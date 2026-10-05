@@ -26,7 +26,6 @@ There are no rate limits (Administrator decision 12): an unknown secret is
 refused at once, and only its notice is grouped, one per host digest per hour.
 """
 
-import hashlib
 import hmac
 import json
 import logging
@@ -68,6 +67,16 @@ from .automation_models import (
     AutomationNoticeAcknowledgement,
     AutomationSession,
 )
+
+# Re-exported: the command line needs these before Django is set up.
+from .automation_tokens import (  # noqa: F401
+    DIGEST_PATTERN,
+    SECRET_PATTERN,
+    SessionUnusable,
+    command_event_type,
+    secret_digest,
+    valid_digest,
+)
 from .models import PortalSession
 from .policy_models import AdminRevocation, PortalUser
 from .policy_schema import normalized_email
@@ -88,9 +97,6 @@ NAMESPACE = "stewardship:auth:v1"
 MARKER = "automation_session"
 SCOPE_KEY = "automation_scope"
 
-# secrets.token_urlsafe(32): 256 random bits as 43 unpadded base64url characters.
-SECRET_PATTERN = re.compile(r"[A-Za-z0-9_-]{43}")
-DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}")
 NAME_PATTERN = re.compile(r"[a-z0-9-]{1,32}")
 # Eight letters and digits without the look-alikes 0/O and 1/I: 32 symbols,
 # so 40 bits per code.
@@ -109,35 +115,8 @@ return 1
 """
 
 
-class SessionUnusable(PermissionError):
-    """No usable automation session; ``code`` says why for the command line.
-
-    ``session_missing`` (no session has this secret) or ``session_ended``
-    (revoked, expired, no longer an Administrator, or a host mismatch).
-    """
-
-    def __init__(self, code):
-        """Keep the closed error code the command line reports."""
-        if code not in {"session_missing", "session_ended"}:
-            raise ValueError("Unknown automation refusal.")
-        super().__init__("The automation session is not usable.")
-        self.code = code
-
-
 class PairingRefused(PermissionError):
     """The approval page refuses a pairing without saying anything about it."""
-
-
-def secret_digest(secret):
-    """The lowercase SHA-256 of a well-formed session secret, or ValueError."""
-    if type(secret) is not str or SECRET_PATTERN.fullmatch(secret) is None:
-        raise ValueError("A session secret is 43 base64url characters.")
-    return hashlib.sha256(secret.encode("ascii")).hexdigest()
-
-
-def valid_digest(value):
-    """Whether ``value`` is a lowercase hexadecimal SHA-256 digest."""
-    return type(value) is str and DIGEST_PATTERN.fullmatch(value) is not None
 
 
 def valid_label(value):
@@ -171,15 +150,6 @@ def normalized_code(value):
 def display_code(code):
     """Show a user code in two groups of four, as the command line prints it."""
     return f"{code[:4]}-{code[4:]}"
-
-
-def command_event_type(command):
-    """The audit event type of a command: ``admin_cmd_`` plus its name.
-
-    Lowercase, with hyphens and spaces replaced by ``_``, so ``go-live
-    confirm-preview`` becomes ``admin_cmd_go_live_confirm_preview``.
-    """
-    return "admin_cmd_" + re.sub(r"[-\s]+", "_", command.strip().lower())
 
 
 def database_now():
