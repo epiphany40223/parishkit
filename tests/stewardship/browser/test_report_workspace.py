@@ -22,6 +22,11 @@ def test_report_chart_scope_export_controls_and_accessibility(
     page.keyboard.press("Home")
     values = page.locator("[data-digest-values]").inner_text()
     assert "Historical as of day" in values and "$1,234.56" in values
+    # The live text stays full for screen readers; the visible tooltip is short.
+    tip = page.locator("[data-digest-tip]")
+    assert tip.is_visible()
+    assert tip.locator("dd").all_inner_texts() == ["1", "1", "$1,235"]
+    assert "Historical" not in tip.inner_text()
     assert page.locator("tbody tr").count() == 3
     page.get_by_label("Export format", exact=True).select_option("xlsx")
     button = page.get_by_role("button", name="Generate export")

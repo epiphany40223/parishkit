@@ -13,8 +13,24 @@ from parishkit.stewardship.web.dates import format_date
 from .participation import ParticipationDocument
 
 _RENDER_LOCK = RLock()
-RENDERER_VERSION = "participation-v1"
+RENDERER_VERSION = "participation-v2"
 PLOT_LAYOUT = {"left": 0.09, "right": 0.89, "top": 0.74, "bottom": 0.29}
+
+
+def family_axis_top(days):
+    """Return the Family axis top: the largest plotted count plus 10% headroom.
+
+    Both the daily bars and the cumulative line share this axis. Unavailable
+    days are gaps and do not count; an empty or all-zero chart still gets a
+    top of 1 so the axis is drawable.
+    """
+    counts = [
+        count
+        for day in days
+        if day.population_available
+        for count in (day.first_responses, day.cumulative_responses)
+    ]
+    return max([1, *counts]) * 1.1
 
 
 def participation_limits(day_count):
@@ -70,7 +86,10 @@ def _draw(figure, document):
     axes.set_title(f"Family participation — {document.scope_label}", pad=38)
     axes.set_xlabel(f"Campaign date ({document.campaign_timezone})")
     axes.set_ylabel("Families (count)")
-    axes.yaxis.set_major_locator(MaxNLocator(integer=True, min_n_ticks=2))
+    # Round 1/2/5 steps (10, 20, 50, ...) read more easily than 30 or 25.
+    axes.yaxis.set_major_locator(
+        MaxNLocator(integer=True, min_n_ticks=2, steps=[1, 2, 5, 10])
+    )
     axes.yaxis.set_major_formatter(FuncFormatter(lambda value, pos: f"{value:,.0f}"))
     axes.grid(axis="y", color="#dddddd", linewidth=0.5)
     dates = list(range(len(document.days)))
@@ -101,9 +120,10 @@ def _draw(figure, document):
         label="Cumulative participating Families",
         zorder=3,
     )
-    axes.set_ylim(
-        bottom=0, top=max([1] + [day.cohort_denominator for day in document.days]) * 1.1
-    )
+    # Scale the Family axis to the plotted counts, not to the eligible
+    # population (#575): a top at the eligible total made the bars and the
+    # cumulative line tiny.
+    axes.set_ylim(bottom=0, top=family_axis_top(document.days))
     if dates:
         ticks = sorted(
             {0, len(dates) - 1} | set(range(0, len(dates), max(1, len(dates) // 8)))
@@ -176,9 +196,13 @@ def _draw(figure, document):
         for day in document.days
     )
     note = "Missing observations are gaps, not zero." if unavailable else ""
-    figure.text(0.09, 0.13, document.as_of_label, fontsize=8, va="top")
     figure.text(0.09, 0.055, note, fontsize=8)
     figure.text(0.89, 0.035, f"{RENDERER_VERSION} · Page 1", fontsize=7, ha="right")
+
+
+def provenance_text(document):
+    """Return the chart's source and request provenance as one line of text."""
+    return " ".join(document.as_of_label.split("\n"))
 
 
 def render_participation(document, output, *, format):
@@ -187,9 +211,16 @@ def render_participation(document, output, *, format):
         raise ValueError("Participation charts support PNG or PDF.")
     with participation_figure(document) as figure:
         metadata = {"Title": "Family participation", "Creator": RENDERER_VERSION}
+        # The image no longer draws the source snapshot and request time; the
+        # file keeps them as metadata instead (Administrator decision, #575).
+        # PNG takes any text key; PDF only the standard Info keys, so Subject.
+        provenance = provenance_text(document)
+        if format == "png":
+            metadata["Description"] = provenance
         if format == "pdf":
             metadata.update(
                 {
+                    "Subject": provenance,
                     # The logical document originates at its immutable request,
                     # not at a retry's wall-clock render time.
                     "CreationDate": document.requested_at,

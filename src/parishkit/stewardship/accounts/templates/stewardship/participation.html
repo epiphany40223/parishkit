@@ -41,14 +41,10 @@
 <h2>{% translate "Daily participation" %} — {% if query.scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</h2>
 {% if selection.updating %}<p class="notice" role="status">{% translate "Updating — the latest complete chart is shown below when available. It may not yet include the newest ParishSoft data or responses counted above. Refresh this page to check progress." %}</p>{% endif %}
 {% if chart %}
-<dl><dt>{% translate "Chart ParishSoft data as of" %}</dt><dd><time datetime="{{ chart.source_as_of|date:'c' }}" data-local-instant>{{ chart.source_as_of|date:'c' }}</time></dd>
-<dt>{% translate "Campaign timezone" %}</dt><dd>{{ chart.campaign_timezone }}</dd></dl>
-<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Chart ParishSoft data load" %}</dt><dd>{{ chart.source_generation|number }}</dd>
-<dt>{% translate "Chart responses included up to number" %}</dt><dd>{{ chart.submission_watermark|number }}</dd></dl></details>
 {% if chart.days %}
-<img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840">
+<div class="digest-figure"><img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840"><div class="digest-tip" data-digest-tip aria-hidden="true" hidden></div></div>
 {{ chart_interaction|json_script:'digest-chart-data' }}
-<div data-digest-controls hidden><p>{% translate "Point to a date, tap it, or use the date slider to inspect exact values." %}</p><label for="digest-day">{% translate "Inspect campaign date" %}</label><input id="digest-day" type="range" min="0" max="{{ chart_last_index }}" value="{{ chart_last_index }}" step="1"><p data-digest-values role="status" aria-live="polite"></p></div>
+<div data-digest-controls hidden><label for="digest-day">{% translate "Inspect campaign date" %}</label><input id="digest-day" type="range" min="0" max="{{ chart_last_index }}" value="{{ chart_last_index }}" step="1"><p class="visually-hidden" data-digest-values role="status" aria-live="polite"></p></div>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Daily table pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="daily-table-caption"><table class="data-table"><caption id="daily-table-caption">{{ chart.scope_label }} — {% translate "exact daily values" %}</caption><thead><tr>{% for key, heading in columns %}{% sort_heading table key heading %}{% endfor %}</tr></thead><tbody>{% for day, row in table.rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="4">{% translate "No campaign dates to show." %}</td></tr>{% endfor %}</tbody></table></div>
