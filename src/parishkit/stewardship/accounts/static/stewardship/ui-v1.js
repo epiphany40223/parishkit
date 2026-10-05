@@ -143,8 +143,15 @@
           delete field.dataset.zoneHint;
         }
         zoneValidity(field);
+        // The zone note (or, without a zone, the Save hint) describes the
+        // field; any other description, such as a refused contact time's
+        // inline error (#592), is kept after it.
         const described = known ? note : gateHint;
-        if (described && described.id) field.setAttribute("aria-describedby", described.id);
+        if (described && described.id) {
+          const others = (field.getAttribute("aria-describedby") || "").split(/\s+/)
+            .filter((id) => id && id !== note?.id && id !== gateHint?.id);
+          field.setAttribute("aria-describedby", [described.id, ...others].join(" "));
+        }
       });
     });
     if (!zone || zone === "UTC") return;
