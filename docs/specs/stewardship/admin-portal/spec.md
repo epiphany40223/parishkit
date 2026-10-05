@@ -485,9 +485,11 @@ Administrators and Staff only; Ministry leaders get none, since they cannot
 open the [Family directory](../reports/spec.md#family-directory). It uses the
 directory's search query (the Family name with its heads of household, DUID
 and address) and its permission checks, so results show only Families the role
-may already see, and a result opens that Family (today its directory row). It
-searches by a CSRF-protected POST, never a GET, so the search text stays out
-of URLs, logs and browser history, as the directory's code search does.
+may already see, and a result opens that Family's
+[Family timeline](../reports/spec.md#family-timeline) (the summary only for
+Staff). It searches by a CSRF-protected POST, never a GET, so the search text
+stays out of URLs, logs and browser history, as the directory's code search
+does.
 Matching member names and envelope numbers as well is a proposal in #561, to
 confirm in NAV-19. Results appear in place as the reader types. Its route is a
 non-page action.
@@ -641,6 +643,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/<campaign>/ministries/follow-up/<request>/` | `/admin/reports/ministries/follow-up/<request>/` | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
 | `family_directory` | Family directory | Menu: Family directory | Administrator, Staff | (same) | `/admin/reports/<campaign>/families/` | `/admin/reports/families/` |  |
 | `family_codes` | Family campaign codes | Family directory | Administrator, Staff | (same) | `/admin/campaign/<campaign>/family-codes` | `/admin/reports/family-codes/` |  |
+| `family_timeline` | Family timeline | Family directory | Administrator, Staff | (new, #477) | `/admin/reports/<campaign>/families/<family>/` | `/admin/reports/families/<family>/` | Opened from each Family directory and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `weekly_digest_manual` | Send a weekly report now | Emailed reports (new page) | Administrator | Request a manual information report; Manual information report | `/admin/reports/weekly-digests/request/<campaign>/` | `/admin/reports/emailed/weekly/new/` | Was the Manual information report menu entry; ends on Emailed reports, which links the report it produced. |
 | `weekly_digest_snapshot` | Weekly report | Emailed reports (new page) | Administrator | Weekly information report; Weekly summary | `/admin/reports/weekly-digests/<snapshot>/` | `/admin/reports/emailed/weekly/<snapshot>/` |  |
 | `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/weekly-digests/<snapshot>/items/<item>/` | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | Links the live Additional information request. |
@@ -1061,7 +1064,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   refuses an in-place control whose fragment names no region there.
 - **Controls.** A link that shows another view of the page (`a[data-in-place]`:
   the [response dashboard](../reports/spec.md#response-dashboard)'s mode and
-  grain, the [response lists](../reports/spec.md#response-lists)' mode,
+  grain, the [response lists](../reports/spec.md#response-lists)' mode, the
+  [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
   "Refresh current work" on "Background work", "Refresh list" on
   "Families on the form now") or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the

@@ -116,7 +116,7 @@ def test_lists_and_downloads_for_admin_and_staff(
         response, body = get(admin, base + "submitted/?mode=testing")
         assert response.status_code == 200
         assert listed_duids(body) == [1]
-        assert f'<th scope="row">{name}</th>'.encode() in body
+        assert f'">{name}</a></th>'.encode() in body
         assert b"never counted in Production" in body
         # Submitted without a delivered invitation: no invitation was sent.
         _, body = get(admin, base + "submitted/?mode=testing&show=invited")

@@ -44,7 +44,7 @@
 <caption>{% if mailing %}{% translate "Family codes, email availability, current campaign response and mailing details" %}{% else %}{% translate "Family codes, email availability and current campaign response" %}{% endif %}</caption>
 <thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "ParishSoft DUID" as heading %}{% sort_heading table "duid" heading %}<th scope="col">{% translate "Family code" %}</th><th scope="col">{% translate "Campaign email deliverable" %}</th><th scope="col">{% translate "Responded" %}</th>{% if mailing %}<th scope="col">{% translate "Addressee" %}</th><th scope="col">{% translate "Mailing address" %}</th>{% endif %}<th scope="col">{% translate "Contact details" %}</th></tr></thead>
 <tbody>{% for row in table.rows %}<tr>
-<td>{{ row.display_name }}</td>
+<td>{% if row.family_id %}<a href="{% url 'admin:family_timeline' campaign_id row.family_id %}">{{ row.display_name }}</a>{% else %}{{ row.display_name }}{% endif %}</td>
 <td>{{ row.family_duid|duid }}</td>
 <td class="family-code">{% if row.code %}<code>{{ row.code }}</code>{% if not testing_codes %}<br><a href="{% url 'public:entry' %}#code={{ row.code|urlencode }}" target="_blank" rel="noopener" data-open-form>{% translate "Open form" %}<span class="visually-hidden"> {% translate "for" %} {{ row.display_name }}</span></a>{% endif %}{% else %}{% translate "Unavailable for this campaign" %}{% endif %}</td>
 <td>{% if row.reason == 'deliverable' %}{% translate "Yes" %}{% else %}<span title="{{ row.reason_label }}">{% translate "No" %}</span> <small>({{ row.reason_label }})</small>{% endif %}</td>

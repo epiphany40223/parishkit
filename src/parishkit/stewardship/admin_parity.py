@@ -162,6 +162,7 @@ LEDGER = {
     "response_list": pending("PR 8", "export responses"),
     "response_list_export": pending("PR 8", "export responses"),
     "family_directory": pending("PR 8", "export directory"),
+    "family_timeline": pending("PR 8", "report family-timeline"),
     "postal_directory": pending("PR 8", "export postal"),
     "family_codes": pending("PR 8", "export family-codes"),
     "financial_export": pending("PR 8", "export financial"),

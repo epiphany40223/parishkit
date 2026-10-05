@@ -170,6 +170,8 @@ PAGES = {
     ),
     "family_directory": Page("reports", _("Family directory")),
     "family_codes": Page("reports", _("Family campaign codes"), "family_directory"),
+    # One Family's summary and timeline (#477), opened from its directory row.
+    "family_timeline": Page("reports", _("Family timeline"), "family_directory"),
     # Parish and integrations
     "parish_settings": Page("parish", _("Parish settings")),
     "branding_settings": Page("parish", _("Parish logos")),

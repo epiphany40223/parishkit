@@ -90,6 +90,8 @@ class Action(StrEnum):
     RESPONSE_REPEAT_LIST_EXPORTED = "response_repeat_list_exported"
     RESPONSE_DATA_QUALITY_LIST_VIEWED = "response_data_quality_list_viewed"
     RESPONSE_DATA_QUALITY_LIST_EXPORTED = "response_data_quality_list_exported"
+    # One Family's timeline (#477): the subject is the Family's opaque record id.
+    FAMILY_TIMELINE_VIEWED = "family_timeline_viewed"
     DASHBOARD_VIEWED = "dashboard_viewed"
     SYSTEM_LOGS_VIEWED = "system_logs_viewed"
     SYSTEM_LOGS_EXPORTED = "system_logs_exported"

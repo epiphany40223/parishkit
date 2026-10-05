@@ -231,10 +231,15 @@ def test_page_shows_the_table_filter_and_download():
     assert page.index("<h1>") < page.index('data-about-page="response-list"')
     assert "Sample campaign — Production" in page
     assert '<div id="table" data-table-region>' in page
-    # The Family cell is the row's heading; identifiers are never grouped.
-    assert '<th scope="row">Adams, Ann</th>' in page
+    # The Family cell is the row's heading and opens the Family's timeline
+    # by its opaque campaign record id; identifiers are never grouped.
+    adams = next(row for row in ROWS if row.family_duid == 1)
+    assert (
+        f'<th scope="row"><a href="/admin/reports/{CAMPAIGN.pk}/families/'
+        f'{adams.family_id}/">Adams, Ann</a></th>'
+    ) in page
     assert '<td class="numeric">101</td>' in page
-    assert re.search(r'<th scope="row">=Baker, Bob</th>', page)
+    assert re.search(r'<th scope="row"><a href="[^"?]+/">=Baker, Bob</a></th>', page)
     # Sort headings are links that keep the filter; the filter is a GET form.
     assert 'aria-sort="ascending" data-sort-column="submitted"' in page
     assert 'href="?size=50&amp;sort=family#table"' in page
@@ -263,6 +268,10 @@ def test_page_keeps_filter_in_links_and_download():
     assert '<input type="hidden" name="show" value="uninvited">' in page
     assert '<input type="hidden" name="mode" value="testing">' in page
     assert "mode=testing&amp;show=uninvited" in page
+    # A Testing list's Family opens the Family's Testing timeline.
+    assert re.search(
+        r'<th scope="row"><a href="[^"]+/families/[^"]+/\?mode=testing">', page
+    )
     # Switching mode keeps the filter and a chosen order.
     resorted = render(query=query, values={"sort": "-family"})
     assert f'href="{BASE}submitted/?show=uninvited&amp;sort=-family#table"' in resorted

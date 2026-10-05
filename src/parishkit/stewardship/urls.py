@@ -70,6 +70,7 @@ from .reports import (
     exact_views,
     export_ui,
     export_views,
+    family_timeline_views,
     financial_export_views,
     financial_views,
     information_export_views,
@@ -206,6 +207,11 @@ admin_patterns = [
         "reports/<uuid:campaign_id>/families/",
         directory_views.directory,
         name="family_directory",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/families/<uuid:family_id>/",
+        family_timeline_views.family_timeline,
+        name="family_timeline",
     ),
     path(
         "reports/<uuid:campaign_id>/postal/",

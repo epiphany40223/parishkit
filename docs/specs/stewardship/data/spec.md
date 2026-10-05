@@ -655,7 +655,8 @@ durable `family_engagement_failed` operational event, and the request goes
 ahead. The heartbeat, which carries nothing but presence, writes directly and
 a refusal is its ordinary temporary denial. Rows hold no answers, names or
 credentials; they are behavioural evidence about a Family, read only by the
-Admin and Staff [response funnel](../reports/spec.md#response-funnel).
+Admin and Staff [response funnel](../reports/spec.md#response-funnel) and
+the Administrator's [Family timeline](../reports/spec.md#family-timeline).
 
 Retention follows the mode. `test` rows are Testing detail: the
 Production-transition cleanup inventories and deletes them with the other
