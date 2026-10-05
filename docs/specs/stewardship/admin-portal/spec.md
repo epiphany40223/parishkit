@@ -3529,8 +3529,19 @@ unbounded export is never assembled in a web request; moving log exports onto
 the asynchronous export-job pipeline used by large report exports is deferred.
 
 Stored timestamps are UTC. The screen renders browser-local timestamps to the
-second, with the zone name and UTC offset, since the date filters are whole
-UTC days. Export
+second, with the zone name and UTC offset, so entries can be compared with
+times recorded elsewhere. The From and Through date filters are whole days in
+the browser's time zone, following the
+[timestamp rule](../spec.md#global-presentation-rules): the filter form
+carries the browser's zone, the server turns From into the start of that local
+day and Through into the start of the next local day (exclusive), so a
+daylight-saving day is 23 or 25 hours long, and paging, sorting and export
+carry the zone with the other filters. A date sent without a zone the server
+knows is refused with a hint to apply again; while the browser reports no zone
+the page keeps Apply unavailable whenever a date is entered. The critical-event
+banner's link sends the browser's zone with a From day one day before its
+24-hour window, so the window is covered in every zone; when the browser
+reports no zone it sends no From day. Export
 requires choosing UTC or the browser's timezone (offered by the page); the
 file's timestamps carry their UTC offset. Logins/logouts, configuration, polls/tasks, each email and
 reason/recipient routing, report execution/export, errors, Family access,

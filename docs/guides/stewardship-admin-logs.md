@@ -39,7 +39,7 @@ there is nothing richer to show.
 ### A closed grammar, without hiding real types
 
 Every filter is an exact value from a closed shape: a canonical identifier, a
-canonical UTC day, a level tick or a source choice. Identifiers travel only in
+canonical calendar day, a level tick or a source choice. Identifiers travel only in
 CSRF POST bodies; a query string is refused, so none reaches a URL or a log.
 
 The type filter is an exact identifier, the same shape the audit table's own
@@ -78,9 +78,15 @@ never enters the audit event or a log. Its identifier is shown beneath the
 address, because the Actor filter takes that identifier. One that is not a
 current portal user, such as a Family or a former user, is shown as that.
 
-Dates are whole UTC days between 2020 and 2999. The last representable day
-cannot be advanced to its exclusive upper bound, so it is refused as a filter
-rather than allowed to overflow.
+Dates are whole days between 2020 and 2999 in the browser's time zone
+([#558](https://github.com/epiphany40223/parishkit/issues/558)). The filter
+form carries the zone the page script reports; From starts at local midnight
+and Through runs to the start of the next local day, so a daylight-saving day
+is 23 or 25 hours long. A date that arrives without a known zone (a tab opened
+before this change, or a browser that reports none) is refused rather than
+read as UTC, and the page keeps Apply unavailable while such a browser has a
+date entered. The last representable day cannot be advanced to its exclusive
+upper bound, so it is refused as a filter rather than allowed to overflow.
 
 ### Authority, audit and cost
 

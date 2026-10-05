@@ -3,7 +3,7 @@
 import csv
 import io
 import json
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -12,6 +12,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
@@ -25,6 +26,7 @@ from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
+from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.exports import csv_cell, download_headers
 from parishkit.stewardship.web.tables import bounded_count
 
@@ -49,6 +51,13 @@ UNAVAILABLE = (ConfigError, LimiterUnavailable, ObjectDoesNotExist)
 # the index-ordered keys of every entry before it.
 EXPORT_LIMIT = 10_000
 EXPORT_FORMATS = {"csv": "text/csv", "jsonl": "application/x-ndjson"}
+# From and Through arrived without the browser's zone (a tab opened before
+# #558, or a zone the server's catalog lacks); they are never read as UTC.
+ZONE_MESSAGE = _(
+    "The dates came without your computer's time zone. Return to the logs and "
+    "apply the filters again; if this repeats, check your computer's time zone "
+    "setting."
+)
 EXPORT_COLUMNS = (
     "time",
     "source",
@@ -63,21 +72,25 @@ EXPORT_COLUMNS = (
 )
 
 
-def _error(code, status, *, query_string=False):
+def _error(code, status, *, query_string=False, message=None):
     """A fixed, accessible message with no submitted filter and no DB chrome.
 
     An unavailable database must not be queried again by the Admin navigation
     context processor while the error itself is rendered. Filter guidance is
     shown only when a filter value was the problem: a denied reader or an
     outage submitted nothing that could be corrected, and a query string is
-    refused for where it was sent, not for what it said.
+    refused for where it was sent, not for what it said. A specific
+    ``message`` (dates without a known zone, #558) replaces the closed one
+    and the value guidance, since no value the reader typed was wrong.
     """
     response = HttpResponse(
         render_to_string(
             "stewardship/logs-error.html",
             {
-                "message": MESSAGES[code],
-                "invalid": code is ErrorCode.INVALID and not query_string,
+                "message": message or MESSAGES[code],
+                "invalid": code is ErrorCode.INVALID
+                and not query_string
+                and message is None,
                 "query_string": query_string,
             },
         ),
@@ -125,18 +138,17 @@ AUDIT_FIELDS = (
 def _filtered(rows, query, through):
     """Apply the filters both sources share, bounded by the snapshot instant.
 
-    Dates are whole UTC days, matching how the entries are stored.
+    Dates are whole days in the viewer's browser zone (``LogQuery.bounds``).
     """
     if query.actor:
         rows = rows.filter(actor_id=query.actor)
     if query.correlation:
         rows = rows.filter(correlation_id=query.correlation)
-    start, end = query.days
-    if start:
-        rows = rows.filter(created_at__gte=datetime.combine(start, time.min, UTC))
-    if end:
-        end += timedelta(days=1)
-        rows = rows.filter(created_at__lt=datetime.combine(end, time.min, UTC))
+    lower, upper = query.bounds
+    if lower:
+        rows = rows.filter(created_at__gte=lower)
+    if upper:
+        rows = rows.filter(created_at__lt=upper)
     if through is not None:
         rows = rows.filter(created_at__lte=through)
     return rows
@@ -331,6 +343,8 @@ def logs(request):
         return _error(ErrorCode.UNAVAILABLE, 503)
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
+    except UnknownZone:
+        return _error(ErrorCode.INVALID, 400, message=ZONE_MESSAGE)
     except ValueError:
         return _error(ErrorCode.INVALID, 400)
 
@@ -371,7 +385,9 @@ def export_logs(request):
 
     The same closed filters as the screen arrive in the CSRF POST body, plus a
     format (CSV or JSON Lines) and a timezone: UTC or one supported timezone
-    name, which the page offers from the browser's own zone. The page's
+    name, which the page offers from the browser's own zone. The filters'
+    ``zone`` (where From and Through days fall) is separate from that display
+    choice: it is always the browser zone the page applied. The page's
     snapshot, page, size and sort are ignored, so an export always starts from
     the newest matching entry. Like
     the screen, the export is rechecked after it is built and then audited with
@@ -427,5 +443,7 @@ def export_logs(request):
         return _error(ErrorCode.UNAVAILABLE, 503)
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
+    except UnknownZone:
+        return _error(ErrorCode.INVALID, 400, message=ZONE_MESSAGE)
     except ValueError:
         return _error(ErrorCode.INVALID, 400)

@@ -320,8 +320,9 @@ becomes 3:30 AM daylight time), so the form is never refused for it. Emails,
 which cannot know a reader's browser, use the parish time zone and name it
 ("9:15 PM Eastern"), never "UTC". Pages and emails move to these rules one
 group at a time in the #558 PRs; the Ministry follow-up contact attempt is the
-first ([Admin portal](admin-portal/spec.md#follow-up-workflows)), and until its
-PR lands each other page keeps its current zone, including the campaign zone
+first ([Admin portal](admin-portal/spec.md#follow-up-workflows)) and the System
+logs date filters the second ([Admin portal](admin-portal/spec.md#logs)).
+Until a page's PR lands, it keeps its current zone, including the campaign zone
 for schedules, campaign dates and report day buckets. Local-day conversion must
 handle daylight-saving gaps and folds without running an occurrence twice.
 

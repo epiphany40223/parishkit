@@ -1,6 +1,6 @@
 """Dates and times typed in the browser's local time zone (#558)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -8,7 +8,11 @@ import pytest
 from django.http import QueryDict
 
 from parishkit.stewardship.reports.ministry_followup_views import change_values
-from parishkit.stewardship.web.dates import UnknownZone, browser_instant
+from parishkit.stewardship.web.dates import (
+    UnknownZone,
+    browser_day_start,
+    browser_instant,
+)
 from parishkit.stewardship.workflows.followup import FollowupRefusal
 
 from .test_ministry_followup import FORM, form
@@ -204,3 +208,114 @@ def test_follow_up_page_labels_no_utc_entry():
     shown = [line for line in text.splitlines() if "|date:'c'" in line]
     assert len(shown) == 6
     assert all("data-local-instant" in line for line in shown)
+
+
+@pytest.mark.parametrize(
+    ("day", "zone", "start", "hours"),
+    [
+        # An ordinary day: UTC, and west of UTC, where it starts in the
+        # UTC morning.
+        (date(2026, 10, 4), "UTC", datetime(2026, 10, 4, tzinfo=UTC), 24),
+        (
+            date(2026, 10, 4),
+            "America/New_York",
+            datetime(2026, 10, 4, 4, tzinfo=UTC),
+            24,
+        ),
+        # Spring forward (2:00 becomes 3:00): a 23-hour day.
+        (
+            date(2026, 3, 8),
+            "America/Los_Angeles",
+            datetime(2026, 3, 8, 8, tzinfo=UTC),
+            23,
+        ),
+        # Fall back (2:00 becomes 1:00 again): a 25-hour day.
+        (
+            date(2026, 11, 1),
+            "America/Los_Angeles",
+            datetime(2026, 11, 1, 7, tzinfo=UTC),
+            25,
+        ),
+        # East of UTC the local day starts on the previous UTC day; a
+        # quarter-hour offset.
+        (
+            date(2026, 10, 4),
+            "Asia/Kathmandu",
+            datetime(2026, 10, 3, 18, 15, tzinfo=UTC),
+            24,
+        ),
+        # East of UTC with daylight saving: New Zealand springs forward on
+        # 27 September 2026 and falls back on 5 April 2026.
+        (
+            date(2026, 9, 27),
+            "Pacific/Auckland",
+            datetime(2026, 9, 26, 12, tzinfo=UTC),
+            23,
+        ),
+        (
+            date(2026, 4, 5),
+            "Pacific/Auckland",
+            datetime(2026, 4, 4, 11, tzinfo=UTC),
+            25,
+        ),
+        # Clocks that spring forward at midnight (Chile, 6 September 2026), so
+        # the day has no 00:00: 00:00 at the old offset is the change itself,
+        # shown as 01:00.
+        (
+            date(2026, 9, 6),
+            "America/Santiago",
+            datetime(2026, 9, 6, 4, tzinfo=UTC),
+            23,
+        ),
+        # Clocks that fall back at midnight (Chile, 4 April 2026): the
+        # repeated 23:00 hour belongs to the Saturday, not the Sunday.
+        (
+            date(2026, 4, 4),
+            "America/Santiago",
+            datetime(2026, 4, 4, 3, tzinfo=UTC),
+            25,
+        ),
+    ],
+)
+def test_browser_day_start_places_local_days(day, zone, start, hours):
+    """A local calendar day is the UTC interval from its midnight to the next.
+
+    The System logs From and Through filters use these bounds (#558); a
+    daylight-saving day is 23 or 25 hours long, never a fixed 24.
+    """
+    assert browser_day_start(day, zone) == start
+    end = browser_day_start(day + timedelta(days=1), zone)
+    assert end - start == timedelta(hours=hours)
+
+
+@pytest.mark.parametrize("zone", ["", "Etc/Unknown", "Mars/Olympus", "../etc"])
+def test_browser_day_start_needs_a_known_zone(zone):
+    """A blank or unknown zone is a zone problem, never read as UTC."""
+    with pytest.raises(UnknownZone):
+        browser_day_start(date(2026, 10, 4), zone)
+
+
+def test_log_page_dates_are_browser_local():
+    """The System logs filters name no fixed zone (#558): From and Through
+    carry the browser zone field and its note, and the only "UTC" left is the
+    export's own time zone choice (the reader picks the file's zone)."""
+    text = (TEMPLATES / "logs.html").read_text()
+    assert [line for line in text.splitlines() if "UTC" in line] == [
+        line for line in text.splitlines() if '<option value="UTC">UTC</option>' in line
+    ]
+    assert 'name="zone" value="{{ query.zone }}" data-browser-zone ' in text
+    assert "data-browser-zone-note hidden" in text
+    assert text.count("data-browser-zone-field>") == 2
+    assert (
+        '<form id="table-filters"' in text
+        and "data-require-complete data-missing-hint" in text
+    )
+    error = (TEMPLATES / "logs-error.html").read_text()
+    assert "UTC" not in error
+    # The critical-events banner's link sends the browser zone with its day.
+    banner = (TEMPLATES / "admin-banners.html").read_text()
+    assert '<input type="hidden" name="zone" value="" data-browser-zone>' in banner
+    # Without a zone the day is left out rather than refused (ui-v1.js).
+    assert (
+        'value="{{ admin_chrome.critical_since_day }}" data-zone-dependent>' in banner
+    )

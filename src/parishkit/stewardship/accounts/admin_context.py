@@ -1,5 +1,7 @@
 """Capability-filtered Admin chrome; public/Family pages never query this context."""
 
+from datetime import timedelta
+
 from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -123,8 +125,13 @@ def portal_chrome(request):
             "critical_shown": critical_sign(critical_ids) if critical_ids else "",
             # More pending than one form signs: the rest stay after Acknowledge.
             "critical_limit": ACKNOWLEDGE_LIMIT,
-            # The banner's System logs link filters from this UTC day onward.
-            "critical_since_day": (now - CRITICAL_WINDOW).date().isoformat(),
+            # The banner's System logs link filters from this day onward, a
+            # day in the browser's zone (#558). One UTC day earlier than the
+            # window's start, so that local day starts before the window in
+            # every zone (offsets reach at most 14 hours either way).
+            "critical_since_day": (now - CRITICAL_WINDOW - timedelta(days=1))
+            .date()
+            .isoformat(),
             "background": counts,
             "delivery_unknown": delivery_unknown,
             # Presence has its own passive endpoint. Do not repeat its current
