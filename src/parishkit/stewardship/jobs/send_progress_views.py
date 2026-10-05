@@ -22,12 +22,10 @@ from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.web.contracts import ErrorCode, filters
 
 from .delivery_views import UNAVAILABLE, _database_error, _error, _principal
-from .ownership import database_now
-from .send_progress import progress, read_send, upcoming
+from .send_reads import audited_count, read_progress
 
 # How often an open page re-reads the status while emails remain, in ms.
 POLL_MILLISECONDS = 5000
@@ -54,15 +52,8 @@ def _announcement(sent):
     }
 
 
-def _audited_count(sent):
-    """The emails the audited view showed: the total, or those counted so far."""
-    if sent is None:
-        return 0
-    return sent.done + sent.counts.remaining if sent.total is None else sent.total
-
-
 def _load():
-    """Read the current send in one read-only snapshot, without any lock.
+    """Read the current send (``send_reads.read_progress``) and add the page's parts.
 
     Returns the template context, or None when the system is unavailable
     (no configuration yet, or a restore still under review). ``follow``
@@ -71,36 +62,15 @@ def _load():
     send by itself. ``upcoming`` (a Production send about to start) only
     changes what the idle page says.
     """
-    with read_transaction():
-        configuration = SystemConfiguration.objects.select_related(
-            "current_campaign"
-        ).first()
-        if configuration is None or configuration.restore_review_required:
-            return None
-        campaign = configuration.current_campaign
-        production = configuration.mode == "production"
-        # Only Production mail can be paused; use the pause control itself,
-        # since messages are held one by one as workers reach them.
-        paused = bool(production and campaign and campaign.delivery_paused)
-        sent = soon = None
-        if campaign is not None:
-            cycle = campaign.production_cycle if production else 0
-            now = database_now()
-            counts = read_send(campaign.pk, configuration.mode, cycle, now)
-            sent = None if counts is None else progress(counts, paused=paused)
-            if sent is None or not sent.active:
-                soon = upcoming(campaign, configuration.mode, cycle, now)
-        return {
-            "campaign": campaign,
-            "testing": not production,
-            "paused": paused,
-            "send": sent,
-            "upcoming": bool(soon),
-            "follow": campaign is not None,
-            "announcement": _announcement(sent),
-            "poll_interval": POLL_MILLISECONDS,
-            "give_up": GIVE_UP_MILLISECONDS,
-        }
+    data = read_progress()
+    if data is None:
+        return None
+    return data | {
+        "follow": data["campaign"] is not None,
+        "announcement": _announcement(data["send"]),
+        "poll_interval": POLL_MILLISECONDS,
+        "give_up": GIVE_UP_MILLISECONDS,
+    }
 
 
 def _read(request, template, *, page):
@@ -142,7 +112,7 @@ def _read(request, template, *, page):
                     actor_id=current.identity,
                     context={
                         "outcome": Outcome.SUCCEEDED,
-                        "count": _audited_count(context["send"]),
+                        "count": audited_count(context["send"]),
                     },
                 )
         response["Cache-Control"] = "no-store"

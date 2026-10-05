@@ -23,14 +23,15 @@ from parishkit.stewardship.web.refusals import stale_page
 from . import admin_navigation
 from .admin_editing import confirm, error_response, principal, sign_preview
 from .authentication import runtime
-from .campaign_views import _state, _target
+from .campaign_views import _state
 from .content_forms import EMAIL_LABELS
-from .content_views import _campaign, _records
+from .content_views import _records
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
 from .schedule_forms import WEEKDAYS, Schedules, ScheduleWindow, schedule_action
 from .schedule_preview import fingerprint, work_summary
+from .schedule_reads import campaign_schedules, schedule_state
 from .sessions import authenticated_admin
 
 
@@ -211,9 +212,7 @@ def schedule_settings(request, campaign_id):
             if request.method in {"GET", "HEAD"}
             else work_transaction()
         ):
-            state = _state(service)
-            campaign = _campaign(state, campaign_id)
-            _, editable = _target(state[0], state[1], state[3], campaign_id)
+            state, campaign, editable = schedule_state(service, campaign_id)
             if proposed and not editable:
                 raise StaleRecordError("Campaign dates are structurally locked.")
             previous = campaign.active_configuration.values
@@ -235,13 +234,7 @@ def schedule_settings(request, campaign_id):
                 templates=_records(state[0], campaign_id),
                 campaign_id=campaign_id,
                 campaign=previous,
-                previous=[
-                    row
-                    for row in state[0]
-                    .active_configuration.canonical_document["sections"]
-                    .get("schedules", [])
-                    if row["values"]["campaign_id"] == str(campaign_id)
-                ],
+                previous=campaign_schedules(state[0], campaign_id),
             )
             response = (
                 _preview(

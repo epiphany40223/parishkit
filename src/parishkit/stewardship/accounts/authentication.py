@@ -39,7 +39,6 @@ from django.views.decorators.http import (
 )
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.web.namespaces import admin_return_path
 from parishkit.stewardship.web.security import login_denial
@@ -515,38 +514,27 @@ def index(request):
     from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
     from parishkit.stewardship.audit.services import record_action
 
-    from .admin_dashboard import summary
-    from .configuration_installation import coherent_configuration
+    from .admin_caller import AdminCaller
+    from .admin_dashboard import observe
 
     try:
         service = runtime()
-        principal = authenticated_admin(request, store=service.store, activity=True)
+        caller = AdminCaller.from_request(request)
+        principal = authenticated_admin(caller, store=service.store, activity=True)
         if principal is None:
             return HttpResponseRedirect("/admin/login")
-        # A read-only snapshot, not the writers' work lock: the dashboard only
-        # observes, and must not wait behind a source promotion or installer.
-        with read_transaction():
-            config = coherent_configuration(service.store)
-            if config.restore_review_required:
-                return denial(status=503, retry=5)
-            if config.current_campaign_id is not None:
-                from parishkit.stewardship.campaigns.models import Campaign
-
-                # The summary and the page both read the campaign's settings;
-                # load them together once rather than lazily twice.
-                config.current_campaign = Campaign.objects.select_related(
-                    "active_configuration"
-                ).get(pk=config.current_campaign_id)
-            now = database_now()
-            data = summary(principal, config, now)
-            # The chrome renders right after this transaction; it reuses this
-            # instant, read inside this snapshot, instead of another clock query.
-            request._stewardship_display_now = now
-            # Presentation only: this exact projection is already verified and
-            # captured with the summary in the same snapshot. Rendering
-            # happens after release; chrome must use that observation, not
-            # independently choose a newer projection for the same response.
-            request._stewardship_display_configuration = config
+        observed = observe(principal, service.store)
+        if observed is None:
+            return denial(status=503, retry=5)
+        config, data, now = observed
+        # The chrome renders right after the snapshot; it reuses this
+        # instant, read inside that snapshot, instead of another clock query.
+        request._stewardship_display_now = now
+        # Presentation only: this exact projection is already verified and
+        # captured with the summary in the same snapshot. Rendering happens
+        # after release; chrome must use that observation, not independently
+        # choose a newer projection for the same response.
+        request._stewardship_display_configuration = config
         response = render(
             request,
             "stewardship/home.html",
@@ -558,7 +546,7 @@ def index(request):
         )
         with transaction.atomic():
             if (
-                authenticated_admin(request, store=service.store, read_only=True)
+                authenticated_admin(caller, store=service.store, read_only=True)
                 != principal
             ):
                 return denial(status=403)
