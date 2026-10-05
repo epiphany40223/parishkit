@@ -334,8 +334,10 @@ consumer dies mid-batch. Then start the services as usual. At startup the
 worker and mail worker log a WARNING saying the bulk send is on and with
 which B; with debug logging on, each batch transaction logs one
 `bulk timing: {...}` line: what it did (`prepare`, `commit` or `outcome`),
-how many items it finished and tried, its lock hold and each item's time
-under the lock (BG-12's rehearsal report reads these lines).
+how many items it finished and tried, its lock hold, each item's time
+under the lock, and how many items were written from a build made outside
+the lock (`prebuilt`) or rebuilt under it because their inputs changed
+(`rebuilt`); BG-12's rehearsal report reads these lines.
 
 To turn it off, either:
 
@@ -356,6 +358,48 @@ To turn it off, either:
 Work already started either way is finished by whichever path runs next; no
 cleanup is needed. The switch is never part of the provisioning record, so
 `retarget-image` does not count it as a changed deployment input.
+
+### Reminders prepared ahead of their due time
+
+With the bulk send on, a Production reminder is prepared during the two
+hours before its due time, so only sending is left at the due time
+([preparing ahead](../specs/stewardship/background-processing/spec.md#preparing-ahead-of-the-due-time),
+BG-12). What an operator sees during that lead window:
+
+- Outgoing mail lists each prepared reminder as pending. Its delivery task
+  waits for the due time; nothing is sent before it, and the dispatch guard
+  refuses a message whose occurrence is not yet due in any case.
+- The send progress panel shows the reminder as upcoming (within an hour
+  of its due time), not as a send in progress, and due-work health ignores
+  it until it is due.
+- Scheduled delta refreshes wait while the reminders are being prepared,
+  and run again once preparation ends, until the send begins. A Family that
+  responds, a pause, or a schedule or content change after preparation is
+  caught when the message is sent, as always.
+- If a scheduled ParishSoft full refresh (the nightly time, any other
+  configured full refresh time, or an hourly or quarter-hour full refresh)
+  falls inside a reminder's lead window, the scheduler logs one WARNING
+  (`startup_validated` with the category `full_refresh_in_lead_window`)
+  per process for each campaign and configuration, so a settings or
+  schedule change is checked again: that refresh's promotion would pause
+  preparation until the Family population is rebuilt. The default 02:00
+  precedes an 08:00 reminder's window.
+- Planning ahead applies only once a Family's invitation is fulfilled. A
+  Family whose invitation is still owed plans exactly as before, so an
+  unsent invitation never absorbs a reminder early. Two reminders less than
+  two hours apart are merged: the earlier one, not yet sent, is coalesced
+  into the later, and the Family gets one reminder, at the later time.
+
+Turning the bulk send off during a lead window is safe: preparation already
+queued completes on the one-at-a-time path, and the prepared reminders are
+sent at their due time by whichever path is running. The initial invitation
+and Testing are always prepared at their due time.
+
+The release that adds this carries a forward migration
+(`stewardship_campaigns.0003_occurrence_prepare_ahead`), so it is deployed
+with `STEWARDSHIP_SCHEMA_CHANGE=1` and cannot be rolled back by retargeting
+the previous image; see the
+[runbook](stewardship-deployment-runbook.md#preparing-reminders-ahead-bg-12).
 
 ## Send statistics and tuning the batch caps
 

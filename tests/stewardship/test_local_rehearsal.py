@@ -334,6 +334,7 @@ def test_holds_are_summarized_per_kind():
             "hold_ms": 700,
             "item_ms": [300, 300, 90],
             "work_ms": [200, 210],
+            "build_ms": [400, 450, 500],
             "prebuilt": 2,
             "rebuilt": 1,
         },
@@ -352,8 +353,10 @@ def test_holds_are_summarized_per_kind():
     assert prepare["items_per_batch"] == 1.5
     assert prepare["hold_ms"]["max"] == 800 and prepare["item_ms"]["n"] == 4
     assert prepare["work_ms"]["p50"] == 200
+    assert prepare["build_ms"]["n"] == 3 and prepare["build_ms"]["max"] == 500
     assert prepare["prebuilt"] == 2 and prepare["rebuilt"] == 1
     assert summary["outcome"]["work_ms"] == {"n": 0}
+    assert summary["outcome"]["build_ms"] == {"n": 0}
 
 
 def outcome(message, settled, submitted, reason="smtp_accepted", **stats):

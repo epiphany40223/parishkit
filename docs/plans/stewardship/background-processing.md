@@ -326,9 +326,15 @@ the spec:
     `jobs/send_progress.py`) and its upcoming list, and the due-work health
     check (`jobs/due_work_health.py`, `SCHEDULER_LAG`, which probably
     already does and needs only a test), ignore what is not yet due;
-  - a startup WARNING flags a nightly refresh time (02:00 by default,
-    `DEFAULT_TIME` in `source/cadence.py`) that falls inside a lead window;
-    PR 4's deploy confirms the deployment's configured time.
+  - a WARNING flags a scheduled full refresh time (the nightly time, 02:00
+    by default, `DEFAULT_TIME` in `source/cadence.py`, and any other
+    `full_refresh_times`) that falls inside a lead window, once per
+    scheduler process for each campaign and configuration; PR 4's deploy
+    confirms the deployment's configured times. A dedicated event for it is
+    [#584](https://github.com/epiphany40223/parishkit/issues/584);
+  - only a reminder-only group plans ahead: a Family whose invitation is
+    still owed plans at the current time, so an unsent invitation never
+    absorbs a reminder early.
 
   The initial invitation at a campaign's start cannot be prepared ahead (no
   occurrence may be created before the configuration starts), so this
@@ -392,11 +398,13 @@ new behavior, including preparing ahead, is simply how the bulk path works.
   one-at-a-time path, which prepares at the due time; reminders already
   prepared ahead wait for their due time and are sent by that path.
 - Until PR 2's release, returning to the previous release is an ordinary
-  image retarget. From PR 2's release on, a release from before the
-  migration refuses the migrated database, so going back means a database
-  restore (losing responses since the backup) or a forward migration that
-  restores the old condition; that corrective migration is drafted before
-  PR 2's release is deployed.
+  image retarget. From PR 2's release on, turning the bulk send off is the
+  immediate rollback (it stops planning ahead and building outside the
+  lock; only the looser guard condition remains). Beyond that the
+  Administrator chose to fail forward (#447): there is no corrective
+  migration. A release from before the migration refuses the migrated
+  database, so only in a catastrophic case is the pre-upgrade backup
+  restored with the previous release (losing responses since the backup).
 
 **Risks and mitigations.**
 
@@ -497,17 +505,18 @@ deploys the release with the [scripted
 upgrade](../../guides/stewardship-deployment-runbook.md#scripted-upgrade)
 and `STEWARDSHIP_SCHEMA_CHANGE=1`, since the release carries PR 2's
 migration. The upgrade carries the bulk switch over. It runs at an
-Administrator-approved time outside a reminder send and its lead window,
-with the corrective migration drafted. The operator confirms that the switch
-is still on and that the configured nightly refresh time precedes every lead
-window, and the operator and the implementer watch the next reminder's
-preparation and send live (progress page, operational log, `pg_locks`
-sampler) and run the mail send report afterwards. Turn the bulk send off at
-once (its quick stop, no approval needed) on a second message to one Family,
-more than one batch per mail consumer `delivery_unknown`, a rate below
-today's bulk baseline, or any CRITICAL alert; the one-at-a-time path then
-prepares at the due time and sends what is already prepared. A fault in the
-guard change itself needs the corrective forward migration, or a restore.
+Administrator-approved time outside a reminder send and its lead window.
+The operator confirms that the switch is still on and that the configured
+full refresh times precede every lead window, and the operator and the
+implementer watch the next reminder's preparation and send live (progress
+page, operational log, `pg_locks` sampler) and run the mail send report
+afterwards. Turn the bulk send off at once (its quick stop, no approval
+needed) on a second message to one Family, more than one batch per mail
+consumer `delivery_unknown`, a rate below today's bulk baseline, or any
+CRITICAL alert; the one-at-a-time path then prepares at the due time and
+sends what is already prepared. A fault in the guard change itself is fixed
+forward, or in a catastrophic case by restoring the pre-upgrade backup and
+the previous release (see the rollback options above).
 
 **Dependencies.** PR 1 needs only PR 0. PR 2 and PR 3 follow PR 0 and may
 proceed alongside PR 1. PR 4 depends on PR 1, PR 2 and PR 3.
@@ -551,8 +560,11 @@ proceed alongside PR 1. PR 4 depends on PR 1, PR 2 and PR 3.
    planning selecting a reminder due within the lead window while
    dispatch-time `plan_family` keeps its horizon; the bulk send turned off
    mid-window with preparation tasks queued, which still complete; the
-   existing bulk and single preparation suites unchanged; lock hold per item
-   measured against today.
+   existing bulk and single preparation suites unchanged. The lock hold per
+   item against today is measured by PR 4's rehearsal, from the batches'
+   `item_ms`, `build_ms` and prebuilt/rebuilt counts (deferred from PR 2,
+   whose local tests run against a database where rendering is too cheap
+   for the comparison to mean anything).
 4. **PR 3, sending built outside the lock.** The build step in
    `delivery_bulk`, the key-locked decryption variant, and
    `begin_submission` split into build and commit halves (the bulk path

@@ -9,6 +9,7 @@ configured definitions); it never selects a message from a partial group.
 
 from contextlib import nullcontext
 from dataclasses import dataclass
+from datetime import timedelta
 from uuid import UUID
 
 from django.db import connection
@@ -29,6 +30,13 @@ from .schedule_models import ScheduleDefinition, ScheduleFulfillment, ScheduleOc
 from .schedule_recovery import RecoverySlot, plan_recovery
 from .schedules import occurrence_key
 from .work_locks import require_work_order, work_transaction
+
+# How long before its due time a Production reminder may be planned and
+# prepared on the bulk path (BG-12, #447), so only sending is left at the due
+# time. The occurrence guard (stewardship_occurrence_guard_v1) admits a
+# preparation claim up to two hours early and no more, so this must never
+# exceed that cap; a test pins the two together.
+PREPARE_AHEAD = timedelta(hours=2)
 
 FAMILY_FIELDS = (
     "id",
@@ -54,7 +62,7 @@ class FamilyPlanningResult:
     examined: int = 0
 
 
-def plan_family(guard, *, family_id, worker_id, nested=False):
+def plan_family(guard, *, family_id, worker_id, nested=False, ahead=False):
     """Recheck current scope and atomically prepare one complete Family group.
 
     Work already bound to a task or outbox is conservatively held here;
@@ -63,11 +71,20 @@ def plan_family(guard, *, family_id, worker_id, nested=False):
     The selected pending row is not provider permission or a task execution hint.
     ``nested`` lets the scheduler's bulk sweep (#430) plan several Families
     in one work-order transaction, each in its own savepoint.
+
+    Planning looks up to the current time, except for Production reminders
+    planned ahead (BG-12, see ``_horizon``): ``ahead`` is the scheduler's bulk
+    sweep, and a preparation claim extends its own horizon when its
+    occurrence is a Production reminder not yet due but due within
+    PREPARE_AHEAD. A group whose initial invitation is still owed never
+    looks ahead.
     """
     if (
         not isinstance(guard, (SchedulerGuard, TaskClaim))
         or not isinstance(family_id, UUID)
         or not isinstance(worker_id, UUID)
+        or type(ahead) is not bool
+        or (ahead and isinstance(guard, TaskClaim))
     ):
         raise TypeError("Family planning requires actual schedule ownership.")
     claimed = isinstance(guard, TaskClaim)
@@ -85,6 +102,7 @@ def plan_family(guard, *, family_id, worker_id, nested=False):
         message = bound_dispatch(_status(task))
         if message.family_id != family_id or worker_id != guard.worker_id:
             raise PermissionError("Dispatch cannot plan another Family.")
+    occurrence = None
     if claimed and not catchup and not dispatch:
         from parishkit.stewardship.jobs.family_mail_tasks import _row, owned_preparation
 
@@ -223,6 +241,22 @@ def plan_family(guard, *, family_id, worker_id, nested=False):
         # keeps one current attempt per semantic slot without loading an
         # unbounded recovery history; PostgreSQL cannot combine it with FOR UPDATE.
         excluded = covered | held
+        # Reminders may be planned up to PREPARE_AHEAD early (BG-12), but only
+        # in a reminder-only group: once the Family's initial invitation is
+        # fulfilled (or restore-held), so it is not part of this decision.
+        # With an invitation still owed, a reminder due within the window
+        # would be coalesced into it early and never sent; that group plans
+        # exactly as before. Catch-up and dispatch never look ahead.
+        reminders = (
+            through
+            if catchup
+            or dispatch
+            or any(
+                definition.kind == "initial" and (definition.pk, "once") not in excluded
+                for definition in definitions
+            )
+            else _horizon(scope, through, ahead=ahead, occurrence=occurrence)
+        )
         for definition in definitions:
             check()
             if (definition.pk, "once") in excluded:
@@ -230,7 +264,7 @@ def plan_family(guard, *, family_id, worker_id, nested=False):
             revision = definition.current_revision
             page = SchedulePlan.from_values(
                 revision.values, scope.campaign.active_configuration.values
-            ).page(through=through)
+            ).page(through=reminders if definition.kind == "reminder" else through)
             if not page.slots:
                 continue
             due = page.slots[0]
@@ -304,7 +338,13 @@ def plan_family(guard, *, family_id, worker_id, nested=False):
                 )
                 for row, kind in rows
             ),
-            cutoff=through,
+            # A reminder planned ahead counts as due here, so an older due
+            # reminder not yet sent coalesces into it, up to PREPARE_AHEAD
+            # earlier than at its own due time; the Family is mailed once
+            # (two reminders less than PREPARE_AHEAD apart merge this way).
+            # Only reminder-only groups look ahead (above), so an unsent
+            # invitation never absorbs a reminder early.
+            cutoff=reminders,
             closed=closed,
             eligible=eligible,
             responded=responded,
@@ -335,6 +375,39 @@ def plan_family(guard, *, family_id, worker_id, nested=False):
             decision.reason,
             len(rows),
         )
+
+
+def _horizon(scope, through, *, ahead, occurrence):
+    """How far ahead this planning creates and selects reminders (BG-12, #447).
+
+    Only Production reminders are planned ahead, only PREPARE_AHEAD, and
+    only once the Family's invitation is fulfilled (``plan_family`` keeps
+    ``through`` for a group that still owes one):
+
+    - the scheduler's bulk sweep (``ahead``) plans them once due within the
+      lead window, so the worker prepares them before the due time;
+    - a preparation claim re-plans its own occurrence before writing it.
+      Its horizon follows the occurrence, not the bulk switch, so a task
+      queued before the bulk send was turned off still completes: a
+      Production reminder not yet due but due within the window extends it.
+      Already-due work plans exactly as before.
+
+    Everything else, including Testing, initial invitations, catch-up and
+    the dispatch-time recheck, looks up to ``through`` (the current time).
+    """
+    if scope.runtime.mode != "production":
+        return through
+    limit = through + PREPARE_AHEAD
+    if ahead:
+        return limit
+    if (
+        occurrence is not None
+        and occurrence.definition.kind == "reminder"
+        and occurrence.mode == "production"
+        and through < occurrence.due_at <= limit
+    ):
+        return limit
+    return through
 
 
 def _planning_scope(

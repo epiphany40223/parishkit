@@ -102,6 +102,13 @@ class FailureKind(StrEnum):
     # directory's or an export's captured source was compacted and, for an
     # export, there is no current promoted source either.
     HEAD_EMAILS_UNAVAILABLE = "directory_head_emails_unavailable"
+    # A scheduled ParishSoft full refresh falls inside the lead window in
+    # which the bulk Family send prepares a Production reminder (BG-12,
+    # #447): its promotion would pause that preparation until the Family
+    # population is rebuilt. Warned once per scheduler process for each
+    # campaign and configuration, riding on the reviewed startup_validated
+    # event until it has its own (see the follow-up issue on #447).
+    REFRESH_IN_LEAD_WINDOW = "full_refresh_in_lead_window"
 
 
 # The off-site copy's Drive failure categories, mirroring

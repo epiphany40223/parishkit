@@ -327,7 +327,13 @@ def shadow_work(mode="production", paused=False):
         )
         cursor.execute(
             "CREATE TEMP TABLE stewardship_outbox_message "
-            "(id uuid PRIMARY KEY, purpose text, state text, pause_hold_id uuid)"
+            "(id uuid PRIMARY KEY, purpose text, state text, pause_hold_id uuid, "
+            "semantic_key uuid)"
+        )
+        # Each message's occurrence, for whether it is due yet (BG-12).
+        cursor.execute(
+            "CREATE TEMP TABLE stewardship_schedule_occurrence "
+            "(id uuid PRIMARY KEY, due_at timestamptz)"
         )
         cursor.execute(
             "CREATE TEMP TABLE stewardship_task_run "
@@ -338,21 +344,37 @@ def shadow_work(mode="production", paused=False):
     finally:
         with connection.cursor() as cursor:
             cursor.execute("DROP TABLE pg_temp.stewardship_outbox_message")
+            cursor.execute("DROP TABLE pg_temp.stewardship_schedule_occurrence")
             cursor.execute("DROP TABLE pg_temp.stewardship_task_run")
             cursor.execute("DROP TABLE pg_temp.stewardship_system_configuration")
             cursor.execute("DROP TABLE pg_temp.stewardship_campaign")
 
 
 def add(table, rows):
-    """Insert ``rows`` of (second column, state[, paused]) into a shadow table."""
+    """Insert ``rows`` of (second column, state[, paused[, due]]) into a shadow table.
+
+    A message's occurrence fell due a minute ago, or with ``due`` False
+    falls due in an hour (a reminder prepared ahead, BG-12).
+    """
     with connection.cursor() as cursor:
         for row in rows:
             if table == "message":
-                purpose, state, paused = row
+                purpose, state, paused, *rest = row
+                occurrence = uuid4()
+                cursor.execute(
+                    "INSERT INTO pg_temp.stewardship_schedule_occurrence "
+                    "VALUES (%s,statement_timestamp()+%s)",
+                    [
+                        occurrence,
+                        timedelta(minutes=-1)
+                        if rest == [] or rest[0]
+                        else timedelta(hours=1),
+                    ],
+                )
                 cursor.execute(
                     "INSERT INTO pg_temp.stewardship_outbox_message "
-                    "VALUES (gen_random_uuid(),%s,%s,%s)",
-                    [purpose, state, uuid4() if paused else None],
+                    "VALUES (gen_random_uuid(),%s,%s,%s,%s)",
+                    [purpose, state, uuid4() if paused else None, occurrence],
                 )
             else:
                 task_type, state = row
@@ -393,6 +415,15 @@ def test_send_activity_counts_remaining_family_work():
         assert not send_hold.family_send_active()
         assert send_hold.family_send_active(minimum=6)
         add("message", [("initial", "pending", False)] * 4)
+        assert send_hold.family_send_active()
+
+
+def test_messages_not_yet_due_do_not_hold_deltas():
+    """A reminder prepared ahead (BG-12) counts only once it is due."""
+    with transaction.atomic(), shadow_work():
+        add("message", [("reminder", "pending", False, False)] * 20)
+        assert not send_hold.family_send_active()
+        add("message", [("reminder", "pending", False, True)] * 10)
         assert send_hold.family_send_active()
 
 

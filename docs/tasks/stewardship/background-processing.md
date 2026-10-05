@@ -438,8 +438,8 @@ Specification: [bulk send work outside the lock](../../specs/stewardship/backgro
 
 - [ ] BG-12.01 — PR 0: specify the faster bulk Family send and plan its PR sequence.
 - [ ] BG-12.02 — PR 1: add the local rehearsal harness and SMTP latency setting, and record baselines.
-- [ ] BG-12.03 — PR 2: build bulk preparation outside the work-order lock, and prepare Production reminders ahead of their due time with one occurrence-guard migration.
+- [x] BG-12.03 — PR 2: build bulk preparation outside the work-order lock, and prepare Production reminders ahead of their due time with one occurrence-guard migration.
 - [ ] BG-12.04 — PR 3: build bulk sending's messages outside the work-order lock, committing only under it.
 - [ ] BG-12.05 — PR 4: record the rehearsal evidence and deploy to Production at an Administrator-approved time.
 
-Evidence: Not started.
+Evidence: BG-12.03 (PR 2) is covered by `tests/stewardship/database/test_family_mail_prepare_ahead_postgresql.py` and `tests/stewardship/test_prepare_ahead.py`; its timing is measured by PR 4's rehearsal.

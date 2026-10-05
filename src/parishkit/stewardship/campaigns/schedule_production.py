@@ -2,19 +2,27 @@
 
 import logging
 from contextlib import ExitStack, nullcontext
+from datetime import datetime, time, timedelta
 from time import monotonic
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from django.db import connection, transaction
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.jobs.family_mail_epochs import ensure_preparation_epoch
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
-from parishkit.stewardship.observability import Event, emit, emit_failure
+from parishkit.stewardship.observability import (
+    Event,
+    FailureKind,
+    emit,
+    emit_failure,
+)
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .credential_models import FamilyCampaign
-from .family_schedule_planning import plan_family
+from .family_schedule_planning import PREPARE_AHEAD, plan_family
+from .intervals import resolve_local
 
 # Most Families one scheduler loop plans while the sweep is finding mail to
 # prepare. During a launch send about 40% of planned Families produce a
@@ -61,7 +69,9 @@ class FamilyScheduleProducer:
         nothing to prepare visits at most IDLE_FAMILY_SWEEP_LIMIT Families.
         ``bulk`` (the bulk Family send, #430) plans several Families per
         work-order transaction, each in its own savepoint, until the bulk
-        lock-hold budget; off, each Family has its own transaction.
+        lock-hold budget, and plans Production reminders up to
+        ``PREPARE_AHEAD`` before their due time (BG-12); off, each Family
+        has its own transaction and planning looks up to the current time.
         """
         if (
             not isinstance(worker_id, UUID)
@@ -78,6 +88,9 @@ class FamilyScheduleProducer:
         self.worker_id, self.limit, self.seconds = worker_id, limit, seconds
         self.bulk = bulk
         self.campaign_id, self.cursor = None, None
+        # (campaign, configuration) pairs whose refresh-time check has run
+        # in this process (see _warn_refresh_in_lead_window).
+        self.checked = set()
         # Whether the last page created new preparation work. Start at the
         # full page: a restart mid-send should not slow it.
         self.busy = True
@@ -104,6 +117,11 @@ class FamilyScheduleProducer:
             self.campaign_id, self.cursor, self.busy = current, None, True
         if current is None:
             return ()
+        if self.bulk:
+            key = _refresh_check_key(current)
+            if key not in self.checked:
+                self.checked.add(key)
+                _warn_refresh_in_lead_window(current)
         try:
             ensure_preparation_epoch(guard, current, self.worker_id)
         except PermissionError:
@@ -136,7 +154,9 @@ class FamilyScheduleProducer:
                             family_id=identifier,
                             worker_id=self.worker_id,
                             # Off, the call is exactly the one before #430.
-                            **({"nested": True} if self.bulk else {}),
+                            # On, Production reminders are also planned a
+                            # lead window ahead (BG-12, #447).
+                            **({"nested": True, "ahead": True} if self.bulk else {}),
                         )
                         results.append(result)
                         if result.selected is not None and not result.held:
@@ -220,6 +240,117 @@ class _Chunks:
             stack.__exit__(RuntimeError, RuntimeError("bulk sweep failed"), None)
         else:
             stack.close()
+
+
+def refresh_in_lead_window(refresh_times, timezone, due_times, lead=PREPARE_AHEAD):
+    """Whether a scheduled full refresh falls inside any reminder's lead window.
+
+    ``refresh_times`` are the local ``HH:MM`` times of the daily full
+    refreshes (the nightly time and any other ``full_refresh_times``, #465),
+    ``timezone`` the campaign's, and ``due_times`` the reminders' UTC due
+    times. A lead window runs from ``lead`` before a due time up to it. Each
+    time is resolved on the due time's local day and the day before (a
+    window may cross midnight) through the shared DST resolver.
+    """
+    for due in due_times:
+        day = due.astimezone(ZoneInfo(timezone)).date()
+        for value in refresh_times:
+            wall = time.fromisoformat(value)
+            for offset in (1, 0):
+                at = resolve_local(
+                    datetime.combine(day - timedelta(days=offset), wall), timezone
+                )
+                if due - lead <= at < due:
+                    return True
+    return False
+
+
+def _refresh_check_key(campaign_id):
+    """What the refresh warning depends on: the campaign and its configuration.
+
+    The refresh times and the reminder schedules are both part of the
+    applied configuration, so a new configuration (a settings or schedule
+    change) is checked again. One small read per sweep.
+    """
+    configuration = SystemConfiguration.objects.values_list(
+        "active_configuration_id", flat=True
+    ).first()
+    return campaign_id, configuration
+
+
+def _warn_refresh_in_lead_window(campaign_id):
+    """Warn when a full refresh would fall inside a reminder's lead window.
+
+    The bulk Family send prepares a Production reminder in the two hours
+    before its due time (BG-12). A full refresh's promotion marks the Family
+    population dirty, so preparation pauses until the population is
+    rebuilt. The nightly full refresh (02:00 by default) never waits for a
+    send; the other configured daily times (``full_refresh_times``) wait
+    only while one is under way, so they are checked as well, and an hourly
+    or quarter-hour full refresh falls in every window. The default
+    leaves an 08:00 reminder's window (from 06:00) clear. Only reminders
+    still to come on the campaign clock count. The caller warns once per
+    process for each campaign and configuration. It changes nothing, and any
+    failure to check is ignored: it is advice for the operator, not a gate.
+    """
+    from django.db.models import DateTimeField, Func
+
+    from parishkit.stewardship.accounts.configuration_models import (
+        AppliedIntegration,
+    )
+    from parishkit.stewardship.source.cadence import refresh_settings
+
+    from .models import Campaign
+    from .schedule_models import ScheduleDefinition
+
+    try:
+        with transaction.atomic():
+            runtime = SystemConfiguration.objects.get()
+            if runtime.mode != "production":
+                return
+            settings = (
+                AppliedIntegration.objects.filter(
+                    configuration_id=runtime.active_configuration_id,
+                    kind="parishsoft",
+                )
+                .values_list("settings", flat=True)
+                .first()
+            )
+            timezone = (
+                Campaign.objects.select_related("active_configuration")
+                .get(pk=campaign_id)
+                .active_configuration.timezone
+            )
+            due_times = list(
+                ScheduleDefinition.objects.filter(
+                    campaign_id=campaign_id,
+                    kind="reminder",
+                    current_revision__isnull=False,
+                    # Only reminders still to come on the campaign clock; a
+                    # past one's window no longer matters.
+                    current_revision__due_at__gt=Func(
+                        function="stewardship_campaign_now_v1",
+                        output_field=DateTimeField(),
+                    ),
+                ).values_list("current_revision__due_at", flat=True)
+            )
+        schedule = refresh_settings(settings or {})
+        times = {schedule["nightly_time"], *schedule["full_refresh_times"]}
+        # An hourly or quarter-hour full refresh falls in every window.
+        if (
+            bool(due_times)
+            if schedule["frequency"] != "daily"
+            else refresh_in_lead_window(sorted(times), timezone, due_times)
+        ):
+            emit(
+                Event.STARTUP_VALIDATED,
+                level=logging.WARNING,
+                failure_kind=FailureKind.REFRESH_IN_LEAD_WINDOW,
+            )
+    except Exception as error:  # noqa: BLE001 - advice must never stop planning
+        logging.getLogger("parishkit.stewardship.debug").debug(
+            "refresh lead-window check skipped: %s", type(error).__name__
+        )
 
 
 def _enqueue(guard, occurrence_id):

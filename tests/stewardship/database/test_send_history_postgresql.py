@@ -200,6 +200,8 @@ def test_the_web_login_lists_a_real_send_during_a_work_order_hold(
     browser, _ = signed_in()
     ready = Queue()
     with (
+        # On the campaign clock: a send is in progress once it is due (BG-12).
+        campaign_clock(occurrence.due_at),
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         ThreadPoolExecutor(max_workers=1) as pool,
     ):

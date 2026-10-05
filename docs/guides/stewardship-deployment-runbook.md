@@ -801,6 +801,41 @@ and refuses to commit unless the new body is installed) and then
 nightly refresh keeps its time until an Administrator lists more on the
 ParishSoft integration page.
 
+### Preparing reminders ahead (BG-12)
+
+The release that prepares bulk-send reminders before their due time
+([#447](https://github.com/epiphany40223/parishkit/issues/447)) is a schema
+change without a grant change: with the [scripted upgrade](#scripted-upgrade)
+set `STEWARDSHIP_SCHEMA_CHANGE=1`; step 4 runs migration
+(`stewardship_campaigns.0003_occurrence_prepare_ahead` replaces the
+occurrence guard, so Family mail preparation may claim a Production
+occurrence up to two hours before its due time, restores the guard's
+`SECURITY DEFINER`, and refuses to commit unless both are installed) and
+then `database-grants`, which changes nothing. No credential, code, link
+token or token lookup changes. Deploy outside a reminder send and its lead
+window (from two hours before the due time until the send has settled),
+and only with the Administrator's approval.
+
+Rolling back:
+
+- **Turn the bulk send off.** This is the immediate rollback and needs no
+  approval: its quick stop or a re-render without the switch
+  ([Family mail dispatch guide](stewardship-family-mail-dispatch.md#turning-on-the-bulk-family-send)).
+  It stops planning ahead and building outside the lock; the one-at-a-time
+  path prepares at the due time and sends what is already prepared. Only
+  the looser guard condition remains, and nothing then uses it except
+  preparation already queued for a reminder planned ahead.
+- **Fail forward.** Any other fault is fixed in a later release, as the
+  general policy is; there is no corrective migration restoring the old
+  guard condition. The previous image refuses the migrated database, so an
+  image retarget alone is not possible.
+- **Catastrophic case only:** restore the pre-upgrade backup and redeploy
+  the previous release. This returns the old guard but loses every response
+  and change since that backup.
+
+The Administrator chose this (turn the bulk send off, then fail forward) on
+[#447](https://github.com/epiphany40223/parishkit/issues/447#issuecomment-5988416157).
+
 ### Worker connection limit (#339)
 
 The release that runs ParishSoft source work on the worker's second process
@@ -913,8 +948,9 @@ What to watch after deploying it:
 An application-only rollback is possible only when the new release changed
 neither the schema nor any runtime grant. Every release that carries a
 forward migration (the first was v1.2.0 with
-`stewardship_campaigns.0002_family_engagement`, #477; the next,
-`stewardship_source.0002_refresh_tick_times`, #465) rules it out: the
+`stewardship_campaigns.0002_family_engagement`, #477; then
+`stewardship_source.0002_refresh_tick_times`, #465, and
+`stewardship_campaigns.0003_occurrence_prepare_ahead`, #447) rules it out: the
 previous image refuses a database whose applied migrations it does not know,
 so roll back by database restore (below) or roll forward with a fix. For a
 release that qualifies:
