@@ -46,6 +46,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from datetime import UTC
+from pathlib import Path
 
 from parishkit.config import ConfigError
 
@@ -977,7 +978,11 @@ def build_parser():
                 )
             command = groups[words[0]].add_parser(words[1], help=spec.help)
         command.set_defaults(command_name=spec.name)
-        command.add_argument("--config", required=True, help="web configuration file")
+        # load_deployment takes a Path: a plain string reads the YAML and then
+        # fails on Path methods, which classify reports as "internal" (#609).
+        command.add_argument(
+            "--config", type=Path, required=True, help="web configuration file"
+        )
         command.add_argument(
             "--session-stdin",
             action="store_true",
