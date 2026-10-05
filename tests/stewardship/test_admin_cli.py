@@ -438,6 +438,27 @@ def fresh_environment():
         # Admission fails on the missing configuration file: exit 2, mapped
         # without loading any model.
         ("real", PREAMBLE, ["whoami"], (2, "configuration")),
+        # An existing file goes through the real load_deployment, past its
+        # Path handling (#609: a string --config ended as "internal"), to a
+        # later admission check, which refuses this development file.
+        ("file", PREAMBLE, ["whoami"], (2, "configuration")),
+        (
+            "file",
+            PREAMBLE,
+            [
+                "login",
+                "start",
+                "--name",
+                "ops",
+                "--label",
+                "x",
+                "--expect-email",
+                "a@example.org",
+                "--scope",
+                "read-only",
+            ],
+            (2, "configuration"),
+        ),
         # Past load_deployment: every session command reaches the signing
         # keyring check inside configure_admin_process, never "internal".
         ("stub", PREAMBLE, ["whoami"], (2, "configuration")),
@@ -456,6 +477,8 @@ def fresh_environment():
         "commands",
         "malformed-preamble",
         "missing-configuration",
+        "real-configuration-whoami",
+        "real-configuration-login-start",
         "admitted-whoami",
         "admitted-sessions",
         "admitted-logout",
@@ -475,6 +498,12 @@ def test_the_command_line_runs_before_django_is_set_up(
     import subprocess
     import sys
 
+    config = tmp_path / "missing.yaml"
+    if mode == "file":
+        # A real, existing deployment file, read by the real load_deployment.
+        config = tmp_path / "web.yaml"
+        config.write_text("deployment:\n  profile: development\n")
+        mode = "real"
     result = subprocess.run(
         [
             sys.executable,
@@ -483,7 +512,7 @@ def test_the_command_line_runs_before_django_is_set_up(
             mode,
             *argv,
             "--config",
-            str(tmp_path / "missing.yaml"),
+            str(config),
             "--session-stdin",
         ],
         input=preamble,
