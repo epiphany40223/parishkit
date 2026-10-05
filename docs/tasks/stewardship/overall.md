@@ -1017,6 +1017,7 @@ Source scope: [post-launch work packages](../../plans/stewardship/overall.md#pos
 1. [OPS-10](operations.md#ops-10-local-laptop-environment) local laptop environment, in its own dependency order.
 2. [ADM-11](admin-portal.md#adm-11-admin-automation-interface) Admin automation interface, in its own dependency order.
 3. [BG-12](background-processing.md#bg-12-faster-bulk-family-send) faster bulk Family send, in its own dependency order; the Production deploy follows once PR 0–PR 3 have merged and the rehearsal has passed.
+4. [ADM-12](admin-portal.md#adm-12-admin-navigation-overhaul) Admin navigation overhaul, in its own dependency order.
 
 ## Packages that span phases
 

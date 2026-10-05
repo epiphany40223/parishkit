@@ -281,6 +281,53 @@ the tests; items here only name them.
     changes), assignments, chairpersons, acknowledgements and follow-up.
 13. **PR 12, go-live and withdrawal.** The go-live sequence and withdrawal.
 
+### ADM-12: Admin navigation overhaul
+
+Moves the Admin portal to the
+[Admin navigation](../../specs/stewardship/admin-portal/spec.md#admin-navigation)
+structure and the
+[JavaScript requirement](../../specs/stewardship/admin-portal/spec.md#javascript-requirement),
+through #520 (one name per page), #521 (reachability and ways back), #525
+(URL scheme), #561 (Find a Family) and #565 (JavaScript gate). It is
+post-launch work outside the phase and gate sequence, with no schema change.
+Each row is one pull request with independent review and full CI. The
+[implementation plan on #522](https://github.com/epiphany40223/parishkit/issues/522)
+owns each PR's files, tests, dependencies and risks; this table only orders
+them. The URL PRs (NAV-6 to NAV-12) also update their rows in the spec's
+placement table, the other specs that name those URLs, and the guides.
+
+| Tasks | PR | Scope | Lane |
+| --- | --- | --- | --- |
+| ADM-12.00 | NAV-0 | Spec fixes for the plan's decisions; this package and its checklist | Any time |
+| ADM-12.01 | NAV-1 | JavaScript gate on every Admin and sign-in page (#565) | Serial |
+| ADM-12.02–.04 | NAV-2 | Registry rewrite: seven groups, stable menu shape with greyed entries and reasons, collapsible groups and Sign out | Serial |
+| ADM-12.05 | NAV-3 | Grey out multi-campaign controls, server refusals, remove New campaign (rule 10) | A |
+| ADM-12.06 | NAV-4 | Names for Campaign setup and Mail, including Cancel go-live | A |
+| ADM-12.07 | NAV-5a | Names for Parish data, Users and access, System and Home | B |
+| ADM-12.08 | NAV-5b | Names for Responses and reports | C |
+| ADM-12.09 | NAV-6 | URL plumbing, per-group URL modules, System URLs | Serial |
+| ADM-12.10 | NAV-7 | Parish data and Users URLs; change status URL | B |
+| ADM-12.11 | NAV-8 | Mail and Family portal URLs | D |
+| ADM-12.12 | NAV-9 | Campaign setup URLs, part A | A |
+| ADM-12.13 | NAV-10 | Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries) | A |
+| ADM-12.14 | NAV-11 | Report URLs, including response lists | C |
+| ADM-12.15 | NAV-12 | Export and digest URLs | C |
+| ADM-12.16 | NAV-13 | Optional: trailing slash on sign-in, setup and maintenance | Last |
+| ADM-12.17 | NAV-14 | Emailed reports page | C |
+| ADM-12.18 | NAV-15 | Split Portal users into Sign-in rules, Ministry assignments and Chairpersons (#535) | B |
+| ADM-12.19 | NAV-16 | Ways back (#521): test-email origin, Return links, linked messages | Serial |
+| ADM-12.20 | NAV-17 | Reachability and no-UUID crawl | Serial |
+| ADM-12.21 | NAV-18 | Home Next steps and Today line | Serial |
+| ADM-12.22 | NAV-19 | Find a Family header search (#561) | C |
+
+NAV-1 and NAV-2 come first (NAV-1 merges after #559), and NAV-6 merges
+before any lane starts its URL work. Lane A runs NAV-3, NAV-4, NAV-9 and
+NAV-10 (NAV-9 needs NAV-4 and NAV-6); lane B runs NAV-5a, NAV-7 and NAV-15;
+lane C runs NAV-5b, NAV-11, NAV-12, NAV-14 and then NAV-19 (which also needs
+NAV-1), after the in-flight report work in #553, #567, #559 and #477 PR 5
+merges; lane D runs NAV-8. NAV-16 (after NAV-10 and NAV-11) to NAV-18 come at
+the end, and NAV-13 is last and optional.
+
 ## Review handoffs
 
 - Review Gate 1 covers ADM-01.
@@ -293,6 +340,8 @@ the tests; items here only name them.
 - ADM-11 is outside the review gates: each of its pull requests gets an
   independent review, and PR 2, PR 5 and PR 10 (items 3, 6 and 11)
   security-focused ones.
+- ADM-12 is outside the review gates: each of its pull requests gets an
+  independent review.
 
 ## Completion criteria
 

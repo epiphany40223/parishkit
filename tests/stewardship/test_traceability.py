@@ -108,7 +108,7 @@ def test_every_spec_section_package_and_scenario_has_an_owner():
         packages.update(
             re.findall(r"^### ([A-Z]+-\d{2}):", plan.read_text(), re.MULTILINE)
         )
-    assert len(packages) == 72
+    assert len(packages) == 73
     specs = {
         path.relative_to(SPECS).as_posix(): path for path in SPECS.rglob("spec.md")
     }
