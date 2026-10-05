@@ -169,6 +169,9 @@ TIMEOUT_LIMITS = frozenset(
         # ``pk-stewardship admin login wait`` stopped waiting for the
         # Administrator to approve a pairing (ADM-11); process log only.
         "automation_pairing_wait",
+        # A ``pk-stewardship admin`` ``--watch`` reached its ``--timeout``
+        # before the read finished (ADM-11); process log only.
+        "automation_watch",
     }
 )
 

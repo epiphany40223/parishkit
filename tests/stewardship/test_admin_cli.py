@@ -12,14 +12,17 @@ import re
 from pathlib import Path
 
 import pytest
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, IntegrityError, OperationalError
 
 from parishkit.config import ConfigError
 from parishkit.stewardship import admin_cli, cli
+from parishkit.stewardship.accounts.authority import AuthorityChanging
 from parishkit.stewardship.accounts.automation_sessions import (
     SessionUnusable,
     command_event_type,
 )
+from parishkit.stewardship.admin_reads import NotAvailable, Unavailable
 from parishkit.stewardship.startup_interlock import StartupBusy
 from parishkit.stewardship.storage import StaleRecordError
 
@@ -48,19 +51,35 @@ def test_the_catalog_lists_every_command_with_its_flags():
     """Generated from the subparser tree: names, scopes, options and fields."""
     entries = {entry["name"]: entry for entry in admin_cli.catalog()}
     assert set(entries) == {spec.name for spec in admin_cli.COMMANDS}
-    assert set(entries) == {
-        "login start",
-        "login wait",
-        "logout",
-        "whoami",
-        "sessions",
-        "commands",
+    session = {"login start", "login wait", "logout", "whoami", "sessions", "commands"}
+    reads = {
+        "status",
+        "task list",
+        "task show",
+        "send progress",
+        "send history",
+        "schedule show",
     }
+    assert set(entries) == session | reads
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
         assert {"--config", "--session-stdin"} <= names
-        assert entry["pr"] == 2
+        assert entry["pr"] == (2 if entry["name"] in session else 3)
         assert not entry["fresh_gated"] and not entry["prompts"]
+    for name in reads:
+        # Read-only status: any session, no state change, the page's event.
+        assert entries[name]["scope"] == "read_only", name
+        assert not entries[name]["changes_state"], name
+        assert entries[name]["watch"] == (name in {"task show", "send progress"})
+    assert entries["status"]["audit_event"] == "dashboard_viewed"
+    assert entries["task list"]["audit_event"] == "background_viewed"
+    assert entries["send history"]["audit_event"] == "delivery_viewed"
+    assert entries["schedule show"]["audit_event"] is None
+    assert entries["task show"]["arguments"] == ["TASK_ID"]
+    watch = {option["name"] for option in entries["send progress"]["options"]}
+    assert {"--watch", "--timeout"} <= watch
+    states = {option["name"]: option for option in entries["task list"]["options"]}
+    assert states["--state"]["choices"][:2] == ["nonterminal", "all"]
     start = {option["name"]: option for option in entries["login start"]["options"]}
     assert start["--scope"]["choices"] == ["read-only", "full"]
     assert start["--label"]["required"] and not start["--days"]["required"]
@@ -100,6 +119,33 @@ def test_commands_needs_no_database_and_prints_one_document():
         ["login", "start", "--config", "x", "--session-stdin"],
         ["login", "wait", "--config", "x", "--session-stdin", "--timeout", "601"],
         ["unknown", "--config", "x", "--session-stdin"],
+        ["task", "show", "not-a-uuid", "--config", "x", "--session-stdin"],
+        # Canonical UUIDs only: no upper case, braces or missing hyphens.
+        [
+            "task",
+            "show",
+            "00000000-0000-4000-8000-00000000000A",
+            "--config",
+            "x",
+            "--session-stdin",
+        ],
+        ["send", "progress", "--watch", "1", "--config", "x", "--session-stdin"],
+        ["send", "progress", "--watch", "301", "--config", "x", "--session-stdin"],
+        [
+            "send",
+            "progress",
+            "--watch",
+            "2",
+            "--timeout",
+            "10801",
+            "--config",
+            "x",
+            "--session-stdin",
+        ],
+        ["status", "--watch", "2", "--config", "x", "--session-stdin"],
+        # --timeout belongs to --watch; alone it is refused, not ignored.
+        ["send", "progress", "--timeout", "60", "--config", "x", "--session-stdin"],
+        ["task", "list", "--state", "done", "--config", "x", "--session-stdin"],
     ],
 )
 def test_usage_errors_are_documents_that_name_no_value(argv):
@@ -160,6 +206,22 @@ def test_the_preamble_is_read_once_and_nothing_after_it():
         (ConfigError("domain"), True, False, "invalid"),
         (RuntimeError("boom"), True, True, "outcome_unknown"),
         (RuntimeError("boom"), True, False, "internal"),
+        # Read refusals (PR 3): a restore under review or an activating
+        # configuration is temporary; an unknown task or campaign is not
+        # available; a watch past its limit times out.
+        (Unavailable("restore"), True, False, "unavailable"),
+        (AuthorityChanging("activating"), True, False, "unavailable"),
+        (AuthorityChanging("activating"), False, False, "unavailable"),
+        (NotAvailable("no task"), True, False, "not_available"),
+        (ObjectDoesNotExist("gone"), True, False, "not_available"),
+        # From a command that may have changed something, a missing row is
+        # no proof that nothing changed.
+        (ObjectDoesNotExist("gone"), True, True, "outcome_unknown"),
+        # A bare LookupError or KeyError is a bug, never "not available".
+        (LookupError("bug"), True, False, "internal"),
+        (KeyError("bug"), True, False, "internal"),
+        (admin_cli.WatchTimeout(None), True, False, "watch_timeout"),
+        (admin_cli.WatchInterrupted(None), True, False, "watch_interrupted"),
     ],
 )
 def test_exceptions_map_to_codes_in_the_specified_order(
@@ -277,6 +339,30 @@ def test_admission_refuses_a_signing_keyring_the_web_did_not_load(monkeypatch):
         )
         == "credential_mismatch"
     )
+
+
+def test_the_runtime_is_configured_only_after_setup():
+    """``configured()`` reads the setup marker each time and fails closed."""
+    runtime = admin_cli.AdminRuntime(store=None, pairing=None, public_origin="x")
+    assert runtime.configured() is False
+    runtime.setup_complete = lambda: True
+    assert runtime.configured() is True
+    runtime.setup_complete = lambda: "yes"
+    with pytest.raises(ConfigError):
+        runtime.configured()
+
+
+def test_canonical_uuids_are_accepted():
+    """The lower-case hyphenated form is the only accepted spelling."""
+    value = "00000000-0000-4000-8000-00000000000a"
+    assert str(admin_cli._uuid(value)) == value
+
+
+def test_the_task_state_filter_is_the_pages():
+    """Spelled out for the parser, it stays equal to the task states."""
+    from parishkit.stewardship.jobs.models import TASK_STATES
+
+    assert ("nonterminal", "all", *TASK_STATES) == admin_cli.TASK_STATE_FILTERS
 
 
 # Runs the command line in a fresh process with no Django settings, as the

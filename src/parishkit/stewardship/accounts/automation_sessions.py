@@ -569,6 +569,31 @@ def close_command_session(portal_session):
         )
 
 
+def heartbeat(portal_session):
+    """Record activity on a command session during a long ``--watch``.
+
+    The 60-minute idle check of ordinary admission then holds while the
+    process lives (see the specification's "Command sessions"); the caller
+    beats at most once a minute. Only a command session that is still live
+    (not revoked, not expired and not already idle past the limit) is
+    renewed, so a beat never revives one that has ended. It is not the
+    activity a state-changing page action records, so a read-only session's
+    watch beats too. Returns whether the session was renewed.
+    """
+    from .session_policy import ADMIN_IDLE
+
+    with transaction.atomic():
+        now = database_now()
+        return bool(
+            PortalSession.objects.filter(
+                pk=portal_session.pk,
+                revoked_at__isnull=True,
+                expires_at__gt=now,
+                last_activity_at__gt=now - ADMIN_IDLE,
+            ).update(last_activity_at=now, version=F("version") + 1)
+        )
+
+
 def refuse_web_session(session_store):
     """Refuse a web request that carries a command session's key.
 

@@ -17,12 +17,24 @@ Every command:
   writes warnings and structured logs to standard error;
 - exits with the specification's codes (0 done, 1 refused, 2 usage or
   admission, 3 unavailable, 4 confirmation not given, 5 no usable session or
-  pairing not finished, 6 outcome unknown, 7 watch timed out).
+  pairing not finished, 6 outcome unknown, 7 a watch stopped before its
+  read finished: ``watch_timeout`` at ``--timeout``, ``watch_interrupted``
+  on SIGINT).
 
-This first version has the session commands: ``login start``, ``login wait``,
-``logout``, ``whoami``, ``sessions`` and ``commands``. Status, schedule and
-other areas join the same subparser tree in later pull requests, each listed
-in the catalog with the pull request that added it.
+With ``--watch SECONDS``, a progress read prints one document per poll
+(newline-delimited JSON, ``final`` false until the last) and stops at a
+terminal state (exit 0), at ``--timeout`` or SIGINT (exit 7, with the last
+state), when the session ends (exit 5) or on an outage (exit 3). Through the
+host wrapper, Ctrl-C ends only the client: ``docker exec`` forwards no
+signal, so the watch in the container runs on (#598).
+
+The session commands (``login start``, ``login wait``, ``logout``,
+``whoami``, ``sessions`` and ``commands``) came first (PR 2); the read-only
+status commands (``status``, ``task list``, ``task show``, ``send
+progress``, ``send history`` and ``schedule show``) follow (PR 3), built on
+the read models of ``admin_reads``. ``task show`` and ``send progress`` take
+``--watch``. Other areas join the same subparser tree in later pull
+requests, each listed in the catalog with the pull request that added it.
 """
 
 import argparse
@@ -42,6 +54,15 @@ PREAMBLE_TAG = "pk-admin-session/1"
 PREAMBLE_LIMIT = 256
 POLL_SECONDS = 2
 PAIRING_WAIT_SECONDS = 600
+# --watch: seconds between polls (the specification's minimum is two; at
+# most five minutes, so a poll always lands well inside the command
+# session's 60-minute idle limit), the default and maximum time a watch
+# runs (the progress page's three-hour give-up limit), and how often a
+# watch records activity on its command session.
+WATCH_MINIMUM = 2
+WATCH_MAXIMUM = 300
+WATCH_TIMEOUT = 3 * 60 * 60
+HEARTBEAT_SECONDS = 60
 
 
 class UsageError(Exception):
@@ -50,6 +71,27 @@ class UsageError(Exception):
 
 class CredentialMismatch(ConfigError):
     """The signing keyring differs from the running web's (exit 2)."""
+
+
+class WatchTimeout(Exception):
+    """A ``--watch`` reached its ``--timeout`` before a terminal state (exit 7)."""
+
+    code = "watch_timeout"
+
+    def __init__(self, model):
+        """Keep the last read (None before the first), which the document shows."""
+        super().__init__("The watch stopped.")
+        self.model = model
+
+
+class WatchInterrupted(WatchTimeout):
+    """SIGINT stopped a ``--watch`` before a terminal state (exit 7).
+
+    Run in the container directly, Ctrl-C delivers it; through the host
+    wrapper it does not, since ``docker exec`` forwards no signal (#598).
+    """
+
+    code = "watch_interrupted"
 
 
 class PairingNotFinished(Exception):
@@ -84,6 +126,7 @@ MESSAGES = {
     "outcome_unknown": "The outcome is unknown; read the status before retrying.",
     "partial": "The command was done in part; read the status before retrying.",
     "watch_timeout": "The watch timed out; the last state is shown.",
+    "watch_interrupted": "The watch was stopped; the last state is shown.",
 }
 EXIT_CODES = {
     **dict.fromkeys(("denied", "invalid", "stale_version", "not_available"), 1),
@@ -94,7 +137,7 @@ EXIT_CODES = {
         ("session_missing", "session_ended", "pairing_pending", "pairing_expired"), 5
     ),
     **dict.fromkeys(("outcome_unknown", "partial"), 6),
-    "watch_timeout": 7,
+    **dict.fromkeys(("watch_timeout", "watch_interrupted"), 7),
 }
 
 
@@ -129,6 +172,8 @@ class CommandSpec:
     prompts: bool = False
     request_key: bool = False
     expected_version: bool = False
+    # Whether --watch repeats this read until it reaches a terminal state.
+    watch: bool = False
     # The audit event a state-changing command records: by default its own
     # admin_cmd_<area>_<verb> type; the session commands record the session
     # events instead, and pairing records none until approval.
@@ -137,11 +182,22 @@ class CommandSpec:
 
 @dataclass
 class AdminRuntime:
-    """What an admitted process holds: the authority store and pairing store."""
+    """What an admitted process holds: the authority store and pairing store.
+
+    It also serves as the ``service`` the shared Admin functions take (as
+    the web's ``AuthRuntime``): ``store`` and ``configured()``.
+    """
 
     store: object
     pairing: object
     public_origin: str
+    setup_complete: object = None
+
+    def configured(self):
+        """Whether first setup finished, by the web's own rule (``AuthRuntime``)."""
+        from .accounts.authentication import AuthRuntime
+
+        return AuthRuntime(self.store, None, self.setup_complete).configured()
 
 
 def iso(value):
@@ -237,6 +293,7 @@ def admitted(configuration):
         from django.db import connections
 
         from .accounts.automation_sessions import PairingStore
+        from .accounts.setup_completion import setup_is_complete
         from .consumer_runtime import loaded_service_receipts
         from .runtime_grants import admit_runtime_database
 
@@ -252,6 +309,7 @@ def admitted(configuration):
                 ),
                 pairing=PairingStore(client),
                 public_origin=configuration.public_origin,
+                setup_complete=setup_is_complete,
             )
         finally:
             connections.close_all()
@@ -525,6 +583,141 @@ def commands(args, preamble, runtime, context):
     return {"commands": catalog()}
 
 
+def status(args, preamble, runtime, context):
+    """The Admin home summary with background and presence counts."""
+    from .admin_reads import read_status
+
+    return read_status(context["caller"], runtime, audit=context["audit"])
+
+
+def task_list(args, preamble, runtime, context):
+    """One page of Background work, filtered and sorted as the page."""
+    from .admin_reads import query, read_task_list
+
+    parameters = query(
+        state=args.state,
+        task_type=args.type,
+        page=args.page,
+        size=args.size,
+        sort=args.sort,
+    )
+    return read_task_list(
+        context["caller"], runtime, parameters, audit=context["audit"]
+    )
+
+
+def task_show(args, preamble, runtime, context):
+    """One task and a page of its history."""
+    from .admin_reads import query, read_task
+
+    parameters = query(page=args.page, size=args.size, sort=args.sort)
+    return read_task(
+        context["caller"], runtime, args.task_id, parameters, audit=context["audit"]
+    )
+
+
+def send_progress(args, preamble, runtime, context):
+    """The Family email send in progress, or the most recent one."""
+    from .admin_reads import read_send_progress
+
+    return read_send_progress(context["caller"], runtime, audit=context["audit"])
+
+
+def send_history(args, preamble, runtime, context):
+    """One page of the current campaign's Family email sends."""
+    from .admin_reads import query, read_send_history
+
+    parameters = query(page=args.page, size=args.size)
+    return read_send_history(
+        context["caller"], runtime, parameters, audit=context["audit"]
+    )
+
+
+def schedule_show(args, preamble, runtime, context):
+    """The campaign's dates and mail schedules."""
+    from .admin_reads import read_schedule
+
+    return read_schedule(context["caller"], runtime, args.campaign)
+
+
+def _uuid(value):
+    """A canonical UUID option value; anything else is a usage error."""
+    from uuid import UUID
+
+    try:
+        parsed = UUID(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("not a UUID") from None
+    if str(parsed) != value:
+        raise argparse.ArgumentTypeError("not a canonical UUID")
+    return parsed
+
+
+def _page_options(parser, *, sort=True):
+    """The page's table window: page number, page size and, if any, sort."""
+    parser.add_argument("--page", type=int, help="page number (default 1)")
+    parser.add_argument("--size", type=int, help="rows per page, as the page offers")
+    if sort:
+        parser.add_argument("--sort", help="a column token as the page uses")
+
+
+def _watch_options(parser):
+    """--watch and --timeout for a progress read."""
+    parser.add_argument(
+        "--watch",
+        type=int,
+        metavar="SECONDS",
+        help=f"repeat every SECONDS ({WATCH_MINIMUM} to {WATCH_MAXIMUM}) until done",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        help=f"with --watch: stop after this many seconds (at most {WATCH_TIMEOUT})",
+    )
+
+
+# Background work's state filter: the page's two groupings and every task
+# state. Spelled out because the parser is built before Django is set up,
+# when ``jobs.models`` cannot be imported; a test keeps it equal to
+# ``jobs.models.TASK_STATES``.
+TASK_STATE_FILTERS = (
+    "nonterminal",
+    "all",
+    "queued",
+    "running",
+    "retry_wait",
+    "abandoned",
+    "succeeded",
+    "failed",
+    "cancelled",
+)
+
+
+def _task_list_options(parser):
+    """Options of ``task list``: the Background work page's filters."""
+    parser.add_argument(
+        "--state",
+        choices=TASK_STATE_FILTERS,
+        help="tasks in this state (default nonterminal)",
+    )
+    parser.add_argument("--type", help="tasks of this internal type")
+    _page_options(parser)
+
+
+def _task_show_options(parser):
+    """Options of ``task show``: the task and its history window."""
+    parser.add_argument("task_id", type=_uuid, metavar="TASK_ID")
+    _page_options(parser)
+    _watch_options(parser)
+
+
+def _schedule_options(parser):
+    """Options of ``schedule show``."""
+    parser.add_argument(
+        "--campaign", type=_uuid, help="the campaign (default: the current one)"
+    )
+
+
 def _pairing_options(parser):
     """Options of ``login start``; the wrapper passes the same ones."""
     parser.add_argument("--name", required=True, help="the session file's name")
@@ -616,6 +809,91 @@ COMMANDS = (
         2,
     ),
 )
+
+
+def _read_specs():
+    """The read-only status commands (PR 3): any session scope, no state change."""
+    from .admin_reads import (
+        ScheduleShow,
+        SendHistory,
+        SendProgressRead,
+        Status,
+        TaskList,
+        TaskShow,
+    )
+
+    return (
+        CommandSpec(
+            "status",
+            "Show the campaign, source, backup and background work status.",
+            status,
+            "read_only",
+            False,
+            Status.field_names(),
+            3,
+            audit_event="dashboard_viewed",
+        ),
+        CommandSpec(
+            "task list",
+            "List Background work tasks.",
+            task_list,
+            "read_only",
+            False,
+            TaskList.field_names(),
+            3,
+            options=(_task_list_options,),
+            audit_event="background_viewed",
+        ),
+        CommandSpec(
+            "task show",
+            "Show one background task and its history.",
+            task_show,
+            "read_only",
+            False,
+            TaskShow.field_names(),
+            3,
+            options=(_task_show_options,),
+            audit_event="background_viewed",
+            watch=True,
+        ),
+        CommandSpec(
+            "send progress",
+            "Show the Family email send in progress, or the latest one.",
+            send_progress,
+            "read_only",
+            False,
+            SendProgressRead.field_names(),
+            3,
+            options=(_watch_options,),
+            audit_event="delivery_viewed",
+            watch=True,
+        ),
+        CommandSpec(
+            "send history",
+            "List the current campaign's Family email sends.",
+            send_history,
+            "read_only",
+            False,
+            SendHistory.field_names(),
+            3,
+            options=(lambda parser: _page_options(parser, sort=False),),
+            audit_event="delivery_viewed",
+        ),
+        CommandSpec(
+            "schedule show",
+            "Show the campaign's dates and mail schedules.",
+            schedule_show,
+            "read_only",
+            False,
+            ScheduleShow.field_names(),
+            3,
+            options=(_schedule_options,),
+            audit_event=None,
+        ),
+    )
+
+
+COMMANDS = COMMANDS + _read_specs()
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 
 
@@ -691,6 +969,12 @@ def catalog():
             for item in command._actions
             if item.option_strings and item.dest != "help"
         ]
+        arguments = [
+            item.metavar or item.dest
+            for item in command._actions
+            if not item.option_strings
+            and not isinstance(item, argparse._SubParsersAction)
+        ]
         entries.append(
             {
                 "name": spec.name,
@@ -704,6 +988,8 @@ def catalog():
                 if spec.audit_event == "default" and spec.changes_state
                 else (None if spec.audit_event == "default" else spec.audit_event),
                 "options": options,
+                "arguments": arguments,
+                "watch": spec.watch,
                 "result_fields": list(spec.result_fields),
                 "pr": spec.pr,
             }
@@ -733,11 +1019,14 @@ def classify(error, *, admitted_process, changed, committed=False):
     nothing changed.
     """
     from django.apps import apps
+    from django.core.exceptions import ObjectDoesNotExist
     from django.db import DatabaseError, OperationalError
     from redis.exceptions import RedisError
 
+    from .accounts.authority import AuthorityChanging
     from .accounts.automation_tokens import SessionUnusable
     from .accounts.limiting import LimiterUnavailable
+    from .admin_reads import NotAvailable, Unavailable
     from .observability import _guard_refusal
     from .startup_interlock import StartupBusy
 
@@ -749,9 +1038,22 @@ def classify(error, *, admitted_process, changed, committed=False):
 
     if committed and not isinstance(error, (SessionUnusable, PairingNotFinished)):
         return "outcome_unknown"
+    if isinstance(error, WatchTimeout):
+        return error.code
     if isinstance(error, StartupBusy):
         return "busy"
-    if isinstance(error, (LimiterUnavailable, RedisError, OperationalError)):
+    # A configuration change activating, or a restore under review, is as
+    # temporary as an outage: nothing was read, retry.
+    if isinstance(
+        error,
+        (
+            LimiterUnavailable,
+            RedisError,
+            OperationalError,
+            AuthorityChanging,
+            Unavailable,
+        ),
+    ):
         return "unavailable"
     if isinstance(error, DatabaseError) and not _guard_refusal(error):
         return "unavailable"
@@ -765,6 +1067,12 @@ def classify(error, *, admitted_process, changed, committed=False):
         return error.code
     if isinstance(error, StaleRecordError):
         return "stale_version"
+    if isinstance(error, NotAvailable):
+        return "not_available"
+    # A missing row says nothing changed only for a command that cannot
+    # change anything; a state-changing command falls through to the end.
+    if isinstance(error, ObjectDoesNotExist) and not changed:
+        return "not_available"
     if isinstance(error, (PermissionError, DatabaseError)):
         return "denied"
     if isinstance(error, (ValueError, ConfigError)):
@@ -794,7 +1102,23 @@ def run(args, *, stdin, stdout, stderr):
 
     spec = BY_NAME[args.command_name]
     with correlation() as correlation_id:
-        context = {"final": True}
+
+        def emit(result, *, final):
+            """Print one successful document; a read model prints its projection."""
+            if hasattr(result, "to_document"):
+                result = result.to_document()
+            output = document(
+                spec.name,
+                correlation_id,
+                ok=True,
+                final=final,
+                session=session_block(context.get("session")),
+                result=result,
+            )
+            print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
+
+        # "audit": only the first read of a --watch records the page's view.
+        context = {"final": True, "audit": True}
         admitted_process = False
         caller = None
         try:
@@ -818,7 +1142,10 @@ def run(args, *, stdin, stdout, stderr):
                     context["caller"] = caller
                     context["session"] = caller.automation_session
                 try:
-                    result = spec.handler(args, preamble, runtime, context)
+                    if getattr(args, "watch", None) is not None:
+                        result = watch(spec, args, preamble, runtime, context, emit)
+                    else:
+                        result = spec.handler(args, preamble, runtime, context)
                 finally:
                     if caller is not None:
                         from .accounts.automation_sessions import (
@@ -826,15 +1153,7 @@ def run(args, *, stdin, stdout, stderr):
                         )
 
                         close_command_session(caller.portal_session)
-            output = document(
-                spec.name,
-                correlation_id,
-                ok=True,
-                final=context["final"],
-                session=session_block(context.get("session")),
-                result=result,
-            )
-            print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
+            emit(result, final=context["final"])
             return 0
         except Exception as error:
             code = classify(
@@ -850,8 +1169,60 @@ def run(args, *, stdin, stdout, stderr):
                 session=session_block(context.get("session")),
             )
             output["error"] = {"code": code, "message": MESSAGES[code]}
+            if isinstance(error, WatchTimeout) and error.model is not None:
+                # The last state read, as the specification asks.
+                output["result"] = error.model.to_document()
             print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
             return EXIT_CODES[code]
+
+
+def watch(spec, args, preamble, runtime, context, emit):
+    """Repeat a passive read every ``--watch`` seconds until it is terminal.
+
+    Each poll admits the command again through its command session, so a
+    session that ended, expired or changed role stops the watch (exit 5).
+    Only the first read records the page's view event. Every document but
+    the last is printed here with ``final`` false; the caller prints the
+    last one. The database connection is closed between polls, and the
+    command session gets a heartbeat at most once a minute so its idle limit
+    holds. Past ``--timeout`` the watch logs what it waited for, the limit
+    and the elapsed time, and stops with ``watch_timeout`` (exit 7) and the
+    last state; SIGINT stops it the same way with ``watch_interrupted``.
+    """
+    from django.db import connection
+
+    from .accounts.automation_sessions import heartbeat
+    from .observability import Event
+    from .observability import emit as log
+
+    started = beat = time.monotonic()
+    model = None
+    try:
+        while True:
+            model = spec.handler(args, preamble, runtime, context)
+            context["audit"] = False
+            if model.terminal:
+                return model
+            elapsed = time.monotonic() - started
+            if elapsed >= args.timeout:
+                log(
+                    Event.TASK_TIMED_OUT,
+                    level=logging.WARNING,
+                    timeout="automation_watch",
+                    limit_seconds=int(args.timeout),
+                    elapsed_seconds=int(elapsed),
+                )
+                raise WatchTimeout(model)
+            emit(model, final=False)
+            connection.close()
+            time.sleep(min(args.watch, max(0.0, args.timeout - elapsed)))
+            if time.monotonic() - beat >= HEARTBEAT_SECONDS:
+                heartbeat(context["caller"].portal_session)
+                beat = time.monotonic()
+    except KeyboardInterrupt:
+        # SIGINT ends a watch like a timeout: a final document with the last
+        # state, no traceback; the command session is still closed.
+        raise WatchInterrupted(model) from None
 
 
 def admit_session(spec, preamble, runtime, stderr):
@@ -903,6 +1274,19 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
             raise UsageError("A command is required.")
         if args.command_name == "login wait" and not 1 <= args.timeout <= 600:
             raise UsageError("The timeout is 1 to 600 seconds.")
+        if hasattr(args, "watch"):
+            # --timeout belongs to --watch; alone it would silently do nothing.
+            if args.watch is None:
+                if args.timeout is not None:
+                    raise UsageError("--timeout needs --watch.")
+            else:
+                if args.timeout is None:
+                    args.timeout = WATCH_TIMEOUT
+                if not (
+                    WATCH_MINIMUM <= args.watch <= WATCH_MAXIMUM
+                    and 1 <= args.timeout <= WATCH_TIMEOUT
+                ):
+                    raise UsageError("The watch interval or timeout is out of range.")
     except UsageError:
         output = {
             "schema": SCHEMA,

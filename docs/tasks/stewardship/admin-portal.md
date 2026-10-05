@@ -325,6 +325,19 @@ decisions. ADM-11.02 adds
 `tests/stewardship/test_admin_caller.py`,
 `tests/stewardship/database/test_admin_caller_postgresql.py` and the
 unchanged session, privileged-intake and Admin view suites.
+ADM-11.04 lands in two pull requests. 3a adds the read models
+(`parishkit.stewardship.admin_reads`), the read-only commands `status`,
+`task list`, `task show`, `send progress`, `send history` and
+`schedule show`, `--watch` with its heartbeat and timeout, and the
+route-parity ledger `parishkit.stewardship.admin_parity`, with the reads
+moved out of their views into `admin_dashboard.observe`, `jobs.task_reads`,
+`jobs.send_reads`, `accounts.schedule_reads` and `presence.active_count`;
+proven by `tests/stewardship/test_admin_reads.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/database/test_admin_status_cli_postgresql.py` and the
+unchanged home, Background work, Family email progress and sends, schedule
+and presence suites. 3b adds `go-live readiness` and `go-live progress`.
 
 ## ADM-12: Admin navigation overhaul
 

@@ -260,7 +260,9 @@ the tests; items here only name them.
    step, session commands, refusals, lifecycle and audit.
    Security-focused review.
 4. **PR 3, read-only status.** Read models, status commands including
-   `schedule show`, `--watch` and the route-parity test.
+   `schedule show`, `--watch` and the route-parity test, in two parts: 3a
+   with the live-campaign reads and the route-parity test, 3b with the
+   go-live reads.
 5. **PR 4, schedules.** Schedule preview and confirm, and configuration
    request status.
 6. **PR 5, fresh-gate acceptance.** The guard migration letting six SQL

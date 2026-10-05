@@ -181,6 +181,15 @@ def _names(configuration, rows):
     )
 
 
+def active_count(configuration, instant):
+    """How many Families are on the portal now: counts only, no identities.
+
+    The ``status`` command's presence count; the same visible sessions the
+    presence page lists (``visible_sessions``).
+    """
+    return visible_sessions(configuration, instant).count()
+
+
 def _by_name(configuration, query, window, token):
     """One page of visible sessions sorted by Family name, with their names.
 
