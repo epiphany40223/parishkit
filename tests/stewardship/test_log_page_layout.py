@@ -9,6 +9,7 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.policy import Capability, Principal, allows
 from parishkit.stewardship.audit.log_rows import (
+    LEVEL_LABELS,
     LEVELS,
     LogQuery,
     audit_row,
@@ -84,6 +85,52 @@ def test_each_level_has_its_own_decorative_icon(level):
     assert icon and 'aria-hidden="true"' in icon.group(0)
     assert 'focusable="false"' in icon.group(0)
     assert "style=" not in html
+
+
+def _level_cells(html):
+    """Each table row's second cell (the Level column), top to bottom.
+
+    The row header (Time) comes first, so this also proves the column order.
+    """
+    return re.findall(
+        r'<tr[^>]*>\s*<th scope="row">.*?</th>\s*<td class="log-level-cell">(.*?)</td>',
+        html,
+        re.S,
+    )
+
+
+def test_level_is_the_second_column_after_time():
+    """Time stays first; Level, the icon column, is second (#569)."""
+    head = re.search(r"<thead>(.*?)</thead>", _render(), re.S).group(1)
+    headings = re.findall(r"<th\b[^>]*>(.*?)</th>", head, re.S)
+    assert "Time" in headings[0] and headings[1] == "Level"
+
+
+@pytest.mark.parametrize("level", LEVELS)
+def test_level_cell_shows_the_level_choices_icon_with_its_name(level):
+    """An operational row's Level cell is the shared icon the level choices
+    use, byte for byte, named for screen readers and as a tooltip (#569)."""
+    html = _render()
+    cells = _level_cells(html)
+    assert len(cells) == len(LEVELS) + 1
+    cell = cells[LEVELS.index(level)]
+    icon = render_to_string(
+        "stewardship/components/level-icon.html", {"level": level.lower()}
+    )
+    label = str(LEVEL_LABELS[level][1])
+    # The same markup appears once beside its checkbox and once in the row.
+    assert icon in cell and html.count(icon) == 2
+    assert f'<span class="visually-hidden">{label}</span>' in cell
+    assert f'title="{label}"' in cell
+    # The icon stands alone: no visible word or source line beside it.
+    assert re.sub(r"<[^>]+>", "", cell.replace(label, "")).strip() == ""
+
+
+def test_audit_rows_have_no_level_icon():
+    """Audit records have no level, so their Level cell says so in words."""
+    cell = _level_cells(_render())[-1]
+    assert "<svg" not in cell
+    assert cell == '<span class="log-kind">Audit record</span>'
 
 
 def test_critical_rows_stand_out():

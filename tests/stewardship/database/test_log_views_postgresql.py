@@ -101,9 +101,11 @@ def next_fields(response):
 
 
 def levels(response):
-    """The severity words shown in the table, in order."""
+    """The severity of each operational entry in the table, in order, by its
+    Level cell's icon (the level choices' own icons sit outside that cell)."""
     return re.findall(
-        r'class="log-level log-level-([a-z]+)"', response.content.decode()
+        r'<span class="log-level"[^>]*><svg class="level-icon level-icon-([a-z]+)"',
+        response.content.decode(),
     )
 
 

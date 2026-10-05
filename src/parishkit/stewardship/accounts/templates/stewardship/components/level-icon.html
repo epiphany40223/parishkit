@@ -1,7 +1,8 @@
 {% comment %}
   One severity icon from a matched set, drawn inline so it needs no extra
   request and stays inside the page's CSP (presentation attributes only, no
-  style attribute). It is decorative: the level word beside it carries the
-  meaning, so the icon is hidden from assistive technology. `level` is the
+  style attribute). It is hidden from assistive technology: beside the level
+  choices the visible level word carries the meaning, and in the System logs
+  Level column the word is screen-reader text plus a tooltip. `level` is the
   lowercase level name; colors come from the .level-icon-* classes.
 {% endcomment %}<svg class="level-icon level-icon-{{ level }}" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">{% if level == "info" %}<circle cx="8" cy="8" r="7.5" fill="currentColor"/><circle cx="8" cy="4.6" r="1.1" fill="#fff"/><rect x="7" y="6.8" width="2" height="5.6" rx=".6" fill="#fff"/>{% elif level == "warning" %}<path d="M8 .9 15.4 14.4H.6Z" fill="currentColor"/><rect x="7.05" y="5.2" width="1.9" height="5" rx=".6" fill="#1b1300"/><circle cx="8" cy="12.1" r="1.05" fill="#1b1300"/>{% elif level == "error" %}<circle cx="8" cy="8" r="7.5" fill="currentColor"/><path d="M5.2 5.2 10.8 10.8M10.8 5.2 5.2 10.8" stroke="#fff" stroke-width="2" stroke-linecap="round"/>{% elif level == "critical" %}<path d="M5 .5h6L15.5 5v6L11 15.5H5L.5 11V5Z" fill="currentColor"/><path d="M5 .5h6L15.5 5v6L11 15.5H5L.5 11V5Z" fill="none" stroke="#fff" stroke-width=".9" transform="translate(8 8) scale(.84) translate(-8 -8)"/><rect x="7" y="3.6" width="2" height="5.9" rx=".6" fill="#fff"/><circle cx="8" cy="11.7" r="1.15" fill="#fff"/>{% else %}<circle cx="8" cy="8" r="3" fill="currentColor"/>{% endif %}</svg>

@@ -44,8 +44,10 @@ DETAIL_LIMIT = 128
 # Entries cannot predate the application, and a far-future day cannot be advanced
 # to its exclusive upper bound without overflowing.
 EARLIEST, LATEST = date(2020, 1, 1), date(2999, 12, 31)
-# A word and a symbol, never color alone, distinguish the five levels, listed
-# least severe first; the order is the form's and the one source of LEVELS.
+# A word and an icon, never color alone, distinguish the five levels, listed
+# least severe first; the order is the form's and the one source of LEVELS. The
+# level choices show the word beside the icon; the table's Level column shows
+# the icon with the word as screen-reader text plus a tooltip.
 LEVEL_LABELS = {
     "DEBUG": ("·", _("Debug")),
     "INFO": ("i", _("Information")),

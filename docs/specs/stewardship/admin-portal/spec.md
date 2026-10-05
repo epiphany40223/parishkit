@@ -3463,10 +3463,14 @@ above already follows them.
 Only Admins access the combined log screen. It supports:
 
 - levels DEBUG, INFO, WARNING, ERROR, and CRITICAL with accessible, distinct
-  indicators: one matched, self-hosted icon set (a blue "i", an amber warning
-  triangle, a red cross and a dark red stop sign for CRITICAL) beside the
-  level word, with the icon decorative so meaning never depends on color, and
-  CRITICAL rows highlighted;
+  indicators: one matched, self-hosted icon set (a grey dot for DEBUG, a blue
+  "i", an amber warning triangle, a red cross and a dark red stop sign for
+  CRITICAL) whose shapes,
+  not only their colors, tell the levels apart. The level filter shows each
+  icon beside its level word. The table's second column, Level, after Time,
+  shows the same icon alone, with the level word as screen-reader text and a
+  tooltip; audit records, which have no level, say "Audit record" there.
+  CRITICAL rows are highlighted;
 - a compact filter bar: levels, source, type and date range fit in one or two
   rows at desktop width, and the actor, correlation and campaign identifier
   filters are folded under "Filter by identifier" until one is used. The

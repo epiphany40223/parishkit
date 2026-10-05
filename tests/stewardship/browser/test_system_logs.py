@@ -2,11 +2,23 @@
 
 import pytest
 
-from .waits import visible
+from .waits import eventually, has_attribute, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
+
+# A mark outside the table region, which only a full page load could lose.
+MARK = "document.querySelector('h1').dataset.mark = 'kept'"
+MARKED = "document.querySelector('h1').dataset.mark"
+# Each row's Level cell (the cell right after the Time row header), as its
+# icon's level or, for an audit record, its words.
+LEVEL_CELLS = """() => [...document.querySelectorAll(
+    '#table tbody tr > th[scope=row] + td.log-level-cell')].map(cell => {
+    const icon = cell.querySelector('svg.level-icon');
+    return icon ? icon.getAttribute('class').split('level-icon-')[1]
+        : cell.textContent.trim();
+})"""
 
 PAGES = (
     "/logs",
@@ -37,10 +49,11 @@ def test_logs_mobile_keyboard_and_accessibility(
     page.goto(component_origin + "/logs")
     # Worker processes are named as such, not as an unknown person.
     visible(page.get_by_role("cell", name="Background worker", exact=False).first)
-    # Severity is a word beside its icon, so it never depends on color; the
-    # icon is decorative and hidden from assistive technology.
+    # Severity is an icon whose shape, not only its color, tells the levels
+    # apart; the icon is hidden from assistive technology and the level's word
+    # names the cell instead (#569).
     for word in ("Debug", "Information", "Warning", "Error"):
-        assert page.locator(".log-level", has_text=word).count() == 1
+        assert page.get_by_role("cell", name=word, exact=True).count() == 1
     assert page.locator(".log-level svg.level-icon[aria-hidden=true]").count() == 4
     # The level choices carry the same icons beside their words.
     assert page.locator(".log-level-choices svg.level-icon").count() == 5
@@ -169,3 +182,52 @@ def test_log_filters_and_paging_without_scripts(browser_engine, component_origin
         assert "correlation=00000000" in body and "?" not in sent.value.url
     finally:
         context.close()
+
+
+def test_level_icon_column_survives_in_place_sort_and_paging(page, component_origin):
+    """The second column shows each entry's level as the level choices' icon,
+    named for screen readers and on hover, and keeps doing so after the table
+    re-sorts and re-pages in place (#569)."""
+    page.goto(component_origin + "/logs")
+    headings = page.locator("#table thead th")
+    assert "Time" in headings.nth(0).inner_text()
+    assert headings.nth(1).inner_text() == "Level"
+    newest = ["debug", "Audit record", "info", "Audit record", "warning", "error"]
+    assert page.evaluate(LEVEL_CELLS) == newest
+    warning = page.get_by_role("cell", name="Warning", exact=True)
+    assert warning.locator(".log-level").get_attribute("title") == "Warning"
+    # The icon is drawn at a readable size in a column no wider than it needs.
+    icon = warning.locator("svg").bounding_box()
+    assert icon["width"] >= 16 and icon["height"] >= 16
+    assert headings.nth(1).bounding_box()["width"] < 120
+    # Narrow, but never broken mid-word: "Level" is one line and "Audit
+    # record" at most two (main's overflow-wrap: anywhere would split them).
+    lines = """element => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return new Set([...range.getClientRects()].map(rect => rect.top)).size;
+    }"""
+    assert headings.nth(1).evaluate(lines) == 1
+    assert page.locator("#table .log-kind").first.evaluate(lines) <= 2
+    page.evaluate(MARK)
+
+    def answer(route):
+        """Serve each table post the fixture its control leads to."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        path = "/logs-older" if "page=2" in route.request.post_data else "/logs-oldest"
+        route.fulfill(response=route.fetch(url=component_origin + path, method="GET"))
+
+    page.route("**/logs", answer)
+    page.get_by_role("button", name="sort ascending").click()
+    has_attribute(
+        page.locator("#table th[data-sort-column='time']"), "aria-sort", "ascending"
+    )
+    eventually(page, LEVEL_CELLS, newest[::-1])
+    assert page.evaluate(MARKED) == "kept"
+    page.get_by_role("button", name="Next", exact=True).first.click()
+    eventually(page, LEVEL_CELLS, ["critical", "Audit record"])
+    assert page.evaluate(MARKED) == "kept"
+    critical = page.get_by_role("cell", name="Critical", exact=True)
+    assert critical.locator("svg.level-icon-critical").count() == 1
