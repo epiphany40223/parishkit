@@ -64,6 +64,12 @@ DEBUG = logging.getLogger("parishkit.stewardship.debug")
 
 # Most preparation tasks one lock transaction prepares.
 PREPARE_BATCH = 100
+# How many more items than its last batch committed a preparation drain
+# builds outside the lock before its next batch (BG-12). A batch's hold
+# fits only a few items, so building far ahead would mostly build items the
+# batch never reaches; those carry over to the next batch and are rechecked
+# there, but cost time while a Family's state may still change.
+BUILD_MARGIN = 2
 # Default and bounds for B, the most messages one send batch marks
 # "submitting" before sending them. A crash between that commit and the
 # outcome commit leaves up to B messages delivery_unknown for an
@@ -295,7 +301,7 @@ def _run_batch(ids, item, *, limit, seconds=None):
     return done, tried, pace
 
 
-def _timing(kind, pace, *, items, tried, work=(), prebuilt=0, rebuilt=0):
+def _timing(kind, pace, *, items, tried, work=(), built=(), prebuilt=0, rebuilt=0):
     """Debug-log one lock transaction's timings for the local rehearsal (BG-12).
 
     One line per batch transaction, ``bulk timing: {...}``, with a JSON
@@ -312,8 +318,13 @@ def _timing(kind, pace, *, items, tried, work=(), prebuilt=0, rebuilt=0):
     - ``item_ms``: each item's time under the lock;
     - ``work_ms``: the part of each item that renders, decrypts or seals,
       the work BG-12 moves outside the lock;
-    - ``prebuilt`` and ``rebuilt``: items whose build was made outside the
-      lock or redone under it (zero until that lands).
+    - ``build_ms``: each build made outside the lock before this batch
+      (BG-12), whether used or dropped, so the rehearsal can see what the
+      lock no longer holds;
+    - ``prebuilt`` and ``rebuilt``: items written from a build made outside
+      the lock, and items whose build was stale (its fingerprint changed)
+      and was redone under the lock (BG-12). An item with no build, such
+      as a Testing item or one whose build was dropped, is neither.
 
     Observation only: nothing is built unless DEBUG is enabled, any failure
     here is swallowed, so it can never change what a batch does or delay a
@@ -332,6 +343,7 @@ def _timing(kind, pace, *, items, tried, work=(), prebuilt=0, rebuilt=0):
                     "hold_ms": round(pace.held() * 1000),
                     "item_ms": [round(value * 1000) for value in pace.durations],
                     "work_ms": [round(value * 1000) for value in work],
+                    "build_ms": [round(value * 1000) for value in built],
                     "prebuilt": prebuilt,
                     "rebuilt": rebuilt,
                 },
@@ -395,20 +407,82 @@ def preparation_bulk(handler, *, general, mac, public, public_origin, settings):
     """
     if not settings.enabled:
         return None
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    from .family_mail_builds import build_preparation
     from .family_mail_preparation import prepare_occurrence
     from .family_mail_tasks import TASK_TYPE, disposition, owned_preparation
 
     def run(run_id, *, stop=None, owner=None, pulse=None):
-        """Drain due preparation in batches, then return to the hint path."""
+        """Drain due preparation in batches, then return to the hint path.
+
+        Before each batch the drain builds its next few Production items
+        outside the lock (``build_ahead``); the batch then writes each
+        prebuilt item whose fingerprint still matches, and prepares a stale
+        or dropped one under the lock as before. Builds a batch does not reach
+        carry over to the next one and are rechecked there; all are dropped
+        when the drain ends.
+        """
         if connection.in_atomic_block:
             raise RuntimeError("Bulk preparation must own its transactions.")
         current = owner or handler
         first = [run_id]
         # Each item's preparation time in the current batch (_timing).
         work = []
+        # Builds made outside the lock and not yet used, by task id, and
+        # every task this drain has tried to build (built or dropped), so a
+        # dropped build is not retried within the drain.
+        builds, attempted = {}, set()
+        # Items the last batch committed: the next lookahead's base.
+        committed = [0]
+        # Each build's time outside the lock before the current batch.
+        built = []
+
+        def build_ahead(ids):
+            """Build up to the last batch's count plus BUILD_MARGIN items.
+
+            In ``ids`` order, which is the order the batch tries them.
+            Serial, on this process's own connection, outside any
+            transaction. Returns how many of ``ids`` the next batch may
+            try: those built (now or carried over), those whose build was
+            dropped (prepared under the lock, as before), and at least the
+            first. The batch stops there rather than preparing items it has
+            not tried to build under the lock; the next lookahead, sized by
+            what this batch commits, reaches them. In Testing nothing is
+            built (its preparation writes credentials, #555), so the batch
+            may try every item, as before.
+            """
+            # A carried build whose item is no longer a candidate (taken by
+            # another path, say) is dropped, so it cannot count toward the
+            # lookahead and shrink the batch.
+            for task_id in builds.keys() - set(ids):
+                builds.pop(task_id)
+            if not SystemConfiguration.objects.filter(mode="production").exists():
+                return len(ids)
+            want = committed[0] + BUILD_MARGIN
+            for count, task_id in enumerate(ids):
+                if task_id in builds or task_id in attempted:
+                    continue
+                if len(builds) >= want or (stop is not None and stop.is_set()):
+                    return max(count, 1)
+                attempted.add(task_id)
+                begun = monotonic()
+                build = build_preparation(
+                    task_id, general=general, public=public, public_origin=public_origin
+                )
+                built.append(monotonic() - begun)
+                if build is not None:
+                    builds[task_id] = build
+            return len(ids)
 
         def item(task_id, position):
-            """Claim, prepare and complete one preparation task."""
+            """Claim, prepare and complete one preparation task.
+
+            Returns the task id and whether its build was written (True),
+            redone under the lock (False) or absent (None).
+            """
+            prebuilt = builds.pop(task_id, None)
+            used = []
             claim, correlation_id = _claim(task_id, current, uuid4(), 60)
             task = lock_task_claim(claim)
             ticket = owned_preparation(_status(task))
@@ -423,14 +497,16 @@ def preparation_bulk(handler, *, general, mac, public, public_origin, settings):
                         mac=mac,
                         public=public,
                         public_origin=public_origin,
+                        prebuilt=prebuilt,
+                        report=used.append,
                     )
                 finally:
                     work.append(monotonic() - begun)
             _transition(claim, correlation_id, current, terminal)
-            return task_id
+            return task_id, (used[0] if used else None)
 
         def step(exclude):
-            """Prepare one batch; see _run_batch."""
+            """Build ahead, then prepare one batch; see _run_batch."""
             ids = _candidates(
                 TASK_TYPE,
                 PREPARE_BATCH * 2,
@@ -439,14 +515,33 @@ def preparation_bulk(handler, *, general, mac, public, public_origin, settings):
             )
             if not ids:
                 return 0, ()
+            built.clear()
+            ids = ids[: build_ahead(ids)]
             work.clear()
             done, tried, pace = _run_batch(ids, item, limit=PREPARE_BATCH)
-            _timing("prepare", pace, items=len(done), tried=len(tried), work=work)
+            for task_id in tried:
+                # Used, refused or rolled back: a build is never reused for
+                # an item a batch has tried (a refusal leaves the item to
+                # the one-at-a-time path).
+                builds.pop(task_id, None)
+            committed[0] = len(done)
+            _timing(
+                "prepare",
+                pace,
+                items=len(done),
+                tried=len(tried),
+                work=work,
+                built=built,
+                prebuilt=sum(used is True for _, used in done),
+                rebuilt=sum(used is False for _, used in done),
+            )
             return len(done), tried
 
         try:
             return _drain(step, stop, pulse)
         finally:
+            # Builds hold no plaintext, but none outlives its drain.
+            builds.clear()
             connections.close_all()
 
     return run

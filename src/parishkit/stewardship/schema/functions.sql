@@ -3799,7 +3799,12 @@ BEGIN
                    AND ((instant>=p.starts_at AND instant<p.ends_at
                        AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
                        OR (NEW.mode='production' AND c.state='closed' AND d.kind IN ('daily_digest','weekly_digest'))))
-               OR NEW.due_at>instant
+               -- Not yet due. Only Family mail preparation of a Production
+               -- occurrence may claim it early, within the two-hour lead
+               -- window (BG-12, #447). Every other claim, including a
+               -- delivery claim, and the dispatch guard still wait for it.
+               OR (NEW.due_at>instant AND NOT (t.task_type='family_mail_prepare'
+                   AND NEW.mode='production' AND NEW.due_at<=instant+interval '2 hours'))
                OR (NEW.mode='production' AND c.delivery_paused)
                OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL))
                OR EXISTS(SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot)

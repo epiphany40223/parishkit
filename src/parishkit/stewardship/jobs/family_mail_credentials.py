@@ -28,6 +28,27 @@ def seal_current_credentials(*, identity, render, campaign, family, general, pub
     those checks before resolving the opaque token reference.
     """
     require_work_order()
+    return seal_built_credentials(
+        identity=identity,
+        render=render,
+        campaign=campaign,
+        family=family,
+        general=general,
+        public=public,
+    )
+
+
+def seal_built_credentials(*, identity, render, campaign, family, general, public):
+    """``seal_current_credentials`` without the work-order lock (BG-12).
+
+    A bulk build seals in a short transaction of its own that holds only the
+    credential key-set lock: shared and non-waiting, with its inventory
+    check, held to the end of that transaction. It only reads the Family's
+    code ciphertext and its current link token row, exactly as preparation
+    always has: no credential is written, rotated or re-encrypted. What it
+    read is part of the build's fingerprint, compared again under the
+    work-order lock before anything is written.
+    """
     if not isinstance(general, GeneralKeyring) or not isinstance(
         public, TokenPublicKeyring
     ):

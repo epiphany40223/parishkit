@@ -32,7 +32,7 @@ from parishkit.stewardship.campaigns.models import ScheduleDefinition
 from parishkit.stewardship.deployment import ServiceRole
 
 from .automation_builders import paired
-from .campaign_builders import add_draft
+from .campaign_builders import add_draft, campaign_clock
 from .test_background_grants_postgresql import task_login
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_send_progress_postgresql import prepared
@@ -420,13 +420,19 @@ def test_a_real_send_in_progress_is_followed_and_listed(
         """One command under the paired session."""
         return command(*argv, secret=secret)
 
-    code, documents = run("send", "progress", "--watch", "2", "--timeout", "6")
-    assert code == 7, documents
-    send = documents[0]["result"]["send"]
-    assert send["active"] and send["kind"] == "initial"
-    assert send["remaining"] == 1 and send["total"] == 1 and send["done"] == 0
-    assert documents[-1]["error"]["code"] == "watch_timeout"
-    code, documents = run("send", "history")
+    # Read on the campaign clock at the invitation's due time, as the
+    # fixture prepared it: the fixture campaign falls due decades after the
+    # real clock, and a send whose occurrences are not yet due is upcoming,
+    # not in progress (BG-12 prepares reminders ahead of their due time).
+    due = ScheduleDefinition.objects.get().current_revision.due_at
+    with campaign_clock(due):
+        code, documents = run("send", "progress", "--watch", "2", "--timeout", "6")
+        assert code == 7, documents
+        send = documents[0]["result"]["send"]
+        assert send["active"] and send["kind"] == "initial"
+        assert send["remaining"] == 1 and send["total"] == 1 and send["done"] == 0
+        assert documents[-1]["error"]["code"] == "watch_timeout"
+        code, documents = run("send", "history")
     assert code == 0, documents
     [listed] = documents[0]["result"]["sends"]
     assert listed["live"] and listed["current"] and listed["remaining"] == 1

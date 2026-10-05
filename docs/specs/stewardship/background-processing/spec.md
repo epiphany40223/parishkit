@@ -1013,7 +1013,10 @@ campaign's configuration starts; this campaign has only reminders left.
 - **Catch-up merging.** Because preparation plans up to two hours ahead, an
   older reminder that is due but unsent can be merged into the newer one up
   to two hours earlier than today; the Family is then mailed once, at the
-  newer reminder's due time.
+  newer reminder's due time. Two reminders less than two hours apart merge
+  this way. Only a reminder-only group looks ahead: a Family whose initial
+  invitation is still owed plans at the current time, so an unsent
+  invitation never absorbs a reminder early.
 - **The guard change.** In `stewardship_occurrence_guard_v1`, the branch
   that admits a running claim under a fenced task (a move to `running`, or
   an update that stays `running`) refuses it while the occurrence is not yet
@@ -1051,7 +1054,10 @@ campaign's configuration starts; this campaign has only reminders left.
 - **The lead window follows the nightly refresh.** The nightly full refresh
   (02:00 by default) runs before a 08:00 reminder's lead window (from
   06:00); a deployment whose nightly time falls inside a lead window is
-  flagged by a startup WARNING.
+  flagged by a WARNING when the bulk scheduler first plans the campaign
+  under its configuration (once per process for each campaign and
+  configuration). The other configured full refresh times, and hourly or
+  quarter-hour full refreshes, are checked the same way.
 - **Pages and health ignore what is not yet due.** The send progress panel's
   latest send and its upcoming list, and the due-work health check
   (`SCHEDULER_LAG`), count only occurrences and Tasks that are due, so a
@@ -1064,11 +1070,15 @@ campaign's configuration starts; this campaign has only reminders left.
 For each Production item the build reads the ticket's occurrence, the
 Family's source inputs and the template, renders the message and seals its
 substitutions. Its fingerprint covers the occurrence version, the Family's
-source generation and eligibility, both configuration rows the render reads
+source generation, eligibility, deliverability, response and code
+ciphertext, its unresolved address refusals, the promoted source and the
+population built from it, both configuration rows the render reads
 (the system's active configuration and the campaign's active configuration
-values, such as its name and banner), the template, the hosted files and
-branding assets it names (readiness and size), the active token generation
-and credential epoch, and the key inventory digests. Inside the batch's lock
+values, such as its name and banner), the template, the Production cycle,
+all hosted files' public links and all ready branding bundles (a
+superset of the files and assets the template names), the active token
+generation, credential epoch and the Family's link token row, and the key
+inventory digests. Inside the batch's lock
 transaction each item still claims its ticket and runs `disposition` and
 `plan_family` as today before the fingerprint is compared.
 

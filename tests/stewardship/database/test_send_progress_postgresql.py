@@ -170,6 +170,8 @@ def test_the_web_login_follows_a_real_send_during_a_work_order_hold(
     browser, _ = signed_in()
     ready = Queue()
     with (
+        # Read on the campaign clock: a send shows once it is due (BG-12).
+        campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at),
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         ThreadPoolExecutor(max_workers=1) as pool,
     ):
@@ -218,7 +220,10 @@ def test_a_finished_send_is_not_in_progress_and_is_summarised(
     """
     uncertain(family_mail)
     browser, _ = signed_in()
-    with task_login(ServiceRole.WEB, exact=True):
+    with (
+        campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at),
+        task_login(ServiceRole.WEB, exact=True),
+    ):
         body = browser.get(STATUS).content.decode()
     assert "No Family email send is in progress right now" in body
     assert "Last send: Invitation email, finished <time" in body
@@ -915,7 +920,7 @@ def test_production_launch_reads_only_its_mode_and_cycle_from_real_rows(tmp_path
         ("production", 0),
         ("production", 1),
     }
-    with read_transaction():
+    with campaign_clock(definition.current_revision.due_at), read_transaction():
         now = database_now()
         launch = send_progress.read_send(campaign.pk, "production", 1, now)
         rehearsal = send_progress.read_send(campaign.pk, "testing", 0, now)
@@ -955,7 +960,7 @@ def test_a_page_opened_before_go_live_schedules_keeps_checking(tmp_path):
     demand = ActivationCatchUpDemand.objects.get()
     with campaign_clock(due), task_login(ServiceRole.WORKER, exact=True):
         assert execute_hint(**execution_arguments(demand))
-    with read_transaction():
+    with campaign_clock(due), read_transaction():
         now = database_now()
         assert send_progress.read_send(campaign.pk, "production", 0, now).remaining == 1
         # Scheduled now, and the invitation is not due within the hour.
@@ -985,7 +990,7 @@ def test_a_reminder_held_behind_an_uncertain_invitation_lets_the_send_finish(
     reminder = ScheduleOccurrence.objects.get(definition=last)
     assert reminder.state == "pending" and reminder.outbox_id is None
     campaign, mode, cycle = scope()
-    with read_transaction():
+    with campaign_clock(last.current_revision.due_at), read_transaction():
         counts = send_progress.read_send(campaign, mode, cycle, database_now())
     assert counts.kind == "reminder"
     assert (counts.waiting, counts.remaining) == (1, 0)
@@ -1129,7 +1134,7 @@ def test_a_held_reminder_whose_preparation_failed_counts_once(
             held = plan_family(guard, family_id=message.family_id, worker_id=uuid4())
         assert held.held
         fail_preparation(ScheduleOccurrence.objects.get(definition=last).pk)
-    counts = read_current()
+        counts = read_current()
     assert counts.kind == "reminder"
     assert (counts.failed, counts.prepare_failed, counts.waiting) == (1, 1, 0)
     assert (counts.remaining, counts.unprepared) == (0, 0)
@@ -1199,10 +1204,11 @@ def test_the_total_counts_families_planning_has_not_reached(
         assert (unknown.unplanned, unknown.remaining) == (None, 3)
         shown = send_progress.progress(unknown)
         assert (shown.total, shown.percent, shown.active) == (None, None, True)
-    # Before the schedule's due time (as after it is moved to a later time)
-    # planning creates nothing more, so no Family still counts.
+    # Before the schedule's due time there is no send to show: its
+    # occurrences are not due yet (as for a reminder prepared ahead, BG-12),
+    # and planning creates nothing more, so no Family still counts.
     with campaign_clock(definition.current_revision.due_at - timedelta(minutes=1)):
-        assert read_current().unplanned == 0
+        assert read_current() is None
 
 
 def test_a_reminder_total_counts_only_families_whose_invitation_was_delivered(

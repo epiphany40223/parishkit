@@ -365,7 +365,11 @@ The report shows:
   lock hold and the time per item under the lock;
 - `work`, the render, decrypt or seal part of each item: the work BG-12
   moves outside the lock;
-- `prebuilt` and `rebuilt` counts (zero until BG-12's later pull requests);
+- `build`, the time of each build made outside the lock before a
+  preparation batch (BG-12 PR 2), used or dropped;
+- `prebuilt` and `rebuilt` counts: Production preparation items written from
+  a build made outside the lock, and those rebuilt under it because an
+  input changed (sending items stay zero until BG-12's PR 3);
 - lease renewal waits (from the start of each renewal, so they include
   opening its connection as well as waiting for the lock);
 - the lock samples: the share of seconds the lock was held or waited on, its

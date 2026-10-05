@@ -24,9 +24,31 @@ def current_render(identity, template_record_id, scope, source, *, public_origin
     owning service separately validates lifecycle and its claim/Admin command.
     """
     require_work_order()
+    return build_render(
+        identity,
+        template_record_id,
+        scope.runtime,
+        scope.campaign,
+        source,
+        public_origin=public_origin,
+    )
+
+
+def build_render(
+    identity, template_record_id, runtime, campaign, source, *, public_origin
+):
+    """``current_render`` without the work-order lock, for bulk builds (BG-12).
+
+    ``runtime`` is the system configuration row and ``campaign`` the campaign,
+    each with its active configuration. A bulk build calls this inside its own
+    REPEATABLE READ snapshot, outside the lock, and the item later compares
+    the build's fingerprint under the lock before writing what it rendered;
+    the render guard also checks every render against current scope. Given
+    the same inputs it renders exactly what ``current_render`` does.
+    """
     if not isinstance(template_record_id, UUID):
         raise TypeError("Rendering requires a canonical template record identity.")
-    version = scope.runtime.active_configuration
+    version = runtime.active_configuration
     template = ContentVersion.objects.get(
         configuration=version,
         campaign_id=identity.campaign_id,
@@ -42,22 +64,22 @@ def current_render(identity, template_record_id, scope, source, *, public_origin
         values=public_values(
             source,
             parish=document_parish(version.canonical_document),
-            campaign=scope.campaign.active_configuration.values,
+            campaign=campaign.active_configuration.values,
             public_origin=public_origin,
         ),
         sender=email.settings["sender"],
         reply_to=email.settings["reply_to"],
         intended_recipients=source.recipients.deliverable,
-        testing_recipient=scope.runtime.testing_recipient
+        testing_recipient=runtime.testing_recipient
         if identity.mode == "testing"
         else None,
         banner=email_banner(
             banner_for_email(
-                scope.campaign.active_configuration.values,
+                campaign.active_configuration.values,
                 template.slot,
                 origin=public_origin,
             ),
-            scope.campaign.active_configuration.values["name"],
+            campaign.active_configuration.values["name"],
         ),
         files=links_for(public_origin, template.html, template.text),
     )

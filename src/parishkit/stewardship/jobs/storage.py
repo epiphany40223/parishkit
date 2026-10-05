@@ -11,7 +11,7 @@ import hashlib
 import re
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 from django.db import connection, transaction
@@ -113,12 +113,19 @@ def enqueue(
     correlation_id,
     admit,
     idempotency_key=None,
+    not_before=None,
 ):
     """Create an internal root, or return the exact previously bound execution.
 
     Keys are opaque UUIDs; domain consumers map their semantic identity to these
     keys and retain their own fulfillment constraints. Without a key, every call
     represents separately authorized new work, not a retry of a failed run.
+
+    ``not_before`` (an aware datetime) keeps a new root from being claimed
+    before that instant; without it the root is due at once, as before. A
+    Family reminder prepared ahead of its due time (BG-12) is enqueued this
+    way, so mail consumers neither claim it early nor hold it in a retry
+    loop. An existing execution keeps the time it was created with.
     """
     if (
         type(task_type) is not str
@@ -128,6 +135,10 @@ def enqueue(
     for value in (domain_request_id, actor_id, idempotency_key):
         _uuid(value, optional=True)
     _uuid(correlation_id)
+    if not_before is not None and (
+        not isinstance(not_before, datetime) or not_before.utcoffset() is None
+    ):
+        raise ValueError("A task's earliest start must be an aware instant.")
     with _locked(
         correlation_id,
         enqueue_key=None
@@ -159,6 +170,8 @@ def enqueue(
             actor_id=actor_id,
             correlation_id=correlation_id,
             idempotency_key=None if idempotency_key is None else str(idempotency_key),
+            # Omitted, the database default (its own clock) applies, as before.
+            **({} if not_before is None else {"not_before": not_before}),
         )
         _admit(admit, "enqueue", _status(run))
         run.save(force_insert=True)

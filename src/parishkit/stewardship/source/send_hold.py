@@ -12,8 +12,13 @@ manual refresh still run.
 
 A send is in progress while at least ``ACTIVE_MINIMUM`` pieces of its work
 remain in durable state: Family messages pending (not paused), waiting to
-retry or being submitted, plus Family preparation tasks queued, running or
-waiting to retry. The minimum keeps a few stragglers (say, messages in a long
+retry or being submitted, whose occurrence is due, plus Family preparation
+tasks queued, running or waiting to retry. A reminder prepared ahead of its
+due time (BG-12, #447) does not count until it is due, so it holds deltas
+while it is being prepared, not for the rest of its lead window. A delta
+promoted during preparation marks the population dirty, and preparation
+waits for the rebuild; one promoted after preparation only makes the send
+re-render. The minimum keeps a few stragglers (say, messages in a long
 retry wait) from holding refreshes back. Both reads are bounded by that
 minimum, use the existing state indexes and take no lock. While Production
 delivery is paused, preparation tasks wait for the pause to end, so only
@@ -42,7 +47,10 @@ point are the scheduler's own catch-up, which the allowance's last
 
 from datetime import timedelta
 
+from django.db.models import DateTimeField, Exists, Func, OuterRef
+
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.operational_sources import configured_policy
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
@@ -77,9 +85,17 @@ def family_send_active(minimum=ACTIVE_MINIMUM):
     Paused messages do not count: a paused send is not competing for the
     work-order lock, so refreshes need not wait for it. For the same reason
     preparation tasks do not count while Production delivery is paused:
-    they stay queued, held, until the pause ends.
+    they stay queued, held, until the pause ends. Nor does a message whose
+    occurrence is not yet due on the campaign clock (prepared ahead, BG-12).
     """
+    due = ScheduleOccurrence.objects.filter(
+        pk=OuterRef("semantic_key"),
+        due_at__lte=Func(
+            function="stewardship_campaign_now_v1", output_field=DateTimeField()
+        ),
+    )
     messages = OutboxMessage.objects.filter(
+        Exists(due),
         purpose__in=FAMILY_PURPOSES,
         state__in=ACTIVE_MESSAGE_STATES,
         pause_hold__isnull=True,

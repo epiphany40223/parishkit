@@ -358,6 +358,15 @@ must end in the same catalog. The rules:
   frozen file (a migration-owned function is replaced freely, as every path
   runs its migrations). Views and constraints have no such text check; only
   the upgrade-parity test catches their drift.
+- **A replaced function keeps the baseline's attributes.** `CREATE OR
+  REPLACE FUNCTION` keeps the owner and grants but resets every attribute
+  the command does not name. When the baseline sets one with a separate
+  `ALTER FUNCTION` (such as `SECURITY DEFINER` in
+  `schedule_reconciliation.sql`), the frozen file repeats that statement
+  after the replacement and its `DO` block checks it;
+  `test_schema_migration_files.py` enforces this for `SECURITY DEFINER`.
+  The upgrade-parity test cannot catch the omission, because a fresh install
+  runs the same migration.
 - **Upgrade parity is tested.** `tests/stewardship/database/test_upgrade_parity_postgresql.py`
   installs the previous release tag's tree (the latest annotated `v*` tag
   reachable from HEAD) in a second database, migrates it with the current

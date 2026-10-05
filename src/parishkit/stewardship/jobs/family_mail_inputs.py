@@ -69,6 +69,16 @@ def household_names(family, members):
 def load_family_mail_source(family):
     """Read only one household and its unresolved organization-scoped refusals."""
     require_work_order()
+    return read_family_mail_source(family)
+
+
+def read_family_mail_source(family):
+    """``load_family_mail_source`` without the work-order lock (BG-12).
+
+    A bulk build reads the household inside its own REPEATABLE READ snapshot,
+    outside the lock; the source and population state it checks here are
+    part of the build's fingerprint, compared again under the lock.
+    """
     current = SourceCurrent.objects.get(singleton=True)
     population = CampaignCredentialState.objects.get(campaign_id=family.campaign_id)
     if (

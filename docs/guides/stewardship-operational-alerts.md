@@ -62,6 +62,21 @@ hourly automation maintenance task resolves an episode after an hour without
 events, which sends the routes' resolved notice with its own fixed text. See
 the [specification](../specs/stewardship/admin-automation/spec.md#notifications).
 
+## Process-log warning categories
+
+Some advice is logged as a WARNING in the process log only, as a failure
+category on a reviewed event, and never opens an incident or sends mail:
+
+- `full_refresh_in_lead_window` (on `startup_validated`, BG-12): a scheduled
+  ParishSoft full refresh falls inside the two-hour lead window in which
+  the bulk Family send prepares a Production reminder, so its promotion
+  would pause that preparation until the Family population is rebuilt.
+  The scheduler logs it once per process for each campaign and
+  configuration; move the refresh times or the reminder (see the
+  [Family mail dispatch guide](stewardship-family-mail-dispatch.md#reminders-prepared-ahead-of-their-due-time)).
+  A dedicated event is
+  [#584](https://github.com/epiphany40223/parishkit/issues/584).
+
 ## Checkpoints
 
 1. Define the closed incident taxonomy and typed, fixed-content alert compiler.

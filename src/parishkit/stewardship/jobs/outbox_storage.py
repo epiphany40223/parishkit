@@ -168,13 +168,23 @@ def _command_digest(*values):
 
 
 def create_message(
-    *, identity, render, actor_id, correlation_id, command_id, admit, sealed=None
+    *,
+    identity,
+    render,
+    actor_id,
+    correlation_id,
+    command_id,
+    admit,
+    sealed=None,
+    not_before=None,
 ):
     """Atomically allocate one message, root task, first render and history.
 
     Concurrent producers serialize with lifecycle work. A repeated semantic
     identity must also match the original render and initiator; it does not
     rewrite an earlier delivery or silently change its recipient selection.
+    ``not_before`` is the delivery task's earliest claim (see ``enqueue``);
+    a Family reminder prepared ahead passes its due time (BG-12).
     """
     _operation_ids(command_id, actor_id, correlation_id)
     if not isinstance(identity, DeliveryIdentity) or not isinstance(
@@ -217,6 +227,7 @@ def create_message(
             correlation_id=correlation_id,
             idempotency_key=message_id,
             admit=lambda action, status: admit("create_task", identity, None),
+            not_before=not_before,
         )
         message = OutboxMessage.objects.create(
             id=message_id,

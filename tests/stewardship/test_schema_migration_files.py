@@ -23,6 +23,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / "src/parishkit/stewardship/schema"
 MIGRATIONS = SCHEMA / "migrations"
+# A baseline statement making a function SECURITY DEFINER: its name and its
+# identity arguments (pg_get_function_identity_arguments, as pg_dump writes
+# them). Shared by the attribute test and its self-test.
+DEFINER_ALTER = re.compile(
+    r"^ALTER FUNCTION public\.(\w+)\(([^)]*)\) SECURITY DEFINER;", re.M
+)
 
 # Every frozen file and its sha256. Add a line when adding a migration file;
 # never change an existing line.
@@ -35,6 +41,9 @@ FROZEN = {
     ),
     "0004_automation_sessions.sql": (
         "e0b01ea24cad2ca148a774d51b81828331bdcefde857adf34a8e3897ec5fdf2b"
+    ),
+    "0005_occurrence_prepare_ahead.sql": (
+        "12bc2e9c5c21af7da9ff2d3867f3421d9be5a0b63a6c58383931c764304e2987"
     ),
 }
 
@@ -155,3 +164,44 @@ def test_frozen_file_migrations_apply_in_file_order():
         assert previous in loader.graph.forwards_plan(current), (
             f"{current} must depend on {previous}, directly or transitively"
         )
+
+
+def test_replaced_functions_keep_the_baselines_altered_attributes():
+    """A replaced function is altered again as the baseline alters it.
+
+    ``CREATE OR REPLACE FUNCTION`` keeps a function's owner and grants but
+    resets every attribute the command does not name. The baseline makes
+    some guards ``SECURITY DEFINER`` with a separate ``ALTER FUNCTION``, so a
+    frozen file that replaces one must repeat that statement, or the guard
+    would silently start running with its caller's rights (BG-12 found
+    this for the occurrence guard). The baseline names each function with
+    its identity arguments (``pg_get_function_identity_arguments``, as
+    pg_dump writes them), and the frozen file must name the same ones.
+    """
+    altered = {}
+    for path in SCHEMA.glob("*.sql"):
+        for name, arguments in DEFINER_ALTER.findall(path.read_text(encoding="utf-8")):
+            altered.setdefault(name, set()).add(arguments)
+    assert "" in altered["stewardship_occurrence_guard_v1"]
+    for path in sorted(MIGRATIONS.glob("*.sql")):
+        text = path.read_text(encoding="utf-8")
+        for name in function_bodies(text, replace=True).keys() & altered.keys():
+            created = text.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
+            for arguments in altered[name]:
+                statement = (
+                    f"ALTER FUNCTION public.{name}({arguments}) SECURITY DEFINER;"
+                )
+                assert statement in text, f"{path.name} must restore {name}'s rights"
+                assert text.index(statement) > created
+
+
+def test_altered_attribute_scan_reads_identity_arguments():
+    """A function with arguments is matched with its full identity."""
+    text = (
+        "ALTER FUNCTION public.example_v1(uuid, text) SECURITY DEFINER;\n"
+        "ALTER FUNCTION public.other_v1() SECURITY DEFINER;\n"
+    )
+    assert DEFINER_ALTER.findall(text) == [
+        ("example_v1", "uuid, text"),
+        ("other_v1", ""),
+    ]

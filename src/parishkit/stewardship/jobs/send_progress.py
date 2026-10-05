@@ -76,6 +76,8 @@ UNREACHABLE_REASONS = ("no_deliverable_recipient", "family_ineligible")
 # revision and that revision's due time. ``read_send`` orders every send by
 # its revision's due time, so this one is compared with the due sends on the
 # same footing (planning gives each occurrence its revision's due time).
+# Only occurrences already due count: a reminder planned and prepared ahead
+# of its due time (BG-12) is upcoming, not a send in progress.
 _LATEST_SEND = (
     "SELECT o.definition_id, d.kind, o.revision_id, r.due_at "
     "FROM stewardship_schedule_definition d "
@@ -83,6 +85,7 @@ _LATEST_SEND = (
     "JOIN stewardship_schedule_revision r ON r.id=o.revision_id "
     "WHERE d.campaign_id=%(campaign)s AND d.kind IN ('initial','reminder') "
     "AND o.mode=%(mode)s AND o.production_cycle=%(cycle)s "
+    "AND o.due_at<=public.stewardship_campaign_now_v1() "
     "ORDER BY o.due_at DESC, o.created_at DESC, o.id DESC LIMIT 1"
 )
 # Every due send: each Family schedule's current revision that is due on the
@@ -487,9 +490,11 @@ def upcoming(campaign, mode, cycle, now):
 
     True while the campaign's activation catch-up (which schedules the
     invitations after go-live) is unfinished, or while an invitation or
-    reminder is due within an hour either side of now and nothing has been
-    scheduled for it yet. An open page then keeps checking, so it switches
-    to the send by itself. Testing sends are not followed this way.
+    reminder is due within an hour either side of now and nothing due has
+    been scheduled for it yet. An open page then keeps checking, so it
+    switches to the send by itself. Testing sends are not followed this
+    way. A reminder prepared ahead (BG-12) has occurrences before its due
+    time; those do not count, so it shows as upcoming until it is due.
     """
     from parishkit.stewardship.campaigns.runtime_models import (
         ActivationCatchUpDemand,
@@ -506,7 +511,10 @@ def upcoming(campaign, mode, cycle, now):
     ).exists():
         return True
     scheduled = ScheduleOccurrence.objects.filter(
-        definition_id=OuterRef("pk"), mode=mode, production_cycle=cycle
+        definition_id=OuterRef("pk"),
+        mode=mode,
+        production_cycle=cycle,
+        due_at__lte=now,
     )
     return (
         ScheduleDefinition.objects.filter(

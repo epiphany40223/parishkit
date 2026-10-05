@@ -203,6 +203,10 @@ def hold_summary(bulk):
             "work_ms": percentiles(
                 [value for row in rows for value in row.get("work_ms", [])]
             ),
+            # Builds made outside the lock before each batch (BG-12 PR 2).
+            "build_ms": percentiles(
+                [value for row in rows for value in row.get("build_ms", [])]
+            ),
             "prebuilt": sum(row.get("prebuilt", 0) for row in rows),
             "rebuilt": sum(row.get("rebuilt", 0) for row in rows),
         }
@@ -434,6 +438,7 @@ def render(summary):
             f"    hold    {_p(values['hold_ms'])}",
             f"    item    {_p(values['item_ms'])}",
             f"    work    {_p(values['work_ms'])}",
+            f"    build   {_p(values['build_ms'])} (outside the lock)",
         ]
     lines += [
         "",
