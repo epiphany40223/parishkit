@@ -252,7 +252,7 @@ def visible_intro_words(name):
 
 
 # The "About this page" control sits beside the page heading (ui-v1.css puts
-# a closed panel that directly follows an h1 on the heading's line). The
+# a panel that directly follows an h1 on the heading's line). The
 # guarantee is structural: the tag comes right after </h1>, optionally inside
 # one {% if %} that holds only the panel, so nothing can be drawn between them.
 ABOUT_AFTER_HEADING = re.compile(r"</h1>\s*(?:{% if [^%]*%}\s*)?{% aboutpage ", re.S)
