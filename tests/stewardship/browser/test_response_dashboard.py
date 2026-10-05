@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .response_dashboard_components import PATH
 from .test_charts import assert_clean, watch
 from .waits import has_text
@@ -155,9 +156,7 @@ def test_switches_refresh_the_dashboard_in_place(page, component_origin):
 def test_switches_are_plain_links_without_scripts(browser_engine, component_origin):
     """With no JavaScript a switch loads the other view as an ordinary page,
     landing on the dashboard region rather than at the top (#519)."""
-    context = browser_engine.new_context(
-        java_script_enabled=False, viewport={"width": 1000, "height": 400}
-    )
+    context = no_script_context(browser_engine, viewport={"width": 1000, "height": 400})
     try:
         page = context.new_page()
         page.goto(component_origin + PATH)

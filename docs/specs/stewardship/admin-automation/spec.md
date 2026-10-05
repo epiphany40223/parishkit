@@ -1521,7 +1521,7 @@ See [manual ParishSoft refresh](../admin-portal/spec.md#manual-parishsoft-refres
 | --- | --- |
 | `schedule_settings` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4) |
 | `configuration_request` | `config request show --watch` (PR 4) |
-| `campaign_settings`, `campaign_new`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10) |
+| `campaign_settings`, `campaign_new`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `campaign_ministries`, `share_settings`, `talent_settings` | `campaign ministries`, `campaign shares`, `campaign talents` (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |

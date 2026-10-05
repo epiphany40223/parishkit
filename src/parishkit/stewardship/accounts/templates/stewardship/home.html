@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Campaign administration" %}{% endblock %}
 {% block content %}
   <h1>{% translate "Campaign administration" %}</h1>
@@ -7,7 +7,7 @@
     <h2>{{ dashboard.campaign.active_configuration.name }}</h2>
     <p>{% translate "Status:" %} {{ dashboard.campaign.state|capfirst }}</p>
     <p>{{ dashboard.campaign.active_configuration.start_date|parish_date }} – {{ dashboard.campaign.active_configuration.end_date|parish_date }} ({{ dashboard.campaign.active_configuration.timezone }})</p>
-    {% else %}<p>{% translate "No campaign has been set up yet. Select New campaign in the menu to create one." %}</p>{% endif %}
+    {% else %}<p>{% translate "There is no current campaign. Creating a campaign here is disabled until the single-campaign change (#145)." %}</p>{% endif %}
     <p>{% translate "ParishSoft data last updated:" %}
       {% if dashboard.refreshed_at %}<time datetime="{{ dashboard.refreshed_at|instant }}" data-local-instant>{{ dashboard.refreshed_at|instant }}</time>{% else %}{% translate "Not yet refreshed" %}{% endif %}{% if dashboard.can_refresh %} <a href="{% url 'admin:source_refresh' %}">{% translate "Refresh now" %}</a>{% endif %}
     </p>

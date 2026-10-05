@@ -1,78 +1,27 @@
-"""Separately guarded campaign labels keep unrelated lifecycle races off reports."""
+"""The retired report campaign chooser (admin-portal spec, navigation rule 10).
 
-from django.core.exceptions import ObjectDoesNotExist
-from django.shortcuts import render
-from django.template.loader import render_to_string
+Reports show the current campaign only until the single-campaign change (#145),
+so the old "Choose a retained campaign" address no longer lists campaigns. It
+redirects to the reports root, which opens the current campaign's
+Participation report, and keeps the query string, where report filters live.
+The redirect reveals nothing, so it needs no sign-in check of its own: the
+reports root checks access as before. It is a temporary (302) redirect even
+though its target is fixed, because NAV-11 moves the reports root itself and
+adds the permanent redirects for every old report address; a browser that
+cached a permanent redirect here would keep sending readers to the old root.
+"""
+
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.views.decorators.http import require_GET
-
-from parishkit.stewardship.accounts.authentication import denial, runtime
-from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.web.report_errors import report_unavailable
-from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.security import private_response
-
-from .export_views import SAFE_FAILURES, _principal
-from .read_admission import admit_report_read
-from .workspace import ReportQuery
-from .workspace_views import campaign_ids
 
 
 @require_GET
 def picker(request):
-    """Guard every listed campaign without widening a single-report read's scope.
-
-    Names remain campaign-owned data, not a reason to bypass read admission.
-    Concurrent lifecycle changes may require retry here but cannot stop an
-    unrelated selected report whose links and guard name only its own UUID.
-    """
-    try:
-        service = runtime()
-        principal = _principal(request, service.store)
-        query = ReportQuery.parse(request.GET)
-        identities = campaign_ids()
-        if not identities:
-            response = render(request, "stewardship/report-empty.html")
-            response["Cache-Control"] = "no-store"
-            return response
-
-        def fresh(guard):
-            """Current report authority covers only admitted retained campaigns."""
-            current = _principal(request, service.store, read_only=True)
-            if current.identity != principal.identity:
-                raise PermissionError("Report access changed.")
-            for identifier in identities:
-                admit_report_read(identifier)
-
-        def content():
-            """Load labels only after every listed identity is guarded."""
-            rows = (
-                Campaign.objects.filter(pk__in=identities)
-                .select_related("active_configuration")
-                .order_by("-created_at", "id")
-            )
-            choices = [
-                {
-                    "name": row.active_configuration.name,
-                    "url": query.url(row.pk, page=1),
-                }
-                for row in rows
-            ]
-            return iter(
-                (
-                    render_to_string(
-                        "stewardship/report-campaigns.html",
-                        {"campaigns": choices},
-                        request=request,
-                    ).encode(),
-                )
-            )
-
-        return campaign_response(
-            request, identities, authorize=fresh, open_content=content
-        )
-    except (PermissionError, ObjectDoesNotExist):
-        return denial()
-    except SAFE_FAILURES:
-        return report_unavailable()
-    except ValueError:
-        return private_response("Invalid report filters.\n", status=400)
+    """Send the retired chooser to the reports root, filters kept."""
+    query = request.META.get("QUERY_STRING", "")
+    response = HttpResponseRedirect(
+        reverse("admin:reports") + (f"?{query}" if query else "")
+    )
+    response["Cache-Control"] = "no-store"
+    return response

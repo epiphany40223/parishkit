@@ -14,7 +14,6 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
@@ -60,12 +59,11 @@ def index(request):
         current = SystemConfiguration.objects.values_list(
             "current_campaign_id", flat=True
         ).get()
+        # Only the current campaign is reported until #145 (rule 10); with no
+        # current campaign the reader sees the "no campaign" page.
         response = (
-            redirect(
-                "admin:ministry_report",
-                campaign_id=current if current in choices else choices[0],
-            )
-            if choices
+            redirect("admin:ministry_report", campaign_id=current)
+            if current in choices
             else render(request, "stewardship/report-empty.html")
         )
         response["Cache-Control"] = "no-store"
@@ -80,60 +78,18 @@ def index(request):
 
 @require_GET
 def picker(request):
-    """Guard campaign labels and reload assignment scope before offering choices."""
-    try:
-        service = runtime()
-        actor = _principal(request, service.store)
-        if request.GET:
-            raise ValueError("Invalid Ministry navigation.")
-        identities = campaign_ids(actor)
-        if not identities:
-            response = render(request, "stewardship/report-empty.html")
-            response["Cache-Control"] = "no-store"
-            return response
-        selected = ()
+    """The retired Ministry campaign chooser: go to Ministry requests.
 
-        def authorize(guard):
-            """Do not admit newly authorized labels outside the acquired guards."""
-            nonlocal selected
-            fresh = _principal(request, service.store, read_only=True)
-            if fresh.identity != actor.identity:
-                raise PermissionError("Ministry report access changed.")
-            authorized = frozenset(campaign_ids(fresh))
-            selected = tuple(value for value in identities if value in authorized)
-            for identifier in selected:
-                admit_report_read(identifier)
-
-        def content():
-            """Only guarded, currently authorized campaign labels enter the picker."""
-            choices = [
-                {
-                    "name": row.active_configuration.name,
-                    "url": reverse("admin:ministry_report", args=[row.pk]),
-                }
-                for row in Campaign.objects.filter(pk__in=selected)
-                .select_related("active_configuration")
-                .order_by("-created_at", "id")
-            ]
-            return iter(
-                (
-                    render_to_string(
-                        "stewardship/report-campaigns.html",
-                        {"campaigns": choices},
-                        request=request,
-                    ).encode(),
-                )
-            )
-
-        return campaign_response(
-            request, identities, authorize=authorize, open_content=content
-        )
-    except (PermissionError, ObjectDoesNotExist):
-        return denial()
-    except SAFE_FAILURES:
-        return report_unavailable()
-    except ValueError:
-        return private_response("Invalid Ministry filters.\n", status=400)
+    Reports show the current campaign only until the single-campaign change
+    (#145; navigation rule 10). The redirect reveals nothing, so it needs no
+    sign-in check of its own; Ministry requests checks access as before. It
+    is temporary (302) for the same reason as the report chooser's
+    (``campaign_picker``): NAV-11 moves its target and adds the permanent
+    redirects.
+    """
+    response = redirect("admin:ministry_reports")
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 def _audit(actor, campaign_id, query, outcome, count=0, total=0, scope=()):

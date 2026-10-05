@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship %}{# One Family's summary (Administrators and Staff) and timeline (Administrators only), #477: reports/family_timeline_views.py builds the context and reports/family_timeline.py reads the records. Data first; the explanation sits in the About panel. The title leaves the Family's name out, so browser history does not keep it. #}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}{# One Family's summary (Administrators and Staff) and timeline (Administrators only), #477: reports/family_timeline_views.py builds the context and reports/family_timeline.py reads the records. Data first; the explanation sits in the About panel. The title leaves the Family's name out, so browser history does not keep it. #}
 {% block title %}{% translate "Family timeline" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Family timeline" %}</h1>

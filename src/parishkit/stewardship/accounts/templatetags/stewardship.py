@@ -7,6 +7,7 @@ from django import template
 from django.utils.html import format_html
 from django.utils.translation import gettext as _
 
+from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.web import dates, presentation
 
 register = template.Library()
@@ -136,3 +137,13 @@ def sort_heading(context, table, column, label, css_class=""):
         "query": table.heading_query(column),
         "csrf_token": context.get("csrf_token"),
     }
+
+
+@register.inclusion_tag("stewardship/components/disabled-control.html")
+def multi_campaign_control(control_id, label):
+    """A greyed-out multi-campaign control with the one #145 tip (rule 10).
+
+    Every control whose only purpose is working with more than one campaign
+    shows the same tip, defined once in ``campaigns.single_campaign``.
+    """
+    return {"control_id": control_id, "label": label, "tip": single_campaign.TIP}

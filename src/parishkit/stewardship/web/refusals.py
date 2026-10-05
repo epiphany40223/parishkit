@@ -22,6 +22,8 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.storage import StaleRecordError
 
+from .contracts import ErrorCode, FieldError, validation_response
+
 
 @dataclass(frozen=True)
 class Refusal:
@@ -75,6 +77,25 @@ class UserFacingMissing(UserFacing, LookupError):
 
 class UserFacingDenied(UserFacing, PermissionError):
     """The action is not allowed in the current state (HTTP 403)."""
+
+
+class UserFacingGone(UserFacing, PermissionError):
+    """A retired action or another campaign's address; it will not work again.
+
+    HTTP 410 Gone (navigation rule 10): a multi-campaign action until the
+    single-campaign change (#145) removes it, or a report naming a campaign
+    that is not the current one. It is a ``PermissionError`` so any handler
+    that does not know it still refuses (403); ``gone_response`` and the
+    handlers that call it answer with the 410 page and its explanation,
+    never a sign-in prompt.
+    """
+
+
+def gone_response(error):
+    """The 410 response for a ``UserFacingGone`` refusal."""
+    return validation_response(
+        [FieldError(ErrorCode.GONE)], status=410, refusal=error.refusal
+    )
 
 
 def stale_page():

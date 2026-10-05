@@ -368,9 +368,11 @@ def test_archived_financial_observation_does_not_follow_a_new_global_source(
             )
             assert response.status_code == 200
             assert b"Archived campaign" in body and b"$1,200.00" in body
-            response, picker = read(browser, "/admin/reports/campaigns/")
-            assert response.status_code == 200
-            assert str(harness.campaign.pk).encode() in picker
+            # An archived campaign that is still current is reported; the
+            # retired chooser (rule 10) goes to the reports root instead.
+            response, _ = read(browser, "/admin/reports/campaigns/")
+            assert response.status_code == 302
+            assert response["Location"] == "/admin/reports/"
     assert result.source_id == retained.pk
     assert result.active.comparison_pledge.canonical == "1200.00"
     assert result.giving is not None

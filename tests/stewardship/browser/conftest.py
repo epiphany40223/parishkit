@@ -80,6 +80,7 @@ from .in_place_components import SLOW as IN_PLACE_SLOW
 from .in_place_components import components as in_place_components
 from .information_components import components as information_components
 from .log_components import components as log_components
+from .menu_components import components as menu_components
 from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
 from .report_components import components as report_components
@@ -196,6 +197,39 @@ def page(browser_engine):
     context.close()
 
 
+def no_script_context(browser_engine, **options):
+    """A JavaScript-off browser context that loads Admin pages past the gate.
+
+    The Admin portal requires JavaScript (#565): with script off, an Admin page
+    shows only the "needs JavaScript" panel. Some older no-script tests still
+    check the native form and link markup that the scripts submit too, such as
+    POST bodies that keep identifying values out of URLs. Until each one is
+    retired or rewritten when its page changes (#565), it uses this context,
+    which removes the gate's class from every page the browser loads. The gate
+    itself is tested with a plain context in test_admin_javascript_gate.py.
+    """
+    context = browser_engine.new_context(java_script_enabled=False, **options)
+
+    def ungate(route):
+        """Serve each HTML page without the class that hides it.
+
+        Only text/html documents are rewritten; every other response,
+        including a redirect or a download, passes through unchanged.
+        """
+        if route.request.resource_type != "document":
+            route.fallback()
+            return
+        response = route.fetch(max_redirects=0)
+        if not response.headers.get("content-type", "").startswith("text/html"):
+            route.fulfill(response=response)
+            return
+        body = response.text().replace(' class="js-required"', "", 1)
+        route.fulfill(response=response, body=body)
+
+    context.route("**/*", ungate)
+    return context
+
+
 def load_collections(done=0, *, finished=None, expected=None):
     """Decoded download collections with the first ``done`` of them finished."""
     return [
@@ -273,7 +307,7 @@ def component_origin():
         "sections": [
             {
                 "key": "parish",
-                "label": "Parish and integrations",
+                "label": "Parish data",
                 "current": True,
                 "items": [
                     {
@@ -291,7 +325,7 @@ def component_origin():
         ],
         "breadcrumbs": [
             {"label": "Home", "url": "/home"},
-            {"label": "Parish and integrations", "url": "/parish-settings"},
+            {"label": "Parish data", "url": "/parish-settings"},
             {"label": "Ministry activity", "url": None},
         ],
         "testing": True,
@@ -494,7 +528,7 @@ def component_origin():
                 | {
                     "breadcrumbs": [
                         {"label": "Home", "url": "/home"},
-                        {"label": "Parish and integrations", "url": "/parish-settings"},
+                        {"label": "System", "url": "/integrations"},
                         {"label": "Integrations", "url": "/integrations"},
                         {"label": "ParishSoft", "url": "/integration-settings"},
                         {"label": "Key replacement status", "url": None},
@@ -1072,7 +1106,7 @@ def component_origin():
                     "sections": [
                         {
                             "key": "campaign",
-                            "label": "Campaign",
+                            "label": "Campaign setup",
                             "current": False,
                             "items": [
                                 {
@@ -1377,6 +1411,13 @@ def component_origin():
             "/campaign-settings",
             "campaign-settings",
             {
+                # The current Testing draft: New campaign is retired, so the
+                # page always edits an existing campaign (rule 10).
+                "campaign": {
+                    "pk": uuid4(),
+                    "state": "draft",
+                    "active_configuration": {"name": "Sample campaign"},
+                },
                 "editable": True,
                 # The Admin view adds the shared field help the same way.
                 "form": setup_help.apply(
@@ -1401,7 +1442,6 @@ def component_origin():
             "/campaign-preview",
             "campaign-preview",
             {
-                "creating": True,
                 "preview": "synthetic-signed-intent",
                 "changes": [
                     {
@@ -1473,7 +1513,7 @@ def component_origin():
                 | {
                     "breadcrumbs": [
                         {"label": "Home", "url": "/home"},
-                        {"label": "Parish and integrations", "url": "/parish-settings"},
+                        {"label": "Parish data", "url": "/parish-settings"},
                         {"label": "Parish settings", "url": "/parish-settings"},
                         {"label": "Configuration change", "url": None},
                     ],
@@ -1502,8 +1542,7 @@ def component_origin():
                 | {
                     "breadcrumbs": [
                         {"label": "Home", "url": "/home"},
-                        {"label": "Campaign", "url": "/campaign-settings"},
-                        {"label": "Campaign settings", "url": "/campaign-settings"},
+                        {"label": "Campaign setup", "url": "/campaign-settings"},
                         {"label": "Production activation", "url": None},
                     ],
                     "flow_steps": [
@@ -1604,6 +1643,7 @@ def component_origin():
     responses.update(hosted_file_components(context, admin))
     responses.update(talent_components(context, admin))
     responses.update(in_place_components(context, admin))
+    responses.update(menu_components(context, admin))
     # The in-place form page's POST answers (#519, #562): refusals answer
     # with the page the view would render (400 with the summary in the
     # region, 200 with it outside, or a 400 denial page without the region),
@@ -1618,6 +1658,8 @@ def component_origin():
     for filename, kind in (
         ("ui-v1.css", "text/css"),
         ("ui-v1.js", "application/javascript"),
+        ("admin-gate-v1.js", "application/javascript"),
+        ("admin-menu-v1.js", "application/javascript"),
         ("date-format-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),
         ("family-support-v1.js", "application/javascript"),

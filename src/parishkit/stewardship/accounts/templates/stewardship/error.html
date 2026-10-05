@@ -1,7 +1,9 @@
-{% extends 'stewardship/base.html' %}{% load i18n %}
+{% extends admin|yesno:'stewardship/admin-base.html,stewardship/base.html' %}{% load i18n %}
 {% comment %}
   Browser rendering of a typed error response. Every message is a closed,
   server-owned string; nothing submitted or raised is ever shown here.
+  Admin errors (admin is true) extend the JavaScript-gated Admin base
+  (#565); Family errors extend the ungated base.
 {% endcomment %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}<section class="flow panel">

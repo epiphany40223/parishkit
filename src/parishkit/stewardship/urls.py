@@ -484,7 +484,8 @@ admin_patterns = [
         talent_views.talent_settings,
         name="talent_settings",
     ),
-    path("campaign/new", campaign_views.campaign_settings, name="campaign_new"),
+    # Retired (decision 11): redirects to the current campaign's settings.
+    path("campaign/new", campaign_views.retired_new, name="campaign_new"),
     path(
         "campaign/<uuid:campaign_id>/go-live",
         go_live_views.readiness,

@@ -1,23 +1,20 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Campaign settings" %}{% endblock %}
 {% block content %}
-<h1>{% if campaign %}{% translate "Campaign settings" %}{% else %}{% translate "Create campaign draft" %}{% endif %}</h1>
-{% aboutpage "campaign-settings" %}<p>{% translate "Campaign settings decide what the Family form asks (census, Ministries, a pledge, additional information) and when the campaign runs. Page text and email templates, mail schedules and share choices each have their own page, linked above." %}</p>
-{% if not campaign %}<p>{% translate "A new draft starts with the parish time zone; you can change it after the draft is created." %}</p>{% endif %}{% endaboutpage %}
-{% if campaign %}<p>{{ campaign.active_configuration.name }} — {{ campaign.state|capfirst }}</p>{% endif %}
-{% if campaign.state == 'archived' %}<p><a href="{% url 'admin:campaign_clone' campaign.pk %}">{% translate "Clone into a new draft" %}</a></p>{% endif %}
-{% if clone_sources %}<section class="panel"><h2>{% translate "Or start from an archived campaign" %}</h2><ul>{% for source in clone_sources %}<li><a href="{% url 'admin:campaign_clone' source.pk %}">{{ source.active_configuration.name }}</a></li>{% endfor %}</ul></section>{% endif %}
-{% if campaign %}{% if campaign.state != 'archived' %}<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Edit campaign pages and email templates" %}</a></p>{% endif %}<p><a href="{% url 'admin:content_history' campaign.pk %}">{% translate "View retained campaign content" %}</a></p>{% endif %}
-{% if campaign %}<p><a href="{% url 'admin:schedule_settings' campaign.pk %}">{% translate "Edit mail schedules and reconcile campaign dates" %}</a></p>{% endif %}
-{% if family_test_url %}<p><a class="button button-secondary" href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a> <span class="help">{% translate "Sends the invitation to the Testing recipient for Families you choose; its link and code sign in to the Family form now." %}</span></p>{% endif %}
+<h1>{% translate "Campaign settings" %}</h1>
+{% aboutpage "campaign-settings" %}<p>{% translate "Campaign settings decide what the Family form asks (census, Ministries, a pledge, additional information) and when the campaign runs. Page text and email templates, mail schedules and share choices each have their own page, linked above." %}</p>{% endaboutpage %}
+<p>{{ campaign.active_configuration.name }} — {{ campaign.state|capfirst }}</p>
+{% comment %}Copy campaign is greyed out until the single-campaign change (#145) removes it (navigation rule 10); the server refuses it too.{% endcomment %}<p>{% multi_campaign_control "copy-campaign" _("Copy campaign") %}</p>
+{% if campaign.state != 'archived' %}<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Edit campaign pages and email templates" %}</a></p>{% endif %}<p><a href="{% url 'admin:content_history' campaign.pk %}">{% translate "View retained campaign content" %}</a></p>
+<p><a href="{% url 'admin:schedule_settings' campaign.pk %}">{% translate "Edit mail schedules and reconcile campaign dates" %}</a></p>
+{% if family_test_url %}<p><a class="button button-secondary" href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a> <span class="help">{% translate "Sends chosen Families' invitations to the Testing recipient; their links work now." %}</span></p>{% endif %}
 {% if campaign.state == 'draft' %}<p><a href="{% url 'admin:go_live' campaign.pk %}">{% translate "Review go-live readiness and Testing cleanup impact" %}</a></p>{% endif %}
 {% if production_progress_available %}<p><a href="{% url 'admin:production_progress' campaign.pk %}">{% translate "View Production activation and initial mail progress" %}</a></p>{% endif %}
 <p class="notice">{% translate "These settings lock when the campaign goes live or is scheduled for Production. Dates and mail schedules use this campaign's time zone, not your computer's." %}</p>
 {% if editable %}
-{% if campaign and form.ministry.value %}<p><a href="{% url 'admin:talent_settings' campaign.pk %}">{% translate "Edit the talents Members can share" %}</a></p>{% endif %}
-{% if campaign and form.financial_enabled.value %}<p><a href="{% url 'admin:share_settings' campaign.pk %}">{% translate "Edit how Families will share" %}</a></p>{% endif %}
-{% if not campaign %}<p class="notice">{% translate "Once you create a new campaign, earlier campaigns can no longer be deleted (purged) until the system is next returned to Testing mode." %}</p>{% endif %}
-<form method="post" class="panel" data-campaign-form{% if not campaign %} data-new-campaign{% endif %}>
+{% if form.ministry.value %}<p><a href="{% url 'admin:talent_settings' campaign.pk %}">{% translate "Edit the talents Members can share" %}</a></p>{% endif %}
+{% if form.financial_enabled.value %}<p><a href="{% url 'admin:share_settings' campaign.pk %}">{% translate "Edit how Families will share" %}</a></p>{% endif %}
+<form method="post" class="panel" data-campaign-form>
 {% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/campaign-fields.html' %}
 <button type="submit">{% translate "Preview changes" %}</button>

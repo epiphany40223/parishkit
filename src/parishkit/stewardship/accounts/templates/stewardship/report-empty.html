@@ -1,7 +1,7 @@
-{% extends 'stewardship/base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n %}
 {% block title %}{% translate "Campaign reports" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Campaign reports" %}</h1>
-<p>{% translate "No campaign is available for reporting yet. Reports appear here once a campaign has been set up; select New campaign in the menu to create one." %}</p>
+<p>{% translate "There is no current campaign report for you to view." %}</p>
 <p><a href="{% url 'admin:index' %}">{% translate "Return to the administration portal" %}</a></p>
 {% endblock %}

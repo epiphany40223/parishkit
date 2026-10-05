@@ -214,7 +214,8 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 queried = post(browser, route + "export?search=x", fields)
                 assert queried.status_code == 400
                 wrong = f"/admin/reports/{uuid4()}/financial/export"
-                assert post(browser, wrong, fields).status_code == 403
+                # Until #145 any campaign but the current one is gone (410).
+                assert post(browser, wrong, fields).status_code == 410
             response = post(browser, route + "export", fields)
             assert response.status_code == 302
             request = ExportRequest.objects.get(request_key=fields["request_key"])

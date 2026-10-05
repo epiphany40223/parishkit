@@ -370,11 +370,11 @@ Each task maps to the row naming it in that package's table, not to a list item.
 Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#admin-navigation).
 
 - [x] ADM-12.00 — NAV-0: record the implementation plan's decisions in the specification and add this package and its checklist.
-- [ ] ADM-12.01 — NAV-1: gate every Admin and sign-in page on JavaScript (#565).
-- [ ] ADM-12.02 — NAV-2: rewrite the navigation registry into the seven menu groups with per-entry capability and reason checks.
-- [ ] ADM-12.03 — NAV-2: keep a stable menu shape, with unavailable entries greyed out and their reasons shown on hover, focus and tap.
-- [ ] ADM-12.04 — NAV-2: make menu groups collapsible, remembered per browser, and end the menu with Sign out.
-- [ ] ADM-12.05 — NAV-3: grey out multi-campaign controls with the #145 tip, refuse their actions on the server, and remove New campaign.
+- [x] ADM-12.01 — NAV-1: gate every Admin and sign-in page on JavaScript (#565).
+- [x] ADM-12.02 — NAV-2: rewrite the navigation registry into the seven menu groups with per-entry capability and reason checks.
+- [x] ADM-12.03 — NAV-2: keep a stable menu shape, with unavailable entries greyed out and their reasons shown on hover, focus and tap.
+- [x] ADM-12.04 — NAV-2: make menu groups collapsible, remembered per browser, and end the menu with Sign out.
+- [x] ADM-12.05 — NAV-3: grey out multi-campaign controls with the #145 tip, refuse their actions on the server, and remove New campaign.
 - [ ] ADM-12.06 — NAV-4: give Campaign setup and Mail pages one name each, including Cancel go-live.
 - [ ] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages one name each.
 - [ ] ADM-12.08 — NAV-5b: give report pages one name each.
@@ -393,7 +393,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [ ] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
 - [ ] ADM-12.22 — NAV-19: add the Find a Family header search (#561).
 
-Evidence: In progress. ADM-12.00 is this docs-only change: the
+Evidence: In progress. ADM-12.00 merged in PR #568: the
 specification states the JavaScript requirement once and links it from the
 architecture, reports and hosted-files specifications; adds the Response list
 row, the Find a Family header search, the non-page route, trailing-slash,
@@ -401,6 +401,53 @@ row, the Find a Family header search, the non-page route, trailing-slash,
 no-current-campaign explanation and Today line, and decisions 20 to 30; and
 this package, its checklist and the acceptance-manifest owners are added,
 checked by Markdown lint and `tests/stewardship/test_traceability.py`.
+ADM-12.01 adds `admin-base.html`, which every Admin template extends, the
+`admin-gate-v1.js` script and the `ui-v1.css` hiding rule; Family pages keep
+the ungated base. It is proven by
+`tests/stewardship/test_admin_javascript_gate.py` (template guard and
+rendered gate) and `tests/stewardship/browser/test_admin_javascript_gate.py`
+(panel only and nothing reachable with script off, the normal page with
+script on, on Chromium and WebKit).
+ADM-12.02 to ADM-12.04 (NAV-2) move the sidebar to Home and six groups:
+`admin_navigation.py` gains the ordered `MENU` table, where each entry names
+the capability its page checks and a reason check that reads only the
+chrome's campaign and mode, and `admin_context.py` builds the menu from it,
+folding in Delivery controls. Unavailable entries stay in place as links
+without `href` (`role="link"`, `aria-disabled`, `tabindex="0"`,
+`aria-describedby`) whose reason tip `admin-menu-v1.js` shows on hover, focus
+and tap; groups are `<details>` disclosures, collapsed ones are remembered
+per browser and the current page's group always opens; Sign out stays last.
+It is proven by `tests/stewardship/test_admin_navigation.py` (one menu shape
+per role in both modes and every campaign state, the spec's entry order, the
+reasons, the rendered ARIA and groups), the chrome query count on a report
+page in `tests/stewardship/database/test_admin_navigation_postgresql.py` (no
+role above NAV-1) and `tests/stewardship/browser/test_admin_menu.py` (tip on
+hover, focus and tap, Escape and tap-away dismissal, remembered collapse,
+the current group forced open and the summary's expanded state, on Chromium
+and WebKit). The menu's open counts are #585.
+ADM-12.05 (NAV-3) applies navigation rule 10: Copy campaign on Campaign
+settings and the "Choose a retained campaign" links on Participation and
+Ministry requests become the shared `components/disabled-control.html`
+(NAV-2's unavailable-entry pattern) with the tip "Disabled; will be removed
+with the single-campaign change (#145)", defined once in
+`campaigns/single_campaign.py`; New campaign and Campaign settings' create
+branch are removed. The server refuses with 410: `campaign_clone` refuses
+every request before reading it, the shared `confirm` refuses any change that
+adds a campaign and `_target` refuses a new draft, and `admit_report_read`
+refuses a campaign that is not current. The old New campaign address and the
+two choosers redirect. It is proven by
+`tests/stewardship/test_single_campaign.py` (exact tip text, rendered control,
+the three templates, the service refusal),
+`tests/stewardship/database/test_clone_views_postgresql.py` (page, seeded
+preview and valid signed confirmation all refused, nothing recorded),
+`tests/stewardship/database/test_campaign_views_postgresql.py` (New campaign
+redirects and records nothing; a signed creation preview is refused while an
+edit signed the same way applies),
+`tests/stewardship/database/test_single_campaign_postgresql.py` and the
+report suites (a non-current campaign refused with 410, after access is
+checked with 403; choosers redirect) and
+`tests/stewardship/browser/test_single_campaign.py` (the Copy campaign tip on
+hover, focus and tap, on Chromium and WebKit).
 
 ## ADM-13: System health page
 

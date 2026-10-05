@@ -1,9 +1,24 @@
 {% load i18n %}{% comment %}
-  Admin sidebar, built from accounts/admin_navigation.py. The disclosure is
-  open by default so the menu works without JavaScript; ui-v1.js collapses it
-  on narrow screens only. aria-current marks the current page. Sign out is a
-  POST form (logout is CSRF-protected) styled as the last menu item. Each
-  section title is a heading that also names its list of links.
+  Admin sidebar, built from accounts/admin_navigation.py (admin-portal spec,
+  "Menu groups" and "Stable menu shape"). The outer disclosure is the narrow
+  screens' Menu toggle; ui-v1.js closes it there and keeps it open on wide
+  screens. aria-current marks the current page.
+
+  Each menu group is a native disclosure whose summary is the group's title
+  and names its list of entries. The title is not a heading inside the
+  summary, because some screen readers then drop the summary's disclosure
+  role. Groups render open; admin-menu-v1.js closes the ones this browser
+  remembers as collapsed, except the group holding the current page
+  (data-menu-current), which always stays open.
+
+  An entry the viewer's role may open but that is unavailable right now is
+  greyed out, never removed: a link without href (so activating it does
+  nothing) that stays in the tab order, with its reason as its accessible
+  description. admin-menu-v1.js shows the reason's tip on hover, keyboard
+  focus and tap, and Escape or a tap elsewhere hides it.
+
+  Sign out is a POST form (logout is CSRF-protected) styled as the last menu
+  entry.
 {% endcomment %}<nav class="admin-sidebar" aria-label="{% translate 'Administration' %}">
   <details class="admin-menu" open data-admin-menu>
     <summary>{% translate "Menu" %}</summary>
@@ -14,10 +29,12 @@
       <li><a href="{{ admin_chrome.home_url }}"{% if admin_chrome.home_current %} aria-current="page"{% endif %}>{% translate "Home" %}</a></li>
       {% for section in admin_chrome.sections %}
       <li class="admin-section{% if section.current %} is-current{% endif %}">
-        <h2 class="admin-section-title" id="admin-section-{{ section.key }}">{{ section.label }}</h2>
-        <ul aria-labelledby="admin-section-{{ section.key }}">
-          {% for item in section.items %}<li><a href="{{ item.url }}"{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}</a></li>{% endfor %}
-        </ul>
+        <details class="admin-group" data-menu-group="{{ section.key }}"{% if section.current %} data-menu-current{% endif %} open>
+          <summary class="admin-section-title" id="admin-section-{{ section.key }}">{{ section.label }}</summary>
+          <ul aria-labelledby="admin-section-{{ section.key }}">
+            {% for item in section.items %}<li>{% if item.url %}<a href="{{ item.url }}"{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}</a>{% else %}<a class="admin-unavailable" role="link" aria-disabled="true" tabindex="0" aria-describedby="admin-tip-{{ item.name }}" data-menu-tip{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}</a><span class="admin-tip" id="admin-tip-{{ item.name }}" role="tooltip">{{ item.reason }}</span>{% endif %}</li>{% endfor %}
+          </ul>
+        </details>
       </li>
       {% endfor %}
       {% endif %}

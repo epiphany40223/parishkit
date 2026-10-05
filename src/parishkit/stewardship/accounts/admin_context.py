@@ -4,7 +4,6 @@ from datetime import timedelta
 
 from django.db.models import Count, Q
 from django.urls import reverse
-from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.audit.critical_events import ACKNOWLEDGE_LIMIT
@@ -12,8 +11,7 @@ from parishkit.stewardship.audit.critical_events import WINDOW as CRITICAL_WINDO
 from parishkit.stewardship.audit.critical_events import sign as critical_sign
 from parishkit.stewardship.audit.critical_events import summary as critical_summary
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
-from parishkit.stewardship.campaigns.domain import CampaignState
-from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.jobs.delivery_metadata import alert_counts
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.observability import debug_logging_enabled
@@ -52,7 +50,7 @@ def portal_chrome(request):
     if _setup_pending():
         return {"admin_chrome": _setup_chrome(actor, configuration, session)}
     admin = allows(actor, Capability.CONFIGURE)
-    campaign = configuration.current_campaign
+    campaign = _current_campaign(configuration)
     items = _navigation_items(actor, admin, campaign, configuration)
     # Presentation only: reuse the instant the owning view read inside its own
     # read snapshot (never an earlier one from before a lock wait).
@@ -75,14 +73,6 @@ def portal_chrome(request):
         from .delivery_control_commands import inventory
         from .policy_models import PortalUser
 
-        items.append(
-            (
-                "campaign",
-                "delivery_control",
-                _("Delivery controls"),
-                reverse("admin:delivery_control", args=[campaign.pk]),
-            )
-        )
         if campaign.delivery_paused:
             delivery_pause = {
                 "inventory": inventory(campaign.pk),
@@ -147,89 +137,52 @@ def portal_chrome(request):
 
 
 def _navigation_items(actor, admin, campaign, configuration):
-    """Sidebar entries ``(section, url_name, label, url)`` the actor may open.
+    """The menu entries the actor may open: ``MenuItem`` rows in menu order.
 
     Each entry uses the same capability the page itself checks, so the menu
     and the pages cannot disagree; the menu is still not the security
-    boundary. Campaign entries follow the current campaign.
+    boundary. Only the role hides an entry: one the mode or the campaign's
+    state does not allow right now has no URL and carries its reason (the
+    admin-portal spec's stable menu shape). Campaign entries follow the
+    current campaign. ``admin`` is the caller's CONFIGURE decision, reused.
     """
-    items = []
 
-    def add(section, name, label, *args):
-        """Append one entry, reversing its Admin URL."""
-        items.append((section, name, label, reverse(f"admin:{name}", args=args)))
-
-    if admin:
-        if campaign:
-            values = campaign.active_configuration.values or {}
-            add("campaign", "campaign_settings", _("Campaign settings"), campaign.pk)
-            # Theme artwork (#248) stays editable while the campaign runs.
-            if campaign.state != "archived":
-                add("campaign", "artwork_settings", _("Campaign images"), campaign.pk)
-            if campaign.state != "archived":
-                add("campaign", "content_catalog", _("Pages and emails"), campaign.pk)
-            add("campaign", "schedule_settings", _("Mail schedules"), campaign.pk)
-            # Share options are editable only on an unlocked Testing draft; the
-            # page refuses anything else, so do not offer a link that fails.
-            if (
-                "financial" in values.get("modules", ())
-                and configuration.mode == "testing"
-                and structural_edit_admitted(
-                    CampaignState(campaign.state),
-                    ever_active=campaign.ever_active,
-                    locked=campaign.structural_locked,
-                )
-            ):
-                add("campaign", "share_settings", _("Share options"), campaign.pk)
-            if (
-                "ministry" in values.get("modules", ())
-                and configuration.mode == "testing"
-                and structural_edit_admitted(
-                    CampaignState(campaign.state),
-                    ever_active=campaign.ever_active,
-                    locked=campaign.structural_locked,
-                )
-            ):
-                add("campaign", "talent_settings", _("Member talents"), campaign.pk)
-            if campaign.state == "draft":
-                add("campaign", "go_live", _("Go-live readiness"), campaign.pk)
-            add("campaign", "family_email_progress", _("Family email progress"))
-            add("campaign", "family_email_sends", _("Family email sends"))
-        else:
-            add("campaign", "campaign_new", _("New campaign"))
-    if allows(actor, Capability.CAMPAIGN_REPORT):
-        add("reports", "reports", _("Campaign reports"))
-    if allows(actor, Capability.MINISTRY_REPORT) or any(
-        allows(actor, Capability.MINISTRY_REPORT, ministry_id=duid)
-        for duid in actor.ministries
-    ):
-        add("reports", "ministry_reports", _("Ministry reports"))
-    if campaign and allows(actor, Capability.FAMILY_CODES):
-        add("reports", "family_directory", _("Family directory"), campaign.pk)
-    if admin and campaign:
-        add(
-            "reports",
-            "weekly_digest_manual",
-            _("Manual information report"),
-            campaign.pk,
+    def may_open(entry):
+        """The entry's own capability; a Ministry leader's Ministries count."""
+        if entry.capability is Capability.CONFIGURE:
+            return admin
+        return allows(actor, entry.capability) or (
+            entry.scoped
+            and any(
+                allows(actor, entry.capability, ministry_id=duid)
+                for duid in actor.ministries
+            )
         )
-    if admin:
-        add("parish", "parish_settings", _("Parish settings"))
-        add("parish", "branding_settings", _("Parish logos"))
-        add("parish", "hosted_files", _("Hosted files"))
-        add("parish", "integrations", _("Integrations"))
-        add("parish", "source_refresh", _("ParishSoft refresh"))
-        add("parish", "ministries", _("Ministry activity"))
-    if allows(actor, Capability.MANAGE_USERS):
-        add("users", "users", _("Portal users"))
-    if admin:
-        add("system", "background", _("Background work"))
-        add("system", "deliveries", _("Outgoing mail"))
-        add("system", "presence", _("Families on the form now"))
-        add("system", "family_portal", _("Family portal availability"))
-    if allows(actor, Capability.SYSTEM_LOGS):
-        add("system", "logs", _("System logs"))
-    return items
+
+    state = admin_navigation.MenuState(campaign, configuration.mode)
+    return admin_navigation.menu(state, may_open)
+
+
+def _current_campaign(configuration):
+    """The current campaign with its active configuration, in at most one query.
+
+    The menu's reason checks read the campaign's modules. The configuration
+    an owning view or the branding helper lends the chrome may carry neither
+    relation, and reading them lazily would take two queries, one more than
+    before for Staff and Ministry leaders (the Administrator's menu read the
+    modules already). Reuse the relations when both are cached.
+    """
+    if configuration.current_campaign_id is None:
+        return None
+    if SystemConfiguration._meta.get_field("current_campaign").is_cached(configuration):
+        campaign = configuration.current_campaign
+        if Campaign._meta.get_field("active_configuration").is_cached(campaign):
+            return campaign
+    return (
+        Campaign.objects.select_related("active_configuration")
+        .filter(pk=configuration.current_campaign_id)
+        .first()
+    )
 
 
 def _debug_in_production(configuration):

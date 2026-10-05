@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -55,7 +56,7 @@ def test_report_chart_scope_export_controls_and_accessibility(
 
 def test_report_and_exports_work_without_scripts(browser_engine, component_origin):
     """No JavaScript is required to choose scope, read exact values or export."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/participation")

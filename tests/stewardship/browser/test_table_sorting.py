@@ -10,6 +10,7 @@ the GET fixture the view would have rendered.
 
 import pytest
 
+from .conftest import no_script_context
 from .talent_components import PATH as TALENTS
 from .waits import eventually, has_attribute, has_text, visible
 
@@ -328,7 +329,7 @@ def test_without_javascript_a_heading_loads_the_page_at_the_table(
     browser_engine, component_origin
 ):
     """No script: the heading is a plain link whose fragment lands on the table."""
-    context = browser_engine.new_context(java_script_enabled=False, viewport=VIEWPORT)
+    context = no_script_context(browser_engine, viewport=VIEWPORT)
     try:
         page = context.new_page()
         page.goto(component_origin + "/ministries")
@@ -675,7 +676,7 @@ def test_followup_filter_refreshes_in_place_without_assignment(page, component_o
 
 def test_without_javascript_filters_load_the_page(browser_engine, component_origin):
     """No script: the filter form is an ordinary GET form, sort included."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/ministries")

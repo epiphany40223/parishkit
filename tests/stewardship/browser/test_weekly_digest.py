@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -41,7 +42,7 @@ def test_weekly_detail_is_responsive_accessible_and_escaped(
 
 def test_weekly_report_remains_usable_without_scripts(browser_engine, component_origin):
     """Reading full requests and paging require no JavaScript enhancement."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/weekly-digest")

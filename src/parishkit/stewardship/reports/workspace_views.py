@@ -63,12 +63,13 @@ def index(request):
         current = SystemConfiguration.objects.values_list(
             "current_campaign_id", flat=True
         ).get()
-        if not choices:
+        # Only the current campaign is reported until #145 (rule 10); with no
+        # current campaign the reader sees the "no campaign" page.
+        if current not in choices:
             response = render(request, "stewardship/report-empty.html")
         else:
-            selected = current if current in choices else choices[0]
-            admit_report_read(selected)
-            response = redirect(query.url(selected))
+            admit_report_read(current)
+            response = redirect(query.url(current))
         response["Cache-Control"] = "no-store"
         return response
     except (PermissionError, ObjectDoesNotExist):
@@ -245,9 +246,6 @@ def _page_context(campaign_id, query, selected, principal):
         mutable = False
     context = {
         "campaign": campaign,
-        "picker_url": reverse("admin:report_campaigns")
-        + "?"
-        + query.url(campaign_id).split("?", 1)[1],
         "query": query,
         "selection": selected,
         "statistics": statistics,

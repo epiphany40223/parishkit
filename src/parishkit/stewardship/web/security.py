@@ -121,6 +121,9 @@ def login_denial(*, admin=False, status=403, public_content="", kind=""):
         render_to_string(
             "stewardship/denied.html",
             {
+                # Selects the JavaScript-gated Admin base (#565) for Admin
+                # denials; Family denials keep the ungated base.
+                "admin": admin,
                 "retry_path": "/admin/login" if admin else "/",
                 "public_content": public_content,
                 "kind": kind,

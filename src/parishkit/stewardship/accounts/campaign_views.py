@@ -1,4 +1,10 @@
-"""Admin draft creation and structural editing through exact YAML requests."""
+"""Admin structural editing of the current campaign through exact YAML requests.
+
+Creating another campaign is retired until the single-campaign change (#145):
+the one campaign is created in the setup wizard (admin-portal spec, decision
+11), the old New campaign address only redirects here, and ``_target``
+refuses a new draft for every caller.
+"""
 
 import hashlib
 import json
@@ -16,13 +22,11 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
-from parishkit.stewardship.campaigns.domain import CampaignState, SystemMode
-from parishkit.stewardship.campaigns.lifecycle import (
-    draft_creation_admitted,
-    structural_edit_admitted,
-)
+from parishkit.stewardship.campaigns.domain import CampaignState
+from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.campaigns.live_ministries import live_change_admitted
 from parishkit.stewardship.campaigns.models import Campaign, CampaignWorkGate
+from parishkit.stewardship.campaigns.single_campaign import creation_refused
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
@@ -50,10 +54,10 @@ from .authentication import runtime
 from .campaign_family_test import chosen_family_test_url
 from .campaign_forms import CampaignForm, initial_fields
 from .campaign_preview import describe_changes
-from .content_forms import default_content
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
+from .runtime_models import SystemConfiguration
 from .sessions import authenticated_admin
 
 SALT = "stewardship-campaign-structure-preview-v1"
@@ -182,25 +186,13 @@ def _catalog(configuration, source, previous):
 
 
 def _target(configuration, campaigns, held, campaign_id):
-    """Creation and structural mutation use the canonical current-campaign guards."""
+    """Structural mutation uses the canonical current-campaign guards.
+
+    ``campaign_id`` None asks for a new draft (Copy campaign passes it), which
+    is refused until the single-campaign change (#145; navigation rule 10).
+    """
     if campaign_id is None:
-        if held or not draft_creation_admitted(
-            mode=SystemMode(configuration.mode),
-            current_id=configuration.current_campaign_id,
-            states=[CampaignState(row.state) for row in campaigns],
-            # BG-11/ADM-10 own the future durable purge-request fact. The
-            # existing work/credential hold above is a separate prerequisite.
-            nonterminal_purge=False,
-        ):
-            raise UserFacingStale(
-                _("A new campaign can't be created right now."),
-                fix=_(
-                    "A new campaign can be created only in Testing mode, after "
-                    "every earlier campaign is archived, and while no background "
-                    "work is running."
-                ),
-            )
-        return None, True
+        raise creation_refused()
     campaign = next((row for row in campaigns if row.pk == campaign_id), None)
     if campaign is None:
         raise LookupError("Campaign is unavailable.")
@@ -232,24 +224,16 @@ def _page(request, configuration, campaign, form, *, editable, status=200):
             "form": form,
             "editable": editable,
             # A live campaign's Ministries keep their own editor (#342).
-            "ministries_live": campaign is not None
-            and campaign.pk == configuration.current_campaign_id
+            "ministries_live": campaign.pk == configuration.current_campaign_id
             and live_change_admitted(campaign.state, locked=campaign.structural_locked)
             and "ministry" in campaign.active_configuration.values["modules"],
             "family_test_url": chosen_family_test_url(configuration, campaign),
-            "production_progress_available": campaign is not None
-            and configuration.current_campaign_id == campaign.pk
+            "production_progress_available": configuration.current_campaign_id
+            == campaign.pk
             and configuration.mode == "production"
             and ProductionConfirmation.objects.filter(
                 request__campaign=campaign
             ).exists(),
-            "clone_sources": list(
-                Campaign.objects.filter(state="archived")
-                .select_related("active_configuration")
-                .order_by("active_configuration__name", "id")
-            )
-            if campaign is None
-            else [],
         },
         status=status,
     )
@@ -266,19 +250,7 @@ def _preview(request, service, actor, state, campaign, form):
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
     values = form.values()
-    if (
-        campaign is None
-        and values["timezone"] != configuration.active_configuration.parish.timezone
-    ):
-        form.add_error(
-            "timezone",
-            _(
-                "A new campaign starts in the Parish timezone. "
-                "Edit the draft afterward to change it."
-            ),
-        )
-        return _page(request, configuration, campaign, form, editable=True, status=400)
-    previous = campaign.active_configuration.values if campaign else {}
+    previous = campaign.active_configuration.values
     changed = {
         key: value for key, value in values.items() if previous.get(key) != value
     }
@@ -286,15 +258,11 @@ def _preview(request, service, actor, state, campaign, form):
         form.add_error(None, _("No settings have changed."))
         return _page(request, configuration, campaign, form, editable=True, status=400)
     window_fields = {"start_date", "end_date", "timezone"}
-    if (
-        campaign
-        and window_fields.intersection(changed)
-        and any(
-            row["values"]["campaign_id"] == str(campaign.pk)
-            for row in configuration.active_configuration.canonical_document[
-                "sections"
-            ].get("schedules", [])
-        )
+    if window_fields.intersection(changed) and any(
+        row["values"]["campaign_id"] == str(campaign.pk)
+        for row in configuration.active_configuration.canonical_document[
+            "sections"
+        ].get("schedules", [])
     ):
         if set(changed) - window_fields:
             form.add_error(
@@ -312,24 +280,13 @@ def _preview(request, service, actor, state, campaign, form):
             + "?"
             + urlencode({name: values[name] for name in sorted(window_fields)})
         )
-    target = str(campaign.pk if campaign else uuid4())
-    content = []
-    if campaign is None:
-        # A new (non-cloned) campaign starts with the default text for every
-        # page and email its modules use, added in this same configuration
-        # change so it never exists without content. Each default passes the
-        # normal editor validation, and build_candidate below validates the
-        # whole candidate. Cloned campaigns copy their source content instead
-        # (campaign_cloning), and later module changes add no content.
-        content, values["content_versions"] = default_content(target, values)
     patch = [
         {
-            "operation": "update" if campaign else "add",
+            "operation": "update",
             "section": "campaigns",
-            "id": target,
-            "values": changed if campaign else values,
-        },
-        *({"operation": "add", "section": "content", **row} for row in content),
+            "id": str(campaign.pk),
+            "values": changed,
+        }
     ]
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
@@ -350,8 +307,6 @@ def _preview(request, service, actor, state, campaign, form):
         request,
         "stewardship/campaign-preview.html",
         {
-            "creating": campaign is None,
-            "default_content": bool(content),
             "removes_share_options": bool(previous.get("share_options"))
             and "financial" not in values["modules"],
             "changes": describe_changes(
@@ -372,7 +327,36 @@ def _preview(request, service, actor, state, campaign, form):
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
-def campaign_settings(request, campaign_id=None):
+def retired_new(request):
+    """The retired New campaign address: go to the current campaign's settings.
+
+    New campaign is removed (admin-portal spec, decision 11). Every method,
+    including a form left open on the old page, is sent to Campaign settings
+    without recording anything, so a creation preview posted here is never
+    confirmed. With no current campaign the reader lands on Home, which
+    explains that. Only an Administrator who may open Campaign settings is
+    redirected, so the address never reveals the campaign's identifier to
+    anyone else. A temporary redirect, because the target follows whichever
+    campaign is current.
+    """
+    try:
+        principal(request, runtime())
+        current = SystemConfiguration.objects.values_list(
+            "current_campaign_id", flat=True
+        ).first()
+    except (ConfigError, DatabaseError, LimiterUnavailable, PermissionError) as error:
+        return error_response(error)
+    response = HttpResponseRedirect(
+        reverse("admin:campaign_settings", args=[current])
+        if current
+        else reverse("admin:index")
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+def campaign_settings(request, campaign_id):
     """Read, preview and confirm a draft without direct runtime/configuration writes."""
     try:
         service = runtime()
@@ -399,19 +383,10 @@ def campaign_settings(request, campaign_id=None):
             state = _state(service)
             configuration, campaigns, source, held = state[:4]
             campaign, editable = _target(configuration, campaigns, held, campaign_id)
-            previous = campaign.active_configuration.values if campaign else {}
+            previous = campaign.active_configuration.values
             ministries, funds = _catalog(configuration, source, previous)
-            initial = (
-                initial_fields(
-                    previous, digest=configuration.active_configuration.digest
-                )
-                if campaign
-                else {
-                    "timezone": configuration.active_configuration.parish.timezone,
-                    "census": True,
-                    "additional_information": True,
-                    "base_digest": configuration.active_configuration.digest,
-                }
+            initial = initial_fields(
+                previous, digest=configuration.active_configuration.digest
             )
             form = CampaignForm(
                 request.POST if request.method == "POST" else None,

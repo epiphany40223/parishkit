@@ -1,9 +1,11 @@
-{% extends 'stewardship/base.html' %}{% load i18n %}
+{% extends admin|yesno:'stewardship/admin-base.html,stewardship/base.html' %}{% load i18n %}
 {% comment %}
   One page per denial kind, never per reason: every rejected Family code shares
   the "code" text and every rejected secure link shares the "link" text, so
   the page cannot reveal why a credential failed. The code and link sentences
   are quoted from the parishioner-portal specification.
+  Admin denials (admin is true) extend the JavaScript-gated Admin base
+  (#565); Family denials extend the ungated base.
 {% endcomment %}
 {% block title %}{% if kind == "code" %}{% translate "Family code not accepted" %}{% elif kind == "link" %}{% translate "Family link not accepted" %}{% elif kind == "unavailable" %}{% translate "Sign-in temporarily unavailable" %}{% else %}{% translate "Access unavailable" %}{% endif %}{% endblock %}
 {% block content %}<section class="flow panel">

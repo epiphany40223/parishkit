@@ -146,7 +146,8 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         assert [row.pk for row in rows] == [first.pk] and not more
         assert information_history(item.pk, 2, version=item.version) == ([], False)
         wrong_route = f"/admin/reports/{uuid4()}/information/{item.pk}/"
-        assert read(browser, wrong_route)[0].status_code == 403
+        # Until #145 any campaign but the current one is gone (410).
+        assert read(browser, wrong_route)[0].status_code == 410
         assert (
             post(
                 browser,

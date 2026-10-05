@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -92,7 +93,7 @@ def test_financial_mobile_keyboard_and_accessibility(
 
 def test_financial_filters_and_pages_without_scripts(browser_engine, component_origin):
     """Identifying filters and page changes post natively, never through the URL."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/financial-report")

@@ -8,6 +8,7 @@ from django.http import QueryDict
 
 from parishkit.stewardship.reports.ministry_followup_views import change_values
 
+from .conftest import no_script_context
 from .waits import has_text, visible
 
 # The instant every follow-up fixture shows (followup_components.py).
@@ -244,7 +245,7 @@ def test_followup_fields_follow_a_restored_status(page, component_origin):
 
 def test_followup_filters_without_scripts(browser_engine, component_origin):
     """Identifying filters submit only through native POST, never the URL."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/followup-queue")
@@ -264,7 +265,7 @@ def test_followup_filters_without_scripts(browser_engine, component_origin):
 
 def test_followup_edit_without_scripts(browser_engine, component_origin):
     """The edit posts natively, with no URL state and no assignee."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/followup-item")
@@ -377,7 +378,7 @@ def test_followup_contact_waits_for_a_known_browser_zone(
 
 def test_followup_sort_heading_without_scripts(browser_engine, component_origin):
     """A heading re-sorts the queue by native POST, keeping private filters."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/followup-queue")

@@ -138,12 +138,13 @@ def test_timeline_for_administrators_and_staff(
         "?size=25",
     ):
         assert as_web(admin, corpus + invalid)[0].status_code == 400
-    # An unknown Family, or a Family under another campaign, is refused and
-    # leaves no audit row (checked below).
+    # An unknown Family is refused; any campaign other than the current one
+    # is gone (410) until the single-campaign change (#145), since reports show
+    # the current campaign only. Neither leaves an audit row (checked below).
     unknown, elsewhere = uuid4(), uuid4()
     assert as_web(admin, base + f"{unknown}/")[0].status_code == 403
     other = f"/admin/reports/{elsewhere}/families/{families[1]}/"
-    assert as_web(admin, other)[0].status_code == 403
+    assert as_web(admin, other)[0].status_code == 410
     # A role without Family codes gets no code and no Open form. No real role
     # has CAMPAIGN_REPORT without FAMILY_CODES, so the view's check is
     # narrowed for one request.
@@ -244,8 +245,10 @@ def test_a_family_is_refused_under_another_real_campaign(
 
     A real successor campaign (created after the first is archived and the
     deployment returns to Testing, the only way a second campaign exists) is
-    itself reportable, and the first campaign's Family opens under its own
-    campaign, but not under the successor: the ``campaign_id`` filter refuses.
+    itself reportable. The first campaign's Family does not open under the
+    successor (the ``campaign_id`` filter refuses), and, until the
+    single-campaign change (#145), not under its own retained campaign either:
+    reports show the current campaign only, so that is gone (410).
     """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.lifecycle import Action
@@ -287,15 +290,9 @@ def test_a_family_is_refused_under_another_real_campaign(
             == 200
         )
         own = f"/admin/reports/{harness.campaign.pk}/families/{family.pk}/"
-        assert as_web(admin, own)[0].status_code == 200
+        assert as_web(admin, own)[0].status_code == 410
         other = f"/admin/reports/{successor}/families/{family.pk}/"
         assert as_web(admin, other)[0].status_code == 403
-        # The refused pairing leaves no audit row; the real view leaves one.
+        # Neither refusal leaves an audit row.
         events = AuditEvent.objects.filter(event_type="family_timeline_viewed")
-        assert not events.filter(campaign_reference=successor).exists()
-        assert (
-            events.filter(
-                subject_id=family.pk, campaign_reference=harness.campaign.pk
-            ).count()
-            == 1
-        )
+        assert not events.filter(subject_id=family.pk).exists()

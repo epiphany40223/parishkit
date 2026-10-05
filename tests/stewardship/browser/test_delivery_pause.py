@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -46,7 +47,7 @@ def test_pause_resume_and_resolution_accessibility(
 
 def test_closed_resolution_without_javascript(browser_engine, component_origin):
     """A closed-campaign decision needs only ordinary labeled POST controls."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/delivery-resolve")
