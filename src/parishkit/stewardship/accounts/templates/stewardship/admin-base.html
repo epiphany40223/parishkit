@@ -18,6 +18,12 @@
 {% endcomment %}
 {% block document_class %} class="js-required"{% endblock %}
 {% block gate_script %}<script src="{% static 'stewardship/admin-gate-v1.js' %}"></script>{% endblock %}
+{% comment %}
+  The Admin menu's collapsible groups and unavailable-entry tips (admin-portal
+  spec, "Stable menu shape"). It is kept out of ui-v1.js, which every page
+  loads, and is deferred like it.
+{% endcomment %}
+{% block admin_script %}<script src="{% static 'stewardship/admin-menu-v1.js' %}" defer></script>{% endblock %}
 {% block gate_panel %}<div class="js-required-panel" hidden><section class="panel flow">
     <p><strong>{% translate "The Admin portal needs JavaScript." %}</strong></p>
     <p>{% translate "Turn it on in your browser settings, then reload this page." %}</p>

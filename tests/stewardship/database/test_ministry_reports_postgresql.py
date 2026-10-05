@@ -152,7 +152,8 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             and b"Food pantry" in body
             and b"Choir" not in body
         )
-        assert b"Ministry reports" in body and b"Family directory" not in body
+        # The menu offers the leader the Ministry entries only (#522).
+        assert b"Ministry report" in body and b"Family directory" not in body
         assert b"/ministries/9/" not in body
         assert b'name="ministry" value="9"' in body
         response, body = search(browser, route, {"ministry": "9"})
@@ -420,7 +421,14 @@ def test_campaign_choices_intersect_enabled_modules_and_assignments(
         assert response.status_code == 302 and response["Location"] == owned
         response, body = read(browser, "/admin/ministry-reports/campaigns/")
         assert response.status_code == 200 and owned.encode() in body
-        assert unowned.encode() not in body and b"Unassigned campaign" not in body
+        # The picker offers only owned campaigns. The menu's Ministry entry
+        # (and so the trail's group crumb) links the current campaign,
+        # whatever the leader owns (the page then refuses), so look only at
+        # the page's content after the trail (#522).
+        main = body[body.index(b'<main id="main"') :]
+        choices = main[main.index(b"</nav>") :]
+        assert unowned.encode() not in choices
+        assert b"Unassigned campaign" not in body
         response, body = read(browser, unowned)
         assert response.status_code == 403 and b"Unassigned campaign" not in body
         assert read(browser, owned)[0].status_code == 200

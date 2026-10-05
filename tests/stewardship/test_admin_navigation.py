@@ -1,6 +1,8 @@
 """The declarative Admin navigation covers every route and yields sound trails."""
 
 import re
+from html.parser import HTMLParser
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -42,20 +44,19 @@ def _arguments(name):
 
 
 def _items(arguments=None):
-    """One sidebar entry per root page, as if the actor could see everything.
+    """Every menu entry, available, as if the actor could open everything.
 
     Each entry's URL is the page's own, built from ``arguments`` where its
     route needs them, so trails may link it.
     """
     return [
-        (
-            page.section,
-            name,
-            page.label,
-            navigation._link(name, arguments or {}) or f"/nav/{name}",
+        navigation.MenuItem(
+            navigation.PAGES[entry.name].section,
+            entry.name,
+            navigation.PAGES[entry.name].label,
+            navigation._link(entry.name, arguments or {}) or f"/nav/{entry.name}",
         )
-        for name, page in navigation.PAGES.items()
-        if page.section and page.parent is None
+        for entry in navigation.MENU
     ]
 
 
@@ -188,13 +189,15 @@ def test_non_admin_and_unknown_routes_yield_no_trail():
 
 def test_exact_page_entry_is_marked_as_the_current_page():
     """On a sidebar entry's own page, its link is aria-current="page"."""
-    match = SimpleNamespace(url_name="reports", namespace="admin", kwargs={})
+    match = SimpleNamespace(
+        url_name="participation", namespace="admin", kwargs={"campaign_id": uuid4()}
+    )
     sections, _ = navigation.build(match, _items())
     marked = [
         item for section in sections for item in section["items"] if item["current"]
     ]
     assert [(item["label"], item["current"]) for item in marked] == [
-        (navigation.PAGES["reports"].label, "page")
+        (navigation.PAGES["participation"].label, "page")
     ]
 
 
@@ -235,7 +238,10 @@ def test_share_options_is_offered_only_where_it_can_be_edited(
     items = admin_context._navigation_items(
         SimpleNamespace(ministries=()), True, campaign, SimpleNamespace(mode=mode)
     )
-    assert any(name == "share_settings" for _, name, _, _ in items) is offered
+    # The entry stays in the menu either way; it is linked only when offered.
+    (share,) = [item for item in items if item.name == "share_settings"]
+    assert (share.url is not None) is offered
+    assert (share.reason is None) is offered
 
 
 def _match(name, **kwargs):
@@ -483,3 +489,365 @@ def test_a_key_page_for_an_unknown_integration_stays_under_integrations():
     # A step still shows without a known integration.
     place_key_page(request, "nonsense", flow="change", step="review")
     assert navigation.placement(request).step == "review"
+
+
+# Stable menu shape (ADM-12.02 to .04; admin-portal spec, "Stable menu shape").
+
+
+def _principal(role):
+    """A real principal for a role; a Ministry leader holds one Ministry."""
+    from parishkit.stewardship.accounts.policy import Principal
+
+    return Principal(
+        uuid4(),
+        frozenset({role}),
+        frozenset({9}) if role == "ministry_leader" else frozenset(),
+    )
+
+
+def _campaign(state="draft", modules=("financial", "ministry"), **facts):
+    """A current-campaign stand-in carrying only what the menu reads."""
+    return SimpleNamespace(
+        pk=uuid4(),
+        state=state,
+        ever_active=facts.get("ever_active", state != "draft"),
+        structural_locked=facts.get("locked", state != "draft"),
+        active_configuration=SimpleNamespace(values={"modules": list(modules)}),
+    )
+
+
+# Every campaign situation the chrome can be in: no current campaign, each
+# lifecycle state, each module set, and a locked or once-live draft.
+CAMPAIGNS = {
+    "none": None,
+    "draft": _campaign(),
+    "locked draft": _campaign(locked=True),
+    "once-live draft": _campaign(ever_active=True),
+    "census only": _campaign(modules=("census",)),
+    "financial only": _campaign(modules=("financial",)),
+    "ministry only": _campaign(modules=("ministry",)),
+    **{
+        state: _campaign(state)
+        for state in ("scheduled", "active", "closed", "archived", "purging")
+    },
+}
+ROLES = ("administrator", "staff", "ministry_leader")
+# Which entries each role sees, whatever the mode or campaign state.
+REPORTS = [
+    "response_dashboard",
+    "participation",
+    "financial_report",
+    "talents_report",
+    "information_queue",
+    "ministry_report",
+    "ministry_followup",
+    "family_directory",
+]
+# The Administrator's menu in the spec's order (admin-portal spec, "Menu
+# groups"), written out so that reordering MENU fails here. Entries for pages
+# that do not exist yet are absent; Manual information report holds the
+# place of Emailed reports until NAV-14.
+SPEC_ORDER = [
+    # Campaign setup
+    "campaign_settings",
+    "content_catalog",
+    "artwork_settings",
+    "schedule_settings",
+    "share_settings",
+    "talent_settings",
+    "go_live",
+    "production_progress",
+    # Mail and Family portal
+    "delivery_control",
+    "family_email_progress",
+    "family_email_sends",
+    "deliveries",
+    "family_portal",
+    "presence",
+    # Responses and reports
+    "response_dashboard",
+    "participation",
+    "financial_report",
+    "talents_report",
+    "information_queue",
+    "ministry_report",
+    "ministry_followup",
+    "family_directory",
+    "weekly_digest_manual",
+    # Parish data
+    "parish_settings",
+    "branding_settings",
+    "ministries",
+    "hosted_files",
+    "source_refresh",
+    # Users and access
+    "users",
+    # System
+    "integrations",
+    "background",
+    "logs",
+]
+SHAPES = {
+    "administrator": SPEC_ORDER,
+    "staff": REPORTS,
+    "ministry_leader": ["ministry_report", "ministry_followup"],
+}
+
+
+def _menu(role, campaign, mode):
+    """The menu items ``portal_chrome`` would build for this situation."""
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.accounts.policy import Capability, allows
+
+    actor = _principal(role)
+    return admin_context._navigation_items(
+        actor,
+        allows(actor, Capability.CONFIGURE),
+        campaign,
+        SimpleNamespace(mode=mode),
+    )
+
+
+@pytest.mark.parametrize("role", ROLES)
+def test_each_role_has_one_menu_shape_in_every_mode_and_campaign_state(role):
+    """Only the role hides an entry: the mode and the campaign only grey one out."""
+    for mode in ("testing", "production"):
+        for name, campaign in CAMPAIGNS.items():
+            items = _menu(role, campaign, mode)
+            assert [item.name for item in items] == SHAPES[role], (mode, name)
+            # Each entry sits in its page's group, in the menu's group order.
+            order = [section.key for section in navigation.SECTIONS]
+            assert [order.index(item.section) for item in items] == sorted(
+                order.index(item.section) for item in items
+            )
+            for item in items:
+                # Available with a URL, or greyed out with a reason: never both.
+                assert (item.url is None) == bool(item.reason), (mode, name, item)
+
+
+def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
+    """No campaign: the campaign's pages say so instead of disappearing."""
+    items = _menu("administrator", None, "testing")
+    needs = {entry.name for entry in navigation.MENU if entry.campaign} | {
+        "family_email_progress",
+        "family_email_sends",
+    }
+    for item in items:
+        if item.name in needs:
+            assert (item.url, item.reason) == (None, navigation.NO_CAMPAIGN), item
+        else:
+            assert item.url and item.reason is None, item
+
+
+@pytest.mark.parametrize(
+    "campaign,mode,name,reason",
+    [
+        ("draft", "testing", "delivery_control", "Available in Production mode"),
+        (
+            "draft",
+            "testing",
+            "production_progress",
+            "Production has not been confirmed for this campaign; "
+            "start at Go-live readiness",
+        ),
+        # Production mode set without a confirmation: the draft never went live.
+        (
+            "draft",
+            "production",
+            "production_progress",
+            "Production has not been confirmed for this campaign; "
+            "start at Go-live readiness",
+        ),
+        (
+            "active",
+            "production",
+            "go_live",
+            "Only a draft campaign can go live; this one already has",
+        ),
+        (
+            "active",
+            "production",
+            "share_settings",
+            "Can be changed only in Testing mode, before the campaign goes live",
+        ),
+        ("archived", "production", "content_catalog", "The campaign is archived"),
+        ("archived", "production", "artwork_settings", "The campaign is archived"),
+        (
+            "census only",
+            "testing",
+            "financial_report",
+            "This campaign does not include Financial stewardship",
+        ),
+        (
+            "census only",
+            "testing",
+            "ministry_report",
+            "This campaign does not include Ministry stewardship",
+        ),
+    ],
+)
+def test_unavailable_entries_carry_their_plain_language_reason(
+    campaign, mode, name, reason
+):
+    """Each greyed entry says why, in the words its tip shows."""
+    (item,) = [
+        item
+        for item in _menu("administrator", CAMPAIGNS[campaign], mode)
+        if item.name == name
+    ]
+    assert (item.url, str(item.reason)) == (None, reason)
+
+
+def test_available_campaign_entries_link_the_current_campaign():
+    """Production with a live campaign opens Delivery controls and activation."""
+    campaign = CAMPAIGNS["active"]
+    urls = {
+        item.name: item.url for item in _menu("administrator", campaign, "production")
+    }
+    assert urls["delivery_control"] == reverse(
+        "admin:delivery_control", args=[campaign.pk]
+    )
+    assert urls["production_progress"] == reverse(
+        "admin:production_progress", args=[campaign.pk]
+    )
+    # The Response dashboard has its own entry (#522).
+    assert urls["response_dashboard"] == reverse(
+        "admin:response_dashboard", args=[campaign.pk]
+    )
+    assert urls["deliveries"] == reverse("admin:deliveries")
+
+
+def test_menu_entries_and_groups_follow_the_spec():
+    """Seven groups in campaign order; every entry is a page in its group."""
+    assert [str(section.label) for section in navigation.SECTIONS] == [
+        "Campaign setup",
+        "Mail and Family portal",
+        "Responses and reports",
+        "Parish data",
+        "Users and access",
+        "System",
+    ]
+    assert len(navigation.MENU_NAMES) == len(navigation.MENU)
+    for entry in navigation.MENU:
+        assert navigation.PAGES[entry.name].parent is None, entry.name
+        assert entry.name in ROUTES, entry.name
+
+
+class _Menu(HTMLParser):
+    """Collect the sidebar's anchors, tips, groups and summaries by attribute."""
+
+    def __init__(self):
+        """Start with nothing collected."""
+        super().__init__()
+        self.anchors, self.tips, self.groups, self.summaries = [], {}, [], {}
+        self.lists, self._tip = [], None
+
+    def handle_starttag(self, tag, attrs):
+        """Record each element of interest with its attributes."""
+        attrs = dict(attrs)
+        if tag == "a":
+            self.anchors.append(attrs)
+        elif tag == "span" and attrs.get("role") == "tooltip":
+            self._tip = attrs["id"]
+            self.tips[self._tip] = {"attrs": attrs, "text": ""}
+        elif tag == "details" and "data-menu-group" in attrs:
+            self.groups.append(attrs)
+        elif tag == "summary" and "id" in attrs:
+            self.summaries[attrs["id"]] = attrs
+        elif tag == "ul" and "aria-labelledby" in attrs:
+            self.lists.append(attrs["aria-labelledby"])
+
+    def handle_endtag(self, tag):
+        """A tip's text ends with its span."""
+        if tag == "span":
+            self._tip = None
+
+    def handle_data(self, data):
+        """Gather a tip's reason text."""
+        if self._tip:
+            self.tips[self._tip]["text"] += data
+
+
+def _render(items, match=None):
+    """The sidebar HTML for these menu items on the given page."""
+    sections, _trail = navigation.build(match, items)
+    return render_to_string(
+        "stewardship/admin-navigation.html",
+        {"admin_chrome": {"home_url": "/admin/", "sections": sections}},
+    )
+
+
+def test_greyed_entries_are_focusable_links_without_href_described_by_their_reason():
+    """No href; role, aria-disabled, tabindex and aria-describedby, plus the tip."""
+    items = _menu("administrator", None, "testing")
+    parsed = _Menu()
+    parsed.feed(_render(items))
+    greyed = [anchor for anchor in parsed.anchors if "aria-disabled" in anchor]
+    assert len(greyed) == sum(1 for item in items if item.url is None) > 0
+    for anchor in greyed:
+        assert "href" not in anchor
+        assert anchor["role"] == "link"
+        assert anchor["aria-disabled"] == "true"
+        assert anchor["tabindex"] == "0"
+        tip = parsed.tips[anchor["aria-describedby"]]
+        assert tip["text"] == str(navigation.NO_CAMPAIGN)
+    available = [anchor for anchor in parsed.anchors if "href" in anchor]
+    # Home, then every available entry; none of them is marked unavailable.
+    assert len(available) == 1 + sum(1 for item in items if item.url)
+    assert not any("role" in anchor or "tabindex" in anchor for anchor in available)
+    # Tip ids are unique, so each entry announces its own reason.
+    assert len(parsed.tips) == len(greyed)
+
+
+def test_groups_are_labelled_disclosures_and_the_current_group_is_marked():
+    """Each group is an open <details> whose summary names its entry list."""
+    campaign = CAMPAIGNS["draft"]
+    match = _match("content_edit", campaign_id=campaign.pk, kind="email", slot="x")
+    parsed = _Menu()
+    parsed.feed(_render(_menu("administrator", campaign, "testing"), match))
+    assert [group["data-menu-group"] for group in parsed.groups] == [
+        section.key for section in navigation.SECTIONS
+    ]
+    assert all("open" in group for group in parsed.groups)
+    # Only the current page's group is forced open by the script.
+    assert [
+        group["data-menu-group"]
+        for group in parsed.groups
+        if "data-menu-current" in group
+    ] == ["campaign"]
+    assert parsed.lists == list(parsed.summaries)
+    # The current entry stays marked on the link to its catalog.
+    assert {"href", "aria-current"} <= set(
+        next(anchor for anchor in parsed.anchors if anchor.get("aria-current"))
+    )
+
+
+@pytest.mark.parametrize("pending", [False, True])
+def test_the_menu_ends_with_sign_out(pending):
+    """Sign out is the last menu item, during setup as well."""
+    html = render_to_string(
+        "stewardship/admin-navigation.html",
+        {
+            "admin_chrome": {
+                "setup_pending": pending,
+                "setup_url": "/admin/setup",
+                "home_url": "/admin/",
+                "sections": navigation.build(None, _items())[0],
+            }
+        },
+    )
+    menu = html[: html.index("</nav>")]
+    assert menu.rindex("Sign out") > max(menu.rindex("<a "), 0)
+    assert '<form method="post" action="/admin/logout">' in menu
+
+
+def test_admin_pages_load_the_menu_script_and_family_pages_do_not():
+    """admin-menu-v1.js loads deferred on Admin pages only, apart from ui-v1.js."""
+    script = '<script src="/static/stewardship/admin-menu-v1.js" defer></script>'
+    assert script in render_to_string("stewardship/login.html", {})
+    assert "admin-menu-v1.js" not in render_to_string(
+        "stewardship/family-login.html", {}
+    )
+    static = Path(navigation.__file__).parent / "static" / "stewardship"
+    assert "data-menu-tip" not in (static / "ui-v1.js").read_text(encoding="utf-8")
+    assert "data-menu-tip" in (static / "admin-menu-v1.js").read_text(encoding="utf-8")
