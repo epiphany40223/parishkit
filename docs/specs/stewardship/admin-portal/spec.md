@@ -1193,6 +1193,17 @@ and introduction exceptions must shrink as their pages are converted. A
 browser test checks on every component fixture with an About panel that the
 closed control is drawn on the heading's line, to its right.
 
+### Button labels
+
+A button's label never breaks inside a word, and a one-word label never
+wraps at all ([#614](https://github.com/epiphany40223/parishkit/issues/614)).
+This covers buttons, links styled as buttons, submit inputs and sortable
+column headings, whether they are POST buttons or GET links, so both kinds of
+heading wrap alike. A longer label may wrap between words, so it never makes
+a phone-width page scroll sideways; a table cell grows to fit its buttons,
+and a wide table scrolls inside its own region. A browser test checks the
+buttons and headings on representative pages at 320 px and 1280 px.
+
 ## Background indicators
 
 Admins have two always-visible indicators:
