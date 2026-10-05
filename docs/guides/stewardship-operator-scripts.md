@@ -95,6 +95,16 @@ A refusal or failure exits with 1, a usage error with 2, and Ctrl-C with
   the only copy, and refuses if the guide's report section no longer holds
   one block from `BEGIN;` to `ROLLBACK;`.
 
+## Admin automation
+
+- [`tools/stewardship-ops/pk-admin`](../../tools/stewardship-ops/pk-admin)
+  runs on the deployment host itself, not over ssh: the Admin automation
+  command line's wrapper, which keeps each session secret in an owner-only
+  file and runs `pk-stewardship admin` in the web container. Unlike the
+  scripts above it is POSIX `sh` and needs nothing on the host beyond
+  Docker, `openssl` and the standard tools. See the
+  [Admin automation guide](stewardship-admin-automation.md).
+
 ## Deferred
 
 The py-spy profiling aggregation helpers used for #447 are not kept here

@@ -1,0 +1,56 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Approve an automation session" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Approve an automation session" %}</h1>
+{% aboutpage "automation-approval" %}
+<p>{% translate "The server operator, a script or an assistant on the server can run Admin commands as you, without this browser, once you approve a session for it here. The command line showed a user code and a link to this page; enter that code to see what was requested." %}</p>
+<p>{% translate "A full-scope session can do everything you can do in the portal, including confirming Production, returning to Testing and deleting Testing data, without asking you again, until it expires or you revoke it. A read-only session can only read status and progress. Every Administrator is told when a session is approved, and every action it takes is recorded under your name." %}</p>
+<p>{% translate "The host is the start of an identifier of the server the request came from; it is the same for every session started on that server. A code expires ten minutes after it was shown." %}</p>
+{% endaboutpage %}
+{% if state == "approved" %}
+<section class="panel" aria-labelledby="approved-heading" role="status">
+  <h2 id="approved-heading">{% translate "Session approved" %}</h2>
+  <p>{% blocktranslate with label=session.label scope=scope_label %}“{{ label }}” can now act as you ({{ scope }}) until{% endblocktranslate %} <time datetime="{{ session.expires_at|instant }}" data-local-instant>{{ session.expires_at|instant }}</time>. {% translate "The command line picks it up within a few seconds." %}</p>
+  <p><a href="{{ back }}">{{ back_label }}</a></p>
+</section>
+{% elif state == "review" %}
+<section class="panel" aria-labelledby="review-heading">
+  <h2 id="review-heading">{% translate "Review the request" %}</h2>
+  <p class="notice notice-error"><strong>{% translate "Approve only a code you started in your own terminal, or that someone you trust started for you just now." %}</strong></p>
+  <dl>
+    <dt>{% translate "Label" %}</dt><dd>{{ pending.label }}</dd>
+    <dt>{% translate "For the Administrator" %}</dt><dd>{{ pending.expect_email }}</dd>
+    <dt>{% translate "Requested scope" %}</dt><dd>{{ scope_label }}</dd>
+    <dt>{% translate "Requested lifetime" %}</dt><dd>{% blocktranslate count days=pending.days %}{{ days }} day{% plural %}{{ days }} days{% endblocktranslate %}</dd>
+    <dt>{% translate "Host" %}</dt><dd><code>{{ host }}</code></dd>
+    <dt>{% translate "Code" %}</dt><dd><code>{{ code }}</code></dd>
+  </dl>
+  {% if pending.scope == "full" %}<p>{% translate "A full-scope session can run every Admin action you can, including Production confirmation, returning to Testing and Testing cleanup, without asking again, until it expires or is revoked." %}</p>{% endif %}
+  <form method="post">{% csrf_token %}
+    <input type="hidden" name="action" value="approve"><input type="hidden" name="code" value="{{ code }}">
+    <label for="automation-scope">{% translate "Scope" %}</label>
+    <select id="automation-scope" name="scope">{% for value, label in scope_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+    <label for="automation-days">{% translate "Days until it expires" %}</label>
+    <input id="automation-days" name="days" type="number" min="1" max="{{ pending.days }}" value="{{ pending.days }}" required>
+    <button type="submit">{% translate "Approve" %}</button>
+  </form>
+  <p><a href="{{ back }}">{% translate "Cancel" %}</a></p>
+</section>
+{% else %}
+<section class="panel" aria-labelledby="code-heading">
+  <h2 id="code-heading">{% translate "Enter the user code" %}</h2>
+  {% if not fresh %}
+  <p>{% translate "For security, confirm your Google sign-in before approving a session. You will come back to this page." %}</p>
+  {% include 'stewardship/components/reauthenticate.html' with next=next %}
+  {% endif %}
+  {% if refused %}<p class="notice notice-error" role="alert">{% translate "That code does not match a pending request for your address. Check the code, and that the operator entered your address; a code expires ten minutes after it was shown." %}</p>{% endif %}
+  <form method="post">{% csrf_token %}
+    <input type="hidden" name="action" value="lookup">
+    <label for="automation-code">{% translate "User code" %}</label>
+    <input id="automation-code" name="code" autocomplete="off" spellcheck="false" maxlength="16" required{% if not fresh %} disabled{% endif %}>
+    <button type="submit"{% if not fresh %} disabled{% endif %}>{% translate "Continue" %}</button>
+  </form>
+  <p><a href="{{ back }}">{{ back_label }}</a></p>
+</section>
+{% endif %}
+{% endblock %}

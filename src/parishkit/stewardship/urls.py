@@ -9,6 +9,7 @@ from .accounts import (
     artwork_views,
     assignment_views,
     authentication,
+    automation_views,
     branding_views,
     campaign_family_test_views,
     campaign_mail_views,
@@ -554,6 +555,13 @@ admin_patterns = [
         "critical-events/acknowledge",
         critical_event_views.acknowledge_critical_events,
         name="critical_events_acknowledge",
+    ),
+    # The browser side of the Admin automation command line (ADM-11), under
+    # Users and access in the #525 URL scheme: nouns and trailing slashes.
+    path(
+        "users/automation/approval/",
+        automation_views.approval_view,
+        name="automation_approval",
     ),
     path("source/refresh", refresh_views.source_refresh, name="source_refresh"),
     path(

@@ -314,8 +314,9 @@ It supplies the Compose project and file arguments and the web configuration
 path, makes the session secret at pairing, chooses and reads the session file,
 sends the [preamble](#session-file), decides whether to forward standard
 input, and, from PR 8, fetches [export files](#personal-data-on-the-command-line).
-It holds no other behavior: every rule stays in the package. The operator
-guide also shows the same steps by hand. The wrapper has its own tests in CI, run against a
+It holds no other behavior: every rule stays in the package. The
+[operator guide](../../../guides/stewardship-admin-automation.md) also shows
+the same steps by hand. The wrapper has its own tests in CI, run against a
 fake `docker` on `PATH`, covering file creation and modes, session selection,
 the preamble and input forwarding, and export fetching once PR 8 adds it.
 
@@ -630,7 +631,11 @@ longer an Administrator.
   user-code entry has no attempt limit either (see [pairing](#pairing)).
 - `pk-stewardship admin whoami` prints the session document (UUID, label,
   principal email, current roles, scope, deadline, last use).
-- `pk-stewardship admin logout` revokes the session (`logout`).
+- `pk-stewardship admin logout` revokes the session (`logout`) and prints
+  `{"ended": true, "end_reason": "logout"}`. If another ending committed
+  between admission and logout, nothing changes and it prints
+  `{"ended": false, "reason": "already_ended", "end_reason": ...}` with
+  that ending's reason; both exit 0, and the wrapper deletes the file.
 - `pk-stewardship admin sessions` lists the principal's sessions, live and
   ended in the last 30 days, without secrets or digests.
 
