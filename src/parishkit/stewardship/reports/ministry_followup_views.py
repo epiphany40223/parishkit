@@ -114,21 +114,25 @@ def _labels(identities):
     }
 
 
-# What each correctable refusal says, and the field its summary links to.
-# Each names the one problem, not every rule (#553).
+# What each correctable refusal says, and the form fields (by name) it
+# concerns: the one place a refusal code is tied to fields. Each names the
+# one problem, not every rule (#553). The refused page marks those fields in
+# error, shows the message beside them, and its summary links to the first.
+# outcome_kind's message is built from its details (_refusal_error).
 REFUSALS = {
-    "outcome_required": (_("Choose an outcome for Resolved."), "followup-outcome"),
+    "outcome_required": (_("Choose an outcome for Resolved."), ("outcome",)),
+    "outcome_kind": (None, ("outcome",)),
     "other_needs_notes": (
         _("Add notes: the outcome Other needs them."),
-        "followup-notes",
+        ("notes",),
     ),
     "contact_incomplete": (
         _("Enter the date and time of the contact attempt."),
-        "contact-date",
+        ("contact_date", "contact_time"),
     ),
     "contact_future": (
         _("The contact attempt's date and time can't be in the future."),
-        "contact-date",
+        ("contact_date", "contact_time"),
     ),
     # No usable browser zone came with the time (#558): a tab opened before
     # local-time entry, or a browser that reports none. The re-rendered page
@@ -138,8 +142,15 @@ REFUSALS = {
             "The contact time came without your computer's time zone. Save "
             "again; if this repeats, check your computer's time zone setting."
         ),
-        "contact-date",
+        ("contact_date", "contact_time"),
     ),
+}
+# Each form field's element id on the request page.
+FIELD_IDS = {
+    "outcome": "followup-outcome",
+    "notes": "followup-notes",
+    "contact_date": "contact-date",
+    "contact_time": "contact-time",
 }
 ACTIONS = {"join": _("join"), "leave": _("leave")}
 # The submitted fields a refused page shows again.
@@ -156,19 +167,31 @@ FORM_FIELDS = (
 )
 
 
-def _refusal_error(refusal):
-    """The error summary entry for one FollowupRefusal."""
+def refusal_fields(refusal, submitted):
+    """The form fields, by name, that a FollowupRefusal concerns.
+
+    An incomplete contact attempt names only the date or time that is
+    missing; when neither is blank, one is malformed, so it names both.
+    """
+    names = REFUSALS[refusal.code][1]
+    if refusal.code == "contact_incomplete":
+        missing = tuple(name for name in names if not submitted.get(name, "").strip())
+        return missing or names
+    return names
+
+
+def _refusal_error(refusal, submitted):
+    """The error for one FollowupRefusal: its message, the fields it
+    concerns (marked in error beside the message) and the field the
+    summary links to, the first of them."""
+    message = REFUSALS[refusal.code][0]
     if refusal.code == "outcome_kind":
-        return {
-            "message": _("%(outcome)s doesn't apply to a request to %(action)s.")
-            % {
-                "outcome": OUTCOMES.get(refusal.details["outcome"], ""),
-                "action": ACTIONS[refusal.details["action"]],
-            },
-            "field_id": "followup-outcome",
+        message = _("%(outcome)s doesn't apply to a request to %(action)s.") % {
+            "outcome": OUTCOMES.get(refusal.details["outcome"], ""),
+            "action": ACTIONS[refusal.details["action"]],
         }
-    message, field = REFUSALS[refusal.code]
-    return {"message": message, "field_id": field}
+    fields = refusal_fields(refusal, submitted)
+    return {"message": message, "fields": fields, "field_id": FIELD_IDS[fields[0]]}
 
 
 def _page_response(request, campaign_id, *, request_id=None, refusal=None):
@@ -256,6 +279,11 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                     for key in FORM_FIELDS
                     if key in request.POST
                 )
+            error = (
+                _refusal_error(refusal, request.POST)
+                if item and refusal is not None
+                else {}
+            )
             history, more_history = (
                 followup_history(request_id, history_page) if item else ([], False)
             )
@@ -308,7 +336,10 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 if item
                 else [],
                 form=form,
-                errors=[_refusal_error(refusal)] if refusal is not None else [],
+                errors=[error] if error else [],
+                # The refused fields, marked in error with the message beside
+                # them (an empty dict when nothing was refused).
+                field_error=error,
                 outcomes=OUTCOMES,
                 channels=CHANNELS,
             )

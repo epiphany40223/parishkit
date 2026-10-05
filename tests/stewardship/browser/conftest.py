@@ -1257,6 +1257,29 @@ def component_origin():
             "text/html",
             render_to_string(f"stewardship/{template}.html", {**context, **extra}),
         )
+    # The wizard's Parish step after a refused Next (#592): a website with a
+    # query, a rule only the server checks, marked at its field.
+    responses["/setup-parish-invalid"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/setup-step.html",
+            context
+            | {
+                "draft": setup_draft,
+                "wizard": wizard,
+                "form": FORMS["parish"](
+                    data={
+                        "name": "Sample Parish",
+                        "website": "https://example.org/?campaign=1",
+                        "timezone": "America/New_York",
+                        "phone": "+12125551234",
+                    }
+                ),
+                "step": "parish",
+                "step_label": STEPS["parish"],
+            },
+        ),
+    )
     for step, form_type in FORMS.items():
         if step == "branding":
             continue
@@ -1487,6 +1510,29 @@ def component_origin():
                         "website": "https://example.org",
                         "timezone": "America/New_York",
                         "phone": "+12125551234",
+                        "base_digest": "a" * 64,
+                    }
+                ),
+            },
+        ),
+        # The same page after a refused save (#592): Django marks the blank
+        # name (a rule the browser can check too) and the plain-http giving
+        # address (a rule only the server checks) at their fields.
+        (
+            "/parish-settings-invalid",
+            "parish-settings",
+            {
+                "configuration": {
+                    "mode": "testing",
+                    "testing_recipient": "testing@example.org",
+                },
+                "form": ParishForm(
+                    data={
+                        "name": "",
+                        "website": "https://example.org",
+                        "timezone": "America/New_York",
+                        "phone": "+12125551234",
+                        "online_giving_url": "http://giving.example.org",
                         "base_digest": "a" * 64,
                     }
                 ),

@@ -23,8 +23,11 @@ from parishkit.stewardship.reports.ministry_followup import (
     STATES,
     FollowupQuery,
 )
+from parishkit.stewardship.reports.ministry_followup_views import (
+    _refusal_error,
+)
 from parishkit.stewardship.web.tables import report_table
-from parishkit.stewardship.workflows.followup import outcomes_for
+from parishkit.stewardship.workflows.followup import FollowupRefusal, outcomes_for
 from parishkit.stewardship.workflows.models import STAFF_STATES
 
 CAMPAIGN, REQUEST = UUID(int=92), UUID(int=93)
@@ -151,6 +154,11 @@ def components(context, admin):
     saved = row | dict(
         version=4, state="in_progress", state_label=STATES["in_progress"]
     )
+    # The refusals, as the view describes them.
+    kind = _refusal_error(
+        FollowupRefusal("outcome_kind", outcome="leave_confirmed", action="join"), {}
+    )
+    future = _refusal_error(FollowupRefusal("contact_future"), {})
     pages = {
         "/followup-queue": values,
         "/followup-all": values
@@ -173,12 +181,23 @@ def components(context, admin):
         | dict(
             item=row,
             form=refused,
-            errors=[
-                dict(
-                    message="Left ministry doesn't apply to a request to join.",
-                    field_id="followup-outcome",
-                )
-            ],
+            errors=[kind],
+            field_error=kind,
+        ),
+        # A contact attempt in the future, refused with both its date and
+        # time marked in error (#592).
+        "/followup-item-future": values
+        | dict(
+            item=row,
+            form=form
+            | dict(
+                state="in_progress",
+                contact_channel="phone",
+                contact_date="2099-01-01",
+                contact_time="10:00",
+            ),
+            errors=[future],
+            field_error=future,
         ),
         "/followup-closed": values
         | dict(item=closed, rows=[closed], history=[revision]),

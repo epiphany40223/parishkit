@@ -20,6 +20,7 @@ region whose sort heading must still act as a table control.
 from datetime import UTC, datetime
 from uuid import UUID
 
+from django import forms
 from django.template import engines
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -109,8 +110,34 @@ DENIED_PAGE = """{% extends 'stewardship/base.html' %}
 {% block title %}Denied{% endblock %}
 {% block content %}<h1>Denied page</h1><p>This change is not allowed.</p>{% endblock %}
 """
+# A Django choice group refused by the server (#592): Django 5.2 draws a
+# RadioSelect as a fieldset described by the error, with each input marked
+# invalid but not described, so the page finds the message on the fieldset.
+CHOICE_PAGE = """{% extends 'stewardship/base.html' %}
+{% block title %}Choice group{% endblock %}
+{% block content %}<h1>Choice group</h1>
+<form method="post" action="/field-error-group">{{ form.kind.as_field_group }}
+<button type="submit">Save</button></form>{% endblock %}
+"""
+
+
+class ChoiceForm(forms.Form):
+    """One required choice drawn as radio buttons (a use_fieldset widget)."""
+
+    kind = forms.ChoiceField(
+        choices=[("a", "First"), ("b", "Second")], widget=forms.RadioSelect
+    )
+
+
 # The error a refused save re-renders, shaped as a view's form errors are.
 NOTE_ERROR = {"field_id": "note", "message": "Enter a shorter note."}
+
+
+def refused_choice():
+    """The choice form as the server re-renders it after an empty choice."""
+    form = ChoiceForm(data={})
+    assert not form.is_valid()
+    return form
 
 
 def task(number):
@@ -244,6 +271,12 @@ def components(context, admin):
         "/in-place-denied": (
             "text/html",
             denied_template.render(context | {"admin_chrome": admin}),
+        ),
+        "/field-error-group": (
+            "text/html",
+            engines["django"]
+            .from_string(CHOICE_PAGE)
+            .render(context | {"admin_chrome": admin, "form": refused_choice()}),
         ),
         # A POST's own successful answer (no redirect) without the region:
         # the sign-in page stands in for any such page.

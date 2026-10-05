@@ -170,6 +170,34 @@ some states are required only while shown. The Admin portal requires
 JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
 server validation is unchanged and still refuses an incomplete submission.
 
+A field error is shown at that field: its message sits directly beside it,
+and the field is marked in error (`aria-invalid="true"`, described by the
+message, with the shared error border and error-coloured message of
+`ui-v1.css`, the same markup Django forms render on the settings and setup
+pages). An error that concerns two fields (a date and a time) marks both and
+shows its message once, after them. Where a page also shows the error
+summary, the summary links to the first marked field and takes focus, as
+every Admin refusal summary does (#592).
+
+Where a rule can be checked in the browser, the page checks it too, and
+shows its error at the field the same way. The browser's own checks (a
+required field, a format) mark a field when the reader leaves it, and clear
+once the value is valid. Save is held while such an error stands only on
+forms that use the complete-before-submit gate above. The server stays the
+authority: it checks every save, and its refusal is shown at the field as
+above.
+
+A mark clears as soon as its error does, without waiting for Save (#592). An
+error the browser checks clears once the value is valid. One only the
+server can check (an outcome that doesn't fit the request, for example)
+clears from its field, with its message, on the first edit of that field,
+since the server checks again on save; an error that marks two fields (a
+date and a time) clears from both when either is edited. A field that a
+choice hides is not sent, so its marks clear too. Leaving a field without
+changing it clears nothing. The summary loses the item for a field that
+clears, and goes once it lists nothing. This applies to every Admin form,
+Django-rendered ones included, through the shared page script.
+
 Pages and emails start with built-in default text. Saving the first campaign
 fills every applicable page and email slot the draft has never set, in the same
 versioned save as the campaign, and a later campaign save fills only slots that
@@ -1137,7 +1165,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   it is drawn outside the region; this page's own older summaries outside
   the regions are removed then (a successful swap leaves them). The reader
   keeps their place, focus moves to the summary (or to the control when
-  there is none), and the live region reads the summary's messages, or says
+  there is none), the fields it names are marked in error beside their
+  message as the fetched page draws them, and the live region reads the
+  summary's messages, or says
   the server did not accept the change when there is no summary. Any other
   refusal, and a POST's own answer that is not this page, is shown as the
   whole page, as a native submission would show it. That page keeps the
@@ -2747,8 +2777,15 @@ chosen status or channel and refuses an incomplete Resolved. The outcome list
 offers only the outcomes the request's kind can record: Joined ministry only
 for a join and Left ministry only for a leave, from the same rule the server
 applies. If the server still refuses a save (for example a contact time in the
-future), it shows the same request page again in place, with a summary naming
-the one problem, linked to its field, and the submitted values kept.
+future), it shows the same request page again in place, with the submitted
+values kept, a summary naming the one problem, and that problem shown
+[at its fields](#bootstrap-and-first-admin-wizard): a missing or unsuitable
+outcome marks Outcome, Other without notes marks Notes, a contact attempt in
+the future, or one that reached the server without a usable time zone (see
+below), marks its Date and Time, and an incomplete one marks whichever of
+them is missing (both when one is malformed). The view maps each refusal to
+its fields in one table. The contact fields keep the time-zone note in their
+description, followed by the error.
 
 A contact attempt's date and time are typed in the browser's time zone, named
 in a note beside them, and every follow-up time shown (submitted, history,

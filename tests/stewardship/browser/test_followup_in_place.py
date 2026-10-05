@@ -175,6 +175,180 @@ def test_followup_refusal_is_swapped_into_the_request(page, component_origin):
     assert save.is_enabled()
 
 
+FUTURE = "The contact attempt's date and time can't be in the future."
+
+
+def contact_marked(page, marked):
+    """Assert that Date and Time are (or are not) marked in error, with the
+    one contact message shown (or hidden) beside them."""
+    message = page.locator("#followup-item #contact-error")
+    for field in ("#contact-date", "#contact-time"):
+        state = page.locator(field).get_attribute("aria-invalid")
+        assert state == ("true" if marked else "false") or (not marked and not state)
+        described = page.locator(field).get_attribute("aria-describedby") or ""
+        assert ("contact-error" in described.split()) == marked
+    if marked:
+        has_text(message, FUTURE)
+        assert page.locator(".errorlist:visible").count() == 1
+    else:
+        hidden(message)
+
+
+def test_server_future_refusal_is_shown_at_its_fields(page, component_origin):
+    """The server's refusal of a future contact time is swapped in at the
+    fields, once, and its summary links to the date and takes focus, as
+    every Admin refusal summary does. Leaving a field without editing it
+    keeps the mark; correcting the date clears the mark, the message and
+    the summary at once, before any save, and the save then goes through."""
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + FOLLOWUP_ITEM)
+    page.evaluate(MARK)
+    scroll_below(page, FOLLOWUP_SAVE)
+    answer_with(page, component_origin, FOLLOWUP_UPDATE, 400, "/followup-item-future")
+    page.get_by_label("How").select_option("phone")
+    page.locator("#contact-date").fill("2026-09-19")
+    page.locator("#contact-time").fill("10:00")
+    page.locator(FOLLOWUP_SAVE).click()
+    summary = page.locator("#followup-item > [data-error-summary]:first-child")
+    link = summary.get_by_role("link", name=FUTURE)
+    visible(link)
+    assert page.evaluate(MARKED) == "kept"
+    contact_marked(page, True)
+    for field in ("#contact-date", "#contact-time"):
+        # The zone note (#558) still describes it, then the error.
+        assert page.locator(field).get_attribute("aria-describedby") == (
+            "contact-zone-help contact-error"
+        )
+    assert (
+        page.evaluate("document.querySelector('#contact-time').nextElementSibling.id")
+        == "contact-error"
+    )
+    assert link.get_attribute("href") == "#contact-date"
+    assert page.evaluate("document.activeElement.hasAttribute('data-error-summary')")
+    link.click()
+    assert page.evaluate("document.activeElement.id") == "contact-date"
+    # Leaving the field without editing it keeps the mark. (Tab would only
+    # move between a date input's own parts, so focus another field.)
+    page.locator("#contact-notes").focus()
+    contact_marked(page, True)
+    # Corrected: cleared at once, summary and all, before saving.
+    page.unroute(component_origin + FOLLOWUP_UPDATE)
+    page.locator("#contact-date").fill("2026-09-19")
+    contact_marked(page, False)
+    assert page.locator("[data-error-summary]").count() == 0
+    assert page.locator(FOLLOWUP_SAVE).is_enabled()
+    page.locator(FOLLOWUP_SAVE).click()
+    visible(page.locator("#followup-item").get_by_text("Saved <note>", exact=True))
+    assert page.locator(".errorlist:visible, [aria-invalid=true]").count() == 0
+
+
+def test_hiding_the_contact_group_clears_its_marks(page, component_origin):
+    """Choosing no contact attempt hides Date and Time, which are then not
+    sent, so a server error marked on them clears with its summary item."""
+    page.goto(component_origin + FOLLOWUP_ITEM)
+    answer_with(page, component_origin, FOLLOWUP_UPDATE, 400, "/followup-item-future")
+    page.get_by_label("How").select_option("phone")
+    page.locator("#contact-date").fill("2026-09-19")
+    page.locator("#contact-time").fill("10:00")
+    page.locator(FOLLOWUP_SAVE).click()
+    visible(page.locator("[data-error-summary]"))
+    page.get_by_label("How").select_option("")
+    assert page.locator("[data-error-summary]").count() == 0
+    for field in ("#contact-date", "#contact-time"):
+        assert page.locator(field).get_attribute("aria-invalid") == "false"
+    page.get_by_label("How").select_option("phone")
+    contact_marked(page, False)
+    assert page.locator(FOLLOWUP_SAVE).is_enabled()
+
+
+def test_django_choice_group_error_clears_together(page, component_origin):
+    """A Django choice group (RadioSelect, drawn as a fieldset described by
+    its error, with each input marked invalid) clears as one on the first
+    choice: every input's mark and the message on the fieldset."""
+    page.goto(component_origin + "/field-error-group")
+    message = page.locator("#id_kind_error")
+    visible(message)
+    radios = page.locator("input[name=kind]")
+    assert radios.evaluate_all(
+        "nodes => nodes.map((node) => node.getAttribute('aria-invalid'))"
+    ) == ["true", "true"]
+    page.get_by_label("Second").check()
+    hidden(message)
+    assert radios.evaluate_all(
+        "nodes => nodes.map((node) => node.getAttribute('aria-invalid'))"
+    ) == ["false", "false"]
+    assert page.locator("fieldset").get_attribute("aria-describedby") is None
+
+
+def test_server_only_error_clears_when_its_field_is_edited(page, component_origin):
+    """An error only the server can check (an outcome that doesn't fit the
+    request) clears from its field, with its message and its summary item,
+    on the first edit of that field; the server checks again on save."""
+    page.goto(component_origin + FOLLOWUP_ITEM)
+    answer_with(page, component_origin, FOLLOWUP_UPDATE, 200, "/followup-item-refused")
+    page.get_by_label("Status").select_option("resolved")
+    page.get_by_label("Outcome", exact=True).select_option("joined")
+    page.locator(FOLLOWUP_SAVE).click()
+    outcome = page.locator("#followup-outcome")
+    message = page.locator("#followup-outcome-error")
+    has_text(message, "Left ministry doesn't apply to a request to join.")
+    assert outcome.get_attribute("aria-invalid") == "true"
+    assert outcome.get_attribute("aria-describedby") == "followup-outcome-error"
+    assert outcome.evaluate("node => getComputedStyle(node).borderTopWidth") == "2px"
+    outcome.select_option("joined")
+    assert outcome.get_attribute("aria-invalid") == "false"
+    assert outcome.get_attribute("aria-describedby") is None
+    hidden(message)
+    assert page.locator("[data-error-summary]").count() == 0
+
+
+@pytest.mark.parametrize(
+    ("path", "server_only", "browser_checked"),
+    [
+        ("/parish-settings-invalid", "#id_online_giving_url", "#id_name"),
+        ("/setup-parish-invalid", "#id_website", None),
+    ],
+)
+def test_django_form_errors_clear_when_edited(
+    page, component_origin, path, server_only, browser_checked
+):
+    """Django-rendered forms (settings, the setup wizard) follow the same
+    rule: a field the server marked clears its border and its message on
+    the first edit, and leaves every other mark alone."""
+    page.goto(component_origin + path)
+    field = page.locator(server_only)
+    assert field.get_attribute("aria-invalid") == "true"
+    message = page.locator(f"{server_only}_error")
+    visible(message)
+    assert f"{server_only[1:]}_error" in field.get_attribute("aria-describedby")
+    field.fill("https://giving.example.org")
+    assert field.get_attribute("aria-invalid") == "false"
+    hidden(message)
+    assert f"{server_only[1:]}_error" not in (
+        field.get_attribute("aria-describedby") or ""
+    )
+    if browser_checked:
+        other = page.locator(browser_checked)
+        assert other.get_attribute("aria-invalid") == "true"
+        visible(page.locator(f"{browser_checked}_error"))
+        other.fill("Sample Parish")
+        assert other.get_attribute("aria-invalid") == "false"
+        hidden(page.locator(f"{browser_checked}_error"))
+
+
+def test_browser_marked_field_clears_once_valid(page, component_origin):
+    """A field the browser marked on leaving it (a required field left
+    empty) clears as soon as its value is valid, without leaving it."""
+    page.goto(component_origin + "/parish-settings")
+    name = page.locator("#id_name")
+    name.fill("")
+    name.blur()
+    assert name.get_attribute("aria-invalid") == "true"
+    name.focus()
+    name.type("S")
+    assert name.get_attribute("aria-invalid") == "false"
+
+
 def test_followup_conflict_is_shown_whole_and_sent_once(page, component_origin):
     """A stale save (409) answers with the conflict page, which lacks the
     request panel, so it is shown whole, as a native submission shows it,

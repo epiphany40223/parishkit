@@ -2,6 +2,7 @@
 
 import re
 from datetime import UTC, datetime, timedelta
+from html import escape
 from uuid import uuid4
 
 import pytest
@@ -807,6 +808,15 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
         assert response.status_code == 400
         assert b"Choose an outcome for Resolved." in body
         assert b'name="expected_version" value="1"' in body
+        # The outcome is marked in error, its message beside it (#592).
+        assert (
+            b'<select id="followup-outcome" name="outcome" aria-invalid="true"'
+            b' aria-describedby="followup-outcome-error">'
+        ) in body
+        assert (
+            b'<ul class="errorlist" id="followup-outcome-error">'
+            b"<li>Choose an outcome for Resolved.</li></ul>"
+        ) in body
     assert MinistryWorkflowRevision.objects.count() == 0
     # Someone else saves; A's refused form is now stale.
     edit(harness, admin, join, notes="B's notes")
@@ -848,6 +858,60 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
         )
         assert response.status_code == 409 and b"followup-outcome" not in body
     assert MinistryWorkflowRevision.objects.count() == 2
+
+
+def test_contact_refusals_mark_their_fields(response_service, google):
+    """A contact attempt in the future marks both its date and time in error,
+    with the message beside them and the summary linking to the date; one
+    with its time missing marks only the time. Nothing is saved."""
+    harness = setup(response_service)
+    browser, _, _, _ = leader(harness, google)
+    join, _ = requests()
+    detail = f"/admin/reports/{harness.campaign.pk}/ministries/follow-up/{join.pk}/"
+    contact = {
+        "expected_version": "1",
+        "state": "in_progress",
+        "notes": "",
+        "contact_channel": "phone",
+        "contact_date": "2099-01-01",
+        "contact_time": "10:00",
+        "contact_zone": "UTC",
+        "contact_notes": "",
+    }
+    message = "The contact attempt's date and time can't be in the future."
+    for values, marked, unmarked, text in (
+        (contact, ("contact-date", "contact-time"), (), message),
+        (
+            contact | {"contact_time": ""},
+            ("contact-time",),
+            ("contact-date",),
+            "Enter the date and time of the contact attempt.",
+        ),
+    ):
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            response, body = search(
+                browser,
+                detail + "update",
+                values | {"request_key": str(uuid4())},
+            )
+        assert response.status_code == 400
+        page = body.decode()
+        for field in marked:
+            tag = re.search(rf'<input id="{field}"[^>]*>', page)[0]
+            assert (
+                'aria-invalid="true" aria-describedby="contact-zone-help contact-error"'
+                in tag
+            )
+        for field in unmarked:
+            assert (
+                "aria-invalid" not in re.search(rf'<input id="{field}"[^>]*>', page)[0]
+            )
+        assert (
+            f'<ul class="errorlist" id="contact-error"><li>{escape(text)}</li></ul>'
+            in page
+        )
+        assert f'<a href="#{marked[0]}">{escape(text)}</a>' in page
+    assert MinistryWorkflowRevision.objects.count() == 0
 
 
 def test_refusal_outside_scope_is_denied_not_a_conflict(response_service, google):

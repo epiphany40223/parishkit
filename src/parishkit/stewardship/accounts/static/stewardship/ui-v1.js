@@ -185,12 +185,85 @@
     });
   };
   document.querySelector("[data-error-summary]")?.focus();
+  // Field errors (#592). A field in error is marked aria-invalid="true" and
+  // described by its message, a .errorlist beside it: the server draws
+  // both (a refused follow-up, or any Django form, whose 5.2 markup is the
+  // same), and the browser's own checks mark a field on blur. The rule for
+  // every Admin form is that a mark clears as soon as the error does:
+  //   - a field the browser marked clears as soon as its value is valid;
+  //   - a field the server marked clears, with its message, on the first
+  //     edit (input or change), since the browser cannot re-check the
+  //     server's rule; the server checks again on save. A message shared by
+  //     several fields (a date and a time) clears them all, and the error
+  //     summary loses the item that links to them (the whole box once it is
+  //     empty).
+  // Leaving a field without editing it keeps a server mark: the error is
+  // neither fixed nor edited. data-field-error marks a field whose mark
+  // comes from the server's message rather than from the browser's
+  // validity.
+  const errorMessages = (node) => (node?.getAttribute("aria-describedby") || "").split(/\s+/)
+    .map((id) => id && document.getElementById(id))
+    .filter((message) => message && message.matches(".errorlist"));
+  const clearFieldError = (field) => {
+    // A choice group Django renders as a fieldset (use_fieldset widgets)
+    // marks each input but describes the fieldset, so its message is found
+    // there, and every input in it clears together. No Admin form uses one
+    // yet; this keeps the rule true when one does.
+    const group = errorMessages(field).length ? null : field.closest("fieldset");
+    const messages = errorMessages(group || field);
+    const fields = new Set([field]);
+    if (group && messages.length) {
+      fields.add(group);
+      group.querySelectorAll("[data-field-error]").forEach((node) => fields.add(node));
+    }
+    messages.forEach((message) => {
+      document.querySelectorAll("[aria-describedby]").forEach((other) => {
+        if (other.getAttribute("aria-describedby").split(/\s+/).includes(message.id)) {
+          fields.add(other);
+        }
+      });
+    });
+    fields.forEach((node) => {
+      node.removeAttribute("data-field-error");
+      node.setAttribute("aria-invalid", "false");
+      const ids = (node.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && !messages.some((message) => message.id === id));
+      if (ids.length) node.setAttribute("aria-describedby", ids.join(" "));
+      else node.removeAttribute("aria-describedby");
+      // The summary item that links to this field goes too, and the
+      // summary with it once it lists nothing.
+      if (!node.id) return;
+      document.querySelectorAll(`[data-error-summary] a[href="#${CSS.escape(node.id)}"]`)
+        .forEach((link) => link.closest("li")?.remove());
+    });
+    document.querySelectorAll("[data-error-summary]").forEach((summary) => {
+      if (!summary.querySelector("li")) summary.remove();
+    });
+    messages.forEach((message) => { message.hidden = true; });
+  };
+  // Fields this script marked from the browser's own check on blur. Only
+  // those are cleared when valid again, so a mark another script set is
+  // never taken off here. (The Family form's inputs are built by
+  // family-v1.js after this runs, so they are never wired here at all;
+  // that script manages their marks.)
+  const blurMarked = new WeakSet();
   const wireValidity = (root) => {
     root.querySelectorAll("input, select, textarea").forEach((field) => {
-      field.addEventListener("blur", () => {
-        if (field.willValidate) {
-          field.setAttribute("aria-invalid", String(!field.validity.valid));
+      if (field.getAttribute("aria-invalid") === "true") field.setAttribute("data-field-error", "");
+      const edited = () => {
+        if (field.hasAttribute("data-field-error")) clearFieldError(field);
+        else if (blurMarked.has(field) && field.validity.valid) {
+          field.setAttribute("aria-invalid", "false");
+          blurMarked.delete(field);
         }
+      };
+      field.addEventListener("input", edited);
+      field.addEventListener("change", edited);
+      field.addEventListener("blur", () => {
+        if (!field.willValidate) return;
+        const invalid = field.hasAttribute("data-field-error") || !field.validity.valid;
+        field.setAttribute("aria-invalid", String(invalid));
+        if (invalid && !field.hasAttribute("data-field-error")) blurMarked.add(field);
       });
     });
   };
@@ -1361,6 +1434,15 @@
         if (!node.isConnected) return;
         const shown = (ruleValue(control) === value) !== negated;
         wrapper.hidden = !shown;
+        // A hidden field is not sent, so an error marked on it no longer
+        // applies: it clears, with its message and summary item.
+        if (!shown) {
+          // Clearing one field also clears the fields sharing its message,
+          // so each is checked again as it comes up.
+          controls.forEach((item) => {
+            if (item.hasAttribute("data-field-error")) clearFieldError(item);
+          });
+        }
         controls.forEach((item) => { item.disabled = !shown; });
         required.forEach((item) => { item.required = shown; });
         gateComplete(form);
