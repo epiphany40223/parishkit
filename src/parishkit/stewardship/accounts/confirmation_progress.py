@@ -40,9 +40,13 @@ COUNT_LABELS = (
 )
 
 
-def _current(request, service, campaign_id, *, passive=True):
-    """Authorize before reading any receipt; historical campaigns cannot retry."""
-    actor = principal(request, service, passive=passive)
+def _current(caller, service, campaign_id, *, passive=True):
+    """Authorize before reading any receipt; historical campaigns cannot retry.
+
+    ``caller`` is an ``AdminCaller``, or (until PR 12 moves ``retry``) the
+    retry's request, which ``principal`` converts.
+    """
+    actor = principal(caller, service, passive=passive)
     configuration = editable_configuration(service)
     if (
         configuration.current_campaign_id != campaign_id
@@ -57,10 +61,15 @@ def _current(request, service, campaign_id, *, passive=True):
     return actor, receipt
 
 
-def progress(request, service, campaign_id):
-    """Task success alone never clears the durable scheduled-mail preparation hold."""
+def progress(caller, service, campaign_id):
+    """Task success alone never clears the durable scheduled-mail preparation hold.
+
+    ``caller`` is an ``AdminCaller``: the Production progress page and the
+    ``go-live progress`` command (ADM-11) read through this one function.
+    Each outcome row carries its stored ``key`` beside the page's label.
+    """
     with work_transaction():
-        actor, receipt = _current(request, service, campaign_id)
+        actor, receipt = _current(caller, service, campaign_id)
         demand = ActivationCatchUpDemand.objects.filter(
             activation_id=receipt.activation_id
         ).first()
@@ -80,6 +89,7 @@ def progress(request, service, campaign_id):
             actual.update({key: value["actual"] for key, value in digests.items()})
             outcomes = [
                 {
+                    "key": key,
                     "label": label,
                     "preview": receipt.preview_counts[key],
                     "actual": actual[key],

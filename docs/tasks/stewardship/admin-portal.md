@@ -305,7 +305,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [x] ADM-11.01 — PR 0: specify the Admin automation interface and record the Administrator's decisions.
 - [x] ADM-11.02 — PR 1: add the AdminCaller seam with no behavior change.
 - [ ] ADM-11.03 — PR 2: add durable browser-approved automation sessions, notices and the maintenance task (migration), the host wrapper and session file, restore revocation, refusals and audit.
-- [ ] ADM-11.04 — PR 3: add read models, read-only status commands and the route-parity test.
+- [x] ADM-11.04 — PR 3: add read models, read-only status commands and the route-parity test.
 - [ ] ADM-11.05 — PR 4: add schedule preview and confirm and configuration request status.
 - [ ] ADM-11.06 — PR 5: let fresh-gated SQL guards and checks accept full-scope automation sessions (migration) and add the confirmation prompt.
 - [ ] ADM-11.07 — PR 6: add refresh and Testing send commands.
@@ -337,7 +337,16 @@ proven by `tests/stewardship/test_admin_reads.py`,
 `tests/stewardship/test_admin_cli.py`,
 `tests/stewardship/database/test_admin_status_cli_postgresql.py` and the
 unchanged home, Background work, Family email progress and sends, schedule
-and presence suites. 3b adds `go-live readiness` and `go-live progress`.
+and presence suites. 3b adds `go-live readiness` and `go-live progress`
+(with `--watch`), reading through `go_live_inputs.collect_inputs` and
+`confirmation_progress.progress`, which now take the caller, and
+`go_live_inputs.recent_cleanup_requests`; proven by the go-live goldens and
+allowlists in `tests/stewardship/test_admin_reads.py`,
+`tests/stewardship/test_admin_cli.py` (catalog, usage and the fresh-process
+case), `tests/stewardship/database/test_admin_go_live_cli_postgresql.py`
+(a plain draft, a draft ready to go live, one whose cleanup started, and a
+scheduled and an active Production confirmation) and the unchanged
+go-live, confirmation, activation and withdrawal suites.
 
 ## ADM-12: Admin navigation overhaul
 

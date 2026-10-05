@@ -1,6 +1,6 @@
 """The read models of ``pk-stewardship admin`` and their documents (ADM-11 PR 3).
 
-Pure tests: a golden document for each of the six read models, built through
+Pure tests: a golden document for each of the eight read models, built through
 the same projection functions the commands use; an exact allowlist of every
 member name each document may carry, at any depth, with a personal-data
 pattern no member may match; the JSON conversion of instants and
@@ -33,6 +33,11 @@ SCHEDULE = "00000000-0000-4000-8000-000000000003"
 TEMPLATE = "00000000-0000-4000-8000-000000000004"
 DEFINITION = UUID("00000000-0000-4000-8000-000000000005")
 REVISION = UUID("00000000-0000-4000-8000-000000000006")
+SNAPSHOT = UUID("00000000-0000-4000-8000-000000000007")
+FULL = UUID("00000000-0000-4000-8000-000000000008")
+MAIL_TEST = UUID("00000000-0000-4000-8000-000000000009")
+CLEANUP = UUID("00000000-0000-4000-8000-00000000000a")
+CONFIRMATION = UUID("00000000-0000-4000-8000-00000000000b")
 # Member names that would carry Family-level personal data, credentials or
 # signed controls. No document may have one at any depth.
 FORBIDDEN = re.compile(
@@ -300,6 +305,117 @@ def schedule_show():
     )
 
 
+def go_live_readiness():
+    """A ready Testing draft with a Testing inventory and one cancelled cleanup.
+
+    The Admin report recipient is in the inputs, as on the page's inputs;
+    the document must not show it.
+    """
+    from parishkit.stewardship.accounts.go_live_configuration import (
+        ConfigurationReadiness,
+    )
+    from parishkit.stewardship.accounts.go_live_inputs import GoLiveInputs
+    from parishkit.stewardship.campaigns.cleanup_preview import CleanupPreview
+    from parishkit.stewardship.campaigns.production_storage import CleanupInventory
+    from parishkit.stewardship.campaigns.readiness_digests import DigestImpact
+    from parishkit.stewardship.campaigns.readiness_families import (
+        FamilyImpactEvidence,
+    )
+    from parishkit.stewardship.campaigns.readiness_impact import FamilyImpact
+    from parishkit.stewardship.source.readiness import SourceReadiness
+
+    inputs = GoLiveInputs(
+        campaign=SimpleNamespace(pk=CAMPAIGN),
+        observed_at=NOW,
+        target_state="scheduled",
+        configuration=ConfigurationReadiness(
+            problems=(),
+            family_templates=(TEMPLATE,),
+            admin_recipients=("reports@example.org",),
+        ),
+        source=SourceReadiness(
+            "ready",
+            current_id=SNAPSHOT,
+            full_id=FULL,
+            observed_at=NOW - timedelta(hours=1),
+            expires_at=NOW + timedelta(hours=23),
+        ),
+        families=FamilyImpactEvidence(
+            FamilyImpact(
+                families=12,
+                active=10,
+                email_eligible=8,
+                no_eligible_email=2,
+                deliverable=8,
+                messages=0,
+                coalesced_slots=0,
+                skipped_slots=0,
+                blocked_families=0,
+            ),
+            "e" * 64,
+        ),
+        digests=DigestImpact(0, 0, 0, 0, 0, "d" * 64),
+        cleanup=CleanupPreview(
+            CleanupInventory("c" * 64, {"outbox_message": 3, "family_submission": 2}),
+            submissions=2,
+            families=2,
+            message_states=(("delivered", 2), ("uncertain", 1)),
+        ),
+        mail_test_id=MAIL_TEST,
+        problems=("testing_delivery_unresolved",),
+        digest="a" * 64,
+    )
+    requests = [
+        SimpleNamespace(pk=CLEANUP, state="cancelled", created_at=NOW - timedelta(1))
+    ]
+    return admin_reads.GoLiveReadiness.build(inputs, requests)
+
+
+def go_live_progress(task_state="running", *, complete=False, control=None):
+    """An active campaign's initial mail preparation, part way through.
+
+    The rows carry the page's translated labels; the document keeps keys.
+    """
+    return admin_reads.GoLiveProgress.build(
+        {
+            "campaign": SimpleNamespace(pk=CAMPAIGN, state="active"),
+            "receipt": SimpleNamespace(
+                pk=CONFIRMATION, created_at=NOW - timedelta(hours=1)
+            ),
+            "demand": SimpleNamespace(
+                phase="families",
+                items_completed=40,
+                groups_completed=2,
+                failure_code="" if control is None else "group_failed",
+            ),
+            "task": SimpleNamespace(
+                pk=TASK, state=task_state, updated_at=NOW - timedelta(minutes=1)
+            ),
+            "complete": complete,
+            "control": control,
+            "outcomes": [
+                {
+                    "key": "family_messages",
+                    "label": "Family message candidates",
+                    "preview": 10,
+                    "actual": 4,
+                    "difference": -6,
+                    "complete": complete,
+                },
+                {
+                    "key": "daily_messages",
+                    "label": "Daily Admin messages created",
+                    "preview": 1,
+                    "actual": 0,
+                    "difference": -1,
+                    "complete": False,
+                },
+            ],
+            "withdrawal_available": False,
+        }
+    )
+
+
 GOLDEN = {
     "status": (
         status,
@@ -470,6 +586,103 @@ GOLDEN = {
                     ],
                     "more": False,
                 }
+            ],
+        },
+    ),
+    "go-live readiness": (
+        go_live_readiness,
+        {
+            "campaign_id": str(CAMPAIGN),
+            "observed_at": iso(NOW),
+            "target_state": "scheduled",
+            "checks_passed": False,
+            "problems": ["testing_delivery_unresolved"],
+            "family_templates": [TEMPLATE],
+            "source": {
+                "state": "ready",
+                "current_id": str(SNAPSHOT),
+                "full_id": str(FULL),
+                "observed_at": iso(NOW - timedelta(hours=1)),
+                "expires_at": iso(NOW + timedelta(hours=23)),
+            },
+            "families": {
+                "families": 12,
+                "active": 10,
+                "eligible": 8,
+                "not_eligible": 2,
+                "deliverable": 8,
+                "messages": 0,
+                "coalesced_slots": 0,
+                "skipped_slots": 0,
+                "blocked_families": 0,
+            },
+            "admin_reports": {
+                "daily_messages": 0,
+                "weekly_messages": 0,
+                "coalesced_slots": 0,
+                "empty_weekly_reports": 0,
+                "blocked_groups": 0,
+            },
+            "cleanup": {
+                "submissions": 2,
+                "families": 2,
+                "messages": 3,
+                "unresolved": 1,
+                "total": 5,
+                "inventory": [
+                    {"category": "family_submission", "count": 2},
+                    {"category": "outbox_message", "count": 3},
+                ],
+                "message_states": [
+                    {"state": "delivered", "count": 2},
+                    {"state": "uncertain", "count": 1},
+                ],
+            },
+            "mail_test_id": str(MAIL_TEST),
+            "cleanup_requests": [
+                {
+                    "id": str(CLEANUP),
+                    "state": "cancelled",
+                    "created_at": iso(NOW - timedelta(days=1)),
+                }
+            ],
+            "version": "a" * 64,
+        },
+    ),
+    "go-live progress": (
+        go_live_progress,
+        {
+            "campaign_id": str(CAMPAIGN),
+            "campaign_state": "active",
+            "confirmation_id": str(CONFIRMATION),
+            "confirmed_at": iso(NOW - timedelta(hours=1)),
+            "withdrawal_available": False,
+            "preparation": {
+                "complete": False,
+                "task_id": str(TASK),
+                "task_state": "running",
+                "updated_at": iso(NOW - timedelta(minutes=1)),
+                "phase": "families",
+                "items_completed": 40,
+                "groups_completed": 2,
+                "failure": None,
+                "retry_available": False,
+            },
+            "outcomes": [
+                {
+                    "key": "family_messages",
+                    "preview": 10,
+                    "actual": 4,
+                    "difference": -6,
+                    "complete": False,
+                },
+                {
+                    "key": "daily_messages",
+                    "preview": 1,
+                    "actual": 0,
+                    "difference": -1,
+                    "complete": False,
+                },
             ],
         },
     ),
@@ -647,6 +860,68 @@ ALLOWED = {
         "due_at",
         "more",
     },
+    "go-live readiness": {
+        "campaign_id",
+        "observed_at",
+        "target_state",
+        "checks_passed",
+        "problems",
+        "family_templates",
+        "source",
+        "state",
+        "current_id",
+        "full_id",
+        "expires_at",
+        "families",
+        "active",
+        "eligible",
+        "not_eligible",
+        "deliverable",
+        "messages",
+        "coalesced_slots",
+        "skipped_slots",
+        "blocked_families",
+        "admin_reports",
+        "daily_messages",
+        "weekly_messages",
+        "empty_weekly_reports",
+        "blocked_groups",
+        "cleanup",
+        "submissions",
+        "unresolved",
+        "total",
+        "inventory",
+        "category",
+        "count",
+        "message_states",
+        "mail_test_id",
+        "cleanup_requests",
+        "id",
+        "created_at",
+        "version",
+    },
+    "go-live progress": {
+        "campaign_id",
+        "campaign_state",
+        "confirmation_id",
+        "confirmed_at",
+        "withdrawal_available",
+        "preparation",
+        "complete",
+        "task_id",
+        "task_state",
+        "updated_at",
+        "phase",
+        "items_completed",
+        "groups_completed",
+        "failure",
+        "retry_available",
+        "outcomes",
+        "key",
+        "preview",
+        "actual",
+        "difference",
+    },
 }
 
 
@@ -681,7 +956,7 @@ def test_each_documents_members_are_exactly_its_allowlist(command):
 
 
 def test_every_command_has_a_golden_document_and_an_allowlist():
-    """The six read commands, no more and no fewer."""
+    """The eight read commands, no more and no fewer."""
     reads = {spec.name for spec in admin_cli.COMMANDS if spec.pr == 3}
     assert reads == set(GOLDEN) == set(ALLOWED)
 
@@ -734,6 +1009,37 @@ def test_task_show_stops_once_the_task_is_terminal():
     assert not task_show("running").terminal and not task_show("retry_wait").terminal
     assert task_show("succeeded").terminal and task_show("failed").terminal
     assert admin_reads.TaskList.terminal
+
+
+def test_when_a_go_live_progress_watch_stops():
+    """Preparation running or waiting to retry is followed; anything else stops.
+
+    A failed task changes nothing on its own (the page offers its retry),
+    so it stops the watch too, and says the retry is there.
+    """
+    assert not go_live_progress("running").terminal
+    assert not go_live_progress("retry_wait").terminal
+    assert not go_live_progress("queued").terminal
+    assert go_live_progress("running", complete=True).terminal
+    failed = go_live_progress("failed", control="signed-control")
+    assert failed.terminal
+    document = failed.to_document()
+    assert document["preparation"]["retry_available"] is True
+    assert document["preparation"]["failure"] == "group_failed"
+    assert "signed-control" not in json.dumps(document)
+    # Confirmed before its start: no initial mail to prepare, nothing to follow.
+    scheduled = admin_reads.GoLiveProgress(
+        CAMPAIGN, "scheduled", CONFIRMATION, NOW, True, None, []
+    )
+    assert scheduled.terminal
+    assert scheduled.to_document()["preparation"] is None
+    assert admin_reads.GoLiveReadiness.terminal
+
+
+def test_readiness_never_shows_the_admin_report_recipients():
+    """The inputs hold the recipients' addresses; the document holds none."""
+    text = json.dumps(go_live_readiness().to_document())
+    assert "reports@example.org" not in text and "@" not in text
 
 
 def test_catalog_result_fields_are_each_models_fields():

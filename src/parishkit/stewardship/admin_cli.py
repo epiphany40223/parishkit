@@ -31,9 +31,10 @@ signal, so the watch in the container runs on (#598).
 The session commands (``login start``, ``login wait``, ``logout``,
 ``whoami``, ``sessions`` and ``commands``) came first (PR 2); the read-only
 status commands (``status``, ``task list``, ``task show``, ``send
-progress``, ``send history`` and ``schedule show``) follow (PR 3), built on
-the read models of ``admin_reads``. ``task show`` and ``send progress`` take
-``--watch``. Other areas join the same subparser tree in later pull
+progress``, ``send history``, ``schedule show``, ``go-live readiness`` and
+``go-live progress``) follow (PR 3), built on the read models of
+``admin_reads``. ``task show``, ``send progress`` and ``go-live progress``
+take ``--watch``. Other areas join the same subparser tree in later pull
 requests, each listed in the catalog with the pull request that added it.
 """
 
@@ -640,6 +641,20 @@ def schedule_show(args, preamble, runtime, context):
     return read_schedule(context["caller"], runtime, args.campaign)
 
 
+def go_live_readiness(args, preamble, runtime, context):
+    """Whether the current Testing draft is ready to go live."""
+    from .admin_reads import read_go_live_readiness
+
+    return read_go_live_readiness(context["caller"], runtime, args.campaign)
+
+
+def go_live_progress(args, preamble, runtime, context):
+    """The Production activation progress of the current campaign."""
+    from .admin_reads import read_go_live_progress
+
+    return read_go_live_progress(context["caller"], runtime, args.campaign)
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -712,10 +727,16 @@ def _task_show_options(parser):
 
 
 def _schedule_options(parser):
-    """Options of ``schedule show``."""
+    """Options of ``schedule show`` and ``go-live readiness``: the campaign."""
     parser.add_argument(
         "--campaign", type=_uuid, help="the campaign (default: the current one)"
     )
+
+
+def _go_live_progress_options(parser):
+    """Options of ``go-live progress``: the campaign, and --watch."""
+    _schedule_options(parser)
+    _watch_options(parser)
 
 
 def _pairing_options(parser):
@@ -812,8 +833,10 @@ COMMANDS = (
 
 
 def _read_specs():
-    """The read-only status commands (PR 3): any session scope, no state change."""
+    """The read-only status commands (PR 3a and 3b): any scope, no state change."""
     from .admin_reads import (
+        GoLiveProgress,
+        GoLiveReadiness,
         ScheduleShow,
         SendHistory,
         SendProgressRead,
@@ -889,6 +912,30 @@ def _read_specs():
             3,
             options=(_schedule_options,),
             audit_event=None,
+        ),
+        # The go-live reads (PR 3b) matter again for the next campaign.
+        CommandSpec(
+            "go-live readiness",
+            "Show whether the Testing draft is ready to go live.",
+            go_live_readiness,
+            "read_only",
+            False,
+            GoLiveReadiness.field_names(),
+            3,
+            options=(_schedule_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "go-live progress",
+            "Show the Production activation progress.",
+            go_live_progress,
+            "read_only",
+            False,
+            GoLiveProgress.field_names(),
+            3,
+            options=(_go_live_progress_options,),
+            audit_event=None,
+            watch=True,
         ),
     )
 

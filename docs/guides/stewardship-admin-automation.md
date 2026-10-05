@@ -166,8 +166,8 @@ identifiers and UTC instants only: no Family names, email addresses, codes
 or other personal data. A read-only session can run every one of them. Each
 records the same view event in System logs as its page (`status` the home
 page's, `task list` and `task show` Background work's, `send progress` and
-`send history` Outgoing mail's); `schedule show` records none, like its
-page.
+`send history` Outgoing mail's); `schedule show`, `go-live readiness` and
+`go-live progress` record none, like their pages.
 
 ```sh
 pk-admin status
@@ -176,6 +176,8 @@ pk-admin task show TASK_ID --watch 5
 pk-admin send progress --watch 10
 pk-admin send history
 pk-admin schedule show
+pk-admin go-live readiness
+pk-admin go-live progress --watch 30
 ```
 
 Each command's `result` member holds the fields below. Instants are UTC
@@ -244,22 +246,68 @@ another. An unknown campaign, or no current campaign, is exit 1
 background work holds while mail is being sent, is exit 1
 (`stale_version`), as on the Mail schedules page.
 
+### `go-live readiness` and `go-live progress`
+
+These matter again for the next campaign. Both read the current campaign
+unless `--campaign UUID` names another. Starting cleanup, the public web
+address check, preparing links, confirming Production and withdrawing stay
+on the pages until ADM-11 PR 12.
+
+`go-live readiness` is the Go-live readiness page's preview of the current
+Testing draft, without its public web address check:
+
+| Field | What it holds |
+| --- | --- |
+| `campaign_id`, `observed_at`, `target_state` | The draft, when it was read, and what confirming would make it (`scheduled`, `active` or `closed`) |
+| `checks_passed`, `problems` | Whether the settings and data checks passed, and the codes of those that did not (for example `full_refresh_required`, `family_test_mail_required`), which the page explains in words |
+| `family_templates` | The selected Family mail templates, by record id |
+| `source` | The full ParishSoft refresh the preview relies on: `state` (`ready` or why not), `current_id`, `full_id`, `observed_at`, `expires_at` |
+| `families` | Family mail impact counts: `families`, `active`, `eligible` and `not_eligible` (with and without an eligible email address), `deliverable`, `messages` due at once, `coalesced_slots`, `skipped_slots`, `blocked_families` |
+| `admin_reports` | Admin report mail impact counts: `daily_messages`, `weekly_messages`, `coalesced_slots`, `empty_weekly_reports`, `blocked_groups` |
+| `cleanup` | The Testing data cleanup would delete: `submissions`, `families`, `messages`, `unresolved`, `total`, `inventory` (`category`, `count`) and `message_states` (`state`, `count`) |
+| `mail_test_id` | The successful Family test email that counts, or `null` |
+| `cleanup_requests` | The ten most recent cleanup requests: `id`, `state`, `created_at` |
+| `version` | Changes whenever anything the preview counts changes |
+
+The Admin report recipients and the Testing Families are not shown; the
+Testing Families list is an export (PR 12). A campaign that is not the
+current Testing draft is exit 1 (`stale_version`), as on the page.
+
+`go-live progress` is the Production activation progress page:
+
+| Field | What it holds |
+| --- | --- |
+| `campaign_id`, `campaign_state` | The campaign and its state (`scheduled`, `active` or `closed`) |
+| `confirmation_id`, `confirmed_at` | The Production confirmation |
+| `withdrawal_available` | Whether the page offers withdrawal (before the start only) |
+| `preparation` | The initial mail preparation, or `null` when the campaign was confirmed before its start and has none: `complete`, `task_id` (follow it with `task show`), `task_state`, `updated_at`, `phase`, `items_completed`, `groups_completed`, `failure` (a stored code, or `null`) and `retry_available` (the page offers **Retry failed mail preparation**) |
+| `outcomes` | Each count the confirmation previewed, by `key` (`family_messages`, `daily_messages`, `weekly_messages`, `coalesced_slots`, `active_families`, `eligible_families`, `no_email_families`): `preview`, `actual`, `difference`, and `complete` once that count is final |
+
+A campaign that is not the current Production campaign, a Testing draft
+included, is exit 1 (`denied`), as on the page; the current Production
+campaign with no confirmation receipt is exit 1 (`not_available`). Retrying
+failed preparation stays on the page until PR 12.
+
 ### Watching and errors
 
-`--watch SECONDS` (2 to 300) on `task show` and `send progress` prints one
-document per poll, `final` false until the last. It stops with exit 0 once
-the task has finished or no send is in progress or about to start. It stops
-with exit 7 and the last state after `--timeout` seconds (default and
-maximum three hours; `watch_timeout`), and with exit 5 if the session ends.
+`--watch SECONDS` (2 to 300) on `task show`, `send progress` and
+`go-live progress` prints one document per poll, `final` false until the
+last. It stops with exit 0 once the task has finished, once no send is in
+progress or about to start, or once Production preparation is complete,
+absent or its task has stopped (a failed task waits for the page's retry,
+and `retry_available` says so). It stops with exit 7 and the last state
+after `--timeout` seconds (default and maximum three hours;
+`watch_timeout`), and with exit 5 if the session ends.
 Ctrl-C stops `pk-admin` at once, but `docker exec` does not pass the signal
 on, so the watch inside the web container keeps polling until its timeout,
 until the read finishes, or until you revoke the session in Automation
 access ([#598](https://github.com/epiphany40223/parishkit/issues/598)); it
 changes nothing meanwhile. Run in the container directly, it stops with
 exit 7 (`watch_interrupted`) and the last state. `--timeout` without
-`--watch` is refused. Only the first poll is recorded in System logs. An unknown task is
-exit 1 (`not_available`). A restore under review, or a configuration change
-being applied, is exit 3 (`unavailable`), so try again shortly.
+`--watch` is refused. For commands that record a view event, only the first
+poll is recorded in System logs. An unknown task or campaign is exit 1
+(`not_available`). A restore under review, or a configuration change being
+applied, is exit 3 (`unavailable`), so try again shortly.
 
 `pk-admin commands` lists every command's result fields. The route-parity
 ledger, `src/parishkit/stewardship/admin_parity.py`, says which command
@@ -271,3 +319,5 @@ covers each Admin page, or why none does yet.
 - `pk-admin/1` (ADM-11 PR 3a): additive. The status commands above,
   `watch` and `arguments` in each catalog entry, and the error code
   `watch_interrupted`.
+- `pk-admin/1` (ADM-11 PR 3b): additive. `go-live readiness` and
+  `go-live progress`.
