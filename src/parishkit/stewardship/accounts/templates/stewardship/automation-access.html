@@ -1,0 +1,51 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Automation access" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Automation access" %}</h1>
+{% aboutpage "automation-access" %}
+<p>{% translate "An automation session lets the server's command line act as the Administrator who approved it, until it expires or is revoked. Revoke a session as soon as its task is done; it stops working at its next command." %}</p>
+<p>{% translate "Your sessions are listed with those that ended in the last 30 days. Every live session of any Administrator is listed below them, and any Administrator may revoke one; revoke at once any session nobody recognizes." %}</p>
+<p>{% translate "The host is the start of an identifier of the server a session was started on; a session used from another server is ended." %}</p>
+{% endaboutpage %}
+{% if fresh %}<p><a class="button" href="{{ approval_url }}">{% translate "Approve a session" %}</a></p>
+{% else %}<div class="panel"><p>{% translate "Approving a session first asks you to confirm your sign-in. You will come back to the approval page." %}</p>
+{% include 'stewardship/components/reauthenticate.html' with next=approval_url %}
+<p><button type="button" disabled>{% translate "Approve a session" %}</button></p></div>{% endif %}
+<section class="panel" id="automation-sessions" data-in-place-region aria-labelledby="automation-sessions-heading">
+  <h2 id="automation-sessions-heading">{% translate "Your sessions" %}</h2>
+  {% if sessions %}
+  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="automation-sessions-caption">
+  <table><caption id="automation-sessions-caption">{% translate "Your automation sessions, live and ended in the last 30 days" %}</caption>
+  <thead><tr><th scope="col">{% translate "Label" %}</th><th scope="col">{% translate "Scope" %}</th><th scope="col">{% translate "Approved" %}</th><th scope="col">{% translate "Expires" %}</th><th scope="col">{% translate "Last used" %}</th><th scope="col">{% translate "Host" %}</th><th scope="col">{% translate "Status" %}</th></tr></thead>
+  <tbody>{% for row in sessions %}<tr>
+    <th scope="row">{{ row.label }}</th>
+    <td>{{ row.scope_label }}</td>
+    <td><time datetime="{{ row.created_at|instant }}" data-local-instant>{{ row.created_at|instant }}</time></td>
+    <td><time datetime="{{ row.expires_at|instant }}" data-local-instant>{{ row.expires_at|instant }}</time></td>
+    <td>{% if row.last_used_at %}<time datetime="{{ row.last_used_at|instant }}" data-local-instant>{{ row.last_used_at|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
+    <td><code>{{ row.host }}</code></td>
+    <td>{% if row.live %}{% translate "Live" %} <form method="post" action="{% url 'admin:automation_session' row.id %}#automation-sessions" class="inline-form" data-in-place="revoke-own-{{ row.id }}" data-in-place-message="{% translate 'Session revoked.' %}">{% csrf_token %}<button type="submit">{% translate "Revoke" %}</button></form>{% elif row.reason_label %}{{ row.reason_label }}{% elif row.revoked_at %}{% translate "Ended" %}{% else %}{% translate "Expired or no longer valid" %}{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+  </table>
+  </div>
+  {% else %}<p>{% translate "You have no automation sessions." %}</p>{% endif %}
+</section>
+<section class="panel" id="automation-live" data-in-place-region aria-labelledby="automation-live-heading">
+  <h2 id="automation-live-heading">{% translate "Every live session" %}</h2>
+  {% if live %}
+  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="automation-live-caption">
+  <table><caption id="automation-live-caption">{% translate "Sessions that can act as an Administrator now" %}</caption>
+  <thead><tr><th scope="col">{% translate "Administrator" %}</th><th scope="col">{% translate "Label" %}</th><th scope="col">{% translate "Scope" %}</th><th scope="col">{% translate "Expires" %}</th><th scope="col">{% translate "Last used" %}</th><th scope="col">{% translate "Revoke" %}</th></tr></thead>
+  <tbody>{% for row in live %}<tr>
+    <th scope="row">{{ row.principal_email|default:_("unknown") }}{% if row.own %} ({% translate "you" %}){% endif %}</th>
+    <td>{{ row.label }}</td>
+    <td>{{ row.scope_label }}</td>
+    <td><time datetime="{{ row.expires_at|instant }}" data-local-instant>{{ row.expires_at|instant }}</time></td>
+    <td>{% if row.last_used_at %}<time datetime="{{ row.last_used_at|instant }}" data-local-instant>{{ row.last_used_at|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
+    <td><form method="post" action="{% url 'admin:automation_session' row.id %}#automation-live" class="inline-form" data-in-place="revoke-{{ row.id }}" data-in-place-message="{% translate 'Session revoked.' %}">{% csrf_token %}<button type="submit">{% translate "Revoke" %}</button></form></td>
+  </tr>{% endfor %}</tbody>
+  </table>
+  </div>
+  {% else %}<p>{% translate "No automation session is live." %}</p>{% endif %}
+</section>
+{% endblock %}

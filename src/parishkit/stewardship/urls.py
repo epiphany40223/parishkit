@@ -564,11 +564,23 @@ admin_patterns = [
         name="critical_events_acknowledge",
     ),
     # The browser side of the Admin automation command line (ADM-11), under
-    # Users and access in the #525 URL scheme: nouns and trailing slashes.
+    # Users and access in the #525 URL scheme: nouns, trailing slashes, and
+    # actions posted to the collection or item they change.
+    path("users/automation/", automation_views.access_view, name="automation_access"),
     path(
         "users/automation/approval/",
         automation_views.approval_view,
         name="automation_approval",
+    ),
+    path(
+        "users/automation/sessions/<uuid:session_id>/",
+        automation_views.session_view,
+        name="automation_session",
+    ),
+    path(
+        "users/automation/notices/",
+        automation_views.notices_view,
+        name="automation_notices",
     ),
     path("source/refresh", refresh_views.source_refresh, name="source_refresh"),
     path(

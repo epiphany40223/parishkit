@@ -29,6 +29,7 @@
       </form>
     </li>{% endfor %}</ul>
   </section>{% endif %}
+  {% if dashboard.automation_notices %}{% include "stewardship/automation-notices.html" with notices=dashboard.automation_notices %}{% endif %}
   {% if dashboard.ministry_catalog %}{% include "stewardship/ministry-catalog-notice.html" with notice=dashboard.ministry_catalog %}{% endif %}
   {% if dashboard.families %}<section class="panel">
     <h2>{% translate "Family participation" %}</h2>

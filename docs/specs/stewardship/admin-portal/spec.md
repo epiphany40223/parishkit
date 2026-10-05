@@ -420,6 +420,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Users and access | Sign-in rules | `/admin/users/sign-in-rules/` | Administrator | Never |
 | Users and access | Ministry assignments | `/admin/users/ministry-assignments/` | Administrator | Never |
 | Users and access | Chairpersons | `/admin/users/chairpersons/` | Administrator | Never |
+| Users and access | Automation access | `/admin/users/automation/` | Administrator | Never |
 | System | System health | `/admin/system/health/` | Administrator | Never |
 | System | Integrations | `/admin/system/integrations/` | Administrator | Never |
 | System | Background work | `/admin/system/background/` | Administrator | Never |
@@ -663,6 +664,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `assignments` | Review Ministry assignment | Ministry assignments (new page) | Administrator | Review Ministry assignment change; Assignments | `/admin/users/assignments` (POST only) | `/admin/users/ministry-assignments/review/` (POST only) |  |
 | `chair_confirmations` | Review Chairperson suggestion | Chairpersons (new page) | Administrator | Review Chairperson confirmation; Chair suggestions | `/admin/users/suggestions` (POST only) | `/admin/users/chairpersons/suggestions/` (POST only) |  |
 | `chair_reviews` | Review Chairperson decision | Chairpersons (new page) | Administrator | Review Chairperson assignment decision; Chair reviews | `/admin/users/reviews` (POST only) | `/admin/users/chairpersons/reviews/` (POST only) |  |
+| `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); revoke posts to `/admin/users/automation/sessions/<session>/`. |
+| `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
 | `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/configuration/integrations` | `/admin/system/integrations/` |  |
 | `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/configuration/integrations/<target>` | `/admin/system/integrations/<target>/` | Object-named (exception); hand-written Integrations link removed. |
@@ -2470,10 +2473,10 @@ is greyed out under [navigation rule 10](#navigation-rules) until #145.
 
 ## Portal user management
 
-The page also lists every live
-[automation session](../admin-automation/spec.md#revocation-and-listing) and
-lets any Administrator revoke one; each Administrator's own sessions are on
-the Automation access page under the account menu.
+Automation sessions are not listed here: every live
+[automation session](../admin-automation/spec.md#revocation-and-listing),
+and each Administrator's own, are on the Automation access page in the Users
+and access group, where any Administrator may revoke one.
 
 The Admin user page contains sorted domain and exact-address tables. Rows show
 normalized value, effective roles, source, last login, and warnings. Role

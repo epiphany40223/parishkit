@@ -40,7 +40,7 @@
 <section class="panel" aria-labelledby="code-heading">
   <h2 id="code-heading">{% translate "Enter the user code" %}</h2>
   {% if not fresh %}
-  <p>{% translate "For security, confirm your Google sign-in before approving a session. You will come back to this page." %}</p>
+  <p>{% translate "For security, confirm your sign-in before approving a session. You will come back to this page, where the code still works for ten minutes after it was shown." %}</p>
   {% include 'stewardship/components/reauthenticate.html' with next=next %}
   {% endif %}
   {% if refused %}<p class="notice notice-error" role="alert">{% translate "That code does not match a pending request for your address. Check the code, and that the operator entered your address; a code expires ten minutes after it was shown." %}</p>{% endif %}

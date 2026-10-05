@@ -1,9 +1,12 @@
-"""The browser side of Admin automation: the approval page (ADM-11).
+"""The browser side of Admin automation: approval, access and notices (ADM-11).
 
-The page the command line's ``login start`` links to, under Users and
-access at ``/admin/users/automation/approval/`` (see the Admin automation
-specification): an Administrator enters the user code, reviews the pending
-session and approves it.
+These pages are the human side of the command line (see the Admin automation
+specification): an Administrator approves a pending pairing, lists their own
+sessions and every live session, revokes any live one, and acknowledges
+automation notices on the dashboard. They live under Users and access, at
+``/admin/users/automation/`` (Automation access) and
+``/admin/users/automation/approval/`` (the approval page), with their POST
+actions on the session and notice collections beneath them.
 
 Approval needs the Administrator role and a Google sign-in within five
 minutes. A stale sign-in never gets a refusal: the page renders its
@@ -13,14 +16,24 @@ attempt limit (Administrator decision 12): a wrong code, and a code meant for
 another Administrator's address, get the same reply, which names nothing
 about any pairing. The approval page follows the Admin confirmation guidance
 (#523): one plain sentence, the result shown in place, and a link back.
+
+Revoke and acknowledge are ``form[data-in-place]`` posts (#559): each
+redirects back to its own page, and the page's regions are swapped in place.
 """
+
+from uuid import UUID
 
 from django.core import signing
 from django.db import DatabaseError, transaction
+from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import (
+    require_http_methods,
+    require_POST,
+    require_safe,
+)
 from redis.exceptions import RedisError
 
 from parishkit.config import ConfigError
@@ -29,12 +42,18 @@ from parishkit.stewardship.web.contracts import filters
 
 from .admin_editing import error_response, principal
 from .authentication import runtime
+from .automation_models import AutomationSession
 from .automation_sessions import (
     PairingRefused,
     PairingStore,
+    acknowledge_notices,
     approve,
+    database_now,
     display_code,
+    live_sessions,
     normalized_code,
+    revoke,
+    sessions_of,
 )
 from .limiting import LimiterUnavailable
 from .policy import Capability
@@ -53,6 +72,20 @@ REFUSALS = (
     signing.BadSignature,
 )
 
+# How each ending reads on the Automation access page.
+END_REASONS = {
+    "logout": _("Ended from the command line"),
+    "revoked_by_owner": _("Revoked by you"),
+    "revoked_by_administrator": _("Revoked by another Administrator"),
+    "role_lost": _("Ended: you are no longer an Administrator"),
+    "user_removed": _("Ended: your account was disabled or removed"),
+    "recovery": _("Ended by an offline Admin-access recovery"),
+    "restore": _("Ended when the database was restored"),
+    "revoked_by_operator": _("Ended by the server operator"),
+    "host_mismatch": _("Ended: used from a different server"),
+    "misused": _("Ended: its key was used outside the command line"),
+    "pairing_abandoned": _("Ended: approved, but never collected by the command line"),
+}
 SCOPES = {"full": _("Full"), "read_only": _("Read-only")}
 
 
@@ -89,8 +122,8 @@ def _expected(actor, pending):
 
 def _approval_page(request, context):
     """Render the approval page; it is never cached."""
-    context.setdefault("back", reverse("admin:index"))
-    context.setdefault("back_label", _("Back to Home"))
+    context.setdefault("back", reverse("admin:automation_access"))
+    context.setdefault("back_label", _("Back to Automation access"))
     context.setdefault("next", reverse("admin:automation_approval"))
     response = render(request, "stewardship/automation-approval.html", context)
     response["Cache-Control"] = "no-store"
@@ -168,5 +201,88 @@ def approval_view(request):
     except PairingRefused:
         context = {"state": "enter", "fresh": True, "refused": True}
         return _approval_page(request, context)
+    except REFUSALS as error:
+        return error_response(error)
+
+
+@require_safe
+def access_view(request):
+    """This Administrator's sessions, and every live session of any Administrator.
+
+    The own list shows sessions live and ended in the last 30 days; the
+    second list shows every live session, which any Administrator may revoke.
+    Approving a new session first asks for a fresh Google sign-in.
+    """
+    try:
+        service = runtime()
+        actor = _administrator(request, service)
+        filters(request.GET, allowed=set())
+        now = database_now()
+        own = sessions_of(actor.identity, now)
+        for row in own:
+            row["scope_label"] = SCOPES[row["scope"]]
+            row["reason_label"] = END_REASONS.get(row["end_reason"])
+        everyone = live_sessions()
+        for row in everyone:
+            row["scope_label"] = SCOPES[row["scope"]]
+            row["own"] = row["principal_id"] == actor.identity
+        response = render(
+            request,
+            "stewardship/automation-access.html",
+            {
+                "sessions": own,
+                "live": everyone,
+                "fresh": _fresh(request),
+                "approval_url": reverse("admin:automation_approval"),
+            },
+        )
+        response["Cache-Control"] = "no-store"
+        return response
+    except REFUSALS as error:
+        return error_response(error)
+
+
+@require_POST
+def session_view(request, session_id):
+    """Revoke one live session, then return to Automation access.
+
+    Revoking one's own session records ``revoked_by_owner``; any other
+    Administrator's, ``revoked_by_administrator``. It takes effect at that
+    session's next command.
+    """
+    try:
+        service = runtime()
+        actor = _administrator(request, service)
+        filters(request.GET, allowed=set())
+        _fields(request.POST, {"csrfmiddlewaretoken"})
+        session = AutomationSession.objects.filter(pk=session_id).first()
+        if session is None:
+            raise LookupError("Automation session is unavailable.")
+        own = session.principal_id == actor.identity
+        revoke(
+            session_id,
+            actor,
+            reason="revoked_by_owner" if own else "revoked_by_administrator",
+        )
+        return HttpResponseRedirect(
+            reverse("admin:automation_access") + "#automation-sessions"
+        )
+    except REFUSALS as error:
+        return error_response(error)
+
+
+@require_POST
+def notices_view(request):
+    """Acknowledge one notice, or all of them, on this Administrator's dashboard."""
+    try:
+        service = runtime()
+        actor = _administrator(request, service)
+        filters(request.GET, allowed=set())
+        _fields(request.POST, {"csrfmiddlewaretoken", "notice"})
+        value = request.POST.get("notice")
+        notices = None if value in (None, "all") else [UUID(value)]
+        with transaction.atomic():
+            acknowledge_notices(actor, notices)
+        return HttpResponseRedirect(reverse("admin:index") + "#automation-notices")
     except REFUSALS as error:
         return error_response(error)

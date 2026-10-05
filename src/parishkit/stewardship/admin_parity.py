@@ -71,8 +71,21 @@ LEDGER = {
     "session_status": permanent(SESSION_CHROME),
     "session_renew": permanent(SESSION_CHROME),
     "maintenance": permanent("the status page the access gate shows"),
+    # The human side of the automation interface (the specification's action
+    # inventory): approving, listing and revoking sessions, and acknowledging
+    # their notices, stay in the browser. ``sessions`` lists one's own
+    # sessions, and ``status`` counts the unacknowledged notices.
     "automation_approval": permanent(
         "the human side of the automation interface: approving a session"
+    ),
+    "automation_access": permanent(
+        "the human side of the automation interface: listing every session"
+    ),
+    "automation_session": permanent(
+        "the human side of the automation interface: revoking a session"
+    ),
+    "automation_notices": permanent(
+        "the human side of the automation interface: acknowledging notices"
     ),
     # Source refresh.
     "source_refresh": pending("PR 6", "refresh start", "refresh status"),
