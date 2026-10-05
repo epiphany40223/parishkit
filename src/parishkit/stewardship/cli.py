@@ -95,12 +95,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     Syntax validation is explicitly not deployment readiness. Do not configure
     Django, contact providers, or perform writes from syntax diagnostics.
     Service execution and new development-tree provisioning are explicit commands.
+
+    ``pk-stewardship admin <area> <verb> …`` (the Admin automation command
+    line) has its own subparser tree in ``admin_cli`` and its own options, so
+    it is handed over before this flat parser sees any of them.
     """
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["admin"]:
+        from .admin_cli import main as admin_main
+
+        return admin_main(arguments[1:])
     parser = StewardshipArgumentParser(
         "pk-stewardship",
         description="Stewardship application commands",
         error_hints={
-            "command": "invalid command; choose " + ", ".join(_COMMAND_OPTIONS),
+            "command": "invalid command; choose "
+            + ", ".join([*_COMMAND_OPTIONS, "admin (first word only)"]),
             "--profile": "--profile requires a valid value; choose "
             + ", ".join(DeploymentProfile),
             "--service-role": "--service-role requires a valid value; choose "

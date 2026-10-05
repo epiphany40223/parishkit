@@ -1,0 +1,914 @@
+"""``pk-stewardship admin``: the Admin automation command line (ADM-11).
+
+An operator, script or AI assistant on the deployment host runs Admin
+commands as the named Administrator who approved an automation session in the
+browser (see the Admin automation specification). Commands run inside the web
+container, through the host wrapper ``tools/stewardship-ops/pk-admin``, which
+keeps the session secret in an owner-only file on the host and sends it on
+standard input as the first line (the preamble).
+
+Every command:
+
+- requires ``--config`` and ``--session-stdin`` (the wrapper supplies both);
+- admits its process as the web profile on the web's own restricted SQL login,
+  with the web's signing keyring, and refuses when that keyring differs from
+  the one the running web loaded;
+- prints exactly one JSON document (``pk-admin/1``) to standard output, and
+  writes warnings and structured logs to standard error;
+- exits with the specification's codes (0 done, 1 refused, 2 usage or
+  admission, 3 unavailable, 4 confirmation not given, 5 no usable session or
+  pairing not finished, 6 outcome unknown, 7 watch timed out).
+
+This first version has the session commands: ``login start``, ``login wait``,
+``logout``, ``whoami``, ``sessions`` and ``commands``. Status, schedule and
+other areas join the same subparser tree in later pull requests, each listed
+in the catalog with the pull request that added it.
+"""
+
+import argparse
+import contextlib
+import json
+import logging
+import sys
+import time
+from dataclasses import dataclass, field
+from datetime import UTC
+
+from parishkit.config import ConfigError
+
+SCHEMA = "pk-admin/1"
+PREAMBLE_TAG = "pk-admin-session/1"
+# The preamble is one line of at most 128 bytes plus the host digest.
+PREAMBLE_LIMIT = 256
+POLL_SECONDS = 2
+PAIRING_WAIT_SECONDS = 600
+
+
+class UsageError(Exception):
+    """The command line or its preamble is malformed; nothing ran (exit 2)."""
+
+
+class CredentialMismatch(ConfigError):
+    """The signing keyring differs from the running web's (exit 2)."""
+
+
+class PairingNotFinished(Exception):
+    """``login wait`` stopped before a usable session existed (exit 5)."""
+
+    def __init__(self, code):
+        """Keep the error code (``pairing_pending`` or ``pairing_expired``)."""
+        super().__init__("The pairing is not finished.")
+        self.code = code
+
+
+# The message each error code shows; never exception text, values or paths.
+MESSAGES = {
+    "denied": "The command was refused; nothing changed.",
+    "invalid": "The command's input is not valid; nothing changed.",
+    "stale_version": "The record changed since it was read; read it again.",
+    "not_available": "That is not available now; nothing changed.",
+    "usage": "The command line is not valid; see --help.",
+    "configuration": "The command could not start; check the web configuration.",
+    "credential_mismatch": (
+        "The web's signing key differs from this process's; retry after the "
+        "web service is recreated."
+    ),
+    "unavailable": "A service is temporarily unavailable; nothing changed. Retry.",
+    "busy": "Offline maintenance is in progress; nothing changed. Retry.",
+    "internal": "An unexpected error stopped the read; retry once, then report it.",
+    "confirmation_required": "The confirmation was not given; nothing changed.",
+    "session_missing": "No automation session has this secret; pair again.",
+    "session_ended": "This automation session has ended; pair again.",
+    "pairing_pending": "The pairing is not approved yet; run login wait again.",
+    "pairing_expired": "The pairing expired before it was approved; start again.",
+    "outcome_unknown": "The outcome is unknown; read the status before retrying.",
+    "partial": "The command was done in part; read the status before retrying.",
+    "watch_timeout": "The watch timed out; the last state is shown.",
+}
+EXIT_CODES = {
+    **dict.fromkeys(("denied", "invalid", "stale_version", "not_available"), 1),
+    **dict.fromkeys(("usage", "configuration", "credential_mismatch"), 2),
+    **dict.fromkeys(("unavailable", "busy", "internal"), 3),
+    "confirmation_required": 4,
+    **dict.fromkeys(
+        ("session_missing", "session_ended", "pairing_pending", "pairing_expired"), 5
+    ),
+    **dict.fromkeys(("outcome_unknown", "partial"), 6),
+    "watch_timeout": 7,
+}
+
+
+@dataclass(frozen=True)
+class Preamble:
+    """The first standard-input line: the session secret and the host digest.
+
+    The secret stays out of ``repr`` so no traceback or log can show it.
+    """
+
+    secret: str = field(repr=False)
+    host_digest: str
+
+
+@dataclass(frozen=True)
+class CommandSpec:
+    """One command's catalog entry and handler.
+
+    ``scope`` is the session scope it needs: ``none`` before a session exists
+    (pairing), ``read_only`` for any session, ``full`` for a full-scope one.
+    """
+
+    name: str
+    help: str
+    handler: object
+    scope: str
+    changes_state: bool
+    result_fields: tuple
+    pr: int
+    options: tuple = ()
+    fresh_gated: bool = False
+    prompts: bool = False
+    request_key: bool = False
+    expected_version: bool = False
+    # The audit event a state-changing command records: by default its own
+    # admin_cmd_<area>_<verb> type; the session commands record the session
+    # events instead, and pairing records none until approval.
+    audit_event: str | None = "default"
+
+
+@dataclass
+class AdminRuntime:
+    """What an admitted process holds: the authority store and pairing store."""
+
+    store: object
+    pairing: object
+    public_origin: str
+
+
+def iso(value):
+    """A UTC ISO 8601 instant, or None."""
+    return None if value is None else value.astimezone(UTC).isoformat()
+
+
+def read_preamble(stream):
+    """Read exactly the first line of standard input and parse it.
+
+    Nothing after it is read here; later prompts and inputs read the same
+    stream. A malformed line is a usage error that names no part of it.
+    """
+    from .accounts.automation_sessions import (
+        SECRET_PATTERN,
+        valid_digest,
+    )
+
+    raw = stream.readline(PREAMBLE_LIMIT + 1)
+    if len(raw) > PREAMBLE_LIMIT or not raw.endswith(b"\n"):
+        raise UsageError("The session preamble is missing or too long.")
+    try:
+        parts = raw.decode("ascii").removesuffix("\n").split(" ")
+    except UnicodeDecodeError:
+        raise UsageError("The session preamble is malformed.") from None
+    if (
+        len(parts) != 3
+        or parts[0] != PREAMBLE_TAG
+        or SECRET_PATTERN.fullmatch(parts[1]) is None
+        or not valid_digest(parts[2])
+    ):
+        raise UsageError("The session preamble is malformed.")
+    return Preamble(parts[1], parts[2])
+
+
+def configure_admin_process(configuration):
+    """Assemble Django for the command line as the web does, and nothing else.
+
+    The web's ``django_signing`` keyring (active key and verify-only
+    fallbacks) signs the command session's data, so it is the web's, not a
+    random key. The database is the web's login only; no HTTP server,
+    download pool, worker or provider client is assembled. Returns the
+    receipt of the signing keyring this process loaded.
+    """
+    from importlib import import_module
+
+    import django
+    from django.conf import settings
+
+    from .accounts.key_files import parse_keyring, read_private
+    from .accounts.metrics_credentials import credential_receipt
+    from .runtime_database import database_settings, profile_settings
+
+    if settings.configured:
+        raise ConfigError("The admin command requires a fresh process.")
+    if "django_signing" not in configuration.secrets:
+        raise ConfigError("The web signing keyring is not mounted.")
+    loaded = read_private(configuration.secrets["django_signing"])
+    ring = parse_keyring(loaded, "django_signing")
+    base = import_module("parishkit.stewardship.settings.base")
+    values = {name: getattr(base, name) for name in dir(base) if name.isupper()}
+    values.update(ring.django_settings())
+    values["DATABASES"] = {"default": database_settings(configuration)}
+    values["STEWARDSHIP_OPERATIONAL_POLICY"] = configuration.operational_alerts
+    values.update(profile_settings(configuration))
+    settings.configure(**values)
+    django.setup()
+    return credential_receipt(loaded, "django_signing")
+
+
+@contextlib.contextmanager
+def admitted(configuration):
+    """Admit this process as ``engagement-backfill`` does, then yield its runtime.
+
+    The admitted web profile, the lifecycle mounts, a non-offline startup
+    lease and the web's own SQL login; every other profile and login is
+    refused. The signing keyring must match the running web's published
+    receipt, so a key rotation in progress refuses (exit 2). At most one
+    database connection is held, and it is closed at exit.
+    """
+    from .accounts.authority import AuthorityStore
+    from .accounts.automation_sessions import PairingStore
+    from .accounts.configuration_schema import validate_sections
+    from .deployment import ServiceRole
+    from .runtime_paths import RuntimeLayout
+    from .runtime_web import admit_lifecycle_mounts, valkey_client
+    from .service_boundaries import admit_online_service
+    from .startup_interlock import StartupLease
+
+    if admit_online_service(configuration) is not ServiceRole.WEB:
+        raise ConfigError("The admin command requires the admitted web profile.")
+    admit_lifecycle_mounts(configuration)
+    with StartupLease(RuntimeLayout(configuration).interlock, offline=False):
+        receipt = configure_admin_process(configuration)
+        from django.db import connections
+
+        from .consumer_runtime import loaded_service_receipts
+        from .runtime_grants import admit_runtime_database
+
+        client = None
+        try:
+            admit_runtime_database(configuration)
+            if loaded_service_receipts(configuration).get("django_signing") != receipt:
+                raise CredentialMismatch("The web signing keyring differs.")
+            client = valkey_client(configuration)
+            yield AdminRuntime(
+                store=AuthorityStore(
+                    configuration.paths["authority"], validate_sections
+                ),
+                pairing=PairingStore(client),
+                public_origin=configuration.public_origin,
+            )
+        finally:
+            connections.close_all()
+            if client is not None:
+                client.connection_pool.disconnect()
+
+
+def session_block(row):
+    """The ``session`` member of a document: the session's id and deadline."""
+    return (
+        None if row is None else {"id": str(row.pk), "expires_at": iso(row.expires_at)}
+    )
+
+
+def warn_if_expiring(row, now, stderr):
+    """Warn on standard error when the session has less than 72 hours left."""
+    from .accounts.automation_sessions import WARNING_WINDOW
+
+    if row is not None and row.expires_at - now < WARNING_WINDOW:
+        hours = max(0, int((row.expires_at - now).total_seconds() // 3600))
+        print(
+            f"WARNING: this automation session expires in {hours} hours "
+            f"({iso(row.expires_at)}); approve a new one before then.",
+            file=stderr,
+        )
+
+
+# ---------------------------------------------------------------- commands
+
+
+def login_start(args, preamble, runtime, context):
+    """Store a pending pairing and print its user code at once (``final`` false).
+
+    The secret's digest, the host digest and the operator's options go to
+    Valkey for ten minutes; the secret itself never leaves this process.
+    """
+    from datetime import timedelta
+
+    from django.urls import reverse
+
+    from .accounts.automation_sessions import (
+        PAIRING_SECONDS,
+        database_now,
+        display_code,
+        pairing_request,
+        secret_digest,
+    )
+
+    try:
+        request = pairing_request(
+            digest=secret_digest(preamble.secret),
+            host_digest=preamble.host_digest,
+            name=args.name,
+            label=args.label,
+            expect_email=args.expect_email,
+            scope=args.scope,
+            days=args.days,
+        )
+    except ValueError:
+        raise UsageError("The pairing options are not valid.") from None
+    # Everything that can fail (the database clock, the route) runs before
+    # the pairing is stored, so a failed start never leaves a pairing that
+    # an Administrator could approve with nobody waiting to collect it. The
+    # deadline shown is therefore a moment early, never late.
+    expires = database_now() + timedelta(seconds=PAIRING_SECONDS)
+    approve_url = runtime.public_origin.rstrip("/") + reverse(
+        "admin:automation_approval"
+    )
+    code = runtime.pairing.start(request)
+    context["committed"] = True
+    context["final"] = False
+    return {
+        "user_code": display_code(code),
+        "approve_url": approve_url,
+        "expires_at": iso(expires),
+    }
+
+
+def _session_document(row, *, name=None):
+    """The session as ``login wait`` prints it: never the secret or a digest."""
+    from .accounts.policy_models import PortalUser
+
+    email = (
+        PortalUser.objects.filter(pk=row.principal_id)
+        .values_list("email", flat=True)
+        .first()
+    )
+    document = {
+        "id": str(row.pk),
+        "label": row.label,
+        "principal_email": email,
+        "scope": row.scope,
+        "expires_at": iso(row.expires_at),
+    }
+    if name is not None:
+        document["name"] = name
+    return document
+
+
+def _collect(row, digest, preamble, runtime):
+    """Collect an approved session once, under its row lock.
+
+    The lock is taken before the pairing request is consumed, so two
+    concurrent ``login wait`` runs with the same secret serialize: the first
+    collects the session (``last_used_at`` set), the second then finds it
+    collected and prints the same document. Returns ``(row, outcome, name)``:
+    ``collected``, ``ended`` (revoked, expired, or refused because its
+    principal is not the expected address or the host differs) or
+    ``abandoned`` (approved, but the request expired before any wait took
+    it, so the session is revoked as ``pairing_abandoned``).
+    """
+    from django.db import transaction
+    from django.db.models import F
+
+    from .accounts.automation_models import AutomationSession
+    from .accounts.automation_sessions import database_now, end_session
+    from .accounts.policy_models import PortalUser
+    from .accounts.policy_schema import normalized_email
+
+    with transaction.atomic():
+        row = AutomationSession.objects.select_for_update().get(pk=row.pk)
+        if row.revoked_at is not None or row.expires_at <= database_now():
+            return row, "ended", None
+        if row.last_used_at is not None:
+            return row, "collected", None
+        code = runtime.pairing.code_for(digest)
+        request = None if code is None else runtime.pairing.request(code)
+        if request is None or not runtime.pairing.consume(code, digest):
+            end_session(row, reason="pairing_abandoned")
+            return row, "abandoned", None
+        email = (
+            PortalUser.objects.filter(pk=row.principal_id)
+            .values_list("email", flat=True)
+            .first()
+        )
+        if (
+            email is None
+            or normalized_email(email) != request["expect_email"]
+            or row.host_digest != preamble.host_digest
+        ):
+            end_session(row, reason="misused")
+            return row, "ended", None
+        AutomationSession.objects.filter(pk=row.pk).update(
+            last_used_at=database_now(), version=F("version") + 1
+        )
+    row.refresh_from_db()
+    return row, "collected", request["name"]
+
+
+def login_wait(args, preamble, runtime, context):
+    """Wait for the Administrator's approval, then collect the session.
+
+    Checks every two seconds, up to ``--timeout`` (at most ten minutes, and no
+    longer than the pending request lives). Once a session row with this
+    secret's digest exists, ``_collect`` consumes both Valkey keys atomically
+    and records the first use, or ends the session when it cannot be
+    collected. While the request lives and is not approved, a timeout exits 5
+    with ``pairing_pending`` so ``wait`` can run again, after logging what it
+    waited for, the limit and the elapsed time; once the request has expired
+    unapproved, the exit is ``pairing_expired``.
+    """
+    from django.db import connection
+
+    from .accounts.automation_models import AutomationSession
+    from .accounts.automation_sessions import SessionUnusable, secret_digest
+    from .observability import Event, emit
+
+    digest = secret_digest(preamble.secret)
+    limit = args.timeout
+    started = time.monotonic()
+    while True:
+        row = AutomationSession.objects.filter(secret_digest=digest).first()
+        if row is not None:
+            row, outcome, name = _collect(row, digest, preamble, runtime)
+            # Collecting or ending the session is a durable change.
+            context["committed"] = outcome != "collected" or name is not None
+            if outcome == "abandoned":
+                raise PairingNotFinished("pairing_expired")
+            if outcome == "ended":
+                raise SessionUnusable("session_ended")
+            context["session"] = row
+            return _session_document(row, name=name)
+        code = runtime.pairing.code_for(digest)
+        if code is None or runtime.pairing.request(code) is None:
+            raise PairingNotFinished("pairing_expired")
+        elapsed = time.monotonic() - started
+        if elapsed >= limit:
+            emit(
+                Event.TASK_TIMED_OUT,
+                level=logging.WARNING,
+                timeout="automation_pairing_wait",
+                limit_seconds=int(limit),
+                elapsed_seconds=int(elapsed),
+            )
+            raise PairingNotFinished("pairing_pending")
+        connection.close()
+        time.sleep(min(POLL_SECONDS, max(0.0, limit - elapsed)))
+
+
+def logout(args, preamble, runtime, context):
+    """End this automation session (``logout``); the wrapper then deletes the file.
+
+    The session was live at admission, but another ending (a revocation in
+    the portal, for example) may commit before this one. Then nothing is
+    changed, and the document says so with ``"ended": false``,
+    ``"reason": "already_ended"`` and the ending that won. Either way the
+    session is over, so the command succeeds and the file goes.
+    """
+    from django.db import transaction
+
+    from .accounts.automation_models import AutomationSession
+    from .accounts.automation_sessions import end_session
+
+    caller = context["caller"]
+    with transaction.atomic():
+        ended = end_session(
+            caller.automation_session,
+            reason="logout",
+            actor_id=caller.principal.identity,
+        )
+    context["committed"] = True
+    if ended:
+        return {"ended": True, "end_reason": "logout"}
+    reason = (
+        AutomationSession.objects.filter(pk=caller.automation_session.pk)
+        .values_list("end_reason", flat=True)
+        .first()
+    )
+    return {"ended": False, "reason": "already_ended", "end_reason": reason}
+
+
+def whoami(args, preamble, runtime, context):
+    """Print the session: its id, label, principal, current roles, scope and use."""
+    caller = context["caller"]
+    row = caller.automation_session
+    document = _session_document(row)
+    document.update(
+        roles=sorted(caller.principal.roles),
+        last_used_at=iso(row.last_used_at),
+    )
+    return document
+
+
+def sessions(args, preamble, runtime, context):
+    """List this Administrator's sessions, live and ended in the last 30 days."""
+    from .accounts.automation_sessions import database_now, sessions_of
+
+    caller = context["caller"]
+    rows = sessions_of(caller.principal.identity, database_now())
+    return {
+        "sessions": [
+            {
+                "id": str(row["id"]),
+                "label": row["label"],
+                "scope": row["scope"],
+                "approved_at": iso(row["created_at"]),
+                "expires_at": iso(row["expires_at"]),
+                "last_used_at": iso(row["last_used_at"]),
+                "live": bool(row["live"]),
+                "ended_at": iso(row["revoked_at"]),
+                "end_reason": row["end_reason"],
+                "current": row["id"] == caller.automation_session_id,
+            }
+            for row in rows
+        ]
+    }
+
+
+def commands(args, preamble, runtime, context):
+    """Print the machine-readable catalog of every command."""
+    return {"commands": catalog()}
+
+
+def _pairing_options(parser):
+    """Options of ``login start``; the wrapper passes the same ones."""
+    parser.add_argument("--name", required=True, help="the session file's name")
+    parser.add_argument("--label", required=True, help="what the session is for")
+    parser.add_argument(
+        "--expect-email", required=True, help="the approving Administrator's address"
+    )
+    parser.add_argument("--scope", required=True, choices=("read-only", "full"))
+    parser.add_argument("--days", type=int, default=30, help="1 to 30 (default 30)")
+
+
+def _wait_options(parser):
+    """Options of ``login wait``."""
+    parser.add_argument("--name", help="the session file's name (wrapper only)")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=PAIRING_WAIT_SECONDS,
+        help="seconds to wait, at most 600 (default 600)",
+    )
+
+
+COMMANDS = (
+    CommandSpec(
+        "login start",
+        "Start pairing a new automation session.",
+        login_start,
+        "none",
+        True,
+        ("user_code", "approve_url", "expires_at"),
+        2,
+        options=(_pairing_options,),
+        audit_event=None,
+    ),
+    CommandSpec(
+        "login wait",
+        "Wait for the Administrator to approve the pairing.",
+        login_wait,
+        "none",
+        True,
+        ("id", "name", "label", "principal_email", "scope", "expires_at"),
+        2,
+        options=(_wait_options,),
+        audit_event=None,
+    ),
+    CommandSpec(
+        "logout",
+        "End this automation session.",
+        logout,
+        "read_only",
+        True,
+        ("ended", "end_reason"),
+        2,
+        audit_event="automation_session_ended",
+    ),
+    CommandSpec(
+        "whoami",
+        "Show this session and its Administrator's current roles.",
+        whoami,
+        "read_only",
+        False,
+        (
+            "id",
+            "label",
+            "principal_email",
+            "roles",
+            "scope",
+            "expires_at",
+            "last_used_at",
+        ),
+        2,
+    ),
+    CommandSpec(
+        "sessions",
+        "List this Administrator's automation sessions.",
+        sessions,
+        "read_only",
+        False,
+        ("sessions",),
+        2,
+    ),
+    CommandSpec(
+        "commands",
+        "Print the machine-readable command catalog.",
+        commands,
+        "none",
+        False,
+        ("commands",),
+        2,
+    ),
+)
+BY_NAME = {spec.name: spec for spec in COMMANDS}
+
+
+class _Parser(argparse.ArgumentParser):
+    """An argparse parser that never prints raw errors, which may echo values."""
+
+    def __init__(self, *args, **kwargs):
+        """Refuse abbreviated options, so a typo never selects another option."""
+        kwargs.setdefault("allow_abbrev", False)
+        super().__init__(*args, **kwargs)
+
+    def error(self, message):
+        """Raise instead of printing argparse's message, which may hold input."""
+        raise UsageError("The command line is not valid.")
+
+
+def build_parser():
+    """The subparser tree: ``<area> <verb>`` or a one-word command."""
+    parser = _Parser(
+        prog="pk-stewardship admin",
+        description="Admin commands acting as an approved Administrator.",
+    )
+    areas = parser.add_subparsers(dest="area", parser_class=_Parser)
+    groups = {}
+    for spec in COMMANDS:
+        words = spec.name.split(" ")
+        if len(words) == 1:
+            command = areas.add_parser(words[0], help=spec.help)
+        else:
+            if words[0] not in groups:
+                group = areas.add_parser(words[0], help=f"{words[0]} commands")
+                groups[words[0]] = group.add_subparsers(
+                    dest="verb", parser_class=_Parser
+                )
+            command = groups[words[0]].add_parser(words[1], help=spec.help)
+        command.set_defaults(command_name=spec.name)
+        command.add_argument("--config", required=True, help="web configuration file")
+        command.add_argument(
+            "--session-stdin",
+            action="store_true",
+            required=True,
+            help="read the session preamble from standard input",
+        )
+        for add in spec.options:
+            add(command)
+    return parser
+
+
+def catalog():
+    """Each command with its scope, flags, options and result fields.
+
+    Generated from the subparser tree, so a command cannot be added without
+    appearing here; a test keeps it complete.
+    """
+    parser = build_parser()
+    entries = []
+    for spec in COMMANDS:
+        command = parser
+        for word in spec.name.split(" "):
+            action = next(
+                item
+                for item in command._actions
+                if isinstance(item, argparse._SubParsersAction)
+            )
+            command = action.choices[word]
+        options = [
+            {
+                "name": max(item.option_strings, key=len),
+                "required": bool(item.required),
+                "takes_value": item.nargs != 0,
+                "choices": list(item.choices) if item.choices else None,
+            }
+            for item in command._actions
+            if item.option_strings and item.dest != "help"
+        ]
+        entries.append(
+            {
+                "name": spec.name,
+                "scope": spec.scope,
+                "changes_state": spec.changes_state,
+                "fresh_gated": spec.fresh_gated,
+                "prompts": spec.prompts,
+                "request_key": spec.request_key,
+                "expected_version": spec.expected_version,
+                "audit_event": command_event_type(spec.name)
+                if spec.audit_event == "default" and spec.changes_state
+                else (None if spec.audit_event == "default" else spec.audit_event),
+                "options": options,
+                "result_fields": list(spec.result_fields),
+                "pr": spec.pr,
+            }
+        )
+    return entries
+
+
+def command_event_type(name):
+    """The audit event type a state-changing command records (see the spec)."""
+    from .accounts.automation_sessions import command_event_type as event_type
+
+    return event_type(name)
+
+
+# ------------------------------------------------------------------ running
+
+
+def classify(error, *, admitted_process, changed, committed=False):
+    """Map an exception to its error code, in the specification's order.
+
+    ``admitted_process`` says whether admission finished (a ``ConfigError``
+    before it is a configuration error, after it a domain refusal);
+    ``changed`` whether a state-changing command may have committed;
+    ``committed`` whether it did. Any unexpected error after a durable
+    commit (an outage while closing the command session after ``logout``,
+    for example) is ``outcome_unknown`` (exit 6): nothing guarantees that
+    nothing changed.
+    """
+    from django.db import DatabaseError, OperationalError
+    from redis.exceptions import RedisError
+
+    from .accounts.automation_sessions import SessionUnusable
+    from .accounts.limiting import LimiterUnavailable
+    from .observability import _guard_refusal
+    from .startup_interlock import StartupBusy
+    from .storage import StaleRecordError
+
+    if committed and not isinstance(error, (SessionUnusable, PairingNotFinished)):
+        return "outcome_unknown"
+    if isinstance(error, StartupBusy):
+        return "busy"
+    if isinstance(error, (LimiterUnavailable, RedisError, OperationalError)):
+        return "unavailable"
+    if isinstance(error, DatabaseError) and not _guard_refusal(error):
+        return "unavailable"
+    if isinstance(error, (UsageError, CredentialMismatch)):
+        return "usage" if isinstance(error, UsageError) else "credential_mismatch"
+    if isinstance(error, ConfigError) and not admitted_process:
+        return "configuration"
+    if isinstance(error, PairingNotFinished):
+        return error.code
+    if isinstance(error, SessionUnusable):
+        return error.code
+    if isinstance(error, StaleRecordError):
+        return "stale_version"
+    if isinstance(error, (PermissionError, DatabaseError)):
+        return "denied"
+    if isinstance(error, (ValueError, ConfigError)):
+        return "invalid"
+    return "outcome_unknown" if changed else "internal"
+
+
+def document(name, correlation_id, *, ok, final=True, session=None, result=None):
+    """The one JSON document a command prints."""
+    value = {
+        "schema": SCHEMA,
+        "command": name,
+        "correlation_id": str(correlation_id),
+        "ok": ok,
+        "final": final,
+        "session": session,
+    }
+    if ok:
+        value["result"] = result if result is not None else {}
+    return value
+
+
+def run(args, *, stdin, stdout, stderr):
+    """Admit the process and the session, run one command, print its document."""
+    from .deployment import load_deployment
+    from .observability import correlation
+
+    spec = BY_NAME[args.command_name]
+    with correlation() as correlation_id:
+        context = {"final": True}
+        admitted_process = False
+        caller = None
+        try:
+            preamble = read_preamble(stdin)
+            if spec.name == "commands":
+                result = commands(args, preamble, None, context)
+                print(
+                    json.dumps(
+                        document(spec.name, correlation_id, ok=True, result=result),
+                        sort_keys=True,
+                    ),
+                    file=stdout,
+                    flush=True,
+                )
+                return 0
+            configuration = load_deployment(args.config)
+            with ADMISSION(configuration) as runtime:
+                admitted_process = True
+                if spec.scope != "none":
+                    caller = admit_session(spec, preamble, runtime, stderr)
+                    context["caller"] = caller
+                    context["session"] = caller.automation_session
+                try:
+                    result = spec.handler(args, preamble, runtime, context)
+                finally:
+                    if caller is not None:
+                        from .accounts.automation_sessions import (
+                            close_command_session,
+                        )
+
+                        close_command_session(caller.portal_session)
+            output = document(
+                spec.name,
+                correlation_id,
+                ok=True,
+                final=context["final"],
+                session=session_block(context.get("session")),
+                result=result,
+            )
+            print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
+            return 0
+        except Exception as error:
+            code = classify(
+                error,
+                admitted_process=admitted_process,
+                changed=spec.changes_state and caller is not None,
+                committed=context.get("committed", False),
+            )
+            output = document(
+                spec.name,
+                correlation_id,
+                ok=False,
+                session=session_block(context.get("session")),
+            )
+            output["error"] = {"code": code, "message": MESSAGES[code]}
+            print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
+            return EXIT_CODES[code]
+
+
+def admit_session(spec, preamble, runtime, stderr):
+    """Admit the command through its automation session and check its scope."""
+    from .accounts.admin_caller import AdminCaller
+    from .accounts.automation_sessions import database_now
+
+    caller = AdminCaller.from_automation(
+        preamble.secret,
+        preamble.host_digest,
+        store=runtime.store,
+        pairing=runtime.pairing,
+    )
+    if spec.scope == "full" and caller.read_only:
+        from .accounts.automation_sessions import close_command_session
+
+        close_command_session(caller.portal_session)
+        raise PermissionError("This command needs a full-scope session.")
+    warn_if_expiring(caller.automation_session, database_now(), stderr)
+    return caller
+
+
+# Replaced in tests, which assemble Django and Valkey themselves.
+ADMISSION = admitted
+
+
+def _limit_core_dumps():
+    """Keep a crash from writing the session secret to a core file."""
+    try:
+        import resource
+
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    except (ImportError, ValueError, OSError):
+        pass
+
+
+def main(argv=None, *, stdin=None, stdout=None, stderr=None):
+    """Console entry for ``pk-stewardship admin``: parse, run, exit with its code."""
+    from .observability import configure_logging
+
+    stdin = sys.stdin.buffer if stdin is None else stdin
+    stdout = sys.stdout if stdout is None else stdout
+    stderr = sys.stderr if stderr is None else stderr
+    _limit_core_dumps()
+    parser = build_parser()
+    try:
+        args = parser.parse_args(argv)
+        if getattr(args, "command_name", None) is None:
+            raise UsageError("A command is required.")
+        if args.command_name == "login wait" and not 1 <= args.timeout <= 600:
+            raise UsageError("The timeout is 1 to 600 seconds.")
+    except UsageError:
+        output = {
+            "schema": SCHEMA,
+            "command": None,
+            "correlation_id": None,
+            "ok": False,
+            "final": True,
+            "session": None,
+            "error": {"code": "usage", "message": MESSAGES["usage"]},
+        }
+        print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
+        return 2
+    configure_logging()
+    return run(args, stdin=stdin, stdout=stdout, stderr=stderr)

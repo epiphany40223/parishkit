@@ -657,8 +657,7 @@ layout; where the deployment YAML overrides a path, use that path instead.
    stopped, end every Admin automation session the restored database holds,
    since their session files survive on the host:
    `run --rm admin-recovery revoke-automation-sessions --config RECOVERY_CONFIG --reason restore`
-   (see the Admin automation specification's
-   [session rules](../specs/stewardship/admin-automation/spec.md#session-rules)).
+   (see the [Admin automation guide](stewardship-admin-automation.md#restore-and-ending-every-session)).
    A set taken under a release without automation sessions has none, and
    its image has no such command; skip it then.
 8. **Start web alone and review.** **Disposable drill host: start `web` alone, stop

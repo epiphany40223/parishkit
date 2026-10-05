@@ -1,0 +1,288 @@
+#!/bin/sh
+# Usage: tools/stewardship-ops/pk-admin [--session NAME] [--session-dir DIR] COMMAND...
+#
+# The host wrapper of the Admin automation command line (ADM-11): it runs
+# `pk-stewardship admin COMMAND...` inside the web container as the
+# Administrator who approved the session, sending the session secret on
+# standard input. It holds no other behavior; every rule is in the package.
+# See docs/guides/stewardship-admin-automation.md.
+#
+#   pk-admin login start --name NAME --label TEXT --expect-email ADDRESS \
+#            --scope read-only|full [--days N]
+#       Create the session file NAME (a fresh 256-bit secret) and start
+#       pairing; prints the user code and the approval link at once.
+#   pk-admin login wait --name NAME [--timeout SECONDS]
+#       Wait for the Administrator's approval in the browser.
+#   pk-admin [--session NAME] logout
+#       End the session, then delete its file.
+#   pk-admin [--session NAME] AREA VERB [OPTIONS]
+#       Any other command, for example `whoami`, `sessions` or `commands`.
+#
+# Session files live in ${PARISHKIT_ROOT:-/opt/parishkit}/run/admin-automation
+# (or --session-dir), a directory owned by you with mode 0700; each file is
+# NAME.session, owned by you with mode 0600. The session is --session NAME,
+# else $PK_ADMIN_SESSION, else the only file in the directory. The secret is
+# never an argument of any program and never printed.
+#
+# Environment:
+#   PARISHKIT_ROOT          the deployment root (default /opt/parishkit)
+#   PK_ADMIN_SESSION        the session to use when --session is not given
+#   PK_ADMIN_COMPOSE_FILE   the rendered Compose file
+#                           (default ROOT/config/services/compose.json)
+#   PK_ADMIN_PROJECT        the Compose project name (default stewardship)
+#   PK_ADMIN_WEB_CONFIG     the web configuration path inside the container
+#                           (default ROOT/config/services/web.yaml)
+#   PK_ADMIN_MACHINE_ID     the machine identity file (default /etc/machine-id)
+#
+# Exit status: the command's own (0 done, 1 refused, 2 usage or admission,
+# 3 unavailable, 4 confirmation not given, 5 no usable session or pairing not
+# finished, 6 outcome unknown, 7 watch timed out); 2 for the wrapper's own
+# refusals, which happen before anything runs; 127 when docker, or
+# pk-stewardship inside the web container, is not found (126 when it cannot
+# run), as the shell and docker report; 130 when interrupted.
+#
+# Standard input is forwarded to the command after the preamble only when
+# the command line has a `-` input, or from a terminal for a command that
+# prompts; otherwise it ends after the preamble, so a run never waits on a
+# terminal nobody is typing into and a prompt without a terminal fails at
+# once. No command of this release prompts.
+
+# Never trace: the session secret passes through this shell's variables.
+set +x
+set -eu
+
+TAG="pk-admin-session/1"
+ROOT=${PARISHKIT_ROOT:-/opt/parishkit}
+
+refuse() {
+    printf 'pk-admin: %s\n' "$*" >&2
+    exit 2
+}
+
+usage() {
+    sed -n '2,/^$/s/^# \{0,1\}//p' "$0" >&2
+    exit 2
+}
+
+# Owner and permission bits of a path: GNU stat on the host, BSD stat for
+# developers' machines.
+owner_mode() {
+    stat -c '%u %a' "$1" 2>/dev/null || stat -f '%u %Lp' "$1"
+}
+
+# Refuse a directory or file that is not owned by this account or that
+# grants anything to group or others.
+require_private() {
+    set -- "$1" "$(owner_mode "$1")"
+    owner=${2% *}
+    mode=${2#* }
+    if [ "$owner" != "$(id -u)" ]; then
+        refuse "$1 must be owned by you"
+    fi
+    case $mode in
+        *[1-7]?|*[1-7]) refuse "$1 must not be readable or writable by group or others" ;;
+    esac
+}
+
+# Character lists are spelled out: a range such as a-z can match capitals
+# under some locales' collation.
+LOWER=abcdefghijklmnopqrstuvwxyz
+UPPER=ABCDEFGHIJKLMNOPQRSTUVWXYZ
+DIGITS=0123456789
+
+valid_name() {
+    case $1 in
+        '' | *[!"$LOWER$DIGITS"-]*) return 1 ;;
+    esac
+    [ "${#1}" -le 32 ]
+}
+
+session_dir=""
+session=""
+while [ "$#" -gt 0 ]; do
+    case $1 in
+        --session)
+            [ "$#" -ge 2 ] || refuse "--session needs a name"
+            session=$2
+            shift 2
+            ;;
+        --session-dir)
+            [ "$#" -ge 2 ] || refuse "--session-dir needs a directory"
+            session_dir=$2
+            shift 2
+            ;;
+        -h | --help) usage ;;
+        *) break ;;
+    esac
+done
+[ "$#" -gt 0 ] || usage
+session_dir=${session_dir:-$ROOT/run/admin-automation}
+compose=${PK_ADMIN_COMPOSE_FILE:-$ROOT/config/services/compose.json}
+project=${PK_ADMIN_PROJECT:-stewardship}
+web_config=${PK_ADMIN_WEB_CONFIG:-$ROOT/config/services/web.yaml}
+machine_id=${PK_ADMIN_MACHINE_ID:-/etc/machine-id}
+
+# The session directory must already exist (provisioning creates it) and be
+# private to this account.
+if ! { [ -d "$session_dir" ] && [ ! -L "$session_dir" ]; }; then
+    refuse "$session_dir is not a directory; see the operator guide"
+fi
+require_private "$session_dir"
+
+# The application-specific host digest: HMAC-SHA256 keyed with the machine
+# identity over fixed text, so the raw identity never leaves this host.
+[ -r "$machine_id" ] || refuse "$machine_id is not readable"
+key=$(cat "$machine_id")
+[ -n "$key" ] || refuse "$machine_id is empty"
+host_digest=$(printf '%s' "parishkit-admin-automation/1" \
+    | openssl dgst -sha256 -hmac "$key" | sed 's/^.*= *//')
+case $host_digest in
+    *[!"$DIGITS"abcdef]* | '') refuse "the host digest could not be computed" ;;
+esac
+[ "${#host_digest}" -eq 64 ] || refuse "the host digest could not be computed"
+
+# `login start` and `login wait` name their session with --name.
+name_option=""
+if [ "$1" = login ]; then
+    previous=""
+    for argument in "$@"; do
+        if [ "$previous" = --name ]; then
+            name_option=$argument
+        fi
+        previous=$argument
+    done
+    [ -n "$name_option" ] || refuse "login ${2:-} needs --name"
+    valid_name "$name_option" || refuse "a name is 1 to 32 of a-z, 0-9 and -"
+    session=$name_option
+fi
+
+if [ -z "$session" ]; then
+    session=${PK_ADMIN_SESSION:-}
+fi
+if [ -z "$session" ]; then
+    count=0
+    for file in "$session_dir"/*.session; do
+        [ -e "$file" ] || continue
+        count=$((count + 1))
+        found=${file##*/}
+    done
+    if [ "$count" -eq 0 ]; then
+        refuse "no session file in $session_dir; run pk-admin login start first"
+    fi
+    if [ "$count" -gt 1 ]; then
+        printf 'pk-admin: several sessions; choose one with --session NAME:\n' >&2
+        for file in "$session_dir"/*.session; do
+            name=${file##*/}
+            printf '  %s\n' "${name%.session}" >&2
+        done
+        exit 2
+    fi
+    session=${found%.session}
+fi
+valid_name "$session" || refuse "a name is 1 to 32 of a-z, 0-9 and -"
+file="$session_dir/$session.session"
+
+# Set while this run's new session file is not yet a started pairing, so an
+# interruption or a failed start removes it. The handler is written inline
+# in the trap rather than as a function, which shellcheck would report as
+# unreachable.
+created=no
+trap 'if [ "$created" = yes ]; then rm -f "$file"; fi; exit 130' INT TERM
+
+if [ "$1" = login ] && [ "${2:-}" = start ]; then
+    # Exclusive create with umask 077: never overwrite an existing session.
+    if [ -e "$file" ] || [ -L "$file" ]; then
+        refuse "$file already exists"
+    fi
+    secret=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')
+    [ "${#secret}" -eq 43 ] || refuse "no random secret could be made"
+    (
+        umask 077
+        set -C
+        printf '%s %s\n' "$TAG" "$secret" >"$file"
+    ) || refuse "$file could not be created"
+    created=yes
+fi
+
+# Read and check the session file: a private regular file of one line,
+# at most 128 bytes, in the tagged format.
+if ! { [ -f "$file" ] && [ ! -L "$file" ]; }; then
+    refuse "no session $session in $session_dir"
+fi
+require_private "$file"
+[ "$(wc -c <"$file")" -le 128 ] || refuse "$file is not a session file"
+IFS=' ' read -r tag secret rest <"$file" || refuse "$file is not a session file"
+if ! { [ "$tag" = "$TAG" ] && [ -z "${rest:-}" ]; }; then
+    refuse "$file is not a session file"
+fi
+case $secret in
+    *[!"$LOWER$UPPER$DIGITS"_-]* | '') refuse "$file is not a session file" ;;
+esac
+[ "${#secret}" -eq 43 ] || refuse "$file is not a session file"
+
+# Commands that prompt for a confirmation, as AREA_VERB words separated by
+# spaces (for example "send_confirm"). They read their answer from a
+# terminal after the preamble.
+# None in this release; the fresh-gated commands add themselves here.
+PROMPTING=""
+
+# Forward this standard input after the preamble only for a `-` input, or
+# from a terminal for a prompting command (see the header).
+forward=no
+for argument in "$@"; do
+    if [ "$argument" = - ]; then
+        forward=yes
+    fi
+done
+if [ -t 0 ]; then
+    for command in $PROMPTING; do
+        if [ "$command" = "$1${2:+_$2}" ]; then
+            forward=yes
+        fi
+    done
+fi
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/pk-admin.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+# Stream the command's output as it comes, keeping a copy to decide whether
+# the session file must go; the command's own exit status is kept aside.
+{
+    {
+        printf '%s %s %s\n' "$TAG" "$secret" "$host_digest"
+        if [ "$forward" = yes ]; then
+            cat
+        fi
+    } | docker compose -f "$compose" -p "$project" exec -T web \
+        pk-stewardship admin "$@" --config "$web_config" --session-stdin \
+        && status=0 || status=$?
+    printf '%s\n' "$status" >"$work/status"
+} | tee "$work/output"
+status=$(cat "$work/status")
+secret=""
+
+remove_file() {
+    rm -f "$file"
+    created=no
+    printf 'pk-admin: removed session file %s (%s)\n' "$file" "$1" >&2
+}
+
+# Whether the command's document (its one line, with sorted keys) reports
+# this top-level error code: `"error": {"code": "...", ...}` directly in the
+# document, never a match anywhere in its text.
+reports() {
+    tail -n 1 "$work/output" | grep -q "^{\"command\": [^{]*, \"error\": {\"code\": \"$1\", "
+}
+
+if [ "$status" -eq 5 ] && reports session_ended; then
+    remove_file "the session has ended"
+elif [ "$status" -eq 5 ] && [ "$1" = login ] && reports pairing_expired; then
+    remove_file "the pairing expired"
+elif [ "$1" = logout ] && [ "$status" -eq 0 ]; then
+    remove_file "logged out"
+elif [ "$1" = login ] && [ "${2:-}" = start ] && [ "$status" -ne 0 ]; then
+    remove_file "pairing did not start"
+fi
+# A started pairing keeps its file.
+created=no
+exit "$status"

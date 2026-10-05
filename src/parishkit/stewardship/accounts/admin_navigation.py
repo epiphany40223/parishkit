@@ -216,6 +216,9 @@ PAGES = {
     ),
     "chair_reviews": Page("users", _("Chair reviews"), "users", linkable=False),
     "assignments": Page("users", _("Assignments"), "users", linkable=False),
+    # The page the Admin automation command line links to (ADM-11). It
+    # stands under Home until Automation access, its parent, joins the menu.
+    "automation_approval": Page(None, _("Approve an automation session")),
     # System
     "background": Page("system", _("Background work")),
     "background_task_page": Page("system", _("Background task"), "background"),
