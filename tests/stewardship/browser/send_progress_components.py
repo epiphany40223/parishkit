@@ -76,8 +76,8 @@ def components(context, admin):
     chrome = admin | {
         "sections": [
             {
-                "key": "campaign",
-                "label": "Campaign",
+                "key": "mail",
+                "label": "Mail and Family portal",
                 "current": True,
                 "items": [
                     {"url": PAGE, "label": "Family email progress", "current": "page"}
@@ -86,7 +86,7 @@ def components(context, admin):
         ],
         "breadcrumbs": [
             {"label": "Home", "url": "/home"},
-            {"label": "Campaign", "url": PAGE},
+            {"label": "Mail and Family portal", "url": PAGE},
             {"label": "Family email progress", "url": None},
         ],
     }

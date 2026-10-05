@@ -65,7 +65,7 @@ def test_a_manual_refresh_is_confirmed_keyed_and_coalesced(auth_service, google)
         body = page.content.decode()
         assert "Refresh now" in body and 'name="request_key"' in body
         assert "A refresh is running" not in body
-        # The page is its own sidebar entry under Parish and integrations.
+        # The page is its own sidebar entry under Parish data.
         assert f'<a href="{URL}" aria-current="page">' in body
         assert '<span aria-current="page">ParishSoft refresh</span>' in body
         key = uuid4()

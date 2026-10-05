@@ -958,25 +958,28 @@ def test_admin_sidebar_and_breadcrumbs_mark_the_current_page(page, component_ori
 
 
 @pytest.mark.parametrize("width", [320, 1280])
-def test_admin_sidebar_groups_are_labelled_headings_set_apart_from_links(
+def test_admin_sidebar_groups_are_labelled_disclosures_set_apart_from_links(
     page, component_origin, axe_source, width
 ):
-    """Section headings name their link groups and look unlike the links."""
+    """Group titles are disclosure summaries that name their link groups."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/admin-navigation")
     sidebar = page.get_by_role("navigation", name="Administration")
-    menu = sidebar.locator("details")
+    menu = sidebar.locator("details[data-admin-menu]")
     if not menu.evaluate("details => details.open"):
-        sidebar.get_by_text("Menu").click()
-    headings = sidebar.get_by_role("heading", level=2)
-    assert headings.all_inner_texts() == [
-        "CAMPAIGN",
-        "PARISH AND INTEGRATIONS",
+        sidebar.get_by_text("Menu", exact=True).click()
+    # The title is the summary itself, not a heading inside it (some screen
+    # readers then drop the summary's disclosure role).
+    titles = sidebar.locator("details[data-menu-group] > summary")
+    assert titles.all_inner_texts() == [
+        "CAMPAIGN SETUP",
+        "PARISH DATA",
         "SYSTEM",
     ]
+    assert sidebar.get_by_role("heading").count() == 0
     for name, links in (
-        ("Campaign", ["Campaign settings", "Mail schedules"]),
-        ("Parish and integrations", ["Parish settings", "Ministry activity"]),
+        ("Campaign setup", ["Campaign settings", "Mail schedules"]),
+        ("Parish data", ["Parish settings", "Ministry activity"]),
         ("System", ["Background work"]),
     ):
         group = sidebar.get_by_role("list", name=name, exact=True)
@@ -989,13 +992,13 @@ def test_admin_sidebar_groups_are_labelled_headings_set_apart_from_links(
             list(names),
         )
 
-    # Headings are smaller, uppercase, bold and not pointer-styled; links are
-    # normal weight, and the current page is bolder still.
+    # Titles are smaller, uppercase and bold; links are normal weight, and
+    # the current page is bolder still.
     link = sidebar.get_by_role("link", name="Campaign settings")
-    heading = style(headings, "fontSize", "textTransform", "fontWeight", "cursor")
+    title = style(titles, "fontSize", "textTransform", "fontWeight")
     link_size, link_weight = style(link, "fontSize", "fontWeight")
-    assert heading[1:] == ["uppercase", "700", "default"]
-    assert float(heading[0][:-2]) < float(link_size[:-2])
+    assert title[1:] == ["uppercase", "700"]
+    assert float(title[0][:-2]) < float(link_size[:-2])
     assert link_weight == "400"
     current = sidebar.locator('a[aria-current="page"]')
     assert style(current, "fontWeight") == ["650"]
@@ -1005,8 +1008,8 @@ def test_admin_sidebar_groups_are_labelled_headings_set_apart_from_links(
         "nodes => nodes.map(node => getComputedStyle(node).borderTopWidth)"
     )
     assert widths == ["0px", "1px", "1px"]
-    # Links sit indented under their heading.
-    assert link.bounding_box()["x"] > headings.first.bounding_box()["x"]
+    # Links sit indented under their group's title.
+    assert link.bounding_box()["x"] > titles.first.bounding_box()["x"]
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
 
@@ -1080,7 +1083,7 @@ def test_menu_sign_out_is_a_keyboard_reachable_csrf_post(page, component_origin,
     if width < 900:
         # Narrow screens collapse the menu until the Admin opens it.
         expect(page.locator("[data-admin-menu]")).to_have_js_property("open", False)
-        menu.locator("summary").click()
+        menu.locator("details[data-admin-menu] > summary").click()
     visible(button)
     assert page.get_by_role("button", name="Sign out", exact=True).count() == 1
     assert page.get_by_text("Stewardship and census").count() == 0

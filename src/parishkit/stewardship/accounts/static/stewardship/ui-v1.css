@@ -111,21 +111,49 @@ img { max-width: 100%; height: auto; }
 .admin-menu > summary { display: inline-flex; align-items: center; min-height: 44px; padding: .5rem 1rem; border: 1px solid var(--control-border); border-radius: var(--radius-small); background: var(--paper); color: var(--accent); font-weight: 650; cursor: pointer; }
 .admin-sidebar ul { display: block; list-style: none; margin: 0; padding: 0; }
 .admin-sections { margin-top: .75rem; }
-/* Sections read as separate groups: a small, muted, uppercase heading that
-   does not look clickable, a divider above every group after the first, and
-   the group's links indented beside a rule (accent-colored for the current
-   page's group). Links stay normal weight; the current page is a solid
-   accent block in bolder type. */
+/* Menu groups read as separate, collapsible groups: each title is a
+   disclosure summary styled as a small, muted, uppercase label with an arrow
+   for its open or closed state, a divider above every group after the first,
+   and the group's links indented beside a rule (accent-colored for the
+   current page's group). Links stay normal weight; the current page is a
+   solid accent block in bolder type. */
 .admin-sections > li + li { margin-top: .75rem; }
 .admin-sections > .admin-section { margin-top: 1.25rem; }
 .admin-section + .admin-section { padding-top: 1rem; border-top: 1px solid var(--border); }
-.admin-sidebar .admin-section-title { margin: 0 0 .4rem; padding-inline: .75rem; font-size: .75rem; font-weight: 700; line-height: 1.4; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); cursor: default; }
-.admin-section.is-current > .admin-section-title { color: var(--accent-strong); }
-.admin-section > ul { margin-inline-start: .75rem; padding-inline-start: .5rem; border-inline-start: 2px solid var(--border); }
-.admin-section.is-current > ul { border-inline-start-color: var(--accent); }
+/* The groups are bare disclosures: none of the shared details/summary box
+   (border, padding, margins, 44px summary), so the menu stays as dense as a
+   heading and its links. */
+.admin-group, .admin-group[open] { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
+.admin-sidebar .admin-section-title { display: flex; align-items: center; gap: .4rem; min-height: 24px; margin: 0 0 .25rem; padding: 0 .75rem; border-radius: var(--radius-small); font-size: .75rem; font-weight: 700; line-height: 1.4; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); cursor: pointer; list-style: none; }
+.admin-sidebar .admin-section-title::-webkit-details-marker { display: none; }
+/* The arrow: a small chevron pointing right when closed and down when open. */
+.admin-sidebar .admin-section-title::before { content: ""; flex: none; width: .4rem; height: .4rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+.admin-group[open] > .admin-section-title::before { transform: rotate(45deg); }
+.admin-sidebar .admin-section-title:hover { color: var(--accent-strong); }
+.admin-section.is-current .admin-section-title { color: var(--accent-strong); }
+.admin-group > ul { margin-inline-start: .75rem; padding-inline-start: .5rem; border-inline-start: 2px solid var(--border); }
+.admin-section.is-current .admin-group > ul { border-inline-start-color: var(--accent); }
+.admin-group li { position: relative; }
+/* WebKit keeps laying out an open group nested inside the closed narrow-screen
+   Menu disclosure, so its entries would still show; hide a closed
+   disclosure's list explicitly. */
+.admin-menu:not([open]) > .admin-sections, .admin-group:not([open]) > ul { display: none; }
 .admin-sidebar a { display: block; min-height: 40px; padding: .5rem .75rem; border-radius: var(--radius-small); color: var(--ink); font-weight: 400; line-height: 1.4; text-decoration: none; }
 .admin-sidebar a:hover, .admin-sidebar a:focus-visible { background: var(--accent-soft); color: var(--accent-strong); }
 .admin-sidebar a[aria-current=page] { background: var(--accent); color: var(--paper); font-weight: 650; }
+/* An entry the role may open but that is unavailable right now: greyed out,
+   still focusable, and never styled like a link that goes somewhere. Its
+   grey (#646e73) keeps 4.5:1 on the page background, so the name stays
+   readable. Its reason is a small tip under it, hidden until
+   admin-menu-v1.js shows it on hover, focus or tap. */
+.admin-sidebar a.admin-unavailable, .admin-sidebar a.admin-unavailable:hover, .admin-sidebar a.admin-unavailable:focus-visible { background: none; color: #646e73; cursor: not-allowed; }
+.admin-sidebar a.admin-unavailable[aria-current] { background: var(--paper-soft); font-weight: 400; }
+/* admin-menu-v1.js places a shown tip (fixed, so the sidebar's scroll area
+   cannot clip it) beside its entry, or above it where there is no room. A
+   tapped tip lets the next tap through to whatever is under it. */
+.admin-tip { display: none; position: fixed; z-index: 20; left: 0; top: 0; width: max-content; max-width: min(20rem, calc(100vw - 1rem)); padding: .4rem .6rem; border: 1px solid var(--control-border); border-radius: var(--radius-small); background: var(--ink); color: var(--paper); font-size: .875rem; line-height: 1.4; box-shadow: 0 2px 6px rgb(0 0 0 / 20%); }
+.admin-tip.is-shown { display: block; }
+.admin-tip.is-tapped { pointer-events: none; }
 /* Sign out is a POST button that looks like the menu's links, set apart at the end. */
 .admin-sections > li.admin-signout { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
 .admin-signout form { margin: 0; }

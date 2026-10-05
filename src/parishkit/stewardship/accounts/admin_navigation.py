@@ -1,31 +1,45 @@
-"""Declarative Admin portal navigation: sections, sidebar items and breadcrumbs.
+"""Declarative Admin portal navigation: menu groups, menu entries and breadcrumbs.
 
-One registry describes every Admin page: which section it belongs to, its
-parent page and its label. The sidebar and the breadcrumb trail are both built
-from it, so the two cannot drift, and templates never hand-write breadcrumbs.
+One registry describes every Admin page: which menu group it belongs to, its
+parent page and its label. ``MENU`` lists the menu entries in order, each with
+the capability its page checks and the reason it is unavailable right now. The
+sidebar and the breadcrumb trail are both built from them, so the two cannot
+drift, and templates never hand-write breadcrumbs.
+
+The menu has a stable shape (admin-portal spec, "Stable menu shape"): only the
+viewer's role hides an entry. An entry the role may open but that the mode or
+the campaign's state does not allow right now stays in place, greyed out, with
+its reason.
 
 Everything here is presentation only. It grants no authority: each view still
-checks its own capability, and ``portal_chrome`` passes in the same capability
-decisions the pages use. Building navigation reverses URLs from static route
-metadata and the current request's resolved arguments; it never queries the
-database, so it adds nothing to the Admin chrome's query budget.
+checks its own capability, and ``portal_chrome`` applies the same capability
+decisions the pages use. Building navigation reads only the campaign and mode
+the chrome already loaded and reverses URLs from static route metadata and the
+current request's resolved arguments; it never queries the database, so it
+adds nothing to the Admin chrome's query budget.
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import cache
+from typing import NamedTuple
 
 from django.urls import NoReverseMatch, Resolver404, get_resolver, resolve, reverse
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.campaigns.domain import CampaignState
+from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
+
+from .policy import Capability
 
 NAMESPACE = "admin"
 
 
 @dataclass(frozen=True)
 class Section:
-    """A top-level group in the sidebar and the second breadcrumb."""
+    """A menu group: a collapsible group in the sidebar and the second breadcrumb."""
 
     key: str
     label: str
@@ -68,18 +82,23 @@ class Placement:
     step: str | None = None
 
 
+# The menu groups, in the order a campaign runs: set it up, send it, read the
+# responses, then the parish data, users and system pages that change rarely.
+# Home sits above them (admin-portal spec, "Menu groups").
 SECTIONS = (
-    Section("campaign", _("Campaign")),
-    Section("reports", _("Reports")),
-    Section("parish", _("Parish and integrations")),
-    Section("users", _("Users")),
+    Section("campaign", _("Campaign setup")),
+    Section("mail", _("Mail and Family portal")),
+    Section("reports", _("Responses and reports")),
+    Section("parish", _("Parish data")),
+    Section("users", _("Users and access")),
     Section("system", _("System")),
 )
 SECTION_LABELS = {section.key: section.label for section in SECTIONS}
 
-# Every Admin HTML page, keyed by URL name. Pages without a parent are the
-# sidebar entries of their section (or, with no section, stand alone under
-# Home). A view may override the last crumb's label with a ``breadcrumb_label``
+# Every Admin HTML page, keyed by URL name. Menu entries are listed in MENU
+# below; a page without a parent that is not a menu entry (a redirect, a
+# digest) stands alone under its group (or, with no group, under Home). A
+# view may override the last crumb's label with a ``breadcrumb_label``
 # context variable, e.g. the name of the email being edited.
 PAGES = {
     "index": Page(None, _("Home")),
@@ -127,27 +146,35 @@ PAGES = {
     "production_confirmation": Page(
         "campaign", _("Confirm Production"), "go_live_links"
     ),
-    "production_progress": Page(
-        "campaign", _("Production activation"), "campaign_settings"
-    ),
+    # A menu entry of its own, available once Production is confirmed.
+    "production_progress": Page("campaign", _("Production activation")),
     "production_withdrawal": Page(
         "campaign", _("Return to Testing"), "campaign_settings"
     ),
-    "delivery_control": Page("campaign", _("Delivery controls")),
+    # Mail and Family portal
+    "delivery_control": Page("mail", _("Delivery controls")),
     # Watching a launch or reminder send (#413): a sidebar entry of its own,
     # beside Delivery controls, so it is found without knowing where it is.
-    "family_email_progress": Page("campaign", _("Family email progress")),
+    "family_email_progress": Page("mail", _("Family email progress")),
     # The permanent record of every send (#432), listed beside the live panel.
-    "family_email_sends": Page("campaign", _("Family email sends")),
-    # Reports
+    "family_email_sends": Page("mail", _("Family email sends")),
+    "deliveries": Page("mail", _("Outgoing mail")),
+    "delivery": Page("mail", _("Message"), "deliveries"),
+    "delivery_refusals": Page("mail", _("Refused addresses"), "deliveries"),
+    "delivery_refusal": Page("mail", _("Refused address"), "delivery_refusals"),
+    "family_portal": Page("mail", _("Family portal availability")),
+    "presence": Page("mail", _("Families on the form now")),
+    # Responses and reports. Every report is a menu entry of its own. The
+    # two report roots only redirect to the current campaign's report (or
+    # show that there is none), so they stand alone, outside the menu.
     "reports": Page("reports", _("Campaign reports")),
     "report_campaigns": Page("reports", _("Choose a campaign"), "reports"),
-    "participation": Page("reports", _("Participation"), "reports"),
-    "financial_report": Page("reports", _("Financial report"), "reports"),
-    "talents_report": Page("reports", _("Talents and limitations"), "reports"),
-    "response_dashboard": Page("reports", _("Response dashboard"), "reports"),
+    "participation": Page("reports", _("Participation")),
+    "financial_report": Page("reports", _("Financial report")),
+    "talents_report": Page("reports", _("Talents and limitations")),
+    "response_dashboard": Page("reports", _("Response dashboard")),
     "response_list": Page("reports", _("Response list"), "response_dashboard"),
-    "information_queue": Page("reports", _("Additional information"), "reports"),
+    "information_queue": Page("reports", _("Additional information")),
     "information_item": Page("reports", _("Information item"), "information_queue"),
     "report_export": Page("reports", _("Report export"), "reports"),
     "report_exact": Page("reports", _("Exact export"), "reports"),
@@ -161,16 +188,16 @@ PAGES = {
     "ministry_report_campaigns": Page(
         "reports", _("Choose a campaign"), "ministry_reports"
     ),
-    "ministry_report": Page("reports", _("Ministry report"), "ministry_reports"),
+    "ministry_report": Page("reports", _("Ministry report")),
     "ministry_joiners": Page("reports", _("Joining"), "ministry_report"),
     "ministry_leavers": Page("reports", _("Leaving"), "ministry_report"),
-    "ministry_followup": Page("reports", _("Follow-up"), "ministry_report"),
+    "ministry_followup": Page("reports", _("Follow-up")),
     "ministry_followup_item": Page(
         "reports", _("Follow-up request"), "ministry_followup"
     ),
     "family_directory": Page("reports", _("Family directory")),
     "family_codes": Page("reports", _("Family campaign codes"), "family_directory"),
-    # Parish and integrations
+    # Parish data
     "parish_settings": Page("parish", _("Parish settings")),
     "branding_settings": Page("parish", _("Parish logos")),
     # Reviews one staged logo and refuses once it is chosen.
@@ -180,24 +207,6 @@ PAGES = {
     "hosted_files": Page("parish", _("Hosted files")),
     "hosted_file_delete": Page("parish", _("Delete hosted files"), "hosted_files"),
     "hosted_file_rename": Page("parish", _("Change placeholder name"), "hosted_files"),
-    "integrations": Page("parish", _("Integrations")),
-    "integration_settings": Page("parish", _("Integration"), "integrations"),
-    # A key's status and its Finish switching page sit under the integration
-    # the key belongs to; their views supply the target the routes lack. The
-    # status is readable only by the Administrator who saved the key, so
-    # Finish switching (open to every Administrator) never runs through it.
-    # Finish switching is a one-time review that needs a fresh Google
-    # sign-in, so a switch's status page names it but returns to the
-    # integration.
-    "credential_status": Page(
-        "parish", _("Key replacement status"), "integration_settings"
-    ),
-    "select_credential": Page(
-        "parish",
-        _("Finish switching to the new key"),
-        "integration_settings",
-        linkable=False,
-    ),
     "ministries": Page("parish", _("Ministry activity")),
     # A sidebar entry of its own, so a manual refresh is found without Home.
     "source_refresh": Page("parish", _("ParishSoft refresh")),
@@ -220,16 +229,268 @@ PAGES = {
     # stands under Home until Automation access, its parent, joins the menu.
     "automation_approval": Page(None, _("Approve an automation session")),
     # System
+    "integrations": Page("system", _("Integrations")),
+    "integration_settings": Page("system", _("Integration"), "integrations"),
+    # A key's status and its Finish switching page sit under the integration
+    # the key belongs to; their views supply the target the routes lack. The
+    # status is readable only by the Administrator who saved the key, so
+    # Finish switching (open to every Administrator) never runs through it.
+    # Finish switching is a one-time review that needs a fresh Google
+    # sign-in, so a switch's status page names it but returns to the
+    # integration.
+    "credential_status": Page(
+        "system", _("Key replacement status"), "integration_settings"
+    ),
+    "select_credential": Page(
+        "system",
+        _("Finish switching to the new key"),
+        "integration_settings",
+        linkable=False,
+    ),
     "background": Page("system", _("Background work")),
     "background_task_page": Page("system", _("Background task"), "background"),
-    "deliveries": Page("system", _("Outgoing mail")),
-    "delivery": Page("system", _("Message"), "deliveries"),
-    "delivery_refusals": Page("system", _("Refused addresses"), "deliveries"),
-    "delivery_refusal": Page("system", _("Refused address"), "delivery_refusals"),
     "logs": Page("system", _("System logs")),
-    "presence": Page("system", _("Families on the form now")),
-    "family_portal": Page("system", _("Family portal availability")),
 }
+
+
+class MenuState(NamedTuple):
+    """What a menu entry's reason check may read: the chrome's campaign and mode.
+
+    ``campaign`` is the current campaign row (or None), already loaded with
+    its active configuration by ``portal_chrome``, and ``mode`` is the
+    system's "testing" or "production". Reason checks read nothing else, so
+    building the menu runs no query.
+    """
+
+    campaign: object
+    mode: str
+
+
+class MenuItem(NamedTuple):
+    """One menu entry as the viewer sees it: ``url`` is None while unavailable.
+
+    ``reason`` is the plain-language reason an unavailable entry is greyed
+    out, shown in its tip and announced as its description; None when the
+    entry may be opened now.
+    """
+
+    section: str
+    name: str
+    label: str
+    url: str | None
+    reason: str | None = None
+
+
+NO_CAMPAIGN = _("No current campaign")
+
+
+def _never(state):
+    """The entry is always available (its page needs no campaign)."""
+    return None
+
+
+def _campaign(state):
+    """Unavailable while there is no current campaign."""
+    return None if state.campaign else NO_CAMPAIGN
+
+
+def _unarchived(state):
+    """Unavailable without a current campaign, or once it is archived."""
+    if not state.campaign:
+        return NO_CAMPAIGN
+    if state.campaign.state == "archived":
+        return _("The campaign is archived")
+    return None
+
+
+def _modules(state):
+    """The current campaign's modules (financial, ministry, census)."""
+    return (state.campaign.active_configuration.values or {}).get("modules", ())
+
+
+def _module(module, missing):
+    """A reason check for a page that needs the campaign to include ``module``."""
+
+    def reason(state):
+        """Unavailable without a current campaign or without the module."""
+        if not state.campaign:
+            return NO_CAMPAIGN
+        return None if module in _modules(state) else missing
+
+    return reason
+
+
+FINANCIAL = _module(
+    "financial", _("This campaign does not include Financial stewardship")
+)
+MINISTRY = _module("ministry", _("This campaign does not include Ministry stewardship"))
+
+
+def _structural(module_reason):
+    """A reason check for Share options and Member talents.
+
+    Both edit the campaign's structure, which is open only on an unlocked
+    Testing draft that has never been live; the page refuses anything else,
+    so the entry is greyed out rather than linking a page that fails.
+    """
+
+    def reason(state):
+        """Unavailable without the module, or once the structure is fixed."""
+        missing = module_reason(state)
+        if missing:
+            return missing
+        campaign = state.campaign
+        if state.mode == "testing" and structural_edit_admitted(
+            CampaignState(campaign.state),
+            ever_active=campaign.ever_active,
+            locked=campaign.structural_locked,
+        ):
+            return None
+        return _("Can be changed only in Testing mode, before the campaign goes live")
+
+    return reason
+
+
+def _draft(state):
+    """Go-live readiness: only a draft campaign can go live."""
+    if not state.campaign:
+        return NO_CAMPAIGN
+    if state.campaign.state != "draft":
+        return _("Only a draft campaign can go live; this one already has")
+    return None
+
+
+def _confirmed(state):
+    """Production activation: the page follows a confirmed Production switch.
+
+    Confirming Production moves the campaign out of draft (to scheduled or
+    active) and the system into Production mode, and Cancel go-live undoes
+    both, so the two together stand for a stored confirmation without a
+    query. The page itself refuses in Testing mode or without one.
+    """
+    if not state.campaign:
+        return NO_CAMPAIGN
+    if state.mode != "production" or state.campaign.state == "draft":
+        return _(
+            "Production has not been confirmed for this campaign; "
+            "start at Go-live readiness"
+        )
+    return None
+
+
+def _production(state):
+    """Delivery controls pause and resume real mail, so Production only."""
+    if not state.campaign:
+        return NO_CAMPAIGN
+    return None if state.mode == "production" else _("Available in Production mode")
+
+
+@dataclass(frozen=True)
+class Entry:
+    """One menu entry: the page it opens, who may see it and when it is unavailable.
+
+    ``capability`` is the capability the page itself checks, so the menu and
+    the page cannot disagree (the menu is still not the security boundary).
+    ``scoped`` marks a Ministry-scoped capability, which a Ministry leader
+    holds through an assigned Ministry. ``campaign`` marks a route that names
+    the current campaign; its ``reason`` must refuse when there is none.
+    ``reason`` returns why the entry is unavailable right now, or None.
+    """
+
+    name: str
+    capability: Capability
+    reason: Callable = _never
+    campaign: bool = False
+    scoped: bool = False
+
+
+# The menu, in order within each group (admin-portal spec, "Menu groups").
+# Labels come from PAGES, so the menu, the trail and the page share a name.
+# Entries for pages that do not exist yet are added with those pages:
+# Emailed reports, Ministry assignments and Chairpersons (ADM-12), and System
+# health, the first System entry (ADM-13).
+_ADMIN = Capability.CONFIGURE
+MENU = (
+    # Campaign setup
+    Entry("campaign_settings", _ADMIN, _campaign, campaign=True),
+    Entry("content_catalog", _ADMIN, _unarchived, campaign=True),
+    # Theme artwork (#248) stays editable while the campaign runs.
+    Entry("artwork_settings", _ADMIN, _unarchived, campaign=True),
+    Entry("schedule_settings", _ADMIN, _campaign, campaign=True),
+    Entry("share_settings", _ADMIN, _structural(FINANCIAL), campaign=True),
+    Entry("talent_settings", _ADMIN, _structural(MINISTRY), campaign=True),
+    Entry("go_live", _ADMIN, _draft, campaign=True),
+    Entry("production_progress", _ADMIN, _confirmed, campaign=True),
+    # Mail and Family portal
+    Entry("delivery_control", _ADMIN, _production, campaign=True),
+    Entry("family_email_progress", _ADMIN, _campaign),
+    Entry("family_email_sends", _ADMIN, _campaign),
+    Entry("deliveries", _ADMIN),
+    Entry("family_portal", _ADMIN),
+    Entry("presence", _ADMIN),
+    # Responses and reports
+    Entry("response_dashboard", Capability.CAMPAIGN_REPORT, _campaign, campaign=True),
+    Entry("participation", Capability.CAMPAIGN_REPORT, _campaign, campaign=True),
+    Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL, campaign=True),
+    Entry("talents_report", Capability.CAMPAIGN_REPORT, MINISTRY, campaign=True),
+    Entry(
+        "information_queue", Capability.ADDITIONAL_FOLLOWUP, _campaign, campaign=True
+    ),
+    Entry(
+        "ministry_report",
+        Capability.MINISTRY_REPORT,
+        MINISTRY,
+        campaign=True,
+        scoped=True,
+    ),
+    Entry(
+        "ministry_followup",
+        Capability.MINISTRY_FOLLOWUP,
+        MINISTRY,
+        campaign=True,
+        scoped=True,
+    ),
+    Entry("family_directory", Capability.FAMILY_CODES, _campaign, campaign=True),
+    # Moves to the Emailed reports page with NAV-14; until then it keeps its
+    # menu entry so it stays reachable.
+    Entry("weekly_digest_manual", _ADMIN, _campaign, campaign=True),
+    # Parish data
+    Entry("parish_settings", _ADMIN),
+    Entry("branding_settings", _ADMIN),
+    Entry("ministries", _ADMIN),
+    Entry("hosted_files", _ADMIN),
+    Entry("source_refresh", _ADMIN),
+    # Users and access
+    Entry("users", Capability.MANAGE_USERS),
+    # System
+    Entry("integrations", _ADMIN),
+    Entry("background", _ADMIN),
+    Entry("logs", Capability.SYSTEM_LOGS),
+)
+MENU_NAMES = frozenset(entry.name for entry in MENU)
+
+
+def menu(state, may_open):
+    """The menu entries the viewer's role may open, available or greyed out.
+
+    ``may_open(entry)`` is the caller's capability decision for the entry,
+    the same one its page makes. Only it hides an entry; the mode and the
+    campaign's state only grey one out, so a role's menu keeps one shape.
+    Returns ``MenuItem`` rows in menu order.
+    """
+    items = []
+    for entry in MENU:
+        if not may_open(entry):
+            continue
+        reason = entry.reason(state)
+        url = None
+        if reason is None:
+            arguments = [state.campaign.pk] if entry.campaign else []
+            url = reverse(f"{NAMESPACE}:{entry.name}", args=arguments)
+        page = PAGES[entry.name]
+        items.append(MenuItem(page.section, entry.name, page.label, url, reason))
+    return items
+
 
 # Admin routes that are not navigable pages: form actions, downloads, images,
 # JSON/fragment endpoints, sign-in and the setup wizard (which has its own
@@ -440,17 +701,17 @@ def route_parameters():
 
 
 def _sidebar_page(name):
-    """Whether a page is a sidebar entry: a sectioned page with no parent."""
-    return PAGES[name].section is not None and PAGES[name].parent is None
+    """Whether a page is a menu entry."""
+    return name in MENU_NAMES
 
 
 def _link(name, arguments, offered=None):
     """Reverse an Admin page with the arguments it needs, or None if unavailable.
 
-    ``offered`` is the set of URLs the viewer's sidebar offers now. A sidebar
+    ``offered`` is the set of URLs the viewer's sidebar offers now. A menu
     page is linked only when the sidebar offers that exact URL: the sidebar
-    already hides entries its page would refuse (Share options once the
-    campaign is locked, Campaign images for a campaign no longer current,
+    already greys out entries their page would refuse (Share options once
+    the campaign is locked, Campaign images for an archived campaign,
     Go-live readiness after the draft), so a trail or "Return to" link
     reuses that decision instead of repeating it (#196). None skips the check.
     """
@@ -552,11 +813,12 @@ def build(match, items, placed=None):
     """Return ``(sections, breadcrumbs)`` for the current request.
 
     ``match`` is the request's resolver match (or None), and ``items`` is the
-    ordered list of ``(section, url_name, label, url)`` entries the actor may
-    see, already filtered by the caller's capability checks. Sections with no
-    visible entry are omitted. The entry whose page chain contains the current
-    page is marked current, and so is its section. ``placed`` is the view's
-    optional ``Placement``.
+    ordered list of ``MenuItem`` entries the actor may see (``menu``), already
+    filtered by the caller's capability checks; an unavailable one has no URL
+    and carries its reason. Groups with no entry for the viewer are omitted.
+    The entry whose page chain contains the current page is marked current,
+    and so is its group, which the menu then always shows open. ``placed`` is
+    the view's optional ``Placement``.
     """
     name, chain, arguments = _resolved(match, placed)
     current_item = next(
@@ -572,18 +834,20 @@ def build(match, items, placed=None):
     for section in SECTIONS:
         entries = [
             {
-                "url": url,
-                "label": label,
+                "name": item.name,
+                "url": item.url,
+                "label": item.label,
+                "reason": item.reason,
                 # "page" for the page itself; "true" when the entry is only
                 # the nearest listed ancestor of the page being viewed.
                 "current": (
-                    ("page" if entry_name == name else "true")
-                    if entry_name == current_item
+                    ("page" if item.name == name else "true")
+                    if item.name == current_item
                     else None
                 ),
             }
-            for key, entry_name, label, url in items
-            if key == section.key
+            for item in map(_item, items)
+            if item.section == section.key
         ]
         if entries:
             sections.append(
@@ -600,9 +864,16 @@ def build(match, items, placed=None):
     )
 
 
+def _item(entry):
+    """A ``MenuItem`` from a menu row, accepting a plain tuple as well."""
+    return entry if isinstance(entry, MenuItem) else MenuItem(*entry)
+
+
 def _offered(items):
-    """The URLs of the sidebar entries, or None when none were given."""
-    return None if items is None else {entry[3] for entry in items}
+    """The URLs of the available menu entries, or None when none were given."""
+    if items is None:
+        return None
+    return {item.url for item in map(_item, items) if item.url}
 
 
 def _breadcrumbs(name, chain, arguments, sections, labels, offered=None):
@@ -615,9 +886,15 @@ def _breadcrumbs(name, chain, arguments, sections, labels, offered=None):
         return trail
     section = _section(chain)
     if section:
-        # Link the section to its first entry the actor can see, if any.
+        # Link the group to its first entry the actor may open now, if any.
         first = next(
-            (entry["items"][0]["url"] for entry in sections if entry["key"] == section),
+            (
+                item["url"]
+                for entry in sections
+                if entry["key"] == section
+                for item in entry["items"]
+                if item["url"]
+            ),
             None,
         )
         trail.append({"label": SECTION_LABELS[section], "url": first})

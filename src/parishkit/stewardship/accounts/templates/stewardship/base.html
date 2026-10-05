@@ -8,10 +8,12 @@
   {% comment %}
     The three gate blocks (document_class, gate_script, gate_panel) stay empty
     here, so Family pages work without JavaScript. admin-base.html fills them
-    to gate every Admin page on JavaScript (#565).
+    to gate every Admin page on JavaScript (#565), and fills admin_script with
+    the Admin menu's script.
   {% endcomment %}{% block gate_script %}{% endblock %}
   <script src="{% static 'stewardship/date-format-v1.js' %}" defer></script>
   <script src="{% static 'stewardship/ui-v1.js' %}" defer></script>
+  {% block admin_script %}{% endblock %}
   {% if parish_branding.favicon %}<link rel="icon" type="image/png" href="{{ parish_branding.favicon }}">{% endif %}
   {% block head %}{% endblock %}
 </head>

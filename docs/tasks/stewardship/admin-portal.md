@@ -356,9 +356,9 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 
 - [x] ADM-12.00 — NAV-0: record the implementation plan's decisions in the specification and add this package and its checklist.
 - [x] ADM-12.01 — NAV-1: gate every Admin and sign-in page on JavaScript (#565).
-- [ ] ADM-12.02 — NAV-2: rewrite the navigation registry into the seven menu groups with per-entry capability and reason checks.
-- [ ] ADM-12.03 — NAV-2: keep a stable menu shape, with unavailable entries greyed out and their reasons shown on hover, focus and tap.
-- [ ] ADM-12.04 — NAV-2: make menu groups collapsible, remembered per browser, and end the menu with Sign out.
+- [x] ADM-12.02 — NAV-2: rewrite the navigation registry into the seven menu groups with per-entry capability and reason checks.
+- [x] ADM-12.03 — NAV-2: keep a stable menu shape, with unavailable entries greyed out and their reasons shown on hover, focus and tap.
+- [x] ADM-12.04 — NAV-2: make menu groups collapsible, remembered per browser, and end the menu with Sign out.
 - [ ] ADM-12.05 — NAV-3: grey out multi-campaign controls with the #145 tip, refuse their actions on the server, and remove New campaign.
 - [ ] ADM-12.06 — NAV-4: give Campaign setup and Mail pages one name each, including Cancel go-live.
 - [ ] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages one name each.
@@ -393,6 +393,23 @@ the ungated base. It is proven by
 rendered gate) and `tests/stewardship/browser/test_admin_javascript_gate.py`
 (panel only and nothing reachable with script off, the normal page with
 script on, on Chromium and WebKit).
+ADM-12.02 to ADM-12.04 (NAV-2) move the sidebar to Home and six groups:
+`admin_navigation.py` gains the ordered `MENU` table, where each entry names
+the capability its page checks and a reason check that reads only the
+chrome's campaign and mode, and `admin_context.py` builds the menu from it,
+folding in Delivery controls. Unavailable entries stay in place as links
+without `href` (`role="link"`, `aria-disabled`, `tabindex="0"`,
+`aria-describedby`) whose reason tip `admin-menu-v1.js` shows on hover, focus
+and tap; groups are `<details>` disclosures, collapsed ones are remembered
+per browser and the current page's group always opens; Sign out stays last.
+It is proven by `tests/stewardship/test_admin_navigation.py` (one menu shape
+per role in both modes and every campaign state, the spec's entry order, the
+reasons, the rendered ARIA and groups), the chrome query count on a report
+page in `tests/stewardship/database/test_admin_navigation_postgresql.py` (no
+role above NAV-1) and `tests/stewardship/browser/test_admin_menu.py` (tip on
+hover, focus and tap, Escape and tap-away dismissal, remembered collapse,
+the current group forced open and the summary's expanded state, on Chromium
+and WebKit). The menu's open counts are #585.
 
 ## ADM-13: System health page
 

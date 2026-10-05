@@ -79,6 +79,7 @@ from .in_place_components import SLOW as IN_PLACE_SLOW
 from .in_place_components import components as in_place_components
 from .information_components import components as information_components
 from .log_components import components as log_components
+from .menu_components import components as menu_components
 from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
 from .report_components import components as report_components
@@ -305,7 +306,7 @@ def component_origin():
         "sections": [
             {
                 "key": "parish",
-                "label": "Parish and integrations",
+                "label": "Parish data",
                 "current": True,
                 "items": [
                     {
@@ -323,7 +324,7 @@ def component_origin():
         ],
         "breadcrumbs": [
             {"label": "Home", "url": "/home"},
-            {"label": "Parish and integrations", "url": "/parish-settings"},
+            {"label": "Parish data", "url": "/parish-settings"},
             {"label": "Ministry activity", "url": None},
         ],
         "testing": True,
@@ -526,7 +527,7 @@ def component_origin():
                 | {
                     "breadcrumbs": [
                         {"label": "Home", "url": "/home"},
-                        {"label": "Parish and integrations", "url": "/parish-settings"},
+                        {"label": "System", "url": "/integrations"},
                         {"label": "Integrations", "url": "/integrations"},
                         {"label": "ParishSoft", "url": "/integration-settings"},
                         {"label": "Key replacement status", "url": None},
@@ -1104,7 +1105,7 @@ def component_origin():
                     "sections": [
                         {
                             "key": "campaign",
-                            "label": "Campaign",
+                            "label": "Campaign setup",
                             "current": False,
                             "items": [
                                 {
@@ -1505,7 +1506,7 @@ def component_origin():
                 | {
                     "breadcrumbs": [
                         {"label": "Home", "url": "/home"},
-                        {"label": "Parish and integrations", "url": "/parish-settings"},
+                        {"label": "Parish data", "url": "/parish-settings"},
                         {"label": "Parish settings", "url": "/parish-settings"},
                         {"label": "Configuration change", "url": None},
                     ],
@@ -1534,8 +1535,7 @@ def component_origin():
                 | {
                     "breadcrumbs": [
                         {"label": "Home", "url": "/home"},
-                        {"label": "Campaign", "url": "/campaign-settings"},
-                        {"label": "Campaign settings", "url": "/campaign-settings"},
+                        {"label": "Campaign setup", "url": "/campaign-settings"},
                         {"label": "Production activation", "url": None},
                     ],
                     "flow_steps": [
@@ -1635,6 +1635,7 @@ def component_origin():
     responses.update(hosted_file_components(context, admin))
     responses.update(talent_components(context, admin))
     responses.update(in_place_components(context, admin))
+    responses.update(menu_components(context, admin))
     # The in-place form page's POST answers (#519, #562): refusals answer
     # with the page the view would render (400 with the summary in the
     # region, 200 with it outside, or a 400 denial page without the region),
@@ -1650,6 +1651,7 @@ def component_origin():
         ("ui-v1.css", "text/css"),
         ("ui-v1.js", "application/javascript"),
         ("admin-gate-v1.js", "application/javascript"),
+        ("admin-menu-v1.js", "application/javascript"),
         ("date-format-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),
         ("family-support-v1.js", "application/javascript"),

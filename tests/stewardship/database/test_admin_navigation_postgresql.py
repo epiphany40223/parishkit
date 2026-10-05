@@ -16,7 +16,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.observability import Event
 
-from ..policy_factory import address
+from ..policy_factory import address, assignment
 from . import test_parish_views_postgresql as parish
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change
@@ -359,3 +359,79 @@ def test_critical_event_warning_is_persistent_and_admin_only(auth_service, googl
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
     assert b"Critical problems" not in browser.get("/admin/").content
+
+
+# The Admin chrome's queries on one report page: (NAV-1, now). NAV-1 is this
+# same test run on 8ad079ba, before the menu of Home and six groups
+# (ADM-12.02 to .04). Building the menu reads only what the chrome already
+# loads, so no role may pay more (admin-portal spec, "Stable menu shape").
+# The Administrator's count with a campaign fell by one: the campaign and its
+# configuration are now read together (admin_context._current_campaign).
+CHROME_QUERIES = {
+    ("administrator", False): (4, 4),
+    ("administrator", True): (7, 6),
+    ("staff", False): (2, 2),
+    ("staff", True): (4, 4),
+    ("ministry_leader", False): (2, 2),
+    ("ministry_leader", True): (4, 4),
+}
+
+
+@pytest.mark.parametrize("draft", [False, True])
+@pytest.mark.parametrize("role", ["administrator", "staff", "ministry_leader"])
+def test_building_the_menu_adds_no_query(
+    auth_service, google, monkeypatch, role, draft
+):
+    """The chrome's query count on a fresh report page is the same as NAV-1's.
+
+    The real context processor is wrapped where the template engine keeps
+    it, so the count is of the one call the page's own render makes, with
+    nothing loaded beforehand by the test.
+    """
+    from django.template import engines
+    from django.test.utils import CaptureQueriesContext
+
+    from parishkit.stewardship.accounts import admin_context, family_maintenance
+
+    # The Family portal switch is cached per process for a few seconds;
+    # start cold, so the count does not depend on the tests run before.
+    monkeypatch.setitem(family_maintenance._cache, "at", None)
+    store = auth_service.store
+    if draft:
+        add_draft(store, store.active(), uuid4())
+    if role != "administrator":
+        records = [address("reader@example.org", roles=(role,))]
+        if role == "ministry_leader":
+            records.append(assignment("reader@example.org", ministry=9))
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "login_rules", **r} for r in records],
+        )
+        google[0]["email"] = "reader@example.org"
+    engine = engines["django"].engine
+    counts = []
+
+    def counted(request):
+        """The real chrome, with the queries its one call runs counted."""
+        with CaptureQueriesContext(connection) as chrome:
+            result = admin_context.portal_chrome(request)
+        if result:
+            counts.append(len(chrome.captured_queries))
+        return result
+
+    processors = tuple(
+        counted if processor is admin_context.portal_chrome else processor
+        for processor in engine.template_context_processors
+    )
+    assert counted in processors
+    monkeypatch.setitem(engine.__dict__, "template_context_processors", processors)
+    browser, _ = signed_in()
+    # A report page every role may open. The draft has no Ministry module,
+    # so it renders its "no reports" page rather than redirecting.
+    response = browser.get("/admin/ministry-reports/")
+    assert response.status_code == 200
+    assert b'aria-label="Administration"' in response.content
+    before, now = CHROME_QUERIES[(role, draft)]
+    assert counts == [now] and now <= before, counts
