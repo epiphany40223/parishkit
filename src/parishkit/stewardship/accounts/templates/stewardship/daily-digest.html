@@ -23,13 +23,13 @@
 </section>
 <section class="panel" data-digest-chart>
 <h2>{% translate "Daily participation — Historical as of day" %}</h2>
-<img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840">
+<div class="digest-figure"><img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840"><div class="digest-tip" data-digest-tip aria-hidden="true" hidden></div></div>
 {{ chart_interaction|json_script:'digest-chart-data' }}
 <div data-digest-controls hidden>
 <p>{% translate "Point to a date in the chart, tap it, or use the date slider to inspect exact values." %}</p>
 <label for="digest-day">{% translate "Inspect campaign date" %}</label>
 <input id="digest-day" type="range" min="0" max="{{ chart_last_index }}" value="{{ chart_last_index }}" step="1">
-<p data-digest-values role="status" aria-live="polite"></p>
+<p class="visually-hidden" data-digest-values role="status" aria-live="polite"></p>
 </div>
 <p><a href="{{ download_url }}">{% translate "Download the original chart (PNG)" %}</a></p>
 <div id="{{ table.anchor }}" data-table-region>

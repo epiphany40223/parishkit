@@ -1,3 +1,21 @@
 .digest-chart { display: block; width: 100%; height: auto; }
 [data-digest-controls] input[type="range"] { width: 100%; min-height: 44px; }
-[data-digest-values] { min-height: 3em; overflow-wrap: anywhere; }
+/* Chart tooltip (#575): a date heading and short "label: value" lines, the
+   labels right-aligned up to the colon and the values left-aligned. The
+   script places it beside the inspected date and keeps it inside the chart. */
+.digest-figure { position: relative; }
+.digest-tip { position: absolute; z-index: 1; pointer-events: none; padding: 0.5rem 0.75rem; background: var(--paper, #fff); color: var(--ink, #1b2a31); border: 1px solid var(--control-border, #7a8a90); border-radius: 6px; box-shadow: 0 2px 8px rgb(0 0 0 / 18%); font-size: 1rem; line-height: 1.4; white-space: nowrap; }
+.digest-tip-date { margin: 0 0 0.25rem; font-size: 0.875rem; font-weight: 600; color: var(--muted, #4f5e66); }
+/* Override the page-wide dl/dt/dd grid in ui-v1.css, whose gap and minimum
+   label width would spread the lines apart. */
+.digest-tip-rows { display: grid; grid-template-columns: max-content max-content; gap: 0 0.4em; margin: 0; }
+.digest-tip-rows dt { grid-column: 1; margin: 0; text-align: right; font-weight: normal; color: var(--ink, #1b2a31); }
+.digest-tip-rows dd { grid-column: 2; margin: 0; text-align: left; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* On a phone the chart is too small to cover: show the tooltip just under it.
+   Its space stays reserved while hidden, so the slider below never jumps
+   under a finger that is dragging it. */
+.digest-tip:not(.digest-tip-open) { display: none; }
+@media (max-width: 40rem) {
+  .digest-tip, .digest-tip:not(.digest-tip-open) { position: static; display: inline-block; margin-top: 0.5rem; box-shadow: none; }
+  .digest-tip:not(.digest-tip-open) { visibility: hidden; }
+}

@@ -83,7 +83,10 @@ an absent amount stays blank, never zero; an amount beyond Excel's 15
 significant digits stays exact text rather than rounding. CSV and PDF money is
 the page's text, such as `$1,234.50`. PDF
 uses parish branding, report-request/data-as-of time, page numbers, repeated
-table headings, and legible landscape layout where needed.
+table headings, and legible landscape layout where needed. The participation
+chart's PDF is the exception for the request and as-of time: it carries them
+in the file's metadata, not on the page (see
+[Participation graph](#participation-graph)).
 In every output format, including CSV, the report-request timestamp is
 immutable across render retries; output labels must not describe it as the
 wall-clock time of a later rendering attempt.
@@ -201,6 +204,21 @@ The graph shows:
 - line on a dollar axis, when financial is enabled: effective annual pledge
   total at each day end.
 
+Both axes are linear. The Families axis is scaled to the plotted counts: its
+top is the largest daily or cumulative count with about 10% headroom, and its
+ticks step by round 1, 2 or 5 multiples. It does not stretch to the eligible
+Family total, which would flatten the bars and line; the eligible total is not
+drawn (the table's participation column still states it per day).
+
+The chart image draws no source snapshot, request time or other provenance
+text. By Administrator decision
+([#575](https://github.com/epiphany40223/parishkit/issues/575)) the file
+carries that provenance as metadata instead: the PNG's `Description` text
+chunk and the PDF's Info `Subject`, both holding the same "Source … as of …;
+submission cutoff …; Requested …" text. CSV and XLSX exports keep it as rows,
+and the daily digest email keeps it in its text. The same drawing is used on
+the Participation page, in PNG and PDF exports, and in the daily digest email.
+
 For **Historical as of day**, the source cutoff is the last promoted source
 generation at or before the resolved end instant of that local day, selected
 from permanent manifest generation/promotion metadata even if that snapshot's
@@ -269,14 +287,19 @@ submissions, including on retry. Pinning protects the required input records
 before the build starts. Priority affects claim order, not preemption of a
 running build, and an exact request never consumes newer interactive demand.
 
-If the exact current input generation is not ready, the interactive report
-shows the last complete generation only when it is conspicuously labeled with
-its data-as-of values, together with a non-blocking **Updating** state; it never
-labels stale facts current. The user can refresh after the queued generation
-publishes. A pinned export or digest waits/retries for its exact generation and
-fails visibly rather than substituting a different cutoff. Recalculation from
-the pinned source/submission inputs must reproduce every stored fact, and a
-verification job detects drift.
+If the exact current input generation is not ready, the interactive report shows
+the last complete generation only together with a conspicuous, non-blocking
+**Updating** notice saying that the chart may not yet include the newest data;
+it never labels stale facts current. By Administrator decision
+([#575](https://github.com/epiphany40223/parishkit/issues/575)), the
+Participation page's chart block shows no "data as of", campaign time zone or
+technical-details header, and no instruction line above the date slider; the
+chart's as-of values are in the chart file's metadata and in its exports, and
+the x-axis label names the campaign time zone. The user can refresh after the
+queued generation publishes. A pinned export or digest waits/retries for its
+exact generation and fails visibly rather than substituting a different cutoff.
+Recalculation from the pinned source/submission inputs must reproduce every
+stored fact, and a verification job detects drift.
 
 Superseded, unpinned calculated generations are automatically compacted under
 [derived fact retention](../data/spec.md#derived-fact-retention). Current,
@@ -286,9 +309,16 @@ atomic reference/read guards; no consumer assumes an unpinned old generation
 will remain available indefinitely.
 
 The UI defaults to Historical as of day and offers a clearly labeled scope
-toggle. Changing scope updates every series together. Hover shows scope, local
-date, daily count, cumulative count out of the scoped population with
-percentage, and pledge. Report URLs, pinned digest inputs, equivalent data
+toggle. Changing scope updates every series together. Pointing at or tapping a
+date, or choosing it with the date slider, shows a short tooltip: the local date
+as a small heading, then "Families" (cumulative count), "New today" (daily
+count) and, when financial is enabled, "Pledges", aligned on the colon and with
+no explanatory text. The tooltip's pledge is whole dollars (halves round up,
+such as $760,410); everything else keeps exact cents. On a narrow screen the
+tooltip sits under the chart in reserved space, so the slider does not move. The
+screen-reader live text and the slider's value text keep the fuller form: scope,
+local date, daily count, cumulative count out of the scoped population with
+percentage, and exact pledge. Report URLs, pinned digest inputs, equivalent data
 tables, PNG/PDF output, and structured downloads record the scope and exactly
 match the displayed values. A scope note explains why the historical endpoint
 may differ from current-statistics cards.

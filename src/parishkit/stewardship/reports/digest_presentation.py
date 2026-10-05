@@ -1,5 +1,7 @@
 """Shared exact-value presentation for the digest's protected snapshot page."""
 
+from decimal import ROUND_HALF_UP, Decimal
+
 from .charts import PLOT_LAYOUT, participation_limits
 from .daily_digest import participation_row, statistics_cards
 
@@ -15,6 +17,38 @@ def snapshot_context(document, *, mode, chart_url, download_url):
         "chart_url": chart_url,
         "download_url": download_url,
     }
+
+
+def tooltip_dollars(amount):
+    """Round an exact pledge total to whole dollars, halves up: $760,410."""
+    return f"${amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,}"
+
+
+def tooltip_point(day, row):
+    """Return one date's short chart tooltip: a date heading and label/value rows.
+
+    The tooltip is deliberately terse (#575): cumulative Families, that day's
+    first submissions and, when the table has a pledge column, the pledge total.
+    Pledges are whole dollars here, as the Administrator asked; the table, live
+    text and slider value text keep the exact cents.
+    """
+    rows = [
+        [
+            "Families",
+            f"{day.cumulative_responses:,}"
+            if day.population_available
+            else "Unavailable",
+        ],
+        ["New today", row[1]],
+    ]
+    if len(row) > 3:
+        rows.append(
+            [
+                "Pledges",
+                tooltip_dollars(day.pledge_total) if day.pledge_available else row[3],
+            ]
+        )
+    return {"date": row[0], "rows": rows}
 
 
 def participation_context(chart):
@@ -40,6 +74,10 @@ def participation_context(chart):
         "rows": rows,
         "chart_interaction": {
             "labels": labels,
+            "points": [
+                tooltip_point(day, row)
+                for day, row in zip(chart.days, rows, strict=True)
+            ],
             "plot": PLOT_LAYOUT,
             "limits": participation_limits(len(labels)),
         },

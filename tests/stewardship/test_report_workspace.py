@@ -18,6 +18,7 @@ from parishkit.stewardship.reports.daily_digest import (
 from parishkit.stewardship.reports.digest_presentation import (
     participation_context,
     snapshot_context,
+    tooltip_dollars,
 )
 from parishkit.stewardship.reports.spreadsheets import participation_xlsx
 from parishkit.stewardship.reports.workspace import RenderedReport, ReportQuery
@@ -112,6 +113,75 @@ def test_rendered_report_releases_generation_even_before_first_byte(consume):
     response.close()
     response.close()
     assert closed == [True]
+
+
+def test_tooltip_points_are_three_short_lines_per_date():
+    """The visible tooltip is a date and short label/value lines (#575).
+
+    The fuller sentence remains in ``labels`` for screen readers; ``points``
+    carries only what the tooltip shows, formatted exactly as the table is.
+    """
+    chart = document().participation
+    interaction = participation_context(chart)["chart_interaction"]
+    assert len(interaction["points"]) == len(interaction["labels"]) == len(chart.days)
+    first, day = interaction["points"][0], chart.days[0]
+    assert first["date"] == participation_context(chart)["rows"][0][0]
+    assert [label for label, _ in first["rows"]] == [
+        "Families",
+        "New today",
+        "Pledges",
+    ]
+    assert first["rows"][0][1] == f"{day.cumulative_responses:,}"
+    assert first["rows"][1][1] == f"{day.first_responses:,}"
+    # Whole dollars in the tooltip; the table row keeps the cents.
+    assert day.pledge_total == Decimal("1234.56")
+    assert first["rows"][2][1] == "$1,235"
+    assert participation_context(chart)["rows"][0][3] == "$1,234.56"
+    assert all(len(value) < 20 for _, value in first["rows"])
+    plain = participation_context(replace(chart, financial_enabled=False))
+    assert [
+        [label for label, _ in point["rows"]]
+        for point in plain["chart_interaction"]["points"]
+    ] == [["Families", "New today"]] * len(chart.days)
+
+
+def test_tooltip_on_an_unavailable_day_says_unavailable():
+    """A missing day is labeled Unavailable, never shown as zero."""
+    chart = document().participation
+    missing = replace(
+        chart.days[0],
+        first_responses=0,
+        cumulative_responses=0,
+        cohort_denominator=0,
+        source_generation=None,
+        source_as_of=None,
+        population_available=False,
+        pledge_available=False,
+        pledge_total=None,
+    )
+    chart = replace(chart, days=(missing, *chart.days[1:]))
+    point = participation_context(chart)["chart_interaction"]["points"][0]
+    assert point["rows"] == [
+        ["Families", "Unavailable"],
+        ["New today", "Unavailable"],
+        ["Pledges", "Unavailable"],
+    ]
+
+
+@pytest.mark.parametrize(
+    ("amount", "shown"),
+    [
+        ("0", "$0"),
+        ("0.49", "$0"),
+        ("0.50", "$1"),
+        ("2.50", "$3"),
+        ("760409.50", "$760,410"),
+        ("1234567890123456.78", "$1,234,567,890,123,457"),
+    ],
+)
+def test_tooltip_pledges_are_whole_dollars_rounding_halves_up(amount, shown):
+    """Halves round up (not to even), and large totals keep every digit."""
+    assert tooltip_dollars(Decimal(amount)) == shown
 
 
 def test_live_presentation_is_the_digest_presentation_without_population_mixing():

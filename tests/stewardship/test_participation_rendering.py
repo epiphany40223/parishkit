@@ -13,6 +13,8 @@ import pytest
 from PIL import Image
 
 from parishkit.stewardship.reports.charts import (
+    RENDERER_VERSION,
+    family_axis_top,
     participation_figure,
     render_participation,
 )
@@ -109,6 +111,84 @@ def test_figure_coordinates_match_table_and_do_not_mix_units():
         assert counts.yaxis.get_major_formatter()(1234, 0) == "1,234"
         assert dollars.yaxis.get_major_formatter()(1234, 0) == "$1,234"
     assert not figure.axes
+
+
+def test_family_axis_fits_the_counts_without_drawing_provenance():
+    """The Family axis tops out near the data, not the eligible total (#575).
+
+    The fixture's eligible cohort is 1,234 Families but its largest count is 3,
+    so the old axis made the bars and line nearly flat. Both axes stay linear.
+    """
+    with participation_figure(document()) as figure:
+        counts, dollars = figure.axes
+        assert counts.get_ylim() == pytest.approx((0, 3.3))
+        assert all(tick == int(tick) for tick in counts.get_yticks())
+        assert counts.get_yscale() == dollars.get_yscale() == "linear"
+        assert dollars.get_ylim() == pytest.approx((0, 3234.56 * 1.1))
+        texts = [text.get_text() for text in figure.texts]
+        assert f"{RENDERER_VERSION} · Page 1" in texts
+        # Neither the eligible total nor the source/request provenance is drawn.
+        assert not any(
+            word in text
+            for text in texts
+            for word in ("Eligible", "Source #", "Requested")
+        )
+    assert RENDERER_VERSION == "participation-v2"
+
+
+def test_family_axis_top_uses_the_larger_series_and_skips_gaps():
+    """Daily or cumulative, whichever is larger; unavailable days are ignored."""
+    days = document().days
+    burst = replace(days[0], first_responses=40, cumulative_responses=40)
+    assert family_axis_top((burst,)) == pytest.approx(44)
+    assert family_axis_top(days) == pytest.approx(3.3)
+    missing = replace(
+        days[2],
+        first_responses=0,
+        cumulative_responses=0,
+        cohort_denominator=0,
+        source_generation=None,
+        source_as_of=None,
+        population_available=False,
+        pledge_available=False,
+        pledge_total=None,
+    )
+    assert family_axis_top((missing,)) == pytest.approx(1.1)
+    assert family_axis_top(()) == pytest.approx(1.1)
+
+
+def test_round_family_ticks_for_a_realistic_campaign():
+    """A few hundred Families get round 50-step ticks, not 30 or 25."""
+    value = document()
+    days = tuple(
+        replace(day, first_responses=90, cumulative_responses=90 * (index + 1))
+        for index, day in enumerate(value.days)
+    )
+    with participation_figure(replace(value, days=days)) as figure:
+        counts = figure.axes[0]
+        top = counts.get_ylim()[1]
+        assert top == pytest.approx(270 * 1.1)
+        # Only the ticks inside the axis are drawn; the locator may add one past it.
+        ticks = [tick for tick in counts.get_yticks() if tick <= top]
+        assert ticks == [0, 50, 100, 150, 200, 250]
+
+
+@pytest.mark.parametrize("format", ["png", "pdf"])
+def test_provenance_is_file_metadata_not_drawn(format):
+    """Source snapshot and request time travel in the file, not the picture.
+
+    PNG carries them in a Description text chunk and PDF in its Info Subject,
+    so a downloaded chart still says where its numbers came from (#575).
+    """
+    value = document()
+    data = encoded(value, format)
+    expected = value.as_of_label.replace("\n", " ")
+    assert "Source #3 as of" in expected and "Requested" in expected
+    if format == "png":
+        with Image.open(io.BytesIO(data)) as image:
+            assert image.text["Description"] == expected
+    else:
+        assert b"/Subject (Source #3 as of " in data
 
 
 @pytest.mark.parametrize("format", ["png", "pdf"])
