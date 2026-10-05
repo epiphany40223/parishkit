@@ -10,7 +10,7 @@ from parishkit.stewardship.web.presentation import out_of
 from parishkit.stewardship.web.presentation import phone as format_phone
 
 from .directories import address_lines
-from .ministries import NOT_IN_CAMPAIGN, OUTCOMES, STATES
+from .ministries import NOT_IN_CAMPAIGN, OUTCOMES, STATE_LABELS
 
 
 @dataclass(frozen=True, repr=False)
@@ -137,7 +137,6 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
             "Submitted",
             "State",
             "Outcome",
-            "Assignee",
         )
         headings += (
             ("Gender", "Age", "Email", "Phones", "Known primary Family address")
@@ -151,10 +150,8 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
                 item["proposed_id"] or "",
                 str(item["ministry_duid"]),
                 instant(item["submitted_at"]),
-                STATES[item["state"]],
+                STATE_LABELS[item["state"]],
                 OUTCOMES.get(item["outcome"], "Not yet recorded"),
-                # Captures made before assignment existed carry no such key.
-                item.get("assignee") or "Unassigned",
             )
             if action == "leave":
                 rows.append(common + (item["current_role"] or "Unavailable",))

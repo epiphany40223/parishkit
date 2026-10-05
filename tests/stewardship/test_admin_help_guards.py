@@ -97,7 +97,7 @@ INTRO_ALLOWED = {
     "campaign-mail-families.html": 64,
     "setup-schedules.html": 63,
     "setup-source.html": 61,
-    "ministry-followup-error.html": 61,
+    "ministry-followup-error.html": 38,
     "setup-content.html": 60,
     "error.html": 56,
     "setup-preview.html": 52,

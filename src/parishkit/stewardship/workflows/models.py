@@ -10,7 +10,9 @@ from parishkit.stewardship.storage import (
 
 # Families own cancellation/supersession and the source worker owns roster-
 # evidence resolution; Staff edits move a request only among these states.
-STAFF_STATES = ("new", "assigned", "in_progress", "resolved", "closed_no_response")
+# `assigned` stays a stored, open state for requests assigned before
+# follow-up assignment was removed (#552), but no edit chooses it any more.
+STAFF_STATES = ("new", "in_progress", "resolved", "closed_no_response")
 OPEN_STATES = ("new", "assigned", "in_progress")
 RESOLVED_OUTCOMES = ("joined", "leave_confirmed", "declined", "duplicate", "other")
 CONTACT_CHANNELS = ("email", "phone", "in_person", "other")
@@ -41,6 +43,8 @@ class MinistryRequest(MutableRecord):
     superseded_by = models.ForeignKey("self", on_delete=models.PROTECT, null=True)
     # A plain UUID, like other retained actor references: history must outlive
     # a portal user. A same-intent successor inherits it with the state.
+    # Unused since follow-up assignment was removed (#552): Staff edits store
+    # none, and only requests assigned before then still carry one.
     assignee_id = models.UUIDField(null=True)
 
     immutable_fields = MutableRecord.immutable_fields + (
@@ -136,7 +140,7 @@ class MinistryRequest(MutableRecord):
 class MinistryWorkflowRevision(ImmutableRecord):
     """One authorized Staff edit: the complete resulting workflow, never a diff.
 
-    The request keeps the current assignee/state/outcome; this history owns the
+    The request keeps the current state/outcome; this history owns the
     notes and contact attempts. SQL stamps the time, validates current authority
     and pairs each revision with its projection and audit. Notes and contact
     details are private workflow data and never enter audit context or logs.
@@ -147,6 +151,7 @@ class MinistryWorkflowRevision(ImmutableRecord):
     )
     expected_version = models.PositiveBigIntegerField()
     request_key = models.UUIDField()
+    # Set only on revisions recorded before assignment was removed (#552).
     assignee_id = models.UUIDField(null=True)
     state = models.CharField(max_length=20)
     outcome = models.CharField(max_length=20, null=True)

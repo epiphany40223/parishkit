@@ -159,6 +159,13 @@ def test_exact_outcome_mapping_and_unresolved_is_blank(values, expected):
     assert packet([section]).sections[0].rows[0][OUTCOME] == expected
 
 
+def test_legacy_assigned_request_reads_new():
+    """A request assigned before assignment was removed (#552) reads as New."""
+    section = dict(duid=9, name="Choir", chairs=[], rows=[item(state="assigned")])
+    status = HEADINGS.index("Status")
+    assert packet([section]).sections[0].rows[0][status] == "New"
+
+
 def test_contact_dates_prefill_in_the_display_zone_and_privacy_holds():
     """Recorded dates are local calendar dates; unpublished contacts never render."""
     rows = [

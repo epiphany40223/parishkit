@@ -26,7 +26,7 @@ from .information_rendering import (
     write_pages,
     xlsx_cell,
 )
-from .ministries import NOT_IN_CAMPAIGN, OUTCOMES, STATES
+from .ministries import NOT_IN_CAMPAIGN, OUTCOMES, STATE_LABELS
 
 TITLE = "Ministry follow-up packet"
 # The spreadsheet format's per-cell character limit. The library truncates
@@ -139,7 +139,7 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
                     item["member_name"],
                     str(item["member_duid"]) if item["member_duid"] else "",
                     "Join" if item["action"] == "join" else "Leave",
-                    STATES[item["state"]],
+                    STATE_LABELS[item["state"]],
                     contacts(item, "email"),
                     contacted(item["email_contact_at"]),
                     contacts(item, "phone"),

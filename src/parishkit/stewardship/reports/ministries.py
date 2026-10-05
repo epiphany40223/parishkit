@@ -41,13 +41,18 @@ STATES = {
     "any": "All states",
     "unresolved": "Unresolved",
     "new": "New",
-    "assigned": "Assigned",
     "in_progress": "In progress",
     "resolved": "Resolved",
     "closed_no_response": "Closed without response",
     "cancelled": "Cancelled",
     "superseded": "Superseded",
 }
+# Row labels. Follow-up has no assignee (#552); a request still stored as
+# `assigned` from before then reads as New, because that state only ever
+# meant "has an assignee". Screens, exports and packets share these labels.
+# The frozen report selection (schema/ministry_reports.sql) still returns each
+# row's assignee email; nothing renders it any more.
+STATE_LABELS = STATES | {"assigned": STATES["new"]}
 # A Ministry an Administrator removed from a live campaign whose requests are
 # kept (#342); SQL marks it in_campaign false.
 NOT_IN_CAMPAIGN = "No longer in this campaign"
@@ -244,7 +249,7 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
         )
     for row in result["rows"]:
         row["submitted_at"] = datetime.fromisoformat(row["submitted_at"])
-        row["state_label"] = STATES[row["state"]]
+        row["state_label"] = STATE_LABELS[row["state"]]
         row["outcome_label"] = OUTCOMES.get(row["outcome"], "Not yet recorded")
         row["address_lines"] = address_lines(row["address"] or {})
         row["emails"] = [

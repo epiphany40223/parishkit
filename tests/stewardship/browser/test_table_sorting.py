@@ -648,12 +648,13 @@ def test_talents_filter_updates_both_tables_and_the_summary(page, component_orig
     assert page.evaluate(MARKED) == "kept"
 
 
-def test_followup_filter_on_one_ministry_shows_bulk_assignment(page, component_origin):
-    """Choosing one Ministry brings in the bulk-assignment panel and the
-    selection column that only a single Ministry's queue offers."""
+def test_followup_filter_refreshes_in_place_without_assignment(page, component_origin):
+    """Filtering the follow-up queue to one Ministry swaps the table in place
+    (#488) and, with assignment removed (#552), brings in no selection column
+    or assignment panel."""
     page.goto(component_origin + "/followup-all")
     page.evaluate(MARK)
-    assert page.get_by_role("group", name="Assign the selected requests").count() == 0
+    page.evaluate("document.querySelector('#table').dataset.old = '1'")
     fulfil_post_with(
         page, "**/follow-up/", component_origin, lambda request: "/followup-queue"
     )
@@ -661,9 +662,15 @@ def test_followup_filter_on_one_ministry_shows_bulk_assignment(page, component_o
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Apply filters").click()
     assert "ministry=9" in sent.value.post_data
-    visible(page.get_by_role("group", name="Assign the selected requests"))
-    visible(page.locator("#table").get_by_role("columnheader", name="Select"))
+    assert "assignee" not in sent.value.post_data
+    # The fetched region replaces the old one, which carried this marker.
+    eventually(page, "!document.querySelector('#table').dataset.old")
     assert page.evaluate(MARKED) == "kept"
+    assert page.get_by_label("Ministry", exact=True).input_value() == "9"
+    table = page.locator("#table")
+    assert table.get_by_role("columnheader", name="Select").count() == 0
+    assert table.get_by_role("columnheader", name="Assigned to").count() == 0
+    assert page.get_by_role("button", name="Assign selected").count() == 0
 
 
 def test_without_javascript_filters_load_the_page(browser_engine, component_origin):

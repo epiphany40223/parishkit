@@ -63,8 +63,7 @@ def test_packet_scope_history_privacy_and_rendering(response_service, google):
         harness,
         admin,
         join,
-        assignee_id=head,
-        state="assigned",
+        state="in_progress",
         notes="PRIVATE-JOIN-NOTE",
         contact_channel="email",
         contact_at=emailed,
@@ -74,8 +73,7 @@ def test_packet_scope_history_privacy_and_rendering(response_service, google):
         harness,
         admin,
         join,
-        assignee_id=head,
-        state="assigned",
+        state="in_progress",
         notes="PRIVATE-JOIN-NOTE",
         contact_channel="phone",
         contact_at=phoned,
@@ -95,7 +93,11 @@ def test_packet_scope_history_privacy_and_rendering(response_service, google):
     assert snapshot.authorization_scope["result_ministries"] == [4, 9]
     assert found[4]["rows"] == []  # Selected but empty still gets its section.
     (row,) = found[9]["rows"]
-    assert (row["action"], row["state"], row["outcome"]) == ("join", "assigned", None)
+    assert (row["action"], row["state"], row["outcome"]) == (
+        "join",
+        "in_progress",
+        None,
+    )
     assert row["email_contact_at"][:10] == emailed.date().isoformat()
     assert row["phone_contact_at"][:10] == phoned.date().isoformat()
     # Staff see the operational contact; the leader capture below must not.

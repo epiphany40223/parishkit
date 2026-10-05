@@ -838,7 +838,12 @@ request but do not erase its history. Workflow state is `new`, `assigned`,
 `in_progress`, `resolved`, `closed_no_response`, `cancelled`, or `superseded`.
 Resolution outcome is `joined`, `leave_confirmed`, `declined`, `no_response`,
 `duplicate`, or `other`. Contact attempts record time, channel, actor, and
-notes. Assignees must be authorized for that Ministry.
+notes. Follow-up has no assignment
+([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows)): Staff
+edits store no assignee and never choose `assigned`. The `assignee_id` column,
+the `assigned` state and their database rules remain, unused, for requests
+assigned before that decision, which a same-intent Family resubmission still
+carries forward until the next Staff edit clears them.
 
 Manual census work uses proposed-change execution state and notes rather than a
 separate workflow. Admin and Staff may mark manual items resolved externally or

@@ -591,9 +591,12 @@ Each Ministry links to:
 
 - prospective joiners: Member name/DUID, gender, age as of report date,
   publishable email/phones for leaders, operational contact for Admin/Staff,
-  Family mailing address, request/submission date, assignee/status/outcome; and
+  Family mailing address, request/submission date, status/outcome; and
 - requested leavers: Member name/DUID, current role where known, request date,
-  assignee/status/outcome.
+  status/outcome.
+
+Follow-up has no assignee, so neither list nor its exports show one; see
+[Follow-up workflows](../admin-portal/spec.md#follow-up-workflows).
 
 Leader phone/email columns honor ParishSoft publish flags and show "Not
 published" rather than leaking a value. Admin/Staff may see operational source

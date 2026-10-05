@@ -1107,22 +1107,102 @@
     refresh();
   });
 
+  // Complete-before-submit (#553): a form marked data-require-complete keeps
+  // its submit buttons disabled until every control that is currently shown
+  // and required is valid, and says why in its [data-complete-hint] element
+  // (which the buttons name with aria-describedby). Conditional requirements
+  // are applied only here, never in the markup, so without JavaScript the
+  // buttons stay enabled and the server's own validation answers as before:
+  //   - data-required-when-shown="name …" on a data-show-when group (or an
+  //     empty value on a field) makes those controls required while shown;
+  //   - data-required-when="name=value" makes a field required while the
+  //     form's control "name" has that value (notes for the outcome Other).
+  // The hint is the first missing control's data-missing-hint, or that of
+  // the nearest element around it. As with acknowledgments below, real
+  // disabled is used and only buttons this gate disabled are re-enabled.
+  const requiredWhen = (form) => {
+    form.querySelectorAll("[data-required-when]").forEach((node) => {
+      const [name, value] = node.dataset.requiredWhen.split("=");
+      const control = form.elements.namedItem(name);
+      // A hidden (disabled) control's leftover value does not count.
+      node.required = Boolean(control) && !control.disabled && control.value === value;
+    });
+  };
+  const gateComplete = (form) => {
+    if (!form || !form.hasAttribute("data-require-complete")) return;
+    requiredWhen(form);
+    // A required text field holding only spaces is still empty: the server
+    // trims it (notes for the outcome Other).
+    const blank = (node) => node.required && node.matches("textarea, input[type=text]")
+      && !node.value.trim();
+    const missing = [...form.elements].find((node) => node.willValidate
+      && !node.closest("[hidden]") && (!node.validity.valid || blank(node)));
+    const hint = form.querySelector("[data-complete-hint]");
+    if (hint) {
+      hint.hidden = !missing;
+      hint.textContent = missing
+        ? (missing.closest("[data-missing-hint]")?.dataset.missingHint
+          || "Fill in the required fields to save.")
+        : "";
+    }
+    submitControls(form).forEach((node) => {
+      if (node.formNoValidate) return;
+      if (missing && !node.disabled) {
+        node.disabled = true;
+        node.setAttribute("data-complete-gated", "");
+      } else if (!missing && node.hasAttribute("data-complete-gated")) {
+        node.disabled = false;
+        node.removeAttribute("data-complete-gated");
+      }
+    });
+  };
+
   // A field marked data-show-when="name=value" is shown only while the form's
   // control called "name" has that value, e.g. the daily refresh time only
-  // for the once-a-day frequency. Hidden fields are disabled so they are not
-  // sent; without JavaScript every field simply stays visible.
-  document.querySelectorAll("[data-show-when]").forEach((input) => {
-    const [name, value] = input.dataset.showWhen.split("=");
-    const control = input.form && input.form.elements.namedItem(name);
-    const wrapper = input.closest("div");
+  // for the once-a-day frequency; "name!=value" shows it for every other
+  // value, e.g. a contact attempt's date only once a channel is chosen. On a
+  // field the mark hides its enclosing div; on a div (a group of fields, as
+  // in Ministry follow-up) it hides that div and every control inside it.
+  // Hidden fields are disabled so they are not sent; without JavaScript
+  // every field simply stays visible, and the server ignores what does not
+  // apply. A browser can restore form values without a change event (the
+  // back/forward cache, or autofill after load), so every rule is applied
+  // again on pageshow, not only at load.
+  const showWhenUpdates = [];
+  document.querySelectorAll("[data-show-when]").forEach((node) => {
+    const rule = node.dataset.showWhen;
+    const negated = rule.includes("!=");
+    const [name, value] = rule.split(negated ? "!=" : "=");
+    const field = node.matches("input, select, textarea");
+    const form = field ? node.form : node.closest("form");
+    const control = form && form.elements.namedItem(name);
+    const wrapper = field ? node.closest("div") : node;
     if (!control || !wrapper) return;
+    const controls = field ? [node] : [...node.querySelectorAll("input, select, textarea")];
+    const listed = node.dataset.requiredWhenShown;
+    const required = listed === undefined ? []
+      : listed === "" ? [node]
+        : listed.split(/\s+/).map((item) => form.elements.namedItem(item)).filter(Boolean);
     const update = () => {
-      const shown = control.value === value;
+      const shown = (control.value === value) !== negated;
       wrapper.hidden = !shown;
-      input.disabled = !shown;
+      controls.forEach((item) => { item.disabled = !shown; });
+      required.forEach((item) => { item.required = shown; });
+      gateComplete(form);
     };
     control.addEventListener("change", update);
+    showWhenUpdates.push(update);
     update();
+  });
+  const completeForms = [...document.querySelectorAll("form[data-require-complete]")];
+  completeForms.forEach((form) => {
+    gateComplete(form);
+    form.addEventListener("input", () => gateComplete(form));
+    form.addEventListener("change", () => gateComplete(form));
+  });
+  window.addEventListener("pageshow", () => {
+    showWhenUpdates.forEach((update) => update());
+    completeForms.forEach(gateComplete);
   });
 
   // Optional modules remain ordinary accessible fieldsets without JavaScript.

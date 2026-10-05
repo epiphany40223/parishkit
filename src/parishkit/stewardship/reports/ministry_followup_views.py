@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -23,28 +24,31 @@ from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.followup import (
-    MAX_BULK,
+    FollowupRefusal,
     WorkflowChange,
-    assign_requests,
-    assignment_state,
+    authorize_ministry,
+    outcomes_for,
     update_request,
 )
-from parishkit.stewardship.workflows.models import STAFF_STATES, MinistryRequest
+from parishkit.stewardship.workflows.models import (
+    OPEN_STATES,
+    STAFF_STATES,
+    MinistryRequest,
+)
 
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .information import parse_page
 from .ministry_followup import (
     CHANNELS,
+    HISTORY_STATES,
     OUTCOMES,
     SORTING,
     STATES,
     FollowupQuery,
-    assignable,
     can_follow_up,
     followup_history,
     followup_page,
-    valid_ministry,
 )
 from .read_admission import admit_report_read
 from .report_paging import clamp_query
@@ -110,8 +114,58 @@ def _labels(identities):
     }
 
 
-def _page_response(request, campaign_id, *, request_id=None):
-    """Guard every data query, template render and byte; audit response completion."""
+# What each correctable refusal says, and the field its summary links to.
+# Each names the one problem, not every rule (#553).
+REFUSALS = {
+    "outcome_required": (_("Choose an outcome for Resolved."), "followup-outcome"),
+    "other_needs_notes": (
+        _("Add notes: the outcome Other needs them."),
+        "followup-notes",
+    ),
+    "contact_incomplete": (
+        _("Enter the date and time of the contact attempt."),
+        "contact-date",
+    ),
+    "contact_future": (
+        _("The contact attempt's date and time can't be in the future."),
+        "contact-date",
+    ),
+}
+ACTIONS = {"join": _("join"), "leave": _("leave")}
+# The submitted fields a refused page shows again.
+FORM_FIELDS = (
+    "expected_version",
+    "state",
+    "outcome",
+    "notes",
+    "contact_channel",
+    "contact_date",
+    "contact_time",
+    "contact_notes",
+)
+
+
+def _refusal_error(refusal):
+    """The error summary entry for one FollowupRefusal."""
+    if refusal.code == "outcome_kind":
+        return {
+            "message": _("%(outcome)s doesn't apply to a request to %(action)s.")
+            % {
+                "outcome": OUTCOMES.get(refusal.details["outcome"], ""),
+                "action": ACTIONS[refusal.details["action"]],
+            },
+            "field_id": "followup-outcome",
+        }
+    message, field = REFUSALS[refusal.code]
+    return {"message": message, "field_id": field}
+
+
+def _page_response(request, campaign_id, *, request_id=None, refusal=None):
+    """Guard every data query, template render and byte; audit response completion.
+
+    With a refusal, the request page is shown again in place (status 400)
+    with an error summary and the submitted values, instead of an error page.
+    """
     finish, handed_off = None, False
     try:
         service = runtime()
@@ -174,48 +228,37 @@ def _page_response(request, campaign_id, *, request_id=None):
             except PermissionError:
                 mutable = False
             item = result["rows"][0] if request_id else None
+            # The form's values: the request's own, or what was just submitted.
+            form = (
+                dict(
+                    {key: "" for key in FORM_FIELDS},
+                    expected_version=str(item["version"]),
+                    state=item["state"],
+                    notes=item["notes"] or "",
+                )
+                if item
+                else {}
+            )
+            if item and refusal is not None:
+                form.update(
+                    (key, request.POST.get(key, ""))
+                    for key in FORM_FIELDS
+                    if key in request.POST
+                )
             history, more_history = (
                 followup_history(request_id, history_page) if item else ([], False)
             )
-            # Assignee choices exist only for one Ministry: the open request's,
-            # or the queue's when it is filtered to a single Ministry for bulk
-            # use. The filter is caller input, so honour it only when SQL placed
-            # that Ministry in the caller's current scope; otherwise listing its
-            # assignees would reveal who leads a Ministry the caller cannot see.
-            scoped = {str(entry["duid"]) for entry in result["ministries"]}
-            ministry = (
-                item["ministry_duid"]
-                if item
-                else int(query.ministry)
-                if query.ministry in scoped
-                else None
-            )
-            assignees = assignable(ministry) if ministry and mutable else []
-            # Authority is rechecked on every edit, so an assignee who was
-            # disabled or left the Ministry cannot be kept. Say so, rather than
-            # letting the select fall back to "Unassigned" without explanation.
-            stale_assignee = bool(
-                item
-                and item["open"]
-                and mutable
-                and item["assignee_id"]
-                and item["assignee_id"] not in {str(row.pk) for row in assignees}
-            )
+            # Past edits keep showing an assignment they recorded before
+            # follow-up assignment was removed (#552); new edits record none.
             labels = _labels(
-                [row["assignee_id"] for row in result["rows"]]
-                + [row.actor_id for row in history]
-                + [row.assignee_id for row in history]
+                [row.actor_id for row in history] + [row.assignee_id for row in history]
             )
-            for row in result["rows"]:
-                row["assignee_label"] = (
-                    labels.get(row["assignee_id"], FORMER) if row["assignee_id"] else ""
-                )
             for row in history:
                 row.actor_label = labels.get(str(row.actor_id), FORMER)
                 row.assignee_label = (
                     labels.get(str(row.assignee_id), FORMER) if row.assignee_id else ""
                 )
-                row.state_label = STATES[row.state]
+                row.state_label = HISTORY_STATES[row.state]
                 row.outcome_label = OUTCOMES.get(row.outcome, "")
                 row.channel_label = CHANNELS.get(row.contact_channel, "")
             context = dict(
@@ -240,18 +283,23 @@ def _page_response(request, campaign_id, *, request_id=None):
                 ),
                 mutable=mutable,
                 item=item,
-                stale_assignee=stale_assignee,
                 history=history,
                 previous_history=history_page - 1 if history_page > 1 else None,
                 next_history=history_page + 1 if more_history else None,
                 request_key=uuid4(),
-                assignees=assignees,
-                bulk_ministry=ministry if not item else None,
                 states=STATES,
                 staff_states=[(key, STATES[key]) for key in STAFF_STATES],
+                # Only Resolved takes a chosen outcome (change_values), and
+                # only those this kind of request can record (outcomes_for).
+                resolved_outcomes=[
+                    (key, OUTCOMES[key]) for key in outcomes_for(item["action"])
+                ]
+                if item
+                else [],
+                form=form,
+                errors=[_refusal_error(refusal)] if refusal is not None else [],
                 outcomes=OUTCOMES,
                 channels=CHANNELS,
-                viewer=str(principal.identity),
             )
             return iter(
                 (render_to_string(TEMPLATE, context, request=request).encode(),)
@@ -265,6 +313,12 @@ def _page_response(request, campaign_id, *, request_id=None):
             on_close=finish,
         )
         handed_off = response.status_code == 200 and response.streaming
+        if handed_off and refusal is not None:
+            # A typed validation answer from this view: the request page the
+            # person may already read, with their own submitted values, so the
+            # security middleware keeps it rather than a generic 400 text.
+            response.status_code = 400
+            response.stewardship_safe_error = True
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()
@@ -289,56 +343,61 @@ def detail(request, campaign_id, request_id):
     return _page_response(request, campaign_id, request_id=request_id)
 
 
-def _assignee(value):
-    """An empty selection unassigns; anything else is one canonical UUID."""
-    return UUID(value) if value else None
+def _text(parameters, key):
+    """One optional textarea, canonicalized; absent (a hidden field) is empty.
+
+    Native forms encode textarea line breaks as CRLF, while maxlength counts
+    the browser's LF representation. Keep storage/replay canonical.
+    """
+    return parameters.get(key, "").replace("\r\n", "\n").replace("\r", "\n")
 
 
 def change_values(parameters):
-    """Strict closed form grammar; absent optional fields are never ambiguous."""
-    required = {
-        "expected_version",
-        "request_key",
-        "state",
-        "outcome",
-        "assignee",
-        "notes",
-        "contact_channel",
-        "contact_date",
-        "contact_time",
-        "contact_notes",
-    }
+    """Strict closed form grammar; fields that do not apply are ignored.
+
+    The page hides, and so does not send, the outcome unless the status is
+    Resolved and the contact details unless a channel is chosen. A stale or
+    crafted form may still send them, so the server ignores whatever does
+    not apply rather than refusing it: the outcome for any other status (Closed:
+    no response always records No response, and open statuses have none),
+    and the date, time and notes of a contact attempt that has no channel.
+    Notes stay optional except for the outcome Other, which the database
+    requires (ministry_revision_outcome).
+    """
+    required = {"expected_version", "request_key", "state", "notes", "contact_channel"}
+    optional = {"outcome", "contact_date", "contact_time", "contact_notes"}
     keys = set(parameters) - {"csrfmiddlewaretoken"}
-    if keys != required or any(len(parameters.getlist(key)) != 1 for key in keys):
+    if not required <= keys <= required | optional or any(
+        len(parameters.getlist(key)) != 1 for key in keys
+    ):
         raise ValueError("Invalid follow-up form.")
-    text = {
-        # Native forms encode textarea line breaks as CRLF, while maxlength
-        # counts the browser's LF representation. Keep storage/replay canonical.
-        key: parameters[key].replace("\r\n", "\n").replace("\r", "\n")
-        for key in ("notes", "contact_notes")
-    }
-    assignee = _assignee(parameters["assignee"])
+    state = parameters["state"]
+    outcome = {
+        "resolved": parameters.get("outcome") or None,
+        "closed_no_response": "no_response",
+    }.get(state)
     channel = parameters["contact_channel"] or None
     moment = None
     if channel is not None:
         # The native date/time controls carry no zone; the page states UTC.
-        moment = datetime.fromisoformat(
-            f"{parameters['contact_date']}T{parameters['contact_time']}"
-        ).replace(tzinfo=UTC)
-    elif parameters["contact_date"] or parameters["contact_time"]:
-        raise ValueError("A contact time requires its channel.")
+        try:
+            day, clock = (
+                parameters.get("contact_date", ""),
+                parameters.get("contact_time", ""),
+            )
+            moment = datetime.fromisoformat(f"{day}T{clock}").replace(tzinfo=UTC)
+        except ValueError:
+            raise FollowupRefusal("contact_incomplete") from None
     return dict(
         expected_version=expected_version(parameters["expected_version"]),
         request_key=UUID(parameters["request_key"]),
         change=WorkflowChange(
-            assignee_id=assignee,
-            # New and Assigned follow the assignee, exactly as in bulk assignment.
-            state=assignment_state(parameters["state"], assignee),
-            outcome=parameters["outcome"] or None,
-            notes=text["notes"],
+            state=state,
+            outcome=outcome,
+            notes=_text(parameters, "notes"),
             contact_channel=channel,
             contact_at=moment,
-            contact_notes=text["contact_notes"],
+            contact_notes=_text(parameters, "contact_notes") if channel else "",
         ),
     )
 
@@ -355,7 +414,11 @@ def _in_campaign(campaign_id, identities):
 
 
 def _mutation(request, campaign_id, request_id, work):
-    """Shared denial, stale, outage and validation mapping for both mutations."""
+    """Denial, stale, outage and validation mapping for a follow-up edit.
+
+    A correctable refusal re-renders the request page in place (#553); a
+    malformed form still gets the plain 400 page.
+    """
     try:
         service = runtime()
         principal = _principal(request, service.store)
@@ -371,8 +434,52 @@ def _mutation(request, campaign_id, request_id, work):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return _error(campaign_id, request_id=request_id, status=503)
+    except FollowupRefusal as refusal:
+        # Only work() raises one, so the service and principal are set.
+        return _refused(
+            request, campaign_id, request_id, refusal, service.store, principal
+        )
     except ValueError:
         return _error(campaign_id, request_id=request_id)
+
+
+def _refused(request, campaign_id, request_id, refusal, store, principal):
+    """Show a correctable refusal on the request page, unless it went stale.
+
+    Some refusals (a missing outcome, Other without notes, an incomplete
+    contact) are found before the version check. If the request changed or
+    closed since the form was loaded, re-rendering would pair the person's
+    stale values with the current version, and resubmitting them would
+    silently overwrite the other edit; so that answers as a conflict (409),
+    exactly as a stale save does. Otherwise the page carries the submitted
+    version, so a later change still reads as a conflict.
+
+    These refusals can come before the edit's own scope check, so the
+    caller's current authority for the request's Ministry is checked first:
+    a request outside it gets the same denial as an unknown one, never a
+    conflict that would reveal it exists or what version it is at.
+    """
+    try:
+        current = (
+            MinistryRequest.objects.filter(
+                pk=request_id,
+                submission__campaign_id=campaign_id,
+                submission__mode="live",
+            )
+            .values_list("version", "state", "ministry_duid")
+            .first()
+        )
+        if current is None:
+            return denial()
+        version, state, ministry = current
+        authorize_ministry(store, principal.identity, ministry)
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except (DatabaseError, *SAFE_FAILURES, StorageInvariantError):
+        return _error(campaign_id, request_id=request_id, status=503)
+    if request.POST.get("expected_version") != str(version) or state not in OPEN_STATES:
+        return _error(campaign_id, request_id=request_id, status=409)
+    return _page_response(request, campaign_id, request_id=request_id, refusal=refusal)
 
 
 @require_POST
@@ -386,47 +493,3 @@ def update(request, campaign_id, request_id):
         return "admin:ministry_followup_item", {"request_id": request_id}
 
     return _mutation(request, campaign_id, request_id, work)
-
-
-def assignment_values(parameters):
-    """One Ministry, one assignee and an exact selected `uuid:version` set."""
-    keys = set(parameters) - {"csrfmiddlewaretoken"}
-    if keys != {"request_key", "ministry", "assignee", "selected"} or any(
-        len(parameters.getlist(key)) != 1 for key in keys - {"selected"}
-    ):
-        raise ValueError("Invalid bulk assignment form.")
-    selected = parameters.getlist("selected")
-    if not 1 <= len(selected) <= MAX_BULK or not valid_ministry(parameters["ministry"]):
-        raise ValueError("Invalid bulk assignment selection.")
-    versions = {}
-    for value in selected:
-        identity, _, version = value.partition(":")
-        versions[UUID(identity)] = expected_version(version)
-    if len(versions) != len(selected):
-        raise ValueError("A request was selected more than once.")
-    return dict(
-        request_key=UUID(parameters["request_key"]),
-        assignee_id=_assignee(parameters["assignee"]),
-        versions=versions,
-    ), int(parameters["ministry"])
-
-
-@require_POST
-def assign(request, campaign_id):
-    """Assign an exact visible selection in one Ministry: all of it or none of it."""
-
-    def work(store, actor):
-        values, ministry = assignment_values(request.POST)
-        _in_campaign(campaign_id, list(values["versions"]))
-        # The form offered assignees for one Ministry only; never let a crafted
-        # selection spread that choice across Ministries it was not offered for.
-        if (
-            MinistryRequest.objects.filter(pk__in=values["versions"])
-            .exclude(ministry_duid=ministry)
-            .exists()
-        ):
-            raise ValueError("A bulk assignment covers exactly one Ministry.")
-        assign_requests(store, actor, **values)
-        return "admin:ministry_followup", {}
-
-    return _mutation(request, campaign_id, None, work)
