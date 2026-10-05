@@ -1141,11 +1141,11 @@ how it behaves (how a credential is kept, how mail schedules work, the
 placeholder reference) sit in an "About this page" panel beside the heading: a
 native disclosure that starts closed, and that each browser remembers open,
 per page type, once an Admin opens it. Every page with a panel has exactly
-one, placed directly after its heading, so the closed control always sits on
-the heading's line; opened, the panel and its control continue on the line
-below at full width. Only that open choice is stored in the browser, and
-closing the panel removes it; with nothing stored the panel starts closed and
-opens with a click or the keyboard. Help under a field is a short hint; longer
+one, placed directly after its heading, so its control always sits on the
+heading's line, open or closed, and stays in place when it is toggled; opened,
+the help appears on its own full-width line below. Only that open choice is
+stored in the browser, and closing the panel removes it; with nothing stored
+the panel starts closed and opens with a click or the keyboard. Help under a field is a short hint; longer
 field explanations belong in the About panel or a click-to-open field tip,
 never in hover-only tooltips, which touch and keyboard users cannot reach.
 

@@ -123,3 +123,51 @@ PLACEMENT = """() => {
   if (s.left < h.right) return "not beside the heading";
   return "";
 }"""
+
+
+# Representative pages for the control's steadiness (#602): a setup page
+# without Admin chrome, an Admin table page, and a page with a long heading
+# that wraps at phone width.
+STEADY_PAGES = ["/setup-credential", "/background", "/information", "/daily-digest"]
+# A wide laptop window and a phone.
+STEADY_VIEWPORTS = [{"width": 1366, "height": 768}, {"width": 390, "height": 844}]
+
+
+@pytest.mark.parametrize("path", STEADY_PAGES)
+@pytest.mark.parametrize("viewport", STEADY_VIEWPORTS, ids=["wide", "phone"])
+def test_about_control_stays_put_when_toggled(page, component_origin, path, viewport):
+    """Opening and closing the panel never moves its control (#602).
+
+    The control's box is measured closed, open and closed again, both by
+    mouse and by keyboard (Enter and Space); keyboard toggling leaves focus
+    on the control.
+    """
+    from playwright.sync_api import expect
+
+    page.set_viewport_size(viewport)
+    page.goto(component_origin + path)
+    page.evaluate("document.fonts.ready.then(() => true)")
+    panel = page.locator("details[data-about-page]")
+    summary = panel.locator("summary")
+    body = panel.locator(".about-page-body")
+    closed = summary.bounding_box()
+    for key in (None, "Enter", " "):
+        if key:
+            # Focus once: a locator's press would re-focus the control first,
+            # hiding a toggle that lost focus.
+            summary.focus()
+        for state in ("open", "closed again"):
+            if key:
+                page.keyboard.press(key)
+            else:
+                summary.click()
+            if state == "open":
+                expect(panel).to_have_attribute("open", "")
+                visible(body)
+                # The help opens below the heading row, not beside the control.
+                assert body.bounding_box()["y"] >= closed["y"] + closed["height"] - 1
+            else:
+                expect(panel).not_to_have_attribute("open", "")
+            assert summary.bounding_box() == closed, (path, key, state)
+            if key:
+                assert page.evaluate("document.activeElement.tagName") == "SUMMARY"
