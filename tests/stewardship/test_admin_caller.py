@@ -207,6 +207,17 @@ def test_only_admin_caller_constructs_callers_in_production():
     assert offenders == []
 
 
+def test_from_automation_is_called_only_from_admin_cli():
+    """The command-line constructor has one caller, the host command line."""
+    offenders = [
+        str(path.relative_to(SOURCE))
+        for path in SOURCE.rglob("*.py")
+        if path.name not in {"admin_cli.py", "admin_caller.py"}
+        and "from_automation(" in path.read_text()
+    ]
+    assert offenders == []
+
+
 def test_admission_is_mirrored_onto_the_web_request_only():
     """Views keep reading request.portal_session and request.principal."""
     request = RequestFactory().get("/admin/")

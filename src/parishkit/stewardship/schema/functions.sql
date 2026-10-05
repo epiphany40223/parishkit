@@ -10015,6 +10015,7 @@ CREATE FUNCTION public.stewardship_task_type_login_v1(task_type text) RETURNS te
         -- mail-queue types in mail dispatch. NULL is an unknown type.
         WHEN task_type IN (
             'activation_catchup',
+            'automation_maintenance',
             'branding_cleanup',
             'campaign_boundary',
             'daily_digest_finalize',

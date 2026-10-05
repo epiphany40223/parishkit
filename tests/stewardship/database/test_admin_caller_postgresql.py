@@ -103,8 +103,15 @@ def test_automation_caller_is_never_rotated(auth_service, google, monkeypatch):
     assert not AuditEvent.objects.filter(event_type="admin_privileges_changed")
 
 
-def test_read_only_automation_caller_may_still_read(auth_service, google):
-    """A read-only scope narrows activity only; passive admission still works."""
+def test_an_automation_caller_over_a_browser_session_is_refused(auth_service, google):
+    """Automation admits only its own command session (ADM-11 PR 2).
+
+    A browser session carries no automation marker and no live automation
+    session, so an automation caller built over it is refused and writes
+    nothing; a read-only scope still never records activity. A real
+    read-only command session reads normally
+    (test_automation_sessions_postgresql).
+    """
     browser, _ = signed_in()
     version = PortalSession.objects.get().version
     caller = AdminCaller(
@@ -113,8 +120,8 @@ def test_read_only_automation_caller_may_still_read(auth_service, google):
         automation_session_id=uuid4(),
         scope=READ_ONLY,
     )
-    principal = sessions.authenticated_admin(caller, store=auth_service.store)
-    assert principal is not None and caller.principal is principal
+    assert sessions.authenticated_admin(caller, store=auth_service.store) is None
+    assert caller.principal is None
     with pytest.raises(PermissionError):
         sessions.authenticated_admin(caller, store=auth_service.store, activity=True)
     assert PortalSession.objects.get().version == version

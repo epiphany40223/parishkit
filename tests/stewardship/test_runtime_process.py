@@ -527,6 +527,7 @@ def test_configuration_service_restores_on_an_idle_pass(tmp_path, monkeypatch):
         "operational",
         "operational_fanout",
         "operational_slack",
+        "maintenance",
     ],
 )
 def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
@@ -577,6 +578,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 "facts": "facts-receipt",
                 "verification": "verification-receipt",
                 "setup_cleanup": "setup-cleanup-receipt",
+                "maintenance": "maintenance-receipt",
             }
             # One patched fanout producer serves both alert owners, so its
             # failure loses the security receipt as well.
@@ -630,6 +632,11 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     verification = Mock(return_value=("verification-receipt",))
     operational = Mock(return_value=("operational-receipt",))
     operational_slack = Mock(return_value=("operational-slack-receipt",))
+    maintenance = Mock(return_value=("maintenance-receipt",))
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.automation_maintenance.MaintenanceProducer",
+        lambda: maintenance,
+    )
 
     def fanout(guard, owner=None):
         """The scheduler runs one fanout producer per alert owner in turn."""
@@ -763,6 +770,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "operational": operational,
             "operational_fanout": operational_fanout,
             "operational_slack": operational_slack,
+            "maintenance": maintenance,
         }[failing_producer].side_effect = RuntimeError("synthetic-owner-failure")
     rotations = Mock(return_value=[])
     monkeypatch.setattr(
@@ -825,6 +833,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 campaign_recovery,
                 family_recovery,
                 slack_recovery,
+                maintenance,
             ):
                 operation.assert_not_called()
             return
@@ -853,8 +862,9 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         campaign_recovery.assert_called_once_with()
         family_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        # Twenty-three independent producers, each bracketed by two checks.
-        assert guard.check.call_count == 46
+        maintenance.assert_called_once_with(guard)
+        # Twenty-four independent producers, each bracketed by two checks.
+        assert guard.check.call_count == 48
     else:
         operational.assert_not_called()
         operational_fanout.assert_not_called()
@@ -870,6 +880,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         facts.assert_not_called()
         verification.assert_not_called()
         expiry.assert_not_called()
+        maintenance.assert_not_called()
 
 
 def test_background_failed_admission_restores_signals_without_publishing_receipts(

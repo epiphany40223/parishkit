@@ -33,6 +33,9 @@ FROZEN = {
     "0003_refresh_tick_times.sql": (
         "906afe7be0ad16ada790a814adfa0ea83893c76956c75eef17900f4e6d286c02"
     ),
+    "0004_automation_sessions.sql": (
+        "e0b01ea24cad2ca148a774d51b81828331bdcefde857adf34a8e3897ec5fdf2b"
+    ),
 }
 
 

@@ -64,6 +64,8 @@ _COMMAND_OPTIONS = {
         "reason",
     },
     "preview-admin-recovery": {"config", "confirm_deployment", "target_email"},
+    # Ends every live Admin automation session (ADM-11); run in every restore.
+    "revoke-automation-sessions": {"config", "reason"},
     # The local environment's fake ParishSoft service (#476); LOCAL only.
     "fake-parishsoft": {"config", "profile", "fake_config", "port"},
     "local-sign-in": {"config", "email"},
@@ -206,6 +208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "migrate",
         "recover-admin",
         "preview-admin-recovery",
+        "revoke-automation-sessions",
         "database-roles",
         "database-grants",
     }:

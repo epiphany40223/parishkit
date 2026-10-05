@@ -70,7 +70,11 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         MINISTRY_CATALOG_FUNCTION
     }
     assert runtime_functions(ServiceRole.WEB) == {FAMILY_LOGIN_FUNCTION}
-    for role in (ServiceRole.WORKER, ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):
+    # The worker's one definer routine purges ended Admin sessions (ADM-11).
+    assert runtime_functions(ServiceRole.WORKER) == {
+        "stewardship_admin_session_purge_v1(uuid[])"
+    }
+    for role in (ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):
         assert runtime_functions(role) == frozenset()
 
 

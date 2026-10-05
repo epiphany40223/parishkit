@@ -1,7 +1,7 @@
 -- Independent fixed-content admission for outbox SQL writers. The private
 -- helper also recompiles these facts; it never trusts stored arbitrary prose.
 -- Contract tests compare every closed kind/phase against operational_content.py.
-CREATE FUNCTION stewardship_ops_content_v1(notice uuid, deployment_mode text)
+CREATE FUNCTION public.stewardship_ops_content_v1(notice uuid, deployment_mode text)
 RETURNS jsonb LANGUAGE plpgsql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE n stewardship_ops_notice%ROWTYPE; kind text; title text; status text;
     instruction text; labels text[]; vals text[]; body text; html text; i integer;
@@ -34,14 +34,24 @@ BEGIN
       WHEN 'source_retention_failing' THEN 'Parish data cleanup keeps failing'
       WHEN 'purge_inconsistency' THEN 'Campaign purge is inconsistent'
       WHEN 'purge_cleanup_failed' THEN 'Campaign purge cleanup failed'
+      WHEN 'automation_approved' THEN 'An automation session was approved'
+      WHEN 'automation_irreversible' THEN 'An automation session took an irreversible action'
+      WHEN 'automation_policy_change' THEN 'An automation session changed user access, integration keys or notification settings'
+      WHEN 'automation_refused' THEN 'An automation session was refused'
     END;
     IF title IS NULL THEN RAISE EXCEPTION 'Operational kind is invalid' USING ERRCODE='23514'; END IF;
     status:=CASE n.phase WHEN 'resolved' THEN 'RESOLVED' ELSE n.level END;
     instruction:=CASE WHEN n.phase='resolved' AND kind='backup_key_changed'
       THEN 'The backup encryption key change is no longer recent. If you have not already, ask the server operator to confirm that each kept copy of the private key opens a new backup, as the backup runbook describes.'
+      WHEN n.phase='resolved' AND kind IN ('automation_approved','automation_irreversible',
+        'automation_policy_change','automation_refused')
+      THEN 'No further automation events of this kind in the last hour. Review the automation notices on the Admin dashboard if you have not already.'
       WHEN n.phase='resolved'
       THEN 'This condition has recovered. Review the operational log if follow-up is needed.'
       WHEN kind='backup_key_changed' THEN 'A backup in the last two days was sealed to a different encryption key than the backup before it. Unless the server operator installed a new key on purpose, new backups may not open with the kept private key. Ask the operator to open the newest backup with each kept copy of the private key, as the backup runbook describes.'
+      WHEN kind IN ('automation_approved','automation_irreversible',
+        'automation_policy_change','automation_refused')
+      THEN 'Review the automation notices on the Admin dashboard. They name the automation session and what it did.'
       WHEN kind='source_retention_failing' THEN 'Removing old ParishSoft copies was skipped by the last three refreshes, so the database keeps growing. Refreshes still work. Ask the server operator to check the worker log for the cause.'
       ELSE 'Administrator attention is required. Review the operational log for details.' END;
     labels:=ARRAY['Status','Notification','Deployment mode','First observed',

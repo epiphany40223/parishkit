@@ -673,6 +673,7 @@ def serve_background(configuration, lease, *, source=False, mail=False):
         )
         # Model-dependent runtime owners may be imported only after the fresh
         # process has configured Django and admitted its SQL identity.
+        from .accounts.automation_maintenance import MaintenanceProducer
         from .accounts.branding_cleanup import produce_cleanup
         from .accounts.setup_mail import recover_pending as recover_setup_mail
         from .accounts.setup_notifications import recover_pending as recover_setup_slack
@@ -738,6 +739,7 @@ def serve_background(configuration, lease, *, source=False, mail=False):
         daily_finalization = DailyDigestFinalizeProducer(uuid4())
         weekly = WeeklyDigestProducer(uuid4())
         weekly_finalization = WeeklyDigestFinalizeProducer(uuid4())
+        maintenance = MaintenanceProducer()
 
         def produce(guard):
             """Expire abandoned setup even while exact candidate recovery is pending.
@@ -796,6 +798,7 @@ def serve_background(configuration, lease, *, source=False, mail=False):
                 *independent_producer(guard, produce_facts, guard),
                 *independent_producer(guard, produce_verifications, guard),
                 *independent_producer(guard, produce_setup_cleanup, guard),
+                *independent_producer(guard, maintenance, guard),
             )
 
         return serve_scheduler(

@@ -184,6 +184,7 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
             "source_refresh",
             "setup_finalize",
             "branding_cleanup",
+            "automation_maintenance",
             "setup_source_load",
             "setup_source_cleanup",
         }
@@ -278,6 +279,7 @@ def test_scheduler_registry_is_metadata_only():
         "production_token_cleanup",
         "source_refresh",
         "branding_cleanup",
+        "automation_maintenance",
         "setup_source_load",
         "setup_source_cleanup",
         "setup_mail_test",
@@ -494,6 +496,7 @@ def test_only_bootstrap_worker_can_omit_installed_source_key(
             "production_token_cleanup",
             "setup_source_load",
             "branding_cleanup",
+            "automation_maintenance",
             "setup_source_cleanup",
         }
         assert "parishsoft" not in runtime.receipts

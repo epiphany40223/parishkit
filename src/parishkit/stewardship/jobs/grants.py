@@ -140,6 +140,11 @@ def task_runtime_grants(role):
         )
 
         add_setup_completion_grants(tables, columns)
+        from parishkit.stewardship.accounts.automation_grants import (
+            add_automation_worker_grants,
+        )
+
+        add_automation_worker_grants(tables, columns)
     else:
         columns["stewardship_ops_incident"] = {"SELECT": {"kind", "resolved_at"}}
         columns["stewardship_ops_slack_attempt"] = {

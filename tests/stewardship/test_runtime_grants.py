@@ -336,16 +336,24 @@ def test_background_grants_keep_initial_completion_separate_from_general_authori
             "UPDATE": {"revoked_at", "version"},
         }
         assert tables["stewardship_task_run"] == {"SELECT", "INSERT", "UPDATE"}
-        assert "stewardship_portal_session" not in tables
+        # The automation maintenance task (ADM-11) cleans up ended Admin
+        # sessions: it reads their liveness columns, revokes and deletes them,
+        # and purges their Django sessions through a definer function, never
+        # reading a session key or session data.
+        assert tables["stewardship_portal_session"] == {"DELETE"}
         assert columns["stewardship_portal_session"] == {
             "SELECT": {
                 "id",
                 "principal_id",
+                "authenticated_at",
                 "revoked_at",
                 "expires_at",
                 "last_activity_at",
-            }
+                "version",
+            },
+            "UPDATE": {"revoked_at", "version"},
         }
+        assert "django_session" not in tables and "django_session" not in columns
     else:
         assert "stewardship_family_session" not in tables
         assert "stewardship_family_session" not in columns

@@ -230,19 +230,24 @@ FAMILY_LOGIN_FUNCTION = (
 )
 # Promoted Ministry catalog DUIDs, for a live campaign's added Ministries (#342).
 MINISTRY_CATALOG_FUNCTION = "stewardship_ministry_catalog_v1()"
+# The automation maintenance task's Django session purge for ended Admin
+# sessions (ADM-11): the worker never reads a session key itself.
+SESSION_PURGE_FUNCTION = "stewardship_admin_session_purge_v1(uuid[])"
 
 
 def runtime_functions(role, *, target=None):
     """Return the definer routines this login may EXECUTE.
 
     Web signs Families in; the configuration installer checks that a Ministry
-    added to a live campaign is in the promoted catalog, without source grants.
+    added to a live campaign is in the promoted catalog, without source grants;
+    the general worker purges the Django sessions of ended Admin sessions.
     """
     role = _identity_role(role, target)
     return frozenset(
         {
             ServiceRole.WEB: {FAMILY_LOGIN_FUNCTION},
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
+            ServiceRole.WORKER: {SESSION_PURGE_FUNCTION},
         }.get(role, ())
     )
 
@@ -316,9 +321,9 @@ def runtime_grants(role, *, target=None):
         }
         return tables, columns
     if role in {ServiceRole.BOOTSTRAP, ServiceRole.ADMIN_RECOVERY}:
-        from .runtime_database import offline_grants
+        from .runtime_database import offline_columns, offline_grants
 
-        return offline_grants(role), {}
+        return offline_grants(role), offline_columns(role)
     if role is ServiceRole.BACKUP_WORKER:
         # The dump itself reads through the pg_read_all_data membership that
         # provisioning grants; the registry holds the one row it may write and
@@ -478,6 +483,9 @@ def runtime_grants(role, *, target=None):
         from .campaigns.engagement_grants import add_engagement_web_grants
 
         add_engagement_web_grants(tables, columns)
+        from .accounts.automation_grants import add_automation_web_grants
+
+        add_automation_web_grants(tables, columns)
         # Verified clearance is append-only and independently admitted by SQL;
         # its trigger owns the one-Family eligibility effect, not the web login.
         tables["stewardship_recipient_refusal"] = {"SELECT"}

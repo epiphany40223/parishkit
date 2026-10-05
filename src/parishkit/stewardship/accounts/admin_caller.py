@@ -11,8 +11,10 @@ later, the host command line (see the Admin automation specification's
 ``AdminCaller.from_request`` is the only web constructor. A web caller keeps
 its request privately, mirroring admission results onto it exactly as before
 and rotating its CSRF token when authority rotates, so the pages behave as they
-did. The automation constructor arrives with automation sessions; until then
-the automation rules here are fail-closed and unreachable in production.
+did. ``AdminCaller.from_automation`` is the only command-line constructor: it
+takes an automation session secret, never a browser session key, opens the
+command session and admits it. Only the host command line,
+``parishkit.stewardship.admin_cli``, may call it, which a test enforces.
 
 Build one caller per request, early, and pass that same caller everywhere. A
 web caller snapshots the request's session: if a second caller converted from
@@ -88,6 +90,9 @@ class AdminCaller:
     scope: str | None = None
     correlation_id: UUID | None = None
     campaign_id: int | None = None
+    # Automation only: the admitted AutomationSession row, for its label,
+    # deadline and the 72-hour warning; None for the web.
+    automation_session: Any = field(default=None, repr=False)
     # Web only: the request whose attributes and CSRF token admission keeps in
     # step, and whether the CSRF-protected POST was asserted at construction.
     _request: Any = field(default=None, repr=False)
@@ -149,6 +154,45 @@ class AdminCaller:
             _request=request,
             _state_changing=state_changing,
         )
+
+    @classmethod
+    def from_automation(cls, secret, host_digest, *, store, pairing=None):
+        """Build the command-line caller for one command, or refuse it.
+
+        Admits the command through its automation session (see
+        ``automation_sessions.open_command_session``): the session secret's
+        digest finds the session, which must be live and bound to this host
+        digest, and a new command session is opened for its Administrator.
+        Ordinary admission then runs on that command session as for a page.
+        Raises ``automation_sessions.SessionUnusable``. It never accepts a
+        browser session key, never rotates and never touches CSRF.
+        """
+        from .automation_sessions import (
+            SessionUnusable,
+            close_command_session,
+            open_command_session,
+        )
+        from .sessions import authenticated_admin
+
+        row, session = open_command_session(
+            secret, host_digest, store=store, pairing=pairing
+        )
+        caller = cls(
+            session=session,
+            channel=AUTOMATION,
+            automation_session_id=row.pk,
+            scope=row.scope,
+            correlation_id=bound_correlation(),
+        )
+        caller.automation_session = row
+        if authenticated_admin(caller, store=store) is None:
+            from .models import PortalSession
+
+            close_command_session(
+                PortalSession.objects.filter(session_id=session.session_key).first()
+            )
+            raise SessionUnusable("session_ended")
+        return caller
 
     @property
     def read_only(self):

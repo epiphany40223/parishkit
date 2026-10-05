@@ -338,20 +338,54 @@ def offline_grants(role):
         grants["stewardship_credential_key_state"] = {"SELECT", "INSERT"}
         grants["stewardship_credential_deployment"] = {"SELECT", "INSERT"}
     elif role is ServiceRole.ADMIN_RECOVERY:
+        from .accounts.automation_grants import add_automation_recovery_grants
+
         grants["stewardship_config_request"].add("INSERT")
         grants["stewardship_portal_session"] = {"SELECT", "UPDATE"}
+        # The restore's revocation of every automation session (ADM-11).
+        add_automation_recovery_grants(grants, {})
     else:
         raise ConfigError("This role has no offline configuration grants.")
     return grants
 
 
+def offline_columns(role):
+    """The column grants of an offline login, declared beside its table grants.
+
+    Admin recovery ends automation sessions through the session table's ending
+    columns only (``revoke-automation-sessions``); bootstrap has none.
+    """
+    if role is ServiceRole.BOOTSTRAP:
+        return {}
+    if role is ServiceRole.ADMIN_RECOVERY:
+        from .accounts.automation_grants import add_automation_recovery_grants
+
+        columns = {}
+        add_automation_recovery_grants({}, columns)
+        return columns
+    raise ConfigError("This role has no offline configuration grants.")
+
+
 def admit_offline_database(configuration):
-    """Offline host confirmation never bypasses SQL identity or schema admission."""
+    """Offline host confirmation never bypasses SQL identity or schema admission.
+
+    Column grants are declared by ``offline_columns`` and verified exactly, as
+    the online logins' are: a column privilege is admitted only for a column
+    it names.
+    """
+    from django.db import connection
+
     from .accounts.credential_database import _identity, admit_grants
+    from .runtime_grants import admit_columns
 
     role = configuration.service_role
     _identity("pk_stewardship_" + role.value.replace("-", "_"))
-    admit_grants(offline_grants(role))
+    tables, columns = offline_grants(role), offline_columns(role)
+    allowed = {table: set(grants) for table, grants in tables.items()}
+    for table, grants in columns.items():
+        allowed.setdefault(table, set()).update(grants)
+    admit_grants(allowed)
+    admit_columns(connection, tables, columns)
     require_no_temporary_authority()
     require_current_schema()
     require_capacity(configuration)

@@ -138,6 +138,8 @@ def _bulk_settings(configuration):
 
 def scheduler_handlers():
     """Compiled metadata admission only; accidental provider/file execution refuses."""
+    from .accounts.automation_maintenance import TASK_TYPE as AUTOMATION_MAINTENANCE
+    from .accounts.automation_maintenance import maintenance_handler
     from .accounts.branding_cleanup import TASK_TYPE as BRANDING_CLEANUP
     from .accounts.branding_cleanup import cleanup_handler
     from .accounts.setup_mail import TASK_TYPE as SETUP_MAIL
@@ -205,6 +207,7 @@ def scheduler_handlers():
         TOKEN_PREPARATION: token_handler(scheduler=True),
         TOKEN_CLEANUP: token_handler(cleanup=True, scheduler=True),
         BRANDING_CLEANUP: cleanup_handler(),
+        AUTOMATION_MAINTENANCE: maintenance_handler(scheduler=True),
         SETUP_CLEANUP: setup_cleanup_handler(scheduler=True),
         SETUP_MAIL: setup_mail_handler(scheduler=True),
         SETUP_LOAD: Handler(
@@ -339,6 +342,10 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
 
         handlers = {SETUP_MAIL: setup_mail_handler()}
     else:
+        from .accounts.automation_maintenance import (
+            TASK_TYPE as AUTOMATION_MAINTENANCE,
+        )
+        from .accounts.automation_maintenance import maintenance_handler
         from .accounts.branding_cleanup import TASK_TYPE as BRANDING_CLEANUP
         from .accounts.branding_cleanup import cleanup_handler
         from .campaigns.activation_tasks import token_handler
@@ -414,6 +421,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
             TOKEN_PREPARATION: token_handler(public=rings["token_public"]),
             TOKEN_CLEANUP: token_handler(cleanup=True),
             BRANDING_CLEANUP: cleanup_handler(configuration.paths["media"]),
+            AUTOMATION_MAINTENANCE: maintenance_handler(),
             SETUP_CLEANUP: setup_cleanup_handler(),
             SETUP_LOAD: setup_source_handler(),
         }

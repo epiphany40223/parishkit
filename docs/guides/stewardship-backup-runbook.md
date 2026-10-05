@@ -653,7 +653,14 @@ layout; where the deployment YAML overrides a path, use that path instead.
    `collect-static` into it in the set's image, as the deployment runbook's
    [upgrade](stewardship-deployment-runbook.md#upgrade) does. The static
    tree is not in the set, and a newer release's scripts must not be served
-   with the restored release's pages.
+   with the restored release's pages. Then, with every online service still
+   stopped, end every Admin automation session the restored database holds,
+   since their session files survive on the host:
+   `run --rm admin-recovery revoke-automation-sessions --config RECOVERY_CONFIG --reason restore`
+   (see the Admin automation specification's
+   [session rules](../specs/stewardship/admin-automation/spec.md#session-rules)).
+   A set taken under a release without automation sessions has none, and
+   its image has no such command; skip it then.
 8. **Start web alone and review.** **Disposable drill host: start `web` alone, stop
    after web's health check and go straight to step 10.** Starting the
    installers there would let the Google Workspace installer answer pending

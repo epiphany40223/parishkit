@@ -114,6 +114,13 @@ class Action(StrEnum):
     SETUP_EXPIRED = "setup_expired"
     SETUP_CREDENTIAL_STAGED = "setup_credential_staged"
     SETUP_CREDENTIAL_SCRUBBED = "setup_credential_scrubbed"
+    # Admin automation sessions (ADM-11): approval, ending (the reason is on
+    # the session row), refused use, and an Administrator acknowledging the
+    # automation notices on their own dashboard.
+    AUTOMATION_SESSION_APPROVED = "automation_session_approved"
+    AUTOMATION_SESSION_ENDED = "automation_session_ended"
+    AUTOMATION_SESSION_REFUSED = "automation_session_refused"
+    AUTOMATION_NOTICES_ACKNOWLEDGED = "automation_notices_acknowledged"
 
 
 # Closed field identifiers are operational metadata, never census values.

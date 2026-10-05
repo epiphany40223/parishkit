@@ -32,7 +32,7 @@ CREATE TABLE "stewardship_ops_notice" (
 );
 ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "stewardship_jobs_operationalincident_positive_version" CHECK ("version" >= 1);
 CREATE UNIQUE INDEX "ops_incident_active_kind" ON "stewardship_ops_incident" ("kind") WHERE "resolved_at" IS NULL;
-ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "ops_incident_kind" CHECK ("kind"::text = ANY(ARRAY[('database_unavailable'::varchar)::text, ('storage_integrity'::varchar)::text, ('task_failed'::varchar)::text, ('system_failure'::varchar)::text, ('source_refresh_failed'::varchar)::text, ('source_stale'::varchar)::text, ('source_tenant_mismatch'::varchar)::text, ('source_destructive_change'::varchar)::text, ('mail_provider_unavailable'::varchar)::text, ('scheduler_lag'::varchar)::text, ('worker_unavailable'::varchar)::text, ('admin_abuse'::varchar)::text, ('family_abuse'::varchar)::text, ('limiter_unavailable'::varchar)::text, ('limiter_state_lost'::varchar)::text, ('publication_ambiguous'::varchar)::text, ('production_cleanup_failed'::varchar)::text, ('backup_rpo_breach'::varchar)::text, ('backup_offsite_failed'::varchar)::text, ('backup_key_changed'::varchar)::text, ('source_retention_failing'::varchar)::text, ('purge_inconsistency'::varchar)::text, ('purge_cleanup_failed'::varchar)::text]));
+ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "ops_incident_kind" CHECK ("kind"::text = ANY(ARRAY[('database_unavailable'::varchar)::text, ('storage_integrity'::varchar)::text, ('task_failed'::varchar)::text, ('system_failure'::varchar)::text, ('source_refresh_failed'::varchar)::text, ('source_stale'::varchar)::text, ('source_tenant_mismatch'::varchar)::text, ('source_destructive_change'::varchar)::text, ('mail_provider_unavailable'::varchar)::text, ('scheduler_lag'::varchar)::text, ('worker_unavailable'::varchar)::text, ('admin_abuse'::varchar)::text, ('family_abuse'::varchar)::text, ('limiter_unavailable'::varchar)::text, ('limiter_state_lost'::varchar)::text, ('publication_ambiguous'::varchar)::text, ('production_cleanup_failed'::varchar)::text, ('backup_rpo_breach'::varchar)::text, ('backup_offsite_failed'::varchar)::text, ('backup_key_changed'::varchar)::text, ('source_retention_failing'::varchar)::text, ('purge_inconsistency'::varchar)::text, ('purge_cleanup_failed'::varchar)::text, ('automation_approved'::varchar)::text, ('automation_irreversible'::varchar)::text, ('automation_policy_change'::varchar)::text, ('automation_refused'::varchar)::text]));
 ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "ops_incident_levels" CHECK ("level"::text = ANY(ARRAY[('WARNING'::varchar)::text, ('CRITICAL'::varchar)::text]) AND "signal_level"::text = ANY(ARRAY[('WARNING'::varchar)::text, ('CRITICAL'::varchar)::text]));
 ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "ops_incident_action" CHECK ("action"::text = ANY(ARRAY[('observe'::varchar)::text, ('resolve'::varchar)::text]));
 ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "ops_incident_windows" CHECK ("suppression_seconds">=60 AND "suppression_seconds"<=86400 AND ("escalation_seconds">=60 AND "escalation_seconds"<=86400));
@@ -81,9 +81,14 @@ BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'Operational episode history cannot be deleted' USING ERRCODE='23514';
     END IF;
+    -- Web observes authentication signals and, for the Admin automation
+    -- interface, the four automation kinds (approval, refused use, policy
+    -- changes and irreversible actions taken through a session).
     IF session_user='pk_stewardship_web' AND NEW.kind NOT IN
-      ('limiter_unavailable','limiter_state_lost','admin_abuse','family_abuse') THEN
-        RAISE EXCEPTION 'Web operational signals are limited to authentication' USING ERRCODE='23514';
+      ('limiter_unavailable','limiter_state_lost','admin_abuse','family_abuse',
+       'automation_approved','automation_irreversible','automation_policy_change',
+       'automation_refused') THEN
+        RAISE EXCEPTION 'Web operational signals are limited to authentication and automation' USING ERRCODE='23514';
     END IF;
     IF TG_OP='INSERT' THEN
         IF NEW.version<>1 OR NEW.action<>'observe' OR NEW.occurrences<>1

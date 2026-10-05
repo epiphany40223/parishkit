@@ -94,6 +94,10 @@ class FailureKind(StrEnum):
     # A new integration key has been installed for a while but not selected,
     # so its consumers hold their work (#307 M1); it needs an Administrator.
     CREDENTIAL_SWITCH_UNFINISHED = "credential_switch_unfinished"
+    # A refused Admin automation session use (ADM-11): an unknown secret, a
+    # host mismatch or a command session's key presented to the web. The
+    # detail is the automation notice and audit event, never the secret.
+    AUTOMATION_REFUSED = "automation_session_refused"
 
 
 # The off-site copy's Drive failure categories, mirroring
@@ -162,6 +166,9 @@ TIMEOUT_LIMITS = frozenset(
         "family_sweep_budget",
         "configuration_activation",
         "startup_database_wait",
+        # ``pk-stewardship admin login wait`` stopped waiting for the
+        # Administrator to approve a pairing (ADM-11); process log only.
+        "automation_pairing_wait",
     }
 )
 

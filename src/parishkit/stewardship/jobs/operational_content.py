@@ -44,6 +44,12 @@ class IncidentKind(StrEnum):
     SOURCE_RETENTION_FAILING = "source_retention_failing"
     PURGE_INCONSISTENCY = "purge_inconsistency"
     PURGE_CLEANUP_FAILED = "purge_cleanup_failed"
+    # Admin automation sessions (ADM-11): fixed text naming no session, label
+    # or Family; the detail is in the automation notices on the dashboard.
+    AUTOMATION_APPROVED = "automation_approved"
+    AUTOMATION_IRREVERSIBLE = "automation_irreversible"
+    AUTOMATION_POLICY_CHANGE = "automation_policy_change"
+    AUTOMATION_REFUSED = "automation_refused"
 
 
 class IncidentLevel(StrEnum):
@@ -87,7 +93,33 @@ TITLES = MappingProxyType(
         IncidentKind.SOURCE_RETENTION_FAILING: "Parish data cleanup keeps failing",
         IncidentKind.PURGE_INCONSISTENCY: "Campaign purge is inconsistent",
         IncidentKind.PURGE_CLEANUP_FAILED: "Campaign purge cleanup failed",
+        IncidentKind.AUTOMATION_APPROVED: "An automation session was approved",
+        IncidentKind.AUTOMATION_IRREVERSIBLE: (
+            "An automation session took an irreversible action"
+        ),
+        IncidentKind.AUTOMATION_POLICY_CHANGE: (
+            "An automation session changed user access, integration keys or "
+            "notification settings"
+        ),
+        IncidentKind.AUTOMATION_REFUSED: "An automation session was refused",
     }
+)
+
+# The automation kinds, which the web login may observe and the maintenance
+# task resolves after an hour without events (automation_sessions.py).
+AUTOMATION_KINDS = (
+    IncidentKind.AUTOMATION_APPROVED,
+    IncidentKind.AUTOMATION_IRREVERSIBLE,
+    IncidentKind.AUTOMATION_POLICY_CHANGE,
+    IncidentKind.AUTOMATION_REFUSED,
+)
+_AUTOMATION_INSTRUCTION = (
+    "Review the automation notices on the Admin dashboard. They name the "
+    "automation session and what it did."
+)
+_AUTOMATION_RESOLVED = (
+    "No further automation events of this kind in the last hour. Review the "
+    "automation notices on the Admin dashboard if you have not already."
 )
 
 
@@ -110,6 +142,7 @@ INSTRUCTIONS = MappingProxyType(
             "work. Ask the server operator to check the worker log for "
             "the cause."
         ),
+        **dict.fromkeys(AUTOMATION_KINDS, _AUTOMATION_INSTRUCTION),
     }
 )
 
@@ -125,6 +158,7 @@ RESOLVED_INSTRUCTIONS = MappingProxyType(
             "kept copy of the private key opens a new backup, as the backup "
             "runbook describes."
         ),
+        **dict.fromkeys(AUTOMATION_KINDS, _AUTOMATION_RESOLVED),
     }
 )
 

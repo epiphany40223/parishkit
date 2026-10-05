@@ -220,6 +220,33 @@ def preview_recovery_command(configuration, *, deployment_id, target_email):
         return {"recovery_preview": recovery_preview(version, runtime.pk, target_email)}
 
 
+def revoke_automation_command(configuration, *, reason):
+    """End every live Admin automation session, offline (restore or operator).
+
+    Runs as the offline admin-recovery login, with every online service
+    stopped, after a restored database and before ``web`` starts (see the
+    Admin automation specification, "Session rules"). ``reason`` is
+    ``restore`` or ``revoked_by_operator``. Prints only a count.
+    """
+    if reason not in {"restore", "revoked_by_operator"}:
+        raise ConfigError("The reason is restore or revoked_by_operator.")
+    if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
+        raise ConfigError("Revocation requires the admin-recovery profile.")
+    with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
+        configure_operator_database(configuration)
+        from django.db import connection
+
+        from .accounts.automation_sessions import revoke_all_offline
+        from .runtime_database import admit_offline_database
+
+        try:
+            admit_offline_database(configuration)
+            count = revoke_all_offline(reason, correlation_id=uuid4())
+        finally:
+            connection.close()
+    return {"automation_sessions_revoked": count, "end_reason": reason}
+
+
 def execute_operator(args):
     """Report reviewed status fields only; arbitrary exception messages stay private."""
     import sys
@@ -261,6 +288,8 @@ def execute_operator(args):
                 deployment_id=args.confirm_deployment,
                 target_email=args.target_email,
             )
+        elif args.command == "revoke-automation-sessions":
+            result = revoke_automation_command(configuration, reason=args.reason)
         elif args.command == "recover-admin":
             result = recover_admin_command(
                 configuration,
