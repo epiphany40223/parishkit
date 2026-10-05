@@ -112,8 +112,11 @@ class DeliveryCircuit:
     reacts to is durable, so sharing it is needed only for a stop:
     - SYSTEMIC: the stop is container-wide through ``shared_stop``. The
       other process may already have one message in flight, so a SYSTEMIC
-      fault can fail up to two messages (one per process) before both stop;
-      each is refused (definitely unsent), so an Administrator retry is safe.
+      fault can fail up to two messages (one per process) before both stop.
+      A fault before DATA was sent leaves its message definitely unsent, so
+      an Administrator retry is safe. One after DATA was sent is delivery
+      unknown and never retried automatically; it must be settled from
+      provider evidence (family_delivery.py).
     - Outage: a process pauses after its own three outage results, so an
       outage costs at most three attempts per process (six instead of
       three), and each cooldown ends with one probe per process. A
