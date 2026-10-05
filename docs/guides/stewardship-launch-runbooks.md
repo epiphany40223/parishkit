@@ -275,10 +275,13 @@ results do not use up a message's five provider attempts, so a long outage
 fails no message (unless it lasts 7 days). A systemic failure (a
 configuration or credential fault that waiting cannot fix) instead stops
 campaign sending until `mail-dispatch` restarts. A message that met a
-systemic failure becomes a failed delivery, as does one that used up its
-five provider attempts on other temporary refusals; one whose
+systemic failure before the `DATA` command was sent becomes a failed
+delivery, as does one that used up its five provider attempts on other
+temporary refusals; one whose
 preparation retries ran out stays pending, or waiting to retry, with a
-failed task; one the provider may have accepted without confirming becomes
+failed task; one the provider may have accepted without confirming, including
+one that met a systemic failure after `DATA` was sent (an unexpected reply
+to `DATA`, for example), becomes
 `delivery_unknown` (below). None of these is retried automatically.
 
 **You do:**
@@ -405,7 +408,8 @@ until the drop is explained.
 
 1. Find what fell. The worker's log line for the refusal, a CRITICAL
    `source_destructive_change`, carries `source_loss` with the count's name
-   and its before and after values (counts only, no parish data):
+   and its before and after values (counts only, no parish data; the
+   System health page's example Families are separate and never logged):
    `docker compose ... logs worker | grep source_loss`.
 2. Check it in ParishSoft. If it is a mistake or an outage there (records
    removed, organization or status fields blanked), fix it in ParishSoft and

@@ -265,7 +265,7 @@ the tests; items here only name them.
    request status.
 6. **PR 5, fresh-gate acceptance.** The guard migration letting six SQL
    guards (four session-bound fresh-gate guards and two secret request
-   guards) accept a full-scope automation session, caller-aware freshness
+   guards), plus any ADM-13 System health guard already installed, accept a full-scope automation session, caller-aware freshness
    checks, the confirmation prompt and `--yes`. Security-focused review.
 7. **PR 6, refresh and Testing sends.** Refresh, sample and chosen-Family
    tests.
@@ -328,6 +328,69 @@ NAV-1), after the in-flight report work in #553, #567, #559 and #477 PR 5
 merges; lane D runs NAV-8. NAV-16 (after NAV-10 and NAV-11) to NAV-18 come at
 the end, and NAV-13 is last and optional.
 
+### ADM-13: System health page
+
+Implements the
+[System health](../../specs/stewardship/admin-portal/spec.md#system-health)
+page for [#530](https://github.com/epiphany40223/parishkit/issues/530): a
+System menu entry at `/admin/system/health/` with plain-language panels and
+four Administrator-only, fresh-gated, audited actions, each with a matching
+command through the same service function. It is post-launch work outside
+the phase and gate sequence. Each item is one pull request with independent
+review and full CI. Normal CI stays credential-free. PR 1 and PR 3 to PR 6
+(and PR 2 if it adds the #382 index) each change the schema through their
+own forward migration under the
+[post-launch schema policy](../../specs/stewardship/operations/spec.md#post-launch-schema-policy),
+and each frozen SQL file ends with a check that raises unless it was
+installed. The specification owns the behavior; items here only name each
+PR's scope.
+
+Dependencies: the System menu group and its URLs come from ADM-12 (#522,
+NAV-2 and NAV-6), and PR 2 follows them. The commands need ADM-11's read
+models (ADM-11 PR 3) and fresh-gate acceptance (ADM-11 PR 5). Until those
+land, each ADM-13 PR records its command as a pending exemption in the
+[action inventory](../../specs/stewardship/admin-automation/spec.md#action-inventory).
+ADM-13's SQL guards are written without the automation clause; ADM-11 PR 5's
+migration amends those already installed, and a guard installed after it
+includes the clause from the start. The Administrator's
+[decisions](../../specs/stewardship/admin-portal/spec.md#system-health-decisions)
+of 2026-10-04 are recorded in the specification.
+
+1. **PR 0, specification.** The System health section, the links from the
+   operations and automation specifications, the corrected SYSTEMIC outcome
+   wording in the Family mail dispatch guide and launch runbooks, this
+   package and its checklist. Tests: Markdown lint and the traceability
+   test.
+2. **PR 1, status records and drop counts.** Service status records
+   (migration and per-login grants, including the installers' new write
+   grant), and the loader change that checks and records every drop count
+   with the refused run. Security-focused review.
+3. **PR 2, read-only page.** The read model and page with all six panels,
+   the problems list, live updates, Home's problem lines and the debug
+   banner's link, and the read command or its pending exemption. If #382
+   has not added its item L9 daily-count index, PR 2 adds it in a forward
+   migration and then gets a security-focused review.
+4. **PR 3, take a backup now.** The backup request (migration), the backup
+   login's request grants, request mode with the backup lock and the hold
+   during a bulk send, the host cron entry, and the backup runbook's schedule,
+   checking, restore and restore drill updates. Security-focused review.
+5. **PR 4, clear a halted mail sender.** Halt identities, the clear signal
+   and the mailbox check request with their guards (migration), the check
+   in `mail-dispatch`, the consumers reading the signal, and the dispatch
+   guide and mail-provider outage runbook updates. Security-focused review.
+6. **PR 5, accept a large ParishSoft change once.** The one-time acceptance
+   and its guard, and the example Families table with its deletion
+   (migration), the drop check honoring the acceptance, the manifest
+   record and the launch runbook update. Security-focused review.
+7. **PR 6, turn off debug logging.** The debug-off switch and its guard
+   (migration), the in-process override, children's environment, the
+   `debug-off-clear` operator command, **Allow debug logging again**
+   (`system_debug_allow`, Testing only, refused in Production by its SQL
+   guard), the banner's end condition, and the Production activation and
+   deployment runbook updates. Security-focused review.
+
+PR 3 to PR 6 each add their command or its pending exemption.
+
 ## Review handoffs
 
 - Review Gate 1 covers ADM-01.
@@ -342,6 +405,9 @@ the end, and NAV-13 is last and optional.
   security-focused ones.
 - ADM-12 is outside the review gates: each of its pull requests gets an
   independent review.
+- ADM-13 is outside the review gates: each of its pull requests gets an
+  independent review, and PR 1 and PR 3 to PR 6 (items 2 and 4 to 7), plus
+  PR 2 if it adds a migration, security-focused ones.
 
 ## Completion criteria
 

@@ -1018,6 +1018,7 @@ Source scope: [post-launch work packages](../../plans/stewardship/overall.md#pos
 2. [ADM-11](admin-portal.md#adm-11-admin-automation-interface) Admin automation interface, in its own dependency order.
 3. [BG-12](background-processing.md#bg-12-faster-bulk-family-send) faster bulk Family send, in its own dependency order; the Production deploy follows once PR 0–PR 3 have merged and the rehearsal has passed.
 4. [ADM-12](admin-portal.md#adm-12-admin-navigation-overhaul) Admin navigation overhaul, in its own dependency order.
+5. [ADM-13](admin-portal.md#adm-13-system-health-page) System health page, in its own dependency order, after the ADM-12 System menu group and URLs.
 
 ## Packages that span phases
 

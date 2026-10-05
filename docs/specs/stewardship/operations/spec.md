@@ -569,7 +569,10 @@ describes under **Backup encryption key**; old private keys stay with the
 operator until the backups sealed to them expire.
 
 The application provides a shared backup service invoked by its scheduled task,
-operator command, or guarded campaign-purge web workflow. Each invocation
+operator command, or guarded campaign-purge web workflow, or for a request
+an Administrator makes on the
+[System health](../admin-portal/spec.md#take-a-backup-now) page. Each
+invocation
 creates one consistent backup set containing:
 
 - PostgreSQL logical/custom-format dump and schema/version metadata;
@@ -731,6 +734,11 @@ are the selected controls. Export encryption or a shorter code-specific
 retention period is not required. This exception does not change encrypted
 backup or database-field encryption requirements.
 
+The example Families that a refused large ParishSoft change records (DUID
+and directory name only) are deleted under the rules of
+[accept a large ParishSoft change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once)
+(ADM-13), at most seven days after the refusal by default.
+
 ParishSoft HTTP cache follows configured freshness and bounded size. Upload
 staging, failed wizard staging, old static bundles, expired sessions, worker
 results, and rotated operational logs have documented cleanup jobs.
@@ -831,6 +839,12 @@ says when to run it. `pk-stewardship engagement-backfill` is admitted the same
 way and fills the
 [Family engagement record](../data/spec.md#family-engagement) once after the
 release that introduces it.
+
+Administrators see this health in plain words, and fix its routine
+problems, on the Admin portal's
+[System health](../admin-portal/spec.md#system-health) page (ADM-13). The
+page works through durable requests that the services act on, so the web
+process gains no Docker access, backup credential or host command.
 
 The application exposes Prometheus-compatible metrics only at `/metrics` on its
 internal Compose interface. The route requires an `Authorization: Bearer`
