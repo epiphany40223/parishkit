@@ -277,3 +277,197 @@ def test_admission_refuses_a_signing_keyring_the_web_did_not_load(monkeypatch):
         )
         == "credential_mismatch"
     )
+
+
+# Runs the command line in a fresh process with no Django settings, as the
+# wrapper does in the container. The preamble arrives on standard input,
+# never on the command line. With "stub" as the first argument, the
+# deployment and host checks are replaced, so the real admitted() and
+# configure_admin_process() run up to the missing signing keyring: every
+# import they make before Django is set up really happens.
+FRESH_PROCESS = """
+import contextlib, io, json, sys
+from types import SimpleNamespace
+if sys.argv[1] == "stub":
+    from parishkit.stewardship import (
+        deployment, runtime_paths, runtime_web, service_boundaries,
+        startup_interlock,
+    )
+    deployment.load_deployment = lambda path: SimpleNamespace(secrets={})
+    service_boundaries.admit_online_service = (
+        lambda configuration: deployment.ServiceRole.WEB
+    )
+    runtime_web.admit_lifecycle_mounts = lambda configuration: None
+    runtime_paths.RuntimeLayout = lambda configuration: SimpleNamespace(
+        interlock=None
+    )
+    startup_interlock.StartupLease = lambda *a, **k: contextlib.nullcontext()
+from parishkit.stewardship import cli
+sys.stdin = io.TextIOWrapper(io.BytesIO(sys.stdin.buffer.read()))
+code = cli.main(["admin", *sys.argv[2:]])
+print(json.dumps({"exit": code}))
+"""
+
+
+def fresh_environment():
+    """This interpreter's environment without Django settings, with this source."""
+    import os
+
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key != "DJANGO_SETTINGS_MODULE"
+    }
+    environment["PYTHONPATH"] = str(SOURCE.parent.parent)
+    return environment
+
+
+@pytest.mark.parametrize(
+    "mode,preamble,argv,expected",
+    [
+        ("real", PREAMBLE, ["commands"], (0, None)),
+        ("real", b"malformed\n", ["commands"], (2, "usage")),
+        # Admission fails on the missing configuration file: exit 2, mapped
+        # without loading any model.
+        ("real", PREAMBLE, ["whoami"], (2, "configuration")),
+        # Past load_deployment: every session command reaches the signing
+        # keyring check inside configure_admin_process, never "internal".
+        ("stub", PREAMBLE, ["whoami"], (2, "configuration")),
+        ("stub", PREAMBLE, ["sessions"], (2, "configuration")),
+        ("stub", PREAMBLE, ["logout"], (2, "configuration")),
+        ("stub", PREAMBLE, ["login", "wait", "--name", "ops"], (2, "configuration")),
+    ],
+    ids=[
+        "commands",
+        "malformed-preamble",
+        "missing-configuration",
+        "admitted-whoami",
+        "admitted-sessions",
+        "admitted-logout",
+        "admitted-login-wait",
+    ],
+)
+def test_the_command_line_runs_before_django_is_set_up(
+    tmp_path, mode, preamble, argv, expected
+):
+    """The wrapper runs each command in a fresh process with no Django settings.
+
+    The preamble, the catalog, the exit-code mapping and admission up to
+    configure_admin_process all run before Django is set up, so none of
+    them may import a model.
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            FRESH_PROCESS,
+            mode,
+            *argv,
+            "--config",
+            str(tmp_path / "missing.yaml"),
+            "--session-stdin",
+        ],
+        input=preamble,
+        capture_output=True,
+        env=fresh_environment(),
+        timeout=120,
+    )
+    lines = result.stdout.decode().splitlines()
+    assert result.returncode == 0, result.stderr.decode()[-2000:]
+    document, outcome = json.loads(lines[0]), json.loads(lines[-1])
+    code, error = expected
+    assert (document.get("error") or {}).get("code") == error
+    assert outcome["exit"] == code
+
+
+def pre_setup_imports():
+    """Every module admin_cli imports before Django is set up, read from its source.
+
+    Module-level imports; in ``admitted()``, the imports before its call to
+    ``configure_admin_process``; in ``configure_admin_process``, the imports
+    before ``settings.configure`` (and the settings module it loads); and the
+    direct imports of the functions that run before admission.
+    """
+    import ast
+
+    tree = ast.parse(Path(admin_cli.__file__).read_text())
+    functions = {
+        node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
+    }
+
+    def calls(node, name):
+        """The first line on which ``node`` calls ``name`` (an attribute or a name)."""
+        lines = [
+            item.lineno
+            for item in ast.walk(node)
+            if isinstance(item, ast.Call)
+            and getattr(item.func, "attr", getattr(item.func, "id", None)) == name
+        ]
+        return min(lines)
+
+    def imports(statements, before=None):
+        """Absolute module names imported by these statements, before a line."""
+        names = set()
+        for statement in statements:
+            for item in ast.walk(statement):
+                if before is not None and getattr(item, "lineno", 0) >= before:
+                    continue
+                if isinstance(item, ast.Import):
+                    names.update(alias.name for alias in item.names)
+                elif isinstance(item, ast.ImportFrom):
+                    package = "parishkit.stewardship"
+                    if item.level == 2:
+                        package = "parishkit"
+                    module = item.module or ""
+                    names.add(
+                        f"{package}.{module}".rstrip(".") if item.level else module
+                    )
+        return names
+
+    found = imports(
+        [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+    )
+    admitted = functions["admitted"]
+    found |= imports(admitted.body, calls(admitted, "configure_admin_process"))
+    configure = functions["configure_admin_process"]
+    found |= imports(configure.body, calls(configure, "configure"))
+    found.add("parishkit.stewardship.settings.base")
+    for name in ("main", "run", "read_preamble", "catalog", "command_event_type"):
+        # Only the function's own direct imports: nested blocks run later.
+        found |= imports(
+            [
+                node
+                for node in functions[name].body
+                if isinstance(node, (ast.Import, ast.ImportFrom))
+            ]
+        )
+    return sorted(found)
+
+
+def test_every_pre_setup_import_is_django_free():
+    """Each module imported before Django is set up loads in a clean process.
+
+    A static guard beside the fresh-process test: a model-loading import
+    added before configure_admin_process fails here by name, whichever
+    command path would reach it.
+    """
+    import subprocess
+    import sys
+
+    modules = pre_setup_imports()
+    assert "parishkit.stewardship.accounts.authority" in modules
+    assert "parishkit.stewardship.accounts.automation_sessions" not in modules
+    failed = []
+    for module in modules:
+        result = subprocess.run(
+            [sys.executable, "-c", f"import {module}"],
+            capture_output=True,
+            env=fresh_environment(),
+            timeout=120,
+        )
+        if result.returncode:
+            failed.append(module)
+    assert not failed, f"These load Django models before setup: {failed}"

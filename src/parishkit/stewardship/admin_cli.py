@@ -155,10 +155,7 @@ def read_preamble(stream):
     Nothing after it is read here; later prompts and inputs read the same
     stream. A malformed line is a usage error that names no part of it.
     """
-    from .accounts.automation_sessions import (
-        SECRET_PATTERN,
-        valid_digest,
-    )
+    from .accounts.automation_tokens import SECRET_PATTERN, valid_digest
 
     raw = stream.readline(PREAMBLE_LIMIT + 1)
     if len(raw) > PREAMBLE_LIMIT or not raw.endswith(b"\n"):
@@ -222,8 +219,9 @@ def admitted(configuration):
     receipt, so a key rotation in progress refuses (exit 2). At most one
     database connection is held, and it is closed at exit.
     """
+    # Only Django-free modules before configure_admin_process sets Django up;
+    # a module that loads models is imported after it (a test checks this).
     from .accounts.authority import AuthorityStore
-    from .accounts.automation_sessions import PairingStore
     from .accounts.configuration_schema import validate_sections
     from .deployment import ServiceRole
     from .runtime_paths import RuntimeLayout
@@ -238,6 +236,7 @@ def admitted(configuration):
         receipt = configure_admin_process(configuration)
         from django.db import connections
 
+        from .accounts.automation_sessions import PairingStore
         from .consumer_runtime import loaded_service_receipts
         from .runtime_grants import admit_runtime_database
 
@@ -714,7 +713,7 @@ def catalog():
 
 def command_event_type(name):
     """The audit event type a state-changing command records (see the spec)."""
-    from .accounts.automation_sessions import command_event_type as event_type
+    from .accounts.automation_tokens import command_event_type as event_type
 
     return event_type(name)
 
@@ -733,14 +732,20 @@ def classify(error, *, admitted_process, changed, committed=False):
     for example) is ``outcome_unknown`` (exit 6): nothing guarantees that
     nothing changed.
     """
+    from django.apps import apps
     from django.db import DatabaseError, OperationalError
     from redis.exceptions import RedisError
 
-    from .accounts.automation_sessions import SessionUnusable
+    from .accounts.automation_tokens import SessionUnusable
     from .accounts.limiting import LimiterUnavailable
     from .observability import _guard_refusal
     from .startup_interlock import StartupBusy
-    from .storage import StaleRecordError
+
+    # Before admission sets up Django, no domain code has run, so no stale
+    # record can be refused; ``storage`` imports models and cannot load then.
+    StaleRecordError = ()
+    if apps.ready:
+        from .storage import StaleRecordError
 
     if committed and not isinstance(error, (SessionUnusable, PairingNotFinished)):
         return "outcome_unknown"
