@@ -81,10 +81,17 @@ def caret_to_end(page):
 
 
 def submit(page):
-    """Save the form and wait until the rendered response page has loaded."""
-    with page.expect_response(lambda response: response.request.method == "POST"):
+    """Save the form and wait until the rendered response page has loaded.
+
+    The page posts back to its own URL, so waiting for the POST response and
+    then ``wait_for_load_state()`` is not enough: when Playwright has not yet
+    seen the new document commit, the old page's already-fired ``load``
+    satisfies the wait and the next query races the swap to the new page
+    (#544, "assert 0 == 3" on loaded CI runners). ``expect_navigation`` waits
+    for the new document itself to commit and finish loading.
+    """
+    with page.expect_navigation():
         page.get_by_role("button", name="Preview changes").click()
-    page.wait_for_load_state()
 
 
 def test_typed_paragraphs_breaks_bold_lists_and_links_round_trip(
@@ -156,10 +163,12 @@ def test_typed_paragraphs_breaks_bold_lists_and_links_round_trip(
         "- Worship together\n- Serve others"
     )
     # Rendering the stored HTML again shows, and resubmits, the same structure.
+    from playwright.sync_api import expect
+
     editor = page.locator("[data-content-editor]")
-    assert editor.locator("p").count() == 3
-    assert editor.locator("li").count() == 2
-    assert editor.locator("strong").inner_text() == "a way of life"
+    expect(editor.locator("p")).to_have_count(3)
+    expect(editor.locator("li")).to_have_count(2)
+    expect(editor.locator("strong")).to_have_text("a way of life")
     keyboard.press("Tab")  # No edit: the source still holds the stored HTML.
     submit(page)
     assert saved[1].html == stored.html
