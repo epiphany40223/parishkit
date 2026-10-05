@@ -762,7 +762,11 @@ def test_campaign_modules_hide_and_disable_unselected_fields(page, component_ori
     assert not ministry.is_visible() and not financial.is_visible()
     page.get_by_label("Ministry stewardship").check()
     visible(ministry)
-    assert page.get_by_label("Included Ministries").input_value() == "4"
+    # Campaign settings edit an existing campaign (New campaign is retired),
+    # so checking the module selects nothing by itself.
+    included = page.get_by_label("Included Ministries")
+    assert included.evaluate("select => select.selectedOptions.length") == 0
+    included.select_option("4")
     page.get_by_label("Financial stewardship").check()
     visible(financial)
     page.get_by_label("Upcoming financial period start").fill("2027-01-01")

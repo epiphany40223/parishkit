@@ -154,6 +154,12 @@ img { max-width: 100%; height: auto; }
 .admin-tip { display: none; position: fixed; z-index: 20; left: 0; top: 0; width: max-content; max-width: min(20rem, calc(100vw - 1rem)); padding: .4rem .6rem; border: 1px solid var(--control-border); border-radius: var(--radius-small); background: var(--ink); color: var(--paper); font-size: .875rem; line-height: 1.4; box-shadow: 0 2px 6px rgb(0 0 0 / 20%); }
 .admin-tip.is-shown { display: block; }
 .admin-tip.is-tapped { pointer-events: none; }
+/* An unavailable in-page control (components/disabled-control.html, rule 10):
+   greyed like an unavailable menu entry. admin-menu-v1.js places its tip
+   beside it, or above it where there is no room, never over the next
+   control. */
+.disabled-control { position: relative; display: inline-block; }
+.disabled-control-link, .disabled-control-link:hover { color: #646e73; text-decoration: none; cursor: not-allowed; }
 /* Sign out is a POST button that looks like the menu's links, set apart at the end. */
 .admin-sections > li.admin-signout { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
 .admin-signout form { margin: 0; }

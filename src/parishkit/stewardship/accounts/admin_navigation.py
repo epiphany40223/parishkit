@@ -104,9 +104,9 @@ PAGES = {
     "index": Page(None, _("Home")),
     # Campaign
     "campaign_settings": Page("campaign", _("Campaign settings")),
-    # Creating or copying a campaign is refused once a campaign is current,
-    # so a change's status page names these editors but never links them.
-    "campaign_new": Page("campaign", _("New campaign"), linkable=False),
+    # Copy campaign is refused until the single-campaign change (#145), so a
+    # change's status page names it but never links it. (New campaign is
+    # retired outright; its old address is a non-page redirect below.)
     "campaign_clone": Page(
         "campaign", _("Copy campaign"), "campaign_settings", linkable=False
     ),
@@ -168,7 +168,6 @@ PAGES = {
     # two report roots only redirect to the current campaign's report (or
     # show that there is none), so they stand alone, outside the menu.
     "reports": Page("reports", _("Campaign reports")),
-    "report_campaigns": Page("reports", _("Choose a campaign"), "reports"),
     "participation": Page("reports", _("Participation")),
     "financial_report": Page("reports", _("Financial report")),
     "talents_report": Page("reports", _("Talents and limitations")),
@@ -185,9 +184,6 @@ PAGES = {
     ),
     "daily_digest_snapshot": Page("reports", _("Daily report"), "reports"),
     "ministry_reports": Page("reports", _("Ministry reports")),
-    "ministry_report_campaigns": Page(
-        "reports", _("Choose a campaign"), "ministry_reports"
-    ),
     "ministry_report": Page("reports", _("Ministry report")),
     "ministry_joiners": Page("reports", _("Joining"), "ministry_report"),
     "ministry_leavers": Page("reports", _("Leaving"), "ministry_report"),
@@ -538,6 +534,11 @@ NON_PAGES = frozenset(
         "ministry_followup_update",
         "ministry_packet",
         "participation_chart",
+        # Retired multi-campaign addresses (navigation rule 10, decision 11):
+        # New campaign and the two campaign choosers only redirect.
+        "campaign_new",
+        "report_campaigns",
+        "ministry_report_campaigns",
         # The old postal-outreach routes: a bookmark redirects to the Family
         # directory, and forms rendered before the merge still submit.
         "postal_directory",

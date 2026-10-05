@@ -661,10 +661,11 @@ def test_native_page_filters_privately_and_denies_leaders(
             assert search(browser, route, invalid)[0].status_code == 400
         # Another campaign is indistinguishable from none.
         wrong = f"/admin/reports/{uuid4()}/financial/"
-        assert get(browser, wrong)[0].status_code == 403
-        # Denied even with malformed filters: never a filter error whose link
-        # back could only lead to a denial.
-        assert search(browser, wrong, {"sort": "random"})[0].status_code == 403
+        # Until #145 any campaign but the current one is gone (410).
+        assert get(browser, wrong)[0].status_code == 410
+        # Refused even with malformed filters: never a filter error whose link
+        # back could only lead to a refusal.
+        assert search(browser, wrong, {"sort": "random"})[0].status_code == 410
         # The campaign reports page offers the entry only with the module enabled.
         _, body = get(browser, route.replace("financial", "participation"))
         assert route.encode() in body

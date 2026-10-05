@@ -6,13 +6,9 @@ import pytest
 from django.test import Client
 
 from parishkit.stewardship.accounts.campaign_forms import initial_fields
+from parishkit.stewardship.accounts.campaign_views import SALT
 from parishkit.stewardship.accounts.configuration_installation import install_request
-from parishkit.stewardship.accounts.content_forms import (
-    applicable_slots,
-    matches_default,
-)
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
-from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
@@ -22,7 +18,7 @@ from ..policy_factory import address
 from ..test_source_corpus import source
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change, command
-from .test_admin_navigation_postgresql import STEPS, flow_steps
+from .test_admin_navigation_postgresql import flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_current_chair_postgresql import publish
 from .test_parish_views_postgresql import token
@@ -70,84 +66,71 @@ def apply(store, response):
     assert receipt.state == "applied"
 
 
-def test_new_draft_requires_confirmation_and_applied_receipt(auth_service, google):
-    """No source, Ministry or financial data is required for a census-only draft."""
+def test_new_campaign_address_redirects_and_records_nothing(auth_service, google):
+    """New campaign is retired (decision 11): its address only redirects.
+
+    With no current campaign it leads Home, otherwise to the current
+    campaign's settings. A form left open on the old page, even one carrying
+    a valid signed creation preview, is redirected without recording anything.
+    """
+    from .test_clone_views_postgresql import added_campaign, signed_preview
+
     browser, _ = signed_in()
     store = auth_service.store
     response = browser.get(NEW)
-    assert response.status_code == 200 and b"Create campaign draft" in response.content
-    assert flow_steps(response.content) == (STEPS, "Make changes")
-    preview = post(browser, NEW, fields(store))
-    assert b"starts with the default text" in preview.content
-    assert flow_steps(preview.content) == (STEPS, "Review")
-    proposal = token(preview)
-    assert (
-        not Campaign.objects.exists()
-        and not ConfigurationChangeRequest.objects.exists()
-    )
-    accepted = post(browser, NEW, {"action": "confirm", "preview": proposal})
+    assert response.status_code == 302 and response["Location"] == "/admin/"
+    proposal = signed_preview(SALT, added_campaign())
+    for response in (
+        post(browser, NEW, fields(store)),
+        post(browser, NEW, {"action": "confirm", "preview": proposal}),
+    ):
+        assert response.status_code == 302 and response["Location"] == "/admin/"
+        assert response["Cache-Control"] == "no-store"
+    assert not ConfigurationChangeRequest.objects.exists()
     assert not Campaign.objects.exists()
-    apply(store, accepted)
-    # The status page names the new-campaign editor, which now refuses, but
-    # never links it (#196): Return goes Home.
-    status = browser.get(accepted["Location"]).content
-    assert flow_steps(status) == (STEPS, "Apply")
-    assert b"<li><span>New campaign</span></li>" in status
-    assert f'href="{NEW}"'.encode() not in status
-    assert b'<a href="/admin/">Return to Home</a>' in status
+    add_draft(store, store.active(), uuid4())
     row = Campaign.objects.get()
-    assert row.state == "draft" and not row.structural_locked
-    assert SystemConfiguration.objects.get().current_campaign_id == row.pk
-    assert (
-        post(browser, NEW, {"action": "confirm", "preview": proposal})["Location"]
-        == accepted["Location"]
-    )
-    assert ConfigurationChangeRequest.objects.count() == 1
-    assert browser.get(NEW).status_code == 409
+    response = browser.get(NEW)
+    assert response.status_code == 302 and response["Location"] == url(row)
     assert b"Campaign settings" in browser.get(url(row)).content
 
 
-def test_new_draft_starts_with_default_content(auth_service, google):
-    """A new campaign's request carries every applicable default page and email."""
-    browser, _ = signed_in()
+def test_signed_creation_preview_is_refused_by_campaign_settings(auth_service, google):
+    """Campaign settings' shared confirmation never adds a campaign (rule 10).
+
+    A creation preview signed before New campaign was retired shares Campaign
+    settings' salt; posting it there is refused and records nothing, while an
+    edit signed the same way is still accepted.
+    """
+    from .test_clone_views_postgresql import added_campaign, signed_preview
+
     store = auth_service.store
-    browser.get(NEW)
-    proposal = token(post(browser, NEW, fields(store)))
-    apply(store, post(browser, NEW, {"action": "confirm", "preview": proposal}))
+    add_draft(store, store.active(), uuid4())
     row = Campaign.objects.get()
-    document = store.active().document()["sections"]
-    records = [
-        record
-        for record in document["content"]
-        if record["values"]["campaign_id"] == str(row.pk)
-    ]
-    values = row.active_configuration.values
-    # Census only with the additional-information prompt: 11 pages, 6 emails.
-    assert sorted((r["values"]["kind"], r["values"]["slot"]) for r in records) == (
-        sorted(applicable_slots(values))
+    browser, _ = signed_in()
+    requests = ConfigurationChangeRequest.objects.count()
+    proposal = signed_preview(SALT, added_campaign())
+    refused = post(browser, url(row), {"action": "confirm", "preview": proposal})
+    assert refused.status_code == 410
+    assert refused.json()["refusal"]["message"] == (
+        "Creating another campaign is disabled."
     )
-    assert len(records) == 11 + 6
-    assert all(matches_default(record["values"]) for record in records)
-    # The legacy page references select exactly the new page revisions.
-    pages = {
-        record["values"]["slot"]: record["id"]
-        for record in records
-        if record["values"]["kind"] == "page"
-    }
-    assert values["content_versions"] == {
-        slot: pages[slot]
-        for slot in (
-            "welcome",
-            "census",
-            "closing",
-            "additional",
-            "review",
-            "thank_you",
-        )
-    }
-    catalog = browser.get(f"/admin/campaign/{row.pk}/content").content.decode()
-    assert "start with default text" in catalog
-    assert catalog.count("— Default text") == 11 + 6
+    assert ConfigurationChangeRequest.objects.count() == requests
+    edit = [
+        {
+            "operation": "update",
+            "section": "campaigns",
+            "id": str(row.pk),
+            "values": {"name": "Renamed campaign"},
+        }
+    ]
+    accepted = post(
+        browser, url(row), {"action": "confirm", "preview": signed_preview(SALT, edit)}
+    )
+    apply(store, accepted)
+    row.refresh_from_db()
+    assert row.active_configuration.name == "Renamed campaign"
+    assert Campaign.objects.count() == 1
 
 
 def test_disabling_financial_preview_warns_before_discarding_custom_sharing(
@@ -217,39 +200,22 @@ def test_draft_can_change_timezone_without_changing_parish_default(
         {"name": ""},
         {"end_date": "2054-09-01"},
         {"state": "active"},
-        {"timezone": "America/Los_Angeles"},
         {"ministry_duids": ["4"]},
         {"fund_duids": ["6"]},
         {"mode": "production"},
         {"name": ["First", "Second"]},
     ],
 )
-def test_invalid_hidden_and_new_timezone_values_do_not_create_intent(
-    auth_service, google, changes
-):
+def test_invalid_and_hidden_values_do_not_create_intent(auth_service, google, changes):
     """A typed form and closed request parser reject controls that were not offered."""
-    browser, _ = signed_in()
-    response = post(browser, NEW, fields(auth_service.store, **changes))
-    assert response.status_code == 400
-    assert not ConfigurationChangeRequest.objects.exists()
-
-
-def test_current_campaign_blocks_second_creation_and_old_preview(auth_service, google):
-    """Concurrent draft creation invalidates the exact preview, not just its form."""
-    browser, _ = signed_in()
     store = auth_service.store
-    proposal = token(post(browser, NEW, fields(store)))
     add_draft(store, store.active(), uuid4())
-    refused = post(browser, NEW, fields(store))
-    assert refused.status_code == 409
-    assert refused.json()["refusal"]["message"] == (
-        "A new campaign can't be created right now."
-    )
-    assert (
-        post(browser, NEW, {"action": "confirm", "preview": proposal}).status_code
-        == 409
-    )
-    assert Campaign.objects.count() == 1
+    row = Campaign.objects.get()
+    requests = ConfigurationChangeRequest.objects.count()
+    browser, _ = signed_in()
+    response = post(browser, url(row), fields(store, row, **changes))
+    assert response.status_code == 400
+    assert ConfigurationChangeRequest.objects.count() == requests
 
 
 def test_live_lock_invalidates_preview_without_a_yaml_change(auth_service, google):
@@ -280,15 +246,18 @@ def test_source_replacement_requires_fresh_preview(auth_service, google):
     """Catalog changes cannot silently change a reviewed Ministry/fund selection."""
     publish(source())
     store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    requests = ConfigurationChangeRequest.objects.count()
     browser, _ = signed_in()
-    values = fields(store, ministry="on", ministry_duids=["4"])
-    proposal = token(post(browser, NEW, values))
+    values = fields(store, row, ministry="on", ministry_duids=["4"])
+    proposal = token(post(browser, url(row), values))
     publish(source())
     assert (
-        post(browser, NEW, {"action": "confirm", "preview": proposal}).status_code
+        post(browser, url(row), {"action": "confirm", "preview": proposal}).status_code
         == 409
     )
-    assert not ConfigurationChangeRequest.objects.exists()
+    assert ConfigurationChangeRequest.objects.count() == requests
 
 
 def test_financial_and_ministry_catalogs_work_under_real_web_grants(
@@ -297,6 +266,8 @@ def test_financial_and_ministry_catalogs_work_under_real_web_grants(
     """Runtime SELECT access is limited to public catalog payloads, not giving rows."""
     publish(source())
     store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    current = Campaign.objects.get()
     browser, _ = signed_in()
     row = campaign(
         modules=["financial", "ministry"],
@@ -310,9 +281,11 @@ def test_financial_and_ministry_catalogs_work_under_real_web_grants(
         if value is not False and value is not None
     } | {"action": "preview"}
     with task_login(ServiceRole.WEB):
-        assert browser.get(NEW).status_code == 200
-        proposal = token(post(browser, NEW, values))
-        response = post(browser, NEW, {"action": "confirm", "preview": proposal})
+        assert browser.get(url(current)).status_code == 200
+        proposal = token(post(browser, url(current), values))
+        response = post(
+            browser, url(current), {"action": "confirm", "preview": proposal}
+        )
         assert response.status_code == 302, response.content
         assert b"Applying" in browser.get(response["Location"]).content
     apply(store, response)

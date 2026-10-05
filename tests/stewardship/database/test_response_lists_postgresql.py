@@ -141,9 +141,10 @@ def test_lists_and_downloads_for_admin_and_staff(
         ):
             assert get(admin, base + invalid)[0].status_code == 400
         assert get(admin, base + "everyone/")[0].status_code == 404
+        # Until #145 any campaign but the current one is gone (410).
         assert (
             get(admin, f"/admin/reports/{uuid4()}/responses/submitted/")[0].status_code
-            == 403
+            == 410
         )
         # The download is the complete filtered list, in the page's order.
         response, body = search(

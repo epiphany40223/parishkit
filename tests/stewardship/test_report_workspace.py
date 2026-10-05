@@ -45,6 +45,8 @@ def test_read_admission_classifies_only_known_campaign_closure(
     admission = Mock(side_effect=PermissionError("private refusal"))
     monkeypatch.setattr(read_admission, "admit_campaign", admission)
     identifier = uuid4()
+    # The campaign is the current one; only its lifecycle admission fails.
+    system.objects.values_list.return_value.first.return_value = identifier
     error = ReadUnavailable if system_open and known else PermissionError
     with pytest.raises(error, match="unavailable") as caught:
         read_admission.admit_report_read(identifier)
@@ -57,6 +59,26 @@ def test_read_admission_classifies_only_known_campaign_closure(
         campaign.objects.filter.assert_called_once_with(pk=identifier)
     else:
         campaign.objects.filter.assert_not_called()
+
+
+@pytest.mark.parametrize("current", [None, "other"])
+def test_read_admission_refuses_a_campaign_that_is_not_current(monkeypatch, current):
+    """Until #145 only the current campaign is reported (rule 10): 410, no read."""
+    from parishkit.stewardship.reports import read_admission
+    from parishkit.stewardship.web.refusals import UserFacingGone
+
+    system = Mock()
+    system.objects.values_list.return_value.first.return_value = (
+        uuid4() if current else None
+    )
+    monkeypatch.setattr(read_admission, "SystemConfiguration", system)
+    admission = Mock()
+    monkeypatch.setattr(read_admission, "admit_campaign", admission)
+    with pytest.raises(UserFacingGone) as caught:
+        read_admission.admit_report_read(uuid4())
+    assert str(caught.value) == "This campaign is no longer the current campaign."
+    system.objects.values_list.assert_called_once_with("current_campaign_id", flat=True)
+    admission.assert_not_called()
 
 
 @pytest.mark.parametrize(

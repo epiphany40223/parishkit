@@ -530,7 +530,8 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
         # Another Ministry's or campaign's request is indistinguishable from none.
         assert get(browser, route + f"{leave.pk}/")[0].status_code == 403
         wrong = f"/admin/reports/{uuid4()}/ministries/follow-up/{join.pk}/"
-        assert get(browser, wrong)[0].status_code == 403
+        # Until #145 any campaign but the current one is gone (410).
+        assert get(browser, wrong)[0].status_code == 410
         form = {
             "expected_version": "1",
             "request_key": str(uuid4()),

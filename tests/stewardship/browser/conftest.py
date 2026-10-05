@@ -1411,6 +1411,13 @@ def component_origin():
             "/campaign-settings",
             "campaign-settings",
             {
+                # The current Testing draft: New campaign is retired, so the
+                # page always edits an existing campaign (rule 10).
+                "campaign": {
+                    "pk": uuid4(),
+                    "state": "draft",
+                    "active_configuration": {"name": "Sample campaign"},
+                },
                 "editable": True,
                 # The Admin view adds the shared field help the same way.
                 "form": setup_help.apply(
@@ -1435,7 +1442,6 @@ def component_origin():
             "/campaign-preview",
             "campaign-preview",
             {
-                "creating": True,
                 "preview": "synthetic-signed-intent",
                 "changes": [
                     {

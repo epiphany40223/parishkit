@@ -2,9 +2,10 @@
 
 // The Admin sidebar's collapsible menu groups and the tips of its unavailable
 // entries (admin-portal spec, "Menu groups" and "Stable menu shape"). The
-// markup is admin-navigation.html. This file is kept out of ui-v1.js, which
-// every page loads, and the Admin portal requires JavaScript (#565), so there
-// is no no-script fallback here.
+// markup is admin-navigation.html. The same tips serve unavailable in-page
+// controls (components/disabled-control.html, navigation rule 10). This file
+// is kept out of ui-v1.js, which every page loads, and the Admin portal
+// requires JavaScript (#565), so there is no no-script fallback here.
 (() => {
   // Collapsible groups. Groups render open. Each browser remembers which
   // groups an Admin collapsed: only a "closed" marker under the group's key,
@@ -40,9 +41,9 @@
     });
   });
 
-  // Unavailable entries. Each is a link without href, in the tab order, whose
-  // reason sits in a role="tooltip" element named by its aria-describedby, so
-  // screen readers announce it with the entry.
+  // Unavailable entries and controls. Each is a link without href, in the tab
+  // order, whose reason sits in a role="tooltip" element named by its
+  // aria-describedby, so screen readers announce it with the entry.
   //
   // The tip opens BESIDE the entry, to the right of its row, so it never
   // covers the entries below it; with no room there (narrow screens) it opens

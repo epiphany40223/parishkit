@@ -74,7 +74,8 @@ def test_dashboard_for_admin_and_staff_in_both_modes(
         for invalid in ("?mode=live", "?grain=week", "?search=x"):
             assert get(admin, route + invalid)[0].status_code == 400
         # A campaign with no report scope (an unknown one) is refused.
-        assert get(admin, f"/admin/reports/{uuid4()}/responses/")[0].status_code == 403
+        # Until #145 any campaign but the current one is gone (410).
+        assert get(admin, f"/admin/reports/{uuid4()}/responses/")[0].status_code == 410
     assert (
         AuditEvent.objects.filter(
             event_type="response_dashboard_viewed",

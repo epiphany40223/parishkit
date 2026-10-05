@@ -2,8 +2,6 @@
 {% block title %}{% translate "Review campaign changes" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Review campaign changes" %}</h1>
-{% if creating %}<p>{% translate "This creates a new draft, not a live campaign. No Family emails are sent by this action." %}</p>{% endif %}
-{% if default_content %}<p>{% translate "Every page and email of the new campaign starts with the default text. You can edit any of them afterward under Campaign content and templates." %}</p>{% endif %}
 {% if removes_share_options %}<p class="notice" role="note">{% translate "Disabling financial stewardship removes this draft's sharing options. Re-enabling it starts with the default options, not your customized labels. The previous configuration remains in retained history." %}</p>{% endif %}
 {% for change in changes %}<section class="panel"><h2>{{ change.label }}</h2>
 <p>{% translate "Current:" %} {{ change.before|default_if_none:'—'|linebreaksbr }}</p>

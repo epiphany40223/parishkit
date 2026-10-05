@@ -1,4 +1,10 @@
-"""Archived-campaign cloning through one reviewed, immutable configuration intent."""
+"""Archived-campaign cloning through one reviewed, immutable configuration intent.
+
+Copy campaign is retired until the single-campaign change (#145) removes it
+(admin-portal spec, navigation rule 10 and decision 18): Campaign settings
+shows it greyed out and ``campaign_clone`` refuses every request before
+reading anything. The rest of this module stays, unreachable, until #145.
+"""
 
 from uuid import UUID, uuid4
 
@@ -8,6 +14,7 @@ from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.single_campaign import copy_refused
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
@@ -148,7 +155,22 @@ def _preview(
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def campaign_clone(request, campaign_id):
-    """Only an Admin with no current campaign may clone an archived configuration."""
+    """Refuse Copy campaign: the page, its preview and its confirmation.
+
+    The refusal comes first, before the session, the form or a preview token
+    is read, so neither a valid preview nor a valid clone seed can get past
+    it (rule 10). Only an Administrator gets this far in the menu, but the
+    refusal names nothing about any campaign, so it needs no sign-in check.
+    """
+    return error_response(copy_refused())
+
+
+def _retired_clone(request, campaign_id):
+    """Copy campaign as it worked before #145 retired it; nothing calls this.
+
+    Kept unreachable so the single-campaign change (#145) removes it with the
+    rest of multi-campaign support rather than this interim change.
+    """
     try:
         service = runtime()
         actor = principal(request, service)

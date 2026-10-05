@@ -356,10 +356,16 @@ def test_detail_pagination_is_complete_stable_and_source_scoped(response_service
     assert page(harness, ministry=9, page="3")["rows"] == []
 
 
-def test_campaign_choices_intersect_enabled_modules_and_assignments(
+def test_only_the_current_campaign_is_reported_within_each_scope(
     response_service, google
 ):
-    """A newer unrelated campaign never hides an older authorized Ministry report."""
+    """An earlier campaign is gone; the current one still honors each scope.
+
+    Until the single-campaign change (#145) reports show the current campaign
+    only (navigation rule 10). A leader whose assignment covers only the
+    archived campaign now sees the "no campaign" page rather than that
+    campaign, and the retired chooser redirects.
+    """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.lifecycle import Action
     from parishkit.stewardship.campaigns.runtime import return_to_testing
@@ -414,37 +420,31 @@ def test_campaign_choices_intersect_enabled_modules_and_assignments(
     )
     google[0]["email"] = "leader@example.org"
     browser, _ = signed_in()
-    owned = f"/admin/reports/{harness.campaign.pk}/ministries/"
-    unowned = f"/admin/reports/{successor['id']}/ministries/"
+    archived = f"/admin/reports/{harness.campaign.pk}/ministries/"
+    current = f"/admin/reports/{successor['id']}/ministries/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response = browser.get("/admin/ministry-reports/")
-        assert response.status_code == 302 and response["Location"] == owned
-        response, body = read(browser, "/admin/ministry-reports/campaigns/")
-        assert response.status_code == 200 and owned.encode() in body
-        # The picker offers only owned campaigns. The menu's Ministry entry
-        # (and so the trail's group crumb) links the current campaign,
-        # whatever the leader owns (the page then refuses), so look only at
-        # the page's content after the trail (#522).
-        main = body[body.index(b'<main id="main"') :]
-        choices = main[main.index(b"</nav>") :]
-        assert unowned.encode() not in choices
-        assert b"Unassigned campaign" not in body
-        response, body = read(browser, unowned)
+        # The leader's only assigned Ministry is in the archived campaign.
+        response, body = read(browser, "/admin/ministry-reports/")
+        assert response.status_code == 200 and b"Unassigned campaign" not in body
+        response = browser.get("/admin/ministry-reports/campaigns/")
+        assert response.status_code == 302
+        assert response["Location"] == "/admin/ministry-reports/"
+        assert read(browser, archived)[0].status_code == 410
+        response, body = read(browser, current)
         assert response.status_code == 403 and b"Unassigned campaign" not in body
-        assert read(browser, owned)[0].status_code == 200
     google[0]["email"] = "admin@example.org"
     google[0]["sub"] = "synthetic-admin-subject"
     admin, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = read(admin, "/admin/ministry-reports/campaigns/")
-        assert (
-            response.status_code == 200
-            and owned.encode() in body
-            and unowned.encode() in body
-        )
-        response, body = read(admin, unowned)
+        assert admin.get("/admin/ministry-reports/")["Location"] == current
+        response, body = read(admin, current)
         assert response.status_code == 200 and b"Choir" in body
         assert b"2,147,483,648" not in body and b"9,223,372,036,854,775,807" not in body
+        response, body = read(admin, archived)
+        assert response.status_code == 410
+        assert response.json()["refusal"]["message"] == (
+            "This campaign is no longer the current campaign."
+        )
     # Admin/Staff may inspect unfinished configuration even when a draft has
     # no supported selected Ministry; a leader still needs a real intersection.
     for selected in ([], [2**31, 2**63 - 1]):
@@ -465,16 +465,14 @@ def test_campaign_choices_intersect_enabled_modules_and_assignments(
             == "applied"
         )
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            assert admin.get("/admin/ministry-reports/")["Location"] == unowned
-            assert browser.get("/admin/ministry-reports/")["Location"] == owned
-            response, body = read(admin, "/admin/ministry-reports/campaigns/")
-            assert response.status_code == 200 and unowned.encode() in body
-            response, body = read(admin, unowned)
+            assert admin.get("/admin/ministry-reports/")["Location"] == current
+            assert browser.get("/admin/ministry-reports/").status_code == 200
+            response, body = read(admin, current)
             assert (
                 response.status_code == 200
                 and b"No matching authorized Ministries" in body
             )
-            assert read(browser, unowned)[0].status_code == 403
+            assert read(browser, current)[0].status_code == 403
     assert (
         change(
             store,
@@ -492,8 +490,10 @@ def test_campaign_choices_intersect_enabled_modules_and_assignments(
         == "applied"
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert admin.get("/admin/ministry-reports/")["Location"] == owned
-        response, body = read(admin, unowned)
+        # The current campaign has no Ministry step: no campaign to report.
+        response, body = read(admin, "/admin/ministry-reports/")
+        assert response.status_code == 200 and b"Unassigned campaign" not in body
+        response, body = read(admin, current)
         assert response.status_code == 403 and "Retry-After" not in response
         assert b"Unassigned campaign" not in body
 

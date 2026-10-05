@@ -26,7 +26,6 @@ def components(context, admin):
     page = {
         **participation_context(chart),
         "campaign": campaign,
-        "picker_url": "/campaigns",
         "campaigns": [
             {"id": campaign.pk, "name": chart.campaign_name, "url": "/participation"}
         ],

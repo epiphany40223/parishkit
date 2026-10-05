@@ -16,6 +16,9 @@ class ErrorCode(StrEnum):
     STALE = "stale_version"
     UNAVAILABLE = "unavailable"
     DENIED = "denied"
+    # A retired action, or an address naming a campaign that is no longer
+    # current (navigation rule 10): it will not work again, so do not retry.
+    GONE = "gone"
 
 
 MESSAGES = {
@@ -26,6 +29,7 @@ MESSAGES = {
         "This information is temporarily unavailable. Retry later."
     ),
     ErrorCode.DENIED: _("Access is unavailable. Sign in again."),
+    ErrorCode.GONE: _("This is no longer available."),
 }
 
 
@@ -64,7 +68,7 @@ def validation_response(errors, *, status=400, refusal=None):
     its static explanation and fix link, as a ``refusal`` JSON field and for
     that page.
     """
-    if status not in {400, 403, 404, 409, 422, 503}:
+    if status not in {400, 403, 404, 409, 410, 422, 503}:
         raise ValueError("Unsupported validation status.")
     if (
         type(errors) not in {tuple, list}

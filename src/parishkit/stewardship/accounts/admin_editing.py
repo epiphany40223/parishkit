@@ -15,6 +15,7 @@ from django.http import HttpResponseRedirect
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.single_campaign import refuse_campaign_creation
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import (
     current_correlation,
@@ -28,7 +29,9 @@ from parishkit.stewardship.web.contracts import (
 )
 from parishkit.stewardship.web.refusals import (
     UserFacingDenied,
+    UserFacingGone,
     expired_preview,
+    gone_response,
     load_preview,
 )
 
@@ -199,6 +202,9 @@ def confirm_intent(
     intent = load_preview(token, salt=salt, link=link)
     if intent["actor"] != str(actor.identity):
         raise PermissionError("Preview belongs to another Administrator.")
+    # Until #145 no editor may add a campaign, even with a preview signed
+    # before New campaign and Copy campaign were retired (rule 10).
+    refuse_campaign_creation(intent["patch"])
     key = UUID(intent["key"])
 
     def admit():
@@ -254,6 +260,8 @@ def error_response(error):
         response = validation_response([FieldError(ErrorCode.DENIED)], status=403)
         response.stewardship_reauthenticate = True
         return response
+    if isinstance(error, UserFacingGone):
+        return gone_response(error)
     if isinstance(error, PermissionError):
         code, status = ErrorCode.DENIED, 403
     elif isinstance(error, StaleRecordError):

@@ -7,7 +7,7 @@
 <p>{% translate "Current counts leave out cancelled requests and requests a Family later replaced. Inactive Ministries keep their requests. Follow-up progress counts resolved or closed requests; it is not a record of contact attempts." %}</p>
 <p>{% translate "A Ministry marked Not in ParishSoft data no longer appears in the latest ParishSoft data, but its requests are kept." %}</p>
 <p>{% translate "A Ministry marked No longer in this campaign was removed from the campaign's Ministries after Families answered. Its requests are kept, and they show without that mark again if the Ministry is added back." %}</p>{% endaboutpage %}
-<p><a href="{% url 'admin:ministry_report_campaigns' %}">{% translate "Choose a retained campaign" %}</a></p>
+<p>{% multi_campaign_control "choose-campaign" _("Choose a retained campaign") %}</p>
 <p>{{ metadata.name }} — {% translate "ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>.</p>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "ParishSoft data load" %}</dt><dd>{{ metadata.source_generation|number }}</dd></dl></details>
 <p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Follow up these requests: status, contact attempts, notes and outcomes" %}</a></p>

@@ -56,6 +56,10 @@ _GUIDANCE = {
             "administrator for access."
         ),
     ),
+    ErrorCode.GONE: (
+        _("Page unavailable"),
+        _("This page or action no longer works. Use the menu to find the page."),
+    ),
 }
 _NOT_FOUND = (
     _("Page unavailable"),

@@ -7,6 +7,7 @@ endpoints and never persists SocialAccount, SocialToken or Django User objects.
 
 import logging
 import secrets
+import sys
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -41,6 +42,7 @@ from django.views.decorators.http import (
 from parishkit.config import ConfigError
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.web.namespaces import admin_return_path
+from parishkit.stewardship.web.refusals import UserFacingGone, gone_response
 from parishkit.stewardship.web.security import login_denial
 
 from .auth_incidents import record_login_rejection
@@ -97,7 +99,19 @@ def denial(*, status=403, retry=None, admin=True):
     Any other refusal keeps the original generic text. Report views answer an
     outage with ``web.report_errors.report_unavailable`` instead, so Admins
     see a report error rather than this sign-in wording.
+
+    Every report view sends a ``PermissionError`` here, including the
+    ``UserFacingGone`` refusal of a campaign that is not the current one
+    (navigation rule 10, raised by ``reports.read_admission``). That one is
+    answered with its own 410 page instead, which explains that reports
+    show the current campaign only, rather than suggesting signing in again.
+    Reading the exception being handled keeps that in one place instead of
+    an extra ``except`` clause in every report view.
     """
+    error = sys.exception()
+    if isinstance(error, UserFacingGone):
+        debug_swallowed("admin request refused")
+        return gone_response(error)
     # Callers deny from inside an except block; record what actually failed.
     debug_swallowed("admin request denied")
     response = login_denial(

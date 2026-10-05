@@ -88,12 +88,15 @@ def detail(request, request_id):
             current = _principal(request, service.store, read_only=True)
             if current.identity != principal.identity:
                 raise PermissionError("Report access changed.")
-            admit_report_read(campaign_id)
+            # The owner check comes first, so another Admin's request for an
+            # earlier campaign is a plain denial (403), never a 410 that would
+            # reveal the request exists (rule 10).
             authorize(
                 service.store,
                 current.identity,
                 request=ExactExportRequest.objects.get(pk=request_id),
             )
+            admit_report_read(campaign_id)
 
         def content():
             """Only the existing owner chooses waiting/rendering/terminal status."""

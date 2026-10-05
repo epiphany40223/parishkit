@@ -1,0 +1,15 @@
+{% comment %}
+  An unavailable in-page control: shown greyed out, not a link or action,
+  with a one-line reason in a tip (admin-portal spec, navigation rule 10). It
+  uses the same pattern as an unavailable menu entry (admin-navigation.html):
+  a link without href, so activating it does nothing, that stays in the tab
+  order with role="link" and aria-disabled="true", and whose reason is a
+  role="tooltip" element named by aria-describedby, so screen readers
+  announce it with the control. admin-menu-v1.js shows the tip on hover,
+  keyboard focus and tap, and Escape or a tap elsewhere hides it.
+
+  Include it with a page-unique control_id, the control's label and its tip:
+    {% include "stewardship/components/disabled-control.html" with control_id="copy-campaign" label=_("Copy campaign") tip=reason %}
+  A multi-campaign control uses the multi_campaign_control tag instead, which
+  supplies the one #145 tip.
+{% endcomment %}<span class="disabled-control"><a class="disabled-control-link" role="link" aria-disabled="true" tabindex="0" aria-describedby="{{ control_id }}-tip" data-menu-tip>{{ label }}</a><span class="admin-tip" id="{{ control_id }}-tip" role="tooltip">{{ tip }}</span></span>

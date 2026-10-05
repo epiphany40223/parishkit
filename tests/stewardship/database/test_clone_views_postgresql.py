@@ -1,19 +1,26 @@
-"""Archived-source cloning through actual sessions, YAML intents and installer."""
+"""Copy campaign is refused until the single-campaign change (#145).
 
+Navigation rule 10 and decision 18: Campaign settings shows Copy campaign
+greyed out, and the server refuses the page, its preview and its
+confirmation, even with a valid signed preview. ``setup`` (an archived
+campaign through its genuine lifecycle owners) is shared with other tests.
+"""
+
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.core import signing
+from django.test import Client
 
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.lifecycle import Action
-from parishkit.stewardship.campaigns.models import Campaign, ScheduleDefinition
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.runtime import return_to_testing
 
+from ..campaign_factory import campaign as campaign_record
 from ..content_factory import content
-from ..policy_factory import address
-from ..test_campaign_forms import posted
-from ..test_schedule_forms import data_for
 from .auth_builders import signed_in
 from .campaign_builders import (
     add_draft,
@@ -23,11 +30,11 @@ from .campaign_builders import (
     close_campaign,
     command,
 )
-from .test_admin_navigation_postgresql import STEPS, flow_steps
-from .test_campaign_views_postgresql import apply, post
-from .test_parish_views_postgresql import token
+from .test_campaign_views_postgresql import post
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+TIP = "Disabled; will be removed with the single-campaign change (#145)"
 
 
 def setup(store, *, archived=True, before_archive=None):
@@ -78,245 +85,95 @@ def setup(store, *, archived=True, before_archive=None):
     return campaign, f"/admin/campaign/{campaign.pk}/clone"
 
 
-def fields(browser, path, store):
-    """Use the displayed signed IDs, supplying new dates as a human would."""
-    page = browser.get(path)
-    assert page.status_code == 200
-    rows = page.context["schedules"].previous
-    values = posted(
-        name="Successor campaign",
-        start_date="2055-10-01",
-        end_date="2055-10-31",
-        base_digest=store.active().digest,
-    )
-    values.update(data_for(rows), clone_seed=page.context["clone_seed"])
-    values["schedules-0-date"] = "2055-10-02"
-    return values
+def administrator():
+    """The signed-in Administrator, as an editor's preview names its actor."""
+    from parishkit.stewardship.accounts.policy_models import PortalUser
+
+    return SimpleNamespace(identity=PortalUser.objects.get().pk)
 
 
-def test_clone_installs_new_ids_content_and_mail_without_touching_history(
-    auth_service, google
-):
-    """The request atomically adds a successor; retry retains the same receipt."""
-    store = auth_service.store
-    source, path = setup(store)
-    old_version = source.active_configuration_id
-    old_schedule = ScheduleDefinition.objects.get()
-    browser, _ = signed_in()
-    assert path.encode() in browser.get("/admin/campaign/new").content
-    assert flow_steps(browser.get(path).content) == (STEPS, "Make changes")
-    preview = post(browser, path, fields(browser, path, store))
-    assert b"Welcome to" in preview.content
-    assert flow_steps(preview.content) == (STEPS, "Review")
-    assert b"2055-10-02T13:00:00+00:00" in preview.content
-    assert b"data-local-instant" in preview.content
-    proposal = token(preview)
-    accepted = post(browser, path, {"action": "confirm", "preview": proposal})
-    apply(store, accepted)
-    # Copying is refused once the copy is current: named, never linked (#196).
-    status = browser.get(accepted["Location"]).content
-    assert b"<li><span>Copy campaign</span></li>" in status
-    assert f'href="{path}"'.encode() not in status
-    assert browser.get(path).status_code != 200
-    new = Campaign.objects.exclude(pk=source.pk).get()
-    source.refresh_from_db()
-    assert source.active_configuration_id == old_version
-    assert new.state == "draft" and not new.structural_locked and not new.ever_active
-    assert new.active_configuration.values["start_date"] == "2055-10-01"
-    mail = ScheduleDefinition.objects.get(campaign=new)
-    assert mail.pk != old_schedule.pk
-    assert mail.current_revision.values["date"] == "2055-10-02"
-    assert not mail.scheduleoccurrence_set.exists()
-    config = SystemConfiguration.objects.get().active_configuration
-    assert config.content_versions.filter(campaign_id=new.pk).count() == 1
-    # A clone copies its source's content unchanged and adds no defaults.
-    records = store.active().document()["sections"]["content"]
-    copied = [
-        row["values"] for row in records if row["values"]["campaign_id"] == str(new.pk)
-    ]
-    original = [
-        row["values"]
-        for row in records
-        if row["values"]["campaign_id"] == str(source.pk)
-    ]
-    assert copied == [value | {"campaign_id": str(new.pk)} for value in original]
-    assert (
-        post(browser, path, {"action": "confirm", "preview": proposal})["Location"]
-        == accepted["Location"]
+def signed_preview(salt, patch):
+    """A preview signed exactly as an editor signs one for the Administrator.
+
+    It binds the signed-in Administrator, the applied configuration and the
+    same scope fingerprint Campaign settings and Copy campaign confirm
+    against, so it is valid in every respect but its patch.
+    """
+    from parishkit.stewardship.accounts.admin_editing import sign_preview
+    from parishkit.stewardship.accounts.authentication import runtime
+    from parishkit.stewardship.accounts.campaign_views import _scope
+    from parishkit.stewardship.campaigns.work_locks import read_transaction
+
+    with read_transaction():
+        configuration, snapshot = _scope(runtime())
+    return sign_preview(
+        actor=administrator(),
+        configuration=configuration,
+        patch=patch,
+        salt=salt,
+        snapshot=snapshot,
     )
 
 
-def test_clone_folds_a_retired_closing_note_into_a_valid_email(
-    auth_service, google, monkeypatch
-):
-    """A source note (#260) arrives in the clone's confirmation email, validated."""
-    from parishkit.stewardship.accounts import content_schema
-
-    store = auth_service.store
-
-    def plant(owner):
-        """Apply an email and note as a configuration from before #260."""
-        email = content(owner, kind="email", slot="confirmation")
-        note = content(
-            owner,
-            slot="submission_confirmation",
-            html="<p>Call the office.</p>",
-            text="Call the office.",
-        )
-        with monkeypatch.context() as patched:
-            patched.setattr(content_schema, "RETIRED", None)
-            patch = [
-                {"operation": "add", "section": "content", **row}
-                for row in (email, note)
-            ]
-            assert change(store, store.active(), uuid4(), patch).state == "applied"
-
-    source, path = setup(store, before_archive=plant)
-    browser, _ = signed_in()
-    preview = post(browser, path, fields(browser, path, store))
-    assert preview.status_code == 200 and b"Call the office." in preview.content
-    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
-    new = Campaign.objects.exclude(pk=source.pk).get()
-    rows = SystemConfiguration.objects.get().active_configuration.content_versions
-    cloned = rows.filter(campaign_id=new.pk)
-    assert not cloned.filter(slot="submission_confirmation").exists()
-    email = cloned.get(kind="email", slot="confirmation")
-    assert email.html == "<p>Welcome to {{ parish_name }}.</p><p>Call the office.</p>"
-    assert email.text == "Welcome to {{ parish_name }}.\n\nCall the office."
-    # The source's applied history keeps its note untouched.
-    assert rows.filter(campaign_id=source.pk, slot="submission_confirmation").exists()
+def added_campaign():
+    """The patch a new draft or a copy adds: one new campaign record."""
+    return [{"operation": "add", "section": "campaigns", **campaign_record()}]
 
 
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"schedules-0-date": ""},
-        {"start_date": ""},
-        {"state": "draft"},
-        {"schedules-0-date": ["2055-10-02", "2055-10-03"]},
-        {"timezone": "America/Chicago"},
-        {"clone_seed": "forged"},
-    ],
-)
-def test_invalid_clone_never_creates_an_intent(auth_service, google, changes):
-    """Missing dates and hidden or repeated controls cannot import source state."""
-    store = auth_service.store
-    _, path = setup(store)
-    browser, _ = signed_in()
-    data = fields(browser, path, store)
-    before = ConfigurationChangeRequest.objects.count()
-    assert post(browser, path, data | changes).status_code == 400
-    assert ConfigurationChangeRequest.objects.count() == before
-
-
-def test_clone_is_not_available_while_the_source_is_current(auth_service, google):
-    """A clone is not a way to plan a second concurrent campaign."""
-    _, path = setup(auth_service.store, archived=False)
-    browser, _ = signed_in()
-    assert browser.get(path).status_code == 409
-
-
-def test_clone_seed_and_confirmation_both_expire(auth_service, google, monkeypatch):
-    """Reusing expired form identities or a preview requires another review."""
-    from types import SimpleNamespace
-
-    from django.core import signing
-
-    _, path = setup(auth_service.store)
-    browser, _ = signed_in()
-    data = fields(browser, path, auth_service.store)
-    proposal = token(post(browser, path, data))
-    future = signing.time.time() + 901
-    monkeypatch.setattr(signing, "time", SimpleNamespace(time=lambda: future))
-    assert post(browser, path, data).status_code == 409
-    assert (
-        post(browser, path, {"action": "confirm", "preview": proposal}).status_code
-        == 409
-    )
-
-
-@pytest.mark.parametrize("role", ["staff", "ministry_leader"])
-def test_non_admin_cannot_read_or_submit_clone(auth_service, google, role):
-    """Family/source access does not confer campaign-cloning authority."""
-    store = auth_service.store
-    _, path = setup(store)
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [
-                {
-                    "operation": "add",
-                    "section": "login_rules",
-                    **address("reader@example.org", roles=(role,)),
-                }
-            ],
-        ).state
-        == "applied"
-    )
-    google[0].update(email="reader@example.org", sub="reader-subject")
-    browser, _ = signed_in()
-    assert browser.get(path).status_code == 403
-    assert (
-        post(browser, path, {"action": "confirm", "preview": "forged"}).status_code
-        == 403
-    )
-
-
-def test_changed_configuration_invalidates_both_clone_stages(auth_service, google):
-    """A seed and final confirmation both pin the actual applied configuration."""
-    store = auth_service.store
-    _, path = setup(store)
-    browser, _ = signed_in()
-    data = fields(browser, path, store)
-    proposal = token(post(browser, path, data))
-    parish = store.active().document()["sections"]["parish"][0]
-    assert (
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [
-                {
-                    "operation": "update",
-                    "section": "parish",
-                    "id": parish["id"],
-                    "values": {"name": "Changed parish"},
-                }
-            ],
-        ).state
-        == "applied"
-    )
-    assert post(browser, path, data).status_code == 409
-    assert (
-        post(browser, path, {"action": "confirm", "preview": proposal}).status_code
-        == 409
-    )
-
-
-def test_new_campaign_content_cannot_change_historical_content(auth_service, google):
-    """Creation admission allows new text, never a concurrent edit of old text."""
+def test_copy_campaign_is_refused_even_with_a_valid_preview(auth_service, google):
+    """The page, a seeded preview and a signed confirmation are all refused."""
     store = auth_service.store
     source, path = setup(store)
     browser, _ = signed_in()
-    data = fields(browser, path, store)
-    preview = post(browser, path, data)
-    from django.core import signing
-
-    intent = signing.loads(
-        token(preview), salt=f"stewardship-campaign-clone-v1:{source.pk}"
+    requests = ConfigurationChangeRequest.objects.count()
+    salt = f"stewardship-campaign-clone-v1:{source.pk}"
+    proposal = signed_preview(salt, added_campaign())
+    seed = signing.dumps(
+        {
+            "actor": str(administrator().identity),
+            "base": store.active().digest,
+            "target": str(uuid4()),
+        },
+        salt=salt + ":seed",
     )
-    historical = content(str(source.pk), slot="thank_you")
-    result = change(
-        store,
-        store.active(),
-        uuid4(),
-        intent["patch"] + [{"operation": "add", "section": "content", **historical}],
+    for response in (
+        browser.get(path),
+        browser.head(path),
+        post(browser, path, {"action": "preview", "clone_seed": seed}),
+        post(browser, path, {"action": "confirm", "preview": proposal}),
+        # The refusal names nothing about any campaign, so it needs no sign-in.
+        Client().get(path),
+    ):
+        assert response.status_code == 410
+        assert response["Cache-Control"] == "no-store"
+    refusal = browser.get(path).json()
+    assert refusal["errors"][0]["code"] == "gone"
+    assert refusal["refusal"]["message"] == "Copying a campaign is disabled."
+    assert refusal["refusal"]["fix"] == (
+        "It will be removed with the single-campaign change (#145)."
     )
-    assert result.state == "failed"
+    # A person sees a plain page, never a sign-in prompt.
+    page = browser.get(path, HTTP_ACCEPT="text/html")
+    assert page.status_code == 410
+    assert b"Page unavailable" in page.content
+    assert b"Copying a campaign is disabled." in page.content
+    # (The error page's own sign-in link; the session dialog has another.)
+    assert b'<p><a href="/admin/login">Sign in again</a></p>' not in page.content
+    assert ConfigurationChangeRequest.objects.count() == requests
     assert Campaign.objects.count() == 1
-    # The exact same creation proposal succeeds without the historical edit;
-    # unrelated clone validation must not make the rejection test pass.
-    assert change(store, store.active(), uuid4(), intent["patch"]).state == "applied"
-    assert Campaign.objects.count() == 2
+
+
+def test_campaign_settings_show_copy_campaign_greyed_out(auth_service, google):
+    """Copy campaign is an unavailable control with the #145 tip, not a link."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    browser, _ = signed_in()
+    body = browser.get(f"/admin/campaign/{row.pk}/settings").content.decode()
+    assert (
+        '<a class="disabled-control-link" role="link" aria-disabled="true" '
+        'tabindex="0" aria-describedby="copy-campaign-tip" data-menu-tip>'
+        "Copy campaign</a>"
+    ) in body
+    assert f'id="copy-campaign-tip" role="tooltip">{TIP}</span>' in body
+    assert "/clone" not in body and "Create campaign draft" not in body

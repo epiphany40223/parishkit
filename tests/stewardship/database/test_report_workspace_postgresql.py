@@ -119,7 +119,8 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
             f"/admin/reports/{unknown}/participation/",
             f"/admin/reports/{unknown}/participation/{setup[2].pk}.png",
         ):
-            assert read(browser, endpoint)[0].status_code == 403
+            # Until #145 any campaign but the current one is gone (410).
+            assert read(browser, endpoint)[0].status_code == 410
     assert events.count() == 6
     assert not AuditEvent.objects.filter(campaign_reference=unknown).exists()
 
@@ -134,12 +135,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     with monkeypatch.context() as patch:
         patch.setattr(read_admission, "admit_campaign", closed_admission)
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            for endpoint in (
-                "/admin/reports/",
-                "/admin/reports/campaigns/",
-                path,
-                chart_path,
-            ):
+            for endpoint in ("/admin/reports/", path, chart_path):
                 response, body = read(browser, endpoint)
                 assert response.status_code == 503, endpoint
                 assert response["Retry-After"] == "5"
@@ -173,8 +169,10 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     monkeypatch.setattr(tables, "PAGE_SIZES", (2, *tables.PAGE_SIZES))
     monkeypatch.setattr(workspace, "PAGE_SIZES", (2, *tables.PAGE_SIZES))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, picker = read(browser, "/admin/reports/campaigns/?scope=current")
-        assert response.status_code == 200 and b"scope=current" in picker
+        # The retired chooser (rule 10) goes to the reports root, filters kept.
+        response, _ = read(browser, "/admin/reports/campaigns/?scope=current")
+        assert response.status_code == 302
+        assert response["Location"] == "/admin/reports/?scope=current"
         options = "?sort=date_desc&inactive=yes&size=2"
         response, page_one = read(browser, path + options)
         assert response.status_code == 200

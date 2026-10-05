@@ -374,7 +374,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.02 — NAV-2: rewrite the navigation registry into the seven menu groups with per-entry capability and reason checks.
 - [x] ADM-12.03 — NAV-2: keep a stable menu shape, with unavailable entries greyed out and their reasons shown on hover, focus and tap.
 - [x] ADM-12.04 — NAV-2: make menu groups collapsible, remembered per browser, and end the menu with Sign out.
-- [ ] ADM-12.05 — NAV-3: grey out multi-campaign controls with the #145 tip, refuse their actions on the server, and remove New campaign.
+- [x] ADM-12.05 — NAV-3: grey out multi-campaign controls with the #145 tip, refuse their actions on the server, and remove New campaign.
 - [ ] ADM-12.06 — NAV-4: give Campaign setup and Mail pages one name each, including Cancel go-live.
 - [ ] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages one name each.
 - [ ] ADM-12.08 — NAV-5b: give report pages one name each.
@@ -425,6 +425,29 @@ role above NAV-1) and `tests/stewardship/browser/test_admin_menu.py` (tip on
 hover, focus and tap, Escape and tap-away dismissal, remembered collapse,
 the current group forced open and the summary's expanded state, on Chromium
 and WebKit). The menu's open counts are #585.
+ADM-12.05 (NAV-3) applies navigation rule 10: Copy campaign on Campaign
+settings and the "Choose a retained campaign" links on Participation and
+Ministry requests become the shared `components/disabled-control.html`
+(NAV-2's unavailable-entry pattern) with the tip "Disabled; will be removed
+with the single-campaign change (#145)", defined once in
+`campaigns/single_campaign.py`; New campaign and Campaign settings' create
+branch are removed. The server refuses with 410: `campaign_clone` refuses
+every request before reading it, the shared `confirm` refuses any change that
+adds a campaign and `_target` refuses a new draft, and `admit_report_read`
+refuses a campaign that is not current. The old New campaign address and the
+two choosers redirect. It is proven by
+`tests/stewardship/test_single_campaign.py` (exact tip text, rendered control,
+the three templates, the service refusal),
+`tests/stewardship/database/test_clone_views_postgresql.py` (page, seeded
+preview and valid signed confirmation all refused, nothing recorded),
+`tests/stewardship/database/test_campaign_views_postgresql.py` (New campaign
+redirects and records nothing; a signed creation preview is refused while an
+edit signed the same way applies),
+`tests/stewardship/database/test_single_campaign_postgresql.py` and the
+report suites (a non-current campaign refused with 410, after access is
+checked with 403; choosers redirect) and
+`tests/stewardship/browser/test_single_campaign.py` (the Copy campaign tip on
+hover, focus and tap, on Chromium and WebKit).
 
 ## ADM-13: System health page
 
