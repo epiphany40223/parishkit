@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n static stewardship %}{# One list of Families behind the response funnel (#477): reports/response_list_views.py builds the context and reports/response_lists.py defines the lists. Data first; the explanation sits in the About panel. #}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}{# One list of Families behind the response funnel (#477): reports/response_list_views.py builds the context and reports/response_lists.py defines the lists. Data first; the explanation sits in the About panel. #}
 {% block title %}{{ spec.title }}{% endblock %}
 {% block content %}
 <h1>{{ spec.title }}</h1>

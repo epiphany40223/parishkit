@@ -1,16 +1,22 @@
 {% load static i18n %}<!doctype html>
-<html lang="en">
+<html lang="en"{% block document_class %}{% endblock %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{% translate "Stewardship campaign" %}{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'stewardship/ui-v1.css' %}">
+  {% comment %}
+    The three gate blocks (document_class, gate_script, gate_panel) stay empty
+    here, so Family pages work without JavaScript. admin-base.html fills them
+    to gate every Admin page on JavaScript (#565).
+  {% endcomment %}{% block gate_script %}{% endblock %}
   <script src="{% static 'stewardship/date-format-v1.js' %}" defer></script>
   <script src="{% static 'stewardship/ui-v1.js' %}" defer></script>
   {% if parish_branding.favicon %}<link rel="icon" type="image/png" href="{{ parish_branding.favicon }}">{% endif %}
   {% block head %}{% endblock %}
 </head>
 <body{% if admin_chrome %} class="admin-body"{% endif %} data-date-format="{{ date_format|default:'us_long' }}">
+  {% block gate_panel %}{% endblock %}
   <a class="skip-link" href="#main" tabindex="0">{% translate "Skip to content" %}</a>
   {% if local_environment %}<div class="local-environment" role="note" aria-label="{% translate 'Local environment' %}"><strong>{% translate "LOCAL" %}</strong> {% translate "This is the local laptop environment: synthetic data, no real email and no real ParishSoft." %}</div>{% endif %}
   <header class="site-header">

@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import eventually, has_attribute, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -131,7 +132,7 @@ def test_logs_mobile_keyboard_and_accessibility(
 
 def test_log_filters_and_paging_without_scripts(browser_engine, component_origin):
     """Identifiers, the snapshot and the sort post natively, never in the URL."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/logs-default")
@@ -145,13 +146,14 @@ def test_log_filters_and_paging_without_scripts(browser_engine, component_origin
         assert not page.get_by_label("Actor identifier").is_visible()
         page.get_by_text("Filter by identifier", exact=True).click()
         page.get_by_label("Actor identifier").fill(actor)
-        # Answer only the form posts; the page itself shares this path.
+        # Answer only the form posts; the page itself shares this path, and
+        # fallback (not continue_) keeps it passing through no_script_context.
         page.route(
             "**/logs",
             lambda route: (
                 route.fulfill(body="Filtered")
                 if route.request.method == "POST"
-                else route.continue_()
+                else route.fallback()
             ),
         )
         with page.expect_request(lambda request: request.method == "POST") as sent:

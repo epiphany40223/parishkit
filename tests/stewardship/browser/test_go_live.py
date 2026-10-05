@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -50,7 +51,7 @@ def test_go_live_acknowledgement_and_status_are_accessible(
 
 def test_cleanup_controls_work_without_javascript(browser_engine, component_origin):
     """Native POST forms and status refresh links do not depend on enhancement."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/go-live")

@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship delivery %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship delivery %}
 {% block title %}{% translate "Mail delivery" %}{% endblock %}
 {% block content %}
 <p><a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a></p>

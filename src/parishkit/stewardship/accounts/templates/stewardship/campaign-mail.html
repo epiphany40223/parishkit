@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n %}
 {% block title %}{% translate "Campaign email test" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Campaign email test" %}</h1><p>{{ campaign.active_configuration.name }}</p>

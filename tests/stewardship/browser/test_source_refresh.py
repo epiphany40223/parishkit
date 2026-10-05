@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -37,7 +38,7 @@ def test_refresh_confirmation_is_accessible_and_states_what_happens(
 
 def test_the_request_posts_natively_with_its_key(browser_engine, component_origin):
     """Without scripts the form posts the page's key to the refresh route."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/source-refresh")

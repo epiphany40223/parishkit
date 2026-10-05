@@ -160,21 +160,6 @@ def test_mode_switch_refreshes_in_place(page, component_origin):
     assert_clean(page, errors)
 
 
-def test_without_scripts_a_heading_loads_the_sorted_page(
-    browser_engine, component_origin
-):
-    """With no JavaScript every control is an ordinary link or form."""
-    context = browser_engine.new_context(java_script_enabled=False)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + SUBMITTED)
-        page.get_by_role("link", name="Family (sort ascending)").click()
-        page.wait_for_url("**sort=family*")
-        assert families(page) == ["=Baker, Bob", "Adams, Ann", "Evans, Eve"]
-    finally:
-        context.close()
-
-
 def test_paused_download_is_disabled_with_its_reason(page, component_origin):
     """While the purge gate is closed the button is disabled and says why."""
     page.goto(component_origin + "/response-list-paused")

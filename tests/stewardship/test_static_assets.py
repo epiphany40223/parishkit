@@ -38,7 +38,7 @@ def test_static_collection_without_database_or_provider_credentials(tmp_path):
     result = collect_in_fresh_process(tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout) == {"static_assets_collected": True}
-    for name in ("ui-v1.css", "ui-v1.js"):
+    for name in ("ui-v1.css", "ui-v1.js", "admin-gate-v1.js"):
         path = tmp_path / "stewardship" / name
         assert path.is_file()
         assert path.stat().st_mode & 0o777 == 0o600

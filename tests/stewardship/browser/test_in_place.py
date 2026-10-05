@@ -10,6 +10,7 @@ Families on the form now templates; the form tests use a small test-only page
 
 import pytest
 
+from .conftest import no_script_context
 from .in_place_components import BACKGROUND, FORM, PRESENCE
 from .waits import has_text, visible
 
@@ -136,7 +137,7 @@ def test_without_javascript_a_refresh_lands_at_the_table(
     browser_engine, component_origin
 ):
     """No script: Refresh is a plain link whose fragment lands on the table."""
-    context = browser_engine.new_context(java_script_enabled=False, viewport=VIEWPORT)
+    context = no_script_context(browser_engine, viewport=VIEWPORT)
     try:
         page = context.new_page()
         page.goto(component_origin + BACKGROUND)

@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -45,7 +46,7 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
 
 def test_ministry_sort_heading_without_scripts(browser_engine, component_origin):
     """A heading re-sorts through a native POST that keeps the private search."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/ministry-detail")
@@ -66,7 +67,7 @@ def test_ministry_sort_heading_without_scripts(browser_engine, component_origin)
 
 def test_ministry_search_without_scripts(browser_engine, component_origin):
     """Private search and history selection submit only through native POST."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/ministry-detail")
@@ -85,7 +86,7 @@ def test_ministry_search_without_scripts(browser_engine, component_origin):
 
 def test_ministry_complete_export_without_scripts(browser_engine, component_origin):
     """Applied filters and private selection survive native export without URL leaks."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/ministry-detail")
@@ -112,7 +113,7 @@ def test_ministry_complete_export_without_scripts(browser_engine, component_orig
 
 def test_ministry_packet_request_without_scripts(browser_engine, component_origin):
     """The multi-Ministry selection posts natively; detail pages do not offer it."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/ministry-summary")

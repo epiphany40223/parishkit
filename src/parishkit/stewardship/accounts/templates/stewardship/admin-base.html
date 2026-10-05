@@ -1,0 +1,24 @@
+{% extends 'stewardship/base.html' %}{% load static i18n %}
+{% comment %}
+  The base of every Admin page, including the sign-in and setup pages: the
+  Admin portal requires JavaScript (#565; admin-portal spec, "JavaScript
+  requirement"). The page renders with a js-required class on the root html
+  element, and the shared stylesheet then hides everything except the panel
+  below. admin-gate-v1.js removes the class. It loads in the head without
+  defer, so it runs before the body is parsed and a browser with JavaScript
+  never shows the panel. Without JavaScript, or if the script fails to load,
+  only the panel shows, and no link, button or form control can be reached.
+  The panel also carries the hidden attribute, so if the stylesheet fails to
+  load, a browser with JavaScript still shows the page without the panel.
+  The panel has no heading element: it stays in the DOM (hidden) on every
+  page, and a second h1 would confuse headings navigation and tests.
+  A CSS rule rather than a noscript element covers that failed-load case too.
+  The content security policy still allows no inline script or style. Family
+  pages extend base.html and are not gated.
+{% endcomment %}
+{% block document_class %} class="js-required"{% endblock %}
+{% block gate_script %}<script src="{% static 'stewardship/admin-gate-v1.js' %}"></script>{% endblock %}
+{% block gate_panel %}<div class="js-required-panel" hidden><section class="panel flow">
+    <p><strong>{% translate "The Admin portal needs JavaScript." %}</strong></p>
+    <p>{% translate "Turn it on in your browser settings, then reload this page." %}</p>
+  </section></div>{% endblock %}

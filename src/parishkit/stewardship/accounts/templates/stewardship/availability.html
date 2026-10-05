@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n %}
+{% extends admin|yesno:'stewardship/admin-base.html,stewardship/base.html' %}{% load i18n %}
 {% block title %}{% translate "Portal unavailable" %}{% endblock %}
 {% block content %}<section class="flow panel">
   {% if setup %}

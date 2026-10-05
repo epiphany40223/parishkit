@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -134,7 +135,7 @@ def test_portal_users_mobile_keyboard_and_accessibility(
 
 def test_rule_changes_post_natively_without_scripts(browser_engine, component_origin):
     """A row's ticks and the add forms post to the rules route, never a URL."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/portal-users")

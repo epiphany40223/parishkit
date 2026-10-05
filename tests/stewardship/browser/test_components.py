@@ -8,7 +8,7 @@ import pytest
 from parishkit.stewardship.accounts.templatetags.stewardship import parish_time
 from parishkit.stewardship.web import dates
 
-from .conftest import NOW, load_collections
+from .conftest import NOW, load_collections, no_script_context
 from .waits import eventually, hidden, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -687,7 +687,7 @@ def test_javascript_disabled_retains_admin_form_and_family_explanation(
     browser_engine, component_origin
 ):
     """No silent failure: Admin core forms stay ordinary POST, Family explains JS."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/login")
@@ -778,7 +778,7 @@ def test_campaign_modules_remain_usable_without_javascript(
     browser_engine, component_origin
 ):
     """Server validation remains available when progressive enhancement is absent."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/campaign-settings")

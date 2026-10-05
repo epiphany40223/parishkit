@@ -2,6 +2,7 @@
 
 import pytest
 
+from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -57,7 +58,7 @@ def test_directories_are_accessible_and_keep_filters_in_post(
 
 def test_directory_pagination_works_without_scripts(browser_engine, component_origin):
     """Codes, contacts and private navigation do not depend on JavaScript."""
-    context = browser_engine.new_context(java_script_enabled=False)
+    context = no_script_context(browser_engine)
     try:
         page = context.new_page()
         page.goto(component_origin + "/postal-directory")
@@ -82,10 +83,14 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
     browser_engine, component_origin, scripts
 ):
     """Export applied filters, not unsaved edits or the current page, on mobile."""
-    context = browser_engine.new_context(
-        java_script_enabled=scripts,
-        timezone_id="America/Detroit",
-        viewport={"width": 320, "height": 900},
+    options = {
+        "timezone_id": "America/Detroit",
+        "viewport": {"width": 320, "height": 900},
+    }
+    context = (
+        browser_engine.new_context(**options)
+        if scripts
+        else no_script_context(browser_engine, **options)
     )
     try:
         page = context.new_page()
