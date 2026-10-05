@@ -6,9 +6,10 @@ Administrator, without clicking through pages. The
 [Admin automation specification](../specs/stewardship/admin-automation/spec.md)
 defines it; this guide says how to use it. It is delivered in steps
 ([ADM-11](../tasks/stewardship/admin-portal.md#adm-11-admin-automation-interface)).
-This version has the session commands only: `login start`, `login wait`,
-`logout`, `whoami`, `sessions` and `commands`. Status, schedules and the
-other areas follow in later releases, each listed in the command catalog.
+This version has the session commands (`login start`, `login wait`,
+`logout`, `whoami`, `sessions` and `commands`) and the
+[status commands](#status-commands). The other areas follow in later
+releases, each listed in the command catalog.
 
 Anyone who can run Docker on the host already controls the deployment; the
 command line adds no limits on top of that, only notices and audit (see the
