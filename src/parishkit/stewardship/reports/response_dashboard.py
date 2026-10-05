@@ -13,7 +13,8 @@ Production is the default for everyone. Testing responses are shown only in
 explicit Admin testing views (``docs/specs/stewardship/reports/spec.md``), so
 only Administrators may choose ``mode=testing``, which reads the campaign's
 active rehearsal epoch. The page shows counts only, never a Family's name or
-identifier; the lists behind the counts are a later page.
+identifier; its "Lists of Families" panel links to the lists behind the
+counts (``response_list_views``), each with its length.
 """
 
 from dataclasses import dataclass, replace
@@ -46,6 +47,7 @@ from parishkit.stewardship.web.security import private_response
 from .chart_specs import STAGE_LABELS, activity_chart, funnel_chart, share
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
+from .response_lists import LISTS, ListQuery, list_counts
 from .response_metrics import (
     GRAINS,
     MODES,
@@ -156,6 +158,25 @@ def untitled(chart):
     return replace(chart, spec=spec)
 
 
+def family_lists(campaign_id, query, metrics):
+    """The panel linking to each list of Families, with its length when known.
+
+    The lengths come from the same funnel rows as the tiles; the data-quality
+    list needs the ParishSoft read, so it has no length here.
+    """
+    counts = list_counts(metrics.families)
+    return [
+        {
+            "title": spec.title,
+            # Only the list without a length says what it holds.
+            "description": spec.description if spec.needs_facts else "",
+            "url": ListQuery(query.mode).url(campaign_id, key),
+            "count": counts.get(key),
+        }
+        for key, spec in LISTS.items()
+    ]
+
+
 def rehearsal_epoch(campaign_id):
     """The campaign's active rehearsal epoch, or None when it has none."""
     return (
@@ -190,6 +211,7 @@ def page_context(campaign, query, metrics, *, can_test=False):
         "figures": figures(metrics),
         "charts": [untitled(funnel_chart(metrics)), untitled(activity_chart(metrics))],
         "invited": metrics.stage("invited"),
+        "lists": family_lists(campaign.pk, query, metrics),
         "hour_url": query.url(campaign.pk, grain="hour"),
         "day_url": query.url(campaign.pk, grain="day"),
     }

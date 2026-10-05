@@ -667,7 +667,9 @@ concurrent Family sessions:
 - ordinary cached pages should have a p95 server response below two seconds;
 - filtered report first pages should return below three seconds;
 - long polls, publication, digests, exports, purge, and backups are always
-  asynchronous; and
+  asynchronous, except a small CSV rendered on request from the rows of the
+  page it is downloaded from (see
+  [campaign read guards](../data/spec.md#campaign-read-guards)); and
 - interactive traffic remains responsive while all worker categories run.
 
 These targets also apply with the guarded-download admission limit saturated

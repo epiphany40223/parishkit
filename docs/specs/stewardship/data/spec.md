@@ -1207,8 +1207,8 @@ short transaction outside the common work-order lock; a writer holding that
 lock, such as a source promotion or an installer, therefore never delays a
 report page.
 
-Guarded file downloads use a dedicated bounded connection pool and admission
-limit, defaulting to four simultaneous downloads across the entire deployment,
+Downloads of stored export files use a dedicated bounded connection pool and
+admission limit, defaulting to four simultaneous downloads across the entire deployment,
 not four per process or replica. Acquire capacity before opening a guarded
 transaction or export file; do not queue waiting downloads indefinitely or
 borrow interactive/background connection capacity. A multi-campaign download
@@ -1220,6 +1220,12 @@ Release capacity only after the stream and guard transaction close, including
 disconnect, timeout, exception, and worker loss. Coordination across processes
 must not reissue capacity merely because a lease expired while its connection
 or stream is still alive. Downloads never fall back to an unguarded transfer.
+A small download rendered on request in memory from the same rows as its
+page (the [response lists](../reports/spec.md#response-lists), and Talents
+and limitations after
+[#557](https://github.com/epiphany40223/parishkit/issues/557)) is not a stored
+export file: it is read under the interactive campaign read guard, with its
+60-second deadline, on the web connection, as the page itself is.
 
 The connection budget and timeout relationships are deployment invariants
 defined by [operations](../operations/spec.md#download-capacity-and-timeouts).

@@ -3,11 +3,29 @@
 Admin pages that list Families by DUID (the chosen-Families send page, the
 "Families on the form now" page) name them the way the Family codes directory
 does (``family_names.family_heads_name``): the surname, then the active heads
-of household. Two queries serve any number of Families.
+of household. Two queries serve any number of Families. The response lists
+also show each Family's envelope number and ParishSoft mailing name
+(``snapshot_family_facts``), read from the same Family rows.
 """
+
+from dataclasses import dataclass
 
 from .family_names import family_display_name, family_heads_name
 from .version_models import SnapshotFamily, SnapshotMember
+
+
+@dataclass(frozen=True)
+class FamilyFacts:
+    """What the Admin lists show of one snapshot Family besides its DUID.
+
+    ``name`` is the directory's surname-and-heads name; ``envelope`` the
+    ParishSoft envelope number (None when the record has none);
+    ``mailing_name`` the ParishSoft mailing name, stripped ("" when blank).
+    """
+
+    name: str
+    envelope: int | None
+    mailing_name: str
 
 
 def snapshot_family_names(snapshot_id, duids, default=""):
@@ -16,6 +34,21 @@ def snapshot_family_names(snapshot_id, duids, default=""):
     Heads come from the Family's ``active_head_duids`` in DUID order, and only
     active Members count, matching the directory SQL. A DUID missing from the
     snapshot is left out; ``default`` names a Family without a surname.
+    """
+    facts = snapshot_family_facts(snapshot_id, duids, default)
+    return {duid: fact.name for duid, fact in facts.items()}
+
+
+def _envelope(value):
+    """The envelope number when the record holds a whole number, else None."""
+    return value if type(value) is int else None
+
+
+def snapshot_family_facts(snapshot_id, duids, default=""):
+    """Map each requested Family DUID (int) in the snapshot to its ``FamilyFacts``.
+
+    The name follows ``snapshot_family_names``; a DUID missing from the
+    snapshot is left out.
     """
     if snapshot_id is None or not duids:
         return {}
@@ -48,5 +81,10 @@ def snapshot_family_names(snapshot_id, duids, default=""):
             heads.append(
                 {"first": first, "last": last, "name": f"{first} {last}".strip()}
             )
-        names[duid] = family_heads_name(family_display_name(values, default), heads)
+        mailing = values.get("mailingName")
+        names[duid] = FamilyFacts(
+            family_heads_name(family_display_name(values, default), heads),
+            _envelope(values.get("envelopeNumber")),
+            mailing.strip() if isinstance(mailing, str) else "",
+        )
     return names

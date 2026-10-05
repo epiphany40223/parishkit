@@ -309,6 +309,36 @@ DESCRIPTIONS = {
         "Someone downloaded the talents and limitations report."
     ),
     "response_dashboard_viewed": _("Someone opened the response dashboard."),
+    "response_submitted_list_viewed": _(
+        "Someone opened the list of Families that submitted."
+    ),
+    "response_submitted_list_exported": _(
+        "Someone downloaded the list of Families that submitted."
+    ),
+    "response_started_list_viewed": _(
+        "Someone opened the list of Families that started but did not submit."
+    ),
+    "response_started_list_exported": _(
+        "Someone downloaded the list of Families that started but did not submit."
+    ),
+    "response_not_opened_list_viewed": _(
+        "Someone opened the list of invited Families that never opened the form."
+    ),
+    "response_not_opened_list_exported": _(
+        "Someone downloaded the list of invited Families that never opened the form."
+    ),
+    "response_repeat_list_viewed": _(
+        "Someone opened the list of Families that submitted more than once."
+    ),
+    "response_repeat_list_exported": _(
+        "Someone downloaded the list of Families that submitted more than once."
+    ),
+    "response_data_quality_list_viewed": _(
+        "Someone opened the list of ParishSoft data to check."
+    ),
+    "response_data_quality_list_exported": _(
+        "Someone downloaded the list of ParishSoft data to check."
+    ),
     "portal_users_viewed": _("An Administrator opened the portal users list."),
     "system_logs_exported": _("An Administrator downloaded the system logs."),
     "export_cancelled": _("A report download was cancelled."),
