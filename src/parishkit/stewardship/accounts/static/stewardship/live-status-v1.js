@@ -204,6 +204,9 @@
         cache: "no-store",
         headers: { Accept: "text/html" }
       });
+      // A reply that arrives after the page went away (pagehide) must not
+      // swap, finish or navigate.
+      if (stopped) return;
       if ([401, 403, 404].includes(response.status) || response.redirected) {
         // Signed out or no longer allowed: retrying cannot help.
         stop("Couldn't check status. Refresh the page or sign in again.");
@@ -211,6 +214,7 @@
       }
       if (!response.ok) throw new Error("status unavailable");
       const parsed = new DOMParser().parseFromString(await response.text(), "text/html");
+      if (stopped) return;
       const fresh = [...parsed.querySelectorAll("[data-live-status]")]
         .find((node) => node.getAttribute("data-live-status") === name);
       if (!fresh) throw new Error("status region missing");
@@ -224,6 +228,7 @@
       if (region.hasAttribute("data-live-pending")) schedule();
       else finish();
     } catch {
+      if (stopped) return;
       say("Couldn't check status — retrying.");
       schedule();
     } finally {
@@ -237,5 +242,11 @@
     if (document.visibilityState === "visible" && !stopped) check();
     else window.clearTimeout(timer);
   });
+  // Stop when the page goes away for good: an in-place answer shown as the
+  // whole page (ui-v1.js) keeps this window, so this poller would otherwise
+  // run beside the new page's own; check() also ignores a reply that
+  // arrives after this (#562). A page kept in the back/forward cache
+  // (persisted) resumes as before.
+  window.addEventListener("pagehide", (event) => { if (!event.persisted) stop(); });
   schedule();
 })();

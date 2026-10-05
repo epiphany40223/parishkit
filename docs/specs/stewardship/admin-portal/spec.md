@@ -1084,17 +1084,30 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   not step through choices.
 - **Errors and fallback.** A POST that got an answer is never sent again; a
   saving POST is never re-sent at all; a read-only table POST with no answer
-  falls back to the ordinary submission. An error answer to a POST, and a
-  POST's own answer that is not this page, are shown as the page, as a native
-  submission would show them. So a refused save answered without a redirect
-  (a form re-rendered with its errors) currently replaces the whole page: the
-  reader is sent to its top, and the old page's timers keep running;
-  [#562](https://github.com/epiphany40223/parishkit/issues/562) tracks
-  swapping it into its region instead. A saving POST that got no answer at all may
-  have been saved, so an alert at the top of its form says the server could
-  not be reached and to reload the page to check. A redirect to another page
-  (elsewhere, or the sign-in page) is followed by loading that page's
-  address. A read (a GET) that fails falls back to the ordinary load.
+  falls back to the ordinary submission. A refused POST (an error answer, or
+  a page with an error summary, such as a form re-rendered with its errors
+  and the values the reader sent) that carries the control's region and was
+  not redirected to another page is swapped in like a success (#562): every
+  shared region and the data outside them that follows the view are
+  replaced, and the address is unchanged. The error summary, which the base
+  template draws above the page content, moves to the top of the region when
+  it is drawn outside the region; this page's own older summaries outside
+  the regions are removed then (a successful swap leaves them). The reader
+  keeps their place, focus moves to the summary (or to the control when
+  there is none), and the live region reads the summary's messages, or says
+  the server did not accept the change when there is no summary. Any other
+  refusal, and a POST's own answer that is not this page, is shown as the
+  whole page, as a native submission would show it. That page keeps the
+  window, so the old page is first told it is going away (a `pagehide` that
+  is not persisted: the pollers that listen for it stop, and a reply already
+  in flight can neither re-arm them nor act), and every timer id in the
+  window is cleared, so no old timer runs beside the new page's own. The
+  sweep relies on browsers numbering timers in sequence, as current engines
+  do. A saving POST that got no answer at all may have been saved, so an
+  alert at the top of its form says the server could not be reached and to
+  reload the page to check. A redirect to another page (elsewhere, or the
+  sign-in page) is followed by loading that page's address. A read (a GET)
+  that fails falls back to the ordinary load.
 - **Real targets.** Every control is a real link or form with its `href`
   or `action` and fragment, which the script requests; when an ordinary load
   happens instead (a fallback above), the fragment, kept across a

@@ -93,16 +93,17 @@
   };
   wireBrowserTimezone(document);
 
-  const summary = document.querySelector("[data-error-summary]");
-  if (summary) {
-    summary.focus();
-    summary.querySelectorAll('a[href^="#"]').forEach((link) => {
+  // An error summary's links move focus to their field. Wired for the page
+  // and again for any summary a refused in-place save swaps in (#562).
+  const wireSummaryLinks = (root) => {
+    root.querySelectorAll('[data-error-summary] a[href^="#"]').forEach((link) => {
       link.addEventListener("click", (event) => {
         const target = document.getElementById(link.hash.slice(1));
         if (target) { event.preventDefault(); target.focus(); }
       });
     });
-  }
+  };
+  document.querySelector("[data-error-summary]")?.focus();
   const wireValidity = (root) => {
     root.querySelectorAll("input, select, textarea").forEach((field) => {
       field.addEventListener("blur", () => {
@@ -174,6 +175,7 @@
   // loaded with.
   const enhanceTable = (root) => {
     wireCopyButtons(root);
+    wireSummaryLinks(root);
     wireValidity(root);
     root.querySelectorAll("[data-select-table]").forEach(wireSelection);
     wirePageSize(root);
@@ -429,6 +431,50 @@
     note.textContent = UNREACHABLE;
     form.prepend(note);
   };
+  // What the live region says for a refusal: its summary's messages, each
+  // read as a sentence (focus on the summary already reads its heading), or
+  // this when it has no summary.
+  const NOT_ACCEPTED = "The server did not accept this. Please check the form and try again.";
+  const sentences = (nodes) => nodes.filter(Boolean).map((node) => squeeze(node.textContent))
+    .filter(Boolean).map((line) => (/[.!?:]$/.test(line) ? line : `${line}.`)).join(" ");
+  // A refusal's error summary is shown where the reader is. The shared
+  // summary (components/errors.html) is drawn by base.html at the top of
+  // <main>, outside every region, so when the fresh region does not already
+  // hold one, the summary drawn outside it is moved to the top of that
+  // region. This page's own summaries outside the regions (an earlier
+  // refusal of an ordinary form) are removed first: the refusal replaces
+  // them, and no second error-title id appears. A successful swap leaves
+  // them alone. Returns the summary the fresh region now holds, or null.
+  const placeSummary = (parsed, fresh) => {
+    document.querySelectorAll("[data-error-summary]").forEach((node) => {
+      if (!node.closest(REGIONS)) node.remove();
+    });
+    const inside = fresh.querySelector("[data-error-summary]");
+    if (inside) return inside;
+    const loose = [...parsed.querySelectorAll("[data-error-summary]")]
+      .find((node) => !node.closest(REGIONS));
+    if (loose) fresh.prepend(loose);
+    return loose || null;
+  };
+  // Show an answer as the whole page, as a native submission would have shown
+  // it. document.open keeps this window: it erases the old page's event
+  // listeners but not its timers, which would keep running beside the new
+  // page's own (session-v1.js's one-second tick, the header polls) and act on
+  // detached elements (#562). So the old page is first told it is going away,
+  // with a pagehide that is not persisted: the pollers that listen for it
+  // stop, and a reply already in flight can neither re-arm their timers nor
+  // act. Then every timer id in this window up to a fresh one is cleared
+  // (clearTimeout clears an interval too), which also stops timers no script
+  // exposes a way to stop. That relies on browsers numbering timers in
+  // sequence, as Chromium, WebKit and Firefox do.
+  const showAsReturned = (text) => {
+    window.dispatchEvent(new PageTransitionEvent("pagehide", {persisted: false}));
+    const newest = window.setTimeout(() => {}, 0);
+    for (let id = 1; id <= newest; id += 1) window.clearTimeout(id);
+    document.open();
+    document.write(text);
+    document.close();
+  };
   // Load the page a control leads to and bring this page up to date from it.
   // Success: every region present in both pages is swapped (the one the
   // control changes and any other on the page, so they never disagree), the
@@ -441,7 +487,10 @@
   // page after the session ended), or for a data-in-place control a page at
   // another path or origin, is shown by loading its address only when a
   // redirect led there (that address is a GET, safe to repeat); a POST's own
-  // answer, like an error answer to a POST, is shown as returned. A GET is
+  // answer is shown as returned. A refused POST (an error answer, or a page
+  // with an error summary) that carries this region is swapped in like a
+  // success, its summary focused and announced, and the address left alone;
+  // one without the region is shown as returned (#562). A GET is
   // safe to repeat, so a GET's error answer, or a fetch with no answer at
   // all, falls back to the control's ordinary navigation. A read-only table
   // POST with no answer falls back to the ordinary submission too; a saving
@@ -502,38 +551,40 @@
       return;
     }
     const parsed = new DOMParser().parseFromString(text, "text/html");
-    // An error answer (a refused filter's 400, a denial, an unavailable
-    // report) or a page that renders its own error summary is not swapped in.
-    // A POST is never sent again: the report views audit every POST, and a
-    // saving POST would repeat its change. Its answer is shown as the page
-    // instead, as a native submission would have shown it. A GET is safe to
-    // repeat, so it takes the ordinary navigation.
-    const showAsReturned = () => {
-      document.open();
-      document.write(text);
-      document.close();
-    };
-    if (!response.ok || parsed.querySelector("[data-error-summary]")) {
-      if (init.method !== "POST") {
-        region.removeAttribute("aria-busy");
-        fallback();
-        return;
-      }
-      showAsReturned();
-      return;
-    }
     const fresh = parsed.getElementById(id);
     const answered = new URL(response.url);
-    const elsewhere = answered.origin !== window.location.origin
-      || (owner && answered.pathname !== window.location.pathname);
-    if (elsewhere || !isRegion(fresh)) {
+    // An error answer (a refused filter's 400, a denial, an unavailable
+    // report) or a page that renders its own error summary is a refusal. A
+    // GET is safe to repeat, so a refused GET takes the ordinary navigation.
+    // A POST is never sent again (the report views audit every POST, and a
+    // saving POST would repeat its change): a refusal that is this page again
+    // (a form re-rendered with its errors and the values the reader sent) is
+    // swapped in like a success, so the reader keeps their place (#562); any
+    // other refusal is shown whole, as a native submission would show it.
+    const refused = !response.ok || Boolean(parsed.querySelector("[data-error-summary]"));
+    if (refused && init.method !== "POST") {
+      region.removeAttribute("aria-busy");
+      fallback();
+      return;
+    }
+    // A redirect chose the answer's address: a refusal that was redirected
+    // to another page (the sign-in page) is that page, not this one.
+    const otherOrigin = answered.origin !== window.location.origin;
+    const foreign = otherOrigin || (response.redirected && answered.pathname !== window.location.pathname);
+    if (refused && (foreign || !isRegion(fresh))) {
+      showAsReturned(text);
+      return;
+    }
+    const elsewhere = otherOrigin || (owner && answered.pathname !== window.location.pathname);
+    if (!refused && (elsewhere || !isRegion(fresh))) {
       if (response.redirected || init.method !== "POST") {
         window.location.assign(withFragment(response.url, id));
       } else {
-        showAsReturned();
+        showAsReturned(text);
       }
       return;
     }
+    const summary = refused ? placeSummary(parsed, fresh) : null;
     document.querySelectorAll(REGIONS).forEach((other) => {
       const copy = parsed.getElementById(other.id);
       if (isRegion(copy)) swapRegion(other, copy);
@@ -548,7 +599,9 @@
     } else if (init.method !== "POST") {
       window.history.replaceState(window.history.state, "", url);
     }
-    let target = focus(document.getElementById(id));
+    // A refusal's summary (now in the region) takes focus, as it does on an
+    // ordinary load; without one the control does, as after a success.
+    let target = summary || focus(document.getElementById(id));
     if (!target) {
       target = document.getElementById(id);
       target.setAttribute("tabindex", "-1");
@@ -557,7 +610,9 @@
     // Focus without scrolling kept the reader's place; if the control itself
     // is just outside the viewport, bring it (and nothing more) into view.
     target.scrollIntoView({block: "nearest"});
-    announce(describeTable(document.getElementById(id), control, owner));
+    if (!refused) announce(describeTable(document.getElementById(id), control, owner));
+    else if (summary) announce(sentences([...summary.querySelectorAll("li")]));
+    else announce(NOT_ACCEPTED);
   };
   // Links: a GET table's sort headings and navigator Previous and Next, and
   // every a[data-in-place]. A modified click (new tab, new window) keeps its
@@ -875,10 +930,11 @@
     let stopped = false;
     let inFlight = false;
     let timer = null;
+    let controller = null; // the status request in flight, aborted on pagehide
     async function refresh() {
       if (stopped || inFlight || document.hidden) return;
       inFlight = true;
-      const controller = new AbortController();
+      controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 10000);
       try {
         const response = await fetch(panel.dataset.finishingUrl, {
@@ -887,6 +943,8 @@
         });
         if (!response.ok) throw new Error("status unavailable");
         const data = await response.json();
+        // A reply that arrives after pagehide must not reload or reveal.
+        if (stopped) return;
         if (typeof data.signature !== "string" || typeof data.overall !== "string") {
           throw new Error("status changed");
         }
@@ -900,10 +958,11 @@
           window.location.reload();
         }
       } catch {
-        warning.hidden = false;
+        if (!stopped) warning.hidden = false;
       } finally {
         window.clearTimeout(timeout);
         inFlight = false;
+        controller = null;
         if (!stopped) timer = window.setTimeout(refresh, 15000);
       }
     }
@@ -916,6 +975,7 @@
     window.addEventListener("pagehide", () => {
       stopped = true;
       window.clearTimeout(timer);
+      controller?.abort();
     });
     timer = window.setTimeout(refresh, 15000);
   });
