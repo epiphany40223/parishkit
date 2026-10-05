@@ -1375,8 +1375,10 @@ signatures:
   `send_history_views` (`jobs.send_reads`); background task reads from
   `jobs/views` (`jobs.task_reads`); the schedule read from `schedule_views`
   (`accounts.schedule_reads`).
-- **PR 3b:** `go_live_inputs.collect_inputs(request, …)` and the
-  Production progress read.
+- **PR 3b:** `go_live_inputs.collect_inputs` and the Production progress
+  read (`confirmation_progress.progress`) take the caller, and the
+  readiness page's recent cleanup requests move to
+  `go_live_inputs.recent_cleanup_requests`.
 - **PR 4:** the schedule preview and confirm from `schedule_views._preview`
   and its POST handling; configuration request status from
   `ministry_views.configuration_request`.
@@ -1401,7 +1403,8 @@ signatures:
   from their views.
 - **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
   retry and cancel, the link preparation controls in `activation_views.links`,
-  `confirmation_views._fresh_after_cleanup`, `confirmation_commands` and
+  `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
+  Production preparation retry (`confirmation_progress.retry`) and
   `withdrawal_commands`.
 
 ### Read models
@@ -1413,8 +1416,10 @@ the template shows. Its fields are listed in the operator guide and the
 addresses, phone numbers, manual codes, access tokens or financial detail.
 The page and the command read through that same function, moved out of the
 view into a request-free module (`admin_dashboard.observe`,
-`jobs.task_reads`, `jobs.send_reads`, `accounts.schedule_reads`), so they
-cannot drift in what they read. Templates keep rendering from that
+`jobs.task_reads`, `jobs.send_reads`, `accounts.schedule_reads`) or, where
+the read already lived outside the view, taking the caller instead of the
+request (`go_live_inputs.collect_inputs`, `confirmation_progress.progress`),
+so they cannot drift in what they read. Templates keep rendering from that
 function's result, so the pages are unchanged; the document is the read
 model's projection of the same result. Read models never take the
 `request`.
@@ -1540,7 +1545,7 @@ the page's request status does. See
 | `go_live_cleanup` | `go-live cleanup-status --watch`, `go-live cleanup-retry`, `go-live cleanup-cancel` (PR 12) |
 | `go_live_links` | `go-live links`, `go-live links-status --watch`, `go-live links-retry`, `go-live links-cancel` (cancel or discard the preparation) (PR 12) |
 | `production_confirmation` | `go-live confirm-preview`, `go-live confirm --token …` (PR 12) |
-| `production_progress` | `go-live progress --watch` (PR 3b) |
+| `production_progress` | `go-live progress --watch` (PR 3b); the page's **Retry failed mail preparation** (PR 12) |
 | `production_withdrawal` | `go-live withdraw-preview --reason …`, `go-live withdraw --token …` (PR 12) |
 
 Cleanup, cleanup cancel, link preparation discard, confirmation and withdrawal
@@ -1549,6 +1554,25 @@ ask at the [prompt](#command-line-confirmation) unless `--yes` is given. See
 These steps matter again only for the next campaign. The go-live redesign in
 [#462](https://github.com/epiphany40223/parishkit/issues/462) changes them, and
 PR 12 follows whichever flow is current.
+
+`go-live readiness` and `go-live progress` read the current campaign, or the
+campaign `--campaign` names, as `schedule show` does. Neither page records a
+view event, so neither command does. No current campaign is
+`not_available`. A refusal from the page's read is reported only after the
+session is rechecked, so a session that ended during the read is exit 5.
+Then an unknown campaign is `not_available`, and so is Production progress
+for the current Production campaign with no confirmation receipt; any other
+refusal is the page's own: readiness for a campaign that is not the current
+Testing draft is `stale_version`, and Production progress for one that is
+not the current Production campaign (a Testing draft included) is `denied`
+(default, pending Administrator confirmation). Readiness shows the
+problems as their stored codes and never the Admin report recipients.
+A `go-live progress` watch stops once there is no initial mail to prepare,
+once preparation is complete, or once its task has stopped: a failed task
+changes nothing until the page's retry, which the document reports as
+`retry_available` without its signed control. The **Retry failed mail
+preparation** control was missing from this inventory; it is assigned to
+PR 12 (default, pending Administrator confirmation).
 
 ### Family email sends and delivery controls
 
@@ -1990,7 +2014,7 @@ Administrator's approval of that deploy.
   follow-up updates.
 - **PR 12, go-live and withdrawal:** the verified readiness preview, cleanup
   with retry and cancel, link preparation with retry and cancel,
-  confirmation and withdrawal; after
+  confirmation, the Production preparation retry and withdrawal; after
   [#462](https://github.com/epiphany40223/parishkit/issues/462) if that has
   landed.
 

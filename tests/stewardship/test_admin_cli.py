@@ -59,6 +59,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "send progress",
         "send history",
         "schedule show",
+        "go-live readiness",
+        "go-live progress",
     }
     assert set(entries) == session | reads
     for entry in entries.values():
@@ -70,14 +72,21 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # Read-only status: any session, no state change, the page's event.
         assert entries[name]["scope"] == "read_only", name
         assert not entries[name]["changes_state"], name
-        assert entries[name]["watch"] == (name in {"task show", "send progress"})
+        assert entries[name]["watch"] == (
+            name in {"task show", "send progress", "go-live progress"}
+        )
     assert entries["status"]["audit_event"] == "dashboard_viewed"
     assert entries["task list"]["audit_event"] == "background_viewed"
     assert entries["send history"]["audit_event"] == "delivery_viewed"
-    assert entries["schedule show"]["audit_event"] is None
+    # The pages record no view event, so neither do these reads.
+    for name in ("schedule show", "go-live readiness", "go-live progress"):
+        assert entries[name]["audit_event"] is None, name
+        campaign = {option["name"] for option in entries[name]["options"]}
+        assert "--campaign" in campaign, name
     assert entries["task show"]["arguments"] == ["TASK_ID"]
-    watch = {option["name"] for option in entries["send progress"]["options"]}
-    assert {"--watch", "--timeout"} <= watch
+    for name in ("send progress", "go-live progress"):
+        watch = {option["name"] for option in entries[name]["options"]}
+        assert {"--watch", "--timeout"} <= watch, name
     states = {option["name"]: option for option in entries["task list"]["options"]}
     assert states["--state"]["choices"][:2] == ["nonterminal", "all"]
     start = {option["name"]: option for option in entries["login start"]["options"]}
@@ -146,6 +155,19 @@ def test_commands_needs_no_database_and_prints_one_document():
         # --timeout belongs to --watch; alone it is refused, not ignored.
         ["send", "progress", "--timeout", "60", "--config", "x", "--session-stdin"],
         ["task", "list", "--state", "done", "--config", "x", "--session-stdin"],
+        # Readiness is one read, never watched; progress takes the 3a limits.
+        ["go-live", "readiness", "--watch", "2", "--config", "x", "--session-stdin"],
+        ["go-live", "progress", "--watch", "1", "--config", "x", "--session-stdin"],
+        ["go-live", "progress", "--timeout", "60", "--config", "x", "--session-stdin"],
+        [
+            "go-live",
+            "readiness",
+            "--campaign",
+            "not-a-uuid",
+            "--config",
+            "x",
+            "--session-stdin",
+        ],
     ],
 )
 def test_usage_errors_are_documents_that_name_no_value(argv):
@@ -422,6 +444,13 @@ def fresh_environment():
         ("stub", PREAMBLE, ["sessions"], (2, "configuration")),
         ("stub", PREAMBLE, ["logout"], (2, "configuration")),
         ("stub", PREAMBLE, ["login", "wait", "--name", "ops"], (2, "configuration")),
+        # A read with --watch parses and reaches admission the same way.
+        (
+            "stub",
+            PREAMBLE,
+            ["go-live", "progress", "--watch", "2"],
+            (2, "configuration"),
+        ),
     ],
     ids=[
         "commands",
@@ -431,6 +460,7 @@ def fresh_environment():
         "admitted-sessions",
         "admitted-logout",
         "admitted-login-wait",
+        "admitted-go-live-progress",
     ],
 )
 def test_the_command_line_runs_before_django_is_set_up(

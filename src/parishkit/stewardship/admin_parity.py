@@ -109,7 +109,8 @@ LEDGER = {
     "branding_preview": permanent(IMAGES),
     "branding_asset": permanent(IMAGES),
     # Production transition and withdrawal.
-    "go_live": pending("PR 3b", "go-live readiness", owed="PR 12"),
+    # The verified preview with the DNS check and cleanup come in PR 12.
+    "go_live": command("go-live readiness", owed="PR 12"),
     "go_live_families": pending("PR 12", "go-live families"),
     "go_live_cleanup": pending(
         "PR 12", "go-live cleanup-status", "go-live cleanup-retry"
@@ -118,7 +119,8 @@ LEDGER = {
     "production_confirmation": pending(
         "PR 12", "go-live confirm-preview", "go-live confirm"
     ),
-    "production_progress": pending("PR 3b", "go-live progress"),
+    # The page's "Retry failed mail preparation" control comes in PR 12.
+    "production_progress": command("go-live progress", owed="PR 12"),
     "production_withdrawal": pending(
         "PR 12", "go-live withdraw-preview", "go-live withdraw"
     ),

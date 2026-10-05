@@ -2,12 +2,13 @@
 
 Each read command of ``pk-stewardship admin`` gets its data from the
 function its page uses (``admin_dashboard.observe``, ``jobs.task_reads``,
-``jobs.send_reads``, ``accounts.schedule_reads``) and returns a frozen read
-model. A model's fields are its **defined projection**: counts, states,
-stored enumeration values, identifiers and instants, never Family names,
-emails, addresses, phone numbers, codes, access tokens, signed controls or
-translated labels. ``to_document()`` turns those fields into JSON values
-(instants as UTC ISO 8601 strings); the command catalog lists ``FIELDS``.
+``jobs.send_reads``, ``accounts.schedule_reads``, ``go_live_inputs``,
+``confirmation_progress``) and returns a frozen read model. A model's
+fields are its **defined projection**: counts, states, stored enumeration
+values, identifiers and instants, never Family names, emails, addresses,
+phone numbers, codes, access tokens, signed controls or translated labels.
+``to_document()`` turns those fields into JSON values (instants as UTC
+ISO 8601 strings); the command catalog lists ``FIELDS``.
 
 Every read authorizes as its page does, with the same capability, but
 passively: it never records session activity, so a read-only session can
@@ -682,6 +683,280 @@ def read_schedule(caller, service, campaign_id):
                     for row in campaign_schedules(state[0], target)
                 ],
             )
+        _recheck(caller, service.store, actor, Capability.CONFIGURE)
+        return model
+
+    return _held(step)
+
+
+# ------------------------------------------------------------------ go-live
+
+
+def _current_campaign(service, campaign_id):
+    """The campaign a go-live read names: ``--campaign``, or the current one.
+
+    No current campaign at all is ``not_available``. A configuration that
+    cannot be read now (a restore under review) is a ``ConfigError``, which
+    ``_held`` reports as ``unavailable``.
+    """
+    if campaign_id is not None:
+        return campaign_id
+    from .accounts.admin_editing import editable_configuration
+
+    target = editable_configuration(service).current_campaign_id
+    if target is None:
+        raise NotAvailable("There is no current campaign.")
+    return target
+
+
+def _page_read(caller, service, actor, campaign_id, read):
+    """Run a go-live page's own read, rechecking the session before any refusal.
+
+    The pages' reads admit the caller again inside their work lock and
+    refuse a campaign they do not serve. A refusal is reported only after
+    the session is rechecked, so a session that ended while the read ran is
+    ``session_ended`` (exit 5) whatever the read raised. Then an unknown
+    campaign is ``not_available`` (the work scope refuses it as a denial on
+    the page), and so is a missing record (for Production progress, the
+    current Production campaign with no confirmation receipt); any other
+    refusal is the page's own: ``StaleRecordError`` is ``stale_version``
+    and ``PermissionError`` is ``denied`` (a Testing draft's progress
+    included).
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from .accounts.policy import Capability
+    from .campaigns.models import Campaign
+    from .storage import StaleRecordError
+
+    try:
+        return read()
+    except (PermissionError, ObjectDoesNotExist, StaleRecordError) as error:
+        _recheck(caller, service.store, actor, Capability.CONFIGURE)
+        if not Campaign.objects.filter(pk=campaign_id).exists():
+            raise NotAvailable("No such campaign.") from None
+        if isinstance(error, ObjectDoesNotExist):
+            raise NotAvailable("The campaign's record is not available.") from None
+        raise
+
+
+@dataclass(frozen=True)
+class GoLiveReadiness(ReadModel):
+    """Go-live readiness for the current Testing draft: codes and counts only.
+
+    ``problems`` are the stored codes the page translates; ``checks_passed``
+    is true when there are none (the public web address check and cleanup
+    still follow, in PR 12). ``version`` is the preview's binding digest,
+    which changes whenever anything the preview counts changes. The Admin
+    report recipients and the Testing Families are never shown: the
+    Families are an export (PR 12).
+    """
+
+    campaign_id: UUID
+    observed_at: datetime
+    target_state: str
+    checks_passed: bool
+    problems: list
+    family_templates: list
+    source: dict
+    families: dict
+    admin_reports: dict
+    cleanup: dict
+    mail_test_id: UUID | None
+    cleanup_requests: list
+    version: str
+
+    @classmethod
+    def build(cls, inputs, requests):
+        """Project ``go_live_inputs.GoLiveInputs`` and the recent cleanup requests."""
+        counts = inputs.families.counts
+        reports = inputs.digests
+        cleanup = inputs.cleanup
+        source = inputs.source
+        return cls(
+            campaign_id=inputs.campaign.pk,
+            observed_at=inputs.observed_at,
+            target_state=inputs.target_state,
+            checks_passed=not inputs.problems,
+            problems=list(inputs.problems),
+            family_templates=list(inputs.configuration.family_templates),
+            source={
+                # SourceReadiness.reason: "ready" or the closed code why not.
+                "state": source.reason,
+                "current_id": source.current_id,
+                "full_id": source.full_id,
+                "observed_at": source.observed_at,
+                "expires_at": source.expires_at,
+            },
+            families={
+                "families": counts.families,
+                "active": counts.active,
+                # Families with, and without, an eligible email address.
+                "eligible": counts.email_eligible,
+                "not_eligible": counts.no_eligible_email,
+                "deliverable": counts.deliverable,
+                "messages": counts.messages,
+                "coalesced_slots": counts.coalesced_slots,
+                "skipped_slots": counts.skipped_slots,
+                "blocked_families": counts.blocked_families,
+            },
+            admin_reports={
+                "daily_messages": reports.daily_messages,
+                "weekly_messages": reports.weekly_messages,
+                "coalesced_slots": reports.coalesced_slots,
+                "empty_weekly_reports": reports.empty_weekly_reports,
+                "blocked_groups": reports.blocked_groups,
+            },
+            cleanup={
+                "submissions": cleanup.submissions,
+                "families": cleanup.families,
+                "messages": cleanup.messages,
+                "unresolved": cleanup.unresolved,
+                "total": cleanup.inventory.total,
+                # Lists, not objects keyed by name, so the member names of
+                # the document stay a fixed set.
+                "inventory": [
+                    {"category": category, "count": count}
+                    for category, count in sorted(cleanup.inventory.counts.items())
+                ],
+                "message_states": [
+                    {"state": state, "count": count}
+                    for state, count in cleanup.message_states
+                ],
+            },
+            mail_test_id=inputs.mail_test_id,
+            cleanup_requests=[
+                {"id": row.pk, "state": row.state, "created_at": row.created_at}
+                for row in requests
+            ],
+            version=inputs.digest,
+        )
+
+
+def read_go_live_readiness(caller, service, campaign_id):
+    """``go-live readiness``: the Go-live readiness page's read, without its forms.
+
+    Through ``go_live_inputs.collect_inputs`` under the work lock, as the
+    page. The page records no view event, so neither does this. The
+    current campaign is the default; a campaign that is not the current
+    Testing draft is the page's ``stale_version``.
+    """
+    from .accounts.go_live_inputs import collect_inputs, recent_cleanup_requests
+    from .accounts.policy import Capability
+
+    def step():
+        """Admit, read as the page does, then recheck."""
+        actor = _admit(caller, service.store, Capability.CONFIGURE)
+        target = _current_campaign(service, campaign_id)
+        inputs, requests = _page_read(
+            caller,
+            service,
+            actor,
+            target,
+            lambda: (
+                collect_inputs(caller, service, target),
+                recent_cleanup_requests(target),
+            ),
+        )
+        model = GoLiveReadiness.build(inputs, requests)
+        _recheck(caller, service.store, actor, Capability.CONFIGURE)
+        return model
+
+    return _held(step)
+
+
+@dataclass(frozen=True)
+class GoLiveProgress(ReadModel):
+    """Production activation progress: the confirmation and its mail preparation.
+
+    ``preparation`` is None when the campaign was confirmed before its start
+    and has no initial mail to prepare. ``retry_available`` says the page
+    offers its retry (the signed control itself is never shown). Each
+    outcome compares the confirmed preview with what preparation produced,
+    by its stored ``key``. A watch stops once nothing more happens on its
+    own: no preparation, preparation complete, or its task has stopped (a
+    failed task waits for the page's retry).
+    """
+
+    campaign_id: UUID
+    campaign_state: str
+    confirmation_id: UUID
+    confirmed_at: datetime
+    withdrawal_available: bool
+    preparation: dict | None
+    outcomes: list
+
+    @property
+    def terminal(self):
+        """No preparation, a finished one, or a task that has stopped."""
+        from .jobs.models import NONTERMINAL_STATES
+
+        preparation = self.preparation
+        return (
+            preparation is None
+            or preparation["complete"]
+            or (
+                preparation["task_state"] is not None
+                and preparation["task_state"] not in NONTERMINAL_STATES
+            )
+        )
+
+    @classmethod
+    def build(cls, data):
+        """Project ``confirmation_progress.progress``'s result."""
+        demand, task = data["demand"], data["task"]
+        return cls(
+            campaign_id=data["campaign"].pk,
+            campaign_state=data["campaign"].state,
+            confirmation_id=data["receipt"].pk,
+            confirmed_at=data["receipt"].created_at,
+            withdrawal_available=bool(data["withdrawal_available"]),
+            preparation=None
+            if demand is None
+            else {
+                "complete": data["complete"],
+                "task_id": None if task is None else task.pk,
+                "task_state": None if task is None else task.state,
+                "updated_at": None if task is None else task.updated_at,
+                "phase": demand.phase,
+                "items_completed": demand.items_completed,
+                "groups_completed": demand.groups_completed,
+                # The stored failure code; empty while nothing failed.
+                "failure": demand.failure_code or None,
+                "retry_available": data["control"] is not None,
+            },
+            outcomes=[
+                {
+                    name: row[name]
+                    for name in ("key", "preview", "actual", "difference", "complete")
+                }
+                for row in data["outcomes"]
+            ],
+        )
+
+
+def read_go_live_progress(caller, service, campaign_id):
+    """``go-live progress``: the Production progress page's read, without its retry.
+
+    Through ``confirmation_progress.progress`` under the work lock, as the
+    page. The page records no view event, and its polls are passive, so
+    neither the command nor its ``--watch`` records one. The current
+    campaign is the default; a campaign that is not the current Production
+    campaign (a Testing draft included) is the page's ``denied``, and the
+    current Production campaign with no confirmation receipt is
+    ``not_available``.
+    """
+    from .accounts.confirmation_progress import progress
+    from .accounts.policy import Capability
+
+    def step():
+        """Admit, read as the page does, then recheck."""
+        actor = _admit(caller, service.store, Capability.CONFIGURE)
+        target = _current_campaign(service, campaign_id)
+        data = _page_read(
+            caller, service, actor, target, lambda: progress(caller, service, target)
+        )
+        model = GoLiveProgress.build(data)
         _recheck(caller, service.store, actor, Capability.CONFIGURE)
         return model
 
