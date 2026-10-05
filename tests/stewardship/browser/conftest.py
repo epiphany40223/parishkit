@@ -68,6 +68,7 @@ from .chart_components import components as chart_components
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
+from .family_timeline_components import components as family_timeline_components
 from .financial_components import components as financial_components
 from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
@@ -1593,6 +1594,7 @@ def component_origin():
     responses.update(chart_components(context, admin))
     responses.update(dashboard_components(context, admin))
     responses.update(response_list_components(context, admin))
+    responses.update(family_timeline_components(context, admin))
     responses.update(user_components(context, admin))
     responses.update(security_components(context, admin))
     responses.update(go_live_components(context, admin))

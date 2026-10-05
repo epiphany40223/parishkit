@@ -368,7 +368,7 @@ lists of Families behind any count all come from the same rows. The
 [chart engine](#chart-engine) draws the funnel and the activity series on the
 [response dashboard](#response-dashboard), and the
 [response lists](#response-lists) show the Families behind the counts; the
-per-Family timeline is specified with a later increment of this report.
+[Family timeline](#family-timeline) shows what happened with one Family.
 
 ### Funnel stages
 
@@ -491,8 +491,7 @@ Each view reads the funnel once, with the report's
 [campaign read guard](../data/spec.md#campaign-read-guards) and role recheck,
 and records one audit event with its outcome and no reported value. The
 browser draws the charts; a page view never renders an image on the server.
-The per-Family timeline and the charts' PNG and PDF downloads follow in later
-increments.
+The charts' PNG and PDF downloads follow in a later increment.
 
 ### Response lists
 
@@ -567,6 +566,109 @@ audit rule in [shared report behavior](#shared-report-behavior): the filter,
 mode and source snapshot are not recorded, because recording them needs new
 approved audit context fields (a schema change), tracked in
 [#556](https://github.com/epiphany40223/parishkit/issues/556).
+
+### Family timeline
+
+**Access:** Administrators see the full timeline; Staff see the summary only
+(`CAMPAIGN_REPORT`; the Administrator's decision of 2026-10-04 on
+[#523](https://github.com/epiphany40223/parishkit/issues/523)). The
+Testing view is Administrator only.
+
+`reports/<campaign>/families/<family>/` (**Family timeline**) answers "what
+happened with this Family?" and "did you get my response?" for one Family of
+the campaign. `<family>` is the Family's campaign record id, an opaque random
+identifier like a Mail message's; the Family's name, DUID, envelope number and
+code never enter the URL, and the browser title leaves the name out so browser
+history does not keep it. The Family's name opens the page from each
+[response list](#response-lists) row (in the list's mode) and each
+[Family directory](#family-directory) row, and the header's Find a Family box
+opens it once that lands (see
+[Admin navigation](../admin-portal/spec.md#admin-navigation)). Its breadcrumb
+parent is the Family directory. The page reads the Family's records at the
+database's current instant (**Counted at**).
+
+Data comes first: the heading, then the Family's name (the directory's
+surname-and-heads name from the latest ParishSoft data, or a note that the
+data no longer has the Family), DUID and envelope number, then a summary that
+both roles see:
+
+- **Submitted:** Yes, with the first submission's time and, after more than
+  one, how many and the latest; or "Not yet".
+- **Last email:** the last email sent to the Family (Invitation, Reminder N,
+  Submission receipt or a chosen-Family test email), planned last among those
+  not cancelled (a cancelled email was never sent), with its time and outcome
+  in plain words: Delivered (the mail service accepted it, which does not
+  prove it reached the inbox), Failed, Not sure it arrived, or Still sending.
+  No email content is shown.
+- **Family code**, for roles that may see Family codes (`FAMILY_CODES`; the
+  code is neither decrypted nor shown otherwise), as the directory shows it,
+  with **Open form**, which opens the Family form in a new tab with the code
+  in the URL fragment only, as the directory's link does. Unlike the
+  directory, the page shows no notice beside it (the Administrator's choice
+  on #590). Open form is a
+  disabled button with its reason beside it while the system is in Testing
+  mode (the Family sign-in then accepts only rehearsal codes) or when the
+  Family has no code for the campaign. In Testing mode the reason links "Try
+  the Family form as a chosen Family" for roles that may open that page
+  (Administrators).
+
+Administrators also see whether campaign email can reach the Family (or why
+not), the furthest form step reached and when the Family was last seen on the
+form (live values of the
+[Family engagement record](../data/spec.md#family-engagement)), and the
+**Timeline**: a [shared Admin table](../admin-portal/spec.md#admin-tables)
+with one row per event and the columns When, What happened and Details. It
+is newest first (the Administrator's decision on #590); When is its one sort
+heading, which reverses the order in place, and rows at the same instant keep
+the order the Family took them in. A Family has few events, so the table
+shows them all, with no paging or row navigator. Rows are each Family email
+with its outcome (including Not sent (cancelled)), linked to its Mail message page; the invitation skipped because
+the Family had already responded (the [funnel's](#funnel-stages) skip), which
+stands in for that invitation's cancelled email, so the one planned email is
+listed once; each sign-in, labelled as possibly a mail scanner checking the
+link; each form open; getting past the first step and the furthest step
+reached; and each submission, noting when no receipt was sent because the
+Family had no email address. Staff get none of
+these, and the server does not read them for a Staff view.
+
+As on the [response lists](#response-lists), the URL carries only closed
+choices: the timeline's `sort` (and the `size=all` its heading carries), and
+`mode`, Production by default or the campaign's active Testing rehearsal for
+Administrators. Both are
+[in-place controls](../admin-portal/spec.md#in-place-controls) of the page's
+one table region, and switching mode keeps the order chosen. Emails,
+submissions, form opens and the engagement record carry their mode (a Testing
+record also its rehearsal epoch; a Testing receipt is found through the
+submission it answers). A sign-in is the durable `family_login` audit event,
+which carries no mode, so each is counted in the mode the system was in at
+that instant (from the runtime mode transitions), and a Testing view keeps
+only those within the rehearsal epoch's lifetime. With no active rehearsal
+the Testing view says there is nothing to show. Every time is shown in the
+browser's time zone.
+
+Each view admits the report read, reads the Family under the campaign read
+guard with the role recheck (a Family of another campaign is refused like a
+missing one), decrypts the code under the credential key-set lock as the
+directory does, sends `Cache-Control: no-store` and records one
+`family_timeline_viewed` audit event whose subject is the Family's opaque
+campaign record id, with the campaign and the outcome and no name, DUID, code
+or shown value, as a Mail message view names its message. A Family that is
+not found in the campaign (an unknown id, or another campaign's Family) is
+refused without an audit row, as a Mail message that is not found is, so no
+row pairs a campaign with a Family that is not in it. Recording which
+Family was viewed lets a later review see who looked at whom, and a view left
+unrecorded could never be filled in; the Administrator confirmed it on
+2026-10-05 ([#477](https://github.com/epiphany40223/parishkit/issues/477)),
+with the page's name, its URL and its place under the Family directory. The
+subject
+is a soft reference with no foreign key, so, like other report access audit,
+the event is outside the purge inventory (see
+[audit records](../data/spec.md#job-outbox-audit-and-purge-records)). The
+reads are a handful of small statements and none runs per row: the emails,
+form opens and submissions through their Family indexes, the skips through
+the campaign's invitation schedules, and the sign-ins through the audit's
+event-type and time index, which scans the campaign's sign-in events rather
+than one Family's.
 
 ## Additional information
 

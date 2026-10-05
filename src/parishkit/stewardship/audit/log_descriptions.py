@@ -356,6 +356,7 @@ DESCRIPTIONS = {
     "response_data_quality_list_exported": _(
         "Someone downloaded the list of ParishSoft data to check."
     ),
+    "family_timeline_viewed": _("Someone opened a Family's timeline."),
     "portal_users_viewed": _("An Administrator opened the portal users list."),
     "system_logs_exported": _("An Administrator downloaded the system logs."),
     "export_cancelled": _("A report download was cancelled."),

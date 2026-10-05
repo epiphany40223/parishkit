@@ -1,0 +1,49 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}{# One Family's summary (Administrators and Staff) and timeline (Administrators only), #477: reports/family_timeline_views.py builds the context and reports/family_timeline.py reads the records. Data first; the explanation sits in the About panel. The title leaves the Family's name out, so browser history does not keep it. #}
+{% block title %}{% translate "Family timeline" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Family timeline" %}</h1>
+{% aboutpage "family-timeline" %}<p>{% if show_codes %}{% translate "What happened with one Family in this campaign: whether it submitted, the last email sent to it and its Family code." %}{% else %}{% translate "What happened with one Family in this campaign: whether it submitted and the last email sent to it." %}{% endif %}{% if full %} {% translate "The timeline below lists every email, sign-in, form open and submission, newest first; select the When heading to reverse the order." %}{% endif %}</p>
+<p>{% translate "Delivered means the mail service accepted the email; that does not prove it reached the inbox. Not sure it arrived means the mail service did not confirm either way." %}</p>
+{% if full %}<p>{% translate "A sign-in can also be a mail scanner checking the Family's personal link. Getting past the first step is recorded from ParishKit 1.2.0 on. Open an email to see its delivery history." %}</p>{% endif %}
+<p>{% if show_codes %}{% translate "Open form opens the Family form in a new tab with the code filled in, as the Family would see it." %} {% endif %}{% translate "Times are shown in your browser's time zone." %}</p>{% endaboutpage %}
+<p>{% if identity.name %}<strong>{{ identity.name }}</strong>{% else %}{% translate "Not in the latest ParishSoft data" %}{% endif %} · {% translate "Family DUID" %} {{ identity.duid|duid }}{% if identity.envelope is not None %} · {% translate "Envelope number" %} {{ identity.envelope|duid }}{% endif %} · <a href="{{ directory_url }}">{% translate "Family directory" %}</a></p>
+{# One shared table region (web/tables.py, #488/#519): the mode links (a[data-in-place]) and the timeline's When heading (sort_heading) refresh it in place; each href ends in its id, the table's anchor "table". #}
+<div id="table" data-table-region>
+<p>{{ campaign.active_configuration.name }} — {% if testing %}{% translate "Testing rehearsal" %}{% else %}{% translate "Production" %}{% endif %}</p>
+{% if full %}<nav class="choice-links" aria-label="{% translate 'Records shown' %}"><a href="{{ production_url }}#table" data-in-place="mode-production"{% if not testing %} aria-current="page"{% endif %}>{% translate "Production" %}</a> <a href="{{ testing_url }}#table" data-in-place="mode-testing"{% if testing %} aria-current="page"{% endif %}>{% translate "Testing rehearsal" %}</a></nav>{% endif %}
+{% if timeline is None %}
+<section class="panel empty-state"><p>{% translate "This campaign has no Testing rehearsal now, so there are no Testing records to show. Choose Production to see live records." %}</p></section>
+{% else %}
+{% if testing %}<p class="notice">{% translate "Testing rehearsal: responses and test emails from the campaign's current rehearsal only. They are never counted in Production." %}</p>{% endif %}
+<p>{% translate "Counted at" %} <time datetime="{{ as_of|instant }}" data-local-instant>{{ as_of|instant }}</time></p>
+{% with summary=timeline.summary email=timeline.summary.last_email %}
+<section class="panel" aria-labelledby="summary-heading">
+<h2 id="summary-heading">{% translate "Summary" %}</h2>
+<dl>
+<dt>{% translate "Submitted" %}</dt>
+<dd>{% if summary.count %}{% translate "Yes" %}, <time datetime="{{ summary.first_at|instant }}" data-local-instant>{{ summary.first_at|instant }}</time>{% if summary.count > 1 %} · {% blocktranslate with number=summary.count|number %}{{ number }} times; most recently{% endblocktranslate %} <time datetime="{{ summary.last_at|instant }}" data-local-instant>{{ summary.last_at|instant }}</time>{% endif %}{% else %}{% translate "Not yet" %}{% endif %}</dd>
+<dt>{% translate "Last email" %}</dt>
+<dd>{% if email %}{{ email.name }}, <time datetime="{{ email.at|instant }}" data-local-instant>{{ email.at|instant }}</time>: <strong>{{ email.outcome }}</strong>{% else %}{% translate "None sent yet" %}{% endif %}</dd>
+{% if show_codes %}<dt>{% translate "Family code" %}</dt>
+<dd>{% if identity.code %}<code>{{ identity.code }}</code>{% else %}{% translate "Unavailable for this campaign" %}{% endif %}
+{% if open_form %}<a class="button" href="{% url 'public:entry' %}#code={{ identity.code|urlencode }}" target="_blank" rel="noopener" data-open-form>{% translate "Open form" %}<span class="visually-hidden"> {% translate "in a new tab" %}</span></a>
+{% else %}<button type="button" disabled aria-describedby="open-form-reason">{% translate "Open form" %}</button> <span id="open-form-reason" class="help">{% if open_form_reason == 'testing' %}{% translate "Not available in Testing mode: the Family form accepts only Testing codes." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}{% else %}{% translate "Not available: this Family has no code for this campaign." %}{% endif %}</span>{% endif %}</dd>{% endif %}
+{% if full %}<dt>{% translate "Campaign email can reach this Family" %}</dt>
+<dd>{{ identity.reach_label }}</dd>
+<dt>{% translate "Furthest step reached" %}</dt>
+<dd>{% if timeline.engagement.furthest_label %}{{ timeline.engagement.furthest_label }}, <time datetime="{{ timeline.engagement.furthest_at|instant }}" data-local-instant>{{ timeline.engagement.furthest_at|instant }}</time>{% else %}{% translate "None recorded" %}{% endif %}</dd>
+<dt>{% translate "Last seen" %}</dt>
+<dd>{% if timeline.engagement.last_seen_at %}<time datetime="{{ timeline.engagement.last_seen_at|instant }}" data-local-instant>{{ timeline.engagement.last_seen_at|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</dd>{% endif %}
+</dl>
+</section>
+{% endwith %}
+{% if full %}<section class="panel" aria-labelledby="events-heading">
+<h2 id="events-heading">{% translate "Timeline" %}</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="events-caption"><table class="data-table"><caption id="events-caption">{% translate "Everything recorded for this Family" %}</caption>
+<thead><tr>{% translate "When" as heading %}{% sort_heading table "when" heading %}<th scope="col">{% translate "What happened" %}</th><th scope="col">{% translate "Details" %}</th></tr></thead><tbody>
+{% for event in table.rows %}<tr><td><time datetime="{{ event.at|instant }}" data-local-instant>{{ event.at|instant }}</time></td><th scope="row">{% if event.message_id %}<a href="{% url 'admin:delivery' event.message_id %}">{{ event.what }}</a>{% else %}{{ event.what }}{% endif %}</th><td>{{ event.detail }}</td></tr>
+{% empty %}<tr><td colspan="3">{% translate "Nothing recorded for this Family yet. Emails, sign-ins and submissions appear here as they happen." %}</td></tr>{% endfor %}</tbody></table></div>
+</section>{% endif %}
+{% endif %}
+</div>
+{% endblock %}

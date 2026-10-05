@@ -154,6 +154,7 @@ def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(test
                         "family_name": "Example",
                         "display_name": "Example, Anna and John",
                         "family_duid": 1,
+                        "family_id": str(UUID(int=81)),
                         "code": "ABCD-EFGH",
                     },
                     {
@@ -171,7 +172,13 @@ def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(test
     assert html.count(link) == (0 if testing else 1)
     # The Name cell and the contact-details summary show the surname and heads;
     # a live Open form link names the Family for screen readers too.
-    assert "<td>Example, Anna and John</td>" in html
+    # A Family's name opens its timeline by its opaque campaign record id;
+    # a row without one (none in practice) stays plain text.
+    assert (
+        f'<td><a href="/admin/reports/{UUID(int=80)}/families/{UUID(int=81)}/">'
+        "Example, Anna and John</a></td>"
+    ) in html
+    assert "<td>Codeless</td>" in html
     assert html.count("Example, Anna and John") == (2 if testing else 3)
     assert ("data-open-form-notice" in html) is not testing
     assert ("appear next to the codes once the campaign is live" in html) is testing
