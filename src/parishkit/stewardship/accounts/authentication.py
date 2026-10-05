@@ -349,7 +349,15 @@ def complete_identity(request, subject, email, hosted, *, authenticated_at):
 
 
 def establish_identity(
-    request, subject, email, hosted, *, authenticated_at, recovery_epoch, destination
+    request,
+    subject,
+    email,
+    hosted,
+    *,
+    authenticated_at,
+    recovery_epoch,
+    destination,
+    step_up_only=False,
 ):
     """The post-verification identity core shared by every Admin sign-in path.
 
@@ -369,6 +377,12 @@ def establish_identity(
     (see ``reauthenticate_admin``). Otherwise a new session replaces whatever
     the browser held. Either way the CSRF secret rotates and the browser
     returns to the validated ``destination`` path.
+
+    With ``step_up_only`` (the LOCAL sign-in, #613), ``destination`` is
+    honoured only for that step-up; a new session goes to the Admin home.
+    The LOCAL return path comes from browser storage, not from a signed
+    sign-in state as Google's does, so only the browser that is already
+    signed in as this user may steer where its own step-up lands.
     """
     service = runtime()
     epoch = (
@@ -406,17 +420,19 @@ def establish_identity(
                 version=F("version") + 1,
             )
         principal = None if user.disabled else current_principal(service.store, user.pk)
+        stepped_up = False
         if principal is not None and principal.roles:
             try:
-                if (
+                stepped_up = (
                     reauthenticate_admin(
                         request,
                         user.pk,
                         store=service.store,
                         authenticated_at=authenticated_at,
                     )
-                    is None
-                ):
+                    is not None
+                )
+                if not stepped_up:
                     issue_admin(
                         request,
                         user.pk,
@@ -446,6 +462,8 @@ def establish_identity(
         delay = record_failure(request, identity=fingerprint, counter=counter)
         return denial(status=429 if delay else 403, retry=delay)
     service.limiter.clear(counter)
+    if step_up_only and not stepped_up:
+        destination = None
     # Revalidate even though login stored only a validated path in its state.
     return HttpResponseRedirect(admin_return_path(destination))
 

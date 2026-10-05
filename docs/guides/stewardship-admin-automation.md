@@ -127,6 +127,10 @@ name may be wrong, or a database restore may be under way. Exit 127 means
   ending (a revocation, for example) got there first, it reports
   `"ended": false` with `"reason": "already_ended"` and that ending's
   `end_reason`, exits 0 and still deletes the file.
+- **Automation access** (`/admin/users/automation/`, in the Users and
+  access group) lists the Administrator's sessions, live and ended in the
+  last 30 days, and every live session of any Administrator; any of them can
+  be revoked there. Revocation takes effect at the next command.
 - A session ends by itself at its deadline, when its Administrator loses the
   Administrator role or is disabled or removed, and after an offline
   Admin-access recovery.
@@ -134,14 +138,13 @@ name may be wrong, or a database restore may be under way. Exit 127 means
 
 ## Notices and alerts
 
-Approvals and refused uses go out by email and, when configured, Slack, as
-the fixed-text alerts `automation_approved` and `automation_refused` (see
-the
+Every Administrator's dashboard shows an **Automation notices** panel for
+each approval, refused use and ending, until that Administrator
+acknowledges it. Approvals and refused uses also go out by email and, when
+configured, Slack, as the fixed-text alerts `automation_approved` and
+`automation_refused` (see the
 [operational alerts guide](stewardship-operational-alerts.md#automation-incident-kinds)).
-If a session nobody recognizes appears, the only way to end it from the
-host in this release is `revoke-automation-sessions --reason
-revoked_by_operator` (below), which ends **every** session at once and
-needs every online service stopped.
+Revoke at once any session nobody recognizes, on Automation access.
 
 ## Restore and ending every session
 

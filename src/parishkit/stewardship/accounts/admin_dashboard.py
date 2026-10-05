@@ -145,6 +145,11 @@ def summary(actor, configuration, now):
         # Every Administrator's dashboard shows an expansion of who may sign
         # in until an Administrator acknowledges it.
         result["security_events"] = open_events(actor)
+        from .automation_sessions import open_notices
+
+        # Automation notices (ADM-11) stay on each Administrator's dashboard
+        # until that Administrator acknowledges them.
+        result["automation_notices"] = open_notices(actor)
     if allows(actor, Capability.BACKGROUND_WORK):
         # Imported here like the other optional sections above: jobs.views
         # loads the task API's view stack, which only this section needs.

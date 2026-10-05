@@ -582,6 +582,7 @@ SPEC_ORDER = [
     "source_refresh",
     # Users and access
     "users",
+    "automation_access",
     # System
     "integrations",
     "background",

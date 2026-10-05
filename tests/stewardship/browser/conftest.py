@@ -64,6 +64,8 @@ from parishkit.stewardship.web.tables import paginate, window_table
 from ..campaign_factory import campaign, financial, schedule
 from ..content_factory import content
 from ..test_setup_final_steps import wizard as final_wizard
+from .automation_components import POSTS as AUTOMATION_POSTS
+from .automation_components import components as automation_components
 from .chart_components import components as chart_components
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
@@ -1644,17 +1646,22 @@ def component_origin():
     responses.update(talent_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(menu_components(context, admin))
+    responses.update(automation_components(context, admin))
     # The in-place form page's POST answers (#519, #562): refusals answer
     # with the page the view would render (400 with the summary in the
     # region, 200 with it outside, or a 400 denial page without the region),
     # and "plain" answers 200 with a page that lacks the form's region,
     # without a redirect.
-    posts = IN_PLACE_POSTS | {
-        f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
-        f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
-        f"{IN_PLACE_FORM}/denied": (400, None, responses["/in-place-denied"][1]),
-        f"{IN_PLACE_FORM}/plain": (200, None, responses["/in-place-plain"][1]),
-    }
+    posts = (
+        IN_PLACE_POSTS
+        | AUTOMATION_POSTS
+        | {
+            f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
+            f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
+            f"{IN_PLACE_FORM}/denied": (400, None, responses["/in-place-denied"][1]),
+            f"{IN_PLACE_FORM}/plain": (200, None, responses["/in-place-plain"][1]),
+        }
+    )
     for filename, kind in (
         ("ui-v1.css", "text/css"),
         ("ui-v1.js", "application/javascript"),
@@ -1671,6 +1678,7 @@ def component_origin():
         ("phone-v1.js", "application/javascript"),
         ("live-status-v1.js", "application/javascript"),
         ("session-v1.js", "application/javascript"),
+        ("local-sign-in-v1.js", "application/javascript"),
         ("session-v1.css", "text/css"),
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),

@@ -304,7 +304,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 
 - [x] ADM-11.01 — PR 0: specify the Admin automation interface and record the Administrator's decisions.
 - [x] ADM-11.02 — PR 1: add the AdminCaller seam with no behavior change.
-- [ ] ADM-11.03 — PR 2: add durable browser-approved automation sessions, notices and the maintenance task (migration), the host wrapper and session file, restore revocation, refusals and audit.
+- [x] ADM-11.03 — PR 2: add durable browser-approved automation sessions, notices and the maintenance task (migration), the host wrapper and session file, restore revocation, refusals and audit.
 - [x] ADM-11.04 — PR 3: add read models, read-only status commands and the route-parity test.
 - [x] ADM-11.05 — PR 4: add schedule preview and confirm and configuration request status.
 - [ ] ADM-11.06 — PR 5: let fresh-gated SQL guards and checks accept full-scope automation sessions (migration) and add the confirmation prompt.
@@ -325,6 +325,28 @@ decisions. ADM-11.02 adds
 `tests/stewardship/test_admin_caller.py`,
 `tests/stewardship/database/test_admin_caller_postgresql.py` and the
 unchanged session, privileged-intake and Admin view suites.
+ADM-11.03 lands in three stacked pull requests. 2a adds the forward
+migration `stewardship_accounts.0004` with the frozen file
+`0004_automation_sessions.sql` (the four automation tables and their
+guards, the liveness, freshness and session purge functions, the worker's
+cleanup guard on Admin sessions, the four automation incident kinds and the
+`automation_maintenance` task type), the automation constructor and command
+sessions, both refusals, the maintenance task and `revoke-automation-sessions`
+with its restore steps, proven by
+`tests/stewardship/test_automation_revocation.py` and
+`tests/stewardship/database/test_automation_sessions_postgresql.py`,
+`test_automation_logins_postgresql.py` and
+`test_automation_maintenance_postgresql.py`, with the upgrade-parity and
+schema baseline tests. 2b adds the session commands of
+`pk-stewardship admin`, the host wrapper `tools/stewardship-ops/pk-admin`, the
+approval page and the
+[operator guide](../../guides/stewardship-admin-automation.md), proven by
+`tests/stewardship/test_admin_cli.py`, `tests/stewardship/test_pk_admin.py`,
+`tests/stewardship/database/test_admin_cli_postgresql.py` and
+`test_automation_approval_postgresql.py`. 2c adds Automation access with
+every live session, in-place revocation and the dashboard's automation
+notices, proven by `tests/stewardship/database/test_automation_access_postgresql.py`
+and the Chromium and WebKit tests in `tests/stewardship/browser/test_automation.py`.
 ADM-11.04 lands in two pull requests. 3a adds the read models
 (`parishkit.stewardship.admin_reads`), the read-only commands `status`,
 `task list`, `task show`, `send progress`, `send history` and

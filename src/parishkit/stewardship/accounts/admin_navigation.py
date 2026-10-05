@@ -223,9 +223,12 @@ PAGES = {
     ),
     "chair_reviews": Page("users", _("Chair reviews"), "users", linkable=False),
     "assignments": Page("users", _("Assignments"), "users", linkable=False),
-    # The page the Admin automation command line links to (ADM-11). It
-    # stands under Home until Automation access, its parent, joins the menu.
-    "automation_approval": Page(None, _("Approve an automation session")),
+    # The Administrator's own automation sessions (ADM-11), and the approval
+    # of a pending one, which the command line links to.
+    "automation_access": Page("users", _("Automation access")),
+    "automation_approval": Page(
+        "users", _("Approve an automation session"), "automation_access"
+    ),
     # System
     "integrations": Page("system", _("Integrations")),
     "integration_settings": Page("system", _("Integration"), "integrations"),
@@ -460,6 +463,7 @@ MENU = (
     Entry("source_refresh", _ADMIN),
     # Users and access
     Entry("users", Capability.MANAGE_USERS),
+    Entry("automation_access", _ADMIN),
     # System
     Entry("integrations", _ADMIN),
     Entry("background", _ADMIN),
@@ -500,6 +504,8 @@ NON_PAGES = frozenset(
         "background_task",
         "background_task_status",
         "background_tasks",
+        "automation_notices",
+        "automation_session",
         "branding_asset",
         "content_plain_text",
         "critical_events_acknowledge",

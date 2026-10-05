@@ -48,6 +48,7 @@ def test_same_origin_admin_paths_are_kept(value):
         "/admin/login",
         "/admin/logout",
         "/admin/oauth/callback",
+        "/admin/local/sign-in",
         "javascript:alert(1)",
         "/admin/" + "a" * 1100,
     ],

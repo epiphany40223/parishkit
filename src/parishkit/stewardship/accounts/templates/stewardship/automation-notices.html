@@ -1,0 +1,18 @@
+{% load i18n stewardship %}{% comment %}
+  Automation notices on the Admin dashboard (ADM-11): every Administrator sees
+  each notice until they acknowledge it; acknowledging affects only their own
+  view. The region is always rendered for an Administrator, empty when
+  nothing is pending, so acknowledging the last notice still swaps in place
+  (#559). Its help is a disclosure inside the region, not the page's About
+  this page panel, which belongs only beside a page's h1. Labels are text the operator typed, escaped by the template.
+{% endcomment %}<section{% if notices.total %} class="panel"{% endif %} id="automation-notices" data-in-place-region{% if notices.total %} aria-labelledby="automation-notices-heading"{% endif %}>{% if notices.total %}
+  <h2 id="automation-notices-heading">{% translate "Automation notices" %}</h2>
+  <details class="technical-details"><summary>{% translate "What these notices mean" %}</summary><p>{% translate "The server's command line acts as an Administrator through an automation session. These notices say when a session was approved, refused or ended. Revoke any session you do not recognize on Automation access. Acknowledging a notice clears it from your dashboard only." %}</p></details>
+  <ul>{% for notice in notices.rows %}<li>
+    <strong>{% if notice.kind == "approved" %}{% translate "An automation session was approved" %}{% elif notice.kind == "refused" %}{% translate "A command was turned away (an unknown session, a session used from another server, or a session's key used in a browser)" %}{% elif notice.kind == "ended" %}{% translate "An automation session ended" %}{% elif notice.kind == "irreversible" %}{% translate "An automation session took an action that cannot be undone" %}{% elif notice.kind == "policy_change" %}{% translate "An automation session changed user access, keys or notification settings" %}{% else %}{% translate "An automation session took a protected action" %}{% endif %}</strong>:
+    {% if notice.label %}“{{ notice.label }}”{% else %}{% translate "no session matched" %}{% endif %} — <time datetime="{{ notice.created_at|instant }}" data-local-instant>{{ notice.created_at|instant }}</time>
+    <form method="post" action="{% url 'admin:automation_notices' %}#automation-notices" class="inline-form" data-in-place="acknowledge-{{ notice.id }}" data-in-place-message="{% translate 'Notice acknowledged.' %}">{% csrf_token %}<input type="hidden" name="notice" value="{{ notice.id }}"><button type="submit">{% translate "Acknowledge" %}</button></form>
+  </li>{% endfor %}</ul>
+  {% if notices.total > notices.rows|length %}<p>{% blocktranslate count counter=notices.total %}{{ counter }} notice in all.{% plural %}{{ counter }} notices in all; the newest are shown.{% endblocktranslate %}</p>{% endif %}
+  <form method="post" action="{% url 'admin:automation_notices' %}#automation-notices" data-in-place="acknowledge-all" data-in-place-message="{% translate 'Notices acknowledged.' %}">{% csrf_token %}<input type="hidden" name="notice" value="all"><button type="submit">{% translate "Acknowledge all" %}</button></form>
+{% endif %}</section>
