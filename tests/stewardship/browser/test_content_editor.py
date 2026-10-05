@@ -132,8 +132,9 @@ def test_typed_paragraphs_breaks_bold_lists_and_links_round_trip(
     keyboard.type("Dear Alex and Sam:")
     keyboard.press("Enter")
     keyboard.type("Stewardship is a way of life.")
-    # On macOS, Playwright's WebKit (like Safari) turns Shift+Enter into the
-    # same "insert newline" as Enter; the editor's own handler makes it a <br>.
+    # On macOS, Playwright's WebKit (and presumably Safari) turns Shift+Enter
+    # into the same "insert newline" as Enter; the editor's own handler makes
+    # it a <br>.
     keyboard.press("Shift+Enter")
     keyboard.type("It is gratitude.")
     keyboard.press("Enter")
@@ -183,24 +184,52 @@ def test_shift_enter_is_a_line_break_whatever_the_platform_key_binding(
     key press cannot show the handler at work there; a dispatched keydown
     reaches only the editor's handler (synthetic events have no native
     editing default) and so proves it runs on every engine, including the
-    macOS WebKit (Safari) case where Shift+Return would start a paragraph.
+    macOS WebKit (and presumably Safari) case where Shift+Return would start
+    a paragraph.
     """
     page.goto(component_origin + "/content-settings")
     caret_to_end(page)
     page.keyboard.type("First line")
-    handled = page.locator("[data-content-editor]").evaluate(
-        """node => {
-            const event = new KeyboardEvent("keydown", {
-                key: "Enter", shiftKey: true, bubbles: true, cancelable: true
-            });
-            node.dispatchEvent(event);
-            return event.defaultPrevented;
-        }"""
-    )
-    assert handled
+    assert shift_enter(page)
     page.keyboard.type("Second line")
     source = page.locator('textarea[name="html"]').input_value()
     assert "First line<br>Second line" in source, source
+
+
+def shift_enter(page, **extra):
+    """Dispatch a synthetic Shift+Enter keydown; return whether it was handled.
+
+    ``extra`` adds KeyboardEvent options such as ``ctrlKey`` or
+    ``isComposing``. ``defaultPrevented`` is true only when the editor's own
+    handler inserted the line break.
+    """
+    return page.locator("[data-content-editor]").evaluate(
+        """(node, extra) => {
+            const event = new KeyboardEvent("keydown", {
+                key: "Enter", shiftKey: true, bubbles: true, cancelable: true,
+                ...extra
+            });
+            node.dispatchEvent(event);
+            return event.defaultPrevented;
+        }""",
+        extra,
+    )
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [{"ctrlKey": True}, {"altKey": True}, {"metaKey": True}, {"isComposing": True}],
+)
+def test_modified_or_composing_shift_enter_is_left_to_the_browser(
+    page, component_origin, extra
+):
+    """Ctrl, Alt or Meta with Shift+Enter, or an IME commit, is not taken over."""
+    page.goto(component_origin + "/content-settings")
+    caret_to_end(page)
+    page.keyboard.type("First line")
+    before = page.locator("[data-content-editor]").inner_html()
+    assert not shift_enter(page, **extra)
+    assert page.locator("[data-content-editor]").inner_html() == before
 
 
 def test_pasted_lines_become_paragraphs(page, component_origin):

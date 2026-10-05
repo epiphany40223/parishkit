@@ -1616,13 +1616,16 @@
     editor.addEventListener("input", sync);
     // Shift+Enter is a line break (<br>) inside the paragraph everywhere.
     // Chrome, Firefox and Linux WebKit do that natively, but macOS WebKit
-    // (Safari) maps Shift+Return to the same "insert newline" command as Return
-    // and starts a new paragraph, so ask for the line break explicitly (#544).
+    // (and presumably Safari) maps Shift+Return to the same "insert newline"
+    // command as Return and starts a new paragraph, so ask for the line break
+    // explicitly (#544). An input method's commit keydown (isComposing, or
+    // keyCode 229 in Safari) belongs to the IME, and the browser's own
+    // behaviour stays whenever the command is unsupported or fails.
     editor.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || !event.shiftKey || event.isComposing
+      if (event.key !== "Enter" || !event.shiftKey
+          || event.isComposing || event.keyCode === 229
           || event.altKey || event.ctrlKey || event.metaKey) return;
-      event.preventDefault();
-      document.execCommand("insertLineBreak");
+      if (document.execCommand("insertLineBreak")) event.preventDefault();
     });
     liveSource(form, visual, editor, source);
     const selectedRange = () => {
