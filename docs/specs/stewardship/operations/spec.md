@@ -776,7 +776,14 @@ defined by the [Admin specification](../admin-portal/spec.md#campaign-purge).
 ## Observability and health
 
 Containers log structured JSON to stdout/stderr with correlation IDs and safe
-context. Application operational/audit storage is separately queryable in the
+context. A failure line may also carry `error_class`, the `module.qualname` of
+the exception's type (for example `builtins.AttributeError`): a name the code
+controls, never the exception's text, accepted only beside a `failure_kind`
+and only as a bounded dotted identifier; a name that is not one is left
+out, and the line is still logged. Only a caller whose failure has no
+other trace adds it, such as the
+[admin command line](../admin-automation/spec.md#correlation-and-logging).
+Application operational/audit storage is separately queryable in the
 Admin UI. Metrics include request latency/error, sessions, queue depth/age,
 task duration/failure, scheduler lag, outbox age/delivery, ParishSoft snapshot
 age, database/broker health, disk usage, backup age, and TLS expiry.

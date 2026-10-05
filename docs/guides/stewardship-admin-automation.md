@@ -109,7 +109,10 @@ and exits 2. Each command prints exactly one JSON document (schema
 fields, the exit codes and the error codes are in the specification's
 [running a command](../specs/stewardship/admin-automation/spec.md#running-a-command);
 `pk-admin commands` prints the catalog of every command with its scope,
-options and result fields.
+options and result fields. On exit 3 or 6, keep the `startup_rejected` or
+`task_failed` line from standard error and its `correlation_id` when you
+report the failure (see
+[correlation and logging](../specs/stewardship/admin-automation/spec.md#correlation-and-logging)).
 
 The wrapper sends the session secret on standard input, never as an
 argument, and forwards your own standard input only when the command line
