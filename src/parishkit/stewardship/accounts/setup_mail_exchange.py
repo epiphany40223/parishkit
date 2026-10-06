@@ -85,11 +85,27 @@ def publish_recipient(recipient):
         return row.pk
 
 
+def has_pending():
+    """Whether any exchange awaits a reply: a cheap read that takes no lock (#639).
+
+    Whether an unreplied, unscrubbed row is still live is decided under the
+    work-order lock, so an idle installer never joins the global lock order.
+    A stale row can match until its setup attempt ends and the scrub trigger
+    marks it; as for the ParishSoft relay (source.setup_exchange.has_pending)
+    that only keeps the loop at its 2 s pace during a setup.
+    """
+    return SetupMailExchange.objects.filter(
+        replied_at__isnull=True, scrubbed_at__isnull=True
+    ).exists()
+
+
 def relay_pending(private):
     """Reply only as the Workspace installer, without installing a working key."""
     if not isinstance(private, PrivateHandoff) or private.target != "google_workspace":
         raise CryptographicError("Only Workspace's target may relay setup mail input.")
     admit_installer_database(private.target)
+    if not has_pending():
+        return False
     with work_transaction():
         with connection.cursor() as cursor:
             cursor.execute(

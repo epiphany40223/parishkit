@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from datetime import timedelta
 from time import monotonic, sleep
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -209,8 +210,6 @@ def test_background_confirmation_records_only_actual_loaded_worker_bytes(
     isolated_roles, tmp_path, monkeypatch, stale_process
 ):
     """CLI proof composition writes through the real target-scoped consumer role."""
-    from types import SimpleNamespace
-
     from parishkit.stewardship.credential_runtime import _confirm_loaded
     from parishkit.stewardship.deployment import ServiceRole
 
@@ -361,21 +360,136 @@ def acknowledge(identifier):
             )
 
 
+def grant_excess():
+    """Give the Slack installer a campaign read it must never hold."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "GRANT SELECT ON stewardship_family_campaign "
+            "TO pk_stewardship_credential_slack"
+        )
+
+
 def test_installer_rejects_superuser_and_unexpected_grants(installer):
-    """Target hints, superusers and unexpected campaign read grants are denied."""
+    """Target hints, superusers and unexpected campaign read grants are denied.
+
+    The excess grant is refused on a new connection, as at startup or after
+    any reconnect, before the installer reads its queue.
+    """
     with pytest.raises(ConfigError, match="identity is not isolated"):
         installer.run_once()
     with identity("pk_stewardship_credential_slack"):
         admit_installer_database("slack")
         with pytest.raises(ConfigError, match="identity is not isolated"):
             admit_installer_database("parishsoft")
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "GRANT SELECT ON stewardship_family_campaign "
-            "TO pk_stewardship_credential_slack"
-        )
+    grant_excess()
+    connection.close()
     with pytest.raises(ConfigError, match="grants are excessive"):
         run(installer)
+    with (
+        identity("pk_stewardship_credential_slack"),
+        pytest.raises(ConfigError, match="grants are excessive"),
+    ):
+        installer.pending()
+
+
+def test_live_connection_rechecks_grants_on_its_interval(installer, monkeypatch):
+    """An excess grant on a live connection is refused once the interval is up.
+
+    Within the interval the admitted connection keeps working: that is the
+    documented window (operations spec, installer idle polling). The cheap
+    work check that runs while full passes are backed off enforces it too.
+    """
+    from parishkit.stewardship.accounts import credential_database
+
+    now = [monotonic()]
+    monkeypatch.setattr(credential_database, "monotonic", lambda: now[0])
+    assert run(installer) is None
+    grant_excess()
+    now[0] += credential_database.GRANT_RECHECK_SECONDS - 1
+    assert run(installer) is None
+    now[0] += 1
+    with (
+        identity("pk_stewardship_credential_slack"),
+        pytest.raises(ConfigError, match="grants are excessive"),
+    ):
+        installer.pending()
+    # A refusal is never remembered: the queue pass refuses too.
+    with pytest.raises(ConfigError, match="grants are excessive"):
+        run(installer)
+
+
+@pytest.mark.parametrize("withdraw", ["NOLOGIN", "VALID UNTIL '2000-01-01T00:00:00Z'"])
+def test_withdrawn_login_stops_a_kept_connection(installer, withdraw):
+    """Disabling or expiring the login refuses the next queue operation.
+
+    PostgreSQL checks both only when a session starts, so the per-operation
+    identity check is what stops a connection the loop keeps open (#639).
+    """
+    assert run(installer) is None
+    with connection.cursor() as cursor:
+        cursor.execute(f"ALTER ROLE pk_stewardship_credential_slack {withdraw}")
+    with pytest.raises(ConfigError, match="identity is not isolated"):
+        run(installer)
+    with (
+        identity("pk_stewardship_credential_slack"),
+        pytest.raises(ConfigError, match="identity is not isolated"),
+    ):
+        installer.pending()
+
+
+def test_idle_loop_installs_new_work_on_its_next_wake(installer, monkeypatch):
+    """Work staged deep in idle backoff starts within one 2 s wake, not 30 s.
+
+    The real loop, queue and database run on a fake clock. The loop has
+    backed off to a full pass every 16 s when a request arrives during the
+    sleep before its 14 s wake; the cheap check finds it on that wake and the
+    pass installs it at once.
+    """
+    from threading import Event
+
+    from parishkit.stewardship import runtime_process
+
+    now, passes, staged, stop, backends = [0.0], [], [], Event(), set()
+
+    def run_once():
+        """The installer's real queue pass, timed on the fake clock."""
+        passes.append(now[0])
+        return installer.run_once() is not None
+
+    def wait(delay):
+        """Advance the clock; stage a request at 14 s; stop once it is installed."""
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_backend_pid()")
+            backends.add(cursor.fetchone()[0])
+        now[0] += delay
+        if now[0] == 14:
+            staged.append(stage_for(installer))
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    'SET SESSION AUTHORIZATION "pk_stewardship_credential_slack"'
+                )
+        if staged and SecretReplacementRequest.objects.get(pk=staged[0]).state == (
+            "awaiting_ack"
+        ):
+            stop.set()
+        elif now[0] > 60:
+            pytest.fail("Staged work was not installed promptly.")
+
+    monkeypatch.setattr(stop, "wait", wait)
+    with identity("pk_stewardship_credential_slack"):
+        runtime_process.bounded_loop(
+            run_once,
+            lease=SimpleNamespace(check=lambda: None),
+            stop=stop,
+            pending=installer.pending,
+            clock=lambda: now[0],
+        )
+    # Idle passes at 0, 4 and 12 s; the next was due at 28 s. The request,
+    # staged just before the 14 s wake, was installed by that wake's pass.
+    assert passes == [0, 4, 12, 14]
+    # Every idle wake reused the one kept connection.
+    assert len(backends) == 1
+    assert read_private(installer.files.path) == b"synthetic-candidate"
 
 
 def test_queue_file_roundtrip_waits_for_consumer_and_scrubs_both_stores(installer):

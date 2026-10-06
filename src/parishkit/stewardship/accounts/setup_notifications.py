@@ -170,6 +170,18 @@ def _check(row, check):
         connections.close_all()
 
 
+def has_pending():
+    """Whether a Slack test is queued or submitting: a lock-free read (#639).
+
+    Those are the only rows ``recover_pending`` and ``_begin`` act on, so
+    when there are none an idle installer skips both of their work-order
+    lock transactions.
+    """
+    return SetupSlackDelivery.objects.filter(
+        state__in=["queued", "submitting"]
+    ).exists()
+
+
 def run_pending(private, *, check):
     """The existing isolated installer loop consumes one explicit test at a time."""
     if (
@@ -180,6 +192,8 @@ def run_pending(private, *, check):
         raise TypeError("An isolated Slack target and owner check are required.")
     check()
     admit_installer_database("slack")
+    if not has_pending():
+        return False
     recover_pending()
     selected = _begin(uuid4())
     if selected is None:

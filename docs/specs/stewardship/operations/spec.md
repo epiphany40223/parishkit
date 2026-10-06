@@ -271,6 +271,101 @@ The wait closes the reboot race; for the burst of starts after a deploy or a
 restore it is a partial mitigation, since a database that becomes too busy
 after admission is not covered.
 
+### Installer idle polling
+
+The configuration installer and the credential installers are idle almost
+all the time, so their loops are built to cost little while idle (#639; the
+measurement is in
+[#629](https://github.com/epiphany40223/parishkit/issues/629)).
+
+- **Wakes and health.** Each loop wakes every 2 seconds and publishes its
+  health heartbeat on every wake, however long ago its last full pass ran.
+  The container probe's 90-second limit therefore still means "the loop has
+  stopped", and a pass that hangs still turns the container unhealthy.
+- **One connection.** A loop keeps its database connection open between
+  passes. The connection budget already reserves it: each installer login's
+  connection limit is the rollout overlap, one connection for each of the
+  old and new container while a rollout overlaps them, and the background
+  connection budget counts every installer process times that overlap.
+  Outside a rollout the second slot stays free for the process's private
+  timeout-log connection. While old and new containers overlap, each keeps
+  one connection, so both slots are used: a timeout entry written then
+  cannot open its private connection, loses its durable copy, and is kept
+  only in the process log, as for any
+  [entry that cannot be written](#observability-and-health). The overlap is
+  short and the installers' passes rarely log timeouts. Each
+  wake first drops a kept connection that no longer answers (one
+  `SELECT 1`), so after a PostgreSQL restart the wake reconnects quietly
+  instead of logging a failure. Any failure also closes the connection, and
+  the next wake reconnects. A failed pass is retried in full after the usual
+  failure backoff (doubling from 2 seconds, at most 60 seconds).
+- **Cheap work check.** On each wake a credential installer first runs one
+  cheap check that takes no lock: whether its target has a pending
+  replacement request or an interrupted replacement journal and, for the
+  setup targets, whether a setup exchange awaits a reply (ParishSoft and
+  Google Workspace), a Slack test is queued or sending (Slack), a backup
+  "Test access" check is waiting (Google Workspace), or a frozen setup
+  attempt awaits an initial installation not yet recorded for this target
+  (all three). The relay checks can match an exchange that is no longer
+  live, because the live proof needs the work-order lock; such a row lasts
+  only until its setup attempt ends and keeps the loop at its 2-second pace
+  meanwhile. When it finds work,
+  the full pass runs on that wake. Otherwise the full pass runs only after
+  an idle gap that doubles after each pass that finds nothing, from
+  2 seconds up to 30 seconds, and drops back to 2 seconds after a pass that
+  does work. The configuration installer has no such check: its idle pass is
+  already two small reads, so it keeps a full pass on every wake.
+- **The global lock.** The setup steps of the ParishSoft, Google Workspace
+  and Slack installers make the same cheap read before joining the
+  [work-order lock](../architecture/spec.md#work-order-lock-scope), and skip
+  the lock when there is nothing to do. An installer past setup never takes
+  that lock while idle.
+- **Latency.** Everything that setup and the Admin portal wait on (setup
+  relays, Slack tests, initial installation, key replacements and backup
+  access checks) is seen by the cheap check, so it starts on the next wake,
+  within 2 seconds, as before: the change adds no wait that a person sees.
+  Only work the check cannot see would wait for the idle gap, at most
+  30 seconds after the previous full pass, and the check covers every queue
+  the full pass serves.
+- **Grant admission.** Every queue operation still checks the actual login:
+  the exact role, still able to log in and not past its `VALID UNTIL`, with
+  no superuser, bypass, membership or schema-create authority. PostgreSQL
+  checks the login attribute only when a session starts, and `VALID UNTIL`
+  only when it authenticates a password, so this check is what makes the
+  installer's own code stop on a kept connection once its login is
+  disabled or expired. The full grant
+  inspection reads the whole catalog, so a credential installer runs it at
+  startup, on every new connection (including each reconnect), when the
+  login's role is not the one it last admitted, and otherwise again each
+  time 5 minutes have passed since the last one. The cheap check admits
+  first, so the interval holds even while full passes are backed off. A
+  refused inspection is never remembered: every later call inspects again.
+- **The admission window.** An excess grant made on a live database can
+  therefore go unnoticed for at most 5 minutes (plus one 2-second wake)
+  before the installer refuses to continue. Grants change only through
+  `database-grants` at a deploy or an upgrade, which stops and restarts
+  every installer, so the startup inspection sees every planned change at
+  once. A change outside that procedure needs the database operator or a
+  superuser, who already holds more authority than the installer would
+  gain. PostgreSQL itself enforces every grant and every revocation on each
+  statement; the inspection only detects authority beyond the closed list,
+  as defence in depth. The 5-minute default is chosen; the Administrator's
+  decision on it is open on #639.
+- **Containing a compromised installer.** The identity check's refusal of
+  a disabled login only stops well-behaved code: a compromised process can
+  skip it and keep using its session. A revoked grant is enforced by
+  PostgreSQL on the next statement, but neither change ends the kept
+  session. To cut it off, first disable the login
+  (`ALTER ROLE … NOLOGIN`) or revoke the grants, so that the next wake
+  cannot reconnect, and then end its backend with `pg_terminate_backend` on
+  the installer login's process, found in `pg_stat_activity`; that needs a
+  superuser or a role with `pg_signal_backend`. Stopping the installer's
+  container also ends it.
+- **Timeouts.** These loops stop no work at a time limit and kill nothing.
+  The idle gap and the failure backoff only delay the next pass, so they
+  write no timeout entry; the provider checks the passes run keep their own
+  [timeout entries](#observability-and-health).
+
 ### Pre-production development policy
 
 This policy ended for the live deployment when Production went live on

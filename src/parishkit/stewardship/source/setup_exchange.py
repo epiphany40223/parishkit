@@ -109,6 +109,25 @@ def _recipient(row):
     )
 
 
+def has_pending():
+    """Whether any exchange awaits a reply: a cheap read that takes no lock (#639).
+
+    Unreplied, unscrubbed rows are the relay's only candidates; whether one
+    is still live is decided under the work-order lock. An idle installer
+    therefore never joins the global lock order.
+
+    It can match more rows than the live query: an exchange whose task or
+    source fence went stale stays unreplied until its setup attempt ends,
+    when the attempt's scrub trigger marks it scrubbed. That is harmless. It
+    exists only during a setup, and it only keeps this installer polling at
+    its 2 s pace, as it did before #639. The live proof needs the lock, so it
+    cannot be part of a lock-free read.
+    """
+    return SetupSourceExchange.objects.filter(
+        replied_at__isnull=True, scrubbed_at__isnull=True
+    ).exists()
+
+
 def relay_pending(private):
     """Reply to one live exchange as the isolated target, without touching files.
 
@@ -119,6 +138,8 @@ def relay_pending(private):
     if not isinstance(private, PrivateHandoff) or private.target != "parishsoft":
         raise CryptographicError("Only the ParishSoft target can relay setup input.")
     admit_installer_database(private.target)
+    if not has_pending():
+        return False
     with work_transaction():
         with connection.cursor() as cursor:
             cursor.execute(

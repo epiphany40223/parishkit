@@ -239,18 +239,22 @@ def test_startup_rejected_names_its_category_at_error(
 
 
 def test_bounded_installer_retries_and_closes_database_without_spinning(monkeypatch):
-    """Transient failures back off finitely; success resets delay and shutdown wins."""
+    """Transient failures back off finitely; success resets delay and shutdown wins.
+
+    Only a failure closes the database connection (#639): a successful pass
+    keeps it for the next one, so an idle loop never reconnects.
+    """
     waits, calls, closes = [], [], []
     stop = Event()
 
     def wait(delay):
         """Drive deterministic retries without delaying the test process."""
         waits.append(delay)
-        if len(waits) == 3:
+        if len(waits) == 4:
             stop.set()
 
     def run_once():
-        """Two failures followed by success exercise retry and delay reset."""
+        """Two failures followed by successes exercise retry and delay reset."""
         calls.append(True)
         if len(calls) < 3:
             raise ValueError("private-provider-message")
@@ -260,8 +264,144 @@ def test_bounded_installer_retries_and_closes_database_without_spinning(monkeypa
     runtime_process.bounded_loop(
         run_once, lease=SimpleNamespace(check=lambda: None), stop=stop
     )
-    assert waits == [4, 8, 2]
-    assert len(calls) == len(closes) == 3
+    assert waits == [4, 8, 2, 2]
+    assert len(calls) == 4
+    assert len(closes) == 2
+
+
+class IdleLoop:
+    """Drive bounded_loop on a fake clock: each wake waits ``delay`` seconds.
+
+    ``work`` lists, per full pass, whether run_once reports work; ``hints``
+    lists, per pending() call, whether the cheap check finds work (False once
+    exhausted). Records when each full pass and pending() call happened, and
+    stops after ``wakes`` heartbeats.
+    """
+
+    def __init__(self, monkeypatch, *, wakes, work=(), hints=(), fail=()):
+        self.now, self.wakes = 0.0, wakes
+        self.work, self.hints, self.fail = list(work), list(hints), set(fail)
+        self.passes, self.probes, self.beats, self.closes = [], [], [], []
+        self.stop = Event()
+        monkeypatch.setattr(self.stop, "wait", self.wait)
+        monkeypatch.setattr(
+            "django.db.connections.close_all", lambda: self.closes.append(self.now)
+        )
+
+    def wait(self, delay):
+        """Advance the fake clock instead of sleeping."""
+        self.now += delay
+        if len(self.beats) >= self.wakes:
+            self.stop.set()
+
+    def run_once(self):
+        """One full pass, failing on the listed pass numbers."""
+        self.passes.append(self.now)
+        if len(self.passes) in self.fail:
+            raise ValueError("synthetic pass failure")
+        return self.work.pop(0) if self.work else False
+
+    def pending(self):
+        """The cheap work check."""
+        self.probes.append(self.now)
+        return self.hints.pop(0) if self.hints else False
+
+    def run(self, **options):
+        """Run the loop to completion with this harness's callbacks."""
+        runtime_process.bounded_loop(
+            self.run_once,
+            lease=SimpleNamespace(check=lambda: None),
+            stop=self.stop,
+            heartbeat=lambda: self.beats.append(self.now),
+            pending=self.pending,
+            clock=lambda: self.now,
+            **options,
+        )
+        return self
+
+
+def test_idle_installer_backs_off_full_passes_but_wakes_every_two_seconds(
+    monkeypatch,
+):
+    """Idle full passes spread out to 30 s; heartbeat and check stay at 2 s."""
+    loop = IdleLoop(monkeypatch, wakes=60).run()
+    # Gaps of 4, 8, 16, then the 30 s ceiling.
+    assert loop.passes == [0, 4, 12, 28, 58, 88, 118]
+    # Every wake publishes the heartbeat, whatever the full-pass gap.
+    assert loop.beats == [2.0 * index for index in range(60)]
+    assert max(b - a for a, b in zip(loop.beats, loop.beats[1:], strict=False)) == 2
+    # Every wake that is not a full pass asks the cheap check instead.
+    assert sorted(loop.passes + loop.probes) == loop.beats
+    # A healthy idle loop keeps its connection.
+    assert loop.closes == []
+
+
+def test_idle_installer_wakes_at_once_when_the_cheap_check_finds_work(monkeypatch):
+    """Work the check sees runs on the next 2 s wake, then polling stays fast."""
+    loop = IdleLoop(
+        monkeypatch,
+        wakes=15,
+        # Deep in idle backoff (next full pass due at 28 s), the check finds
+        # work on its ninth call, at 22 s.
+        hints=[False] * 8 + [True],
+        work=[False, False, False, True, True],
+    ).run()
+    assert loop.probes[8] == 22
+    assert loop.passes[:3] == [0, 4, 12]
+    # The work runs on that same wake. While passes keep finding work they
+    # run on every wake; once idle again the gap doubles from 2 s.
+    assert loop.passes[3:] == [22, 24, 26]
+    assert loop.beats[-1] == 28
+
+
+def test_idle_installer_retries_a_failed_pass_with_a_fresh_connection(monkeypatch):
+    """A failure closes the connection, backs off, and retries in full."""
+    loop = IdleLoop(monkeypatch, wakes=6, fail={2}).run()
+    # Pass 2 (at 4 s) fails: close, wait 4 s, retry the full pass at 8 s,
+    # then back off again from there.
+    assert loop.closes == [4]
+    assert loop.passes == [0, 4, 8, 12]
+    assert loop.beats == [0, 2, 4, 8, 10, 12]
+
+
+def test_failing_cheap_check_reconnects_and_retries_a_full_pass(monkeypatch):
+    """The cheap check's own failure is handled like a failed pass."""
+    loop = IdleLoop(monkeypatch, wakes=5)
+
+    def broken():
+        """The database went away while the loop was idle."""
+        loop.probes.append(loop.now)
+        if len(loop.probes) == 1:
+            raise ValueError("server closed the connection unexpectedly")
+        return False
+
+    loop.pending = broken
+    loop.run()
+    assert loop.probes[0] == 2
+    assert loop.closes == [2]
+    # Retry after the failure backoff runs a full pass, not just the check.
+    assert loop.passes == [0, 6, 10]
+
+
+def test_loop_without_a_work_check_runs_every_pass(monkeypatch):
+    """The configuration installer has no cheap check: it keeps its 2 s pass."""
+    passes, stop = [], Event()
+
+    def wait(delay):
+        """Stop after five wakes."""
+        if len(passes) == 5:
+            stop.set()
+
+    monkeypatch.setattr(stop, "wait", wait)
+    monkeypatch.setattr(
+        "django.db.connections.close_all", lambda: pytest.fail("must stay open")
+    )
+    runtime_process.bounded_loop(
+        lambda: passes.append(True),
+        lease=SimpleNamespace(check=lambda: None),
+        stop=stop,
+    )
+    assert len(passes) == 5
 
 
 def test_lost_lifecycle_lease_is_fatal_not_a_dependency_retry():
@@ -399,11 +539,12 @@ def test_credential_service_publishes_only_after_admission(
         )
         failing.side_effect = RuntimeError("synthetic setup failure")
 
-    def serve(run_once, actual_lease):
+    def serve(run_once, actual_lease, *, pending):
         """Queue processing cannot race ahead of the advertised encryption key."""
         publish.assert_called_once_with(installer.files.private)
         lease.check.assert_called_once()
         assert actual_lease is lease
+        assert callable(pending)
         if failure:
             with pytest.raises(RuntimeError, match="synthetic setup failure"):
                 run_once()
@@ -411,7 +552,7 @@ def test_credential_service_publishes_only_after_admission(
             installer.run_once.assert_called_once()
             failing.assert_called_once()
             return 0
-        run_once()
+        assert run_once() is True
         installer.run_once.assert_called_once()
         if target == "parishsoft":
             relay.assert_called_once_with(installer.files.private)
@@ -437,6 +578,16 @@ def test_credential_service_publishes_only_after_admission(
             stage_initial.assert_not_called()
         else:
             stage_initial.assert_called_once_with(installer.files)
+            # Idle steps report no work; a recorded installation's receipt
+            # counts only while its request is still pending (#639).
+            installer.run_once.return_value = None
+            for step in (relay, mail_relay, slack_send):
+                step.return_value = False
+            probes.return_value = 0
+            stage_initial.return_value = SimpleNamespace(state="applied")
+            assert run_once() is False
+            stage_initial.return_value = SimpleNamespace(state="awaiting_ack")
+            assert run_once() is True
         return 0
 
     monkeypatch.setattr(runtime_process, "serve_installer_loop", serve)
@@ -477,7 +628,11 @@ def test_configuration_service_restores_on_an_idle_pass(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime_process, "installer_request", lambda _: nullcontext())
 
     def serve(run_once, actual_lease):
-        """The idle pass restores; a queued request is installed without one."""
+        """The idle pass restores; a queued request is installed without one.
+
+        The configuration installer has no cheap work check, so its loop
+        runs the full pass on every wake.
+        """
         assert actual_lease is lease
         run_once()
         installer.restore_refused.assert_called_once_with()

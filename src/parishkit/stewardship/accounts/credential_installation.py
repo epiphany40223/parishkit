@@ -1,7 +1,8 @@
 """Target-isolated queue/file reconciliation; production launch belongs to OPS-04.
 
 The database is the queue, not a broker carrying credential-bearing task bodies.
-Every short transaction rechecks the actual SQL login and narrow grants. Target
+Every short transaction rechecks the actual SQL login, and the narrow grants
+on each new connection and at a bounded interval (credential_database). Target
 flock spans separate commits and file renames, including database reconnects.
 Provider-specific tests and whole-consumer recreation are supplied by the owning
 runtime/provider integrations; this module never controls the Docker socket.
@@ -300,6 +301,24 @@ class CredentialInstaller:
                 raise CryptographicError("Working credential fingerprint has changed.")
             self._terminal(row.pk)
         return self._read(row.pk)
+
+    def pending(self):
+        """Whether ``run_once`` has work: a cheap read that takes no lock (#639).
+
+        The installer loop asks this between its backed-off full passes. A
+        journal file left by an interrupted replacement counts without being
+        read, and so does any request still in a pending state for this
+        target. It is only a hint: ``run_once`` decides under its file lock.
+        """
+        admit_installer_database(self.target)
+        return (
+            self.files.journal_path.exists()
+            or SecretReplacementRequest.objects.filter(
+                target=self.target, state__in=SECRET_PENDING
+            )
+            .exclude(required_consumers=[])
+            .exists()
+        )
 
     def run_once(self):
         """Bound one queue pass; missing acknowledgements yield rather than sleep."""
