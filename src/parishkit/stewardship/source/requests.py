@@ -102,9 +102,10 @@ def _pending(*, organization_id, digest, kind):
     leased_roots = SourceMutationLease.objects.filter(owner__isnull=False).values(
         "owner__root_id"
     )
-    promoted_roots = SourceSnapshot.objects.filter(state="promoted").values(
-        "task__root_id"
-    )
+    # An unchanged quick update (#630) completes its root like a promotion.
+    promoted_roots = SourceSnapshot.objects.filter(
+        state__in=("promoted", "unchanged")
+    ).values("task__root_id")
     waiting_roots = TaskRun.objects.filter(state__in=NONTERMINAL_STATES).values(
         "root_id"
     )

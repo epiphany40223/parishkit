@@ -380,7 +380,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         from .reports.verification_tasks import verification_handler
         from .reports.weekly_ownership import TASK_TYPE as WEEKLY_PREPARE
         from .reports.weekly_tasks import weekly_handler
-        from .source.effects import refresh_reconciler
+        from .source.effects import refresh_reconciler, refresh_unchanged
         from .source.execution import refresh_handler
         from .source.requests import TASK_TYPE
         from .source.setup_admission import TASK_TYPE as SETUP_LOAD
@@ -434,6 +434,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
                     public=rings["token_public"],
                     suppressions=source_refusal_suppressions,
                 ),
+                unchanged=refresh_unchanged(suppressions=source_refusal_suppressions),
             )
     handlers = bind_authority(handlers, store, heartbeat=heartbeat)
     if role in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:

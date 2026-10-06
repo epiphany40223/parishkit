@@ -99,11 +99,16 @@ def _attempts(request):
 
 
 def _direct_completion(request):
-    """A full observation or completed delta must belong to this exact request."""
+    """A full observation or completed delta must belong to this exact request.
+
+    A quick update recorded as ``unchanged`` (#630) completed without
+    promoting; only a delta can end that way, so a full request still needs
+    its own promotion.
+    """
     return (
         _attempts(request)
         .filter(
-            snapshot__state="promoted",
+            snapshot__state__in=("promoted", "unchanged"),
             snapshot__cursor__window_digest=request.window_digest,
         )
         .order_by("snapshot__generation")

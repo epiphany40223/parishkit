@@ -181,7 +181,7 @@ def observe_source_health():
         and not failures.filter(created_at__gte=full.started_at).exists()
     ):
         record_recovery(IncidentKind.SOURCE_STALE, healthy_since=full.promoted_at)
-    snapshot = _current(snapshot, organization, scope)
+    snapshot = _current(_newest_read(snapshot), organization, scope)
     if (
         snapshot is None
         or failures.filter(created_at__gte=snapshot.started_at).exists()
@@ -195,11 +195,31 @@ def observe_source_health():
         record_recovery(kind)
 
 
+def _newest_read(current):
+    """The newest successful read of the current corpus.
+
+    That is the newest ``unchanged`` quick update read against ``current``
+    (#630), else ``current`` itself, so a quick update that found nothing
+    still proves recovery from a refresh failure, as its promotion did.
+    """
+    if current is None:
+        return None
+    return (
+        SourceSnapshot.objects.filter(base_id=current.pk, state="unchanged")
+        .order_by("-started_at")
+        .first()
+        or current
+    )
+
+
 def _current(snapshot, organization, scope):
-    """``snapshot`` if it is promoted source for the current scope, else None."""
+    """``snapshot`` if it is a successful read in the current scope, else None.
+
+    A promoted snapshot, or an ``unchanged`` quick update of the current one.
+    """
     if (
         snapshot is None
-        or snapshot.state != "promoted"
+        or snapshot.state not in ("promoted", "unchanged")
         or snapshot.organization_id != organization
         or snapshot.cursor.get("schema") != "source-refresh-v1"
         or snapshot.cursor.get("window_digest") != _window(scope).digest

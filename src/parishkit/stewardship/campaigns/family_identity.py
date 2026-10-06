@@ -3,10 +3,11 @@
 import hashlib
 import re
 from dataclasses import dataclass
+from functools import partial
 from uuid import UUID, uuid4
 
 from django.db import IntegrityError, connection, transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 
 from parishkit.stewardship.accounts.cryptography import (
     CryptographicError,
@@ -19,6 +20,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .credential_keys import key_set_lock
 from .credential_models import (
     CampaignCredentialState,
+    FamilyAccessToken,
     FamilyCampaign,
     FamilyCodeFingerprint,
 )
@@ -174,6 +176,89 @@ def _allocate(campaign_id, rows, general, mac):
     raise CryptographicError("Family-code allocation exhausted its bounded retries.")
 
 
+# The status columns reconciliation copies from each FamilyStatus.
+STATUS_FIELDS = (
+    "active",
+    "portal_eligible",
+    "email_eligible",
+    "email_deliverable",
+    "status_reason",
+    "deliverability_reason",
+)
+
+
+def absent_status(duid):
+    """The status of a Family the source no longer lists."""
+    return FamilyStatus(duid, False, False, False, False, "absent", "ineligible")
+
+
+def _row_current(row, status, source_generation):
+    """Whether reconciliation at ``source_generation`` leaves ``row`` alone.
+
+    ``row`` is a FamilyCampaign or a mapping of its columns. The one predicate
+    shared by ``reconcile_families`` and ``population_current``.
+    """
+    value = row.get if isinstance(row, dict) else partial(getattr, row)
+    return (
+        source_generation == value("source_generation")
+        and all(value(key) == getattr(status, key) for key in STATUS_FIELDS)
+        and (not status.portal_eligible or value("first_eligible_at") is not None)
+    )
+
+
+def population_current(campaign, *, source_snapshot_id, source_generation, statuses):
+    """Whether ``reconcile_families`` would write nothing for these statuses.
+
+    Used before skipping the promotion of a quick update whose corpus equals
+    the current one (#630): every Family row already carries the current
+    generation and exactly these statuses (so a new mail bounce, which
+    changes a status, still promotes), no eligible Family lacks its code or,
+    under an active token generation, its link, and the population evidence
+    is clean and names the current snapshot. Read-only, under the caller's
+    work-order lock; any doubt answers False, which promotes as before.
+    """
+    population = CampaignCredentialState.objects.filter(campaign=campaign).first()
+    if (
+        population is None
+        or population.population_dirty
+        or population.source_snapshot_id != source_snapshot_id
+        or population.source_generation != source_generation
+    ):
+        return False
+    targets = {item.duid: item for item in statuses}
+    rows = {
+        row["family_duid"]: row
+        for row in FamilyCampaign.objects.filter(campaign=campaign).values(
+            "family_duid",
+            *STATUS_FIELDS,
+            "source_generation",
+            "first_eligible_at",
+            "code_ciphertext",
+        )
+    }
+    if targets.keys() - rows.keys():
+        return False
+    for duid, row in rows.items():
+        status = targets.get(duid) or absent_status(duid)
+        if not _row_current(row, status, source_generation) or (
+            duid in targets
+            and status.portal_eligible
+            and row["code_ciphertext"] is None
+        ):
+            return False
+    if campaign.active_token_generation_id is not None:
+        tokens = FamilyAccessToken.objects.filter(
+            generation_id=campaign.active_token_generation_id, family_id=OuterRef("pk")
+        )
+        if (
+            FamilyCampaign.objects.filter(campaign=campaign, portal_eligible=True)
+            .filter(~Exists(tokens))
+            .exists()
+        ):
+            return False
+    return True
+
+
 def reconcile_families(
     *,
     campaign_id,
@@ -297,28 +382,14 @@ def reconcile_families(
         for start in range(0, len(missing), 500):
             _allocate(campaign_id, missing[start : start + 500], general, mac)
         changed = []
-        fields = (
-            "active",
-            "portal_eligible",
-            "email_eligible",
-            "email_deliverable",
-            "status_reason",
-            "deliverability_reason",
-        )
+        fields = STATUS_FIELDS
         for duid, row in existing.items():
-            status = targets.get(
-                duid,
-                FamilyStatus(duid, False, False, False, False, "absent", "ineligible"),
-            )
+            status = targets.get(duid) or absent_status(duid)
             if source_generation < row.source_generation:
                 raise StorageInvariantError(
                     "A stale source generation cannot replace Family identity."
                 )
-            if (
-                source_generation == row.source_generation
-                and all(getattr(row, key) == getattr(status, key) for key in fields)
-                and (not status.portal_eligible or row.first_eligible_at is not None)
-            ):
+            if _row_current(row, status, source_generation):
                 continue
             if any(getattr(row, key) != getattr(status, key) for key in fields):
                 row.eligibility_changed_at = now

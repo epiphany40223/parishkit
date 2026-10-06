@@ -50,7 +50,8 @@ class FullRefreshStatus:
     running: bool
     # The failed run's task, so the banner links straight to its details.
     failed_task_id: UUID | None = None
-    # The latest promoted incremental refresh, and a failed one since it.
+    # The latest successful incremental refresh (promoted, or recorded as
+    # unchanged), and a failed one since it.
     delta_succeeded_at: datetime | None = None
     delta_failed_at: datetime | None = None
     # The configured schedule, when known: "daily", "hourly" or "quarter_hour".
@@ -172,8 +173,10 @@ OUTCOMES_SQL = (
     "(SELECT updated_at FROM failures), "
     "EXISTS(SELECT 1 FROM runs WHERE kind='full' AND state='running'), "
     "(SELECT id FROM failures), "
-    "(SELECT max(promoted_at) FROM stewardship_source_snapshot "
-    "WHERE kind='delta' AND state='promoted'), "
+    # A quick update recorded as unchanged (#630) succeeded too.
+    "(SELECT max(coalesce(promoted_at, completed_at)) "
+    "FROM stewardship_source_snapshot "
+    "WHERE kind='delta' AND state IN ('promoted','unchanged')), "
     # Only a failed delta counts: deltas superseded by a newer or full
     # refresh are cancelled routinely and are not a health problem.
     "(SELECT max(updated_at) FROM runs WHERE kind='delta' AND state='failed')"

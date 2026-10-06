@@ -73,6 +73,44 @@ def _locked_generation(identifier):
     return row
 
 
+def _require_current_generation(campaign, population):
+    """Return the campaign's active link generation, or refuse if it is stale.
+
+    The checks ``extend_active_generation`` makes before adding links, on the
+    ``population`` row the caller read: locked by the population owner, a
+    plain read for ``require_current_generation``.
+    """
+    runtime = SystemConfiguration.objects.get()
+    deployment = DeploymentCredentialState.objects.get()
+    generation = FamilyAccessTokenGeneration.objects.get(
+        pk=campaign.active_token_generation_id, campaign=campaign
+    )
+    if (
+        population.population_dirty
+        or runtime.restore_review_required
+        or runtime.mode != "production"
+        or runtime.current_campaign_id != campaign.pk
+        or campaign.state not in {"scheduled", "active"}
+        or generation.state != "active"
+        or generation.credential_epoch != deployment.family_link_epoch
+    ):
+        raise CryptographicError("Active token generation is not current.")
+    return generation
+
+
+def require_current_generation(campaign):
+    """Raise unless ``campaign``'s active link generation is current; locks nothing.
+
+    The unchanged-quick-update check (#630) makes promotion's generation
+    checks without promoting, so a stale generation still fails visibly. It
+    holds none of the locks that order ``extend_active_generation``'s
+    population lock (runtime and deployment shared, then the campaign), so it
+    reads every row without ``FOR UPDATE``.
+    """
+    population = CampaignCredentialState.objects.get(campaign_id=campaign.pk)
+    _require_current_generation(campaign, population)
+
+
 def extend_active_generation(campaign, *, public):
     """Population-owner hook: missing links join only the current live generation.
 
@@ -88,22 +126,7 @@ def extend_active_generation(campaign, *, public):
             cursor.execute("SELECT id FROM stewardship_system_configuration FOR SHARE")
             cursor.execute("SELECT id FROM stewardship_credential_deployment FOR SHARE")
         campaign = Campaign.objects.select_for_update().get(pk=campaign.pk)
-        population = coverage(campaign.pk)
-        runtime = SystemConfiguration.objects.get()
-        deployment = DeploymentCredentialState.objects.get()
-        generation = FamilyAccessTokenGeneration.objects.get(
-            pk=campaign.active_token_generation_id, campaign=campaign
-        )
-        if (
-            population.population_dirty
-            or runtime.restore_review_required
-            or runtime.mode != "production"
-            or runtime.current_campaign_id != campaign.pk
-            or campaign.state not in {"scheduled", "active"}
-            or generation.state != "active"
-            or generation.credential_epoch != deployment.family_link_epoch
-        ):
-            raise CryptographicError("Active token generation is not current.")
+        generation = _require_current_generation(campaign, coverage(campaign.pk))
         retained = FamilyAccessToken.objects.filter(
             generation=generation, family_id=OuterRef("pk")
         )

@@ -41,19 +41,32 @@ from .snapshot_models import SourceCurrent, SourceSnapshot
 from .snapshots import promote_snapshot
 
 
-def refresh_handler(*, credential_path, reconcile):
+def refresh_handler(*, credential_path, reconcile, unchanged=None):
     """Bind trusted startup dependencies, never caller-selected code or secrets.
 
     ``reconcile(snapshot, execution, source_claim)`` must apply every required
     owning-domain effect and return exactly True inside the promotion transaction.
     The service must not register this handler before those effects are wired.
+    ``unchanged(snapshot, corpus, execution, source_claim)``, when given,
+    returns exactly True when promoting an identical quick update would change
+    no owning-domain state, so it is recorded instead (#630); without it every
+    refresh promotes.
     """
-    if not isinstance(credential_path, Path) or not callable(reconcile):
+    if (
+        not isinstance(credential_path, Path)
+        or not callable(reconcile)
+        or (unchanged is not None and not callable(unchanged))
+    ):
         raise TypeError("Source handler requires its private path and real effects.")
     return Handler(
         queue=WorkQueue.SOURCE,
         admit=admit_refresh_metadata,
-        execute=partial(_execute, credential_path=credential_path, reconcile=reconcile),
+        execute=partial(
+            _execute,
+            credential_path=credential_path,
+            reconcile=reconcile,
+            unchanged=unchanged,
+        ),
         recover=recovery_plan,
         scope=work_transaction,
     )
@@ -155,10 +168,16 @@ def _prepare(execution):
         return request
 
 
-def _observe(execution, claim, credential, reconcile):
-    """Promote only a validated exact attempt and its required atomic effects."""
-    snapshot = load_and_stage_attempt(execution, claim, credential)
+def _observe(execution, claim, credential, reconcile, unchanged=None):
+    """Promote only a validated exact attempt and its required atomic effects.
+
+    A quick update recorded as ``unchanged`` has nothing to promote: the
+    current snapshot already holds its corpus and every effect is current.
+    """
+    snapshot = load_and_stage_attempt(execution, claim, credential, unchanged=unchanged)
     _retire_drained_staging(execution, claim, snapshot)
+    if snapshot.state == "unchanged":
+        return snapshot
     total = sum(snapshot.counts.values())
     execution.progress(total, total, phase=TaskPhase.PROMOTING)
     with execution.effect():
@@ -208,7 +227,7 @@ def _retire_drained_staging(execution, claim, snapshot):
             return
 
 
-def _execute(execution, *, credential_path, reconcile):
+def _execute(execution, *, credential_path, reconcile, unchanged=None):
     """Run one maintained claim; uncertain faults remain for fenced recovery."""
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Source execution requires a maintained lifetime.")
@@ -235,7 +254,7 @@ def _execute(execution, *, credential_path, reconcile):
                 )
             with execution.maintain_source(claim):
                 try:
-                    _observe(execution, claim, credential, reconcile)
+                    _observe(execution, claim, credential, reconcile, unchanged)
                 except ChangeFeedIncomplete:
                     _park_fallback(execution, claim=claim)
                     return

@@ -54,6 +54,9 @@ FROZEN = {
     "0008_log_detail.sql": (
         "14fc3b72cfaf129d5a8799bd66abaaefcae1f4a5b1a1be49abc0aa657edb1dd8"
     ),
+    "0009_unchanged_snapshots.sql": (
+        "206f09701bc2f4b034ec5a180831d6bc3bafcc2ef3d6a4d0647c4c1e659e0e4d"
+    ),
 }
 
 

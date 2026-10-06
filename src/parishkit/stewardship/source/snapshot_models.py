@@ -15,6 +15,9 @@ class SourceSnapshot(MutableRecord):
     Manifests survive compaction. Generation is assigned on promotion, not on
     download start; interrupted or rejected staging never advances source truth.
     Counts, cursor and digest describe this exact membership set, not caches.
+    An ``unchanged`` quick update (#630) has no membership set: it records that
+    its read matched the current snapshot, whose counts and digest it carries,
+    and it never becomes source truth.
     """
 
     organization_id = models.PositiveBigIntegerField()
@@ -52,7 +55,7 @@ class SourceSnapshot(MutableRecord):
             ),
             models.CheckConstraint(
                 condition=models.Q(
-                    state__in=("staging", "ready", "rejected", "promoted")
+                    state__in=("staging", "ready", "rejected", "promoted", "unchanged")
                 ),
                 name="source_snapshot_state",
             ),
