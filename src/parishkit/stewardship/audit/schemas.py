@@ -10,6 +10,9 @@ import re
 from enum import StrEnum
 from uuid import UUID
 
+from parishkit.stewardship.jobs.operational_content import IncidentKind
+from parishkit.stewardship.observability import FailureKind
+
 
 class ContextKind(StrEnum):
     REQUEST = "request"
@@ -24,6 +27,8 @@ class ContextKind(StrEnum):
     SCHEDULE = "schedule"
     TIMEOUT = "timeout"
     DUE_WORK = "due_work"
+    FAILURE = "failure"
+    RECOVERY = "recovery"
 
 
 class Outcome(StrEnum):
@@ -206,6 +211,44 @@ FIELDS = {
         "stall_seconds",
         "elapsed_seconds",
         "other_late_count",
+        # A campaign start or close that ran late (#633): its occurrence and
+        # boundary task, with ``lag_seconds`` against ``limit_seconds``.
+        "occurrence_id",
+        "task_id",
+    },
+    # What failed and what happens next (#633); mirrored in
+    # stewardship_safe_context_v1. ``failure`` is a closed word naming what
+    # failed (``FAILURES``) and ``failure_kind`` the exception's category
+    # (``observability.FailureKind``); ``reason`` a closed provider result
+    # (``REASONS``) and ``status`` an HTTP status. ``outcome`` says whether it
+    # will be retried (``retry``, after ``retry_seconds``, as ``attempt`` of
+    # ``attempt_limit``) or gave up (``failed``). Ids name the task, message or
+    # snapshot involved; ``count`` how many failed together.
+    ContextKind.FAILURE: {
+        "failure",
+        "failure_kind",
+        "task_id",
+        "task_type",
+        "message_id",
+        "version",
+        "attempt",
+        "attempt_limit",
+        "retry_seconds",
+        "status",
+        "reason",
+        "count",
+        "outcome",
+    },
+    # An operational incident that ended (#633), written by the database when
+    # it resolves; mirrored in stewardship_safe_context_v1. ``log_id`` is the
+    # entry that opened it (the recovery entry shares its correlation), with
+    # how long the incident lasted and how many times it was observed.
+    ContextKind.RECOVERY: {
+        "incident_id",
+        "incident_kind",
+        "log_id",
+        "elapsed_seconds",
+        "count",
     },
     ContextKind.EMAIL: {"message_id", "recipient_count", "outcome", "reason"},
     ContextKind.SOURCE: {"snapshot_id", "generation", "count", "outcome"},
@@ -267,6 +310,69 @@ MINISTRY_LIST_FIELDS = frozenset(
 REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
 # Stored hosted-file types (#346); mirrored in stewardship_safe_context_v1.
 HOSTED_FILE_KINDS = frozenset({"pdf", "docx", "xlsx", "pptx", "png", "jpeg"})
+
+# What failed, for a ``failure`` context (#633); mirrored in
+# stewardship_safe_context_v1, and each has a plain-language sentence in
+# ``log_details``.
+FAILURES = frozenset(
+    {
+        # A ParishSoft read (source.failures.classify_read_failure).
+        "organization_mismatch",
+        "destructive_change",
+        "shifted_scan",
+        "invalid_payload",
+        "incomplete_collection",
+        "invalid_response",
+        "lease_unavailable",
+        "configuration_activating",
+        "configuration_busy",
+        "scope_changed",
+        "credential_unreadable",
+        "credential_changed",
+        "provider_status",
+        "provider_timeout",
+        "provider_unreachable",
+        # The source health check refused the configured ParishSoft scope.
+        "source_configuration",
+        "organization_changed",
+        # A health check the operational intake runs on every page.
+        "source_health_check",
+        "mail_health_check",
+        "due_work_health_check",
+        "backup_health_check",
+        # Background tasks that give up visibly.
+        "export_cleanup",
+        "fact_verification",
+        "source_retention",
+        "family_engagement",
+        # Administrator alerts and security notices (SQL triggers).
+        "alert_mail",
+        "security_mail",
+        "slack_alert",
+        # The mail provider as a whole (mail_health.sql).
+        "smtp_systemic",
+        "smtp_unavailable",
+    }
+)
+# Closed provider results a ``reason`` may hold; mirrored in
+# stewardship_safe_context_v1. ``no_deliverable_recipient`` is the email
+# context's; the rest are outbox reasons a failed delivery records (#633).
+REASONS = frozenset(
+    {
+        "no_deliverable_recipient",
+        "smtp_transient",
+        "smtp_unavailable",
+        "smtp_permanent",
+        "smtp_systemic",
+        "smtp_delivery_unknown",
+        "preparation_failed",
+        "slack_not_sent",
+        "slack_delivery_unknown",
+    }
+)
+# Identifier-shaped words (a task type, an incident kind, a failure
+# category): the shape SQL checks; Python also checks the closed set.
+_WORD = re.compile(r"[a-z][a-z0-9_]{0,63}")
 
 # The limits that can stop work (#293); mirrored in stewardship_safe_context_v1.
 TIMEOUT_KINDS = frozenset(
@@ -331,8 +437,17 @@ def sanitize(kind, values):
             valid = isinstance(value, Outcome)
             safe[key] = value.value if valid else None
         elif key == "reason":
-            valid = type(value) is str and value == "no_deliverable_recipient"
+            valid = type(value) is str and value in REASONS
             safe[key] = value
+        elif key == "failure":
+            valid = type(value) is str and value in FAILURES
+            safe[key] = value
+        elif key == "failure_kind":
+            valid = isinstance(value, FailureKind)
+            safe[key] = value.value if valid else None
+        elif key == "incident_kind":
+            valid = isinstance(value, IncidentKind)
+            safe[key] = value.value if valid else None
         elif key == "kind":
             valid = type(value) is str and value in {"start", "close"}
             safe[key] = value
@@ -365,7 +480,7 @@ def sanitize(kind, values):
             valid = type(value) is str and value in {"GET", "HEAD", "POST"}
             safe[key] = value
         elif key == "task_type":
-            valid = type(value) is str and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", value)
+            valid = type(value) is str and _WORD.fullmatch(value)
             safe[key] = value
         elif key == "what":
             valid = type(value) is str and value in TIMEOUT_KINDS

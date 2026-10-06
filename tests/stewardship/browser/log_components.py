@@ -18,6 +18,48 @@ from parishkit.stewardship.audit.log_rows import (
 from parishkit.stewardship.audit.log_views import ZONE_MESSAGE
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 
+# Entries whose context System logs explains in words (#633): a recovery,
+# late scheduled work and a ParishSoft call that will be retried.
+DETAILED = (
+    (
+        "INFO",
+        "incident_recovered",
+        "recovery",
+        {
+            "incident_id": str(UUID(int=600)),
+            "incident_kind": "scheduler_lag",
+            "log_id": str(UUID(int=402)),
+            "elapsed_seconds": 1800,
+            "count": 2,
+        },
+    ),
+    (
+        "WARNING",
+        "source_provider_failed",
+        "failure",
+        {
+            "failure": "provider_status",
+            "status": 503,
+            "task_id": str(UUID(int=601)),
+            "attempt": 2,
+            "attempt_limit": 5,
+            "retry_seconds": 60,
+            "outcome": "retry",
+        },
+    ),
+    (
+        "CRITICAL",
+        "due_work_lag",
+        "due_work",
+        {
+            "task_type": "outbox_delivery",
+            "count": 977,
+            "lag_seconds": 1020,
+            "limit_seconds": 90,
+        },
+    ),
+)
+
 
 def components(context, admin):
     """Production shaping over sample entries, so the page and its rows agree."""
@@ -192,6 +234,48 @@ def components(context, admin):
             | {"admin_chrome": banner}
             | page_context(
                 LogQuery(), log_table(LogQuery(), [], through=moment, action="/logs")
+            ),
+        ),
+    )
+    # Serious entries and a recovery, each with its sentence (#633), under a
+    # banner whose one problem has ended.
+    detailed = [
+        operational_row(
+            dict(
+                id=UUID(int=400 + index),
+                created_at=moment - timedelta(minutes=index),
+                level=level,
+                event=event,
+                actor_id=None,
+                correlation_id=UUID(int=500),
+                schema=schema,
+                context=detail,
+            )
+        )
+        for index, (level, event, schema, detail) in enumerate(DETAILED)
+    ]
+    for row in detailed:
+        row["actor"] = None
+    ended = banner | {
+        "critical_count": 1,
+        "critical_all_ended": True,
+        "critical_events": [
+            {
+                "label": "Scheduled work is running late",
+                "count": 1,
+                "ended_at": moment - timedelta(minutes=1),
+            }
+        ],
+    }
+    result["/logs-detail"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/logs.html",
+            context
+            | {"admin_chrome": ended}
+            | page_context(
+                everything,
+                log_table(everything, detailed, through=moment, action="/logs"),
             ),
         ),
     )

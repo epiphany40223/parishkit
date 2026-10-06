@@ -15,6 +15,7 @@ from parishkit.stewardship.audit.models import (
 from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.observability import Event
 
+from ..log_samples import sample as log_sample
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .test_security_events_postgresql import home, signed_in_as
@@ -29,7 +30,7 @@ BANNER = "Critical problems in the past 24 hours"
 def critical(event):
     """Record one CRITICAL operational event the way producers do."""
     with transaction.atomic():
-        operational(event, level="CRITICAL")
+        operational(event, level="CRITICAL", **log_sample(event))
 
 
 def shown(page):

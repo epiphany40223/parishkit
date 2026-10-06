@@ -61,6 +61,10 @@ class Event(StrEnum):
     # A process could not write its service status record (ADM-13); it goes
     # on working, and the System health page shows it as out of date.
     SERVICE_STATUS_FAILED = "service_status_failed"
+    # A problem that had opened an operational incident has ended (#633):
+    # written by the database when the incident resolves, linking back to the
+    # entry that opened it. Durable log only.
+    INCIDENT_RECOVERED = "incident_recovered"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 
@@ -112,6 +116,16 @@ class FailureKind(StrEnum):
     # campaign and configuration, riding on the reviewed startup_validated
     # event until it has its own (see the follow-up issue on #447).
     REFRESH_IN_LEAD_WINDOW = "full_refresh_in_lead_window"
+    # ``pk-stewardship load-check`` stopped because something it measures
+    # changed under it (#633): the ParishSoft data, the Testing Family
+    # portal, or the campaign. Each says to run the check again.
+    LOAD_CHECK_SOURCE_CHANGED = "load_check_source_changed"
+    # A WARNING-or-above operational entry lacked the context its event must
+    # carry (audit.log_contract, #633); it was written anyway. Logged on the
+    # entry's own event so the line names it.
+    LOG_CONTRACT_INCOMPLETE = "log_contract_incomplete"
+    LOAD_CHECK_PORTAL_CLOSED = "load_check_portal_closed"
+    LOAD_CHECK_CAMPAIGN_UNAVAILABLE = "load_check_campaign_unavailable"
 
 
 # The off-site copy's Drive failure categories, mirroring
@@ -383,22 +397,11 @@ def _guard_refusal(error):
     return isinstance(error, DatabaseError) and state.startswith(_GUARD_REFUSALS)
 
 
-def emit_failure(
-    error,
-    *,
-    event=Event.TASK_FAILED,
-    level=logging.ERROR,
-    task_id=None,
-    shaping=None,
-    name_class=False,
-):
-    """Classify a failure without serializing any exception-controlled field.
+def failure_kind_of(error):
+    """The closed ``FailureKind`` of an exception, never its text (#633).
 
-    ``level`` lowers the severity for a best-effort step whose failure the
-    caller absorbs; ``task_id`` names the task it happened in; ``shaping``
-    names which display-only comparison failed (see ``emit``). ``name_class``
-    adds the exception type's ``error_class``, for a caller whose failure
-    has no other trace (the admin command line, #612).
+    Shared by ``emit_failure`` and the durable entries that record a failure's
+    category (audit ``failure_kind``), so both name a failure the same way.
     """
     from django.db import DatabaseError, IntegrityError
 
@@ -429,6 +432,27 @@ def emit_failure(
         ),
         FailureKind.UNEXPECTED,
     )
+    return kind
+
+
+def emit_failure(
+    error,
+    *,
+    event=Event.TASK_FAILED,
+    level=logging.ERROR,
+    task_id=None,
+    shaping=None,
+    name_class=False,
+):
+    """Classify a failure without serializing any exception-controlled field.
+
+    ``level`` lowers the severity for a best-effort step whose failure the
+    caller absorbs; ``task_id`` names the task it happened in; ``shaping``
+    names which display-only comparison failed (see ``emit``). ``name_class``
+    adds the exception type's ``error_class``, for a caller whose failure
+    has no other trace (the admin command line, #612).
+    """
+    kind = failure_kind_of(error)
     # A name the allowlist refuses (non-ASCII, overlong, or a type() name
     # such as "bad-name") is left out rather than refused: emit would raise,
     # and the failure would lose its only line.

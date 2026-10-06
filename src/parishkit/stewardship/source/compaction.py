@@ -464,7 +464,7 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
     def skip(error):
         """Log one failure now; the run's durable entry is written once, below."""
         _skipped(error)
-        skipped.append(True)
+        skipped.append(error)
 
     try:
         with execution.effect():
@@ -511,7 +511,7 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
     except Exception as error:
         skip(error)
     if skipped:
-        _record_skipped()
+        _record_skipped(execution.claim.run_id, skipped)
     _observe_health()
 
 
@@ -533,19 +533,37 @@ def _budget_reached(execution, deadline):
     )
 
 
-def _record_skipped():
+def _record_skipped(task_id, errors):
     """Keep one durable entry per skipped run for the retention incident.
 
     The ``source_retention_failing`` incident counts these entries by run
-    (``retention_health``). Best effort, like the skip itself: a database
-    that cannot take the entry already has the process-log line.
+    (``retention_health``). The entry names the refresh task, how many
+    retention steps failed and the first failure's category (#633). Best
+    effort, like the skip itself: a database that cannot take the entry
+    already has the process-log line.
     """
+    from parishkit.stewardship.audit.schemas import ContextKind, Outcome
     from parishkit.stewardship.audit.services import operational
-    from parishkit.stewardship.observability import Event, emit_failure
+    from parishkit.stewardship.observability import (
+        Event,
+        emit_failure,
+        failure_kind_of,
+    )
 
     try:
         with transaction.atomic():
-            operational(Event.SOURCE_RETENTION_SKIPPED, level="ERROR")
+            operational(
+                Event.SOURCE_RETENTION_SKIPPED,
+                level="ERROR",
+                schema=ContextKind.FAILURE,
+                context={
+                    "failure": "source_retention",
+                    "failure_kind": failure_kind_of(errors[0]),
+                    "task_id": task_id,
+                    "count": len(errors),
+                    "outcome": Outcome.RETRY,
+                },
+            )
     except Exception as error:
         emit_failure(error, event=Event.SOURCE_RETENTION_SKIPPED)
 

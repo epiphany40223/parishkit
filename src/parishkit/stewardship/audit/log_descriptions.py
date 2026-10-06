@@ -31,16 +31,28 @@ DESCRIPTIONS = {
     ),
     "task_recovery_retry": _("An interrupted background task was queued again."),
     "task_recovery_fail": _("An interrupted background task could not be recovered."),
-    "task_failed": _("A background task failed; see its task page for the reason."),
-    "task_timed_out": _("Work was stopped because it ran longer than its time limit."),
+    "task_failed": _(
+        "A background task failed. The detail says what failed and whether it "
+        "will be retried; if it will not, open its task page (Background work) "
+        "to retry it once the cause is fixed."
+    ),
+    "task_timed_out": _(
+        "Work was stopped because it ran longer than its time limit. It is "
+        "retried automatically; if this keeps happening, tell the server operator."
+    ),
     "helper_timed_out": _(
-        "A helper process was stopped because it ran longer than its time limit."
+        "A helper process was stopped because it ran longer than its time "
+        "limit. Its work is retried; if this keeps happening, tell the server "
+        "operator."
     ),
     "work_budget_reached": _(
-        "Routine work reached its time budget and will continue on its next run."
+        "Routine work reached its time budget and will continue on its next "
+        "run. Nothing needs to be done."
     ),
     "task_lease_lost": _(
-        "A background worker stopped reporting before finishing a task."
+        "A background worker stopped reporting before finishing a task. The "
+        "task is recovered and retried automatically; nothing needs to be done "
+        "unless it keeps happening."
     ),
     # ParishSoft data.
     "source_promoted": _("New ParishSoft data became the current data."),
@@ -48,8 +60,10 @@ DESCRIPTIONS = {
         "A ParishSoft refresh was rejected, so the previous data was kept."
     ),
     "source_refresh_invalid": _(
-        "ParishSoft returned data the system could not accept; the previous "
-        "data was kept."
+        "ParishSoft returned data the system could not accept, or the "
+        "ParishSoft settings were refused; the previous data was kept. The "
+        "detail says which. Check the ParishSoft settings; if they are right, "
+        "the next scheduled refresh tries again."
     ),
     "chair_reconciled": _("Ministry chairs were matched to the new ParishSoft data."),
     "facts_verified": _("Report totals were recalculated and checked."),
@@ -163,17 +177,31 @@ DESCRIPTIONS = {
     "task_started": _("A background task started running."),
     "task_completed": _("A background task finished running."),
     "fact_drift": _(
-        "Recalculated report totals differed from the stored ones; the stored "
-        "totals will be rebuilt."
+        "Recalculated report totals differed from the stored ones on the "
+        "number of days the detail gives; the stored totals will be rebuilt. "
+        "Nothing needs to be done unless it keeps happening."
     ),
     "delivery_unknown": _(
-        "The mail provider did not confirm whether an email was accepted; it "
-        "needs review before it is retried."
+        "The mail provider did not confirm whether an email was accepted; "
+        "review it on Outgoing mail before it is retried."
     ),
     "campaign_boundary_lag": _(
-        "A scheduled campaign date change ran later than planned."
+        "A scheduled campaign start or close ran later than planned; the "
+        "detail says how late. It still ran; nothing needs to be done unless "
+        "it keeps happening."
     ),
-    "due_work_lag": _("Scheduled background work started later than planned."),
+    "due_work_lag": _(
+        "Scheduled background work started later than planned. The detail "
+        "says what was late and by how much; a Recovered entry follows when "
+        "it is back on time. If it does not recover, check that "
+        "the worker and mail services are running."
+    ),
+    "incident_recovered": _(
+        "A problem the system had detected has ended. The detail names it "
+        "and how long it lasted, and says what to check when its end still "
+        "needs follow-up (such as a backup encryption key change); Show "
+        "related entries lists the entry that opened it."
+    ),
     "production_cancel_requested": _(
         "An Administrator asked to stop clearing test data for the campaign going live."
     ),
@@ -181,7 +209,9 @@ DESCRIPTIONS = {
         "An Administrator cleared a refused email address so email to it can resume."
     ),
     "production_cleanup_failed": _(
-        "Clearing test data when the campaign went live did not finish."
+        "Clearing test data when the campaign went live did not finish. Retry "
+        "it from the campaign's go-live page; if it fails again, tell the "
+        "server operator."
     ),
     "source_retention_skipped": _(
         "Removing old ParishSoft copies was skipped this time; the refresh "
@@ -189,14 +219,19 @@ DESCRIPTIONS = {
     ),
     "source_tenant_mismatch": _(
         "ParishSoft answered for a different parish than the one configured, "
-        "so its data was not used."
+        "so its data was not used. Check the ParishSoft organization in the "
+        "ParishSoft settings."
     ),
     "source_destructive_change": _(
         "A ParishSoft refresh would have removed an unusually large share of "
-        "the data, so it was held for review."
+        "the data, so it was held for review. If the change in ParishSoft is "
+        "real, the server operator follows the launch runbook's “Accepting "
+        "a large ParishSoft change”; otherwise correct ParishSoft."
     ),
     "source_member_unusable": _(
-        "A ParishSoft Member record could not be used and was left out."
+        "A ParishSoft Member record could not be used and was left out. The "
+        "detail names the Family and Member numbers and the field to correct "
+        "in ParishSoft."
     ),
     # Process log only (once per process per Ministry and name); a durable
     # Admin notice is tracked in #342.
@@ -205,16 +240,22 @@ DESCRIPTIONS = {
         "characters, so a cleaned-up name was shown instead."
     ),
     "source_refresh_held": _(
-        "A ParishSoft refresh was held back instead of replacing the current data."
+        "A ParishSoft refresh was held back instead of replacing the current "
+        "data, usually because other work was running; it waits and tries again."
     ),
     "source_credential_failed": _(
-        "The ParishSoft key was refused or could not be read."
+        "The ParishSoft key was refused or could not be read. If the detail "
+        "says it will not be retried, replace the key on the Integrations page."
     ),
     "source_provider_failed": _(
-        "ParishSoft could not be reached or returned an error."
+        "ParishSoft could not be reached or returned an error. The detail says "
+        "which, and whether the refresh will be retried; a refresh that gives "
+        "up keeps the previous data until the next scheduled one."
     ),
     "mail_provider_failed": _(
-        "The mail provider could not be reached or refused a request."
+        "The mail provider could not be reached or refused a request. Check "
+        "the email settings and the provider's status page; sending resumes "
+        "on its own once the provider accepts mail again."
     ),
     "installer_request_failed": _("A settings or key installation step failed."),
     "credential_handoff_key_mismatch": _(
@@ -306,7 +347,7 @@ DESCRIPTIONS = {
     ),
     "family_engagement_failed": _(
         "A Family's sign-in or form opening could not be recorded for response "
-        "reporting; the Family was not affected."
+        "reporting; the Family was not affected and nothing needs to be done."
     ),
     "family_codes_viewed": _("Someone opened the Family codes list."),
     # ParishSoft data (audit).

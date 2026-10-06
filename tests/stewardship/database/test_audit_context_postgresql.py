@@ -78,13 +78,28 @@ def test_success_and_failure_share_owning_transaction():
 
 @pytest.mark.parametrize("level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
 def test_operational_levels_and_safe_context(level):
-    result = operational(
-        Event.REQUEST_COMPLETED,
-        level=level,
-        schema=ContextKind.REQUEST,
-        context={"status": 200},
-    )
-    assert result.context == {"status": 200} and result.level == level
+    if level in {"DEBUG", "INFO"}:
+        result = operational(
+            Event.REQUEST_COMPLETED,
+            level=level,
+            schema=ContextKind.REQUEST,
+            context={"status": 200},
+        )
+        assert result.context == {"status": 200} and result.level == level
+    else:
+        # A serious entry also says what went wrong (#633).
+        result = operational(
+            Event.TASK_FAILED,
+            level=level,
+            schema=ContextKind.FAILURE,
+            context={"failure": "alert_mail", "status": 503, "outcome": Outcome.RETRY},
+        )
+        assert result.context == {
+            "failure": "alert_mail",
+            "status": 503,
+            "outcome": "retry",
+        }
+        assert result.level == level
     with pytest.raises(ValueError):
         operational(Event.TASK_FAILED, context={"exception": "PRIVATE"})
 

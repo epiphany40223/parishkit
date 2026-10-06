@@ -75,7 +75,16 @@ def test_three_skipped_runs_open_the_incident_and_a_clean_run_resolves_it(
     # The third run itself opens the incident, as the worker login.
     run_retention(login=ServiceRole.WORKER)
     entry = skips().first()
-    assert (entry.level, entry.context) == ("ERROR", {})
+    # The entry names its refresh task, how many steps failed and the first
+    # failure's category (#633).
+    assert (entry.level, entry.schema) == ("ERROR", "failure")
+    assert entry.context == {
+        "failure": "source_retention",
+        "failure_kind": "database_write_refused",
+        "task_id": entry.context["task_id"],
+        "count": 1,
+        "outcome": "retry",
+    }
     opened = episode()
     assert opened is not None and opened.signal_level == "WARNING"
     monkeypatch.undo()

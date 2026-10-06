@@ -200,9 +200,16 @@ def test_provider_outcomes_settle_under_the_security_admission(routing):
     assert first.outbox.reason.startswith("smtp_")
     assert second.outbox.state == "permanent_failure"
     assert second.outbox.reason.startswith("smtp_")
-    assert (
-        OperationalLog.objects.filter(level="ERROR", event="task_failed").count() == 2
-    )
+    logs = OperationalLog.objects.filter(level="ERROR", event="task_failed")
+    # Each names its message, the provider's closed answer and what is next.
+    assert {
+        (log.context["message_id"], log.context["reason"], log.context["outcome"])
+        for log in logs
+    } == {
+        (str(first.outbox_id), first.outbox.reason, "retry"),
+        (str(second.outbox_id), second.outbox.reason, "failed"),
+    }
+    assert {log.context["failure"] for log in logs} == {"security_mail"}
 
 
 def test_abandoned_security_submission_becomes_uncertain(routing, monkeypatch):

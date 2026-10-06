@@ -94,14 +94,20 @@ BEFORE INSERT OR UPDATE OR DELETE ON stewardship_ops_slack_result
 FOR EACH ROW EXECUTE FUNCTION stewardship_ops_slack_write_v1();
 REVOKE ALL ON FUNCTION stewardship_ops_slack_write_v1() FROM PUBLIC;
 
-CREATE FUNCTION stewardship_ops_slack_error_v1()
+-- A Slack alert the provider did not accept, or whose result is unknown,
+-- names its task and which of the two it was (#633).
+CREATE FUNCTION public.stewardship_ops_slack_error_v1()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     IF NEW.outcome<>'accepted' THEN
       INSERT INTO stewardship_operational_log(id,actor_id,correlation_id,event,level,schema,context)
       VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'task_failed',
         CASE WHEN NEW.outcome='delivery_unknown' THEN 'WARNING' ELSE 'ERROR' END,
-        'exception','{}'::jsonb);
+        'failure',jsonb_strip_nulls(jsonb_build_object('failure','slack_alert',
+          'task_id',(SELECT run_id FROM stewardship_ops_slack_attempt WHERE id=NEW.attempt_id),
+          'reason',CASE WHEN NEW.outcome='delivery_unknown' THEN 'slack_delivery_unknown'
+              ELSE 'slack_not_sent' END,
+          'outcome','failed')));
     END IF;
     RETURN NULL;
 END $$;
@@ -109,11 +115,12 @@ CREATE TRIGGER stewardship_ops_slack_error AFTER INSERT ON stewardship_ops_slack
 FOR EACH ROW EXECUTE FUNCTION stewardship_ops_slack_error_v1();
 REVOKE ALL ON FUNCTION stewardship_ops_slack_error_v1() FROM PUBLIC;
 
-CREATE FUNCTION stewardship_ops_slack_task_error_v1()
+CREATE FUNCTION public.stewardship_ops_slack_task_error_v1()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     -- Failures before provider submission have no result row to log them.
     -- Alert failure stays ERROR, never recursively creates another CRITICAL.
+    -- It names the task, its type and its attempt (#633).
     IF NEW.task_type='operational_slack' AND NEW.state='failed'
       AND OLD.state<>'failed' AND NOT EXISTS(
         SELECT 1 FROM stewardship_ops_slack_attempt a
@@ -121,7 +128,8 @@ BEGIN
         WHERE a.run_id=NEW.id AND r.outcome<>'accepted') THEN
       INSERT INTO stewardship_operational_log(id,actor_id,correlation_id,event,level,schema,context)
       VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'task_failed',
-        'ERROR','exception','{}'::jsonb);
+        'ERROR','failure',jsonb_build_object('failure','slack_alert','task_id',NEW.id,
+          'task_type',NEW.task_type,'attempt',NEW.attempt,'outcome','failed'));
     END IF;
     RETURN NULL;
 END $$;

@@ -25,6 +25,7 @@ from parishkit.stewardship.jobs.scheduler import scan_once, scheduler_session
 from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.observability import Event
 
+from ..log_samples import sample as log_sample
 from .test_background_grants_postgresql import task_login
 from .test_operational_dispatch_postgresql import allocated
 from .test_operational_fanout_postgresql import schedule
@@ -40,7 +41,7 @@ def test_operational_mail_authority_hold_keeps_independent_scan_work(
     """The actual composite MAIL owner cannot abort an independent collector hint."""
     store = routing[0]
     messages = allocated(routing)
-    operational(Event.TASK_FAILED, level="CRITICAL")
+    operational(Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED))
     monkeypatch.setattr(store, "manifest_reference", lambda: (uuid4(), "f" * 64))
     hints = []
     with task_login(ServiceRole.SCHEDULER, exact=True), scheduler_session() as guard:

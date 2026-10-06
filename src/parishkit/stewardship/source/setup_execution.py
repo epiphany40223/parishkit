@@ -6,7 +6,7 @@ from django.db import connection, connections
 from django.db.models import F
 
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
-from parishkit.stewardship.audit.schemas import ContextKind, Outcome
+from parishkit.stewardship.audit.schemas import ContextKind
 from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.dispatch import Handler
@@ -16,7 +16,7 @@ from parishkit.stewardship.jobs.storage import _status, change_run
 from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .failures import classify_read_failure
+from .failures import classify_read_failure, failure_context
 from .leases import acquire_source, release_source, verify_source
 from .outcomes import failure_action, retry_delay
 from .rejection import reject_snapshot
@@ -127,16 +127,10 @@ def _failed(execution, error, claim):
             operational(
                 decision.event,
                 level="CRITICAL" if action == "permanent_failure" else "INFO",
-                schema=ContextKind.TASK,
-                context={
-                    "task_id": result.run_id,
-                    "version": result.version,
-                    "outcome": Outcome.FAILED
-                    if action == "permanent_failure"
-                    else Outcome.RETRY
-                    if action == "retryable_failure"
-                    else Outcome.CANCELLED,
-                },
+                schema=ContextKind.FAILURE,
+                context=failure_context(
+                    decision, result, attempt=status.attempt, action=action
+                ),
             )
         execution.control.finished.set()
 

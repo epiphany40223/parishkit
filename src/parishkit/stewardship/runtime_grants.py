@@ -375,6 +375,10 @@ def runtime_grants(role, *, target=None):
         # Acknowledging the critical-events banner is likewise one append-only
         # row read back by every Admin page's banner count.
         tables["stewardship_critical_event_ack"] = {"SELECT", "INSERT"}
+        # The banner says a listed problem has ended once the incident that
+        # took in each of its entries has resolved (#633): which incident took
+        # in which entry, and nothing else of the receipt.
+        columns["stewardship_ops_log_receipt"] = {"SELECT": {"log_id", "incident_id"}}
         columns["stewardship_ops_incident"] = {
             "UPDATE": {
                 "signal_level",

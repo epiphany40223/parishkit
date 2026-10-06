@@ -1807,6 +1807,64 @@ tasks are Family send work, or a send's progress, it logs a WARNING and
 treats only the tasks it could not judge as unknown (neither late nor
 healthy); other delivery tasks keep the 90-second rule, and the scan moves on.
 
+### What went wrong, and recovery
+
+Every operational log entry at WARNING, ERROR or CRITICAL records enough
+structured context for [System logs](../admin-portal/spec.md#logs) to say
+exactly what went wrong (#633). A table of required context keys per event
+([`audit.log_contract`](../../../../src/parishkit/stewardship/audit/log_contract.py))
+is checked where entries are written, an event without a row there counting
+as missing every key. A failure record must never become a failure itself,
+so only the test settings refuse an incomplete entry; in production it is
+written with what it has and a WARNING `log_contract_incomplete` process-log
+line records the miss. Contract tests check every Python call site and every
+SQL trigger that writes such an entry, and that every serious process-log
+line carries a category, task, limit or count, not only its event name.
+
+The context stays within the closed operational schemas (counts, durations in
+seconds, closed words and identifiers; never names, addresses, provider text
+or exception messages), mirrored by `stewardship_safe_context_v1`:
+
+- `failure`: what failed as a closed word (a ParishSoft read's category, such
+  as `provider_status` with its HTTP status or `provider_timeout`; a health
+  check the operational intake runs; an Administrator alert, security notice
+  or Slack alert that could not be sent; the mail provider as a whole), the
+  failure's category where an exception caused it, the task, message and
+  attempt involved, a closed provider answer (`smtp_transient` and the like),
+  and what happens next: `retry` after `retry_seconds`, as attempt `attempt`
+  of `attempt_limit`, or `failed` (given up);
+- `due_work`: late scheduled work, as described
+  [above](#late-work-during-a-bulk-family-send), and a late campaign start or
+  close with its occurrence and task, its lateness and the limit; and
+- `recovery`, below.
+
+**Recovery is logged.** When an operational incident resolves, the database
+writes one INFO `incident_recovered` entry naming the incident, its kind, how
+long it lasted and how many times it was observed. It shares the correlation
+of the CRITICAL entry that opened the incident, and names that entry, so
+"Show related entries" lists the two together. An incident opened without a
+log entry (backup and sign-in health) keeps its own correlation. An episode
+whose end still needs follow-up (a backup encryption key change, which ends
+when the change is no longer recent rather than when anyone checked the key)
+reads "Ended", with the same instruction its resolved notice gives, never
+"Recovered". Automation-session notices get no entry: they end after an hour
+without events, which is not a recovery, and the dashboard's automation
+notices already say what happened. The
+[critical-problems banner](../admin-portal/spec.md#navigation-and-home)
+then says the problem ended.
+
+A `due_work_lag` entry is never empty: when the scheduler's scan cannot name
+what was late, or its context is missing or refused, the entry still records
+the 90-second per-task limit. System logs says "This entry was recorded
+without detail." for a WARNING-or-above entry with neither a sentence nor any
+field, such as one written before #633.
+
+Frozen migration 0008 (after #622's 0007) widens the allowlist, gives the SQL
+producers that logged an empty context their detail, adds the event and the
+recovery trigger, and refuses to commit unless all of it is installed.
+Entries written before it keep their original context; System logs lists
+their fields without a sentence.
+
 ## Shutdown and upgrade behavior
 
 Workers stop claiming new jobs, finish or checkpoint within their termination

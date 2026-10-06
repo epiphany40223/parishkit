@@ -5587,7 +5587,16 @@ BEGIN
         -- or overran, with its counts, how long since its last progress and
         -- how many other tasks were late in the same check.
         WHEN 'due_work' THEN ARRAY['task_type','count','lag_seconds','limit_seconds','definition_id','revision_id',
-            'remaining_count','done_count','stall_seconds','elapsed_seconds','other_late_count']
+            'remaining_count','done_count','stall_seconds','elapsed_seconds','other_late_count',
+            'occurrence_id','task_id']
+        -- What failed and what happens next (#633): a closed word for what
+        -- failed, the exception's category, the task, message and attempt,
+        -- a closed provider reason or HTTP status, and whether it retries.
+        WHEN 'failure' THEN ARRAY['failure','failure_kind','task_id','task_type','message_id','version',
+            'attempt','attempt_limit','retry_seconds','status','reason','count','outcome']
+        -- An operational incident that ended (#633): the incident, its kind,
+        -- the entry that opened it, how long it lasted and how often it was seen.
+        WHEN 'recovery' THEN ARRAY['incident_id','incident_kind','log_id','elapsed_seconds','count']
         ELSE NULL END;
     IF allowed IS NULL OR jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
     IF schema_name IN ('member_source','boundary') AND NOT payload ?& allowed THEN RETURN false; END IF;
@@ -5597,7 +5606,23 @@ BEGIN
         IF key='outcome' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('started','succeeded','denied','failed','retry','cancelled','changed') THEN RETURN false; END IF;
         ELSIF key='reason' THEN
-            IF jsonb_typeof(value)<>'string' OR text_value<>'no_deliverable_recipient' THEN RETURN false; END IF;
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('no_deliverable_recipient',
+                'smtp_transient','smtp_unavailable','smtp_permanent','smtp_systemic','smtp_delivery_unknown',
+                'preparation_failed','slack_not_sent','slack_delivery_unknown') THEN RETURN false; END IF;
+        -- What failed (#633): a closed word (audit.schemas.FAILURES).
+        ELSIF key='failure' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('organization_mismatch','destructive_change',
+                'shifted_scan','invalid_payload','incomplete_collection','invalid_response','lease_unavailable',
+                'configuration_activating','configuration_busy','scope_changed','credential_unreadable',
+                'credential_changed','provider_status','provider_timeout','provider_unreachable',
+                'source_configuration','organization_changed','source_health_check','mail_health_check',
+                'due_work_health_check','backup_health_check','export_cleanup','fact_verification',
+                'source_retention','family_engagement','alert_mail','security_mail','slack_alert',
+                'smtp_systemic','smtp_unavailable') THEN RETURN false; END IF;
+        -- A failure's category and an incident's kind: identifier words whose
+        -- closed sets Python owns (observability.FailureKind, IncidentKind).
+        ELSIF key IN ('failure_kind','incident_kind') THEN
+            IF jsonb_typeof(value)<>'string' OR text_value!~'^[a-z][a-z0-9_]{0,63}$' THEN RETURN false; END IF;
         ELSIF key='kind' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('start','close') THEN RETURN false; END IF;
         ELSIF key IN ('before_state','after_state') THEN

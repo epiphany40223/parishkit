@@ -60,6 +60,10 @@ SEND_STALL = timedelta(minutes=10)
 # progresses: the source-staleness allowance a send may hold deltas for
 # (send_hold.SEND_ALLOWANCE). A launch-size send takes 30 to 75 minutes.
 SEND_BOUND = timedelta(hours=2)
+# The least a late entry says when nothing more could be recorded (#633):
+# the per-task limit. The checkpoint trigger uses the same context when the
+# setting is missing or refused (schema/due_work_health.sql).
+FALLBACK_CONTEXT = {"limit_seconds": MAX_AGE_SECONDS}
 # The transaction-local setting the checkpoint trigger reads the context from.
 CONTEXT_SETTING = "parishkit.due_work_context"
 # One send's messages, read through the occurrence's definition index and a
@@ -312,13 +316,14 @@ class DueWorkScan:
         self.unknown()
 
     def details(self):
-        """The ``due_work`` context saying why this sweep is late, or {}.
+        """The ``due_work`` context saying why this sweep is late.
 
         A late send's context is chosen over the per-task rule's, since it
         says more. When other tasks also broke the per-task rule in the same
         sweep, ``other_late_count`` adds how many. A context that fails its
-        own validation is reported as {} rather than rolling back the
-        checkpoint.
+        own validation, or a late sweep with nothing to name, is reported as
+        ``FALLBACK_CONTEXT`` (the per-task limit only) rather than rolling
+        back the checkpoint or leaving the entry empty (#633).
         """
         try:
             if self.stalled is not None:
@@ -326,7 +331,7 @@ class DueWorkScan:
                     return self.stalled
                 return self.stalled | {"other_late_count": self.late_tasks}
             if self.worst is None:
-                return {}
+                return dict(FALLBACK_CONTEXT)
             task_type, lag = self.worst
             return sanitize(
                 ContextKind.DUE_WORK,
@@ -338,7 +343,7 @@ class DueWorkScan:
                 },
             )
         except ValueError:
-            return {}
+            return dict(FALLBACK_CONTEXT)
 
     def unknown(self):
         """An intentional hold or failed read cannot certify a recovered queue."""

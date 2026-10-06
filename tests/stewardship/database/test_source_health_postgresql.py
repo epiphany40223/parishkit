@@ -38,6 +38,7 @@ from parishkit.stewardship.source.loading import DestructiveSourceChange
 from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
 from parishkit.stewardship.source.snapshots import promote_snapshot
 
+from ..log_samples import sample as log_sample
 from .campaign_builders import add_draft, change, restored_runtime
 from .test_bootstrap_postgresql import bootstrapped as bootstrap_fixture
 from .test_operational_collection_postgresql import consume, schedule
@@ -293,7 +294,7 @@ def test_new_failure_blocks_recovery_even_after_its_log_is_receipted(
             IncidentLevel.CRITICAL,
             policy=IncidentPolicy(),
         )
-        operational(event, level=level)
+        operational(event, level=level, **log_sample(event))
     observe()
     incident.refresh_from_db()
     assert incident.resolved_at is None
@@ -340,7 +341,9 @@ def test_failed_sample_rolls_back_its_effects_without_silencing_intake(
     """Unrelated critical receipts survive, but no partial healthy sample commits."""
     configured(tmp_path)
     future_observation(monkeypatch, 1801)
-    unrelated = operational(Event.TASK_FAILED, level="CRITICAL")
+    unrelated = operational(
+        Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED)
+    )
     (identifier,) = schedule()
     original = operational_collection.observe_source_health
 
@@ -512,7 +515,11 @@ def test_sample_waits_for_concurrent_failure_and_cannot_clear_it(tmp_path):
 
     with ThreadPoolExecutor(max_workers=1) as pool:
         with work_transaction():
-            operational(Event.SOURCE_PROVIDER_FAILED, level="WARNING")
+            operational(
+                Event.SOURCE_PROVIDER_FAILED,
+                level="WARNING",
+                **log_sample(Event.SOURCE_PROVIDER_FAILED),
+            )
             future = pool.submit(sample_on_another_connection)
             assert started.wait(5)
             deadline = monotonic() + 5
@@ -582,7 +589,14 @@ def test_configuration_defect_is_collected_not_silently_held(
     (identifier,) = schedule()
     assert consume(identifier)
     assert OperationalLog.objects.filter(level="CRITICAL").count() == 1
-    assert OperationalLog.objects.get(level="CRITICAL").schema == "action"
+    critical = OperationalLog.objects.get(level="CRITICAL")
+    # The entry says which configuration defect it was (#633).
+    assert critical.schema == "failure"
+    assert critical.context["failure"] in {
+        "organization_changed",
+        "source_configuration",
+    }
+    assert critical.context["outcome"] == "denied"
     with work_transaction():
         instant = database_now() + timedelta(minutes=1)
     monkeypatch.setattr(operational_collection, "database_now", lambda: instant)
@@ -721,7 +735,12 @@ def test_stale_recovery_requires_a_promoted_full_refresh(tmp_path):
         incident = record_observation(
             IncidentKind.SOURCE_STALE, IncidentLevel.CRITICAL, policy=IncidentPolicy()
         )
-        operational(Event.SOURCE_PROVIDER_FAILED, level="WARNING")
+        # A retried provider failure, as its producer records it (#633).
+        operational(
+            Event.SOURCE_PROVIDER_FAILED,
+            level="WARNING",
+            **log_sample(Event.SOURCE_PROVIDER_FAILED),
+        )
     publish(credential, kind="delta")
     observe()
     incident.refresh_from_db()
@@ -749,7 +768,11 @@ def test_a_warning_after_the_full_refresh_keeps_stale_open(tmp_path, warning):
     full = publish(credential)
     if warning:
         with work_transaction():
-            log = operational(Event.SOURCE_PROVIDER_FAILED, level="WARNING")
+            log = operational(
+                Event.SOURCE_PROVIDER_FAILED,
+                level="WARNING",
+                **log_sample(Event.SOURCE_PROVIDER_FAILED),
+            )
         assert log.created_at > full.started_at
     observe()
     incident.refresh_from_db()

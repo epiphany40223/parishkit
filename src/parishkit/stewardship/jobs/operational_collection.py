@@ -5,12 +5,13 @@ from uuid import UUID, uuid5
 from django.db import connection, transaction
 
 from parishkit.stewardship.audit.models import OperationalLog
+from parishkit.stewardship.audit.schemas import ContextKind, Outcome
 from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
 )
-from parishkit.stewardship.observability import Event, correlation
+from parishkit.stewardship.observability import Event, correlation, failure_kind_of
 from parishkit.stewardship.source.health import (
     admitted_source_scope,
     observe_source_health,
@@ -33,6 +34,16 @@ from .storage import enqueue
 TASK_TYPE = "operational_collect"
 NAMESPACE = UUID("66b36d0c-07e5-4f86-956e-91e589973b36")
 BATCH_SIZE = 50
+# The entry a failed health check leaves (#633), by its ``failure`` word. A
+# failed source check is CRITICAL, since source health has no other watcher;
+# a monitoring defect elsewhere is an ERROR, so it cannot recursively
+# generate mail alerts.
+HEALTH_CHECKS = {
+    "source_health_check": (Event.SOURCE_INVALID, "CRITICAL"),
+    "mail_health_check": (Event.TASK_FAILED, "ERROR"),
+    "due_work_health_check": (Event.TASK_FAILED, "ERROR"),
+    "backup_health_check": (Event.TASK_FAILED, "ERROR"),
+}
 
 
 def pending_logs():
@@ -152,34 +163,33 @@ def _execute(execution):
                     worker_id=execution.claim.worker_id,
                     actor_id=execution.claim.worker_id,
                 )
-        try:
-            # A source-specific defect must not roll back unrelated alert intake.
-            # Failed samples retain no partial health effects; the next collector
-            # receives only this safe diagnostic, never the exception's values.
-            with transaction.atomic():
-                observe_source_health()
-        except Exception:
-            execution.check()
-            operational(Event.SOURCE_INVALID, level="CRITICAL")
-        try:
-            with transaction.atomic():
-                observe_mail_health()
-        except Exception:
-            execution.check()
-            # A monitoring defect must not recursively generate mail alerts.
-            operational(Event.TASK_FAILED, level="ERROR")
-        try:
-            with transaction.atomic():
-                observe_due_work_health()
-        except Exception:
-            execution.check()
-            operational(Event.TASK_FAILED, level="ERROR")
-        try:
-            with transaction.atomic():
-                observe_backup_health()
-        except Exception:
-            execution.check()
-            operational(Event.TASK_FAILED, level="ERROR")
+        # Each health check runs in its own savepoint: a defect in one must not
+        # roll back unrelated alert intake, and a failed sample keeps no
+        # partial health effects. The durable entry names the check and the
+        # failure's category (#633), never the exception's values.
+        for check, observe in (
+            ("source_health_check", observe_source_health),
+            ("mail_health_check", observe_mail_health),
+            ("due_work_health_check", observe_due_work_health),
+            ("backup_health_check", observe_backup_health),
+        ):
+            event, level = HEALTH_CHECKS[check]
+            try:
+                with transaction.atomic():
+                    observe()
+            except Exception as error:
+                execution.check()
+                operational(
+                    event,
+                    level=level,
+                    schema=ContextKind.FAILURE,
+                    context={
+                        "failure": check,
+                        "failure_kind": failure_kind_of(error),
+                        "task_id": execution.claim.run_id,
+                        "outcome": Outcome.FAILED,
+                    },
+                )
         execution.progress(len(page), len(page), phase=TaskPhase.VERIFYING)
         execution.transition("complete")
 

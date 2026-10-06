@@ -5,6 +5,7 @@ from uuid import uuid5
 
 from django.db import connection
 
+from parishkit.stewardship.audit.log_contract import enforce
 from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 from parishkit.stewardship.installer_health import MAX_AGE_SECONDS
 from parishkit.stewardship.observability import Event
@@ -23,9 +24,17 @@ def record_lag(occurrence, task, instant):
     seconds = (instant - occurrence.due_at).total_seconds()
     if seconds <= MAX_AGE_SECONDS:
         return
-    context = sanitize(
-        ContextKind.TASK, {"task_id": task.root_id, "count": int(seconds)}
-    )
+    # Which boundary, its task, and how late against the limit (#633). Rows
+    # written before #633 used the task schema with the lateness in "count".
+    context = {
+        "task_type": task.task_type,
+        "task_id": task.root_id,
+        "occurrence_id": occurrence.pk,
+        "lag_seconds": int(seconds),
+        "limit_seconds": MAX_AGE_SECONDS,
+    }
+    enforce(Event.BOUNDARY_LAG, "WARNING", context)
+    context = sanitize(ContextKind.DUE_WORK, context)
     with connection.cursor() as cursor:
         cursor.execute(
             "INSERT INTO stewardship_operational_log "
@@ -35,7 +44,7 @@ def record_lag(occurrence, task, instant):
                 uuid5(occurrence.pk, "boundary-lag-warning"),
                 occurrence.pk,
                 Event.BOUNDARY_LAG.value,
-                ContextKind.TASK.value,
+                ContextKind.DUE_WORK.value,
                 json.dumps(context),
             ],
         )

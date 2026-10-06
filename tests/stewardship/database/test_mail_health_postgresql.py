@@ -125,7 +125,16 @@ def test_systemic_outcome_commits_critical_intent_with_exact_result(
     assert message.state in {"permanent_failure", "delivery_unknown"}
     log = OperationalLog.objects.get(event=Event.MAIL_PROVIDER_FAILED)
     assert log.level == "CRITICAL"
-    assert log.context == {"task_id": str(message.task_id)}
+    # What failed (#633): one systemic answer, this message and its task.
+    assert log.schema == "failure"
+    assert log.context == {
+        "failure": "smtp_systemic",
+        "count": 1,
+        "task_id": str(message.task_id),
+        "message_id": str(message.pk),
+        "reason": log.context["reason"],
+    }
+    assert log.context["reason"] in {"smtp_systemic", "smtp_delivery_unknown"}
     collect()
     incident = OperationalIncident.objects.get(kind="mail_provider_unavailable")
     assert incident.resolved_at is None and incident.occurrences == 1

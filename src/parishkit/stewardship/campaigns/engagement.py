@@ -35,6 +35,7 @@ from parishkit.stewardship.observability import (
     Event,
     current_correlation,
     emit_failure,
+    failure_kind_of,
 )
 
 from .credential_models import PRESENCE_SECTIONS
@@ -163,7 +164,11 @@ def record_engagement_best_effort(**observation):
         operational(
             Event.FAMILY_ENGAGEMENT_FAILED,
             level="ERROR",
-            schema=ContextKind.EXCEPTION,
-            context={"outcome": Outcome.FAILED},
+            schema=ContextKind.FAILURE,
+            context={
+                "failure": "family_engagement",
+                "failure_kind": failure_kind_of(error),
+                "outcome": Outcome.FAILED,
+            },
         )
         return False

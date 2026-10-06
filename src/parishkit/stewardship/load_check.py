@@ -30,7 +30,13 @@ from parishkit.config import ConfigError
 
 from .deployment import ServiceRole, load_deployment
 from .jobs.delivery_states import TERMINAL_DELIVERY_STATES, DeliveryState
-from .observability import Event, configure_logging, emit, emit_failure
+from .observability import (
+    Event,
+    FailureKind,
+    configure_logging,
+    emit,
+    emit_failure,
+)
 from .runtime_paths import RuntimeLayout
 from .startup_interlock import StartupBusy, StartupLease
 
@@ -1044,18 +1050,30 @@ def execute_load_check(args):
         )
         return 2
     except SourceChanged:
-        emit(Event.FACT_DRIFT, level=logging.WARNING)
+        emit(
+            Event.FACT_DRIFT,
+            level=logging.WARNING,
+            failure_kind=FailureKind.LOAD_CHECK_SOURCE_CHANGED,
+        )
         print("ERROR: source changed during the check; run it again", file=sys.stderr)
         return 2
     except PortalClosed:
-        emit(Event.STARTUP_REJECTED, level=logging.WARNING)
+        emit(
+            Event.STARTUP_REJECTED,
+            level=logging.WARNING,
+            failure_kind=FailureKind.LOAD_CHECK_PORTAL_CLOSED,
+        )
         print(
             "ERROR: the Testing Family portal closed during the check; run it again",
             file=sys.stderr,
         )
         return 2
     except CampaignUnavailable:
-        emit(Event.STARTUP_REJECTED, level=logging.WARNING)
+        emit(
+            Event.STARTUP_REJECTED,
+            level=logging.WARNING,
+            failure_kind=FailureKind.LOAD_CHECK_CAMPAIGN_UNAVAILABLE,
+        )
         print(
             "ERROR: the campaign became unavailable during the check; run it again",
             file=sys.stderr,

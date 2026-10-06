@@ -56,10 +56,15 @@ def label(event):
     return LABELS.get(event) or event.replace("_", " ").capitalize()
 
 
-def summary(counts):
-    """Order the banner's groups by how often they happened, then by name."""
+def summary(counts, ended=None):
+    """Order the banner's groups by how often they happened, then by name.
+
+    ``ended`` maps an event to when its problem ended (``alert_counts``), so
+    the banner can say a problem is over rather than still going on (#633).
+    """
+    ended = ended or {}
     return [
-        {"label": label(event), "count": total}
+        {"label": label(event), "count": total, "ended_at": ended.get(event)}
         for event, total in sorted(
             counts.items(), key=lambda item: (-item[1], label(item[0]))
         )

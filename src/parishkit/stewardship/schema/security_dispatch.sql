@@ -84,11 +84,13 @@ BEGIN
       AND (proposed->>'version')::bigint=message.version;
 END $$;
 
--- A failed security alert delivery or preparation leaves the same fixed safe
--- ERROR the operational owner leaves, never another CRITICAL alert.
-CREATE FUNCTION stewardship_security_delivery_error_v1()
+-- A failed security alert delivery or preparation leaves the same safe ERROR
+-- the operational owner leaves, never another CRITICAL alert. It says what
+-- failed (#633): the message and its closed provider reason, or the task,
+-- its type and attempt, and whether delivery will be retried.
+CREATE FUNCTION public.stewardship_security_delivery_error_v1()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE failed boolean:=false;
+DECLARE failed boolean:=false; detail jsonb;
 BEGIN
     IF TG_TABLE_NAME='stewardship_outbox_event' THEN
       IF NOT ((NEW.state IN ('retry_wait','permanent_failure') AND NEW.reason LIKE 'smtp_%')
@@ -96,6 +98,12 @@ BEGIN
         THEN RETURN NULL; END IF;
       failed:=EXISTS(SELECT 1 FROM stewardship_outbox_message
         WHERE id=NEW.message_id AND purpose='security_event');
+      detail:=jsonb_build_object('failure','security_mail','message_id',NEW.message_id,
+        'outcome',CASE WHEN NEW.state='retry_wait' THEN 'retry' ELSE 'failed' END);
+      IF NEW.reason IN ('smtp_transient','smtp_unavailable','smtp_permanent','smtp_systemic',
+          'smtp_delivery_unknown','preparation_failed') THEN
+        detail:=detail||jsonb_build_object('reason',NEW.reason);
+      END IF;
     ELSIF TG_TABLE_NAME='stewardship_task_event' THEN
       IF NEW.action NOT IN ('permanent_failure','recovery_fail') THEN RETURN NULL; END IF;
       failed:=EXISTS(SELECT 1 FROM stewardship_task_run WHERE id=NEW.run_id
@@ -103,10 +111,13 @@ BEGIN
           JOIN stewardship_outbox_message m ON m.id=t.domain_request_id AND m.task_id=t.root_id
           WHERE t.id=NEW.run_id AND t.task_type='outbox_delivery' AND m.purpose='security_event'
             AND m.state IN ('pending','retry_wait'));
+      detail:=jsonb_strip_nulls(jsonb_build_object('failure','security_mail','task_id',NEW.run_id,
+        'task_type',(SELECT task_type FROM stewardship_task_run WHERE id=NEW.run_id),
+        'attempt',NEW.attempt,'outcome','failed'));
     END IF;
     IF failed THEN
       INSERT INTO stewardship_operational_log(id,actor_id,correlation_id,event,level,schema,context)
-      VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'task_failed','ERROR','exception','{}'::jsonb);
+      VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'task_failed','ERROR','failure',detail);
     END IF;
     RETURN NULL;
 END $$;

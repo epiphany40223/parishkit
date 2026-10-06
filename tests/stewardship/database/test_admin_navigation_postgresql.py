@@ -16,6 +16,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.observability import Event
 
+from ..log_samples import sample as log_sample
 from ..policy_factory import address, assignment
 from . import test_parish_views_postgresql as parish
 from .auth_builders import signed_in
@@ -338,7 +339,7 @@ def test_unexpected_dashboard_failures_use_the_global_closed_error_boundary(
 
 def test_critical_event_warning_is_persistent_and_admin_only(auth_service, google):
     """The warning reports recent critical events without exposing their context."""
-    operational(Event.TASK_FAILED, level="CRITICAL")
+    operational(Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED))
     browser, _ = signed_in()
     for path in ("/admin/", "/admin/background", "/admin/configuration/parish"):
         response = browser.get(path)

@@ -68,40 +68,83 @@ class AlertPhase(StrEnum):
     RESOLVED = "resolved"
 
 
+def gettext_noop(message):
+    """Mark ``message`` for translation extraction and return it unchanged.
+
+    A local stand-in for Django's ``gettext_noop``, which reads the
+    ``USE_I18N`` setting: this module is imported by every command and
+    service before Django settings exist (``cli`` through ``deployment`` and
+    ``operational_policy``), so it must not touch them at import. The name is
+    one ``makemessages`` already extracts.
+    """
+    return message
+
+
+# The titles and resolved instructions are marked for translation
+# (gettext_noop keeps each a plain string): alerts send them as written, and
+# System logs shows them translated (audit.log_details, #633).
 TITLES = MappingProxyType(
     {
-        IncidentKind.DATABASE_UNAVAILABLE: "Database unavailable",
-        IncidentKind.STORAGE_INTEGRITY: "Storage integrity requires attention",
-        IncidentKind.TASK_FAILED: "Background task failed",
-        IncidentKind.SYSTEM_FAILURE: "System operation requires attention",
-        IncidentKind.SOURCE_REFRESH_FAILED: "Parish data refresh failed",
-        IncidentKind.SOURCE_STALE: "Parish data refresh is overdue",
-        IncidentKind.SOURCE_TENANT_MISMATCH: "Parish data organization mismatch",
-        IncidentKind.SOURCE_DESTRUCTIVE_CHANGE: "Unexpected parish data loss",
-        IncidentKind.MAIL_PROVIDER_UNAVAILABLE: "Email provider unavailable",
-        IncidentKind.SCHEDULER_LAG: "Scheduled work is overdue",
-        IncidentKind.WORKER_UNAVAILABLE: "Background worker unavailable",
-        IncidentKind.ADMIN_ABUSE: "Sustained administration login abuse",
-        IncidentKind.FAMILY_ABUSE: "Sustained Family login abuse",
-        IncidentKind.LIMITER_UNAVAILABLE: "Login rate limiter unavailable",
-        IncidentKind.LIMITER_STATE_LOST: "Login rate limiter state was lost",
-        IncidentKind.PUBLICATION_AMBIGUOUS: "Parish data publication is uncertain",
-        IncidentKind.PRODUCTION_CLEANUP_FAILED: "Campaign preparation cleanup failed",
-        IncidentKind.BACKUP_RPO_BREACH: "Required backup is overdue",
-        IncidentKind.BACKUP_OFFSITE_FAILED: "Off-site backup copy failed",
-        IncidentKind.BACKUP_KEY_CHANGED: "Backup encryption key changed",
-        IncidentKind.SOURCE_RETENTION_FAILING: "Parish data cleanup keeps failing",
-        IncidentKind.PURGE_INCONSISTENCY: "Campaign purge is inconsistent",
-        IncidentKind.PURGE_CLEANUP_FAILED: "Campaign purge cleanup failed",
-        IncidentKind.AUTOMATION_APPROVED: "An automation session was approved",
-        IncidentKind.AUTOMATION_IRREVERSIBLE: (
+        IncidentKind.DATABASE_UNAVAILABLE: gettext_noop("Database unavailable"),
+        IncidentKind.STORAGE_INTEGRITY: gettext_noop(
+            "Storage integrity requires attention"
+        ),
+        IncidentKind.TASK_FAILED: gettext_noop("Background task failed"),
+        IncidentKind.SYSTEM_FAILURE: gettext_noop(
+            "System operation requires attention"
+        ),
+        IncidentKind.SOURCE_REFRESH_FAILED: gettext_noop("Parish data refresh failed"),
+        IncidentKind.SOURCE_STALE: gettext_noop("Parish data refresh is overdue"),
+        IncidentKind.SOURCE_TENANT_MISMATCH: gettext_noop(
+            "Parish data organization mismatch"
+        ),
+        IncidentKind.SOURCE_DESTRUCTIVE_CHANGE: gettext_noop(
+            "Unexpected parish data loss"
+        ),
+        IncidentKind.MAIL_PROVIDER_UNAVAILABLE: gettext_noop(
+            "Email provider unavailable"
+        ),
+        IncidentKind.SCHEDULER_LAG: gettext_noop("Scheduled work is overdue"),
+        IncidentKind.WORKER_UNAVAILABLE: gettext_noop("Background worker unavailable"),
+        IncidentKind.ADMIN_ABUSE: gettext_noop("Sustained administration login abuse"),
+        IncidentKind.FAMILY_ABUSE: gettext_noop("Sustained Family login abuse"),
+        IncidentKind.LIMITER_UNAVAILABLE: gettext_noop(
+            "Login rate limiter unavailable"
+        ),
+        IncidentKind.LIMITER_STATE_LOST: gettext_noop(
+            "Login rate limiter state was lost"
+        ),
+        IncidentKind.PUBLICATION_AMBIGUOUS: gettext_noop(
+            "Parish data publication is uncertain"
+        ),
+        IncidentKind.PRODUCTION_CLEANUP_FAILED: gettext_noop(
+            "Campaign preparation cleanup failed"
+        ),
+        IncidentKind.BACKUP_RPO_BREACH: gettext_noop("Required backup is overdue"),
+        IncidentKind.BACKUP_OFFSITE_FAILED: gettext_noop("Off-site backup copy failed"),
+        IncidentKind.BACKUP_KEY_CHANGED: gettext_noop("Backup encryption key changed"),
+        IncidentKind.SOURCE_RETENTION_FAILING: gettext_noop(
+            "Parish data cleanup keeps failing"
+        ),
+        IncidentKind.PURGE_INCONSISTENCY: gettext_noop(
+            "Campaign purge is inconsistent"
+        ),
+        IncidentKind.PURGE_CLEANUP_FAILED: gettext_noop(
+            "Campaign purge cleanup failed"
+        ),
+        IncidentKind.AUTOMATION_APPROVED: gettext_noop(
+            "An automation session was approved"
+        ),
+        IncidentKind.AUTOMATION_IRREVERSIBLE: gettext_noop(
             "An automation session took an irreversible action"
         ),
-        IncidentKind.AUTOMATION_POLICY_CHANGE: (
+        IncidentKind.AUTOMATION_POLICY_CHANGE: gettext_noop(
             "An automation session changed user access, integration keys or "
             "notification settings"
         ),
-        IncidentKind.AUTOMATION_REFUSED: "An automation session was refused",
+        IncidentKind.AUTOMATION_REFUSED: gettext_noop(
+            "An automation session was refused"
+        ),
     }
 )
 
@@ -117,7 +160,7 @@ _AUTOMATION_INSTRUCTION = (
     "Review the automation notices on the Admin dashboard. They name the "
     "automation session and what it did."
 )
-_AUTOMATION_RESOLVED = (
+_AUTOMATION_RESOLVED = gettext_noop(
     "No further automation events of this kind in the last hour. Review the "
     "automation notices on the Admin dashboard if you have not already."
 )
@@ -152,7 +195,7 @@ INSTRUCTIONS = MappingProxyType(
 # Mirrored word for word in stewardship_ops_content_v1.
 RESOLVED_INSTRUCTIONS = MappingProxyType(
     {
-        IncidentKind.BACKUP_KEY_CHANGED: (
+        IncidentKind.BACKUP_KEY_CHANGED: gettext_noop(
             "The backup encryption key change is no longer recent. If you "
             "have not already, ask the server operator to confirm that each "
             "kept copy of the private key opens a new backup, as the backup "

@@ -1224,7 +1224,7 @@ CREATE TABLE public.stewardship_operational_log (
         'setup_credential_scrubbed','campaign_boundary_lag','production_cleanup_failed',
         'authentication_health_observation_failed',
         'task_timed_out','helper_timed_out','work_budget_reached','task_lease_lost',
-        'family_engagement_failed','service_status_failed')),
+        'family_engagement_failed','service_status_failed','incident_recovered')),
     CONSTRAINT operational_log_level CHECK (((level)::text = ANY ((ARRAY['DEBUG'::character varying, 'INFO'::character varying, 'WARNING'::character varying, 'ERROR'::character varying, 'CRITICAL'::character varying])::text[])))
 );
 
