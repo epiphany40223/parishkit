@@ -53,7 +53,8 @@ A refusal or failure exits with 1, a usage error with 2, and Ctrl-C with
   publishes a release once its version bump has merged. It checks the
   version on main's head, gets the successful `workflow_dispatch` CI run on
   exactly that commit that `release.yml` requires (the run you name, or one
-  it dispatches), pushes the annotated tag after you type its name, and
+  it dispatches with all jobs; both accept only a run named
+  `CI (jobs: all)`), pushes the annotated tag after you type its name, and
   prints the published image digest for the
   [scripted upgrade](stewardship-deployment-runbook.md#scripted-upgrade).
   Pushing a release tag needs a human's explicit authorization; running

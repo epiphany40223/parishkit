@@ -132,7 +132,8 @@ human merge-approval stops, including historical checkpoint wording below.
    focused tests for changed behavior during corrections; do not repeatedly
    execute the complete suite locally or on every intermediate push. Keep the
    PR draft until the review loop passes, then dispatch the complete
-   exact-head CI suite; marking the PR ready starts no run. Draft skipped
+   exact-head CI suite (a manual dispatch runs the full suite by default);
+   marking the PR ready starts no run. Draft skipped
    suites are not merge evidence: required aggregate checks remain blocking
    until every full-suite job passes.
    Return to draft before a multi-commit correction effort; ready-PR pushes

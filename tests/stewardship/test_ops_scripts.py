@@ -199,10 +199,11 @@ def test_sql_state_literals_are_real_states():
 # A scripted gh. FAKE_RUN_STATE is every run's status|conclusion|failed jobs
 # (default a success); FAKE_GH_FAIL makes `run view` fail and FAKE_GH_SLEEP
 # makes it hang that many seconds first; FAKE_MERGEABLE is
-# what a pull request answers; FAKE_HEAD and FAKE_EVENT are a run's commit
-# and event; ci_runs (a file) lists the dispatch CI runs on the commit,
-# newest first, and `workflow run` puts FAKE_NEW_RUN at its top when that is
-# set, as a headSha query puts FAKE_NEWER (a run started meanwhile);
+# what a pull request answers; FAKE_HEAD, FAKE_EVENT and FAKE_TITLE are a
+# run's commit, event and run name; ci_runs (a file) lists the dispatch CI
+# runs on the commit, newest first, and `workflow run` puts FAKE_NEW_RUN at
+# its top when that is set, as a headSha query puts FAKE_NEWER (a run started
+# meanwhile);
 # FAKE_OLD_RELEASE is a release.yml run that always exists, and
 # FAKE_RELEASE_RUN one that exists once the bare remote FAKE_REMOTE holds a
 # tag; a run's log names IMAGE.
@@ -230,6 +231,7 @@ case "$*" in
     "run view"*headSha,event,conclusion*)
         if [ -n "${{FAKE_NEWER-}}" ]; then prepend "$FAKE_NEWER"; fi
         echo "${{FAKE_HEAD-}}|${{FAKE_EVENT:-workflow_dispatch}}|success" ;;
+    "run view"*"--json displayTitle"*) echo "${{FAKE_TITLE-CI (jobs: all)}}" ;;
     "pr view"*) echo "${{FAKE_MERGEABLE:-MERGEABLE}}" ;;
     *) echo "unexpected gh $*" >&2; exit 9 ;;
 esac
@@ -515,6 +517,20 @@ def test_release_refuses_a_failed_mismatched_or_superseded_run(tmp_path):
         FAKE_NEWER="80",
     )
     assert result.returncode == 1 and "A newer CI run (80)" in result.stderr
+    # Only an all-jobs dispatch is evidence (#626): a jobs=affected run, or
+    # one named anything else, is refused before it is watched.
+    for n, title in enumerate(("CI (jobs: affected)", "CI", "")):
+        result, calls = run_release(
+            tmp_path / f"title{n}",
+            work,
+            *common,
+            ci_runs="77\n",
+            FAKE_HEAD=sha,
+            FAKE_TITLE=title,
+        )
+        assert result.returncode == 1, title
+        assert "not 'CI (jobs: all)'" in result.stderr
+        assert not any("status,conclusion,jobs" in c for c in calls)
     result, _ = run_release(
         tmp_path / "slow",
         work,
@@ -591,7 +607,10 @@ def test_release_dispatches_and_finds_a_new_run(tmp_path):
         FAKE_RELEASE_RUN="99",
     )
     assert result.returncode == 0, result.stderr
-    assert "gh workflow run ci.yml --repo epiphany40223/parishkit --ref main" in calls
+    assert (
+        "gh workflow run ci.yml --repo epiphany40223/parishkit --ref main -f jobs=all"
+        in calls
+    )
     assert any(c.startswith("gh run view 51 ") for c in calls)
     assert not any(c.startswith("gh run view 50 ") for c in calls)
     assert remote_tag(remote, "v1.2.3") == f"tag {sha}"

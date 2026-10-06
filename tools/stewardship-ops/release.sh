@@ -12,8 +12,9 @@
 #   2. Use CI_RUN_ID, which must be the newest workflow_dispatch run of
 #      ci.yml on that exact commit (the one release.yml will check), or
 #      without it dispatch a new run on main and find it.
-#   3. Watch the run with ci-watch.sh, then verify its commit, event and
-#      conclusion again.
+#   3. Refuse a run that was not dispatched with every job (its run-name
+#      must be exactly "CI (jobs: all)"), watch it with ci-watch.sh, then
+#      verify its commit, event and conclusion again.
 #   4. Ask for the tag name to be typed (skipped with --yes), check once
 #      more that the run is still the newest such run, create the annotated
 #      tag vVERSION at that commit and push it; a failed push deletes the
@@ -163,12 +164,20 @@ if [ -n "$run" ]; then
 else
     before=$(dispatch_runs)
     ops_log "dispatching CI on main"
-    ops_gh workflow run ci.yml --repo "$repo" --ref main
+    ops_gh workflow run ci.yml --repo "$repo" --ref main -f jobs=all
     run=$(await_new_run "the dispatched CI run on $sha to appear (if main moved, it ran on the new head)" dispatch_runs "$before")
 fi
 ops_log "CI run $run"
 
-# 3. Watch it, then check what it ran on.
+# 3. Only a run of every job is release evidence (#626): a jobs=affected
+# dispatch may have skipped job groups. Accept exactly the name ci.yml gives
+# an all-jobs dispatch, as release.yml does, and refuse before watching.
+title=$(ops_gh run view "$run" --repo "$repo" --json displayTitle -q .displayTitle)
+if [ "$title" != "CI (jobs: all)" ]; then
+    ops_refuse "CI run $run is named '$title', not 'CI (jobs: all)'; release evidence needs a dispatch of every job"
+fi
+
+# Watch it, then check what it ran on.
 if ! watch "$run"; then
     ops_refuse "CI run $run did not pass; not tagging"
 fi

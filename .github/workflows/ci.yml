@@ -5,16 +5,35 @@ name: CI
 # starts no run (#624: delivery marks a PR ready seconds before it is merged).
 # Pushes to main run only the light validate job (temporary, to stay within
 # the free plan's 20 concurrent jobs; see issue #158). A manual dispatch runs
-# the full suite on any ref, and releases require that full run on the tagged
-# commit. Ready PRs skip the heavy job groups their changed paths cannot
-# affect (parishkit.stewardship.quality_paths); the aggregate gates accept only
-# that intentional skip, never a draft, failed, cancelled or unexpected skip.
+# the full suite on any ref by default, and releases require that full run on
+# the tagged commit. Ready PRs, and dispatches that explicitly ask for
+# "affected" jobs, skip the heavy job groups their changed paths cannot affect
+# (parishkit.stewardship.quality_paths, issue #626); the aggregate gates accept
+# only that intentional skip, never a draft, failed, cancelled or unexpected
+# skip.
+
+# A dispatch names its job selection. release.yml and release.sh accept only
+# a run named exactly "CI (jobs: all)" as release evidence, so keep this
+# format in step with them. Other runs keep GitHub's default name (a run-name
+# that is empty falls back to it).
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('CI (jobs: {0})', inputs.jobs) || '' }}"
+
 on:
   pull_request:
     types: [opened, synchronize, reopened, converted_to_draft]
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      # "all" stays the default so release and merge evidence is complete
+      # unless someone explicitly asks for less. An "affected" dispatch of a
+      # commit that is already on main when it runs has an empty diff and runs
+      # everything; the release checks refuse "affected" runs regardless.
+      jobs:
+        description: Run all jobs, or only those the branch's changes can affect
+        type: choice
+        options: [all, affected]
+        default: all
 
 permissions:
   contents: read
@@ -35,6 +54,7 @@ jobs:
       postgresql: ${{ steps.paths.outputs.postgresql }}
       browser: ${{ steps.paths.outputs.browser }}
       compose: ${{ steps.paths.outputs.compose }}
+      operational: ${{ steps.paths.outputs.operational }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -53,11 +73,21 @@ jobs:
           tools/ci-pip-install.sh -r requirements/stewardship-build.txt
           tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
 
+      # An "affected" dispatch diffs the branch against its merge base with
+      # main, which the two-commit checkout lacks. If this fetch fails, the
+      # classifier cannot find the merge base and runs every job.
+      - name: Fetch main for an affected-jobs dispatch
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.jobs == 'affected' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        run: git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main
+
       - name: Classify changed paths
         id: paths
         env:
           EVENT: ${{ github.event_name }}
-        run: python -m parishkit.stewardship.quality_paths --event "$EVENT" --output "$GITHUB_OUTPUT"
+          JOBS: ${{ inputs.jobs }}
+        run: python -m parishkit.stewardship.quality_paths --event "$EVENT" --jobs "$JOBS" --output "$GITHUB_OUTPUT"
 
       - name: Ruff check
         run: python -m ruff check .
@@ -99,7 +129,7 @@ jobs:
 
   stewardship-compose-core:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.validate.outputs.compose != 'false') }}
+    if: ${{ needs.validate.outputs.compose != 'false' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -138,7 +168,7 @@ jobs:
 
   stewardship-operational:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.validate.outputs.compose != 'false') }}
+    if: ${{ needs.validate.outputs.operational != 'false' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
     runs-on: ubuntu-latest
     # Two runners with two provider modes each: the freed runner slots let
     # the PostgreSQL partitions spread wider within the 20-job plan limit.
@@ -186,24 +216,39 @@ jobs:
           CORE_RESULT: ${{ needs.stewardship-compose-core.result }}
           OPERATIONAL_RESULT: ${{ needs.stewardship-operational.result }}
           VALIDATE_RESULT: ${{ needs.validate.result }}
-          PATH_RUN: ${{ needs.validate.outputs.compose }}
+          CORE_RUN: ${{ needs.validate.outputs.compose }}
+          OPERATIONAL_RUN: ${{ needs.validate.outputs.operational }}
           EVENT: ${{ github.event_name }}
           DRAFT: ${{ github.event.pull_request.draft }}
+          JOBS: ${{ inputs.jobs }}
         run: |
-          echo 'Full validation requires a ready PR, successful preflight, and all container scenarios.'
-          if test "$VALIDATE_RESULT" = success && test "$EVENT" = pull_request &&
-            test "$DRAFT" = false && test "$PATH_RUN" = false &&
-            test "$CORE_RESULT" = skipped && test "$OPERATIONAL_RESULT" = skipped; then
-            echo 'No changed path can affect these checks; skipped intentionally.'
-            echo 'intentional=true' >> "${GITHUB_OUTPUT:-/dev/null}"
-            exit 0
+          echo 'Full validation requires successful preflight and all container scenarios.'
+          # A ready PR, or a dispatch that asked for affected jobs only, may
+          # skip a job its changed paths cannot affect; nothing else may.
+          allowed=false
+          if test "$VALIDATE_RESULT" = success &&
+            { { test "$EVENT" = pull_request && test "$DRAFT" = false; } ||
+              { test "$EVENT" = workflow_dispatch && test "$JOBS" = affected; }; }; then
+            allowed=true
+          fi
+          # Each job is judged by its own group: a template-only change runs
+          # compose-core but skips the operational scenarios.
+          if test "$allowed" = true && test "$CORE_RUN" = false &&
+            test "$CORE_RESULT" = skipped; then
+            echo 'No changed path can affect compose-core; skipped intentionally.'
+            CORE_RESULT=success
+          fi
+          if test "$allowed" = true && test "$OPERATIONAL_RUN" = false &&
+            test "$OPERATIONAL_RESULT" = skipped; then
+            echo 'No changed path can affect the operational scenarios; skipped intentionally.'
+            OPERATIONAL_RESULT=success
           fi
           test "$CORE_RESULT" = success
           test "$OPERATIONAL_RESULT" = success
 
   stewardship-browser-engine:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.validate.outputs.browser != 'false') }}
+    if: ${{ needs.validate.outputs.browser != 'false' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
     runs-on: ubuntu-latest
     # On 2026-09-30 a slow Ubuntu package mirror spent 17 minutes installing
     # WebKit's system packages, so 25 minutes cancelled passing runs.
@@ -252,10 +297,18 @@ jobs:
           PATH_RUN: ${{ needs.validate.outputs.browser }}
           EVENT: ${{ github.event_name }}
           DRAFT: ${{ github.event.pull_request.draft }}
+          JOBS: ${{ inputs.jobs }}
         run: |
-          echo 'Full validation requires a ready PR, successful preflight, and every browser engine.'
-          if test "$VALIDATE_RESULT" = success && test "$EVENT" = pull_request &&
-            test "$DRAFT" = false && test "$PATH_RUN" = false &&
+          echo 'Full validation requires successful preflight and every browser engine.'
+          # A ready PR, or a dispatch that asked for affected jobs only, may
+          # skip a job its changed paths cannot affect; nothing else may.
+          allowed=false
+          if test "$VALIDATE_RESULT" = success &&
+            { { test "$EVENT" = pull_request && test "$DRAFT" = false; } ||
+              { test "$EVENT" = workflow_dispatch && test "$JOBS" = affected; }; }; then
+            allowed=true
+          fi
+          if test "$allowed" = true && test "$PATH_RUN" = false &&
             test "$BROWSER_RESULT" = skipped; then
             echo 'No changed path can affect these checks; skipped intentionally.'
             echo 'intentional=true' >> "${GITHUB_OUTPUT:-/dev/null}"
@@ -265,7 +318,7 @@ jobs:
 
   stewardship-postgresql-shard:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.validate.outputs.postgresql != 'false') }}
+    if: ${{ needs.validate.outputs.postgresql != 'false' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -336,10 +389,18 @@ jobs:
           PATH_RUN: ${{ needs.validate.outputs.postgresql }}
           EVENT: ${{ github.event_name }}
           DRAFT: ${{ github.event.pull_request.draft }}
+          JOBS: ${{ inputs.jobs }}
         run: |
-          echo 'Full validation requires a ready PR, successful preflight, and all database shards.'
-          if test "$VALIDATE_RESULT" = success && test "$EVENT" = pull_request &&
-            test "$DRAFT" = false && test "$PATH_RUN" = false &&
+          echo 'Full validation requires successful preflight and all database shards.'
+          # A ready PR, or a dispatch that asked for affected jobs only, may
+          # skip a job its changed paths cannot affect; nothing else may.
+          allowed=false
+          if test "$VALIDATE_RESULT" = success &&
+            { { test "$EVENT" = pull_request && test "$DRAFT" = false; } ||
+              { test "$EVENT" = workflow_dispatch && test "$JOBS" = affected; }; }; then
+            allowed=true
+          fi
+          if test "$allowed" = true && test "$PATH_RUN" = false &&
             test "$SHARD_RESULT" = skipped; then
             echo 'No changed path can affect these checks; skipped intentionally.'
             echo 'intentional=true' >> "${GITHUB_OUTPUT:-/dev/null}"

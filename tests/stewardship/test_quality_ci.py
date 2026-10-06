@@ -40,7 +40,12 @@ def test_fast_feedback_precedes_full_candidate_suites():
     """Draft skips cannot become full-suite evidence when readiness changes."""
     import yaml
 
-    from .test_quality_paths import GATES, HEAVY, assert_gate_truth_table
+    from .test_quality_paths import (
+        GATES,
+        HEAVY,
+        assert_gate_truth_table,
+        heavy_condition,
+    )
 
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     fast = jobs["validate"]
@@ -55,18 +60,14 @@ def test_fast_feedback_precedes_full_candidate_suites():
     assert "--require-no-skips" in smoke["run"]
     for name, group in HEAVY.items():
         assert jobs[name]["needs"] == "validate"
-        assert jobs[name]["if"] == (
-            "${{ github.event_name == 'workflow_dispatch' || "
-            "(github.event_name == 'pull_request' && "
-            "github.event.pull_request.draft == false && "
-            f"needs.validate.outputs.{group} != 'false') }}}}"
-        )
+        assert jobs[name]["if"] == heavy_condition(group)
     for name in ("stewardship-compose", "stewardship-postgresql"):
         gate = jobs[name]
         assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
         # A draft, failed, cancelled or unexpected skip still fails the gate;
-        # only an intentional ready-PR path skip may pass without success.
-        assert_gate_truth_table(gate["steps"][0], GATES[name][1])
+        # only an intentional path skip (in a ready PR or an explicitly
+        # "affected" dispatch) may pass without success.
+        assert_gate_truth_table(gate["steps"][0], GATES[name])
 
 
 @pytest.mark.parametrize("count", [1, 2, 8, 12, 32])

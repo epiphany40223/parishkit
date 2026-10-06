@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 import yaml
@@ -16,7 +16,7 @@ from parishkit.stewardship.quality_ci import environment
 from parishkit.stewardship.quality_pytest import BROWSER_DISCOVERY, BrowserSelection
 from parishkit.stewardship.quality_sharding import BROWSER_ENGINES, browser_partition
 
-from .test_quality_paths import assert_gate_truth_table
+from .test_quality_paths import GATES, assert_gate_truth_table
 
 ROOT = Path(__file__).resolve().parents[2]
 BROWSER_DIRECTORY = "tests/stewardship/browser"
@@ -332,8 +332,9 @@ def test_browser_workflow_contract():
         "PATH_RUN": "${{ needs.validate.outputs.browser }}",
         "EVENT": "${{ github.event_name }}",
         "DRAFT": "${{ github.event.pull_request.draft }}",
+        "JOBS": "${{ inputs.jobs }}",
     }
-    assert_gate_truth_table(gate["steps"][0], ("BROWSER_RESULT",))
+    assert_gate_truth_table(gate["steps"][0], GATES["stewardship-browser"])
 
 
 def test_ci_cancels_only_superseded_pr_heads():
@@ -353,7 +354,8 @@ def test_ci_cancels_only_superseded_pr_heads():
             ]
         },
         "push": {"branches": ["main"]},
-        "workflow_dispatch": None,
+        # Its "jobs" input is pinned in test_quality_paths.py.
+        "workflow_dispatch": {"inputs": {"jobs": ANY}},
     }
     assert workflow["concurrency"] == {
         "group": (
