@@ -5582,6 +5582,12 @@ BEGIN
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
+        -- What made scheduled work late (#634): the task type, how many tasks
+        -- and how late against which limit, or the Family send that stalled
+        -- or overran, with its counts, how long since its last progress and
+        -- how many other tasks were late in the same check.
+        WHEN 'due_work' THEN ARRAY['task_type','count','lag_seconds','limit_seconds','definition_id','revision_id',
+            'remaining_count','done_count','stall_seconds','elapsed_seconds','other_late_count']
         ELSE NULL END;
     IF allowed IS NULL OR jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
     IF schema_name IN ('member_source','boundary') AND NOT payload ?& allowed THEN RETURN false; END IF;

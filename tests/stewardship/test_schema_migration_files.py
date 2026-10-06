@@ -45,6 +45,9 @@ FROZEN = {
     "0005_occurrence_prepare_ahead.sql": (
         "12bc2e9c5c21af7da9ff2d3867f3421d9be5a0b63a6c58383931c764304e2987"
     ),
+    "0006_due_work_context.sql": (
+        "f9ac6212009daec6ccaeb2bdfa6df7aa07ac44ff27487d519dbba3dc75147e13"
+    ),
 }
 
 

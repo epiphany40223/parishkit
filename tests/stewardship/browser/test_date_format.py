@@ -27,16 +27,18 @@ def browser_text(page, style, value, *, compact=False):
 
 
 def precise(moment, style):
-    """A System logs time: compact date, clock with seconds, zone and UTC offset."""
+    """A System logs time: compact date, clock with seconds and the zone name.
+
+    No "(UTC-07:00)" offset follows the zone name (#635).
+    """
     local = moment.astimezone(ZoneInfo(ZONE))
     if style.startswith("us_"):
         clock = local.strftime(f"{local.hour % 12 or 12}:%M:%S %p")
     else:
         clock = local.strftime("%H:%M:%S")
-    offset = local.strftime("%z")
     return (
         f"{dates.format_date(local.date(), style, compact=True)} {clock} "
-        f"{local.tzname()} (UTC{offset[:3]}:{offset[3:]})"
+        f"{local.tzname()}"
     )
 
 
@@ -68,8 +70,8 @@ def test_every_style_matches_the_python_formatter(page, component_origin):
 
 
 @pytest.mark.parametrize("value", INSTANTS, ids=["winter", "summer"])
-def test_precise_instants_carry_seconds_zone_and_offset(page, component_origin, value):
-    """Standard and daylight time both show their own offset, for each style."""
+def test_precise_instants_carry_seconds_and_zone(page, component_origin, value):
+    """Standard and daylight time both show their own zone name, for each style."""
     page.goto(component_origin + "/logs")
     moment = datetime.fromisoformat(value).replace(second=7)
     for style in dates.FORMATS:
@@ -82,18 +84,16 @@ def test_precise_instants_carry_seconds_zone_and_offset(page, component_origin, 
             [style, moment.isoformat()],
         )
         assert text == precise(moment, style)
+        assert "UTC" not in text
 
 
 # The 2026 Los Angeles transitions: the repeated 1:30 AM in November (daylight,
 # then standard) and the last standard second before the March jump to 3 AM.
 TRANSITIONS = {
-    "fall-back-first": ("2026-11-01T08:30:05+00:00", "1:30:05 AM PDT (UTC-07:00)"),
-    "fall-back-second": ("2026-11-01T09:30:05+00:00", "1:30:05 AM PST (UTC-08:00)"),
-    "spring-forward-before": (
-        "2026-03-08T09:59:59+00:00",
-        "1:59:59 AM PST (UTC-08:00)",
-    ),
-    "spring-forward-after": ("2026-03-08T10:00:00+00:00", "3:00:00 AM PDT (UTC-07:00)"),
+    "fall-back-first": ("2026-11-01T08:30:05+00:00", "1:30:05 AM PDT"),
+    "fall-back-second": ("2026-11-01T09:30:05+00:00", "1:30:05 AM PST"),
+    "spring-forward-before": ("2026-03-08T09:59:59+00:00", "1:59:59 AM PST"),
+    "spring-forward-after": ("2026-03-08T10:00:00+00:00", "3:00:00 AM PDT"),
 }
 
 
@@ -101,7 +101,7 @@ TRANSITIONS = {
 def test_precise_instants_across_daylight_saving_transitions(
     page, component_origin, moment
 ):
-    """The ambiguous and skipped hours name their own zone and offset."""
+    """The ambiguous and skipped hours name their own zone."""
     value, clock = TRANSITIONS[moment]
     page.goto(component_origin + "/logs")
     text = page.evaluate(
@@ -121,9 +121,15 @@ def test_pages_localize_with_the_body_style_and_compact_tables(page, component_o
     assert page.evaluate("document.body.dataset.dateFormat") == "us_long"
     cell = page.locator("time[data-local-instant][data-compact]").first
     moment = datetime.fromisoformat(cell.get_attribute("datetime"))
-    # Log rows are also precise: seconds, zone name and UTC offset (#391 M3).
+    # Log rows are also precise: seconds and zone name (#391 M3), and no
+    # "(UTC-07:00)" offset after it (#635).
     assert cell.get_attribute("data-precise") is not None
     assert cell.inner_text() == precise(moment, "us_long")
+    assert "UTC" not in cell.inner_text()
+    # The page's own help describes the same form (#635).
+    help_text = page.locator("body").text_content()
+    assert "followed by that zone's short name" in help_text
+    assert "offset" not in help_text
     page.evaluate(
         """() => {
             document.body.dataset.dateFormat = "eu_dot";

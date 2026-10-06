@@ -42,7 +42,7 @@ $$;
 
 CREATE FUNCTION public.stewardship_due_work_health_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE instant timestamptz;
+DECLARE instant timestamptz; detail jsonb;
 BEGIN
     IF TG_OP='DELETE' OR NOT EXISTS(SELECT 1 FROM pg_locks
         WHERE locktype='advisory' AND pid=pg_backend_pid()
@@ -78,9 +78,20 @@ BEGIN
         NEW.last_failure_at,NEW.escalation_seconds,instant) THEN
         -- Intake can be unavailable together with the general worker. Retain
         -- immutable negative evidence here before any later scan can recover.
+        -- The scheduler's scan says what was late (#634) in a setting local
+        -- to this transaction. A context the log would refuse is dropped,
+        -- never allowed to block the failure record itself.
+        BEGIN
+            detail:=COALESCE(NULLIF(current_setting('parishkit.due_work_context',true),'')::jsonb,'{}');
+        EXCEPTION WHEN invalid_text_representation THEN
+            detail:='{}';
+        END;
+        IF NOT public.stewardship_safe_context_v1('due_work',detail) THEN
+            detail:='{}';
+        END IF;
         INSERT INTO public.stewardship_operational_log
             (id,correlation_id,level,event,schema,context)
-        VALUES(gen_random_uuid(),gen_random_uuid(),'CRITICAL','due_work_lag','exception','{}');
+        VALUES(gen_random_uuid(),gen_random_uuid(),'CRITICAL','due_work_lag','due_work',detail);
         NEW.last_failure_at:=instant;
     END IF;
     RETURN NEW;

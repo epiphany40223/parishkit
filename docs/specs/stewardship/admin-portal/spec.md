@@ -3587,8 +3587,9 @@ unbounded export is never assembled in a web request; moving log exports onto
 the asynchronous export-job pipeline used by large report exports is deferred.
 
 Stored timestamps are UTC. The screen renders browser-local timestamps to the
-second, with the zone name and UTC offset, so entries can be compared with
-times recorded elsewhere. The From and Through date filters are whole days in
+second, with the zone name (no UTC offset, #635), so entries can be compared
+with times recorded elsewhere; the zone name also tells the repeated hour
+apart when clocks fall back. The From and Through date filters are whole days in
 the browser's time zone, following the
 [timestamp rule](../spec.md#global-presentation-rules): the filter form
 carries the browser's zone, the server turns From into the start of that local

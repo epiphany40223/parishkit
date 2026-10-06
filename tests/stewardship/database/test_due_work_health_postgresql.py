@@ -340,7 +340,12 @@ def test_broken_scope_and_expired_lease_age_are_not_positive_evidence():
         instant = database_now()
     for state in ("running", "abandoned"):
         health = DueWorkScan()
-        row = SimpleNamespace(state=state, lease_expires_at=instant, updated_at=instant)
+        row = SimpleNamespace(
+            state=state,
+            task_type="outbox_delivery",
+            lease_expires_at=instant,
+            updated_at=instant,
+        )
         health.admitted(row, instant + timedelta(seconds=89))
         assert not health.late
         health.admitted(row, instant + timedelta(seconds=91))
@@ -399,7 +404,15 @@ def test_actual_scheduler_trigger_retains_failure_and_throttles_then_intake():
     scan()
     sample = DueWorkHealth.objects.get()
     failure = OperationalLog.objects.get(event=LogEvent.DUE_WORK_LAG)
-    assert failure.level == "CRITICAL" and failure.context == {}
+    # The entry says what was late (#634): the 20-minute-old probe task.
+    assert failure.level == "CRITICAL" and failure.schema == "due_work"
+    lag = failure.context.pop("lag_seconds")
+    assert 1200 <= lag < 1300
+    assert failure.context == {
+        "task_type": "dispatch_probe",
+        "count": 1,
+        "limit_seconds": 90,
+    }
     assert sample.last_failure_at is not None
     observed = sample.observed_at
     scan()
@@ -535,3 +548,58 @@ def test_scheduler_checkpoint_waits_for_actual_worker_observation_transaction():
                     sleep(0.01)
             future.result(timeout=5)
     assert DueWorkHealth.objects.get().signal == "unknown"
+
+
+def test_sql_due_work_context_mirrors_its_python_schema():
+    """The SQL allowlist admits exactly the reviewed due_work fields (#634)."""
+    import json
+
+    from parishkit.stewardship.audit.schemas import FIELDS, ContextKind, sanitize
+
+    values = {
+        key: uuid4()
+        if key.endswith("_id")
+        else "outbox_delivery"
+        if key == "task_type"
+        else 7
+        for key in FIELDS[ContextKind.DUE_WORK]
+    }
+    complete = sanitize(ContextKind.DUE_WORK, values)
+    with connection.cursor() as cursor:
+        for payload, expected in (
+            (complete, True),
+            ({}, True),
+            (complete | {"message": "private"}, False),
+            ({"outcome": "failed"}, False),
+            ({"task_type": "Not A Type"}, False),
+            ({"stall_seconds": -1}, False),
+            ({"stall_seconds": "600"}, False),
+            ({"definition_id": "private"}, False),
+        ):
+            cursor.execute(
+                "SELECT stewardship_safe_context_v1('due_work', %s::jsonb)",
+                [json.dumps(payload)],
+            )
+            assert cursor.fetchone()[0] is expected, payload
+
+
+@pytest.mark.parametrize(
+    "setting", ['{"message": "private"}', "not json", '{"count": -1}', ""]
+)
+def test_trigger_drops_a_context_the_log_would_refuse(setting):
+    """A bad or missing context never blocks the CRITICAL record itself."""
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    aged_checkpoint()
+    with (
+        task_login(ServiceRole.SCHEDULER, exact=True),
+        scheduler_session(),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "SELECT set_config('parishkit.due_work_context', %s, true)", [setting]
+        )
+        cursor.execute("UPDATE stewardship_due_work_health SET signal='late'")
+    failure = OperationalLog.objects.get(event=LogEvent.DUE_WORK_LAG)
+    assert (failure.schema, failure.context) == ("due_work", {})

@@ -23,6 +23,7 @@ class ContextKind(StrEnum):
     BOUNDARY = "boundary"
     SCHEDULE = "schedule"
     TIMEOUT = "timeout"
+    DUE_WORK = "due_work"
 
 
 class Outcome(StrEnum):
@@ -185,6 +186,26 @@ FIELDS = {
         "helper",
         "count",
         "outcome",
+    },
+    # What made scheduled work late (#634); mirrored in
+    # stewardship_safe_context_v1. Either the task type with how many tasks
+    # were late and the worst lateness against ``limit_seconds``, or the
+    # Family send (its schedule ``definition_id`` and ``revision_id``) that
+    # stalled or overran, with its counts, how long since its last progress
+    # and how long since it fell due (durations, not times), plus how many
+    # other tasks broke the per-task rule in the same check.
+    ContextKind.DUE_WORK: {
+        "task_type",
+        "count",
+        "lag_seconds",
+        "limit_seconds",
+        "definition_id",
+        "revision_id",
+        "remaining_count",
+        "done_count",
+        "stall_seconds",
+        "elapsed_seconds",
+        "other_late_count",
     },
     ContextKind.EMAIL: {"message_id", "recipient_count", "outcome", "reason"},
     ContextKind.SOURCE: {"snapshot_id", "generation", "count", "outcome"},

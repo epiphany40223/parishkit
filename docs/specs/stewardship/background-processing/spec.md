@@ -1338,7 +1338,9 @@ including:
   [Family send holds deltas](#deltas-wait-for-a-bulk-family-send));
 - wrong ParishSoft organization or implausible destructive source change;
 - systemic mail failure during a due campaign occurrence;
-- scheduler/worker health preventing due work;
+- scheduler/worker health preventing due work (judged for a
+  [bulk Family send](#late-work-during-a-bulk-family-send) by the send's
+  progress);
 - sustained distributed administration-login or Family-code guessing abuse;
 - publication ambiguity after an external write;
 - exhausted Production-transition cleanup;
@@ -1357,6 +1359,60 @@ is in Testing or restore review.
 Slack delivery failure is logged and cannot mask the original error. If email
 itself is failing, the system does not recursively create email-failure alerts;
 Slack/logs remain. Sensitive values and full free text never enter Slack.
+
+### Late work during a bulk Family send
+
+The scheduler's due-work check (`SCHEDULER_LAG`) calls a task late when it is
+admitted more than 90 seconds after it was due, and CRITICAL `due_work_lag`
+follows once lateness has lasted the operational escalation window (15
+minutes by default). A [bulk Family send](#bulk-family-send) enqueues every
+delivery task at the send's due time, and the mail consumers take tens of
+minutes to work through them (about 30 minutes for 1,000 messages), so most
+of those tasks start long after 90 seconds by design. Judged that way, every
+normal send raised the alarm (#634).
+
+So while a send is in progress, its waiting delivery tasks are judged by the
+send's own progress instead. "In progress" is the deployment-wide test the
+[delta wait](#deltas-wait-for-a-bulk-family-send) uses, not a per-send count:
+at least 10 pieces of Family send work remain across all sends, counting due
+messages pending, waiting to retry or being submitted and Family preparation
+tasks queued, running or waiting to retry. Each send whose tasks are waiting
+is then judged on its own, and is late only when either:
+
+- **it has stalled:** nothing of the send was prepared or settled (sent,
+  failed or uncertain) for more than 10 minutes since it fell due. This is
+  twice the Send progress panel's five-minute "stalled" window, so a brief
+  provider back-off does not by itself start the alarm; with the escalation
+  window, CRITICAL follows 25 minutes without progress. Progress made before
+  the due time (a reminder prepared ahead) does not count;
+- **it has overrun:** it is still in progress 2 hours after it fell due,
+  however steadily it progresses. This is the same 2 hours a send may hold
+  deltas back for; a launch-size send takes 30 to 75 minutes.
+
+Every other task type, Family delivery tasks whose worker lease expired, other
+delivery tasks (receipts, digests, tests and alerts) and a send's last few
+messages, once fewer than 10 remain, keep the 90-second rule. While Production
+delivery is paused only messages count towards "in progress", as for the delta
+wait.
+
+A late check records why, in the CRITICAL entry's closed `due_work` context
+(counts, seconds and identifiers only):
+
+- for the 90-second rule: the task type of the worst (most late) task, how
+  many tasks were late and that worst lateness against the 90-second limit;
+- for a send: its schedule definition and revision ids, how many of its
+  messages remain and how many are done, how long it has gone without
+  progress, how long since it fell due, and the limit it broke. Durations,
+  not times, so System logs shows no raw timestamp. When other tasks also
+  broke the 90-second rule in the same check, the send's context is kept
+  and their number is added as `other_late_count`.
+
+The scheduler passes the context to the checkpoint trigger in a
+transaction-local setting; a context the allowlist refuses is dropped rather
+than blocking the CRITICAL entry. If the check cannot read which delivery
+tasks are Family send work, or a send's progress, it logs a WARNING and
+treats only the tasks it could not judge as unknown (neither late nor
+healthy); other delivery tasks keep the 90-second rule, and the scan moves on.
 
 ## Shutdown and upgrade behavior
 
