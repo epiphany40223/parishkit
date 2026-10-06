@@ -401,7 +401,11 @@ def test_live_connection_rechecks_grants_on_its_interval(installer, monkeypatch)
     """
     from parishkit.stewardship.accounts import credential_database
 
-    now = [monotonic()]
+    # A whole-number start keeps the fake clock's sums exact (#657). From a
+    # real monotonic() reading such as 3796.0275..., (t + 299) + 1 - t can
+    # round to 299.99999999999955, so the recheck at exactly the interval
+    # would wrongly not be due yet. The real clock's error is sub-microsecond.
+    now = [1000.0]
     monkeypatch.setattr(credential_database, "monotonic", lambda: now[0])
     assert run(installer) is None
     grant_excess()
