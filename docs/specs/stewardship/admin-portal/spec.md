@@ -3690,18 +3690,34 @@ Only Admins access the combined log screen. It supports:
   indicators: one matched, self-hosted icon set (a grey dot for DEBUG, a blue
   "i", an amber warning triangle, a red cross and a dark red stop sign for
   CRITICAL) whose shapes,
-  not only their colors, tell the levels apart. The level filter shows each
-  icon beside its level word. The table's second column, Level, after Time,
-  shows the same icon alone, with the level word as screen-reader text and a
-  tooltip; audit records, which have no level, say "Audit record" there.
-  CRITICAL rows are highlighted;
-- a compact filter bar: levels, source, type and date range fit in one or two
-  rows at desktop width, and the actor, correlation and campaign identifier
-  filters are folded under "Filter by identifier" until one is used. The
+  not only their colors, tell the levels apart. Audit records, which have no
+  level, have a purple clipboard icon of their own, also distinct in shape
+  ([#601](https://github.com/epiphany40223/parishkit/issues/601)). The filter
+  bar's "Show" row is six checkboxes, the five levels and "Audit record", each
+  icon beside its word. The table's second column, Level, after Time, shows
+  the same icon alone, with its word as screen-reader text and a tooltip, so
+  the column stays narrow. CRITICAL rows are highlighted;
+- a compact filter bar: the six Show choices, type and date range fit in one
+  or two rows at desktop width, and the actor, correlation and campaign
+  identifier filters are folded under "Filter by identifier" until one is
+  used. The
   page's longer explanation is in its "About this page" panel;
-- default exclusion of DEBUG;
-- operational/audit source, action/type, campaign, entity, actor, task/request
-  correlation, text, date range, and level filters;
+- default exclusion of DEBUG; the first view shows every other level plus
+  audit records. A submitted form shows exactly the kinds it ticks: "Audit
+  record" alone is the audit trail only, and leaving it unticked shows
+  operational entries only. At least one must be ticked: the filter form's
+  complete gate keeps Apply unavailable, saying "Tick at least one kind of
+  entry to show.", and the server refuses a form with none with its own
+  message, not the identifier guidance. A campaign filter with Audit record
+  unticked lists nothing, and its empty table says to tick Audit record.
+  There is no separate Source field. For one release the server still accepts the
+  retired `source` value an older open tab may send, mapped onto the
+  checkboxes (`audit` clears the levels, `operational` leaves audit records
+  out, `both` includes them), and carries only the checkboxes from then on.
+  The critical-events banner's link ticks Critical alone, without audit
+  records, and "Same campaign" ticks Audit record alone;
+- action/type, campaign, entity, actor, task/request correlation, text,
+  date range, and the six Show (level and audit record) filters;
 - full-text search over approved indexed fields, never credentials;
 - before/after detail for audit events;
 - a plain-language explanation beside each entry's stored type. Every type the

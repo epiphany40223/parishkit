@@ -58,11 +58,14 @@ LEVEL_LABELS = {
     "CRITICAL": ("‼", _("Critical")),
 }
 LEVELS = tuple(LEVEL_LABELS)
-SOURCES = {
-    "both": _("Operational and audit"),
-    "operational": _("Operational only"),
-    "audit": _("Audit only"),
-}
+# Audit records have no level. They are the sixth kind of entry the filter row
+# offers (#601), with their own icon (a clipboard, distinct in shape from the
+# five level icons), named for screen readers and as a tooltip.
+AUDIT_LABEL = _("Audit record")
+# The retired Source select's values (#601). A tab opened before it was
+# removed may still send one, so for one release it is mapped onto the
+# checkboxes (``LogQuery._from_source``) instead of refused.
+LEGACY_SOURCES = frozenset({"both", "operational", "audit"})
 # Suggestions only. Many audit types are written directly by their owners and by
 # SQL triggers, such as `admin_login`, so the two vocabularies here are not the
 # whole set; hiding the rest behind a fixed list would make them unsearchable.
@@ -73,6 +76,14 @@ EVENT = re.compile(r"[a-z][a-z0-9_]{0,63}")
 INSTANT = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}\+00:00"
 )
+
+
+class NothingShown(ValueError):
+    """A submitted filter form ticked none of the six kinds of entry (#601).
+
+    The view words this refusal on its own: no value the reader typed was
+    wrong, they only left every Show choice unticked.
+    """
 
 
 def _identifier(value):
@@ -86,8 +97,11 @@ def _identifier(value):
 class LogQuery:
     """Filters travel only in CSRF POST bodies; identifiers never reach a URL.
 
-    DEBUG is excluded unless chosen. `applied` distinguishes a submitted form
-    with no level ticked, which means none, from the first visit's default.
+    The five operational levels and audit records (`audit`) are six
+    checkboxes (#601). The first visit's default, before `applied` marks a
+    submitted form, is every level but DEBUG plus audit records; a submitted
+    form shows exactly what it ticks and must tick at least one. An older
+    tab's `source` choice is mapped onto the ticks (``_from_source``).
     The log grows while it is being read, so paging is anchored to a snapshot:
     the first view records `through`, the database time it read at, and every
     later page, sort or size change carries it and lists only entries created
@@ -108,7 +122,8 @@ class LogQuery:
     warning: str = ""
     error: str = ""
     critical: str = ""
-    source: str = "both"
+    audit: str = ""
+    source: str = ""
     event: str = ""
     actor: str = ""
     correlation: str = ""
@@ -131,16 +146,30 @@ class LogQuery:
                 {key: [value] for key, value in parameters.items()}
             )
         query = cls(**filters(parameters, allowed=set(cls.__dataclass_fields__)))
-        ticks = (query.debug, query.info, query.warning, query.error, query.critical)
+        ticks = (
+            query.debug,
+            query.info,
+            query.warning,
+            query.error,
+            query.critical,
+            query.audit,
+        )
         if (
             query.applied not in {"", "yes"}
             or any(tick not in {"", "yes"} for tick in ticks)
             # Ticks mean something only on a submitted form.
             or (any(ticks) and not query.applied)
-            or query.source not in SOURCES
+            # A legacy source never comes with the audit tick that replaced it.
+            or (query.source and (query.source not in LEGACY_SOURCES or query.audit))
             or (query.event and EVENT.fullmatch(query.event) is None)
         ):
             raise ValueError("Invalid log filters.")
+        if query.source:
+            query = query._from_source()
+        if query.applied and not (query.levels or query.audit):
+            # The page's gate keeps Apply unavailable with nothing ticked;
+            # a form that bypasses it is refused, not answered with nothing.
+            raise NothingShown("Log filters must show at least one kind of entry.")
         for value in (query.actor, query.correlation, query.campaign):
             _identifier(value)
         for value in (query.start, query.end):
@@ -179,6 +208,29 @@ class LogQuery:
         if not self.applied:
             return LEVELS[1:]
         return tuple(level for level in LEVELS if getattr(self, level.lower()))
+
+    @property
+    def audits(self):
+        """Whether audit records are shown: by default, or when ticked."""
+        return not self.applied or bool(self.audit)
+
+    def _from_source(self):
+        """Map a retired Source choice (#601) onto the six checkboxes.
+
+        The levels it came with (or the default ones, on a form that was not
+        applied, such as the old "Same campaign" action) are kept, except that
+        "audit" (audit only) clears them; "operational" leaves audit records
+        out. The result is an ordinary applied query, so paging and the export
+        carry the checkboxes, never ``source`` again.
+        """
+        levels = () if self.source == "audit" else self.levels
+        return replace(
+            self,
+            applied="yes",
+            source="",
+            audit="" if self.source == "operational" else "yes",
+            **{level.lower(): "yes" if level in levels else "" for level in LEVELS},
+        )
 
     @property
     def bounds(self):
@@ -305,11 +357,15 @@ def page_context(query, table, *, depth_limited=False):
         "depth_limited": depth_limited,
         "query": query,
         "query_fields": query.form_values(),
+        # The six kinds of entry, in the filter row's order: the five levels,
+        # least severe first, then audit records.
         "levels": [
-            (level.lower(), LEVEL_LABELS[level], level in query.levels)
-            for level in LEVEL_LABELS
+            *(
+                (level.lower(), label, level in query.levels)
+                for level, (_symbol, label) in LEVEL_LABELS.items()
+            ),
+            ("audit", AUDIT_LABEL, query.audits),
         ],
-        "sources": SOURCES,
         "events": EVENTS,
     }
 
@@ -324,6 +380,7 @@ def operational_row(record):
         "level": record["level"],
         "level_symbol": symbol,
         "level_label": label,
+        "icon": record["level"].lower(),
         "event": record["event"],
         "description": describe(record["event"], record["context"]),
         "actor_id": record["actor_id"],
@@ -344,7 +401,8 @@ def audit_row(record):
         "source": _("Audit"),
         "level": None,
         "level_symbol": "",
-        "level_label": _("Audit record"),
+        "level_label": AUDIT_LABEL,
+        "icon": "audit",
         "event": record["event_type"],
         "description": describe(record["event_type"]),
         "actor_id": record["actor_id"],

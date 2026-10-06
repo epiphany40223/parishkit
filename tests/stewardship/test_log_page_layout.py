@@ -9,6 +9,7 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.policy import Capability, Principal, allows
 from parishkit.stewardship.audit.log_rows import (
+    AUDIT_LABEL,
     LEVEL_LABELS,
     LEVELS,
     LogQuery,
@@ -77,7 +78,7 @@ def _render(query=None, rows=None):
     )
 
 
-@pytest.mark.parametrize("level", [level.lower() for level in LEVELS])
+@pytest.mark.parametrize("level", [*(level.lower() for level in LEVELS), "audit"])
 def test_each_level_has_its_own_decorative_icon(level):
     """One matched icon per level, hidden from assistive technology."""
     html = _render()
@@ -126,11 +127,127 @@ def test_level_cell_shows_the_level_choices_icon_with_its_name(level):
     assert re.sub(r"<[^>]+>", "", cell.replace(label, "")).strip() == ""
 
 
-def test_audit_rows_have_no_level_icon():
-    """Audit records have no level, so their Level cell says so in words."""
-    cell = _level_cells(_render())[-1]
-    assert "<svg" not in cell
-    assert cell == '<span class="log-kind">Audit record</span>'
+def test_audit_rows_show_the_shared_audit_icon():
+    """Audit records have no level; their Level cell is the shared audit icon
+    the Show choices use, named for screen readers and as a tooltip, never
+    the words alone, which widened the column (#601)."""
+    html = _render()
+    cell = _level_cells(html)[-1]
+    icon = render_to_string(
+        "stewardship/components/level-icon.html", {"level": "audit"}
+    )
+    assert icon in cell and html.count(icon) == 2
+    assert f'<span class="visually-hidden">{AUDIT_LABEL}</span>' in cell
+    assert f'title="{AUDIT_LABEL}"' in cell
+    assert re.sub(r"<[^>]+>", "", cell.replace(str(AUDIT_LABEL), "")).strip() == ""
+    assert "log-kind" not in html
+
+
+def test_audit_icon_differs_in_shape_from_every_level_icon():
+    """Shape, not only color, tells the audit record from each level (#601)."""
+
+    def shapes(level):
+        """The icon's shape elements as (tag, geometry), ignoring every color.
+
+        Only geometry attributes are kept, so two icons that differ only in
+        fill or stroke color compare equal and fail the test.
+        """
+        icon = render_to_string(
+            "stewardship/components/level-icon.html", {"level": level}
+        )
+        body = re.search(r"<svg[^>]*>(.*)</svg>", icon, re.S).group(1)
+        geometry = ("d", "x", "y", "width", "height", "rx", "cx", "cy", "r")
+        return [
+            (tag, tuple(re.findall(rf'\b({"|".join(geometry)})="([^"]*)"', attrs)))
+            for tag, attrs in re.findall(r"<(\w+)\b([^>]*)/?>", body)
+        ]
+
+    audit = shapes("audit")
+    # The outline, drawn first, is a portrait board (a clipboard), with lines.
+    tag, geometry = audit[0]
+    outline = dict(geometry)
+    assert tag == "rect" and float(outline["height"]) > float(outline["width"])
+    for level in LEVELS:
+        drawn = shapes(level.lower())
+        assert drawn and drawn != audit
+        # No level's outline is a board: circles, a triangle, an octagon.
+        assert drawn[0][0] != "rect" and drawn[0] != audit[0]
+
+
+def _choices(html):
+    """The Show fieldset's checkbox labels, in order."""
+    fieldset = re.search(
+        r'<fieldset class="log-level-choices"[^>]*>(.*?)</fieldset>', html, re.S
+    ).group(1)
+    return re.findall(r"<label>(.*?)</label>", fieldset, re.S)
+
+
+def test_six_kinds_of_entry_are_one_row_of_checkboxes():
+    """The five levels and audit records are six checkboxes under Show, each
+    with its shared icon; the Source field is gone (#601)."""
+    html = _render()
+    labels = _choices(html)
+    names = [re.search(r'name="(\w+)"', label).group(1) for label in labels]
+    assert names == [*(level.lower() for level in LEVELS), "audit"]
+    for name, label in zip(names, labels, strict=True):
+        assert 'type="checkbox"' in label and 'value="yes"' in label
+        icon = render_to_string(
+            "stewardship/components/level-icon.html", {"level": name}
+        )
+        assert icon in label
+    assert "Audit record</label>" in html.replace(" </label>", "</label>")
+    assert "<legend>Show</legend>" in html
+    assert 'name="source"' not in html and "log-source" not in html
+    assert ">Source<" not in html
+
+
+@pytest.mark.parametrize(
+    ("values", "ticked"),
+    [
+        ({}, ["info", "warning", "error", "critical", "audit"]),
+        ({"applied": "yes", "audit": "yes"}, ["audit"]),
+        ({"applied": "yes", "debug": "yes"}, ["debug"]),
+        ({"source": "operational"}, ["info", "warning", "error", "critical"]),
+    ],
+)
+def test_checkboxes_show_the_applied_choice(values, ticked):
+    """Defaults are unchanged; a legacy Source arrives as its ticks (#601)."""
+    labels = _choices(_render(LogQuery.parse(values)))
+    checked = [
+        re.search(r'name="(\w+)"', label).group(1)
+        for label in labels
+        if " checked>" in label
+    ]
+    assert checked == ticked
+
+
+def test_the_choices_gate_apply_until_one_is_ticked():
+    """The complete gate keeps Apply unavailable with no box ticked (#601)."""
+    html = _render()
+    form = re.search(r'<form id="table-filters"[^>]*>', html).group(0)
+    assert "data-require-complete" in form
+    fieldset = re.search(r'<fieldset class="log-level-choices"[^>]*>', html).group(0)
+    assert "data-require-one" in fieldset
+    assert 'data-missing-hint="Tick at least one kind of entry to show."' in fieldset
+    # The hint names the group too, as it does the gated Apply button.
+    assert 'aria-describedby="log-filter-hint"' in fieldset
+
+
+@pytest.mark.parametrize(
+    ("values", "campaign_note"),
+    [
+        ({"applied": "yes", "info": "yes", "campaign": str(UUID(int=5))}, True),
+        ({"applied": "yes", "audit": "yes", "campaign": str(UUID(int=5))}, False),
+        ({"applied": "yes", "info": "yes"}, False),
+    ],
+)
+def test_an_empty_campaign_filter_without_audit_says_why(values, campaign_note):
+    """A campaign matches only audit records, so with Audit record unticked
+    the empty table says to tick it instead of the general advice."""
+    html = _render(LogQuery.parse(values), rows=[])
+    note = "Campaign filters list audit records only; tick Audit record."
+    assert (note in html) is campaign_note
+    assert ("Try a wider date range" in html) is not campaign_note
 
 
 def test_critical_rows_stand_out():
@@ -162,17 +279,22 @@ def test_entries_cross_link_by_correlation_actor_campaign_and_task():
     assert html.count(">Same campaign</button>") == 1
     assert html.count(">Open task</a>") == 1
     assert f'href="/admin/background/task/{UUID(int=304)}">Open task</a>' in html
-    # A campaign filter only ever matches audit records, so it asks for them.
-    assert re.search(
-        r'name="source" value="audit"><input type="hidden" name="campaign"', html
+    # A campaign filter only ever matches audit records, so it asks for them
+    # alone: Audit record ticked, every level unticked (#601).
+    form = re.search(r"<form[^>]*>(?:(?!</form>).)*>Same campaign<", html, re.S)
+    hidden = dict(
+        re.findall(r'<input type="hidden" name="(\w+)" value="([^"]*)"', form.group(0))
     )
+    assert hidden == {"applied": "yes", "audit": "yes", "campaign": str(UUID(int=303))}
 
 
 def test_identifier_filters_fold_away_unless_used():
     """The three identifier filters are closed until one of them is set."""
     closed = _render()
     assert '<details class="log-more-filters">' in closed
-    used = _render(LogQuery.parse({"applied": "yes", "actor": str(UUID(int=5))}))
+    used = _render(
+        LogQuery.parse({"applied": "yes", "audit": "yes", "actor": str(UUID(int=5))})
+    )
     assert '<details class="log-more-filters" open>' in used
 
 

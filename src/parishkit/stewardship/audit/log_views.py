@@ -32,6 +32,7 @@ from parishkit.stewardship.web.tables import bounded_count
 
 from .log_rows import (
     LogQuery,
+    NothingShown,
     audit_row,
     log_table,
     merge,
@@ -58,6 +59,12 @@ ZONE_MESSAGE = _(
     "apply the filters again; if this repeats, check your computer's time zone "
     "setting."
 )
+# A submitted form ticked none of the six Show choices (#601); the page's gate
+# normally keeps Apply unavailable, so this answers a bypassed or stale form.
+NOTHING_MESSAGE = _(
+    "Choose at least one kind of entry to show. Return to the logs and tick a "
+    "level or Audit record before applying the filters."
+)
 EXPORT_COLUMNS = (
     "time",
     "source",
@@ -80,8 +87,9 @@ def _error(code, status, *, query_string=False, message=None):
     shown only when a filter value was the problem: a denied reader or an
     outage submitted nothing that could be corrected, and a query string is
     refused for where it was sent, not for what it said. A specific
-    ``message`` (dates without a known zone, #558) replaces the closed one
-    and the value guidance, since no value the reader typed was wrong.
+    ``message`` (dates without a known zone, #558, or no kind of entry
+    ticked, #601) replaces the closed one and the value guidance, since no
+    value the reader typed was wrong.
     """
     response = HttpResponse(
         render_to_string(
@@ -160,12 +168,12 @@ def _sources(query, through):
     Either is None when the filters exclude that source entirely.
     """
     operational = audit = None
-    if query.source != "audit" and not query.campaign and query.levels:
+    if not query.campaign and query.levels:
         operational = OperationalLog.objects.filter(level__in=query.levels)
         if query.event:
             operational = operational.filter(event=query.event)
         operational = _filtered(operational, query, through)
-    if query.source != "operational":
+    if query.audits:
         audit = AuditEvent.objects.all()
         if query.event:
             audit = audit.filter(event_type=query.event)
@@ -345,6 +353,8 @@ def logs(request):
         return _error(ErrorCode.UNAVAILABLE, 503)
     except UnknownZone:
         return _error(ErrorCode.INVALID, 400, message=ZONE_MESSAGE)
+    except NothingShown:
+        return _error(ErrorCode.INVALID, 400, message=NOTHING_MESSAGE)
     except ValueError:
         return _error(ErrorCode.INVALID, 400)
 
@@ -445,5 +455,7 @@ def export_logs(request):
         return _error(ErrorCode.UNAVAILABLE, 503)
     except UnknownZone:
         return _error(ErrorCode.INVALID, 400, message=ZONE_MESSAGE)
+    except NothingShown:
+        return _error(ErrorCode.INVALID, 400, message=NOTHING_MESSAGE)
     except ValueError:
         return _error(ErrorCode.INVALID, 400)

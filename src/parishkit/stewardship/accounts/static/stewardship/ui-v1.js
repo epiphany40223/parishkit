@@ -1255,7 +1255,10 @@
   //   - data-required-when-shown="name …" on a data-show-when group (or an
   //     empty value on a field) makes those controls required while shown;
   //   - data-required-when="name=value" makes a field required while the
-  //     form's control "name" has that value (notes for the outcome Other).
+  //     form's control "name" has that value (notes for the outcome Other);
+  //   - data-require-one on a group of checkboxes needs at least one ticked
+  //     (the System logs Show choices, #601): while none is, each box is
+  //     marked invalid with the group's data-missing-hint.
   // The hint is the first missing control's data-missing-hint, or that of
   // the nearest element around it. As with acknowledgments below, real
   // disabled is used and only buttons this gate disabled are re-enabled.
@@ -1267,9 +1270,20 @@
       node.required = Boolean(control) && !control.disabled && control.value === value;
     });
   };
+  const requireOne = (form) => {
+    form.querySelectorAll("[data-require-one]").forEach((group) => {
+      const boxes = [...group.querySelectorAll("input[type=checkbox]")];
+      const none = !boxes.some((box) => box.checked);
+      // The group's own data-missing-hint is the message (and the custom
+      // validity a box needs to count as invalid); the page supplies it.
+      const hint = none ? group.dataset.missingHint : "";
+      boxes.forEach((box) => box.setCustomValidity(hint));
+    });
+  };
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
+    requireOne(form);
     // A required text field holding only spaces is still empty: the server
     // trims it (notes for the outcome Other).
     const blank = (node) => node.required && node.matches("textarea, input[type=text]")
