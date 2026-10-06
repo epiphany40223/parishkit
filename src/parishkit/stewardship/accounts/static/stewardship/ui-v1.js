@@ -143,8 +143,15 @@
           delete field.dataset.zoneHint;
         }
         zoneValidity(field);
+        // The zone note (or, without a zone, the Save hint) describes the
+        // field; any other description, such as a refused contact time's
+        // inline error (#592), is kept after it.
         const described = known ? note : gateHint;
-        if (described && described.id) field.setAttribute("aria-describedby", described.id);
+        if (described && described.id) {
+          const others = (field.getAttribute("aria-describedby") || "").split(/\s+/)
+            .filter((id) => id && id !== note?.id && id !== gateHint?.id);
+          field.setAttribute("aria-describedby", [described.id, ...others].join(" "));
+        }
       });
     });
     if (!zone || zone === "UTC") return;
@@ -178,12 +185,92 @@
     });
   };
   document.querySelector("[data-error-summary]")?.focus();
+  // Field errors (#592). A field in error is marked aria-invalid="true" and
+  // described by its message, a .errorlist beside it: the server draws
+  // both (a refused follow-up, or any Django form, whose 5.2 markup is the
+  // same), and the browser's own checks mark a field on blur. The rule for
+  // every Admin form is that a mark clears as soon as the error does:
+  //   - a field the browser marked clears as soon as its value is valid;
+  //   - a field the server marked clears, with its message, on the first
+  //     edit (input or change), since the browser cannot re-check the
+  //     server's rule; the server checks again on save. A message shared by
+  //     several fields (a date and a time) clears them all, and the error
+  //     summary loses the item that links to them (the whole box once it is
+  //     empty).
+  // Leaving a field without editing it keeps a server mark: the error is
+  // neither fixed nor edited. data-field-error marks a field whose mark
+  // comes from a message (the server's, or a live check such as the
+  // follow-up contact time's) rather than from the browser's validity.
+  const errorMessages = (node) => (node?.getAttribute("aria-describedby") || "").split(/\s+/)
+    .map((id) => id && document.getElementById(id))
+    .filter((message) => message && message.matches(".errorlist"));
+  const clearFieldError = (field) => {
+    // A choice group Django renders as a fieldset (use_fieldset widgets)
+    // marks each input but describes the fieldset, so its message is found
+    // there, and every input in it clears together. No Admin form uses one
+    // yet; this keeps the rule true when one does.
+    const group = errorMessages(field).length ? null : field.closest("fieldset");
+    const messages = errorMessages(group || field);
+    const fields = new Set([field]);
+    if (group && messages.length) {
+      fields.add(group);
+      group.querySelectorAll("[data-field-error]").forEach((node) => fields.add(node));
+    }
+    messages.forEach((message) => {
+      document.querySelectorAll("[aria-describedby]").forEach((other) => {
+        if (other.getAttribute("aria-describedby").split(/\s+/).includes(message.id)) {
+          fields.add(other);
+        }
+      });
+    });
+    fields.forEach((node) => {
+      node.removeAttribute("data-field-error");
+      // A live check's flag goes with its mark (data-show-when hiding it).
+      delete node.dataset.clientError;
+      node.setAttribute("aria-invalid", "false");
+      const ids = (node.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && !messages.some((message) => message.id === id));
+      if (ids.length) node.setAttribute("aria-describedby", ids.join(" "));
+      else node.removeAttribute("aria-describedby");
+      // The summary item that links to this field goes too, and the
+      // summary with it once it lists nothing.
+      if (!node.id) return;
+      document.querySelectorAll(`[data-error-summary] a[href="#${CSS.escape(node.id)}"]`)
+        .forEach((link) => link.closest("li")?.remove());
+    });
+    document.querySelectorAll("[data-error-summary]").forEach((summary) => {
+      if (!summary.querySelector("li")) summary.remove();
+    });
+    // A message element a live check may reuse stays, hidden and empty.
+    messages.forEach((message) => {
+      message.hidden = true;
+      message.querySelectorAll("li").forEach((item) => { item.textContent = ""; });
+      delete message.dataset.source;
+    });
+  };
+  // Fields this script marked from the browser's own check on blur. Only
+  // those are cleared when valid again, so a mark another script set is
+  // never taken off here. (The Family form's inputs are built by
+  // family-v1.js after this runs, so they are never wired here at all;
+  // that script manages their marks.)
+  const blurMarked = new WeakSet();
   const wireValidity = (root) => {
     root.querySelectorAll("input, select, textarea").forEach((field) => {
-      field.addEventListener("blur", () => {
-        if (field.willValidate) {
-          field.setAttribute("aria-invalid", String(!field.validity.valid));
+      if (field.getAttribute("aria-invalid") === "true") field.setAttribute("data-field-error", "");
+      const edited = () => {
+        if (field.hasAttribute("data-field-error")) clearFieldError(field);
+        else if (blurMarked.has(field) && field.validity.valid) {
+          field.setAttribute("aria-invalid", "false");
+          blurMarked.delete(field);
         }
+      };
+      field.addEventListener("input", edited);
+      field.addEventListener("change", edited);
+      field.addEventListener("blur", () => {
+        if (!field.willValidate) return;
+        const invalid = field.hasAttribute("data-field-error") || !field.validity.valid;
+        field.setAttribute("aria-invalid", String(invalid));
+        if (invalid && !field.hasAttribute("data-field-error")) blurMarked.add(field);
       });
     });
   };
@@ -692,8 +779,9 @@
   // data-in-place key, a form's key standing for its first button. A table
   // control returns to the same heading (by column) or the matching control
   // of the same navigator. Previous and Next become plain text on the first
-  // or last page, so each falls back to the other. Anything still missing
-  // falls back to the region itself.
+  // or last page, so each falls back to the other. Anything still missing,
+  // or disabled, falls back to the region's first heading, else the region
+  // itself (refreshRegions).
   const focusAfter = (region, control, owner) => {
     if (!region.contains(control) || owner) {
       const key = owner?.dataset.inPlace;
@@ -1012,10 +1100,14 @@
       window.history.replaceState(window.history.state, "", url);
     }
     // A refusal's summary (now in the region) takes focus, as it does on an
-    // ordinary load; without one the control does, as after a success.
-    let target = summary || focus(document.getElementById(id));
-    if (!target) {
-      target = document.getElementById(id);
+    // ordinary load; without one the control does, as after a success. A
+    // control that is gone (a save that closed a follow-up request leaves no
+    // form) or disabled cannot take focus, so the region's first heading
+    // does, which names what changed; failing that, the region itself.
+    const swapped = document.getElementById(id);
+    let target = summary || focus(swapped);
+    if (!target || target.disabled) {
+      target = swapped.querySelector("h1, h2, h3, h4, h5, h6") || swapped;
       target.setAttribute("tabindex", "-1");
     }
     target.focus({preventScroll: true});
@@ -1579,6 +1671,15 @@
     refresh();
   });
 
+  // A control's value for the rules below (data-show-when and
+  // data-required-when). A checkbox counts as its value only while it is
+  // ticked and is empty otherwise, as a submission would send it:
+  // "followed_up!=yes" means "not ticked". A radio group already reads as
+  // its ticked button's value (RadioNodeList.value).
+  const ruleValue = (control) => (control instanceof HTMLInputElement
+    && control.type === "checkbox"
+    ? (control.checked ? control.value : "") : control.value);
+
   // Complete-before-submit (#553): a form marked data-require-complete keeps
   // its submit buttons disabled until every control that is currently shown
   // and required is valid, and says why in its [data-complete-hint] element
@@ -1600,7 +1701,7 @@
       const [name, value] = node.dataset.requiredWhen.split("=");
       const control = form.elements.namedItem(name);
       // A hidden (disabled) control's leftover value does not count.
-      node.required = Boolean(control) && !control.disabled && control.value === value;
+      node.required = Boolean(control) && !control.disabled && ruleValue(control) === value;
     });
   };
   const requireOne = (form) => {
@@ -1621,13 +1722,17 @@
     // trims it (notes for the outcome Other).
     const blank = (node) => node.required && node.matches("textarea, input[type=text]")
       && !node.value.trim();
+    // A live check (the follow-up contact time) marks a field it found in
+    // error with data-client-error, whose text is the hint.
     const missing = [...form.elements].find((node) => node.willValidate
-      && !node.closest("[hidden]") && (!node.validity.valid || blank(node)));
+      && !node.closest("[hidden]")
+      && (node.hasAttribute("data-client-error") || !node.validity.valid || blank(node)));
     const hint = form.querySelector("[data-complete-hint]");
     if (hint) {
       hint.hidden = !missing;
       hint.textContent = missing
-        ? (missing.closest("[data-missing-hint]")?.dataset.missingHint
+        ? (missing.dataset.clientError
+          || missing.closest("[data-missing-hint]")?.dataset.missingHint
           || "Fill in the required fields to save.")
         : "";
     }
@@ -1646,52 +1751,199 @@
   // A field marked data-show-when="name=value" is shown only while the form's
   // control called "name" has that value, e.g. the daily refresh time only
   // for the once-a-day frequency; "name!=value" shows it for every other
-  // value, e.g. a contact attempt's date only once a channel is chosen. On a
-  // field the mark hides its enclosing div; on a div (a group of fields, as
-  // in Ministry follow-up) it hides that div and every control inside it.
-  // Hidden fields are disabled so they are not sent; without JavaScript
-  // every field simply stays visible, and the server ignores what does not
-  // apply. A browser can restore form values without a change event (the
-  // back/forward cache, or autofill after load), so every rule is applied
-  // again on pageshow, not only at load.
-  const showWhenUpdates = [];
-  document.querySelectorAll("[data-show-when]").forEach((node) => {
-    const rule = node.dataset.showWhen;
-    const negated = rule.includes("!=");
-    const [name, value] = rule.split(negated ? "!=" : "=");
-    const field = node.matches("input, select, textarea");
-    const form = field ? node.form : node.closest("form");
-    const control = form && form.elements.namedItem(name);
-    const wrapper = field ? node.closest("div") : node;
-    if (!control || !wrapper) return;
-    const controls = field ? [node] : [...node.querySelectorAll("input, select, textarea")];
-    const listed = node.dataset.requiredWhenShown;
-    const required = listed === undefined ? []
-      : listed === "" ? [node]
-        : listed.split(/\s+/).map((item) => form.elements.namedItem(item)).filter(Boolean);
-    const update = () => {
-      const shown = (control.value === value) !== negated;
-      wrapper.hidden = !shown;
-      controls.forEach((item) => { item.disabled = !shown; });
-      required.forEach((item) => { item.required = shown; });
+  // value, e.g. a contact attempt's date only once a channel is chosen, or
+  // the confirmation to reopen information follow-up only once "Follow-up
+  // completed" is unticked. On a field the mark hides its enclosing div; on a
+  // div (a group of fields, as in Ministry follow-up) it hides that div and
+  // every control inside it. Hidden fields are disabled so they are not
+  // sent; without JavaScript every field simply stays visible, and the
+  // server ignores what does not apply. A browser can restore form values
+  // without a change event (the back/forward cache, or autofill after load),
+  // so every rule is applied again on pageshow, not only at load.
+  //
+  // Both this and the complete-before-submit gate are wired for the page and
+  // again for content an in-place swap brings in (a follow-up form saved or
+  // refused in place, #519), which arrives as fresh elements with no
+  // listeners. The lists the pageshow re-run uses drop what a swap removed.
+  // within() includes root itself, which a swapped sync node can be.
+  const within = (root, selector) => [
+    ...(root instanceof Element && root.matches(selector) ? [root] : []),
+    ...root.querySelectorAll(selector),
+  ];
+  let showWhenUpdates = []; // {node, update} for each data-show-when mark
+  let completeForms = []; // every form[data-require-complete] wired so far
+  const wireShowWhen = (root) => {
+    within(root, "[data-show-when]").forEach((node) => {
+      const rule = node.dataset.showWhen;
+      const negated = rule.includes("!=");
+      const [name, value] = rule.split(negated ? "!=" : "=");
+      const field = node.matches("input, select, textarea");
+      const form = field ? node.form : node.closest("form");
+      const control = form && form.elements.namedItem(name);
+      const wrapper = field ? node.closest("div") : node;
+      if (!control || !wrapper) return;
+      const controls = field ? [node] : [...node.querySelectorAll("input, select, textarea")];
+      const listed = node.dataset.requiredWhenShown;
+      const required = listed === undefined ? []
+        : listed === "" ? [node]
+          : listed.split(/\s+/).map((item) => form.elements.namedItem(item)).filter(Boolean);
+      const update = () => {
+        // A control outside a swapped region outlives the marks it served.
+        if (!node.isConnected) return;
+        const shown = (ruleValue(control) === value) !== negated;
+        wrapper.hidden = !shown;
+        // A hidden field is not sent, so an error marked on it no longer
+        // applies: it clears, with its message and summary item.
+        if (!shown) {
+          // Clearing one field also clears the fields sharing its message,
+          // so each is checked again as it comes up.
+          controls.forEach((item) => {
+            if (item.hasAttribute("data-field-error")) clearFieldError(item);
+          });
+        }
+        controls.forEach((item) => { item.disabled = !shown; });
+        required.forEach((item) => { item.required = shown; });
+        gateComplete(form);
+      };
+      control.addEventListener("change", update);
+      showWhenUpdates.push({node, update});
+      update();
+    });
+  };
+  const wireComplete = (root) => {
+    within(root, "form[data-require-complete]").forEach((form) => {
       gateComplete(form);
-    };
-    control.addEventListener("change", update);
-    showWhenUpdates.push(update);
-    update();
-  });
-  const completeForms = [...document.querySelectorAll("form[data-require-complete]")];
-  completeForms.forEach((form) => {
-    gateComplete(form);
-    form.addEventListener("input", () => gateComplete(form));
-    form.addEventListener("change", () => gateComplete(form));
-    // A partly typed date ("09/__/____") is invalid (badInput) but fires no
-    // input or change event, so the gate also checks as focus leaves a field.
-    form.addEventListener("focusout", () => gateComplete(form));
-  });
+      form.addEventListener("input", () => gateComplete(form));
+      form.addEventListener("change", () => gateComplete(form));
+      // A partly typed date ("09/__/____") is invalid (badInput) but fires no
+      // input or change event, so the gate also checks as focus leaves a field.
+      form.addEventListener("focusout", () => gateComplete(form));
+      completeForms.push(form);
+    });
+  };
+  // A contact attempt cannot be in the future (#592). The browser checks
+  // what it can at once; the server still checks every save and its
+  // refusal is shown as before. The date input is marked
+  // data-not-future="<time input id>", with the inline message element
+  // (data-not-future-error) and the server's own words
+  // (data-not-future-message). Its picker stops at today in this browser's
+  // time zone: set at load, after a swap, on pageshow, and on focus, so a
+  // page left open past midnight moves on.
+  //
+  // While the date (with no time yet: a later day) or the date and time
+  // (in this browser's zone) are in the future, both fields are marked in
+  // error beside the message, and the Save gate holds Save with the message
+  // as its hint. The message element is the one a server refusal fills, so
+  // one message shows at a time:
+  //   - An edit (input or change of Date or Time) owns the element: a
+  //     future time shows the check's message there, and a time no longer
+  //     in the future clears it, including the server's own "in the
+  //     future" refusal, which the reader has now changed.
+  //   - Any other run (wiring at load or after a swap, pageshow, leaving a
+  //     field, another change on the form, the timer below) never touches a
+  //     server message: it only adds the marks for a future time, and
+  //     clears only the check's own message. The server's refusal exists
+  //     for exactly the case where this browser's clock disagrees with it
+  //     (a wrong clock, a stale tab), so the browser must not overrule it
+  //     unasked.
+  // A time can pass while the page is open: while the check holds Save it
+  // runs again once a minute, so Save comes back once the time is no longer
+  // in the future.
+  const localToday = () => {
+    const now = new Date();
+    const pad = (number) => String(number).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  };
+  let notFutureChecks = []; // {date, check} for each wired date input
+  const wireNotFuture = (root) => {
+    within(root, "input[data-not-future]").forEach((date) => {
+      const time = document.getElementById(date.dataset.notFuture);
+      const errorId = date.dataset.notFutureError;
+      const message = date.dataset.notFutureMessage;
+      const fields = [date, time].filter(Boolean);
+      let timer = null; // the once-a-minute re-check while Save is held
+      // Written only when the day changes. An earlier version also ran the
+      // check on Save's pointerdown, and re-setting max there, even to the
+      // same value, made Chromium drop that click; the attribute is not
+      // rewritten needlessly in case anything else runs the check mid-press.
+      const limit = () => {
+        const today = localToday();
+        if (date.max !== today) date.max = today;
+      };
+      const describe = (node) => {
+        const ids = (node.getAttribute("aria-describedby") || "").split(/\s+/)
+          .filter((id) => id && id !== errorId);
+        node.setAttribute("aria-describedby", [...ids, errorId].join(" "));
+      };
+      const check = (edited = false) => {
+        if (!date.isConnected) {
+          window.clearInterval(timer);
+          return;
+        }
+        limit();
+        const error = document.getElementById(errorId);
+        const source = error && !error.hidden ? error.dataset.source : null;
+        // A hidden contact group's fields are disabled and not sent.
+        const future = !date.disabled && Boolean(date.value) && (time && time.value
+          ? new Date(`${date.value}T${time.value}`).getTime() > Date.now()
+          : date.value > localToday());
+        if (future) {
+          fields.forEach((node) => {
+            node.setAttribute("aria-invalid", "true");
+            node.setAttribute("data-field-error", "");
+            describe(node);
+          });
+          date.dataset.clientError = message;
+          // The check's message replaces a server one only on an edit.
+          if (error && (edited || !source || source === "client")) {
+            error.hidden = false;
+            error.dataset.source = "client";
+            const item = error.querySelector("li") || error.appendChild(document.createElement("li"));
+            item.textContent = message;
+          }
+          if (!timer) timer = window.setInterval(() => check(), 60000);
+        } else {
+          delete date.dataset.clientError;
+          window.clearInterval(timer);
+          timer = null;
+          // Defensive: on an edit, the field-error listener (wireValidity,
+          // wired before this) has already cleared a server mark, so the
+          // second case is not reached today. It keeps this check right on
+          // its own if that wiring order ever changes.
+          if (source === "client" || (edited && source === "contact_future")) {
+            clearFieldError(date);
+          }
+        }
+        gateComplete(date.form);
+      };
+      fields.forEach((node) => {
+        node.addEventListener("input", () => check(true));
+        node.addEventListener("change", () => check(true));
+        node.addEventListener("blur", () => check());
+      });
+      date.addEventListener("focus", limit);
+      // Any other change on the form runs the check again (not as an edit):
+      // choosing a contact channel shows Date and Time again, with values
+      // that may still be in the future.
+      date.form?.addEventListener("change", () => check());
+      notFutureChecks.push({date, check});
+      check();
+    });
+  };
+  const wireConditional = (root) => {
+    showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
+    completeForms = completeForms.filter((form) => form.isConnected);
+    notFutureChecks = notFutureChecks.filter(({date}) => date.isConnected);
+    wireShowWhen(root);
+    wireComplete(root);
+    wireNotFuture(root);
+  };
+  wireConditional(document);
+  document.addEventListener("parishkit:swap", (event) => wireConditional(event.target));
   window.addEventListener("pageshow", () => {
-    showWhenUpdates.forEach((update) => update());
+    showWhenUpdates.forEach(({update}) => update());
     completeForms.forEach(gateComplete);
+    notFutureChecks.forEach(({check}) => check());
   });
 
   // Optional modules remain ordinary accessible fieldsets without JavaScript.

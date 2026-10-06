@@ -72,6 +72,7 @@ from .digest_components import components as digest_components
 from .directory_components import components as directory_components
 from .family_timeline_components import components as family_timeline_components
 from .financial_components import components as financial_components
+from .followup_components import POSTS as FOLLOWUP_POSTS
 from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
 from .hosted_file_components import IMAGE_TOKEN
@@ -80,6 +81,7 @@ from .in_place_components import FORM as IN_PLACE_FORM
 from .in_place_components import POSTS as IN_PLACE_POSTS
 from .in_place_components import SLOW as IN_PLACE_SLOW
 from .in_place_components import components as in_place_components
+from .information_components import POSTS as INFORMATION_POSTS
 from .information_components import components as information_components
 from .log_components import components as log_components
 from .menu_components import components as menu_components
@@ -1342,6 +1344,29 @@ def component_origin():
             "text/html",
             render_to_string(f"stewardship/{template}.html", {**context, **extra}),
         )
+    # The wizard's Parish step after a refused Next (#592): a website with a
+    # query, a rule only the server checks, marked at its field.
+    responses["/setup-parish-invalid"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/setup-step.html",
+            context
+            | {
+                "draft": setup_draft,
+                "wizard": wizard,
+                "form": FORMS["parish"](
+                    data={
+                        "name": "Sample Parish",
+                        "website": "https://example.org/?campaign=1",
+                        "timezone": "America/New_York",
+                        "phone": "+12125551234",
+                    }
+                ),
+                "step": "parish",
+                "step_label": STEPS["parish"],
+            },
+        ),
+    )
     for step, form_type in FORMS.items():
         if step == "branding":
             continue
@@ -1577,6 +1602,29 @@ def component_origin():
                 ),
             },
         ),
+        # The same page after a refused save (#592): Django marks the blank
+        # name (a rule the browser can check too) and the plain-http giving
+        # address (a rule only the server checks) at their fields.
+        (
+            "/parish-settings-invalid",
+            "parish-settings",
+            {
+                "configuration": {
+                    "mode": "testing",
+                    "testing_recipient": "testing@example.org",
+                },
+                "form": ParishForm(
+                    data={
+                        "name": "",
+                        "website": "https://example.org",
+                        "timezone": "America/New_York",
+                        "phone": "+12125551234",
+                        "online_giving_url": "http://giving.example.org",
+                        "base_digest": "a" * 64,
+                    }
+                ),
+            },
+        ),
         (
             "/parish-preview",
             "parish-preview",
@@ -1742,6 +1790,8 @@ def component_origin():
     posts = (
         IN_PLACE_POSTS
         | AUTOMATION_POSTS
+        | FOLLOWUP_POSTS
+        | INFORMATION_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
@@ -1835,7 +1885,9 @@ def component_origin():
             the sign-in page, so the in-place table tests (#478) can see a
             real redirect, which Playwright cannot fulfil from a route on
             every engine. The in-place form page's paths (#519) answer as
-            ``in_place_components.POSTS`` lists.
+            ``in_place_components.POSTS`` lists, and the two follow-up Save
+            forms' update paths as ``followup_components.POSTS`` and
+            ``information_components.POSTS`` list.
             """
             # Read the body before answering: closing the connection with
             # an unread request body can reset it before the answer arrives.

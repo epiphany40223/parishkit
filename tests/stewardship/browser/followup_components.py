@@ -1,4 +1,13 @@
-"""Ministry follow-up reuses the shared browser server and production templates."""
+"""Ministry follow-up reuses the shared browser server and production templates.
+
+The request page is also served at its real address (``ITEM``), with a
+"saved" view (``SAVED``), and the fixture server answers its Save POST with
+a real Post/Redirect/Get redirect (``POSTS``). The in-place mechanism (#519)
+follows a save only back to the same path, and Playwright cannot fulfil a
+redirect from a route on every engine. Two more requests answer a save with
+the request closed (``RESOLVED``: no form comes back) and with follow-up
+edits unavailable (``GATED``: Save comes back disabled).
+"""
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -14,9 +23,29 @@ from parishkit.stewardship.reports.ministry_followup import (
     STATES,
     FollowupQuery,
 )
+from parishkit.stewardship.reports.ministry_followup_views import (
+    REFUSALS,
+    _refusal_error,
+)
 from parishkit.stewardship.web.tables import report_table
-from parishkit.stewardship.workflows.followup import outcomes_for
+from parishkit.stewardship.workflows.followup import FollowupRefusal, outcomes_for
 from parishkit.stewardship.workflows.models import STAFF_STATES
+
+CAMPAIGN, REQUEST = UUID(int=92), UUID(int=93)
+ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{REQUEST}/"
+UPDATE = ITEM + "update"
+SAVED = ITEM + "?saved=1"
+RESOLVE_REQUEST, GATE_REQUEST = UUID(int=94), UUID(int=96)
+RESOLVE_ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{RESOLVE_REQUEST}/"
+RESOLVED = RESOLVE_ITEM + "?resolved=1"
+GATE_ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{GATE_REQUEST}/"
+GATED = GATE_ITEM + "?gated=1"
+# The fixture server's answers to a Save (status, Location, body).
+POSTS = {
+    UPDATE: (303, SAVED, ""),
+    RESOLVE_ITEM + "update": (303, RESOLVED, ""),
+    GATE_ITEM + "update": (303, GATED, ""),
+}
 
 
 def _table(rows, query, total, campaign):
@@ -35,7 +64,7 @@ def _table(rows, query, total, campaign):
 
 def components(context, admin):
     """Detached authorized sample data exercises native controls and escaping."""
-    campaign, request = UUID(int=92), UUID(int=93)
+    campaign, request = CAMPAIGN, REQUEST
     moment = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
     row = dict(
         id=str(request),
@@ -87,6 +116,7 @@ def components(context, admin):
         resolved_outcomes=[(key, OUTCOMES[key]) for key in outcomes_for("join")],
         outcomes=OUTCOMES,
         channels=CHANNELS,
+        future_message=REFUSALS["contact_future"][0],
         total=51,
         rows=[row],
         ministries=[dict(duid=9, name="Example <Ministry>")],
@@ -123,6 +153,14 @@ def components(context, admin):
         outcome="joined",
         outcome_label=OUTCOMES["joined"],
     )
+    saved = row | dict(
+        version=4, state="in_progress", state_label=STATES["in_progress"]
+    )
+    # The refusals, as the view describes them.
+    kind = _refusal_error(
+        FollowupRefusal("outcome_kind", outcome="leave_confirmed", action="join"), {}
+    )
+    future = _refusal_error(FollowupRefusal("contact_future"), {})
     pages = {
         "/followup-queue": values,
         "/followup-all": values
@@ -145,16 +183,77 @@ def components(context, admin):
         | dict(
             item=row,
             form=refused,
-            errors=[
-                dict(
-                    message="Left ministry doesn't apply to a request to join.",
-                    field_id="followup-outcome",
-                )
-            ],
+            errors=[kind],
+            field_error=kind,
+        ),
+        # A contact attempt in the future, refused with both its date and
+        # time marked in error (#592).
+        "/followup-item-future": values
+        | dict(
+            item=row,
+            form=form
+            | dict(
+                state="in_progress",
+                contact_channel="phone",
+                contact_date="2099-01-01",
+                contact_time="10:00",
+            ),
+            errors=[future],
+            field_error=future,
+        ),
+        # The same refusal for a time this browser's clock says is past:
+        # the case the server's check exists for (a wrong computer clock).
+        "/followup-item-future-past": values
+        | dict(
+            item=row,
+            form=form
+            | dict(
+                state="in_progress",
+                contact_channel="phone",
+                contact_date="2026-09-19",
+                contact_time="10:00",
+            ),
+            errors=[future],
+            field_error=future,
         ),
         "/followup-closed": values
         | dict(item=closed, rows=[closed], history=[revision]),
         "/followup-item-gated": values | dict(item=row, form=form, mutable=False),
+        # The request page at its real address, before and after a save that
+        # moved it to In progress and added an edit to its history.
+        ITEM: values | dict(item=row, form=form, history=[revision], next_history=2),
+        # A request whose save resolves it, and one whose save comes back
+        # while other campaign work makes follow-up edits unavailable.
+        RESOLVE_ITEM: values
+        | dict(item=row | dict(id=str(RESOLVE_REQUEST)), form=form, history=[]),
+        RESOLVED: values
+        | dict(item=closed | dict(id=str(RESOLVE_REQUEST)), history=[revision]),
+        GATE_ITEM: values
+        | dict(item=row | dict(id=str(GATE_REQUEST)), form=form, history=[]),
+        GATED: values
+        | dict(
+            item=row | dict(id=str(GATE_REQUEST)),
+            form=form,
+            history=[revision],
+            mutable=False,
+        ),
+        SAVED: values
+        | dict(
+            item=saved,
+            form=form | dict(expected_version="4", state="in_progress"),
+            history=[
+                SimpleNamespace(
+                    **vars(revision)
+                    | dict(
+                        state_label=STATES["in_progress"],
+                        assignee_label="",
+                        notes="Saved <note>",
+                    )
+                ),
+                revision,
+            ],
+            next_history=2,
+        ),
     }
     result = {
         path: (

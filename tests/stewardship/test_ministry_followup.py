@@ -1,11 +1,14 @@
 """Closed Ministry follow-up change grammar, validated without a database."""
 
+import re
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import urlencode
 from uuid import uuid4
 
 import pytest
 from django.http import QueryDict
+from django.template.loader import render_to_string
 
 from parishkit.stewardship.reports.ministries import STATE_LABELS
 from parishkit.stewardship.reports.ministries import STATES as REPORT_STATES
@@ -15,8 +18,11 @@ from parishkit.stewardship.reports.ministry_followup import (
     FollowupQuery,
 )
 from parishkit.stewardship.reports.ministry_followup_views import (
+    FIELD_IDS,
+    REFUSALS,
     _refusal_error,
     change_values,
+    refusal_fields,
 )
 from parishkit.stewardship.workflows.followup import (
     MAX_CONTACT_NOTES,
@@ -270,14 +276,144 @@ def test_correctable_mistakes_are_named(values, code):
 def test_refusals_name_the_one_problem_and_its_field():
     """The in-place summary says exactly what is wrong and links to the field."""
     kind = _refusal_error(
-        FollowupRefusal("outcome_kind", outcome="leave_confirmed", action="join")
+        FollowupRefusal("outcome_kind", outcome="leave_confirmed", action="join"), {}
     )
     assert str(kind["message"]) == "Left ministry doesn't apply to a request to join."
     assert kind["field_id"] == "followup-outcome"
-    assert _refusal_error(FollowupRefusal("contact_future"))["field_id"] == (
-        "contact-date"
-    )
+    assert kind["fields"] == ("outcome",)
+    future = _refusal_error(FollowupRefusal("contact_future"), {})
+    assert future["field_id"] == "contact-date"
+    assert future["fields"] == ("contact_date", "contact_time")
     # A malformed form is not a correctable refusal.
     with pytest.raises(ValueError) as refused:
         change({key: value for key, value in MINIMAL.items() if key != "notes"})
     assert not isinstance(refused.value, FollowupRefusal)
+
+
+SOURCES = Path(__file__).parents[2] / "src/parishkit/stewardship"
+
+
+def test_every_refusal_code_names_its_fields():
+    """Every FollowupRefusal code raised anywhere has one entry naming the
+    form fields it concerns, and each of those fields has an element id."""
+    raised = {
+        code
+        for path in (
+            SOURCES / "workflows/followup.py",
+            SOURCES / "reports/ministry_followup_views.py",
+        )
+        for code in re.findall(r'FollowupRefusal\(\s*"(\w+)"', path.read_text())
+    }
+    assert raised == set(REFUSALS)
+    expected = {
+        "outcome_required": ("outcome",),
+        "outcome_kind": ("outcome",),
+        "other_needs_notes": ("notes",),
+        "contact_incomplete": ("contact_date", "contact_time"),
+        "contact_future": ("contact_date", "contact_time"),
+        "contact_zone": ("contact_date", "contact_time"),
+    }
+    assert {code: fields for code, (_, fields) in REFUSALS.items()} == expected
+    assert {name for _, fields in REFUSALS.values() for name in fields} == set(
+        FIELD_IDS
+    )
+
+
+@pytest.mark.parametrize(
+    ("submitted", "fields"),
+    [
+        ({"contact_date": "", "contact_time": "10:00"}, ("contact_date",)),
+        ({"contact_date": "2026-09-19", "contact_time": " "}, ("contact_time",)),
+        ({}, ("contact_date", "contact_time")),
+        # Neither is blank, so one is malformed: both are named.
+        (
+            {"contact_date": "2026-13-40", "contact_time": "10:00"},
+            ("contact_date", "contact_time"),
+        ),
+    ],
+)
+def test_incomplete_contact_names_the_missing_field(submitted, fields):
+    """An incomplete contact attempt marks whichever of date and time is
+    missing, and its summary links to the first of them."""
+    refusal = FollowupRefusal("contact_incomplete")
+    assert refusal_fields(refusal, submitted) == fields
+    assert _refusal_error(refusal, submitted)["field_id"] == FIELD_IDS[fields[0]]
+
+
+def render_refused(error):
+    """The request page rendered as a refusal of ``error`` re-renders it."""
+    item = dict(
+        id=str(uuid4()),
+        member_name="Member",
+        ministry_name="Ministry",
+        action="join",
+        submitted_at=WHEN,
+        state_label="New",
+        outcome_label="",
+        open=True,
+        latest=True,
+    )
+    form = dict(
+        expected_version="1",
+        state="resolved",
+        outcome="",
+        notes="",
+        contact_channel="phone",
+        contact_date="2099-01-01",
+        contact_time="10:00",
+        contact_notes="",
+    )
+    return render_to_string(
+        "stewardship/ministry-followup.html",
+        dict(
+            campaign_id=uuid4(),
+            metadata=dict(name="Campaign", source_as_of=WHEN),
+            item=item,
+            form=form,
+            mutable=True,
+            staff_states=[(key, STATES[key]) for key in STAFF_STATES],
+            resolved_outcomes=[],
+            channels={"phone": "Phone"},
+            history=[],
+            errors=[error] if error else [],
+            field_error=error,
+            future_message=REFUSALS["contact_future"][0],
+        ),
+    )
+
+
+@pytest.mark.parametrize("code", sorted(REFUSALS))
+def test_refused_fields_are_marked_at_the_field(code):
+    """Each refused field is aria-invalid and described by the message shown
+    beside it (a date and time share one message after the time); the
+    summary links to the first. Fields the refusal does not concern, and
+    every field on an unrefused page, are left alone."""
+    details = {"outcome": "joined", "action": "join"} if code == "outcome_kind" else {}
+    error = _refusal_error(FollowupRefusal(code, **details), {})
+    page = render_refused(error)
+    message = re.escape(str(error["message"]).replace("'", "&#x27;"))
+    for name, element in FIELD_IDS.items():
+        tag = re.search(rf'<\w+ id="{element}"[^>]*>', page)[0]
+        if name in error["fields"]:
+            contact = name.startswith("contact")
+            target = "contact-error" if contact else f"{element}-error"
+            # The contact fields keep their zone note (#558) before the error.
+            described = f"contact-zone-help {target}" if contact else target
+            assert f'aria-invalid="true" aria-describedby="{described}"' in tag
+            assert re.search(
+                rf'<ul class="errorlist" id="{target}"[^>]*><li>{message}</li></ul>',
+                page,
+            )
+        else:
+            assert "aria-invalid" not in tag
+    assert f'<a href="#{error["field_id"]}">' in page
+    # One message shows, even when it concerns both the date and the time;
+    # the contact message element is always there, hidden when unused, for
+    # the page's live check of the contact time to fill.
+    shown = re.findall(r'<ul class="errorlist"(?![^>]*\bhidden\b)[^>]*>', page)
+    assert len(shown) == 1
+    assert 'data-not-future-message="The contact attempt&#x27;s date' in page
+    clean = render_refused({})
+    assert "aria-invalid" not in clean
+    assert '<ul class="errorlist" id="contact-error" hidden><li></li></ul>' in clean
+    assert len(re.findall(r'<ul class="errorlist"', clean)) == 1
