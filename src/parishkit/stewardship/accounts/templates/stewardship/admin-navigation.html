@@ -1,4 +1,4 @@
-{% load i18n %}{% comment %}
+{% load i18n static %}{% comment %}
   Admin sidebar, built from accounts/admin_navigation.py (admin-portal spec,
   "Menu groups" and "Stable menu shape"). The outer disclosure is the narrow
   screens' Menu toggle; ui-v1.js closes it there and keeps it open on wide
@@ -7,9 +7,15 @@
   Each menu group is a native disclosure whose summary is the group's title
   and names its list of entries. The title is not a heading inside the
   summary, because some screen readers then drop the summary's disclosure
-  role. Groups render open; admin-menu-v1.js closes the ones this browser
-  remembers as collapsed, except the group holding the current page
+  role. Groups render open; admin-menu-state-v1.js closes the ones this
+  browser remembers as collapsed, except the group holding the current page
   (data-menu-current), which always stays open.
+
+  admin-menu-state-v1.js loads without defer right after the sidebar, so it
+  sets the remembered groups and restores the menu's scroll position (#620)
+  once the menu is parsed and before the page content is, avoiding a visible
+  jump. It must not move to the head (the menu does not exist yet there) or
+  be deferred (the page would show first and then jump).
 
   An entry the viewer's role may open but that is unavailable right now is
   greyed out, never removed: a link without href (so activating it does
@@ -42,3 +48,4 @@
     </ul>
   </details>
 </nav>
+<script src="{% static 'stewardship/admin-menu-state-v1.js' %}"></script>
