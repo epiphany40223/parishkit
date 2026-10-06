@@ -4,8 +4,9 @@
 {% block content %}
 <h1>{% translate "Portal users" %}</h1>
 <div data-rule-autosave data-apply-url="{% url 'admin:rule_apply' %}" data-request-url="{% url 'admin:rule_request' request_id='00000000-0000-4000-8000-000000000000' %}" data-base-url="{% url 'admin:rule_base' %}" data-base-digest="{{ base_digest }}"></div>
-<p>{% translate "Who may sign in to this portal with Google, and why. This page shows the applied login rules. An Administrator changes a rule from its row: the change is shown back for review and saved only when you confirm it. An exact address always replaces its domain rule for that person." %}</p>
-<p>{% translate "A successful sign-in is one that was allowed and opened a session. A Google sign-in attempt that policy then refused is not counted. Times use your browser timezone when available; UTC is the fallback." %}</p>
+{% if local_environment %}<p>{% translate "Who may sign in to this portal, and why. This page shows the applied login rules. An Administrator changes a rule from its row: the change is shown back for review and saved only when you confirm it. An exact address always replaces its domain rule for that person." %}</p>
+<p>{% translate "A successful sign-in is one that was allowed and opened a session. A sign-in attempt that policy then refused is not counted. Times use your browser timezone when available; UTC is the fallback." %}</p>{% else %}<p>{% translate "Who may sign in to this portal with Google, and why. This page shows the applied login rules. An Administrator changes a rule from its row: the change is shown back for review and saved only when you confirm it. An exact address always replaces its domain rule for that person." %}</p>
+<p>{% translate "A successful sign-in is one that was allowed and opened a session. A Google sign-in attempt that policy then refused is not counted. Times use your browser timezone when available; UTC is the fallback." %}</p>{% endif %}
 
 <h2 id="domain-rules">{% translate "Google Workspace hosted-domain rules" %}</h2>
 <p>{% translate "A domain rule matches only a sign-in whose Google account presents that signed hosted-domain claim. An email address that merely ends with the domain never matches, so personal or consumer accounts must be authorized by exact address. A domain rule can never grant Administrator." %}</p>

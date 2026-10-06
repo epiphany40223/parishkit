@@ -34,7 +34,7 @@
 <li>{% translate "Optionally, a Slack app bot token (xoxb-…) and the ID of the alert channel." %}</li>
 <li>{% translate "A staff mailbox for Testing mode, the parish logo image, and the first campaign's dates." %}</li>
 </ul>
-<p class="notice">{% translate "Saving a credential needs a Google sign-in from the last five minutes. If yours is older, the page asks you to confirm it's you with Google; your setup is kept." %}</p>
+<p class="notice">{% if local_environment %}{% translate "Saving a credential needs a sign-in from the last five minutes. If yours is older, the page asks you to confirm your sign-in; your setup is kept." %}{% else %}{% translate "Saving a credential needs a Google sign-in from the last five minutes. If yours is older, the page asks you to confirm it's you with Google; your setup is kept." %}{% endif %}</p>
 <p>{% translate "Complete the Parish and first campaign setup using this login. Another login cannot resume your temporary settings. Closing the browser stops the data-load progress page from counting as activity; the inactivity and sign-in time limits still apply." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start"><button type="submit">{% translate "Start setup" %}</button></form>
 {% endif %}
