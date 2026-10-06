@@ -188,6 +188,338 @@
     });
   };
 
+  // Time of day entry (#631). A field marked data-time-entry="time" (one
+  // time) or "list" (several) takes a time in any common form: 2:00, 2am,
+  // 0200, 2:30 PM, 14h30, noon. These are the rules of the server's
+  // parishkit.stewardship.time_entry, which stays the authority; the shared
+  // table tests/stewardship/fixtures/time_entry_cases.json pins both, so
+  // keep the messages and rules here in step with it. A bare hour is never
+  // guessed as afternoon: the reading always shows both clocks, as in
+  // "Reads as 07:00 (7:00 AM)". As the Admin types, a readable entry's
+  // reading shows at once; a refusal waits for a pause or for focus to
+  // leave, so a half-typed "2:" does not flash red. Screen readers hear the
+  // reading or refusal once typing pauses. A server error under the field is
+  // removed on the first edit; on blur a readable entry is rewritten in its
+  // canonical form; and the form's submit buttons stay unavailable while any
+  // shown entry cannot be read. The fields read wall-clock times only; which
+  // zone they are in is the page's own rule (stated in each field's help).
+  const TIME_MESSAGES = {
+    empty: () => "Enter a time, for example 2:00 PM or 14:00.",
+    unreadable: (p) => `“${p.entry}” isn't a time. Try 2:00 PM, 2pm, 14:00 or 1400.`,
+    hour: (p) => `“${p.entry}” has no hour ${p.hour}: hours run from 0 to 23.`,
+    minute: (p) => `“${p.entry}” has no minute ${p.minute}: minutes run from 00 to 59.`,
+    twelve_hour: (p) => `“${p.entry}”: with AM or PM the hour runs from 1 to 12.`,
+    seconds: (p) => `“${p.entry}” has seconds: these times are to the minute, so leave the seconds out.`,
+    too_many: (p) => `Enter at most ${p.count} different times.`,
+  };
+  const timeError = (code, params = {}) => ({error: code, message: TIME_MESSAGES[code](params)});
+  // White space spelled out, the server's time_entry.WHITESPACE (which is
+  // JavaScript's \s); ASCII digits only, as on the server.
+  const TIME_SPACE = String.raw`[ \t\n\v\f\r\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]`;
+  const TIME_SPACES = new RegExp(`${TIME_SPACE}+`);
+  const TIME_SUFFIX = String.raw`(?:${TIME_SPACE}*([ap])\.?(?:m\.?)?)?`;
+  const TIME_CLOCK = new RegExp(
+    String.raw`^([0-9]{1,2})(?:([:.h])([0-9]{2})(?::([0-9]{2}))?)?${TIME_SUFFIX}$`, "i");
+  const TIME_RUN = new RegExp(String.raw`^([0-9]{3,4})${TIME_SUFFIX}$`, "i");
+  // A list's entries are separated by commas, semicolons or new lines, or by
+  // spaces; a suffix standing alone after a space ("2 pm") belongs to the
+  // entry before it, but not across a comma, semicolon or new line ("2, pm").
+  const TIME_BREAKS = /[,;\n\r\u2028\u2029]+/;
+  const TIME_LONE_SUFFIX = /^[ap]\.?(?:m\.?)?$/i;
+  const TIME_WORDS = new Map([["noon", 12], ["midnight", 0]]);
+  const pad2 = (number) => String(number).padStart(2, "0");
+  const timeWords = (text) => String(text ?? "").split(TIME_SPACES).filter(Boolean);
+  // A read time is {hour, minute, second}; its canonical text is "HH:MM",
+  // or "HH:MM:SS" for a kept saved time with seconds.
+  const canonicalTime = (value) => `${pad2(value.hour)}:${pad2(value.minute)}${
+    value.second ? `:${pad2(value.second)}` : ""}`;
+  const twelveHourTime = (value) => `${value.hour % 12 || 12}:${pad2(value.minute)}${
+    value.second ? `:${pad2(value.second)}` : ""} ${value.hour >= 12 ? "PM" : "AM"}`;
+  const timeReading = (value) => `${canonicalTime(value)} (${twelveHourTime(value)})`;
+  // One entry: {value} or {error, message}. ``kept`` is the canonical text
+  // of a saved time with seconds that may be typed back unchanged.
+  const parseTime = (text, kept = "") => {
+    const entry = timeWords(text).join(" ");
+    if (!entry) return timeError("empty");
+    if (TIME_WORDS.has(entry.toLowerCase())) {
+      return {value: {hour: TIME_WORDS.get(entry.toLowerCase()), minute: 0, second: 0}};
+    }
+    let hour, minute, second, half, seconds = false;
+    let match = TIME_CLOCK.exec(entry);
+    if (match) {
+      [hour, minute, second] = [match[1], match[3] || 0, match[4] || 0].map(Number);
+      seconds = match[4] !== undefined;
+      half = match[5];
+      // Seconds belong to the 24-hour colon form only: "2:30:00 pm",
+      // "14.30:00" and "14h30:00" are refused.
+      if (seconds && (half || match[2] !== ":")) return timeError("unreadable", {entry});
+    } else if ((match = TIME_RUN.exec(entry))) {
+      [hour, minute, second] = [match[1].slice(0, -2), match[1].slice(-2), 0].map(Number);
+      half = match[2];
+    } else {
+      return timeError("unreadable", {entry});
+    }
+    if (half) {
+      if (hour < 1 || hour > 12) return timeError("twelve_hour", {entry});
+      hour = hour % 12 + (half.toLowerCase() === "p" ? 12 : 0);
+    }
+    if (hour > 23) return timeError("hour", {entry, hour});
+    if (minute > 59) return timeError("minute", {entry, minute: pad2(minute)});
+    if (second > 59) return timeError("unreadable", {entry});
+    const value = {hour, minute, second};
+    if (second && canonicalTime(value) !== kept) return timeError("seconds", {entry});
+    return {value};
+  };
+  const splitTimes = (text) => {
+    const items = [];
+    String(text ?? "").split(TIME_BREAKS).forEach((chunk) => {
+      let joinable = false;
+      timeWords(chunk).forEach((part) => {
+        if (joinable && TIME_LONE_SUFFIX.test(part)) items[items.length - 1] += ` ${part}`;
+        else items.push(part);
+        joinable = true;
+      });
+    });
+    return items;
+  };
+  // A list: {values, duplicates, blank} (values in the order typed,
+  // duplicates as sorted canonical texts), or the first refusal. ``max``
+  // bounds the number of different times. A list with no entries (blank, or
+  // only separators such as ",") reads as ``blank``, the list a blank field
+  // stands for, with ``blank`` true.
+  const parseTimes = (text, max = 0, blank = "") => {
+    const items = splitTimes(text);
+    if (!items.length && blank) return {...parseTimes(blank, max), blank: true};
+    const values = [];
+    for (const item of items) {
+      const result = parseTime(item);
+      if (result.error) return result;
+      values.push(result.value);
+    }
+    const texts = values.map(canonicalTime);
+    const distinct = [...new Set(texts)].sort();
+    if (max && distinct.length > max) return timeError("too_many", {count: max});
+    return {values, duplicates: distinct.filter((text) =>
+      texts.indexOf(text) !== texts.lastIndexOf(text)), blank: false};
+  };
+  // Exposed read-only for the browser tests that run the shared fixture.
+  window.ParishTimeEntry = Object.freeze({parseTime, parseTimes, timeReading, canonicalTime});
+
+  // Per field: its visible reading line, its visually hidden live region and
+  // the timer that waits for a pause in typing.
+  const timeParts = new WeakMap();
+  const timeGateHints = new WeakMap();
+  let timeGateCount = 0;
+  const TIME_PAUSE = 500;
+  const readTimeEntry = (field) => (field.dataset.timeEntry === "list"
+    ? parseTimes(field.value, Number(field.dataset.timeMax) || 0, field.dataset.timeBlank || "")
+    : parseTime(field.value, field.dataset.timeKept || ""));
+  // What a field's entry reads as: {message, invalid}. A blank single time
+  // has no reading (``required`` is the server's); a blank list reads as
+  // its data-time-blank, when it has one.
+  const readTimeField = (field) => {
+    const list = field.dataset.timeEntry === "list";
+    if (!list && !timeWords(field.value).length) return {message: "", invalid: false};
+    const result = readTimeEntry(field);
+    if (result.error) return {message: result.message, invalid: true};
+    if (!list) return {message: `Reads as ${timeReading(result.value)}`, invalid: false};
+    if (!result.values.length) return {message: "", invalid: false};
+    const read = `${result.blank ? "Blank reads as" : "Reads as"} ${
+      result.values.map(timeReading).join(", ")}`;
+    const repeated = result.duplicates.length
+      ? `; ${result.duplicates.join(", ")} ${result.duplicates.length > 1 ? "are" : "is"
+      } listed more than once and saved once` : "";
+    return {message: read + repeated, invalid: false};
+  };
+  // Fields with a pending pause timer, so a removed row's or a replaced
+  // region's timers can be cleared (cancelTimeChecks).
+  const timePending = new Set();
+  const cancelTimeCheck = (field) => {
+    const parts = timeParts.get(field);
+    if (parts) window.clearTimeout(parts.timer);
+    timePending.delete(field);
+  };
+  // Clear the timers of every time field inside ``root``, or, with no root,
+  // of every field no longer in the page.
+  const cancelTimeChecks = (root) => {
+    if (root) root.querySelectorAll("input[data-time-entry]").forEach(cancelTimeCheck);
+    else [...timePending].filter((field) => !field.isConnected).forEach(cancelTimeCheck);
+  };
+  // Show a field's reading or refusal and set its validity, which the Save
+  // gates read at once. ``typing`` (an input event on this field) defers a
+  // refusal, and the Save hint that explains it, until typing pauses, so a
+  // half-typed "2:" is not flashed red; aria-invalid follows what is shown.
+  // ``quiet`` keeps the line empty while a server error under the field says
+  // the same. Only this field's own typing (after the pause) or blur
+  // ``announce``s, through the live region, and only a changed message:
+  // loading, pageshow and other controls' changes update the line silently.
+  const checkTimeField = (field, {typing = false, announce = false, quiet = false} = {}) => {
+    const parts = timeParts.get(field);
+    if (!parts) return;
+    const {message, invalid} = readTimeField(field);
+    field.setCustomValidity(invalid ? message : "");
+    cancelTimeCheck(field);
+    const shown = quiet ? "" : message;
+    const show = (speak) => {
+      parts.reading.textContent = shown;
+      parts.reading.classList.toggle("is-error", invalid && !quiet);
+      field.setAttribute("aria-invalid", String(invalid || quiet));
+      if (speak && shown !== parts.spoken) parts.live.textContent = shown;
+      parts.spoken = shown;
+    };
+    if (!typing) {
+      show(announce);
+      return;
+    }
+    if (invalid) {
+      // A half-typed entry: no stale reading and no red until the pause.
+      parts.reading.textContent = "";
+      parts.reading.classList.remove("is-error");
+      field.setAttribute("aria-invalid", "false");
+    } else {
+      parts.reading.textContent = shown;
+      parts.reading.classList.remove("is-error");
+      field.setAttribute("aria-invalid", String(quiet));
+    }
+    timePending.add(field);
+    parts.timer = window.setTimeout(() => {
+      timePending.delete(field);
+      if (!field.isConnected) return;
+      show(true);
+      gateTimes(field.form);
+    }, TIME_PAUSE);
+  };
+  // The server's own error under a field (Django's ul.errorlist, id
+  // "<field id>_error") is removed on the first edit; the live check then
+  // speaks for the field.
+  const serverTimeError = (field) => field.id && document.getElementById(`${field.id}_error`);
+  const clearServerTimeError = (field) => {
+    const error = serverTimeError(field);
+    if (!error) return;
+    error.remove();
+    const described = (field.getAttribute("aria-describedby") || "").split(/\s+/)
+      .filter((id) => id && id !== error.id);
+    field.setAttribute("aria-describedby", described.join(" "));
+    field.setAttribute("aria-invalid", "false");
+  };
+  const isSubmit = (node) => (node instanceof HTMLButtonElement
+    || node instanceof HTMLInputElement) && node.type === "submit";
+  // Keep a form's submit buttons unavailable while a shown time entry cannot
+  // be read, with a hint after them saying why. As with the complete gate,
+  // real disabled is used and only buttons this gate disabled are re-enabled.
+  // A data-require-complete form is left to that gate: the entry's custom
+  // validity is set in a capture-phase listener (below), before the gate's
+  // own input listener runs, so it counts the current keystroke.
+  // ``defer`` (typing) disables at once but leaves a hidden hint hidden
+  // until the pause timer calls again, as the refusal it explains waits.
+  const gateTimes = (form, {defer = false} = {}) => {
+    if (!(form instanceof HTMLFormElement) || form.hasAttribute("data-require-complete")) return;
+    const fields = [...form.querySelectorAll("input[data-time-entry]")];
+    if (!fields.length && !timeGateHints.has(form)) return;
+    const unread = fields.some((field) =>
+      !field.disabled && !field.closest("[hidden]") && !field.validity.valid);
+    // A formnovalidate button (a cancel or back action) stays usable.
+    const buttons = [...form.elements].filter((node) => isSubmit(node) && !node.formNoValidate);
+    let hint = timeGateHints.get(form);
+    const explain = unread && (!defer || Boolean(hint && !hint.hidden));
+    if (!hint && explain && buttons.length) {
+      hint = document.createElement("p");
+      hint.className = "help";
+      timeGateCount += 1;
+      hint.id = `time-gate-hint-${timeGateCount}`;
+      hint.textContent = "Fix the time that can't be read to continue.";
+      const last = buttons[buttons.length - 1];
+      (last.parentElement === form ? last : last.parentElement).after(hint);
+      timeGateHints.set(form, hint);
+    }
+    if (hint) hint.hidden = !explain;
+    buttons.forEach((node) => {
+      const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && id !== hint?.id);
+      if (unread && !node.disabled) {
+        node.disabled = true;
+        node.setAttribute("data-time-gated", "");
+      } else if (!unread && node.hasAttribute("data-time-gated")) {
+        node.disabled = false;
+        node.removeAttribute("data-time-gated");
+      }
+      if (explain && hint) described.push(hint.id);
+      if (described.length) node.setAttribute("aria-describedby", described.join(" "));
+      else node.removeAttribute("aria-describedby");
+    });
+  };
+  // Give each new time field its reading line (which describes the field)
+  // and live region, and check it: for the page, a swapped-in region, or a
+  // cloned schedule row.
+  const wireTimeEntry = (root) => {
+    // A swap replaced some fields: their pending timers have nothing to do.
+    cancelTimeChecks();
+    const forms = new Set();
+    root.querySelectorAll("input[data-time-entry]").forEach((field) => {
+      if (timeParts.has(field)) return;
+      const reading = document.createElement("p");
+      reading.className = "time-reading";
+      // Always rendered, even empty, so its first message is announced.
+      const live = document.createElement("span");
+      live.className = "visually-hidden";
+      live.setAttribute("aria-live", "polite");
+      if (field.id) {
+        reading.id = `${field.id}_reading`;
+        field.setAttribute("aria-describedby", [field.getAttribute("aria-describedby"),
+          reading.id].filter(Boolean).join(" "));
+      }
+      field.after(reading, live);
+      timeParts.set(field, {reading, live, timer: 0, spoken: ""});
+      checkTimeField(field, {quiet: Boolean(serverTimeError(field))});
+      forms.add(field.form);
+    });
+    forms.forEach(gateTimes);
+  };
+  // Capture phase: the entry's validity is current before any form's own
+  // input listener (the complete gate) runs.
+  document.addEventListener("input", (event) => {
+    const field = event.target;
+    if (!(field instanceof HTMLInputElement) || !timeParts.has(field)) return;
+    clearServerTimeError(field);
+    checkTimeField(field, {typing: true});
+    gateTimes(field.form, {defer: true});
+  }, true);
+  // As focus leaves, a refusal (and the Save hint) shows at once and is
+  // announced if it changed, and a readable entry is
+  // rewritten in its canonical form: "2pm" becomes "14:00", a list "2am,2 pm"
+  // becomes "02:00, 14:00" (repeats stay, so the reading still reports them;
+  // the server saves each time once). A blank entry stays blank.
+  document.addEventListener("focusout", (event) => {
+    const field = event.target;
+    if (!(field instanceof HTMLInputElement) || !timeParts.has(field)) return;
+    const quiet = Boolean(serverTimeError(field));
+    const result = readTimeEntry(field);
+    const blank = field.dataset.timeEntry === "list" ? !splitTimes(field.value).length
+      : !timeWords(field.value).length;
+    if (!result.error && !blank) {
+      field.value = result.values ? result.values.map(canonicalTime).join(", ")
+        : canonicalTime(result.value);
+    }
+    checkTimeField(field, {quiet, announce: true});
+    gateTimes(field.form);
+  });
+  // Another control can show, hide, enable or clear a time field without an
+  // event on it (a schedule's mail type, the refresh frequency), and the
+  // back/forward cache can restore values silently: check again then.
+  const recheckTimes = (form) => {
+    if (!(form instanceof HTMLFormElement)) return;
+    form.querySelectorAll("input[data-time-entry]").forEach((field) =>
+      checkTimeField(field, {quiet: Boolean(serverTimeError(field))}));
+    gateTimes(form);
+  };
+  document.addEventListener("change", (event) => {
+    if (event.target instanceof Element) recheckTimes(event.target.closest("form"));
+  });
+  window.addEventListener("pageshow", () => {
+    new Set([...document.querySelectorAll("input[data-time-entry]")].map((field) =>
+      field.form)).forEach(recheckTimes);
+  });
+
   // Shared Admin tables (web/tables.py, table-navigator.html and
   // table-selection.html). Row selection is per page: Select all and the
   // header checkbox choose every enabled row checkbox shown, and bulk action
@@ -253,6 +585,7 @@
     wireValidity(root);
     root.querySelectorAll("[data-select-table]").forEach(wireSelection);
     wirePageSize(root);
+    wireTimeEntry(root);
     if (root === document) return;
     wireBrowserTimezone(root);
     if (window.ParishDates) window.ParishDates.localize(root);
@@ -1534,8 +1867,10 @@
       remove.textContent = "Remove this new schedule";
       remove.addEventListener("click", () => {
         added.splice(added.indexOf(row), 1);
+        cancelTimeChecks(row);
         row.remove();
         refresh();
+        gateTimes(form);
         status.textContent = "New schedule removed.";
         add.focus();
       });
@@ -1544,6 +1879,7 @@
       added.push(row);
       refresh();
       scheduleRow(row);
+      wireTimeEntry(row);
       status.textContent = `Schedule ${row.querySelector("[data-schedule-number]")
         .textContent} added. Choose its mail type.`;
       row.querySelector('[data-schedule-field="kind"] select')?.focus();

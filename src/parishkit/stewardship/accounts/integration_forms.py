@@ -1,7 +1,5 @@
 """Closed public-settings and write-only private-candidate forms."""
 
-import re
-
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
@@ -10,10 +8,13 @@ from parishkit.stewardship.source.cadence import (
     DEFAULT_DELTA_REFRESH,
     DEFAULT_TIME,
     MAX_FULL_REFRESH_TIMES,
-    canonical_time,
     longest_gap,
 )
 from parishkit.stewardship.web.sender_name_field import SenderNameField
+from parishkit.stewardship.web.time_entry_fields import (
+    FlexibleTimeListField,
+    TimeEntryInput,
+)
 
 from . import field_tips, setup_help
 from .key_files import MAX_FILE_BYTES
@@ -41,46 +42,6 @@ DELTA_CHOICES = (
     ("hourly", _("Once an hour")),
     ("off", _("Off")),
 )
-
-
-class RefreshTimesField(forms.CharField):
-    """One to eight parish-local HH:MM times, typed as a comma-separated list.
-
-    The stored value is a sorted list of unique times; the field shows it
-    as "02:00, 12:00" and reads the same shape back, also accepting spaces
-    or semicolons between times. Omitted, it keeps the documented default.
-    """
-
-    def prepare_value(self, value):
-        """Show a stored list as text; a posted string is shown as typed."""
-        if isinstance(value, (list, tuple)):
-            return ", ".join(value)
-        return value
-
-    def to_python(self, value):
-        """Split the typed text into a sorted list of unique canonical times."""
-        text = super().to_python(value)
-        if not text:
-            return [DEFAULT_TIME]
-        times = [part for part in re.split(r"[\s,;]+", text.strip()) if part]
-        bad = next((part for part in times if not canonical_time(part)), None)
-        if not times or bad is not None:
-            raise forms.ValidationError(
-                _(
-                    "%(value)s is not a 24-hour HH:MM time. Separate times with "
-                    "commas, for example 02:00, 12:00 (leave blank for 02:00)."
-                ),
-                code="invalid",
-                params={"value": bad},
-            )
-        times = sorted(set(times))
-        if len(times) > MAX_FULL_REFRESH_TIMES:
-            raise forms.ValidationError(
-                _("Enter at most %(count)s times."),
-                code="max_times",
-                params={"count": MAX_FULL_REFRESH_TIMES},
-            )
-        return times
 
 
 class IntegrationForm(forms.Form):
@@ -132,23 +93,28 @@ class IntegrationForm(forms.Form):
                     "due while another is running waits for it."
                 ),
             )
-            self.fields["full_refresh_times"] = RefreshTimesField(
+            # Parish wall-clock times, not the browser's: a recurring refresh
+            # follows the parish's own daylight-saving changes (#642's
+            # decision 18). Typed in any common form (#631).
+            self.fields["full_refresh_times"] = FlexibleTimeListField(
                 label=_("At these times"),
                 initial=[DEFAULT_TIME],
                 required=False,
-                max_length=128,
+                max_length=256,
+                blank=[DEFAULT_TIME],
+                max_times=MAX_FULL_REFRESH_TIMES,
                 # Shown only for the set-times frequency (ui-v1.js); the view
                 # keeps the stored times otherwise.
-                widget=forms.TextInput(
+                widget=TimeEntryInput(
                     attrs={
                         "data-show-when": "full_refresh=daily",
-                        "placeholder": "02:00, 12:00",
-                        "autocomplete": "off",
+                        "placeholder": "2am, 14:00",
                     }
                 ),
                 help_text=_(
-                    "Parish-local times, 24-hour, up to eight, separated by "
-                    "commas; blank means 02:00 alone. The earliest is the nightly "
+                    "Parish-local times, up to eight, in any common form (2am, "
+                    "2:30 PM, 14:00 or 1400), separated by commas or spaces; "
+                    "blank means 02:00 alone. The earliest is the nightly "
                     "refresh, which runs even while Family emails are being sent; "
                     "the others wait for a send to finish and then catch up. Each "
                     "full refresh takes a few minutes of ParishSoft's time. Full "
@@ -227,7 +193,7 @@ class IntegrationForm(forms.Form):
             self,
             {
                 "full_refresh": _("A full refresh takes a few minutes."),
-                "full_refresh_times": _("HH:MM, comma-separated, up to eight."),
+                "full_refresh_times": _("For example 2am, 14:00; up to eight."),
                 "delta_refresh": _("Family contact changes only; keep 15 minutes."),
                 "target": _("The folder link from the address bar; it has /folders/."),
                 "delegated_email": setup_help.HINTS["delegated_email"],

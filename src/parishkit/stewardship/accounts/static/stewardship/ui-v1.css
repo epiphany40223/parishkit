@@ -282,6 +282,16 @@ input:is([type=date], [type=time], [type=datetime-local], [type=month]) { max-wi
 input[type=number] { max-width: 10rem; }
 input:is([type=email], [type=url], [type=tel]) { max-width: 34rem; }
 input:is([type=text], [type=search], [type=password], :not([type])) { max-width: 40rem; }
+/* A typed time of day (#631) is as short as a native time control; a list of
+   times is medium. Its reading (ui-v1.js) sits under the box in the help
+   style, and in the error style while the entry cannot be read; a visually
+   hidden live region beside it announces the reading. The line keeps one
+   line's height while empty, so a reading appearing does not move the
+   controls below it. */
+input[data-time-entry=time] { max-width: 12rem; }
+input[data-time-entry=list] { max-width: 24rem; }
+.time-reading { color: var(--muted); font-size: .925rem; margin: .25rem 0 0; min-height: 1.6em; min-height: 1lh; }
+.time-reading.is-error { color: var(--error-ink); font-weight: 600; }
 select:not([multiple]):not([size]) { max-width: 26rem; }
 select[multiple], select[size] { max-width: 40rem; }
 textarea { max-width: 56rem; }
@@ -306,8 +316,8 @@ textarea { max-width: 56rem; }
    (!important: it must win over the help-text column rule above, whose
    selector is necessarily more specific.) */
 @media (min-width: 48rem) {
-  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number])):not(:has(> :is(select, textarea))):not([hidden]) { display: inline-flex !important; flex-direction: column; vertical-align: top; min-width: 12rem; margin-inline-end: 1.5rem; }
-  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number])) > :is(input, .helptext) { max-width: 14rem; }
+  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) { display: inline-flex !important; flex-direction: column; vertical-align: top; min-width: 12rem; margin-inline-end: 1.5rem; }
+  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])) > :is(input, .helptext, .time-reading) { max-width: 14rem; }
 }
 /* Forms read best at a comfortable measure; forms holding a table keep the
    page width. */

@@ -104,6 +104,70 @@ def test_existing_legacy_template_is_retained_but_not_offered_to_new_schedule():
     assert not invalid.is_valid()
 
 
+@pytest.mark.parametrize(
+    ("typed", "stored"),
+    [("9pm", "21:00:00"), ("0930", "09:30:00"), ("noon", "12:00:00")],
+)
+def test_send_times_are_typed_in_any_common_form(typed, stored):
+    """The send time takes the shared time entry (#631); storage is unchanged."""
+    owner = campaign()
+    old = schedule(owner["id"])
+    template = content(owner["id"], kind="email", slot="reminder", subject="Later")
+    data = data_for([old]) | {
+        "schedules-1-kind": "reminder",
+        "schedules-1-date": "2054-10-05",
+        "schedules-1-time": typed,
+        "schedules-1-template_version": template["id"],
+    }
+    formset = Schedules(
+        data,
+        prefix="schedules",
+        previous=[old],
+        templates=[template],
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+    )
+    assert formset.is_valid(), formset.errors
+    [added] = formset.patch()
+    assert added["operation"] == "add"
+    assert added["values"]["time"] == stored
+    # The page shows the saved time canonically, in a plain text box.
+    shown = Schedules(
+        prefix="schedules",
+        previous=[old],
+        templates=[template],
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+    ).forms[0]["time"]
+    assert 'value="09:00"' in str(shown) and 'data-time-entry="time"' in str(shown)
+    assert 'type="text"' in str(shown)
+
+
+def test_a_saved_time_with_seconds_saves_unchanged_but_cannot_be_typed_anew():
+    """Minute precision applies to new entries, not to a schedule saved before."""
+    owner = campaign()
+    old = schedule(owner["id"], time="09:00:37")
+
+    def bound(time):
+        """The saved row posted with ``time``."""
+        return Schedules(
+            data_for([old]) | {"schedules-0-time": time},
+            prefix="schedules",
+            previous=[old],
+            templates=[],
+            campaign_id=owner["id"],
+            campaign=owner["values"],
+        )
+
+    unchanged = bound("09:00:37")
+    assert unchanged.is_valid(), unchanged.errors
+    assert unchanged.patch() == []
+    assert 'data-time-kept="09:00:37"' in str(unchanged.forms[0]["time"])
+    moved = bound("09:00:38")
+    assert not moved.is_valid()
+    assert moved.forms[0].errors["time"][0].endswith("leave the seconds out.")
+
+
 def test_schedule_add_replace_and_explicit_remove():
     """Allocate new IDs server-side; subjects follow selected immutable content."""
     owner = campaign()
@@ -330,7 +394,7 @@ def test_each_inapplicable_or_missing_value_is_reported_on_its_field(
 @pytest.mark.parametrize(
     "fields",
     [
-        {"kind": "reminder", "date": "2054-10-31", "time": "23:59:59"},
+        {"kind": "reminder", "date": "2054-10-31", "time": "23:59"},
         {"kind": "daily_digest", "time": "00:15:00"},
         {"kind": "weekly_digest", "weekday": "6", "time": "08:00:00"},
     ],

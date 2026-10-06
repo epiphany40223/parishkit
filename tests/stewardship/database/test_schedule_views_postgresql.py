@@ -1,5 +1,6 @@
 """Exact combined schedule/date previews through real Admin sessions and installer."""
 
+from html import unescape
 from uuid import uuid4
 
 import psycopg
@@ -225,6 +226,33 @@ def test_daily_preview_is_bounded_and_labels_reported_days(auth_service, google)
     assert b"2054-10-02T04:15:00+00:00" in response.content
     assert b"2054-10-02T04:30:00+00:00" in response.content
     assert response.content.count(b"data-local-instant") == 10
+
+
+def test_send_times_are_typed_in_any_common_form(auth_service, google):
+    """The schedule page reads "12:30a" as 00:30 and refuses "12:30x" (#631)."""
+    store = auth_service.store
+    campaign, path = setup(store)
+    digest = schedule(str(campaign.pk), kind="daily_digest", date=None, time="00:15:00")
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "schedules", **digest}],
+        ).state
+        == "applied"
+    )
+    browser, _ = signed_in()
+    data, indexes = fields(store, campaign)
+    field = f"schedules-{indexes['daily_digest']}-time"
+    data[field] = "12:30x"
+    refused = post(browser, path, data)
+    assert "\u201c12:30x\u201d isn't a time" in unescape(refused.content.decode())
+    assert f'id="id_{field}_error"'.encode() in refused.content
+    data[field] = "12:30a"
+    response = post(browser, path, data)
+    assert response.status_code == 200
+    assert b"2054-10-02T04:30:00+00:00" in response.content
 
 
 def test_running_work_blocks_confirmation_without_claiming_it_can_be_cancelled(

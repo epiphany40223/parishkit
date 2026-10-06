@@ -192,8 +192,9 @@ automatically and never scheduled, that times use the campaign time zone, and
 the current campaign dates. Each schedule row shows only the fields its mail
 type uses (initial invitation and reminder: date, time and email; daily
 digest: time and email; weekly digest: weekday, time and email) and offers
-only emails of that type; the page script clears a field it hides. A saved
-schedule's mail type is shown but cannot change. The server reports a missing
+only emails of that type; the page script clears a field it hides. The send
+time is a [time entry](#time-entry) field. A saved schedule's mail type is
+shown but cannot change. The server reports a missing
 or inapplicable value on its own field (for example a weekday on an
 invitation, or a date outside the campaign with the campaign's dates); only
 rules between rows, such as a second initial invitation or a reminder before
@@ -1222,6 +1223,111 @@ and introduction exceptions must shrink as their pages are converted. A
 browser test checks on every component fixture with an About panel that the
 closed control is drawn on the heading's line, to its right.
 
+### Time entry
+
+Every Admin field that takes a time of day accepts it in any common form,
+shows how it read the entry, and stores the same canonical value as before
+([#631](https://github.com/epiphany40223/parishkit/issues/631)). Admins type
+`2:00`, `2am`, `0200` or `2:30 PM`, and a native time control's typed entry
+differs per browser and locale (Linux WebKit ignores typing, #605), so these
+fields are plain text boxes. The cost is the phone's own time picker, which a
+text box does not offer; typing a short form such as `9p` is as quick.
+
+**What is read.** Case is ignored, and so is white space around the entry
+(the same set of white-space characters on the server and in the page).
+
+- 24-hour, with a colon, `.` or `h` between hour and minutes: `02:00`,
+  `2:00`, `14.30`, `14h30`. Seconds are accepted only in the colon form
+  (`hh:mm:ss`) and only when they are `00`, since these fields are to the
+  minute.
+- A bare 1–2 digit number is an hour (`7` is 07:00); a bare 3–4 digit number
+  is 24-hour `hmm`/`hhmm` (`830` is 08:30, `1430` is 14:30).
+- Any of those, without seconds, followed by `am`/`pm`, `a`/`p` or
+  `a.m.`/`p.m.`, with or without a space: `2pm`, `2:30 PM`, `2p`,
+  `11 a.m.`, `830pm`. The hour is then 1–12; `12 am` is 00:00 and `12 pm` is
+  12:00.
+- `noon` and `midnight`.
+
+Refused, with a plain message at the field: an hour above 23 (`24:00`), a
+minute above 59 (`7:60`), an hour outside 1–12 with AM or PM (`13pm`,
+`0am`), seconds other than `00`, and anything else, including digits from
+other scripts. Nothing is guessed: a bare `7` is 07:00, never 7 PM, and the
+reading shows both clocks so the Admin can see which. One exception keeps
+saved work saving: a mail schedule saved before this change with seconds in
+its time keeps that time when it is posted back unchanged.
+
+**On the page** (`ui-v1.js`, fields marked `data-time-entry`):
+
+- A readable entry's reading shows under the field at once, as the Admin
+  types, on both clocks: "Reads as 07:00 (7:00 AM)".
+- An entry that cannot be read shows its refusal there once typing pauses
+  (about half a second) or focus leaves, so a half-typed `2:` is not flashed
+  red; the field is marked invalid only once the refusal shows. Save is
+  unavailable at once, and the hint that explains it (below) appears with
+  the refusal. The refusal clears as soon as the entry reads. A server error
+  under the field is removed on the first edit, and the live check then
+  speaks for the field.
+- A visually hidden live region beside the field announces its reading or
+  refusal, only for that field's own typing (once typing pauses) or as focus
+  leaves it, and only when the message changed. Loading the page, the page
+  being shown again, and another control's change (a mail type, the refresh
+  frequency) update the line silently. The reading line keeps one line's
+  height while empty, so a first reading does not move the controls below
+  it.
+- When focus leaves a readable entry it is rewritten in the canonical form
+  (`2pm` becomes `14:00`).
+- While a shown entry cannot be read the form's submit buttons are
+  unavailable, with a one-line hint below them ("Fix the time that can't be
+  read to continue."), which the buttons name while it shows. The hint never
+  shares the buttons' line, so their labels do not wrap. A field hidden by
+  another choice (a mail type that takes no time, a refresh frequency without
+  set times) does not hold Save, and a `formnovalidate` button stays usable.
+- A list field (the ParishSoft refresh times) reads each entry. Entries are
+  separated by commas, semicolons or spaces, and by new lines in a value
+  posted without the page (a one-line text box drops line breaks from pasted
+  text). A suffix standing alone after a space (`2 pm`) belongs to the entry
+  before it, but not across a comma or semicolon (`2, pm` is refused). A time
+  listed twice is reported in the reading and saved once.
+- A list field whose blank stands for a value says so: a blank entry, or
+  one of only separators such as `,`, reads "Blank reads as 02:00 (2:00 AM)"
+  and saves that value. A blank single time has no reading; whether it is
+  required is the form's rule.
+
+The Admin portal [requires JavaScript](#javascript-requirement), so there is
+no no-script fallback. The server stays the authority: one parser
+(`parishkit.stewardship.time_entry`, through the form fields
+`FlexibleTimeField` and `FlexibleTimeListField`) reads every post and every
+`pk-stewardship admin` command that binds the same forms, such as
+[`schedule preview`](../admin-automation/spec.md#schedules-and-configuration).
+The page script applies the same rules, and one shared table of cases
+(`tests/stewardship/fixtures/time_entry_cases.json`) runs against both, so
+the two cannot drift.
+
+**Time zones.** The fields read wall-clock times; each keeps its page's zone
+rule under the [global presentation rules](../spec.md#global-presentation-rules).
+Mail schedule send times stay in the campaign's time zone until their page
+moves to the browser-local rule in its #558 PR. The ParishSoft refresh times
+are in the parish's time zone, the recorded exception to the browser-local
+rule that those rules describe (see also
+[ParishSoft refresh schedule settings](#parishsoft-refresh-schedule-settings)).
+
+**Fields.**
+
+| Page | Field | Entry |
+| --- | --- | --- |
+| ParishSoft settings | At these times (full refresh) | List, parish time |
+| Dates and mail schedules; first-campaign Mail schedules | Send time | One time, campaign time |
+| Ministry follow-up | Contact attempt time | Native time control for now |
+| Logs, reports | Date filters | Dates only, no time of day |
+
+The Ministry follow-up contact attempt keeps its native time control until
+its in-place save work
+([#592](https://github.com/epiphany40223/parishkit/pull/592)) has merged; it
+then moves to this entry as a follow-up. The planned
+[refresh schedule editor](#parishsoft-refresh-schedule-settings)
+([#632](https://github.com/epiphany40223/parishkit/issues/632)) replaces the
+"At these times" list and uses this entry for its rule and exception times.
+
 ### Button labels
 
 A button's label never breaks inside a word, and a one-word label never
@@ -1561,10 +1667,8 @@ each preview time in the browser's zone as well. See decision 18 in the
   the Family email windows by hand: the automatic exclusions do that.
 - **Rule rows**, each "[Full | Quick] every [interval] from [time] to [time]"
   or "[Full | Quick] at [time]", with **Add a rule** and **Remove**. Time
-  fields use the shared flexible time entry
-  ([#631](https://github.com/epiphany40223/parishkit/issues/631)) once it
-  exists, with its live reading beside the field, and accept quarter-hour
-  times; a kept off-quarter-hour full time is shown as a single time,
+  fields use the shared [time entry](#time-entry), with its live reading
+  beside the field, and accept quarter-hour times; a kept off-quarter-hour full time is shown as a single time,
   labeled as kept from the earlier schedule.
 - **Skip these times**: single times or from–to ranges.
 - **Skip refreshes around Family emails** (on by default), with one line

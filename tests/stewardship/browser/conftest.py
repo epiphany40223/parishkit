@@ -261,6 +261,43 @@ def progress_page(progress, wizard):
     }
 
 
+def refused_refresh_times():
+    """The ParishSoft settings posted with a refresh time the server refused."""
+    form = IntegrationForm(
+        "parishsoft",
+        {
+            "base_digest": "a" * 64,
+            "organization_id": "12345",
+            "full_refresh": "daily",
+            "full_refresh_times": "02:00, 25:00",
+            "delta_refresh": "quarter_hour",
+        },
+    )
+    assert not form.is_valid()
+    return form
+
+
+def refused_send_time(owner, emails):
+    """A validated formset whose new invitation's send time cannot be read."""
+    schedules = Schedules(
+        {
+            "schedules-TOTAL_FORMS": "1",
+            "schedules-INITIAL_FORMS": "0",
+            "schedules-0-kind": "initial",
+            "schedules-0-date": "2054-10-01",
+            "schedules-0-time": "25:00",
+            "schedules-0-template_version": emails[0]["id"],
+        },
+        prefix="schedules",
+        previous=[],
+        templates=emails,
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+    )
+    assert not schedules.is_valid()
+    return schedules
+
+
 def invalid_schedules(owner, emails):
     """A validated formset whose only row reports a weekday on an invitation."""
     schedules = Schedules(
@@ -467,6 +504,17 @@ def component_origin():
                     "parishsoft",
                     initial={"organization_id": 12345, "base_digest": "a" * 64},
                 ),
+            },
+        ),
+        (
+            # The ParishSoft settings re-shown with the server's refusal of a
+            # refresh time (#631): the error is cleared on the first edit.
+            "/integration-settings-time-error",
+            "integration-settings",
+            {
+                "target": "parishsoft",
+                "label": "ParishSoft",
+                "form": refused_refresh_times(),
             },
         ),
         (
@@ -1030,6 +1078,45 @@ def component_origin():
                     prefix="window", previous=mail_campaign["values"]
                 ),
                 "schedules": invalid_schedules(mail_campaign, mail_emails),
+            },
+        ),
+        (
+            # A send time the server refused (#631): its error clears on edit.
+            "/setup-schedules-time-error",
+            "setup-schedules",
+            {
+                "draft": setup_draft,
+                "campaign_name": "Sample campaign",
+                "window": SetupScheduleWindow(
+                    prefix="window", previous=mail_campaign["values"]
+                ),
+                "schedules": refused_send_time(mail_campaign, mail_emails),
+            },
+        ),
+        (
+            # A schedule saved with seconds before #631 keeps them unchanged.
+            "/setup-schedules-kept",
+            "setup-schedules",
+            {
+                "draft": setup_draft,
+                "campaign_name": "Sample campaign",
+                "window": SetupScheduleWindow(
+                    prefix="window", previous=mail_campaign["values"]
+                ),
+                "schedules": Schedules(
+                    prefix="schedules",
+                    previous=[
+                        schedule(
+                            mail_campaign["id"],
+                            time="09:00:37",
+                            template_version=mail_emails[0]["id"],
+                            subject="initial mail",
+                        )
+                    ],
+                    templates=mail_emails,
+                    campaign_id=mail_campaign["id"],
+                    campaign=mail_campaign["values"],
+                ),
             },
         ),
         (

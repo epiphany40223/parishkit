@@ -323,7 +323,18 @@ group at a time in the #558 PRs; the Ministry follow-up contact attempt is the
 first ([Admin portal](admin-portal/spec.md#follow-up-workflows)) and the System
 logs date filters the second ([Admin portal](admin-portal/spec.md#logs)).
 Until a page's PR lands, it keeps its current zone, including the campaign zone
-for schedules, campaign dates and report day buckets. Local-day conversion must
+for schedules, campaign dates and report day buckets. One field is a recorded
+exception that stays in the parish's time zone after every #558 PR: the
+ParishSoft full-refresh times (Administrator decision). A refresh schedule is
+a recurring wall-clock schedule: the parish's own daylight-saving changes
+decide when each refresh runs and when the reminders it avoids are due, and a
+time entered in another zone and converted with today's offset would move
+against the parish's clock twice a year when the two zones change on
+different dates. The settings page says the times are parish-local, and the
+[time entry](admin-portal/spec.md#time-entry) reads them as it does any
+other. This is decision 18 of the
+[refresh schedule plan](../../plans/stewardship/refresh-schedule.md#open-decisions),
+which designs the whole refresh schedule. Local-day conversion must
 handle daylight-saving gaps and folds without running an occurrence twice.
 
 Dates and times follow one parish date format that an Admin chooses in Parish

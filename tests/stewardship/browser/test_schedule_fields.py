@@ -184,7 +184,8 @@ def test_add_and_remove_new_schedule_rows_before_saving(
     fields = posted(page, component_origin, path)
     assert fields["schedules-TOTAL_FORMS"] == str(first + 1)
     assert fields[one + "kind"] == "weekly_digest"
-    assert fields[one + "weekday"] == "0" and fields[one + "time"] == "08:30:00"
+    # The typed time was rewritten in its canonical form as focus left (#631).
+    assert fields[one + "weekday"] == "0" and fields[one + "time"] == "08:30"
     assert not any(name.startswith(two) for name in fields)
     assert not any("__prefix__" in name for name in fields)
     assert not failures

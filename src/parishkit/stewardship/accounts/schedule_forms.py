@@ -15,6 +15,7 @@ from parishkit.stewardship.campaigns.configuration import (
 )
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.presentation import parish_date
+from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
 
 from . import field_tips
 from .campaign_forms import OVERLAP_TEMPLATE, overlap_attributes, overlaps
@@ -224,15 +225,16 @@ class ScheduleForm(forms.Form):
             "fall within the campaign dates."
         ),
     )
-    time = forms.TimeField(
+    # Typed in any common form (#631); a plain text box, not a native time
+    # control, whose typed entry differs per browser and locale.
+    time = FlexibleTimeField(
         label=_("Send time"),
-        widget=forms.TimeInput(format="%H:%M:%S", attrs={"type": "time", "step": "1"}),
         error_messages={
             "required": _("Enter the time of day it is sent, for example 9:00 AM.")
         },
         help_text=_(
             "The time of day it is sent, in the campaign's time zone rather than "
-            "your computer's, for example 9:00 AM."
+            "your computer's, for example 9:00 AM, 9am or 21:00."
         ),
     )
     weekday = forms.TypedChoiceField(
@@ -257,13 +259,6 @@ class ScheduleForm(forms.Form):
         ),
     )
 
-    def clean_time(self):
-        """Civil schedules have whole seconds, never an offset or truncated fraction."""
-        value = self.cleaned_data["time"]
-        if value.tzinfo is not None or value.microsecond:
-            raise forms.ValidationError(_("Use a local time with whole seconds."))
-        return value
-
     def __init__(self, *args, templates, **kwargs):
         """Offer email revisions and only this row's unresolved legacy value.
 
@@ -274,6 +269,8 @@ class ScheduleForm(forms.Form):
         """
         self.templates = templates
         super().__init__(*args, **kwargs)
+        # A saved time with seconds (set before #631) still saves unchanged.
+        self.fields["time"].keep(self.initial.get("time"))
         fixed = self.initial.get("kind") if self.initial.get("id") else None
         if fixed:
             self.fields["kind"].disabled = True
