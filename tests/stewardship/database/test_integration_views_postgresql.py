@@ -278,6 +278,57 @@ def test_several_daily_times_reach_yaml_and_the_scheduler(auth_service, google):
     assert b"03:15, 15:00" in page
 
 
+def test_refresh_times_are_typed_in_any_common_form(auth_service, google):
+    """The page reads 12-hour, run-together and repeated entries (#631).
+
+    The review shows the stored list, sorted with each time once; a time the
+    parser cannot read is refused at the field and queues nothing.
+    """
+    browser, _ = signed_in()
+    requests = ConfigurationChangeRequest.objects.count()
+    refused = post(
+        browser,
+        URL,
+        edit(
+            auth_service.store,
+            organization_id="12345",
+            full_refresh_times="3:15 PM, 25:00",
+        ),
+    )
+    assert refused.status_code == 400
+    assert "\u201c25:00\u201d has no hour 25" in unescape(refused.content.decode())
+    assert 'id="id_full_refresh_times_error"' in refused.content.decode()
+    assert ConfigurationChangeRequest.objects.count() == requests
+    review = post(
+        browser,
+        URL,
+        edit(
+            auth_service.store,
+            organization_id="12345",
+            full_refresh_times="3:15 PM; 3:15am\n1515",
+        ),
+    )
+    assert review.status_code == 200
+    assert b"03:15, 15:15" in review.content
+    response = post(
+        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
+    )
+    request = ConfigurationChangeRequest.objects.get(
+        pk=response["Location"].rsplit("/", 1)[-1]
+    )
+    assert (
+        install_request(
+            auth_service.store, request_id=request.pk, correlation_id=uuid4()
+        ).state
+        == "applied"
+    )
+    settings = auth_service.store.active().document()["sections"]["integrations"][0][
+        "values"
+    ]["settings"]
+    assert settings["full_refresh_times"] == ["03:15", "15:15"]
+    assert settings["nightly_time"] == "03:15"
+
+
 def test_older_document_shows_its_nightly_time_as_the_time_list(auth_service, google):
     """A document with a nightly time and no list shows that time, not 02:00 (#465).
 

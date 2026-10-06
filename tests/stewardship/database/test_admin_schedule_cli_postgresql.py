@@ -276,6 +276,28 @@ def test_the_pages_form_errors_are_reported_by_field(admin, google):
     )
 
 
+def test_times_take_the_pages_common_forms(admin, google):
+    """``--changes`` times are read by the page's own parser (#631)."""
+    store = admin.service.store
+    campaign, _ = campaign_with_reminder(store)
+    _, secret, _ = paired(admin.service)
+    identifier = reminder_id(store, campaign)
+    code, document = preview(
+        admin, secret, {"schedules": [{"id": identifier, "time": "10:30 am"}]}
+    )
+    assert code == 0, document
+    [moved] = document["result"]["changes"]
+    assert moved["after"]["time"] == "10:30:00"
+    code, document = preview(
+        admin, secret, {"schedules": [{"id": identifier, "time": "13pm"}]}
+    )
+    assert code == 1 and document["error"]["code"] == "invalid"
+    [problem] = document["error"]["fields"]
+    assert problem["field"] == f"schedules.{identifier}.time"
+    assert problem["code"] == "invalid"
+    assert "with AM or PM the hour runs from 1 to 12" in problem["message"]
+
+
 def test_bad_tokens_change_nothing(admin, google, monkeypatch):
     """Expired, altered, other campaign, other Administrator, stale work."""
     from parishkit.stewardship.web import refusals
