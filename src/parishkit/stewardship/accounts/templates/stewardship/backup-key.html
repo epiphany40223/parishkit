@@ -30,7 +30,7 @@
 {% if proved %}
 <section class="panel" aria-labelledby="prove-done">
 <h2 id="prove-done">{% translate "Code accepted" %}</h2>
-<p>{% translate "For security, confirm your Google sign-in before reviewing the change. You will come back to this page to review and confirm it; the code does not need to be typed again." %}</p>
+<p>{% if local_environment %}{% translate "For security, confirm your sign-in before reviewing the change. The code does not need to be typed again." %}{% else %}{% translate "For security, confirm your Google sign-in before reviewing the change. You will come back to this page to review and confirm it; the code does not need to be typed again." %}{% endif %}</p>
 {% include 'stewardship/components/reauthenticate.html' with next=next %}
 </section>
 {% elif challenge %}
@@ -52,7 +52,7 @@
 {% else %}
 <form method="post" class="panel" autocomplete="off">{% csrf_token %}<input type="hidden" name="action" value="challenge">
 <h2>{% translate "Replace the key" %}</h2>
-{% if not fresh %}<p class="help">{% translate "For security, replacing the key asks you to confirm your Google sign-in first if you have not signed in within the last five minutes." %}</p>{% endif %}
+{% if not fresh %}<p class="help">{% if local_environment %}{% translate "For security, replacing the key asks you to confirm your sign-in first if you have not signed in within the last five minutes." %}{% else %}{% translate "For security, replacing the key asks you to confirm your Google sign-in first if you have not signed in within the last five minutes." %}{% endif %}</p>{% endif %}
 {% if key_error %}<p class="notice notice-error" role="alert">{{ key_error }}</p>{% endif %}
 <div><label for="backup-key-public">{% translate "New public key" %}</label>
 <input type="text" id="backup-key-public" name="public_key" maxlength="200" autocomplete="off" spellcheck="false" required>

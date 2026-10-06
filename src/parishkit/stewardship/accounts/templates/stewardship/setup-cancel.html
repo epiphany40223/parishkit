@@ -17,7 +17,7 @@
 <div class="setup-actions"><a class="setup-continue" href="/admin/">{% translate "Continue" %}</a></div>
 </div>
 {% if reauthenticate %}<div class="notice notice-error" role="alert">
-<p>{% translate "Your Google sign-in is too old for installing credentials. Sign in again with the same account to continue; your setup is kept." %}</p>
+<p>{% if local_environment %}{% translate "Your sign-in is too old for installing credentials. Sign in again with the same email address to continue; your setup is kept." %}{% else %}{% translate "Your Google sign-in is too old for installing credentials. Sign in again with the same account to continue; your setup is kept." %}{% endif %}</p>
 {% include 'stewardship/components/reauthenticate.html' with next=next %}
 </div>{% endif %}
 {% if overall == 'failed' %}<p class="notice notice-error" role="alert">{% translate "Setup could not finish. The failed step below explains what happened and what to do." %}</p>{% endif %}

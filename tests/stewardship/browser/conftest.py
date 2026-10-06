@@ -96,6 +96,7 @@ from .response_list_components import components as response_list_components
 from .security_components import components as security_components
 from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
+from .step_up_components import components as step_up_components
 from .talent_components import components as talent_components
 from .user_components import components as user_components
 from .weekly_components import components as weekly_components
@@ -1785,6 +1786,7 @@ def component_origin():
     responses.update(in_place_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(automation_components(context, admin))
+    responses.update(step_up_components(context, admin))
     # The in-place form page's POST answers (#519, #562): refusals answer
     # with the page the view would render (400 with the summary in the
     # region, 200 with it outside, or a 400 denial page without the region),

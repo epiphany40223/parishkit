@@ -1010,7 +1010,10 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
     developer needs it to reach the setup wizard. In LOCAL the login page
     and the fresh-authentication prompt describe the operator command
     instead of offering Google; a new link opened in a signed-in browser
-    is a step-up of that session in place.
+    is a step-up of that session in place. The text each page puts around
+    the prompt does not mention Google in LOCAL either
+    ([#619](https://github.com/epiphany40223/parishkit/issues/619)); other
+    profiles keep their Google wording unchanged.
   - A step-up returns to the page named by the most recent
     fresh-authentication prompt
     ([#613](https://github.com/epiphany40223/parishkit/issues/613)). Each

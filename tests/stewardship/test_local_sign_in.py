@@ -371,7 +371,10 @@ def test_step_up_prompt_describes_the_command_only_in_local():
         {"local_environment": True, "next": "/admin/users"},
     )
     assert "Confirm with Google" not in local and "<form" not in local
-    assert "<code>tools/stewardship-local.sh sign-in --email E</code>" in local
+    assert (
+        "<code>tools/stewardship-local.sh sign-in --email you@example.org</code>"
+        in local
+    )
     assert "refreshes this sign-in in place" in local
     other = render_to_string(
         "stewardship/components/reauthenticate.html", {"next": "/admin/users"}

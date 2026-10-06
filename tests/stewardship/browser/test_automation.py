@@ -424,7 +424,7 @@ def test_the_local_step_up_returns_to_the_approval_page(
     assert page.get_by_role("button", name="Confirm with Google").count() == 0
     step_up = page.locator("[data-local-step-up]")
     assert step_up.is_visible()
-    contains(step_up, "tools/stewardship-local.sh sign-in --email E")
+    contains(step_up, "tools/stewardship-local.sh sign-in --email you@example.org")
     contains(step_up, says)
     assert page.evaluate(STORED_STEP_UP)["next"] == APPROVAL
     page.goto(component_origin + LOCAL_SIGN_IN + "#" + "t" * 43)
