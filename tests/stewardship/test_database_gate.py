@@ -95,6 +95,7 @@ def test_ci_explicitly_requires_postgresql_verification():
         "PATH_RUN": "${{ needs.validate.outputs.postgresql }}",
         "EVENT": "${{ github.event_name }}",
         "DRAFT": "${{ github.event.pull_request.draft }}",
+        "JOBS": "${{ inputs.jobs }}",
     }
     # The behavioral gate test also executes failure/cancelled/skipped results;
     # explanatory output is not part of the protection contract.
@@ -236,9 +237,11 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
         "CORE_RESULT": "${{ needs.stewardship-compose-core.result }}",
         "OPERATIONAL_RESULT": "${{ needs.stewardship-operational.result }}",
         "VALIDATE_RESULT": "${{ needs.validate.result }}",
-        "PATH_RUN": "${{ needs.validate.outputs.compose }}",
+        "CORE_RUN": "${{ needs.validate.outputs.compose }}",
+        "OPERATIONAL_RUN": "${{ needs.validate.outputs.operational }}",
         "EVENT": "${{ github.event_name }}",
         "DRAFT": "${{ github.event.pull_request.draft }}",
+        "JOBS": "${{ inputs.jobs }}",
     }
     assert (
         step["run"]

@@ -19,57 +19,120 @@ not automatically rerun for every later change to `main`. The repository does
 not currently require branches to be up to date. Pushes to `main` currently run
 only the light `validate` job (a temporary pre-launch measure tracked in
 [#158](https://github.com/epiphany40223/parishkit/issues/158)); the full suite
-runs on ready PRs and on a manual `workflow_dispatch`, which a release requires
-for its tagged commit. Until #158 is resolved nothing runs the full suite on
-the landed result automatically, so concurrent independent PRs can introduce an
-integration regression after their individual checks passed. Keep stewardship
+runs on ready PRs and, by default, on a manual `workflow_dispatch`, which a
+release requires for its tagged commit. Until #158 is resolved nothing runs
+the full suite on the landed result automatically, so concurrent independent
+PRs can introduce an integration regression after their individual checks
+passed. Keep stewardship
 increments serial and inspect base drift before merging; refresh and revalidate
 when intervening changes affect the increment. Do not represent auto-merge as
 restoring the removed queue guarantee.
 
 ## Path-based job skipping
 
-A full run costs about 225 runner minutes, three quarters of it in the
-PostgreSQL shards (see
-[#158](https://github.com/epiphany40223/parishkit/issues/158)). A ready PR
-therefore skips each heavy job group that none of its changed paths can
-affect. The `validate` job's "Classify changed paths" step
-(`parishkit.stewardship.quality_paths`) diffs GitHub's test merge commit
-against its base-branch parent and exports one `true`/`false` output per group:
+A full run costs about 280 runner minutes, most of it in the PostgreSQL shards
+(see [#158](https://github.com/epiphany40223/parishkit/issues/158) and
+[#626](https://github.com/epiphany40223/parishkit/issues/626)). A ready PR, or
+a dispatch that explicitly asks for affected jobs, therefore skips each heavy
+job group that none of its changed paths can affect. The `validate` job's
+"Classify changed paths" step (`parishkit.stewardship.quality_paths`) maps
+every changed path to the groups it needs and exports one `true`/`false`
+output per group:
 
-| Group | Jobs | Skipped when every changed path is in |
-| --- | --- | --- |
-| `postgresql` | database shards | documentation, browser tests, tools, scripts, non-stewardship tests, `deploy/` |
-| `browser` | browser engines | documentation, database tests, tools, scripts, non-stewardship tests, `deploy/` |
-| `compose` | compose core, operational scenarios | documentation the development `tests` service does not mount |
+| Group | Jobs |
+| --- | --- |
+| `postgresql` | database shards (and the combined coverage gate) |
+| `browser` | browser engines |
+| `compose` | compose-core |
+| `operational` | operational scenarios |
+
+| Changed path | Groups that run |
+| --- | --- |
+| Documentation (see below) | none, `validate` only |
+| Templates under `src/` | `postgresql`, `browser`, `compose` |
+| Static assets under `src/` | `browser`, `compose` |
+| Python the browser tests can reach (see below) | all |
+| Other application Python and `tests/stewardship/*.py` | all but `browser` |
+| Browser tests (`tests/stewardship/browser/`) | `browser`, `compose`, `operational` |
+| Database tests (`tests/stewardship/database/`) | `postgresql`, `compose`, `operational` |
+| `tools/`, `scripts/`, `tests/test_*.py` | `compose`, `operational` |
+| CI, deployment and test infrastructure (see below) | all |
+| Anything else | all |
 
 Documentation means `docs/`, `AGENTS.md`, `CLAUDE.md`, `LICENSE`,
-`.pymarkdown.json`, issue templates and workflows other than `ci.yml`.
-Compose-core runs the complete suite inside the image over the paths that
-`deploy/stewardship/compose.development.yaml` bind-mounts into its `tests`
-service (all of `tests/`, selected scripts and tools, the stewardship specs,
-plans and development docs, and both workflows). The classifier reads those
-mounts from the Compose file, so any change under them runs the compose group;
-if the file cannot be read, compose runs. Changing `ci.yml`, application
-source, requirements, `pyproject.toml`, `README.md` (an image input),
-stewardship test infrastructure or any unlisted path runs every group, as do
-an empty or failed diff, a checked-out commit that is not GitHub's two-parent
-test merge, `workflow_dispatch` runs, and `main` pushes. A false positive only costs runner time; a false negative could merge
-an untested change, so new rules must err toward running.
+`.pymarkdown.json` and `scripts/*/README.md`. CI, deployment and test
+infrastructure means `.github/`, `deploy/` (including the Dockerfile),
+`tools/ci-pip-install.sh`, settings, schema, migrations, the `quality*.py` CI
+tooling and the shared conftests. "Anything else" includes requirements,
+`pyproject.toml`, `README.md` (an image input) and any new top-level path.
+
+A mixed change runs the union. Any path the development `tests` service
+bind-mounts also runs `compose`: compose-core runs the complete suite inside
+the image over those mounts (all of `tests/`, selected scripts and tools, the
+stewardship specs, plans and development docs, and the workflows) and checks
+that the host and image collect the same tests. The classifier reads the
+mounts from `deploy/stewardship/compose.development.yaml`; if it cannot,
+compose-core runs. Files a database test reads from the checkout (the
+`DATABASE_INPUTS` patterns: everything under `tools/stewardship-ops/` and the
+[mail send report](stewardship-mail-send-report.md) guide) also run
+`postgresql`.
+
+"Reach" is the static import closure of the browser tests, the conftests
+pytest loads for them, and Django's implicit entry points: settings, template
+tag libraries and each app's `apps`, `models` and `admin` modules. Dotted
+`parishkit.…` strings (settings entries, `include()` targets) count as
+imports. The closure is computed from the checkout, so it cannot drift. It
+covers most application modules, because the browser tests import forms,
+views and helpers directly. A parse failure or a deleted module runs the
+engines.
+
+An empty or failed diff, a git query past its one-minute limit (logged), a
+pull request checkout that is not GitHub's two-parent test merge, `main`
+pushes and every default dispatch run all groups. A false positive only costs
+runner time; a false negative could merge an untested change, so new rules
+must err toward running. `tests/stewardship/test_quality_paths.py` pins the
+rules, the set of tracked top-level entries (a new one fails until its rules
+are decided), and the database and browser tests and shared helpers that
+read files outside `src/` and `tests/`.
 
 Several non-database tests read documentation, workflows and deployment files,
 and shard one normally runs that complete non-database suite. When the
 `postgresql` group is skipped, `validate` runs it instead ("Complete
-non-database suite").
+non-database suite"). That step cannot use `--require-no-skips`: on the host,
+the browser, container and other environment-gated tests skip by design,
+which is why mounted documentation keeps compose-core rather than relying on
+`validate` alone.
+
+### Dispatched runs
+
+`gh workflow run ci.yml --ref BRANCH` runs every job: the `jobs` input
+defaults to `all`, which is what release and merge evidence needs. Add
+`-f jobs=affected` to apply the path rules to the branch's changes since its
+merge base with `main`. Because the delivery cycle keeps PRs in draft and
+merges on a dispatched run, this is where path selection saves most of its
+runner time. If fetching `main` fails, the classifier finds no merge base and
+runs everything.
+
+A dispatched run is named `CI (jobs: all)` or `CI (jobs: affected)`. An
+`affected` dispatch of a commit that is already on `main` when the run starts
+has an empty diff and runs everything, but a run made before the commit
+reached `main` may have skipped groups. `release.yml` and `release.sh`
+therefore accept only a run named exactly `CI (jobs: all)` as release
+evidence, and `release.sh` dispatches with `-f jobs=all`.
+
+### Protected gates
 
 The protected gates (`stewardship-postgresql`, `stewardship-browser`,
-`stewardship-compose`) pass on full success, or on an intentional skip only:
-successful preflight, a ready (non-draft) `pull_request`, the group's
-classification `false`, and every job in the group `skipped`. Drafts, failed or
-skipped preflight, missing classification, failures, cancellations and partial
-skips still fail. The PostgreSQL gate combines coverage only when the shards
-ran. `tests/stewardship/test_quality_paths.py` executes each gate's complete
-truth table.
+`stewardship-compose`) pass when each of their jobs succeeded or was skipped
+on purpose: successful preflight, a ready (non-draft) `pull_request` or an
+`affected` dispatch, that job's group classified `false`, and the job
+`skipped`. `stewardship-compose` judges compose-core and the operational
+scenarios separately, so a template change can run one and skip the other.
+Drafts, failed or skipped preflight, missing classification, default
+dispatches, failures and cancellations still fail. The PostgreSQL gate
+combines coverage only when the shards ran.
+`tests/stewardship/test_quality_paths.py` executes each gate's complete truth
+table.
 
 The branch ruleset's required status checks must name only jobs that report on
 every ready PR. A skipped job reports success to required checks, so required

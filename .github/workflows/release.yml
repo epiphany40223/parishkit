@@ -62,12 +62,19 @@ jobs:
           # on exactly this commit: `gh workflow run ci.yml --ref main` while
           # the tagged commit is main's head. A pull request run tested a
           # different (pre-merge) commit. Poll while that run is queued or in
-          # progress; refuse a failed run or a commit with no full run.
+          # progress; refuse a failed run or a commit with no full run. Only a
+          # run named exactly "CI (jobs: all)" (ci.yml's run-name for an
+          # all-jobs dispatch) is evidence: a jobs=affected dispatch may have
+          # skipped job groups (#626).
           for attempt in $(seq 1 80); do
             state="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml \
               --event workflow_dispatch --commit "${RELEASE_COMMIT}" --limit 1 \
-              --json status,conclusion --jq '.[] | "\(.status) \(.conclusion)"')"
+              --json status,conclusion,displayTitle \
+              --jq '.[] | if .displayTitle == "CI (jobs: all)" then "\(.status) \(.conclusion)" else "partial" end')"
             case "${state}" in
+              partial)
+                echo "::error::The newest dispatched CI run on ${RELEASE_COMMIT} is not named 'CI (jobs: all)'; run gh workflow run ci.yml --ref main (all jobs) while it is main's head, then re-run this release."
+                exit 1 ;;
               "completed success")
                 echo "Full CI passed for ${RELEASE_COMMIT}."
                 exit 0 ;;

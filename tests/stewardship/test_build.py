@@ -1,6 +1,7 @@
 """Credential-free contracts for matching host, CI, and image build tools."""
 
 import os
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -223,9 +224,11 @@ def test_release_requires_full_ci_of_the_tagged_commit_before_build():
     release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     # PyYAML reads the bare `on:` key as the boolean true. Pushes to main run
     # light validation only (temporarily); a manual dispatch must run every
-    # job, or a tagged commit could lack complete evidence.
+    # job by default, or a tagged commit could lack complete evidence; the
+    # release gate accepts only a run named "CI (jobs: all)"
+    # (test_release_accepts_only_an_all_jobs_ci_run).
     assert ci[True]["push"] == {"branches": ["main"]}
-    assert "workflow_dispatch" in ci[True]
+    assert ci[True]["workflow_dispatch"]["inputs"]["jobs"]["default"] == "all"
     for job in ci["jobs"].values():
         condition = job.get("if", "${{ always() }}")
         assert (
@@ -255,6 +258,59 @@ def test_release_requires_full_ci_of_the_tagged_commit_before_build():
         < names.index("Require the release commit's successful full CI run")
         < names.index("Build artifacts")
     )
+
+
+@pytest.mark.parametrize(
+    "state,code,message",
+    [
+        ("partial", 1, "is not named 'CI (jobs: all)'"),
+        ("completed success", 0, "Full CI passed"),
+        ("completed failure", 1, "did not pass"),
+    ],
+)
+def test_release_accepts_only_an_all_jobs_ci_run(state, code, message):
+    """Only an all-jobs dispatch is evidence; anything else is refused.
+
+    ci.yml names dispatched runs "CI (jobs: <selection>)"; the release gate
+    accepts only the exact "CI (jobs: all)" name and maps any other run to
+    "partial", which it refuses. A shell function stands in for gh (the
+    query itself is pinned textually): the Compose test container mounts
+    /tmp noexec, so a stand-in executable there could not run.
+    """
+    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    assert ci["run-name"] == (
+        "${{ github.event_name == 'workflow_dispatch' && "
+        "format('CI (jobs: {0})', inputs.jobs) || '' }}"
+    )
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    steps = release["jobs"]["validate-build"]["steps"]
+    (gate,) = [
+        step
+        for step in steps
+        if step.get("name") == "Require the release commit's successful full CI run"
+    ]
+    assert "--json status,conclusion,displayTitle" in gate["run"]
+    assert (
+        'if .displayTitle == "CI (jobs: all)" then "\\(.status) \\(.conclusion)" '
+        'else "partial" end' in gate["run"]
+    )
+    # A function takes precedence over any gh on PATH; the real step text
+    # runs unchanged after it.
+    script = 'gh() { printf "%s\\n" "$FAKE_STATE"; }\n' + gate["run"]
+    result = subprocess.run(
+        ["bash", "-e", "-c", script],
+        env={
+            "PATH": os.environ["PATH"],
+            "FAKE_STATE": state,
+            "RELEASE_COMMIT": "abc123",
+            "GITHUB_REPOSITORY": "owner/repository",
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == code
+    assert message in result.stdout
 
 
 def test_build_lock_is_pinned_and_compatible_with_runtime_lock():

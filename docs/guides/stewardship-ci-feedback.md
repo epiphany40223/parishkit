@@ -19,8 +19,9 @@ passing focused check remotely merely for its location. The complete candidate
 suite remains independent final-head merge evidence.
 
 A manually dispatched run on the reviewed candidate head supplies full
-PostgreSQL, browser and container validation, after the fast checks succeed.
-Dispatch must target the PR branch (`gh workflow run ci.yml --ref <branch>`).
+PostgreSQL, browser and container validation, after the fast checks succeed:
+a manual dispatch runs the full suite by default. Dispatch must target the PR
+branch (`gh workflow run ci.yml --ref <branch>`).
 Ready-PR pushes still run the full suite; main pushes run only `validate`.
 Marking a draft ready starts no run
 ([issue #624](https://github.com/epiphany40223/parishkit/issues/624)):
@@ -42,6 +43,13 @@ red with a readiness explanation; fast feedback is the `validate` result. This
 prevents a skipped job's successful GitHub conclusion from becoming accidental
 merge authorization. No ruleset change, alternate success check or privileged
 merge bypass is introduced.
+
+A ready PR, or a dispatch that explicitly asks for affected jobs only
+(`-f jobs=affected`), skips the heavy job groups its changes cannot affect;
+see
+[path-based job skipping](stewardship-test-efficiency.md#path-based-job-skipping)
+([#626](https://github.com/epiphany40223/parishkit/issues/626)). An
+`affected` run is never release evidence.
 
 ## Measured scheduling and setup
 
