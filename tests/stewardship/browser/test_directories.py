@@ -122,6 +122,9 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
             and "Unsaved" not in sent.value.post_data
         )
         assert "?" not in sent.value.url and "Example" not in sent.value.url
+        # Let the routed answer finish loading before the next navigation,
+        # which it would otherwise interrupt (#623).
+        visible(page.get_by_text("Export queued", exact=True))
         page.goto(component_origin + "/directory-gated")
         assert page.get_by_role(
             "button", name="Queue complete export", include_hidden=True

@@ -178,6 +178,9 @@ def test_log_filters_and_paging_without_scripts(browser_engine, component_origin
         assert "source=audit" in body and "event=admin_login" in body
         assert f"actor={actor}" in body
         assert actor not in sent.value.url and "?" not in sent.value.url
+        # Let the routed answer finish loading before the next navigation,
+        # which it would otherwise interrupt (#623).
+        visible(page.get_by_text("Filtered", exact=True))
 
         page.goto(component_origin + "/logs")
         with page.expect_request(lambda request: request.method == "POST") as sent:
@@ -188,6 +191,9 @@ def test_log_filters_and_paging_without_scripts(browser_engine, component_origin
         assert "page=2" in body and "sort=newest" in body and "size=25" in body
         assert "debug=yes" in body and "correlation=00000000" in body
         assert "?" not in sent.value.url
+        # Let the routed answer finish loading before the next navigation,
+        # which it would otherwise interrupt (#623).
+        visible(page.get_by_text("Filtered", exact=True))
 
         page.goto(component_origin + "/logs")
         with page.expect_request(lambda request: request.method == "POST") as sent:
@@ -340,6 +346,12 @@ def test_paging_sorting_and_export_keep_the_zone(page, component_origin):
         assert fields["zone"] == ["America/Los_Angeles"]
         assert fields["start"] == fields["end"] == ["2026-09-19"]
         assert "?" not in sent.value.url
+        # The request is only sent here: the page still has to read the
+        # routed answer and write it in (it is not a table page, so it is
+        # shown as returned). Wait for that before the next navigation, or a
+        # late document.open() aborts the goto (NS_BINDING_ABORTED in
+        # Firefox, #623).
+        visible(page.get_by_text("Paged", exact=True))
         page.unroute("**/logs")
         page.goto(component_origin + "/logs-dated")
     export = page.locator("#table-export")

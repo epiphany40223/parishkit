@@ -150,6 +150,9 @@ def test_rule_changes_post_natively_without_scripts(browser_engine, component_or
         assert "roles=ministry_leader" not in body and "action=preview" in body
         assert "base_digest=" in body and "?" not in sent.value.url
         assert sent.value.url.endswith("/users/rules")
+        # Let the routed answer finish loading before the next navigation,
+        # which it would otherwise interrupt (#623).
+        visible(page.get_by_text("Reviewed", exact=True))
 
         page.goto(component_origin + "/portal-users")
         page.get_by_label("Hosted domain").fill("Parish.Example")
