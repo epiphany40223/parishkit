@@ -1064,6 +1064,11 @@ lists of pending setting changes (credential selection and integration
 preview), the campaign mail test's at most ten reviewed Families, and link
 preparation history (panels, not columns) have no sortable columns.
 
+A short table shown whole has no navigator: its headings carry only its sort
+token (no page or size), and the page accepts nothing else for it. The two
+session tables on Automation access are such tables (see
+[portal user management](#portal-user-management)).
+
 A table's navigators and rows sit in one region with a stable id (the table's
 anchor, derived from its parameter prefix so two tables on one page differ),
 and every heading and navigator control names that id as its URL fragment.
@@ -1134,7 +1139,19 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](#follow-up-workflows)) names its region by its
-  URL's fragment. "Refresh current work" keeps
+  URL's fragment. A checkbox marked
+  `data-submit-on-change` submits its own `form[data-in-place]` as soon as it
+  changes, with no Apply button (the Admin portal requires script), and keeps
+  focus. Each page records the state it shows on the box. The box submits
+  again only when its own change got no answer of its own and the page
+  shows another state once nothing is in flight: it changed again while its
+  request ran, a newer request overtook that one, or a save held it back
+  (it then says "Still saving…" beside it too). It never resubmits after
+  its request fell back to a full load or got a page shown as returned
+  (no answer, a refusal, another page), and never sends a state that
+  failed again until the reader changes the box or its own request succeeds, so
+  a server that cannot answer gets one attempt and the fallback, not a
+  loop (Automation access's "Include ended sessions"). "Refresh current work" keeps
   the reader's state filter, sort, rows per page and page; "Refresh list"
   keeps sort and rows per page and returns to the first page. A form's
   submit button belongs to its form even outside it (`form="…"`); a table's
@@ -2787,8 +2804,13 @@ is greyed out under [navigation rule 10](#navigation-rules) until #145.
 
 Automation sessions are not listed here: every live
 [automation session](../admin-automation/spec.md#revocation-and-listing),
-and each Administrator's own, are on the Automation access page in the Users
-and access group, where any Administrator may revoke one.
+and on request each Administrator's own ended ones, are on the Automation
+access page in the Users and access group, where any Administrator may revoke
+a live one. The page opens on its live sessions table, above everything else;
+an "Include ended sessions" checkbox adds the ended table, and both tables
+sort by their headings (the automation specification's
+[revocation and listing](../admin-automation/spec.md#revocation-and-listing)
+owns the parameters).
 
 The Admin user page contains sorted domain and exact-address tables. Rows show
 normalized value, effective roles, source, last login, and warnings. Role

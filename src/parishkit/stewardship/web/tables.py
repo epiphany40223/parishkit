@@ -174,6 +174,9 @@ class TablePage:
     # True when a bounded count stopped at COUNT_LIMIT: ``count`` is then a
     # lower bound and ``pages`` is unknown.
     capped: bool = False
+    # False for a short table shown whole, with no navigator (see
+    # ``whole_table``): its headings then carry only the sort, never a size.
+    paged: bool = True
 
     @property
     def page_name(self):
@@ -341,7 +344,7 @@ class TablePage:
         """Fields a heading carries: filters and size, the new sort, page 1."""
         return [
             *self.carried,
-            (self.size_name, self.size_value),
+            *([(self.size_name, self.size_value)] if self.paged else []),
             (self.sort_name, self.sort_target(column)),
         ]
 
@@ -408,6 +411,32 @@ def paginate(rows, parameters, *, prefix="", default=50, carry=(), sorting=None)
         carried=_carried(carry),
         sorting=sorting,
         sort=token,
+    )
+
+
+def whole_table(rows, *, sorting, sort, prefix="", carry=()):
+    """Sort a short table shown whole: no navigator, no page or size.
+
+    ``sort`` is the token the view already parsed from ``{prefix}sort``
+    (``Sorting.parse``), so a page offering such a table accepts just that
+    parameter (and its own filters); a token the table does not offer is
+    refused with ValueError. ``carry`` lists the (name, value) pairs every
+    heading keeps, such as the page's filters and another table's sort.
+    """
+    if sort not in sorting.tokens:
+        raise ValueError("Unsupported table sort.")
+    rows = sorting.sort_rows(list(rows), sort)
+    return TablePage(
+        rows=rows,
+        number=1,
+        pages=1,
+        count=len(rows),
+        size=None,
+        prefix=prefix,
+        carried=_carried(carry),
+        sorting=sorting,
+        sort=sort,
+        paged=False,
     )
 
 

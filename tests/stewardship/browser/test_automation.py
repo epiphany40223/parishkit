@@ -1,6 +1,8 @@
 """Admin automation pages in Chromium and WebKit (ADM-11).
 
-Revoking a session on Automation access and acknowledging the dashboard's
+Automation access opens on its live sessions; its "Include ended sessions"
+box and both tables' sort headings refresh the page in place (#621).
+Revoking a session there and acknowledging the dashboard's
 automation notices act in place (#559): one POST, no reload (a mark outside
 the regions survives), the reader's place kept, the change announced, and
 the address set to the redirect's page. Acknowledging the last notice still
@@ -51,6 +53,7 @@ def posts_to(page, part):
     "path",
     [
         ACCESS,
+        ACCESS + "?ended=yes",
         "/automation-access-stale",
         "/automation-access-stale-local",
         APPROVAL,
@@ -75,46 +78,270 @@ def test_wide_session_tables_scroll_inside_their_regions(page, component_origin)
     to the edge they happen to fit.
     """
     page.set_viewport_size({"width": 320, "height": 900})
-    page.goto(component_origin + ACCESS)
+    page.goto(component_origin + ACCESS + "?ended=yes")
     page.evaluate(
         "document.querySelectorAll('table').forEach(t => t.style.fontSize = '28px')"
     )
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    for region in ("automation-sessions", "automation-live"):
+    for region in ("live-table", "ended-table"):
         scroller = page.locator(f"#{region} .table-scroll")
         assert scroller.evaluate("e => e.scrollWidth > e.clientWidth")
 
 
-def test_revoking_a_session_acts_in_place(page, component_origin):
-    """One POST; the session lists swap; the mark and scroll stay; it is said."""
-    page.set_viewport_size({"width": 1280, "height": 400})
+def test_live_sessions_are_the_first_table(page, component_origin):
+    """The page opens on live sessions; ended ones wait for the box (#621)."""
+    page.goto(component_origin + ACCESS)
+    first = page.locator("table").first
+    assert first.locator("caption").inner_text() == (
+        "Sessions that can act as an Administrator now"
+    )
+    section = first.locator("xpath=ancestor::section[1]")
+    assert section.locator("h2").inner_text() == "Live sessions"
+    # Nothing on the page (pairing, approval) comes before it.
+    assert page.locator("h1 ~ :is(section, div, p)").first.locator(
+        "h2"
+    ).inner_text() == ("Live sessions")
+    assert page.locator("table").count() == 1
+    assert page.locator("#ended-table").inner_text().strip() == ""
+    assert not page.get_by_label("Include ended sessions").is_checked()
+
+
+def _labels(page, region):
+    """The label column of a region's table, in the order shown."""
+    cells = page.locator(f"#{region} tbody tr")
+    column = 1 if region == "live-table" else 0
+    return [row.locator("th, td").nth(column).inner_text() for row in cells.all()]
+
+
+def test_the_box_shows_and_hides_ended_sessions_in_place(page, component_origin):
+    """Ticking the box adds the ended table without a reload, focus stays on
+    the box and the address follows; unticking takes the table away again."""
+    page.set_viewport_size({"width": 1280, "height": 500})
     page.goto(component_origin + ACCESS)
     page.evaluate(MARK)
-    sessions = page.locator("#automation-sessions")
+    box = page.get_by_label("Include ended sessions")
+    box.check()
+    contains(page.locator("#ended-table"), "Your ended sessions")
+    assert _labels(page, "ended-table") == ["Zeta task", "old job"]
+    assert page.locator("#ended-table").get_by_role("button").count() == 0
+    assert page.evaluate(MARKED) == "kept"
+    assert page.evaluate("document.activeElement.id") == "include-ended"
+    has_text(
+        page.get_by_role("status").filter(has_text="Ended sessions shown."),
+        "Ended sessions shown.",
+    )
+    assert page.url == component_origin + ACCESS + "?ended=yes#ended-table"
+    box.uncheck()
+    from playwright.sync_api import expect
+
+    expect(page.locator("#ended-table table")).to_have_count(0)
+    has_text(
+        page.get_by_role("status").filter(has_text="Ended sessions hidden."),
+        "Ended sessions hidden.",
+    )
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url == component_origin + ACCESS + "#ended-table"
+    assert not box.is_checked()
+
+
+def test_headings_sort_both_tables_in_place(page, component_origin):
+    """Each table sorts by its own headings, keeping the other's order and the
+    box; the sorted heading says so and keeps focus."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + ACCESS + "?ended=yes")
+    page.evaluate(MARK)
+    assert _labels(page, "live-table") == ["other job", "launch <assistant>"]
+    heading = page.locator('#live-table th[data-sort-column="administrator"]')
+    heading.locator(".sort-link").click()
+    contains(page.locator("#live-table"), "launch <assistant>")
+    from playwright.sync_api import expect
+
+    expect(
+        page.locator('#live-table th[data-sort-column="administrator"]')
+    ).to_have_attribute("aria-sort", "ascending")
+    assert _labels(page, "live-table") == ["launch <assistant>", "other job"]
+    assert page.evaluate("document.activeElement.closest('th').dataset.sortColumn") == (
+        "administrator"
+    )
+    # The ended table keeps its rows, and the box stays ticked.
+    assert _labels(page, "ended-table") == ["Zeta task", "old job"]
+    label = page.locator('#ended-table th[data-sort-column="label"] .sort-link')
+    label.click()
+    expect(page.locator('#ended-table th[data-sort-column="label"]')).to_have_attribute(
+        "aria-sort", "ascending"
+    )
+    assert _labels(page, "ended-table") == ["old job", "Zeta task"]
+    # The live table kept its own order.
+    assert _labels(page, "live-table") == ["launch <assistant>", "other job"]
+    assert page.get_by_label("Include ended sessions").is_checked()
+    assert page.evaluate(MARKED) == "kept"
+    assert "live_sort=administrator" in page.url and "ended_sort=label" in page.url
+    # The box's form follows the headings: its hidden sorts are the new ones.
+    hidden = page.locator("#automation-filter input[type=hidden]")
+    assert sorted(
+        hidden.evaluate_all("els => els.map(e => e.name + '=' + e.value)")
+    ) == [
+        "ended_sort=label",
+        "live_sort=administrator",
+    ]
+
+
+RACE = ACCESS + "?live_sort=label"
+
+
+def _settled(page, shown):
+    """The box and the ended region agree on ``shown``, and stay agreed.
+
+    Each race below ends with a request the page itself sends; waiting for
+    the address to carry the region's fragment and the agreed state, then a
+    moment more, shows nothing is left to change them.
+    """
+    from playwright.sync_api import expect
+
+    box = page.get_by_label("Include ended sessions")
+    table = page.locator("#ended-table table")
+    expect(table).to_have_count(1 if shown else 0, timeout=10_000)
+    expect(box).to_be_checked(checked=shown)
+    page.wait_for_timeout(2000)
+    expect(table).to_have_count(1 if shown else 0)
+    expect(box).to_be_checked(checked=shown)
+    applied = box.get_attribute("data-applied")
+    assert applied == ("true" if shown else "false")
+
+
+def gets_to(page, part):
+    """Collect every GET whose URL contains ``part``, in order."""
+    seen = []
+    page.on(
+        "request",
+        lambda request: (
+            seen.append(request.url)
+            if request.method == "GET" and part in request.url
+            else None
+        ),
+    )
+    return seen
+
+
+def test_unticking_before_the_answer_leaves_the_box_and_page_agreed(
+    page, component_origin
+):
+    """Tick, then untick before the slow answer arrives: the ticked page
+    arrives first, then the box sends its unticked state, and no ended table
+    is left."""
+    page.goto(component_origin + RACE)
+    page.evaluate(MARK)
+    gets = gets_to(page, ACCESS + "?")
+    box = page.get_by_label("Include ended sessions")
+    with page.expect_response(lambda response: "ended=yes" in response.url):
+        box.check()
+        box.uncheck()
+    _settled(page, False)
+    assert page.evaluate(MARKED) == "kept"
+    # The race really happened: the slow ticked request, then the unticked one.
+    assert ["ended=yes" in url for url in gets] == [True, False], gets
+
+
+def test_a_heading_during_a_tick_keeps_the_tick(page, component_origin):
+    """A sort chosen while the box's slow request runs supersedes it; the box
+    then applies itself again, on the new sort."""
+    page.goto(component_origin + RACE)
+    page.evaluate(MARK)
+    page.get_by_label("Include ended sessions").check()
+    page.locator('#live-table th[data-sort-column="administrator"] .sort-link').click()
+    _settled(page, True)
+    from playwright.sync_api import expect
+
+    expect(
+        page.locator('#live-table th[data-sort-column="administrator"]')
+    ).to_have_attribute("aria-sort", "ascending")
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_tick_during_a_revoke_applies_after_the_save(page, component_origin):
+    """A tick while Revoke saves is held back ("Still saving…"), then applied."""
+    page.goto(component_origin + RACE)
+    page.evaluate(MARK)
+    row = page.locator("#live-table tr").filter(has_text="launch <assistant>")
+    row.get_by_role("button", name="Revoke").click()
+    page.get_by_label("Include ended sessions").check()
+    has_text(
+        page.get_by_role("status").filter(has_text="Still saving"), "Still saving…"
+    )
+    # Said beside the box too, while the save runs.
+    contains(page.locator("#automation-filter"), "Still saving")
+    _settled(page, True)
+    assert page.locator("#automation-filter [data-held-note]").count() == 0
+    # The revoked session stays revoked: gone from the live table, and listed
+    # among the ended ones.
+    assert page.locator("#live-table").get_by_text("launch <assistant>").count() == 0
+    assert _labels(page, "live-table") == ["other job"]
+    assert "launch <assistant>" in _labels(page, "ended-table")
+    assert page.evaluate(MARKED) == "kept"
+
+
+@pytest.mark.parametrize("answer", ["none", "refused"])
+def test_a_tick_the_server_cannot_answer_is_tried_once(page, component_origin, answer):
+    """No answer (a restart, offline) or a 400: one in-place request and the
+    ordinary load it falls back to, never a loop of resubmissions."""
+    page.goto(component_origin + ACCESS)
+    ticked = gets_to(page, "ended=yes")
+
+    def answer_route(route):
+        """No answer at all, or a refusal."""
+        if answer == "none":
+            route.abort()
+        else:
+            route.fulfill(status=400, body="Refused", content_type="text/plain")
+
+    page.route(lambda url: "ended=yes" in url, answer_route)
+    page.get_by_label("Include ended sessions").check()
+    page.wait_for_timeout(3000)
+    assert len(ticked) == 2, ticked
+
+
+@pytest.mark.parametrize("query", ["", "?ended=yes"])
+def test_revoking_a_session_acts_in_place(page, component_origin, query):
+    """One POST; the session lists swap; the mark and scroll stay; it is said.
+
+    With ended sessions shown, the revoked session moves to them (#621).
+    """
+    page.set_viewport_size({"width": 1280, "height": 400})
+    page.goto(component_origin + ACCESS + query)
+    page.evaluate(MARK)
+    live = page.locator("#live-table")
     # The label is shown as text, never interpreted as markup.
-    assert sessions.get_by_text("launch <assistant>").count() == 1
-    button = sessions.get_by_role("button", name="Revoke")
+    assert live.get_by_text("launch <assistant>").count() == 1
+    row = live.locator("tr").filter(has_text="launch <assistant>")
+    button = row.get_by_role("button", name="Revoke")
     button.scroll_into_view_if_needed()
     offset = page.evaluate("window.scrollY")
+    # The page may shrink by the revoked row's own height, which depends on
+    # the platform's fonts (taller on CI's Linux), so measure it.
+    shrink = row.evaluate("row => row.getBoundingClientRect().height")
     posts = posts_to(page, REVOKE)
     button.click()
-    contains(sessions, "Revoked by you")
-    assert page.evaluate(MARKED) == "kept"
-    # No jump to the top; the page may shrink a little under the reader, as
-    # the revoked session leaves the list of live ones.
-    assert offset > 0 and page.evaluate("window.scrollY") > 0
-    assert abs(page.evaluate("window.scrollY") - offset) < 120
     has_text(
         page.get_by_role("status").filter(has_text="Session revoked."),
         "Session revoked.",
     )
-    # The list of every live session swapped too: only the other one is left.
-    assert page.locator("#automation-live").get_by_text("other job").count() == 1
-    assert (
-        page.locator("#automation-live").get_by_text("launch <assistant>").count() == 0
+    assert page.evaluate(MARKED) == "kept"
+    # No jump to the top; the page may shrink a little under the reader, as
+    # the revoked session leaves the list of live ones.
+    assert offset > 0 and page.evaluate("window.scrollY") > 0
+    assert abs(page.evaluate("window.scrollY") - offset) <= shrink + 16
+    assert page.locator("#live-table").get_by_text("other job").count() == 1
+    assert page.locator("#live-table").get_by_text("launch <assistant>").count() == 0
+    ended = page.locator("#ended-table")
+    if query:
+        contains(ended, "Revoked by you")
+        assert ended.get_by_text("launch <assistant>").count() == 1
+    else:
+        assert ended.inner_text().strip() == ""
+    assert posts == [component_origin + REVOKE + query]
+    assert page.url.startswith(
+        component_origin + ACCESS + (query + "&" if query else "?") + "revoked=1"
     )
-    assert posts == [component_origin + REVOKE]
-    assert page.url.startswith(component_origin + ACCESS + "?revoked=1")
 
 
 def test_acknowledging_the_last_notice_acts_in_place(page, component_origin):

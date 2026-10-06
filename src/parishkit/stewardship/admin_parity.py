@@ -74,7 +74,8 @@ LEDGER = {
     # The human side of the automation interface (the specification's action
     # inventory): approving, listing and revoking sessions, and acknowledging
     # their notices, stay in the browser. ``sessions`` lists one's own
-    # sessions, and ``status`` counts the unacknowledged notices.
+    # sessions with the page's filter and sort (``--include-ended`` and
+    # ``--sort``, #621), and ``status`` counts the unacknowledged notices.
     "automation_approval": permanent(
         "the human side of the automation interface: approving a session"
     ),

@@ -130,6 +130,50 @@ def test_login_whoami_sessions_and_logout(admin, google):
     assert document["ok"] is False
 
 
+def test_sessions_lists_live_ones_unless_ended_are_included(admin, google):
+    """The page's filter and sort (#621): live only by default, ended on
+    request with when and why each ended, sorted by the page's tokens."""
+    browser, _ = signed_in()
+    first = pair(admin, browser)
+    second = pair(admin, browser)
+    assert admin("logout", secret=first)[0] == 0
+    code, document, _ = admin("sessions", secret=second)
+    assert code == 0
+    [live] = document["result"]["sessions"]
+    assert live["live"] and live["current"] and live["ended_at"] is None
+    code, document, _ = admin("sessions", "--include-ended", secret=second)
+    newest, ended = document["result"]["sessions"]
+    assert newest["id"] == live["id"] and newest["live"]
+    assert not ended["live"] and ended["end_reason"] == "logout"
+    assert ended["ended_at"] is not None
+    code, document, _ = admin(
+        "sessions", "--include-ended", "--sort", "created", secret=second
+    )
+    assert [row["id"] for row in document["result"]["sessions"]] == [
+        ended["id"],
+        live["id"],
+    ]
+    # A descending token is written with "=", or argparse reads it as an option.
+    code, document, _ = admin(
+        "sessions", "--include-ended", "--sort=-created", secret=second
+    )
+    assert code == 0
+    assert [row["id"] for row in document["result"]["sessions"]] == [
+        live["id"],
+        ended["id"],
+    ]
+    code, document, _ = admin(
+        "sessions", "--include-ended", "--sort=-ended", secret=second
+    )
+    # The live session has no ending, so it sorts last either way.
+    assert [row["id"] for row in document["result"]["sessions"]] == [
+        ended["id"],
+        live["id"],
+    ]
+    code, document, _ = admin("sessions", "--sort", "created_at", secret=second)
+    assert code == 1 and document["error"]["code"] == "invalid"
+
+
 def test_wait_is_repeatable_while_pending_and_expires_cleanly(admin, google):
     """pairing_pending while the request lives; pairing_expired after; no session."""
     secret = secrets.token_urlsafe(32)

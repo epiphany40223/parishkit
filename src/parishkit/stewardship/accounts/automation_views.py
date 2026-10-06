@@ -1,9 +1,9 @@
 """The browser side of Admin automation: approval, access and notices (ADM-11).
 
 These pages are the human side of the command line (see the Admin automation
-specification): an Administrator approves a pending pairing, lists their own
-sessions and every live session, revokes any live one, and acknowledges
-automation notices on the dashboard. They live under Users and access, at
+specification): an Administrator approves a pending pairing, lists every live
+session (and, on request, their own ended ones), revokes any live one, and
+acknowledges automation notices on the dashboard. They live under Users and access, at
 ``/admin/users/automation/`` (Automation access) and
 ``/admin/users/automation/approval/`` (the approval page), with their POST
 actions on the session and notice collections beneath them.
@@ -21,6 +21,7 @@ Revoke and acknowledge are ``form[data-in-place]`` posts (#559): each
 redirects back to its own page, and the page's regions are swapped in place.
 """
 
+from urllib.parse import urlencode
 from uuid import UUID
 
 from django.core import signing
@@ -39,11 +40,14 @@ from redis.exceptions import RedisError
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.tables import whole_table
 
 from .admin_editing import error_response, principal
 from .authentication import runtime
 from .automation_models import AutomationSession
 from .automation_sessions import (
+    LIVE_SORTING,
+    OWN_SORTING,
     PairingRefused,
     PairingStore,
     acknowledge_notices,
@@ -52,8 +56,8 @@ from .automation_sessions import (
     display_code,
     live_sessions,
     normalized_code,
+    own_sessions,
     revoke,
-    sessions_of,
 )
 from .limiting import LimiterUnavailable
 from .policy import Capability
@@ -205,37 +209,120 @@ def approval_view(request):
         return error_response(error)
 
 
+# Automation access's only query parameters (#621): "ended=yes" shows this
+# Administrator's ended sessions, and each table's sort is one of its own
+# fixed tokens (``LIVE_SORTING`` and ``OWN_SORTING``). Anything else, an
+# unknown token or another value of "ended" is refused.
+LIVE = "live_"
+ENDED = "ended_"
+ACCESS_PARAMETERS = {"ended", f"{LIVE}sort", f"{ENDED}sort"}
+
+
+def _access_state(parameters):
+    """The validated page state: (include_ended, live sort, ended sort)."""
+    values = filters(parameters, allowed=ACCESS_PARAMETERS)
+    ended = values.get("ended")
+    if ended not in (None, "yes"):
+        raise ValueError("Unsupported automation session filter.")
+    return (
+        ended == "yes",
+        LIVE_SORTING.parse(values, LIVE),
+        OWN_SORTING.parse(values, ENDED),
+    )
+
+
+def _state_fields(include_ended, live_sort, ended_sort):
+    """The page state as (name, value) pairs, defaults left out.
+
+    Every heading, the filter form and each Revoke form carry these, so no
+    control resets another's choice and a default page keeps a bare URL.
+    """
+    return [
+        (name, value)
+        for name, value, default in (
+            ("ended", "yes" if include_ended else "", ""),
+            (f"{LIVE}sort", live_sort, LIVE_SORTING.default),
+            (f"{ENDED}sort", ended_sort, OWN_SORTING.default),
+        )
+        if value != default
+    ]
+
+
+def _access_url(fields, anchor):
+    """Automation access with this state, landing on the region ``anchor``."""
+    query = urlencode(fields)
+    return reverse("admin:automation_access") + (f"?{query}" if query else "") + anchor
+
+
+def access_context(state, identity, everyone, ended):
+    """Automation access's template context for one validated page state.
+
+    ``state`` is ``_access_state``'s answer, ``everyone`` the live sessions
+    of every Administrator and ``ended`` this Administrator's ended ones
+    (empty unless asked for). Each table is sorted whole by its own token,
+    and every heading carries the rest of the state, so changing one
+    choice never resets another. Kept apart from the reads so the browser
+    tests render the page exactly as the view does.
+    """
+    include_ended, live_sort, ended_sort = state
+    fields = _state_fields(*state)
+    for row in everyone:
+        row["scope_label"] = SCOPES[row["scope"]]
+        row["own"] = row["principal_id"] == identity
+    for row in ended:
+        row["scope_label"] = SCOPES[row["scope"]]
+        row["reason_label"] = END_REASONS.get(row["end_reason"])
+    return {
+        "live_table": whole_table(
+            everyone,
+            sorting=LIVE_SORTING,
+            sort=live_sort,
+            prefix=LIVE,
+            carry=[pair for pair in fields if pair[0] != f"{LIVE}sort"],
+        ),
+        "ended_table": whole_table(
+            ended,
+            sorting=OWN_SORTING,
+            sort=ended_sort,
+            prefix=ENDED,
+            carry=[pair for pair in fields if pair[0] != f"{ENDED}sort"],
+        ),
+        "include_ended": include_ended,
+        # The box's form keeps both sorts; the box itself gives "ended".
+        "sort_fields": [pair for pair in fields if pair[0] != "ended"],
+        # Each Revoke form's query, so the page it returns to is unchanged.
+        "state_query": urlencode(fields),
+        "approval_url": reverse("admin:automation_approval"),
+    }
+
+
 @require_safe
 def access_view(request):
-    """This Administrator's sessions, and every live session of any Administrator.
+    """Every live session first; this Administrator's ended ones on request.
 
-    The own list shows sessions live and ended in the last 30 days; the
-    second list shows every live session, which any Administrator may revoke.
+    The live table lists every live session of any Administrator, each with
+    Revoke. Ticking "Include ended sessions" (``ended=yes``) adds a second
+    table of this Administrator's sessions that ended in the last 30 days,
+    never offered Revoke. Both tables sort by their headings (``live_sort``
+    and ``ended_sort``), and every control refreshes the page in place.
     Approving a new session first asks for a fresh Google sign-in.
     """
     try:
         service = runtime()
         actor = _administrator(request, service)
-        filters(request.GET, allowed=set())
-        now = database_now()
-        own = sessions_of(actor.identity, now)
-        for row in own:
-            row["scope_label"] = SCOPES[row["scope"]]
-            row["reason_label"] = END_REASONS.get(row["end_reason"])
-        everyone = live_sessions()
-        for row in everyone:
-            row["scope_label"] = SCOPES[row["scope"]]
-            row["own"] = row["principal_id"] == actor.identity
-        response = render(
-            request,
-            "stewardship/automation-access.html",
-            {
-                "sessions": own,
-                "live": everyone,
-                "fresh": _fresh(request),
-                "approval_url": reverse("admin:automation_approval"),
-            },
-        )
+        state = _access_state(request.GET)
+        ended = []
+        if state[0]:
+            ended = [
+                row
+                for row in own_sessions(
+                    actor.identity, database_now(), include_ended=True
+                )
+                if not row["live"]
+            ]
+        context = access_context(state, actor.identity, live_sessions(), ended)
+        context["fresh"] = _fresh(request)
+        response = render(request, "stewardship/automation-access.html", context)
         response["Cache-Control"] = "no-store"
         return response
     except REFUSALS as error:
@@ -244,16 +331,18 @@ def access_view(request):
 
 @require_POST
 def session_view(request, session_id):
-    """Revoke one live session, then return to Automation access.
+    """Revoke one live session, then return to Automation access as it was.
 
     Revoking one's own session records ``revoked_by_owner``; any other
     Administrator's, ``revoked_by_administrator``. It takes effect at that
-    session's next command.
+    session's next command. The form's query carries the page's filter and
+    sorts, validated as the page validates them, so the page it returns to
+    (swapped in place) keeps the reader's view.
     """
     try:
         service = runtime()
         actor = _administrator(request, service)
-        filters(request.GET, allowed=set())
+        state = _state_fields(*_access_state(request.GET))
         _fields(request.POST, {"csrfmiddlewaretoken"})
         session = AutomationSession.objects.filter(pk=session_id).first()
         if session is None:
@@ -264,9 +353,7 @@ def session_view(request, session_id):
             actor,
             reason="revoked_by_owner" if own else "revoked_by_administrator",
         )
-        return HttpResponseRedirect(
-            reverse("admin:automation_access") + "#automation-sessions"
-        )
+        return HttpResponseRedirect(_access_url(state, "#live-table"))
     except REFUSALS as error:
         return error_response(error)
 

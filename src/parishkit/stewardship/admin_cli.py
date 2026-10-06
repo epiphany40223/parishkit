@@ -559,11 +559,20 @@ def whoami(args, preamble, runtime, context):
 
 
 def sessions(args, preamble, runtime, context):
-    """List this Administrator's sessions, live and ended in the last 30 days."""
-    from .accounts.automation_sessions import database_now, sessions_of
+    """List this Administrator's sessions, as Automation access orders them.
+
+    Live sessions only unless ``--include-ended``, which adds those that
+    ended in the last 30 days; ``--sort`` takes the page's own tokens
+    (``OWN_SORTING``, newest approval first by default), and an unknown
+    token is refused as invalid (#621).
+    """
+    from .accounts.automation_sessions import OWN_SORTING, database_now, own_sessions
 
     caller = context["caller"]
-    rows = sessions_of(caller.principal.identity, database_now())
+    sort = OWN_SORTING.parse({} if args.sort is None else {"sort": args.sort})
+    rows = own_sessions(
+        caller.principal.identity, database_now(), include_ended=args.include_ended
+    )
     return {
         "sessions": [
             {
@@ -574,11 +583,11 @@ def sessions(args, preamble, runtime, context):
                 "expires_at": iso(row["expires_at"]),
                 "last_used_at": iso(row["last_used_at"]),
                 "live": bool(row["live"]),
-                "ended_at": iso(row["revoked_at"]),
+                "ended_at": iso(row["ended_at"]),
                 "end_reason": row["end_reason"],
                 "current": row["id"] == caller.automation_session_id,
             }
-            for row in rows
+            for row in OWN_SORTING.sort_rows(rows, sort)
         ]
     }
 
@@ -846,6 +855,20 @@ def _pairing_options(parser):
     parser.add_argument("--days", type=int, default=30, help="1 to 30 (default 30)")
 
 
+def _sessions_options(parser):
+    """Options of ``sessions``: Automation access's filter and sort (#621)."""
+    parser.add_argument(
+        "--include-ended",
+        action="store_true",
+        help="also list sessions that ended in the last 30 days",
+    )
+    parser.add_argument(
+        "--sort",
+        help="label, scope, created, expires, used or ended; "
+        "--sort=-NAME (with =) reverses it (default -created)",
+    )
+
+
 def _wait_options(parser):
     """Options of ``login wait``."""
     parser.add_argument("--name", help="the session file's name (wrapper only)")
@@ -915,6 +938,7 @@ COMMANDS = (
         False,
         ("sessions",),
         2,
+        options=(_sessions_options,),
     ),
     CommandSpec(
         "commands",
