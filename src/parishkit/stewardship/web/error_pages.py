@@ -10,6 +10,7 @@ server-owned text is shown: never exception strings or submitted values.
 
 from urllib.parse import urlsplit
 
+from django.conf import settings
 from django.db import DatabaseError
 from django.http import HttpResponse
 from django.middleware.csrf import get_token
@@ -17,6 +18,7 @@ from django.template.loader import render_to_string
 from django.utils.cache import patch_vary_headers
 from django.utils.translation import gettext_lazy as _
 
+from ..deployment import DeploymentProfile
 from .contracts import MESSAGES, ErrorCode
 from .namespaces import ADMIN_HOME, admin_return_path, is_admin
 
@@ -115,6 +117,12 @@ def _back_path(request):
 ERROR_PAGE_ATTRIBUTE = "_stewardship_error_page"
 
 
+def _is_local():
+    """Whether this process serves the LOCAL laptop environment (#476)."""
+    value = getattr(settings, "STEWARDSHIP_DEPLOYMENT_PROFILE", None)
+    return value is not None and DeploymentProfile(value) is DeploymentProfile.LOCAL
+
+
 def error_page(request, response):
     """Render a typed error response's closed messages as an HTML page."""
     setattr(request, ERROR_PAGE_ATTRIBUTE, True)
@@ -157,6 +165,10 @@ def error_page(request, response):
         "home_label": _("Administration home") if admin else _("Family portal home"),
         # Chrome and step-up forms need this even without request context.
         "csrf_token": get_token(request),
+        # So does LOCAL's step-up wording (#619): the outage fallback below
+        # renders without context processors, which otherwise set this flag
+        # (accounts.branding_context.local_environment).
+        "local_environment": _is_local(),
     }
     try:
         content = render_to_string("stewardship/error.html", context, request=request)

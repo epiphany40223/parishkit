@@ -3,11 +3,14 @@
 import json
 
 import pytest
-from django.test import RequestFactory
+from django.db import DatabaseError
+from django.test import RequestFactory, override_settings
 
 from parishkit.stewardship.accounts.admin_editing import error_response
 from parishkit.stewardship.accounts.sessions import FreshAuthenticationRequired
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web import error_pages
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
     FieldError,
@@ -100,6 +103,32 @@ def test_fresh_authentication_offers_confirm_with_google():
     assert 'name="next" value="/admin/setup/credentials/slack"' in body
     assert 'name="csrfmiddlewaretoken"' in body
     assert "Confirm with Google" in body
+
+
+@pytest.mark.parametrize("outage", [False, True])
+def test_local_step_up_never_mentions_google(monkeypatch, outage):
+    """LOCAL's step-up page names the laptop command, not Google (#619).
+
+    The outage fallback renders without context processors, so the page's
+    own context must carry LOCAL's flag.
+    """
+    real = error_pages.render_to_string
+
+    def render(name, context, request=None):
+        """Fail the chrome render, as a database outage would."""
+        if outage and request is not None:
+            raise DatabaseError("outage")
+        return real(name, context, request=request)
+
+    monkeypatch.setattr(error_pages, "render_to_string", render)
+    request = RequestFactory().get("/admin/setup/credentials/slack", **PAGE)
+    with override_settings(STEWARDSHIP_DEPLOYMENT_PROFILE=DeploymentProfile.LOCAL):
+        response = through(request, error_response(FreshAuthenticationRequired()))
+    body = response.content.decode()
+    assert response.status_code == 403
+    assert "Google" not in body
+    assert "confirm your sign-in before this action" in body
+    assert "tools/stewardship-local.sh sign-in" in body
 
 
 @pytest.mark.parametrize("kept", [False, True])
