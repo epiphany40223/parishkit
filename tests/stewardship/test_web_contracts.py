@@ -28,6 +28,7 @@ def test_secret_fields_rejected_for_every_context(kind):
         ContextKind.MEMBER_SOURCE,
         ContextKind.BOUNDARY,
         ContextKind.SCHEDULE,
+        ContextKind.DUE_WORK,
     }:
         assert sanitize(kind, {"outcome": Outcome.DENIED}) == {"outcome": "denied"}
 

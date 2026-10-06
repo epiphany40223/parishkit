@@ -155,6 +155,7 @@ sections:
     "Export cleanup recovery": [BG-08, ADM-03]
     "ParishSoft publication": [BG-09, ADM-09]
     "Critical errors and notification": [BG-10]
+    "Late work during a bulk Family send": [BG-10]
     "Shutdown and upgrade behavior": [BG-10]
   reports/spec.md:
     "Shared report behavior": [RPT-01]
