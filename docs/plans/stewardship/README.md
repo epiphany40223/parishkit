@@ -23,6 +23,10 @@ ID maps to a numbered item in these plans; checklists do not redefine scope.
 | [Reports](reports.md) | [Reports spec](../../specs/stewardship/reports/spec.md) | Calculations, report UI, charts, workflow views, and exports |
 | [Operations](operations.md) | [Operations spec](../../specs/stewardship/operations/spec.md) | Compose, deployment, backup/restore, observability, CI, and acceptance |
 
+Cross-cutting design plans for post-launch work sit beside them, for example
+the [ParishSoft refresh schedule and data age](refresh-schedule.md) plan
+(#632, #510).
+
 The plans intentionally link to specifications instead of repeating field-level
 requirements. Completing a work package means implementing every applicable
 normative requirement in its linked specification section, its tests, and its

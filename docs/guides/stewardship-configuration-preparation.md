@@ -97,10 +97,12 @@ separation remains an OPS-02/OPS-04 prerequisite before deployment.
 
 The Phase 2 ParishSoft editor emits `source-cadence-v8` when public integration
 settings contain any of `nightly_time`, `full_refresh`, `full_refresh_times`
-or `delta_refresh`. The times use parish-local `HH:MM`, the list is sorted,
-unique and names the nightly time; their scheduling and default behavior
-remain owned by the
-[full-cycle specification](../specs/stewardship/background-processing/spec.md#full-cycle).
+or `delta_refresh`, and, once the integrated refresh schedule
+([#632](https://github.com/epiphany40223/parishkit/issues/632)) lands,
+`quick_refresh_times` or `refresh_rules`. The times use parish-local `HH:MM`,
+the lists are sorted and unique and the full list names the nightly time;
+their scheduling and default behavior remain owned by the
+[refresh schedule specification](../specs/stewardship/background-processing/spec.md#stored-schedule-and-upgrade).
 Every one is optional, so earlier v8 documents stay valid. Validation
 delegates to the frozen content/policy/campaign rules after checking only the
 added fields. Older schema names continue to reject those fields.
