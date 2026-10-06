@@ -1115,19 +1115,83 @@ Family without one receives no outbox row; its occurrence terminates as
 refusals therefore cannot create empty-recipient messages or systemic-provider
 failures, while the skipped occurrence preserves reporting and recovery state.
 
-Each scheduler loop plans the current campaign's Families in one page, in
-stable order from where the previous loop stopped. Each Family is planned in
-its own transaction, so no lock spans two Families. A page holds up to 100
-Families while the previous page allocated new preparation work, and 20 after
-one that allocated none, so a large send creates mail quickly without an idle
-or paused campaign holding the work-order lock for long. A page also ends once
-15 seconds of planning have passed, checked between Families, which bounds
-this producer's share of the scheduler loop and its 90-second heartbeat.
-Ending early is pacing, not a timeout: the next loop resumes after the last
-Family planned (#394). Each such page logs `work_budget_reached` with the
-budget and the elapsed seconds; with debug logging on, every page also logs
-how many Families it visited. With the [bulk Family send](#bulk-family-send)
-on, one transaction plans several Families instead.
+### Family schedule sweep
+
+The scheduler plans a Family again only when something its plan reads may
+have changed, or when the campaign clock reaches a time that may change the
+answer ([#640](https://github.com/epiphany40223/parishkit/issues/640)).
+At most every 15 seconds it reads two fingerprints, without the work-order
+lock and with the scheduler's existing grants:
+
+- **Campaign-wide:** the runtime row's version (mode, configuration, current
+  campaign, restore review), the campaign's version (state, pause, production
+  cycle, configuration), the credential row's go-live gate and rehearsal
+  pointer, rehearsal epochs, work gates, unfinished catch-up demands, and every
+  schedule definition's version (a new revision moves it). A change queues
+  every Family.
+- **Clock edges:** the configuration's start and end, each current invitation
+  and reminder revision's due time and, on the [bulk path](#bulk-family-send)
+  in Production, each reminder's [lead-window](#preparing-ahead-of-the-due-time)
+  start. When the campaign clock reaches the next edge, every Family is
+  queued. Edges are absolute instants on the same campaign clock planning
+  uses, so a daylight-saving change neither skips nor repeats one. The
+  campaign clock only moves forward in a deployment; a test that moves it
+  back past an edge needs a new scheduler producer before that edge wakes
+  the sweep again.
+- **Per Family:** the Family row's planning columns (active, email eligible,
+  email deliverable, effective response), its eligibility history, its
+  responses, the count and version sum of its occurrences and restore holds,
+  and the count of its fulfillments. A change queues that Family alone. A
+  response, an eligibility or deliverability change from a source promotion,
+  and an occurrence moving through preparation or delivery land here. A
+  promotion that rewrites the row without changing these columns does not
+  queue it.
+
+These are the inputs the scheduler can see changing, not proof that a plan
+will change: a queued Family is planned in full, and planning may find
+nothing to do. Every mutable row's version rises by one on each update, so a
+count plus a version sum sees every insert and update. Fulfillments,
+eligibility history and responses are append-only, so their counts suffice.
+Every Family is also queued once an hour, as a safety net for any input the
+fingerprints miss, and when the scheduler starts, a new campaign becomes
+current, or a held Testing gate reopens. Traversal state is memory only; a
+restart plans every Family once, as before, so it needs no durable cursor. A
+fingerprint read before planning that differs afterward queues the Family
+again, so a change that lands while it is planned is not lost.
+
+A Family queued alone goes to the front of the queue, so a change made only by
+others (a response, a source change) is planned within about 15 seconds plus
+one page, even during a full pass. A Family planned since the previous check
+goes to the back instead, since its own planning may have moved it, so its
+change does not jump ahead of Families not yet planned. Such a Family, for
+example one planned just before its response, can wait behind a full pass
+still under way, as can a due time. A full pass's Families go behind anything
+already queued, starting after the last Family planned, so a pass that is
+queued again while under way still reaches its end. Planning is unchanged and
+recomputes everything under the lock; the SQL guards stay authoritative.
+
+A Family is dequeued only once its plan has committed. In bulk, that is when
+its chunk commits, so a rolled-back chunk leaves all its Families queued. A
+Family whose planning raises an unexpected error (a lock timeout or lost
+connection, say) stays queued at the back, so it is retried within seconds
+without blocking the others. A Family refused by admission or by an invariant
+check is not retried until its inputs or the campaign-wide inputs change, or
+the hourly pass comes round. Before #640 the wrapping sweep retried it every
+few minutes.
+
+Each scheduler loop plans the queued Families in one page, in stable order.
+Each Family is planned in its own transaction, so no lock spans two Families. A
+page holds up to 100 Families while the previous page allocated new
+preparation work, and 20 after one that allocated none, so a large send
+creates mail quickly without an idle or paused campaign holding the work-order
+lock for long. A page also ends once 15 seconds of planning have passed,
+checked between Families, which bounds this producer's share of the scheduler
+loop and its 90-second heartbeat. Ending early is pacing, not a timeout: the
+Families not reached stay queued for the next loop (#394). Each such page logs
+`work_budget_reached` with the budget and the elapsed seconds; with debug
+logging on, every page also logs how many Families it visited. With the [bulk
+Family send](#bulk-family-send) on, one transaction plans several Families
+instead. A loop with nothing queued plans nothing and takes no work-order lock.
 
 ### Bulk Family send
 

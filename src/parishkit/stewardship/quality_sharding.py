@@ -62,6 +62,9 @@ SLOW_TEST_SECONDS = {
     "test_metrics_expiry_restores_prior_without_persisting_its_hash": 20,
     "test_all_entity_kinds_stage_in_bounded_batches_at_reference_scale": 15,
     "test_reference_confirmation_and_family_submit_during_incomplete_catchup": 121,
+    # 2,700 Families populated and their occurrences seeded in bulk (#640);
+    # about 5 s locally.
+    "test_a_realistic_population_goes_idle_cheaply": 10,
 }
 
 # Per-test fixture construction is often more expensive than the assertion.

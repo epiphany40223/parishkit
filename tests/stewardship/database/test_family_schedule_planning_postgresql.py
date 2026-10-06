@@ -186,7 +186,7 @@ def test_producer_paging_restart_and_new_family_are_idempotent(family_service): 
         third = producer(guard)
         assert len(first) == len(second) == len(third) == 1
         assert len({row.family_id for row in (*first, *second, *third)}) == 3
-        assert producer(guard) == () and producer.cursor is None
+        assert producer(guard) == () and not producer.pending
         replay = FamilyScheduleProducer(actor)(guard)
         assert len(replay) == 3 and all(row.created == 0 for row in replay)
     assert ScheduleOccurrence.objects.count() == 3
