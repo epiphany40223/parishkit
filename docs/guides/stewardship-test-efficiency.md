@@ -141,6 +141,55 @@ leaves its old required context unreported and blocks every PR until the
 ruleset is updated. Update the ruleset in the same change that renames a
 required job or matrix value.
 
+## PostgreSQL partition packing
+
+After launch, several PRs' CI runs overlap, so runner slots and runner-minutes
+limit throughput more than one run's wall time
+([#625](https://github.com/epiphany40223/parishkit/issues/625)). The account
+runs at most 20 jobs at once. In the 2026-10-04/05 baseline the 14 PostgreSQL
+partition jobs took a median 13.2 minutes each (maximum 18.9), about 65% of a
+full run's runner-minutes, and a full run needed more slots than a second run
+could find, so overlapping runs queued serially.
+
+Each `stewardship-postgresql-shard` job therefore runs `PARTITIONS_PER_JOB` (in
+`parishkit.stewardship.quality_ci`) partitions at once with `quality_ci job`.
+Every partition is still an ordinary `quality_ci shard` child with its own
+receipt, `--require-no-skips`,
+[deadline](stewardship-database-tests.md#parallel-ci-and-live-progress),
+`partition-N` output directory and pytest temporary root. Each slot has its own
+PostgreSQL/Valkey service pair on its own ports (SQL roles are cluster-wide, so
+partitions never share a cluster); Valkey skips port 56380, which the
+unavailable-service tests keep closed. Child output is relayed live with a
+`[partition N]` prefix, so a job killed at its time limit still shows each
+partition's last `CI_PROGRESS` record. A job fails if any of its partitions
+fails, after all of them finish; if the job is interrupted, or a partition
+cannot start, the partitions already running are stopped. The gate merges every
+job's artifact into one directory and combines coverage exactly as before; the
+path-selection skips above are unchanged.
+
+The packing is three per job, the smallest that frees at least eight slots:
+five jobs instead of fourteen frees nine per full run, while two per job would
+free only seven. A standard hosted runner for a public repository has 4 vCPUs
+and 16 GB. The partitions spend much of their time waiting on PostgreSQL and on
+real lease, drain and deadline waits, so three rarely need more than three
+cores at once, leaving one for the PostgreSQL backends. Three 2 GiB tmpfs
+clusters and three pytest processes stay well inside 16 GB; four would
+oversubscribe the CPUs whenever the partitions are all busy. The first job
+takes the short remainder (two partitions): partition one also runs the
+CPU-heavy non-database baseline, so it is often the longest. The partition
+deadline and job limit were raised to absorb sharing the runner, not to permit
+a slower suite.
+
+The expected cost is roughly 100 runner-minutes for the PostgreSQL group
+instead of about 185, with a lone run's PostgreSQL wall time a few minutes
+longer. Measure before claiming either: first with the introducing PR's own
+dispatched `CI (jobs: all)` run (the five jobs' times and runner-minutes, and
+partition one's margin to its deadline), then by comparing a dispatched `CI
+(jobs: all)` run on an otherwise idle account, and the runner-minutes of a week
+of ordinary PR runs, against the #625 baseline. To retune, change
+`PARTITIONS_PER_JOB`; `tests/stewardship/test_quality_ci.py` then names the job
+matrix and the `postgres-N`/`valkey-N` service pairs `ci.yml` must declare.
+
 ## Transient infrastructure failures
 
 Hosted runners occasionally fail a dependency install with "no matching

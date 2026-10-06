@@ -3,7 +3,9 @@
 Each shard runs against its own PostgreSQL/Valkey cluster, on separate CI
 runners or isolated local disposable services. Never run shards concurrently
 against a shared cluster: SQL roles and schemas are cluster-wide test fixtures.
-The ordinary quality command remains the serial, all-in-one developer gate.
+A CI job packs several shards onto one runner (`run_job`), each with its own
+service pair on its own ports. The ordinary quality command remains the
+serial, all-in-one developer gate.
 """
 
 import hashlib
@@ -12,6 +14,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from functools import partial
 from pathlib import Path
@@ -24,7 +27,25 @@ from .quality import FLOOR, coverage_percentages, load_scope
 from .quality_sharding import partition, tree_digest
 
 DATABASE_TESTS = "tests/stewardship/database"
-SHARD_TIMEOUT = 20 * 60
+# Partitions one CI job runs concurrently, each against its own PostgreSQL/
+# Valkey pair (issue #625). This is the one tuning knob: the contract tests
+# derive the workflow's job matrix and its service pairs from it, and fail
+# naming what to change. Three is the smallest packing that frees at least
+# eight of the account's twenty concurrent job slots (fourteen jobs become
+# five; two per job would free only seven). It also fits a 4 vCPU / 16 GB
+# hosted runner: the partitions spend much of their time waiting on
+# PostgreSQL and on real lease and drain deadlines, and three 2 GiB tmpfs
+# clusters plus three pytest processes stay well inside 16 GB.
+PARTITIONS_PER_JOB = 3
+# One partition's subprocesses share this deadline. Partitions alone took up
+# to 18.9 minutes (median 13.2) in October 2026; the margin absorbs sharing a
+# runner with the other packed partitions, not a slower suite.
+SHARD_TIMEOUT = 30 * 60
+# The first slot keeps the services' default ports. Valkey port 56380 stays
+# unused: the unavailable-service tests rely on nothing listening there.
+POSTGRES_PORT = 55432
+VALKEY_PORT = 56379
+RESERVED_VALKEY_PORT = 56380
 # The per-test stack dump only diagnoses a hang; SHARD_TIMEOUT is what fails
 # one. Keep it well above the longest legitimate case and well below the shard
 # deadline, or it can never fire first. The contract test derives that lower
@@ -129,8 +150,12 @@ def child_status(result):
     return result.returncode
 
 
-def run_shard(root, output, index, count):
-    """Run one partition and, on shard one only, the baseline; require success."""
+def run_shard(root, output, index, count, basetemp=None):
+    """Run one partition and, on shard one only, the baseline; require success.
+
+    ``basetemp``, when given, is pytest's private temporary root, so packed
+    partitions on one runner never share or prune each other's directories.
+    """
     partition([], index, count)
     scope = load_scope(root)
     digest = tree_digest(root)
@@ -151,6 +176,7 @@ def run_shard(root, output, index, count):
         "--durations=20",
         "-o",
         f"faulthandler_timeout={STACK_DUMP_SECONDS}",
+        *([f"--basetemp={outside(root, basetemp)}"] if basetemp else []),
     ]
     deadline = time.monotonic() + SHARD_TIMEOUT
     if index == 1:
@@ -212,6 +238,150 @@ def run_shard(root, output, index, count):
         f"CI shard {index}/{count}: {len(expected):,} database tests passed", flush=True
     )
     return 0
+
+
+def job_count(count, per_job=PARTITIONS_PER_JOB):
+    """Return how many packed CI jobs run ``count`` partitions."""
+    return -(-count // per_job)
+
+
+def job_partitions(job, count, per_job=PARTITIONS_PER_JOB):
+    """Return the partition indexes one packed CI job runs, in order.
+
+    Jobs are numbered from one. When the partitions do not divide evenly, the
+    first job takes the short remainder: partition one runs the CPU-heavy
+    non-database baseline as well as its database tests, so it is often the
+    longest and should share its runner with the fewest others. Every
+    partition belongs to exactly one job.
+    """
+    partition([], 1, count)
+    jobs = job_count(count, per_job)
+    if type(job) is not int or not 1 <= job <= jobs:
+        raise ValueError("Invalid CI job for this partition count")
+    first = max(1, count - (jobs - job + 1) * per_job + 1)
+    return list(range(first, count - (jobs - job) * per_job + 1))
+
+
+def slot_ports(slot):
+    """Map a packed job's zero-based slot to its own service pair's ports."""
+    valkey = VALKEY_PORT + slot
+    if valkey >= RESERVED_VALKEY_PORT:
+        valkey += 1
+    return {
+        "PARISHKIT_TEST_POSTGRES_PORT": str(POSTGRES_PORT + slot),
+        "PARISHKIT_TEST_VALKEY_PORT": str(valkey),
+    }
+
+
+# After a child exits, how long its relay may keep reading. A grandchild that
+# outlives the child and still holds the pipe must not stall the job until
+# its time limit; the relay is a daemon thread, so it never blocks exit.
+RELAY_DRAIN_SECONDS = 30
+
+
+def relay(stream, prefix, lock):
+    """Copy a child's output lines live, each tagged with its partition.
+
+    Lines are relayed as they arrive rather than replayed at the end, so a
+    job the runner kills at its time limit still shows each partition's last
+    CI_PROGRESS record. The lock keeps concurrent lines whole.
+    """
+    for line in iter(stream.readline, b""):
+        text = line.decode("utf-8", "replace").rstrip("\n")
+        with lock:
+            print(prefix + text, flush=True)
+
+
+def stop_children(children):
+    """Terminate, then if needed kill, children still running; say so."""
+    for index, process, _ in children:
+        if process.poll() is None:
+            print(f"Stopping CI partition {index}", file=sys.stderr, flush=True)
+            process.terminate()
+    for _, process, _ in children:
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+
+def terminated(signum, frame):
+    """Turn SIGTERM into an exception so run_job can stop its children."""
+    raise SystemExit(128 + signum)
+
+
+def run_job(root, output, job, count):
+    """Run one CI job's partitions concurrently and require every one to pass.
+
+    Each partition is an ordinary `shard` child with its own deadline,
+    receipt and output directory (``partition-N`` under ``output``), pointed
+    at its own PostgreSQL/Valkey pair by port and given its own pytest
+    temporary root beside ``output``. The combiner later reads those
+    directories exactly as it reads single-partition artifacts. If starting a
+    child fails, or the job is interrupted or terminated, children already
+    started are stopped rather than orphaned.
+    """
+    indexes = job_partitions(job, count)
+    output = outside(root, output)
+    output.mkdir(mode=0o700, parents=True, exist_ok=False)
+    # Beside, not inside, output: the artifact uploads output in full.
+    temporary = outside(root, output.with_name(output.name + "-tmp"))
+    temporary.mkdir(mode=0o700, exist_ok=False)
+    lock = threading.Lock()
+    children = []
+    previous = signal.signal(signal.SIGTERM, terminated)
+    try:
+        for slot, index in enumerate(indexes):
+            env = environment()
+            env.update(slot_ports(slot))
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "parishkit.stewardship.quality_ci",
+                    "shard",
+                    "--root",
+                    str(root),
+                    "--index",
+                    str(index),
+                    "--count",
+                    str(count),
+                    "--output",
+                    str(output / f"partition-{index}"),
+                    "--basetemp",
+                    str(temporary / f"partition-{index}"),
+                ],
+                cwd=root,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            thread = threading.Thread(
+                target=relay,
+                args=(process.stdout, f"[partition {index}] ", lock),
+                daemon=True,
+            )
+            thread.start()
+            children.append((index, process, thread))
+        status = 0
+        for index, process, thread in children:
+            # Each child enforces its own partition deadline; the job's
+            # timeout-minutes is the backstop for a child that never returns.
+            code = process.wait()
+            thread.join(timeout=RELAY_DRAIN_SECONDS)
+            if code:
+                status = 1
+                reason = f"signal {-code}" if code < 0 else f"status {code}"
+                print(f"CI partition {index}/{count} failed ({reason})", flush=True)
+    except BaseException:
+        stop_children(children)
+        raise
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+    if not status:
+        print(f"CI job {job}: partitions {indexes} passed", flush=True)
+    return status
 
 
 def remap(root, recorded_root, filename):
@@ -291,27 +461,44 @@ def combine(root, directory, report, count):
 
 
 def main(argv=None):
-    """Run isolated CI shards or the mandatory complete-coverage aggregation gate."""
+    """Run isolated CI shards, a packed job of them, or the coverage gate."""
     parser = StewardshipArgumentParser(
         "python -m parishkit.stewardship.quality_ci",
         description="Run isolated test shards and verify their combined coverage.",
         error_hints={},
     )
-    parser.add_argument("operation", choices=("shard", "combine"))
+    parser.add_argument("operation", choices=("shard", "job", "combine"))
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--count", type=int, required=True)
     parser.add_argument("--index", type=int)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--input", type=Path)
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--basetemp", type=Path)
     args = parser.parse_args(argv)
     try:
         root = args.root.resolve(strict=True)
         if args.operation == "shard":
             if args.index is None or args.output is None or args.input or args.report:
                 parser.usage_error("shard requires --index/--output only")
-            return run_shard(root, args.output, args.index, args.count)
-        if args.input is None or args.report is None or args.index or args.output:
+            return run_shard(root, args.output, args.index, args.count, args.basetemp)
+        if args.operation == "job":
+            if (
+                args.index is None
+                or args.output is None
+                or args.input
+                or args.report
+                or args.basetemp
+            ):
+                parser.usage_error("job requires --index/--output only")
+            return run_job(root, args.output, args.index, args.count)
+        if (
+            args.input is None
+            or args.report is None
+            or args.index
+            or args.output
+            or args.basetemp
+        ):
             parser.usage_error("combine requires --input/--report only")
         return combine(root, args.input, args.report, args.count)
     except (
