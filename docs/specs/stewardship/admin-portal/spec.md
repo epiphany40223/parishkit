@@ -566,7 +566,9 @@ submissions since yesterday, next scheduled email, open follow-up counts,
 problems. How the line differs by role is still to be decided.
 
 Problems that need action (failed background tasks, unacknowledged security
-events, a stale ParishSoft refresh, and the [System health](#system-health)
+events, out-of-date ParishSoft data as
+[ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection)
+defines it, and the [System health](#system-health)
 problems such as an overdue backup or a halted mail sender) stay above Next
 steps and link the page that resolves them. A next step is a link only when
 the viewer's menu entry for it is available.
@@ -1352,16 +1354,9 @@ without spending attempts; see the
 [credential installer guide](../../../guides/stewardship-credential-installers.md#replacing-an-integration-key-from-the-web).
 The history
 stays on the change's details page and in the audit log. The ParishSoft
-settings page lists the full refresh's parish-local times ("At these times",
-one to eight, typed comma-separated and stored sorted; the earliest is the
-nightly refresh) and offers the quick-update cadence (every 15 minutes,
-hourly or off). The time list is shown only for the set-times frequency; for
-hourly and 15-minute refreshes the stored times are kept unchanged and are
-not a change to review. A quick-update choice whose gap exceeds the server's
-freshness window is refused with the gap and the window named, per the
-[full cycle](../background-processing/spec.md#full-cycle). Both fields keep
-their long help behind the field tip; the visible hints are the time format
-and "Family contact changes only; keep 15 minutes".
+settings page edits the refresh schedule, as
+[ParishSoft refresh schedule settings](#parishsoft-refresh-schedule-settings)
+describes.
 
 **Off-site backups (Google Drive)** is an optional integration with no key of
 its own: its one setting is a Google Drive folder link, stored in canonical
@@ -1491,6 +1486,144 @@ deployment, before the wizard runs, and adding a step would reopen the
 frozen setup-draft guards and finalization patch. Instead the wizard's
 completion panel points to this page, as it does for off-site backups. A
 browser-side key-pair generator is not offered.
+
+### ParishSoft refresh schedule settings
+
+The ParishSoft settings page edits the one
+[refresh schedule](../background-processing/spec.md#refresh-schedule) of
+full refreshes and quick updates, replacing the separate frequency, "At these
+times" and quick-update fields
+([#632](https://github.com/epiphany40223/parishkit/issues/632)). The design
+follows common practice for schedules with exceptions (rules, then
+exceptions, then a live preview); the
+[refresh schedule plan](../../../plans/stewardship/refresh-schedule.md#research-notes)
+records the products compared. It is written for a mid-level IT admin: plain
+words, no cron text, and every refused or skipped time explained where it
+appears. It follows the [in-place controls](#in-place-controls) and
+conditional-field rules: nothing on the page reloads it.
+
+**Time zone.** Schedule times are entered and shown in the parish's time
+zone, a recorded exception to the browser-local rule
+([#558](https://github.com/epiphany40223/parishkit/issues/558)): a recurring
+wall-clock schedule belongs to the parish's clock, whose daylight-saving
+changes decide when each refresh runs and when reminders are due, and a time
+converted from another zone would shift twice a year. The page names the
+parish time zone beside the editor ("Times are in the parish's time zone,
+America/New_York") and, when the browser's zone differs, says so and shows
+each preview time in the browser's zone as well. See decision 18 in the
+[plan](../../../plans/stewardship/refresh-schedule.md#open-decisions).
+
+#### Schedule editor
+
+- **Presets** fill the editor, each described with what it includes:
+  - "Nightly only": Full at 02:00; no quick updates.
+  - "Nightly, then quick updates hourly" (the default): Full at 02:00; Quick
+    every hour from 00:00 to 23:00 (23 quick updates; the 02:00 one is
+    covered by the full refresh).
+  - "Every 2 hours": Full every 2 hours from 00:00 to 22:00; no quick
+    updates.
+  - "Every 4 hours": Full every 4 hours from 00:00 to 20:00; no quick
+    updates.
+  - "Business hours": Full at 02:00 and every 2 hours from 08:00 to 18:00;
+    Quick every hour from 07:00 to 19:00 (7 quick updates, at 07:00, 09:00,
+    11:00, 13:00, 15:00, 17:00 and 19:00; the others are covered by the full
+    refreshes).
+
+  Choosing a preset when the editor has unsaved changes asks first, in
+  place: "Replace your changes with this preset?" No preset needs to avoid
+  the Family email windows by hand: the automatic exclusions do that.
+- **Rule rows**, each "[Full | Quick] every [interval] from [time] to [time]"
+  or "[Full | Quick] at [time]", with **Add a rule** and **Remove**. Time
+  fields use the shared flexible time entry
+  ([#631](https://github.com/epiphany40223/parishkit/issues/631)) once it
+  exists, with its live reading beside the field, and accept quarter-hour
+  times; a kept off-quarter-hour full time is shown as a single time,
+  labeled as kept from the earlier schedule.
+- **Skip these times**: single times or from–to ranges.
+- **Skip refreshes around Family emails** (on by default), with one line
+  saying what it does: refreshes are skipped while a reminder is being
+  prepared and while a Family email is being sent.
+- **Edit as text**: the resulting full and quick times as two plain lists,
+  for pasting. Editing them replaces the rules with single times, and the
+  page says so before it does. The lists and the rows stay in step.
+- The page states which full time is the nightly refresh and that it runs
+  even while Family emails are being sent.
+- A schedule saved before this page existed is shown converted to the
+  equivalent rules, and saving other settings leaves it stored as it is; a
+  change to it lists what will differ, as
+  [stored schedule and upgrade](../background-processing/spec.md#stored-schedule-and-upgrade)
+  describes.
+
+**Problems, at the row that causes them.** Each appears live, names the
+times involved, and clears as soon as the row is fixed; the server applies
+the same checks on save.
+
+- Two times too close (possible only with a kept off-quarter-hour time,
+  since new times are on the quarter hour): at the later row, for example
+  "00:00 is only 10 minutes after the 23:50 full refresh; refreshes must be
+  at least 15 minutes apart."
+- A time off the quarter hour: at its field ("Use :00, :15, :30 or :45").
+- A skip that removes the last full time: at that skip row ("This skips
+  02:00, the only full refresh; keep at least one full refresh a day").
+- A skip that matches no refresh: at that skip row ("This matches no
+  refresh"), so a mistyped time is not silently ignored.
+- A rule whose last time is before its start time, or a skip range whose
+  end is not after its start (both would cross midnight): at that row ("Use
+  two ranges: one up to 23:45 and one from 00:00"). A rule whose last time
+  equals its start time is allowed and gives that one time.
+
+While any problem remains, Save is unavailable and a line beside it names
+what is missing, for example "Fix 2 problems before saving: 00:00 is too
+close to 23:50; the skip at 12:30 matches no refresh", each linking to its
+row.
+
+#### Seven-day preview
+
+Below the editor, updated live as it changes, the page shows the next seven
+days from today:
+
+- **A grid**: one row per day and 96 quarter-hour cells, with full refreshes
+  and quick updates marked differently (shape as well as color), excluded
+  windows shaded and labeled with their cause ("Reminder: preparing",
+  "Reminder: sending", "Invitation: sending"), and the current time marked.
+  A kept off-quarter-hour time is marked in the cell it falls in. The grid
+  is read-only. Below 600 pixels wide it scrolls sideways inside its own
+  box, with the day labels fixed, so the page itself never scrolls sideways.
+- **A list** of the same days for keyboard and screen-reader use, one
+  collapsible section per day (today open, the others closed, each heading
+  giving the day's counts): each day's refreshes with their kind, and every
+  time that will not run, struck through with its reason, one time format
+  per line ("06:00 quick update skipped: reminder being prepared", "09:00
+  quick update covered by the 09:00 full refresh", "02:30 runs at 03:00:
+  clocks go forward").
+- Daylight-saving days are flagged in both.
+
+The preview is computed by the server from the same functions the scheduler
+uses, from the edited (unsaved) schedule and the campaign's current upcoming
+Family emails. Windows for emails not yet sent are estimates, and the preview
+says so.
+
+#### Cost and freshness summary
+
+- **Cost**: the estimated daily ParishSoft time and its share of the day,
+  per day of the preview and as an average, for example "About 1 h 34 min
+  of ParishSoft time a day (6.5% of the day): 8 full refreshes of about 7.3
+  minutes and 16 quick updates of about 2.2 minutes." The durations are the
+  medians of the last seven days' successful scheduled runs of each kind, or
+  typical values (7.3 and 2.2 minutes, Production's medians in October
+  2026), labeled as such, until there are three runs of a kind. Above 25% of
+  the day the summary shows a warning; it never refuses.
+- **Freshness**: the longest wait for new ParishSoft data over the seven
+  days, counting the excluded windows, with the day it falls on, and when
+  the alarm would sound, for example "New ParishSoft data arrives at least
+  every 8 hours (00:00 to 08:00). If a full refresh is more than 30 minutes
+  late, Administrators are alerted." Quick updates are described as
+  checking the connection and catching the Family contact changes
+  ParishSoft reports, not as keeping the data current. See
+  [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection).
+
+The command line offers the same schedule, validation and preview (see the
+[automation action inventory](../admin-automation/spec.md#integrations-and-credentials)).
 
 ### Ministry activity management
 
@@ -2882,13 +3015,17 @@ might be held back:
 
 - When the last full refresh and the last quick update finished, whether a
   refresh is running now, and a link to
-  [Refresh from ParishSoft](#manual-parishsoft-refresh). The freshness
-  wording is the one Home and the refresh page use, which
-  [#510](https://github.com/epiphany40223/parishkit/issues/510) may change.
-- **Quick updates skipped during a send:** while a bulk send is in progress
-  the scheduler skips quick updates and daytime full refreshes, as the
-  [delta cycle](../background-processing/spec.md#delta-cycle) describes. The
-  panel says so and gives the latest time at which they start again.
+  [Refresh from ParishSoft](#manual-parishsoft-refresh). The panel states
+  "ParishSoft data as of" and "Connection" as two separate lines, with the
+  wording Home and the refresh page use, defined in
+  [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection).
+- **Refreshes held during a send:** while a bulk send is in progress the
+  scheduler holds quick updates and daytime full refreshes, which run as a
+  catch-up once the send ends, as
+  [deltas wait for a bulk Family send](../background-processing/spec.md#deltas-wait-for-a-bulk-family-send)
+  describes. The panel says so and gives the latest time at which they start
+  again. Refreshes skipped around a scheduled Family email, which do not run
+  later, are listed separately with their window.
 - **A refused large change** (`source_destructive_change`, under the
   [full cycle](../background-processing/spec.md#full-cycle) rules): every
   recorded count with its before and after values (for example "Families

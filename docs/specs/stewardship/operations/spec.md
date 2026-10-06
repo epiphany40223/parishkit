@@ -748,6 +748,11 @@ and directory name only) are deleted under the rules of
 [accept a large ParishSoft change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once)
 (ADM-13), at most seven days after the refusal by default.
 
+Slot decision records, both `skipped` and `held` (see
+[skipped around Family emails](../background-processing/spec.md#skipped-around-family-emails)),
+are deleted eight days after their due time, by the same idempotent
+housekeeping; nothing reads them further back.
+
 ParishSoft HTTP cache follows configured freshness and bounded size. Upload
 staging, failed wizard staging, old static bundles, expired sessions, worker
 results, and rotated operational logs have documented cleanup jobs.
@@ -869,6 +874,136 @@ bundles, or the database.
 No health or metrics endpoint exposes parish names, Family/Member data, emails,
 tokens, campaign content, or credentials. Caddy never proxies any of these three
 internal paths, even when a caller supplies a valid metrics credential.
+
+### ParishSoft data age and connection
+
+"Fresh ParishSoft data" used to mean only that ParishSoft had answered
+recently: an empty quick update promoted a snapshot and reset the 30-minute
+staleness clock, while ParishSoft's change list returned nothing for every
+query ([#510](https://github.com/epiphany40223/parishkit/issues/510)). Three
+facts replace it, everywhere the system describes or alarms on ParishSoft
+data. The facts come from records already kept: each snapshot's kind, start
+and promotion, a quick update's change count, each refresh run's outcome,
+and the slot decision records (skipped and held).
+
+- **Last full refresh.** The start time of the newest promoted full
+  refresh. Only this drives the alarm below, because only a full refresh
+  re-reads everything.
+- **Data as of.** What pages, the digest and the command line show: the
+  start time of the newest promoted snapshot that could have brought in
+  ParishSoft changes, that is the last full refresh, or a later quick update
+  that changed at least one record. The change count is the snapshot
+  cursor's `changes` (the changed-record counts against its base, #242). It
+  is absent when counting failed, since it is display-only; a quick update
+  without it, like one whose counts are all zero, does not move "data as
+  of". Where the two differ, the page shows
+  both ("ParishSoft data as of 11:00, last full refresh 08:00").
+- **Connection.** Whether ParishSoft answers. Only refresh runs that
+  actually called ParishSoft count, scheduled or manual, full or quick; a
+  refresh cancelled because a newer one superseded it, a held or skipped
+  slot, and a run refused before calling ParishSoft are not attempts. One
+  line is shown, the first that applies:
+  1. "Failing since 09:15" when the newest attempt failed; the time is the
+     start of the earliest failed attempt after the newest successful one.
+  2. "Not checked since 02:00" when no attempt has succeeded within the
+     schedule's longest gap between any two scheduled refreshes plus the
+     lateness margin; the time is the newest success. Time during which
+     scheduled refreshes were held for a send or skipped around a Family
+     email does not count toward that gap, so a send alone never makes the
+     line read "not checked".
+  3. "Working" with the time ParishSoft last answered.
+
+  Connection problems keep their existing alarms (repeated refresh failure,
+  a refused organization or a refused large change); the connection line
+  adds no new alarm.
+
+**When data is out of date.** The **overdue full slot** is the first
+counted scheduled full due time (see below) after the last full refresh's
+start. The data is out of date when that slot is more than the **lateness
+margin** overdue. The margin is the deployment's existing
+`source_stale_seconds` (30 minutes by default), which now means "how late a
+scheduled full refresh may be", not "how old the data may be"; the release
+notes of the release that makes this change say so. A due time counts only
+if:
+
+- it is a full time of the effective
+  [refresh schedule](../background-processing/spec.md#refresh-schedule) in
+  the applied configuration;
+- it falls after the current schedule first became effective, so saving a
+  schedule never alarms at once over times that were not yet scheduled. That
+  is the activation of the earliest configuration in the latest unbroken run
+  of activations whose schedule settings equal the current ones, found the
+  way `initial_source_at` in `source/health.py` finds a tenant's first
+  activation; other configuration changes do not move it; and
+- its slot was not recorded as
+  [skipped around a Family email](../background-processing/spec.md#skipped-around-family-emails).
+  A window never stays open past its email's due time plus the two-hour send
+  allowance, so a stuck or retrying send cannot keep refreshes skipped and
+  the alarm silent; from then on held refreshes count as due, with the
+  bulk-send hold's allowance.
+
+With the nightly refresh alone at 02:00, the data is out of date at 02:30 if
+that refresh has not promoted. With full refreshes at 00:00 and every two
+hours from 08:00 to 20:00, a missed 10:00 refresh is reported at 10:30. The
+source-staleness alarm (`source_stale`) sounds on exactly this condition,
+and the [bulk-send hold](../background-processing/spec.md#deltas-wait-for-a-bulk-family-send)
+measures its allowance from the same point. Its recovery requires a
+promoted **full** refresh with no newer failure. That is a change from
+today, when any promoted snapshot, including an empty quick update, recovers
+it.
+
+**Changing the schedule never hides a late refresh.** A full slot is
+**already overdue** when its due time has passed and no full refresh that
+started at or after that due time has promoted, whether or not the lateness
+margin has run out yet. If one is already overdue (or held) when a new
+schedule takes effect, it stays the overdue slot until a full refresh
+promotes, so saving a schedule cannot silence or reset the alarm; only the
+new schedule's own due times before it took effect are ignored. The old slot
+may not be a time of the new schedule, so the scheduler could never create
+it. Instead, the first scheduler loop under the new schedule requests a
+**schedule-change catch-up**: one full refresh with cause `catch_up`, due at
+the instant the new schedule took effect, its slot key derived from the
+scope, time zone, cause and that instant, with no configured time. Its tick
+stores the nightly time in the required `nightly_time` column, as a quick
+update's does. The tick guard admits at most one, at exactly that instant,
+which it finds in SQL by walking the configuration activations, as
+`initial_source_at` does. It is treated as a daytime full refresh: a send in
+progress holds it by its cause, recorded as held, and then it runs as the
+catch-up with the hold's allowance. Before this cause
+exists (delivery step 1), the settings page
+says when a full refresh is overdue on save and offers **Run a full refresh
+now**.
+
+For example, the old schedule has full refreshes at 00:00 and every two
+hours from 08:00 to 20:00, and a send that started at 09:30 is holding the
+10:00 full refresh. At 10:05 the Administrator switches to the new default
+(the nightly refresh at 02:00 and hourly quick updates). The 10:00 slot is
+already overdue and stays the overdue slot. The first loop under the new
+schedule requests the catch-up due at 10:05; the send holds it, so it is
+recorded as held and the hold's allowance continues (the alarm waits until
+12:30). When the send ends at 11:00, the catch-up runs with the 11:00 quick
+update and promotes at about 11:07, and the alarm never sounds. The next
+scheduled full refresh is 02:00 tomorrow.
+
+**What uses which fact.**
+
+- The alarm, the bulk-send hold and the Admin home page's problem line use
+  the last full refresh and the out-of-date rule.
+- The System health page's
+  [ParishSoft refresh panel](../admin-portal/spec.md#parishsoft-refresh-panel),
+  Home, the refresh page, the daily digest and `pk-stewardship health` show
+  "data as of" and the connection line, and, when the data is out of date,
+  which scheduled refresh is late and by how long.
+- The settings page no longer refuses a schedule for its gaps: it states the
+  longest wait for new data and when the alarm would sound (see
+  [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary)).
+- Go-live readiness is unchanged: it still requires a full refresh that
+  started within `source_stale_seconds`.
+
+Pages show these times in the browser's time zone and email and the command
+line in the parish's, each sentence in one format, for example "ParishSoft
+data as of Tue 8:00 AM. Connection: working (last answered 10:15 AM)." and
+"The 10:00 AM full refresh is 45 minutes late."
 
 ## Automated tests
 
