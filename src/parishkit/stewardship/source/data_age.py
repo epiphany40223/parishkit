@@ -219,10 +219,14 @@ FACTS_SQL = (
     "AND created_at>coalesce((SELECT started_at FROM ok),'-infinity') "
     "AND (%(as_of)s::timestamptz IS NULL OR created_at<=%(as_of)s))"
 )
+# How many columns ``FACTS_SQL`` selects, one per ``SourceFacts`` field. The
+# Admin refresh status appends them to its own outcome columns and reads them
+# from the end of the combined row by this count (#659).
+FACTS_COLUMNS = 7
 
 
 def facts_from_row(row):
-    """Build ``SourceFacts`` from the seven columns ``FACTS_SQL`` selects."""
+    """Build ``SourceFacts`` from the ``FACTS_COLUMNS`` ``FACTS_SQL`` selects."""
     return SourceFacts(
         full_started_at=row[0],
         changed_delta_at=row[1],
