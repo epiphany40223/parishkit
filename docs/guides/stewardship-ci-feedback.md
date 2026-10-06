@@ -18,20 +18,30 @@ when faster or comparable, avoiding GitHub startup overhead; do not rerun a
 passing focused check remotely merely for its location. The complete candidate
 suite remains independent final-head merge evidence.
 
-Marking a reviewed candidate ready triggers full PostgreSQL, browser and
-container validation, after the fast checks succeed. Ready-PR pushes and main
-pushes still run the full suite. For multi-commit corrections, return to draft
-first; marking ready again must validate the current head, not reuse evidence
-from an earlier commit. Full suite coverage, all scenario matrices, DCO, three
-dual-source review rounds and normal protected merge remain mandatory.
+A manually dispatched run on the reviewed candidate head supplies full
+PostgreSQL, browser and container validation, after the fast checks succeed.
+Dispatch must target the PR branch (`gh workflow run ci.yml --ref <branch>`).
+Ready-PR pushes still run the full suite; main pushes run only `validate`.
+Marking a draft ready starts no run
+([issue #624](https://github.com/epiphany40223/parishkit/issues/624)):
+delivery marks a PR ready seconds before it is merged, so that run would only
+hold runners. A dispatched run writes its checks on the head SHA, but they may
+not appear in the pull request's check list, and a fork's branch cannot be
+dispatched. When a non-admin protected merge or a fork pull request needs full
+checks attached to the pull request, push again or close and reopen the ready
+pull request. For multi-commit corrections, return to draft first; the merge
+evidence must be a full run of the current head, not evidence from an earlier
+commit. Full suite coverage, all scenario matrices, DCO, three dual-source
+review rounds and normal protected merge remain mandatory.
 
-The `ready_for_review` and `converted_to_draft` events are explicit. Superseded
-PR runs cancel; main runs remain independent. Required aggregate checks always
-run and fail when their prerequisites were skipped, cancelled or failed. Thus
-draft full-suite gates intentionally remain red with a readiness explanation;
-fast feedback is the `validate` result. This prevents a skipped job's successful
-GitHub conclusion from becoming accidental merge authorization. No ruleset
-change, alternate success check or privileged merge bypass is introduced.
+The `converted_to_draft` event is explicit, and `ready_for_review` is
+deliberately absent. Superseded PR runs cancel; main runs remain independent.
+Required aggregate checks always run and fail when their prerequisites were
+skipped, cancelled or failed. Thus draft full-suite gates intentionally remain
+red with a readiness explanation; fast feedback is the `validate` result. This
+prevents a skipped job's successful GitHub conclusion from becoming accidental
+merge authorization. No ruleset change, alternate success check or privileged
+merge bypass is introduced.
 
 ## Measured scheduling and setup
 
