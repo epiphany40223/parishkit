@@ -1,46 +1,14 @@
 "use strict";
 
-// The Admin sidebar's collapsible menu groups and the tips of its unavailable
-// entries (admin-portal spec, "Menu groups" and "Stable menu shape"). The
-// markup is admin-navigation.html. The same tips serve unavailable in-page
-// controls (components/disabled-control.html, navigation rule 10). This file
-// is kept out of ui-v1.js, which every page loads, and the Admin portal
-// requires JavaScript (#565), so there is no no-script fallback here.
+// The tips of the Admin sidebar's unavailable entries (admin-portal spec,
+// "Stable menu shape"). The markup is admin-navigation.html. The same tips
+// serve unavailable in-page controls (components/disabled-control.html,
+// navigation rule 10), so this file is deferred and runs once the whole page
+// is parsed. The menu's remembered group and scroll state is
+// admin-menu-state-v1.js, which must run earlier. This file is kept out of
+// ui-v1.js, which every page loads, and the Admin portal requires JavaScript
+// (#565), so there is no no-script fallback here.
 (() => {
-  // Collapsible groups. Groups render open. Each browser remembers which
-  // groups an Admin collapsed: only a "closed" marker under the group's key,
-  // removed when the group is opened again, so with nothing stored every
-  // group starts open. The group holding the current page (data-menu-current)
-  // always opens, so its aria-current entry is never hidden; that does not
-  // forget the stored choice for other pages. Storage can be unavailable
-  // (private windows, blocked site data); groups then just start open.
-  //
-  // The choice is recorded from the summary's click (Enter and Space on a
-  // summary click it too), not from the "toggle" event: browsers also fire
-  // "toggle" for a group parsed with the open attribute, and WebKit delivers
-  // it after this script runs, which would forget every stored choice. The
-  // click fires before the browser flips the group, so the new state is the
-  // opposite of the current one.
-  const storageKey = (group) => `pk-admin-menu-group:${group.dataset.menuGroup}`;
-  document.querySelectorAll("details[data-menu-group]").forEach((group) => {
-    try {
-      if (
-        !group.hasAttribute("data-menu-current") &&
-        window.localStorage.getItem(storageKey(group)) === "closed"
-      ) {
-        group.open = false;
-      }
-    } catch (error) { /* Keep the group open. */ }
-    const summary = group.querySelector(":scope > summary");
-    if (!summary) return;
-    summary.addEventListener("click", () => {
-      try {
-        if (group.open) window.localStorage.setItem(storageKey(group), "closed");
-        else window.localStorage.removeItem(storageKey(group));
-      } catch (error) { /* Nothing to remember without storage. */ }
-    });
-  });
-
   // Unavailable entries and controls. Each is a link without href, in the tab
   // order, whose reason sits in a role="tooltip" element named by its
   // aria-describedby, so screen readers announce it with the entry.

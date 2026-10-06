@@ -1667,6 +1667,7 @@ def component_origin():
         ("ui-v1.js", "application/javascript"),
         ("admin-gate-v1.js", "application/javascript"),
         ("admin-menu-v1.js", "application/javascript"),
+        ("admin-menu-state-v1.js", "application/javascript"),
         ("date-format-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),
         ("family-support-v1.js", "application/javascript"),

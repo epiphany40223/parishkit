@@ -519,6 +519,33 @@ open. The group holding the current page always opens, so the
 `aria-current` entry is never hidden. Collapsing is the reader's choice and
 does not change the menu's shape.
 
+The menu keeps its scroll position when an Admin follows one of its links
+(#620), so the entry just clicked stays at the same height on screen, under
+the pointer, on the next page; the page content still starts at its top.
+Following a link by click or Enter saves the link's address and its top edge
+on screen, under one key in the tab's session storage. The next page reads
+the value once and removes it, and only if the value names that page does it
+scroll the menu so the same link (or, failing that, the current entry) sits
+at the same height. Matching the link's position, not the menu's scroll
+offset, holds when the page itself was scrolled or a group above the link
+opened or closed. One case cannot be matched: after a click with the page
+scrolled down, the new page's menu starts a header's height lower and still
+reaches past the window's bottom, so an entry near the menu's end, where the
+menu cannot scroll further, can land up to a header's height lower, possibly
+below the window. The restore runs after the remembered groups are set and
+before the page content is parsed, so the menu is in place before the first
+paint where the browser allows. A modified click that opens another tab or
+window, an unavailable entry and Sign out save nothing. When nothing usable
+was saved (a reload, a new tab, a link from elsewhere), or the saved height
+cannot be reached, the current page's entry is scrolled into the menu's
+visible part only if it is outside it, and never by scrolling the page. On
+narrow screens, where the menu is the Menu disclosure and not a scroll area,
+nothing more happens. Blocked storage loses only this convenience, as it
+loses the remembered collapsed groups. The position is never sent to the
+server: a cookie or query string would leak interface state into requests
+and URLs, and making the portal a single-page app was rejected as far
+larger.
+
 #### Stable menu shape
 
 For a given role, the menu has the same groups and entries in the same order

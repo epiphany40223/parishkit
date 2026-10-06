@@ -852,3 +852,26 @@ def test_admin_pages_load_the_menu_script_and_family_pages_do_not():
     static = Path(navigation.__file__).parent / "static" / "stewardship"
     assert "data-menu-tip" not in (static / "ui-v1.js").read_text(encoding="utf-8")
     assert "data-menu-tip" in (static / "admin-menu-v1.js").read_text(encoding="utf-8")
+
+
+def test_the_menu_state_script_runs_right_after_the_sidebar():
+    """admin-menu-state-v1.js loads without defer straight after the menu.
+
+    It restores the remembered groups and the menu's scroll position (#620)
+    before the page content is parsed, so the menu does not visibly jump; in
+    the head the menu would not exist yet, and deferred it would run after
+    the page shows.
+    """
+    html = render_to_string(
+        "stewardship/admin-navigation.html",
+        {"admin_chrome": {"setup_pending": True, "setup_url": "/admin/setup"}},
+    )
+    assert html.rstrip().endswith(
+        '</nav>\n<script src="/static/stewardship/admin-menu-state-v1.js"></script>'
+    )
+    static = Path(navigation.__file__).parent / "static" / "stewardship"
+    state = (static / "admin-menu-state-v1.js").read_text(encoding="utf-8")
+    assert "pk-admin-menu-group:" in state and "sessionStorage" in state
+    # The group state lives only in the early script.
+    menu = (static / "admin-menu-v1.js").read_text(encoding="utf-8")
+    assert "pk-admin-menu-group:" not in menu
