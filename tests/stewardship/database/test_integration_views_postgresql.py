@@ -118,9 +118,9 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     """The web editor queues settings; the existing installer applies YAML and SQL."""
     browser, _ = signed_in()
     assert browser.get(INDEX).status_code == browser.get(URL).status_code == 200
-    # The ParishSoft page reports when data was last fully reloaded.
+    # The ParishSoft page states the data age and the connection (#510).
     page = browser.get(URL).content
-    assert b"Last full ParishSoft refresh:" in page
+    assert b"ParishSoft data: not yet loaded." in page and b"Connection:" in page
     assert flow_steps(page) == (STEPS, "Make changes")
     old = auth_service.store.active()
     review = post(browser, URL, edit(auth_service.store))

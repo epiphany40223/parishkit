@@ -240,11 +240,11 @@ def next_full_at(
 def longest_gap(*, frequency, full_refresh_times, delta_refresh):
     """The longest wait between scheduled refreshes of any kind, as a timedelta.
 
-    This is what the source-staleness alarm sees between refreshes: with
-    deltas on, their interval; with deltas off, the longest interval between
-    consecutive full-refresh times around the clock (daylight-saving shifts
-    ignored). The Admin form refuses a cadence whose gap exceeds the
-    deployment's staleness threshold (#465).
+    With deltas on, their interval; with deltas off, the longest interval
+    between consecutive full-refresh times around the clock (daylight-saving
+    shifts ignored). Plus the lateness margin, it is how long without a
+    successful attempt the connection line waits before it reads "not
+    checked" (``data_age.connection_threshold``, #510).
     """
     if frequency == "quarter_hour":
         return QUARTER_HOUR

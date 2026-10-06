@@ -25,24 +25,37 @@ delivery is paused, preparation tasks wait for the pause to end, so only
 messages count: a paused send keeps its deltas, as source refresh is meant
 to continue through a pause.
 
-Skipping is bounded by source age. The source-staleness alarm (``health``)
-allows ``SEND_ALLOWANCE`` beyond its configured threshold while a send is in
-progress, and the scheduler skips only while the current source is at least
-``RESUME_LEAD`` inside that same total. A send still running past it gets its
-deltas again, early enough for one to finish before the alarm would sound,
-and past the allowance the alarm behaves as it always did. Sending itself
-never waits on source age: Family preparation checks only that the population
-matches the current source generation, which a skipped refresh leaves
-unchanged.
+Holding is bounded by the data-age alarm's own point (#510): the **overdue
+full slot**, the first counted scheduled full due time after the newest
+promoted full refresh started (``data_age``). The ``source_stale`` alarm
+would sound ``source_stale_seconds`` after that due time; while a send is in
+progress and scheduled refreshes are actually being held it allows
+``SEND_ALLOWANCE`` beyond that, and the scheduler holds only until the
+resume point, ``RESUME_LEAD`` before the allowance ends, so a held full
+refresh can run and promote under send load before the alarm would sound.
+Quick updates no longer move that point, so the bound works with quick
+updates off, hourly or every 15 minutes. Sending itself never waits on
+source age: Family preparation checks only that the population matches the
+current source generation, which a held refresh leaves unchanged.
 
-The relaxed alarm applies only while deltas are actually being skipped: no
-delta was requested between the current source's read and the resume point
-(``resume_at``), though deltas were in use within the last day. A delta
-requested in that span but not promoted (a refresh failing or stuck), or a
-frequency with no deltas (a full refresh every quarter hour), alarms at the
-configured threshold as before. Deltas requested at or after the resume
-point are the scheduler's own catch-up, which the allowance's last
-``RESUME_LEAD`` exists to let finish, so they keep the alarm relaxed.
+The relaxed alarm applies only while refreshes are actually being held: no
+scheduled refresh of either kind was requested at or after the overdue
+slot's due time and before the resume point, though scheduled refreshes ran
+within the last day. A refresh requested in that span but not promoted (a
+refresh failing or stuck) alarms at the margin as before. Requests at or
+after the resume point are the scheduler's own catch-up, which the
+allowance's last ``RESUME_LEAD`` exists to let finish.
+
+Once the hold ends the catch-up full refresh keeps the allowance until it
+promotes or fails (``catch_up_held``), recognized statelessly from the
+scheduler's durable send-hold entry: a ``source_refresh_held`` operational
+log entry with the task-free ``schedule`` schema, created at or after the
+overdue slot's due time, with no scheduled full refresh requested between
+that due time and the entry. A request in that span means the overdue slot
+ran rather than being held: with full refreshes at 08:00 and 08:15, an
+on-time 08:00 refresh that hangs is not excused by a send that then holds
+the 08:15 slot. A refresh task's own held retry (lease contention, ``task``
+schema) is never that evidence, and a held quick slot writes none.
 """
 
 from datetime import timedelta
@@ -50,13 +63,14 @@ from datetime import timedelta
 from django.db.models import DateTimeField, Exists, Func, OuterRef
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.operational_sources import configured_policy
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 
+from .data_age import HELD_EVENT, HELD_SCHEMA, current_overdue
 from .refresh_models import SourceRefreshCommand
-from .snapshot_models import SourceCurrent
 
 FAMILY_PURPOSES = ("initial", "reminder")
 ACTIVE_MESSAGE_STATES = ("pending", "retry_wait", "submitting")
@@ -68,15 +82,22 @@ ACTIVE_PREPARATION_STATES = ("queued", "running", "retry_wait")
 # Fewer remaining messages and preparations than this is a send's tail, not
 # a bulk send: deltas run again.
 ACTIVE_MINIMUM = 10
-# How much older than the staleness threshold the source may grow while a
-# send skips its deltas. A launch-size send (about 1,100 messages at 10-20 a
-# minute) takes one to two hours.
+# How much later than the lateness margin a held full refresh may be while a
+# send holds scheduled refreshes. A launch-size send (about 1,100 messages at
+# 10-20 a minute) takes one to two hours.
 SEND_ALLOWANCE = timedelta(hours=2)
-# How long before the allowance runs out the scheduler stops skipping, so a
-# delta (about 5 minutes under send load) promotes before the alarm sounds.
+# How long before the allowance runs out the scheduler stops holding, so the
+# held full refresh promotes before the alarm sounds. The spec keeps 30
+# minutes only if a full refresh under send load promotes within 20. The
+# measured inputs (October 2026, #440, #510): a full refresh takes a median
+# 437 s idle, and send load stretched a delta from about 2.2 to about 5
+# minutes (x2.3), which puts a full refresh under load near 17 minutes.
+# That is an estimate; #653 measures a full refresh during a real send.
 RESUME_LEAD = timedelta(minutes=30)
-# Deltas requested within this long mean the delta cadence is in use.
+# Scheduled refreshes requested within this long mean the schedule is in use.
 DELTA_CADENCE_WINDOW = timedelta(days=1)
+# Scheduled refresh causes (a manual request is not the schedule running).
+SCHEDULED_CAUSES = ("nightly", "delta")
 
 
 def family_send_active(minimum=ACTIVE_MINIMUM):
@@ -112,53 +133,106 @@ def family_send_active(minimum=ACTIVE_MINIMUM):
     return messages + preparations >= minimum
 
 
-def resume_at(observed_at):
-    """When the scheduler stops skipping deltas for source read at ``observed_at``.
+def _margin():
+    """The lateness margin: how late a scheduled full refresh may be."""
+    return timedelta(seconds=configured_policy().source_stale_seconds)
+
+
+def resume_at(overdue):
+    """When the scheduler stops holding for the full slot due at ``overdue``.
 
     ``RESUME_LEAD`` before the send's allowance runs out.
     """
-    stale = timedelta(seconds=configured_policy().source_stale_seconds)
-    return observed_at + stale + SEND_ALLOWANCE - RESUME_LEAD
+    return overdue + _margin() + SEND_ALLOWANCE - RESUME_LEAD
 
 
-def within_allowance(observed_at, now):
-    """Whether source observed at ``observed_at`` is within a send's allowance."""
-    stale = timedelta(seconds=configured_policy().source_stale_seconds)
-    return now - observed_at < stale + SEND_ALLOWANCE
+def within_allowance(overdue, now):
+    """Whether the full slot due at ``overdue`` is still within a send's allowance."""
+    return now - overdue < _margin() + SEND_ALLOWANCE
 
 
-def deltas_skipped(observed_at, now):
-    """Whether delta refreshes have been skipped since ``observed_at``.
+def deltas_skipped(overdue, now):
+    """Whether scheduled refreshes have been held since the slot due at ``overdue``.
 
-    Stateless: deltas were requested within the last day, but none after the
-    current source was read (a delta's command precedes its read) and before
-    the resume point. A request at or after the resume point is the
-    scheduler's own catch-up delta, not a sign of a failing refresh. The
-    command table is small (about 100 rows a day) and this runs only for a
-    stale sample during a send.
+    Stateless: scheduled refreshes (full or quick) were requested within the
+    last day, but none at or after the overdue slot's due time and before
+    the resume point. Measuring from the due time, not from when the newest
+    full refresh was read, means quick updates that ran before it do not
+    cancel the allowance, and held daytime full slots count as well as quick
+    ones, so it works with quick updates off. A request at or after the
+    resume point is the scheduler's own catch-up, not a failing refresh. The
+    command table is small (about 100 rows a day) and this runs only for an
+    out-of-date sample during a send.
     """
-    deltas = SourceRefreshCommand.objects.filter(cause="delta")
+    scheduled = SourceRefreshCommand.objects.filter(cause__in=SCHEDULED_CAUSES)
     return (
-        not deltas.filter(
-            created_at__gt=observed_at, created_at__lt=resume_at(observed_at)
+        not scheduled.filter(
+            created_at__gte=overdue, created_at__lt=resume_at(overdue)
         ).exists()
-        and deltas.filter(created_at__gt=now - DELTA_CADENCE_WINDOW).exists()
+        and scheduled.filter(created_at__gt=now - DELTA_CADENCE_WINDOW).exists()
     )
 
 
-def delta_held(now):
-    """Whether the scheduler should skip a delta or daytime full slot due at ``now``.
+def catch_up_held(overdue):
+    """Whether the scheduler durably held a full slot since ``overdue`` fell due.
 
-    Only while a send is in progress and the current source is still
-    ``RESUME_LEAD`` inside the allowance; with no promoted source yet there
-    is nothing to protect. The scheduler applies the answer to delta slots
+    The evidence for the catch-up's allowance: a ``source_refresh_held``
+    entry with the ``schedule`` schema created at or after the overdue
+    slot's due time, with no scheduled full refresh requested between that
+    due time and the entry. A request in between means the overdue slot was
+    not held but ran (and is late on its own account, say hung): a later
+    slot's hold does not excuse it. No slot identity is derived, so a change
+    of schedule, scope or time zone during the hold keeps the evidence.
+    Filtering by level first uses the operational log's level/time index.
+    """
+    ran_before = SourceRefreshCommand.objects.filter(
+        cause="nightly",
+        created_at__gte=overdue,
+        created_at__lt=OuterRef("created_at"),
+    )
+    return (
+        OperationalLog.objects.filter(
+            level="INFO",
+            created_at__gte=overdue,
+            event=HELD_EVENT,
+            schema=HELD_SCHEMA,
+        )
+        .exclude(Exists(ran_before))
+        .exists()
+    )
+
+
+def allowance_applies(overdue, now, *, failed_since):
+    """Whether an out-of-date full slot is a send hold rather than a fault.
+
+    Within the send's allowance, measured from the overdue full slot, either
+    a send is in progress and scheduled refreshes are actually being held,
+    or the scheduler durably held a full slot since that slot fell due, so
+    the refresh running now is the catch-up, which keeps the allowance until
+    it promotes or fails. ``failed_since(overdue)`` says whether a source
+    refresh failed critically since then: a failed catch-up alarms without
+    the allowance. The catch-up rule does not require the send to still be
+    in progress; it has usually ended by then.
+    """
+    if not within_allowance(overdue, now):
+        return False
+    if family_send_active() and deltas_skipped(overdue, now):
+        return True
+    return catch_up_held(overdue) and not failed_since(overdue)
+
+
+def delta_held(now):
+    """Whether the scheduler should hold a quick or daytime full slot due at ``now``.
+
+    Only while a send is in progress and ``now`` is before the resume point
+    measured from the overdue full slot; before any slot is overdue the data
+    is current, so holding is safe. With no promoted full refresh yet there
+    is nothing to protect. The scheduler applies the answer to quick slots
     and to full slots at a configured time other than the nightly one.
     """
     if not family_send_active():
         return False
-    started_at = (
-        SourceCurrent.objects.filter(singleton=True)
-        .values_list("snapshot__started_at", flat=True)
-        .first()
-    )
-    return started_at is not None and now < resume_at(started_at)
+    overdue, last_full = current_overdue(now)
+    if last_full is None:
+        return False
+    return overdue is None or now < resume_at(overdue)

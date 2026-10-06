@@ -900,10 +900,10 @@ A held slot creates no command, task or failure. Each scheduler loop decides
 again, so the first loop after the hold ends creates the current slots'
 refreshes, which catch up. The scheduler logs `source_refresh_held` at INFO
 to the process log once per held slot, correlated to the slot's command
-identity; today that is its only record. From delivery step 1 of the
+identity. Since delivery step 1 of the
 [refresh schedule plan](../../../plans/stewardship/refresh-schedule.md#delivery-plan),
-for a held **full** slot (a daytime time or a `catch_up`), never a quick
-one, it also writes one durable operational entry through the shared
+for a held **full** slot (a daytime time or, from step 2a, a `catch_up`),
+never a quick one, it also writes one durable operational entry through the shared
 operational-log writer, inside the slot's command correlation: the event
 `source_refresh_held` at INFO with the task-free `schedule` context schema.
 "Once per held slot" is per scheduler process, so a restart during a hold
@@ -956,10 +956,15 @@ only from durable evidence that the scheduler held some full slot after the
 overdue slot fell due, not only the slot the catch-up was created for. That
 covers a send ending just before a loop, scheduler downtime across a full
 time, a send ending while the resume-point catch-up runs, and a held
-`catch_up` slot. The evidence is any `source_refresh_held` entry with the
-`schedule` schema created at or after the overdue slot's due time; no slot
-identity is derived or matched, so a change of schedule, source scope or
-time zone during the hold does not lose it. Once the slot decision record
+`catch_up` slot. The evidence is a `source_refresh_held` entry with the
+`schedule` schema created at or after the overdue slot's due time, with no
+scheduled full refresh requested between that due time and the entry. A
+request in that span means the overdue slot was not held but ran, and is
+late on its own account: with full refreshes at 08:00 and 08:15, an 08:00
+refresh requested on time that hangs is not excused by a send that then
+holds the 08:15 slot, and the alarm sounds at 08:30. No slot identity is
+derived or matched, so a change of schedule, source scope or time zone
+during the hold does not lose the evidence. Once the slot decision record
 exists, a `held` full or `catch_up` row with a due instant in that span
 counts as well. A task's own `source_refresh_held` entry (`task` schema) is
 never evidence, and a quick slot's hold writes none. A full refresh with no

@@ -6,7 +6,6 @@ from parishkit.stewardship.accounts.integration_forms import (
     CredentialForm,
     IntegrationForm,
 )
-from parishkit.stewardship.jobs.operational_policy import IncidentPolicy
 
 
 @pytest.mark.parametrize(
@@ -113,57 +112,35 @@ def schedule(**values):
     )
 
 
-def test_schedule_gaps_longer_than_the_freshness_window_are_refused(settings):
-    """Hourly or no quick updates need a staleness window at least as long (#465).
+@pytest.mark.parametrize("delta", ["quarter_hour", "hourly", "off"])
+@pytest.mark.parametrize("times", ["02:00", "02:00, 14:00"])
+def test_every_quick_update_choice_is_accepted(delta, times):
+    """Full refreshes alone decide data age, so no gap is refused (#510).
 
-    The default window is 30 minutes, so only quarter-hour quick updates fit
-    it; a 60-minute window admits hourly updates, and a day-long window admits
-    no quick updates with two full refreshes a day. The refusal names both
-    the gap and the window.
+    The form used to refuse hourly or no quick updates because an empty
+    quick update reset the 30-minute staleness clock (#465); the alarm now
+    measures from the scheduled full refreshes, so "Off" and "Hourly" are
+    valid with any full-refresh times.
     """
-    assert schedule(delta_refresh="quarter_hour").is_valid()
-    hourly = schedule(delta_refresh="hourly")
-    assert not hourly.is_valid()
-    (message,) = hourly.errors["delta_refresh"]
-    assert "60 minutes between refreshes" in message
-    assert "30-minute freshness window" in message
-    # Every quarter hour full refresh covers the gap whatever the deltas.
-    assert schedule(full_refresh="quarter_hour", delta_refresh="off").is_valid()
-    settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=3600)
-    assert schedule(delta_refresh="hourly").is_valid()
-    twice = {"delta_refresh": "off", "full_refresh_times": "02:00, 14:00"}
-    assert not schedule(**twice).is_valid()
-    settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=86400)
-    assert schedule(**twice).is_valid()
+    form = schedule(delta_refresh=delta, full_refresh_times=times)
+    assert form.is_valid(), form.errors
+    assert form.public_settings()["delta_refresh"] == delta
 
 
 def test_schedule_fields_describe_the_window_and_stay_compact():
-    """The delta help names the server's window; the long help becomes a tip."""
+    """The delta help names the lateness margin; the long help becomes a tip."""
     form = IntegrationForm("parishsoft")
-    assert "30 minutes" in str(form.fields["delta_refresh"].tip)
+    tip = str(form.fields["delta_refresh"].tip)
+    assert "more than 30 minutes late" in tip and "including none" in tip
+    # The short hint no longer tells Administrators to keep 15 minutes.
+    hint = str(form.fields["delta_refresh"].help_text)
+    assert "Hourly or Off" in hint and "keep 15" not in hint
     assert str(form.fields["full_refresh_times"].help_text).startswith(
         "For example 2am, 14:00"
     )
     assert "blank means 02:00" in str(form.fields["full_refresh_times"].tip)
     assert form.fields["full_refresh_times"].prepare_value(["02:00", "12:00"]) == (
         "02:00, 12:00"
-    )
-
-
-def test_staleness_refusal_offers_more_times_only_when_they_could_help(settings):
-    """The fix list quotes the option as shown and suggests times only if they fit."""
-    message = schedule(delta_refresh="hourly").errors["delta_refresh"][0]
-    assert "\u201cEvery 15 minutes\u201d, or ask" in message
-    assert "add full refresh times" not in message
-    # Eight full refreshes a day fit a three-hour window: more times would help.
-    settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=10800)
-    off = schedule(delta_refresh="off", full_refresh_times="02:00, 14:00")
-    assert "add full refresh times" in off.errors["delta_refresh"][0]
-    # They would not with an hourly delta, whose gap is fixed.
-    settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=1800)
-    assert (
-        "add full refresh times"
-        not in (schedule(delta_refresh="hourly").errors["delta_refresh"][0])
     )
 
 
@@ -240,9 +217,8 @@ def test_more_than_eight_times_are_refused():
 
 
 @pytest.mark.parametrize("delta", ["off", "hourly", "quarter_hour"])
-def test_separators_only_is_the_default_time_with_any_quick_update(settings, delta):
-    """ "," saves 02:00 alone; the gap check never sees an empty list."""
-    settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=86400)
+def test_separators_only_is_the_default_time_with_any_quick_update(delta):
+    """ "," saves 02:00 alone, whatever the quick-update choice (#510)."""
     form = schedule(full_refresh_times=",", delta_refresh=delta)
     assert form.is_valid(), form.errors
     assert form.public_settings()["full_refresh_times"] == ["02:00"]

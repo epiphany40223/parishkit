@@ -179,7 +179,10 @@ policy when opening an episode, so a new policy affects new episodes, not
 recorded decisions or an already-active episode. Web/operator startup now wires the validated policy for
 the incident producers. The source freshness threshold instead applies at each
 sample; changing it cannot resolve an existing incident without a new successful
-source observation. See [source health](stewardship-source-health.md) for initial
+source observation. Since #510, `source_stale_seconds` means how late a
+scheduled full refresh may be before `source_stale` sounds, not how old the
+newest snapshot of any kind may be (see
+[ParishSoft data age and connection](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection)). See [source health](stewardship-source-health.md) for initial
 grace and full-refresh recovery evidence. These settings never authorize recipients
 or external I/O.
 
