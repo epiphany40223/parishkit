@@ -450,6 +450,184 @@ def test_the_task_state_filter_is_the_pages():
     assert ("nonterminal", "all", *TASK_STATES) == admin_cli.TASK_STATE_FILTERS
 
 
+# Unexpected failures leave a trace (#612). The text every forced error
+# carries, which no log line may show.
+PRIVATE = "private-value /private/path"
+
+
+def run_failing(monkeypatch, handler, *, changes_state=False, load=None):
+    """Run a stand-in command whose handler fails; returns (exit, document).
+
+    Admission is replaced by an empty context, so the handler runs as an
+    admitted, session-less command; ``load`` replaces ``load_deployment`` to
+    fail before admission instead.
+    """
+    import contextlib
+    from types import SimpleNamespace
+
+    spec = admin_cli.CommandSpec(
+        name="probe",
+        help="A stand-in command.",
+        handler=handler,
+        scope="none",
+        changes_state=changes_state,
+        result_fields=(),
+        pr=0,
+    )
+    monkeypatch.setitem(admin_cli.BY_NAME, "probe", spec)
+    # Debug logging adds detail (and the traceback) the tests compare against.
+    monkeypatch.delenv("PARISHKIT_DEBUG_LOGGING", raising=False)
+    monkeypatch.setattr(
+        "parishkit.stewardship.deployment.load_deployment",
+        load or (lambda path: object()),
+    )
+    monkeypatch.setattr(
+        admin_cli, "ADMISSION", lambda configuration: contextlib.nullcontext(None)
+    )
+    out = io.StringIO()
+    code = admin_cli.run(
+        SimpleNamespace(command_name="probe", config=Path("x")),
+        stdin=io.BytesIO(PREAMBLE),
+        stdout=out,
+        stderr=io.StringIO(),
+    )
+    lines = out.getvalue().splitlines()
+    assert len(lines) == 1
+    return code, json.loads(lines[0])
+
+
+def failure_lines(caplog):
+    """The formatted structured lines logged, as the deployed process writes them."""
+    from parishkit.stewardship.observability import Event, SafeJsonFormatter
+
+    formatter = SafeJsonFormatter()
+    return [
+        formatter.format(record)
+        for record in caplog.records
+        if isinstance(record.msg, Event)
+    ]
+
+
+def broken(args, preamble, runtime, context):
+    """A read handler that fails with an error nothing classifies."""
+    raise RuntimeError(PRIVATE)
+
+
+def test_an_unexpected_read_error_logs_one_failure_line(monkeypatch, caplog):
+    """``internal`` after admission: one task_failed line joined by correlation id.
+
+    The line names the category and the exception's class, never its text,
+    and the document is the one the specification shows.
+    """
+    import logging
+
+    with caplog.at_level(logging.DEBUG):
+        code, document = run_failing(monkeypatch, broken)
+    assert code == 3
+    assert document == {
+        "schema": "pk-admin/1",
+        "command": "probe",
+        "correlation_id": document["correlation_id"],
+        "ok": False,
+        "final": True,
+        "session": None,
+        "error": {"code": "internal", "message": admin_cli.MESSAGES["internal"]},
+    }
+    lines = failure_lines(caplog)
+    assert len(lines) == 1 and PRIVATE not in lines[0]
+    line = json.loads(lines[0])
+    assert line["message"] == "task_failed" and line["level"] == "ERROR"
+    assert line["extra"] == {
+        "correlation_id": document["correlation_id"],
+        "failure_kind": "unexpected_failure",
+        "error_class": "builtins.RuntimeError",
+    }
+
+
+def test_an_unexpected_error_before_admission_is_a_startup_rejection(
+    monkeypatch, caplog
+):
+    """#609's shape: an AttributeError while loading the configuration."""
+    import logging
+
+    def load(path):
+        """Fail as #609's string --config did."""
+        raise AttributeError(PRIVATE)
+
+    with caplog.at_level(logging.DEBUG):
+        code, document = run_failing(monkeypatch, broken, load=load)
+    assert code == 3 and document["error"]["code"] == "internal"
+    lines = failure_lines(caplog)
+    assert len(lines) == 1 and PRIVATE not in lines[0]
+    line = json.loads(lines[0])
+    assert line["message"] == "startup_rejected"
+    assert line["extra"] == {
+        "correlation_id": document["correlation_id"],
+        "failure_kind": "unexpected_failure",
+        "error_class": "builtins.AttributeError",
+    }
+
+
+def test_an_unknown_outcome_logs_one_failure_line(monkeypatch, caplog):
+    """``outcome_unknown`` after a durable commit names the error's category."""
+    import logging
+
+    def committed(args, preamble, runtime, context):
+        """Commit, then lose the database."""
+        context["committed"] = True
+        raise OperationalError(PRIVATE)
+
+    with caplog.at_level(logging.DEBUG):
+        code, document = run_failing(monkeypatch, committed, changes_state=True)
+    assert code == 6 and document["error"]["code"] == "outcome_unknown"
+    lines = failure_lines(caplog)
+    assert len(lines) == 1 and PRIVATE not in lines[0]
+    assert json.loads(lines[0])["extra"] == {
+        "correlation_id": document["correlation_id"],
+        "failure_kind": "database_unavailable",
+        "error_class": "django.db.utils.OperationalError",
+    }
+
+
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        (ValueError(PRIVATE), "invalid"),
+        (PermissionError(PRIVATE), "denied"),
+        (OperationalError(PRIVATE), "unavailable"),
+        # The positive control: the same setup traces an unexpected error.
+        (RuntimeError(PRIVATE), "internal"),
+    ],
+    ids=["invalid", "denied", "unavailable", "internal"],
+)
+def test_only_an_unexpected_error_logs_a_failure_line(
+    monkeypatch, caplog, error, expected
+):
+    """A refusal or an outage has its own code; only the unexpected is traced."""
+    import logging
+
+    def failing(args, preamble, runtime, context):
+        """Fail with the given error."""
+        raise error
+
+    with caplog.at_level(logging.DEBUG):
+        code, document = run_failing(monkeypatch, failing)
+    assert document["error"]["code"] == expected
+    assert len(failure_lines(caplog)) == (expected in admin_cli.TRACED_CODES)
+
+
+def test_a_failure_to_log_keeps_the_document(monkeypatch):
+    """Logging is best effort: the document and exit code stay the contract."""
+
+    def fail(*args, **kwargs):
+        """A logging failure."""
+        raise RuntimeError("logging failed")
+
+    monkeypatch.setattr("parishkit.stewardship.observability.emit_failure", fail)
+    code, document = run_failing(monkeypatch, broken)
+    assert code == 3 and document["error"]["code"] == "internal"
+
+
 # Runs the command line in a fresh process with no Django settings, as the
 # wrapper does in the container. The preamble arrives on standard input,
 # never on the command line. With "stub" as the first argument, the
@@ -473,6 +651,11 @@ if sys.argv[1] == "stub":
         interlock=None
     )
     startup_interlock.StartupLease = lambda *a, **k: contextlib.nullcontext()
+if sys.argv[1] == "broken":
+    from parishkit.stewardship import deployment
+    def load_deployment(path):
+        raise AttributeError("private-value /private/path")
+    deployment.load_deployment = load_deployment
 from parishkit.stewardship import cli
 sys.stdin = io.TextIOWrapper(io.BytesIO(sys.stdin.buffer.read()))
 code = cli.main(["admin", *sys.argv[2:]])
@@ -611,6 +794,52 @@ def test_the_command_line_runs_before_django_is_set_up(
     code, error = expected
     assert (document.get("error") or {}).get("code") == error
     assert outcome["exit"] == code
+
+
+def test_a_fresh_process_logs_an_unexpected_error_on_standard_error():
+    """#612 end to end: the real logging setup, before Django is set up.
+
+    Standard error carries one startup_rejected line that names the
+    error's class and shares the document's correlation id, and no line
+    carries the exception's text; standard output is the document alone.
+    """
+    import subprocess
+    import sys
+
+    # Debug logging would add the traceback, and with it the text.
+    environment = fresh_environment()
+    environment.pop("PARISHKIT_DEBUG_LOGGING", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            FRESH_PROCESS,
+            "broken",
+            "whoami",
+            "--config",
+            "x",
+            "--session-stdin",
+        ],
+        input=PREAMBLE,
+        capture_output=True,
+        env=environment,
+        timeout=120,
+    )
+    stderr = result.stderr.decode()
+    assert result.returncode == 0, stderr[-2000:]
+    document, outcome = map(json.loads, result.stdout.decode().splitlines())
+    assert outcome["exit"] == 3 and document["error"]["code"] == "internal"
+    assert "private" not in stderr
+    # Deliberately strict: every standard error line must be structured
+    # JSON, so stray unstructured output fails here too.
+    lines = [json.loads(line) for line in stderr.splitlines()]
+    failures = [line for line in lines if line["message"] == "startup_rejected"]
+    assert len(failures) == 1
+    assert failures[0]["extra"] == {
+        "correlation_id": document["correlation_id"],
+        "failure_kind": "unexpected_failure",
+        "error_class": "builtins.AttributeError",
+    }
 
 
 def pre_setup_imports():

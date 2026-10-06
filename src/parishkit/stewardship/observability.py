@@ -192,6 +192,29 @@ def _seconds(value):
     return type(value) is int and value >= 0
 
 
+# A failure line's ``error_class`` (#612): the ``module.qualname`` of the
+# exception's type, which code controls, never its message. Only dotted
+# identifiers pass (a class defined inside a function has a ``<locals>``
+# segment), so nothing an exception's text or arguments hold can get through.
+_CLASS_NAME = re.compile(r"[A-Za-z_]\w*(?:\.(?:[A-Za-z_]\w*|<locals>))*", re.ASCII)
+CLASS_NAME_LIMIT = 200
+
+
+def class_name_of(error):
+    """The ``module.qualname`` of an exception's type, for an ``error_class``."""
+    kind = type(error)
+    return f"{kind.__module__}.{kind.__qualname__}"
+
+
+def _class_name(value):
+    """Whether a value is a bounded dotted class name, nothing else."""
+    return (
+        type(value) is str
+        and len(value) <= CLASS_NAME_LIMIT
+        and _CLASS_NAME.fullmatch(value) is not None
+    )
+
+
 _correlation: ContextVar[UUID | None] = ContextVar(
     "stewardship_correlation", default=None
 )
@@ -255,6 +278,7 @@ def emit(
     elapsed_seconds: int | None = None,
     ministry_duid: int | None = None,
     shaping: str | None = None,
+    error_class: str | None = None,
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text.
 
@@ -270,6 +294,8 @@ def emit(
     ``ministry_duid`` is a source Ministry's positive integer DUID, only with
     ``SOURCE_MINISTRY_NAME_REPAIRED``. ``shaping`` names the display-only
     comparison (``SHAPING_STEPS``), only with ``REPORT_SHAPING_FAILED``.
+    ``error_class`` names a failure's exception type (see ``class_name_of``),
+    only with a ``failure_kind``.
     """
     if not isinstance(event, Event) or level not in {
         logging.DEBUG,
@@ -313,6 +339,10 @@ def emit(
         event is not Event.REPORT_SHAPING_FAILED or shaping not in SHAPING_STEPS
     ):
         raise ValueError("A shaping step must be a reviewed name.")
+    if error_class is not None and (
+        failure_kind is None or not _class_name(error_class)
+    ):
+        raise ValueError("An error class must be a failure's dotted class name.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
@@ -330,6 +360,7 @@ def emit(
                 "elapsed_seconds": elapsed_seconds,
                 "ministry_duid": ministry_duid,
                 "shaping": shaping,
+                "error_class": error_class,
             }
         ),
     )
@@ -350,13 +381,21 @@ def _guard_refusal(error):
 
 
 def emit_failure(
-    error, *, event=Event.TASK_FAILED, level=logging.ERROR, task_id=None, shaping=None
+    error,
+    *,
+    event=Event.TASK_FAILED,
+    level=logging.ERROR,
+    task_id=None,
+    shaping=None,
+    name_class=False,
 ):
     """Classify a failure without serializing any exception-controlled field.
 
     ``level`` lowers the severity for a best-effort step whose failure the
     caller absorbs; ``task_id`` names the task it happened in; ``shaping``
-    names which display-only comparison failed (see ``emit``).
+    names which display-only comparison failed (see ``emit``). ``name_class``
+    adds the exception type's ``error_class``, for a caller whose failure
+    has no other trace (the admin command line, #612).
     """
     from django.db import DatabaseError, IntegrityError
 
@@ -387,7 +426,18 @@ def emit_failure(
         ),
         FailureKind.UNEXPECTED,
     )
-    emit(event, level=level, task_id=task_id, failure_kind=kind, shaping=shaping)
+    # A name the allowlist refuses (non-ASCII, overlong, or a type() name
+    # such as "bad-name") is left out rather than refused: emit would raise,
+    # and the failure would lose its only line.
+    name = class_name_of(error) if name_class else None
+    emit(
+        event,
+        level=level,
+        task_id=task_id,
+        failure_kind=kind,
+        shaping=shaping,
+        error_class=name if _class_name(name) else None,
+    )
     if debug_logging_enabled():
         # The reviewed event above carries only the category; say what failed.
         logging.getLogger("parishkit.stewardship.debug").debug(
@@ -603,6 +653,10 @@ class SafeJsonFormatter(JsonLogFormatter):
             context.get("failure_kind"), FailureKind
         ):
             safe.extra["failure_kind"] = context["failure_kind"].value
+            # Re-checked like the other fields: a dotted class name, and only
+            # beside the failure category it explains.
+            if _class_name(context.get("error_class")):
+                safe.extra["error_class"] = context["error_class"]
         if isinstance(context, dict):
             # Closed words and whole seconds only, re-checked here like the
             # other fields so a hand-built record cannot smuggle text through.

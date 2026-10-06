@@ -1273,6 +1273,33 @@ def classify(error, *, admitted_process, changed, committed=False):
     return "outcome_unknown" if changed else "internal"
 
 
+# The codes an unexpected error ends as. Their documents say only that much,
+# and through the host wrapper the command's standard error reaches the
+# operator's terminal, not the web container's log, so each also logs one
+# failure line the operator can report (#612).
+TRACED_CODES = frozenset({"internal", "outcome_unknown"})
+
+
+def trace_failure(error, *, admitted_process):
+    """Log one failure line for an unexpected error; never raise.
+
+    The line is ``startup_rejected`` before admission finished and
+    ``task_failed`` after it, with the invocation's ``correlation_id`` (also
+    in the document, so the two join), the ``failure_kind`` category and the
+    exception type's ``error_class``; never exception text. With debug
+    logging on, ``emit_failure`` adds the traceback. The line goes to the
+    process log only, not the operational log table (#617). It runs after
+    admission has released the startup lease and closed its connections.
+    """
+    from .observability import Event, emit_failure
+
+    event = Event.TASK_FAILED if admitted_process else Event.STARTUP_REJECTED
+    # The document and exit code are the command's contract; a failure to
+    # log must not replace them with a traceback.
+    with contextlib.suppress(Exception):
+        emit_failure(error, event=event, name_class=True)
+
+
 def document(name, correlation_id, *, ok, final=True, session=None, result=None):
     """The one JSON document a command prints."""
     value = {
@@ -1355,6 +1382,8 @@ def run(args, *, stdin, stdout, stderr):
                 changed=spec.changes_state and caller is not None,
                 committed=context.get("committed", False),
             )
+            if code in TRACED_CODES:
+                trace_failure(error, admitted_process=admitted_process)
             output = document(
                 spec.name,
                 correlation_id,

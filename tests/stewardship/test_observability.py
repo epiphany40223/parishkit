@@ -12,6 +12,7 @@ from parishkit.stewardship.observability import (
     DEBUG_LOGGING_VARIABLE,
     CorrelationMiddleware,
     Event,
+    FailureKind,
     SafeJsonFormatter,
     configure_logging,
     correlation,
@@ -238,6 +239,89 @@ def test_missing_head_email_source_has_its_own_failure_kind(caplog):
         emit_failure(forged)
     payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
     assert payload["extra"]["failure_kind"] == "unexpected_failure"
+
+
+def test_a_failure_names_its_class_only_when_asked(caplog):
+    """#612: ``error_class`` is the type's module.qualname, never its text."""
+    from parishkit.stewardship.observability import emit_failure
+
+    class LocalError(Exception):
+        """A class defined in a function: its qualname has a <locals> part."""
+
+    with caplog.at_level(logging.DEBUG):
+        emit_failure(LocalError("synthetic-secret"))
+        emit_failure(LocalError("synthetic-secret"), name_class=True)
+    # Only the event lines: debug logging, when on, adds a traceback record.
+    plain, named = (
+        SafeJsonFormatter().format(item)
+        for item in caplog.records
+        if isinstance(item.msg, Event)
+    )
+    assert "synthetic-secret" not in plain + named
+    assert "error_class" not in json.loads(plain)["extra"]
+    assert json.loads(named)["extra"]["error_class"] == (
+        f"{__name__}.test_a_failure_names_its_class_only_when_asked.<locals>.LocalError"
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["synthetic secret", "a.b-c", "x." + "a" * 200, "", ".a", "a..b", 7],
+)
+def test_an_error_class_must_be_a_bounded_dotted_name(value):
+    """Text, a malformed or overlong name, or a non-string is refused."""
+    with pytest.raises(ValueError):
+        emit(
+            Event.TASK_FAILED,
+            failure_kind=FailureKind.UNEXPECTED,
+            error_class=value,
+        )
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["bad-name", "Bad" + "x" * 200, "Ünïcode"],
+    ids=["text", "long", "non-ascii"],
+)
+def test_a_refused_class_name_still_logs_the_failure(caplog, name):
+    """A type whose name the allowlist refuses still gets its one line, unnamed."""
+    from parishkit.stewardship.observability import emit_failure
+
+    with caplog.at_level(logging.DEBUG):
+        emit_failure(type(name, (Exception,), {})("synthetic-secret"), name_class=True)
+    lines = [
+        json.loads(SafeJsonFormatter().format(item))
+        for item in caplog.records
+        if isinstance(item.msg, Event)
+    ]
+    assert len(lines) == 1
+    assert lines[0]["extra"]["failure_kind"] == "unexpected_failure"
+    assert "error_class" not in lines[0]["extra"]
+
+
+def test_an_error_class_needs_a_failure_kind():
+    """A class name explains a failure category and never stands alone."""
+    with pytest.raises(ValueError):
+        emit(Event.TASK_FAILED, error_class="builtins.RuntimeError")
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"error_class": "builtins.RuntimeError"},
+        # A failure kind spelled as text is not the reviewed category.
+        {"failure_kind": "unexpected_failure", "error_class": "builtins.RuntimeError"},
+        {"error_class": "synthetic secret", "failure_kind": None},
+        {"failure_kind": FailureKind.UNEXPECTED, "error_class": "synthetic secret"},
+    ],
+)
+def test_the_formatter_rechecks_an_error_class(extra):
+    """A hand-built record cannot smuggle text or an orphan class name through."""
+    record = logging.LogRecord(
+        "other", logging.ERROR, "", 1, Event.TASK_FAILED, (), None
+    )
+    record.extra = extra
+    assert "error_class" not in json.loads(SafeJsonFormatter().format(record))["extra"]
 
 
 @pytest.mark.parametrize(

@@ -978,6 +978,18 @@ Structured logs go to standard error at INFO and above. Every wait (pairing,
 `--watch`, lock waits) has a stated limit, and a timeout logs what was waited
 for, the limit and the elapsed time.
 
+An error that ends as `internal` or `outcome_unknown` also logs one ERROR
+failure line (#612): `startup_rejected` before admission finished and
+`task_failed` after it, with the invocation's `correlation_id`, its
+`failure_kind` and its
+[`error_class`](../operations/spec.md#observability-and-health), never
+exception text. The shared correlation ID joins the line to the document,
+whose shape does not change; with debug logging on, the traceback follows.
+Through the host wrapper, standard error reaches the operator's terminal,
+not the web container's log, so the operator reports that line with the
+document. It goes to the process log only; a durable copy is deferred
+to #617.
+
 ## Authorization, confirmation and audit
 
 ### Same checks as the page
