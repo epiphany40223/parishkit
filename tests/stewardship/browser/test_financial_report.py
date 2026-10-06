@@ -107,6 +107,9 @@ def test_financial_filters_and_pages_without_scripts(browser_engine, component_o
         assert "search=Private+name" in body and "pledge_max=5000.00" in body
         assert "frequency=monthly" in body and f"share={ONLINE}" in body
         assert "Private" not in sent.value.url and "?" not in sent.value.url
+        # Let the routed answer finish loading before the next navigation,
+        # which it would otherwise interrupt (#623).
+        visible(page.get_by_text("Filtered", exact=True))
 
         # Pagination carries the applied filters, not the edited form fields.
         page.goto(component_origin + "/financial-report")
@@ -115,6 +118,9 @@ def test_financial_filters_and_pages_without_scripts(browser_engine, component_o
         body = sent.value.post_data
         assert "page=2" in body and "search=Example" in body
         assert "pledge_min=100.00" in body and "?" not in sent.value.url
+        # Let the routed answer finish loading before the next navigation,
+        # which it would otherwise interrupt (#623).
+        visible(page.get_by_text("Filtered", exact=True))
 
         # A sortable heading posts the same filters with its sort token.
         page.goto(component_origin + "/financial-report")
@@ -123,6 +129,9 @@ def test_financial_filters_and_pages_without_scripts(browser_engine, component_o
         body = sent.value.post_data
         assert "sort=pledge_desc" in body and "search=Example" in body
         assert "page=" not in body and "?" not in sent.value.url
+        # Let the routed answer finish loading before the next navigation,
+        # which it would otherwise interrupt (#623).
+        visible(page.get_by_text("Filtered", exact=True))
 
         # The export carries the applied filters, the chosen format and the
         # one-time key natively; without scripts the timezone stays UTC.

@@ -105,6 +105,9 @@ def test_ministry_complete_export_without_scripts(browser_engine, component_orig
             and "page=" not in sent.value.post_data
         )
         assert "?" not in sent.value.url and "/9/" not in sent.value.url
+        # Let the routed answer finish loading before the next navigation,
+        # which it would otherwise interrupt (#623).
+        visible(page.get_by_text("Queued", exact=True))
         page.goto(component_origin + "/ministry-gated")
         assert page.get_by_role("button", name="Queue complete export").is_disabled()
     finally:
@@ -126,6 +129,9 @@ def test_ministry_packet_request_without_scripts(browser_engine, component_origi
             page.get_by_role("button", name="Queue follow-up packet").click()
         assert "ministries=" not in sent.value.post_data
         assert "format=pdf" in sent.value.post_data
+        # Let the routed answer finish loading before the next navigation,
+        # which it would otherwise interrupt (#623).
+        visible(page.get_by_text("Queued", exact=True))
         page.goto(component_origin + "/ministry-summary")
         page.get_by_label("Example <Ministry>", exact=False).check()
         page.get_by_label("Also include resolved and withdrawn requests").check()
@@ -140,6 +146,9 @@ def test_ministry_packet_request_without_scripts(browser_engine, component_origi
         assert "history=yes" in body and "format=xlsx" in body
         assert "request_key=00000000-0000-0000-0000-000000000060" in body
         assert "?" not in sent.value.url
+        # Let the routed answer finish loading before the next navigation,
+        # which it would otherwise interrupt (#623).
+        visible(page.get_by_text("Queued", exact=True))
         # A single Ministry's detail page has no multi-Ministry packet to offer.
         page.goto(component_origin + "/ministry-detail")
         assert page.get_by_role("button", name="Queue follow-up packet").count() == 0
