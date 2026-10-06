@@ -8,7 +8,6 @@ from parishkit.stewardship.source.cadence import (
     DEFAULT_DELTA_REFRESH,
     DEFAULT_TIME,
     MAX_FULL_REFRESH_TIMES,
-    longest_gap,
 )
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 from parishkit.stewardship.web.time_entry_fields import (
@@ -134,9 +133,10 @@ class IntegrationForm(forms.Form):
                     "everything else waits for a full refresh. When that list "
                     "reports nothing, as ParishSoft's currently does, only full "
                     "refreshes bring in changes, and quick updates mainly confirm "
-                    "that ParishSoft is reachable. They also keep the data counted "
-                    "as fresh, so a longer gap than this server's freshness window "
-                    "(%(minutes)s minutes) is refused."
+                    "that ParishSoft is reachable. Any choice, including none, is "
+                    "allowed: how current the data counts as depends only on the "
+                    "full refreshes, and Administrators are alerted when a "
+                    "scheduled full refresh is more than %(minutes)s minutes late."
                 )
                 % {"minutes": configured_policy().source_stale_seconds // 60},
             )
@@ -194,7 +194,9 @@ class IntegrationForm(forms.Form):
             {
                 "full_refresh": _("A full refresh takes a few minutes."),
                 "full_refresh_times": _("For example 2am, 14:00; up to eight."),
-                "delta_refresh": _("Family contact changes only; keep 15 minutes."),
+                "delta_refresh": _(
+                    "Checks the connection; Hourly or Off saves ParishSoft time."
+                ),
                 "target": _("The folder link from the address bar; it has /folders/."),
                 "delegated_email": setup_help.HINTS["delegated_email"],
                 "sender": setup_help.HINTS["sender"],
@@ -258,55 +260,6 @@ class IntegrationForm(forms.Form):
     def clean_delta_refresh(self):
         """An omitted cadence keeps the documented quarter-hour default."""
         return self.cleaned_data["delta_refresh"] or DEFAULT_DELTA_REFRESH
-
-    def clean(self):
-        """Refuse a schedule whose gaps would trip this server's staleness alarm.
-
-        The source-staleness alarm (``source_stale_seconds``, 30 minutes by
-        default) sounds whenever no refresh has run within its window. Quick
-        updates every 15 minutes keep it quiet; hourly or no quick updates
-        leave gaps the alarm would report around the clock, unless the
-        deployment's window is long enough. The schedule itself stays
-        valid configuration: only this form knows the server's policy.
-        """
-        cleaned = super().clean()
-        if self.target != "parishsoft" or self.errors:
-            return cleaned
-        stale = configured_policy().source_stale_seconds
-        gap = longest_gap(
-            frequency=cleaned["full_refresh"],
-            full_refresh_times=cleaned["full_refresh_times"],
-            delta_refresh=cleaned["delta_refresh"],
-        )
-        if gap.total_seconds() > stale:
-            # More full-refresh times can close the gap only when deltas are
-            # off and eight times a day would fit the window.
-            more_times = (
-                cleaned["delta_refresh"] == "off"
-                and cleaned["full_refresh"] == "daily"
-                and stale * MAX_FULL_REFRESH_TIMES >= 24 * 3600
-            )
-            self.add_error(
-                "delta_refresh",
-                forms.ValidationError(
-                    _(
-                        "With this schedule ParishSoft data would go %(gap)s "
-                        "minutes between refreshes, longer than this server's "
-                        "%(stale)s-minute freshness window, so the server would "
-                        "keep reporting the data as out of date. Choose "
-                        "\u201cEvery 15 minutes\u201d%(more)s, or "
-                        "ask whoever manages the server to lengthen "
-                        "source_stale_seconds."
-                    ),
-                    code="stale_gap",
-                    params={
-                        "gap": int(gap.total_seconds()) // 60,
-                        "stale": stale // 60,
-                        "more": _(", add full refresh times") if more_times else "",
-                    },
-                ),
-            )
-        return cleaned
 
 
 class WriteOnlyTextarea(forms.Textarea):

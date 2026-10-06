@@ -115,7 +115,12 @@ def test_report_roles_apply_to_all_representations(family_mail, google, role, se
         with restricted_download_pool(settings):
             for suffix in ("", "chart.png", "download.png"):
                 if role == "staff":
-                    response, _ = read(browser, path + suffix)
+                    response, body = read(browser, path + suffix)
+                    if suffix == "":
+                        # The saved report states the data age and the
+                        # connection, as the email does (#510).
+                        assert b"ParishSoft data as of" in body
+                        assert b"<dt>Connection</dt>" in body
                     if suffix == "download.png":
                         assert response["Content-Disposition"].startswith("attachment;")
                 else:

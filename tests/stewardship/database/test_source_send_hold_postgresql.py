@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 from django.db import connection, transaction
 
+from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.family_mail_tasks import TASK_TYPE as PREPARE
 from parishkit.stewardship.jobs.models import TaskRun
@@ -26,7 +27,7 @@ from parishkit.stewardship.jobs.operational_sources import configured_policy
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.observability import Event
-from parishkit.stewardship.source import health, production, send_hold
+from parishkit.stewardship.source import data_age, health, production, send_hold
 from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
 from parishkit.stewardship.source.production import SourceProducer, produce_refreshes
 from parishkit.stewardship.source.refresh_models import SourceRefreshTick
@@ -34,7 +35,14 @@ from parishkit.stewardship.source.refresh_models import SourceRefreshTick
 from .test_background_grants_postgresql import task_login
 from .test_refresh_frequency_postgresql import with_frequency, with_schedule
 from .test_source_attempts_postgresql import configured
-from .test_source_health_postgresql import future_observation, observe, publish
+from .test_source_health_postgresql import (
+    at_instant,
+    future_observation,
+    observe,
+    overdue_slot,
+    publish,
+    stale_offset,
+)
 from .test_source_requests_postgresql import command
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -55,7 +63,6 @@ def sending(monkeypatch, active=True):
     Both the scheduler's check and the health sample see the same answer.
     """
     monkeypatch.setattr(send_hold, "family_send_active", lambda: active)
-    monkeypatch.setattr(health, "family_send_active", lambda: active)
 
 
 def skipping_deltas(credential):
@@ -70,6 +77,13 @@ def skipping_deltas(credential):
 def causes():
     """The causes of every refresh slot the scheduler has created."""
     return sorted(SourceRefreshTick.objects.values_list("command__cause", flat=True))
+
+
+def durable_holds():
+    """The scheduler's durable send-hold entries (``schedule`` schema)."""
+    return list(
+        OperationalLog.objects.filter(event="source_refresh_held", schema="schedule")
+    )
 
 
 def held_lines(caplog):
@@ -93,6 +107,9 @@ def test_delta_slot_is_skipped_during_a_send_and_created_after_it(
     # One INFO line per skipped slot, however many loops skip it.
     (line,) = held_lines(caplog)
     assert line.levelno == logging.INFO
+    # A held quick slot writes no durable entry: quick updates no longer
+    # decide whether the data is current, so they are no catch-up evidence.
+    assert not durable_holds()
     # Nothing records the skip as a failure.
     assert not TaskRun.objects.filter(state__in=("failed", "retry_wait")).exists()
     assert not OperationalIncident.objects.exists()
@@ -154,14 +171,23 @@ def test_daytime_full_refresh_waits_for_a_send_and_catches_up_after(
         assert producer(guard) == ()
     assert causes() == []
     assert len(held_lines(caplog)) == 2
+    # The held full slot also wrote one durable INFO entry (#510), with the
+    # task-free schedule schema, correlated to the slot's would-be command.
+    (entry,) = durable_holds()
+    assert (entry.level, entry.schema, entry.context) == ("INFO", "schedule", {})
+    # A restarted scheduler may record the same held slot again: harmless.
+    with scheduler_session() as guard:
+        assert SourceProducer(uuid4())(guard) == ()
+    assert len(durable_holds()) == 2
     assert not TaskRun.objects.filter(task_type="source_refresh").exists()
     monkeypatch.setattr(production, "delta_held", lambda now: False)
     with scheduler_session() as guard:
         assert len(producer(guard)) == 2
     assert causes() == ["delta", "nightly"]
-    assert SourceRefreshTick.objects.get(command__cause="nightly").nightly_time == (
-        "12:00"
-    )
+    tick = SourceRefreshTick.objects.get(command__cause="nightly")
+    assert tick.nightly_time == "12:00"
+    # Each durable entry is correlated to the held slot's command identity.
+    assert {entry.correlation_id for entry in durable_holds()} == {tick.command_id}
 
 
 def test_nightly_full_refresh_still_runs_during_a_send(tmp_path, monkeypatch):
@@ -184,46 +210,78 @@ def test_without_promoted_source_nothing_is_skipped(tmp_path, monkeypatch):
 
 
 def test_skipping_ends_before_the_send_allowance_runs_out(tmp_path, monkeypatch):
-    """A long send gets its deltas back in time for one to finish."""
+    """A long send gets its refreshes back in time for a full one to promote.
+
+    The resume point is measured from the overdue full slot (#510), the
+    first scheduled full time after the newest full refresh started, not
+    from the newest snapshot of any kind.
+    """
     credential, *_ = configured(tmp_path)
     publish(credential)
     sending(monkeypatch)
+    overdue = overdue_slot()
     with transaction.atomic():
         now = database_now()
         stale = timedelta(seconds=configured_policy().source_stale_seconds)
         limit = stale + send_hold.SEND_ALLOWANCE - send_hold.RESUME_LEAD
-        started = SourceCurrent.objects.get().snapshot.started_at
+        # Nothing is overdue yet: the data is current, so holding is safe.
         assert send_hold.delta_held(now)
-        assert send_hold.delta_held(started + limit - timedelta(seconds=1))
-        assert not send_hold.delta_held(started + limit)
+        assert send_hold.delta_held(overdue + limit - timedelta(seconds=1))
+        assert not send_hold.delta_held(overdue + limit)
+
+
+def quarter_hourly(tmp_path):
+    """A full refresh every UTC quarter hour: the overdue slot is minutes away."""
+    credential, *_ = with_frequency(tmp_path, "quarter_hour")
+    return credential
+
+
+def read_earlier(monkeypatch, minutes):
+    """Pretend the newest full refresh started ``minutes`` ago.
+
+    The schedule is treated as in effect since a day earlier, so its due
+    times since then count, and the overdue slot lies before requests made
+    now. Returns that slot.
+    """
+    real = data_age.schedule_runs
+    with transaction.atomic():
+        started = database_now() - timedelta(minutes=minutes)
+    for module in (health, data_age):
+        monkeypatch.setattr(module, "last_full_started_at", lambda: started)
+    monkeypatch.setattr(
+        data_age,
+        "schedule_runs",
+        lambda after: [
+            (start - timedelta(days=1), value) for start, value in real(after)
+        ],
+    )
+    return overdue_slot()
 
 
 def test_stale_alarm_holds_within_the_send_allowance(tmp_path, monkeypatch, settings):
-    """Skipped deltas age the source on purpose: no alarm, no resolution."""
-    credential, *_ = configured(tmp_path)
-    skipping_deltas(credential)
+    """Held refreshes age the data on purpose: no alarm, no resolution."""
+    skipping_deltas(quarter_hourly(tmp_path))
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     sending(monkeypatch)
     with monkeypatch.context() as patch:
-        future_observation(patch, 121)
+        future_observation(patch, stale_offset())
         observe()
     assert not OperationalIncident.objects.exists()
     # Past the allowance the alarm sounds even during a send.
     allowance = int(send_hold.SEND_ALLOWANCE.total_seconds())
     with monkeypatch.context() as patch:
-        future_observation(patch, 121 + allowance)
+        future_observation(patch, stale_offset(1 + allowance))
         observe()
     assert OperationalIncident.objects.get(kind="source_stale")
 
 
 def test_stale_alarm_is_unchanged_without_a_send(tmp_path, monkeypatch, settings):
-    """With no send in progress, staleness alarms at the configured threshold."""
-    credential, *_ = configured(tmp_path)
-    skipping_deltas(credential)
+    """With no send in progress, a late full refresh alarms at the margin."""
+    skipping_deltas(quarter_hourly(tmp_path))
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     sending(monkeypatch, active=False)
     with monkeypatch.context() as patch:
-        future_observation(patch, 121)
+        future_observation(patch, stale_offset())
         observe()
     assert OperationalIncident.objects.get(kind="source_stale")
 
@@ -232,11 +290,10 @@ def test_a_held_sample_does_not_resolve_an_open_stale_alarm(
     tmp_path, monkeypatch, settings
 ):
     """An alarm raised before the send stays open until a refresh succeeds."""
-    credential, *_ = configured(tmp_path)
-    skipping_deltas(credential)
+    skipping_deltas(quarter_hourly(tmp_path))
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     with monkeypatch.context() as patch:
-        future_observation(patch, 121)
+        future_observation(patch, stale_offset())
         sending(patch, active=False)
         observe()
         sending(patch)
@@ -248,23 +305,25 @@ def test_a_held_sample_does_not_resolve_an_open_stale_alarm(
 def test_stale_alarm_is_unchanged_during_a_send_when_nothing_was_skipped(
     tmp_path, monkeypatch, settings, deltas
 ):
-    """A delta requested but not promoted, or no deltas at all, still alarms.
+    """A refresh requested but not promoted, or no schedule in use, still alarms.
 
-    "requested": a delta was asked for after the current source was read and
-    well before the resume point, and has not promoted (a failing or stuck
-    refresh). "unused": no delta was requested within the last day, as with
-    a quarter-hour full refresh.
+    "requested": a scheduled refresh was asked for at or after the overdue
+    slot's due time and well before the resume point, and has not promoted
+    (a failing or stuck refresh). "unused": no scheduled refresh was
+    requested within the last day.
     """
-    credential, *_ = configured(tmp_path)
+    credential = quarter_hourly(tmp_path)
     if deltas == "requested":
         skipping_deltas(credential)
+        overdue = read_earlier(monkeypatch, 40)
         command(cause="delta", actor_id=None)
     else:
         publish(credential)
+        overdue = overdue_slot()
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     sending(monkeypatch)
     with monkeypatch.context() as patch:
-        future_observation(patch, 121)
+        at_instant(patch, overdue + timedelta(seconds=121))
         observe()
     assert OperationalIncident.objects.get(kind="source_stale")
 
@@ -272,28 +331,27 @@ def test_stale_alarm_is_unchanged_during_a_send_when_nothing_was_skipped(
 def test_catch_up_delta_keeps_the_alarm_held_until_the_allowance_ends(
     tmp_path, monkeypatch, settings
 ):
-    """The scheduler's own resume-time delta does not sound a false alarm.
+    """The scheduler's own resume-point request does not sound a false alarm.
 
-    The resume point is moved back to the current source's read, so the
-    delta requested just after it is a catch-up request, as one made when
-    skipping ends would be. A sample then still holds; one past the
-    allowance alarms.
+    The resume point is moved back to the overdue slot's due time, so a
+    request made after it is the catch-up, as one made when holding ends
+    would be. A sample then still holds; one past the allowance alarms.
     """
-    credential, *_ = configured(tmp_path)
-    skipping_deltas(credential)
+    skipping_deltas(quarter_hourly(tmp_path))
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     monkeypatch.setattr(
         send_hold, "RESUME_LEAD", send_hold.SEND_ALLOWANCE + timedelta(seconds=120)
     )
+    overdue = read_earlier(monkeypatch, 40)
     command(cause="delta", actor_id=None)
     sending(monkeypatch)
     with monkeypatch.context() as patch:
-        future_observation(patch, 121)
+        at_instant(patch, overdue + timedelta(seconds=121))
         observe()
     assert not OperationalIncident.objects.exists()
-    allowance = int(send_hold.SEND_ALLOWANCE.total_seconds())
+    allowance = send_hold.SEND_ALLOWANCE + timedelta(seconds=121)
     with monkeypatch.context() as patch:
-        future_observation(patch, 121 + allowance)
+        at_instant(patch, overdue + allowance)
         observe()
     assert OperationalIncident.objects.get(kind="source_stale")
 

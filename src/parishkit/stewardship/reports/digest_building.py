@@ -4,6 +4,7 @@ from parishkit.stewardship.accounts.models import AddressRule
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.storage import _status
+from parishkit.stewardship.source.data_age import data_age_at
 from parishkit.stewardship.web.digest_content import validate_digest_body
 
 from .daily_digest import DailyDigestContent, DailyDigestDocument
@@ -83,12 +84,16 @@ def retained_daily_document(snapshot, facts):
         browser_timezone=snapshot.timezone_configuration.timezone,
         requested_at=snapshot.observed_at,
     )
+    # The ParishSoft data age and connection as known at the observation
+    # (#510), for the email and the saved report page alike. The compiled
+    # email body is retained, so later refreshes never rewrite a sent digest.
     return DailyDigestDocument(
         snapshot.pk,
         document,
         retained_statistics(snapshot),
         retained_dates(snapshot),
         snapshot.configuration.parish.date_format,
+        source_age=data_age_at(snapshot.observed_at),
     )
 
 

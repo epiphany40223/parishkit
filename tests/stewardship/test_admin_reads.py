@@ -21,6 +21,7 @@ from parishkit.stewardship import admin_cli, admin_reads
 from parishkit.stewardship.jobs.send_history import ListedSend, SendKey, SendRow
 from parishkit.stewardship.jobs.send_progress import SendCounts, progress
 from parishkit.stewardship.jobs.task_reads import task_metadata
+from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 
 from .campaign_factory import campaign as campaign_record
@@ -128,7 +129,17 @@ def status():
         "campaign": campaign,
         "refreshed_at": NOW - timedelta(hours=1),
         "full_refresh": FullRefreshStatus(
-            NOW - timedelta(hours=1), None, False, None, None, None, "daily", NOW
+            NOW - timedelta(hours=1),
+            None,
+            False,
+            None,
+            None,
+            None,
+            "daily",
+            NOW,
+            full_started_at=NOW - timedelta(hours=1, minutes=7),
+            data_as_of=NOW - timedelta(hours=1, minutes=7),
+            connection=Connection("working", NOW - timedelta(minutes=5)),
         ),
         # Members the page uses but the document must not copy are dropped.
         "next_mail": {
@@ -442,6 +453,13 @@ GOLDEN = {
                 "frequency": "daily",
                 "next_full_at": iso(NOW),
                 "delta_refresh": None,
+                "full_started_at": iso(NOW - timedelta(hours=1, minutes=7)),
+                "data_as_of": iso(NOW - timedelta(hours=1, minutes=7)),
+                "connection": "working",
+                "connection_at": iso(NOW - timedelta(minutes=5)),
+                "overdue_full_at": None,
+                "out_of_date": False,
+                "held_for_send": False,
             },
             "next_mail": {"kind": "reminder", "due_at": iso(NOW + timedelta(days=2))},
             "families": {
@@ -751,6 +769,13 @@ ALLOWED = {
         "frequency",
         "next_full_at",
         "delta_refresh",
+        "full_started_at",
+        "data_as_of",
+        "connection",
+        "connection_at",
+        "overdue_full_at",
+        "out_of_date",
+        "held_for_send",
         "next_mail",
         "kind",
         "due_at",

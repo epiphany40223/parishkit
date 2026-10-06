@@ -237,6 +237,20 @@ class Status(ReadModel):
                 "frequency": refresh.frequency,
                 "next_full_at": refresh.next_full_at,
                 "delta_refresh": refresh.delta_refresh,
+                # Data age and connection (#510): the newest promoted full
+                # refresh's start, "data as of", the connection line, and the
+                # overdue full slot with whether it is past the margin.
+                "full_started_at": refresh.full_started_at,
+                "data_as_of": refresh.data_as_of,
+                "connection": None
+                if refresh.connection is None
+                else refresh.connection.state,
+                "connection_at": None
+                if refresh.connection is None
+                else refresh.connection.at,
+                "overdue_full_at": refresh.overdue_at,
+                "out_of_date": refresh.out_of_date,
+                "held_for_send": refresh.held_for_send,
             },
             next_mail=None
             if data.get("next_mail") is None

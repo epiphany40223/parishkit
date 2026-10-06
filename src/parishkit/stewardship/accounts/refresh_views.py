@@ -21,6 +21,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
+from parishkit.stewardship.jobs.operational_sources import configured_policy
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.source.errors import (
     SourceOrganizationChanged,
@@ -32,7 +33,6 @@ from parishkit.stewardship.source.refresh_status import (
     refresh_schedule,
 )
 from parishkit.stewardship.source.requests import TASK_TYPE, request_refresh
-from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
 
@@ -71,19 +71,11 @@ def _pending():
 def _page(request, service):
     """The confirmation page: the latest refresh, what is pending, a fresh key."""
     configuration = editable_configuration(service)
-    refreshed_at = (
-        SourceSnapshot.objects.filter(
-            pk__in=SourceCurrent.objects.exclude(snapshot_id=None).values("snapshot_id")
-        )
-        .values_list("promoted_at", flat=True)
-        .first()
-    )
     request._stewardship_display_configuration = configuration
     return render(
         request,
         "stewardship/source-refresh.html",
         {
-            "refreshed_at": refreshed_at,
             "pending": _pending(),
             # The same full/incremental status the dashboard shows; this page
             # is itself the "run a full refresh now" action, so no link.
@@ -91,6 +83,8 @@ def _page(request, service):
                 refresh_schedule(configuration), timezone.now()
             ),
             "request_key": uuid4(),
+            # The lateness margin the about text names (#510).
+            "lateness_minutes": configured_policy().source_stale_seconds // 60,
         },
     )
 

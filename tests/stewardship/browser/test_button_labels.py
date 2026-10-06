@@ -92,6 +92,9 @@ BROKEN_LABELS = """() => {
         # Sortable headings: POST buttons (talents) and GET links (ministries).
         "/talents-report",
         "/ministries",
+        # The data-age lines and the late refresh's run button (#510).
+        "/home-data-age",
+        "/integration-settings-late",
     ],
 )
 def test_button_labels_never_wrap_inside_a_word(page, component_origin, path, width):

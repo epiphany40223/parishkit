@@ -11,6 +11,8 @@ from parishkit.stewardship.accounts.configuration_models import (
     Parish,
 )
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.audit.schemas import ContextKind
+from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.admission import require_source_refresh
 from parishkit.stewardship.jobs.models import TaskRun
@@ -91,10 +93,11 @@ def produce_refreshes(guard, *, skipped=None):
 
     While a bulk Family send is in progress a not yet created delta slot, or a
     daytime full slot (a configured time other than the nightly one, #465), is
-    skipped (``send_hold``): like a hold, it records nothing, so it is not a
-    failure, and every later loop decides again. The first loop after the send
-    creates the current slot's refresh, which catches up. ``skipped`` holds the
-    slot keys already logged, so each skipped slot logs one INFO line.
+    held (``send_hold``): it creates no command, task or failure, and every
+    later loop decides again. The first loop after the send creates the
+    current slot's refresh, which catches up. ``skipped`` holds the slot keys
+    already logged, so each held slot logs one INFO line, and a held full slot
+    also writes one durable entry, per scheduler process (#510).
     """
     if not isinstance(guard, SchedulerGuard):
         raise TypeError("Refresh production requires actual scheduler ownership.")
@@ -203,16 +206,26 @@ def _waits_for_send(slot, nightly_time):
 
 
 def _log_skip(slot):
-    """Log a skipped slot under its slot's command identity.
+    """Record a held slot under its slot's command identity.
 
     The reviewed process log carries no free text, so the INFO line is
     ``source_refresh_held`` correlated to the slot's would-be command; with
     debug logging on, a DEBUG line says why and when the slot fell due.
+
+    A held **full** slot also writes a durable ``source_refresh_held`` INFO
+    entry with the task-free ``schedule`` context schema (#510): the health
+    check's evidence that the next full refresh is the catch-up, which keeps
+    the send's allowance until it promotes or fails. A quick slot writes
+    none: quick updates no longer decide whether the data is current. The
+    entry commits with the scheduler loop's transaction; after a restart the
+    same held slot may be recorded again, which is harmless.
     """
     with correlation(slot.command_id):
         emit(Event.SOURCE_HELD, level=logging.INFO)
+        if slot.cause != "delta":
+            operational(Event.SOURCE_HELD, level="INFO", schema=ContextKind.SCHEDULE)
         logging.getLogger("parishkit.stewardship.debug").debug(
-            "%s due %s skipped: a Family send is in progress",
+            "%s due %s held: a Family send is in progress",
             "Incremental ParishSoft update"
             if slot.cause == "delta"
             else f"Full ParishSoft refresh at {slot.nightly_time}",

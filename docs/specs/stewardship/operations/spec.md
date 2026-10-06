@@ -1084,9 +1084,9 @@ which it finds in SQL by walking the configuration activations, as
 `initial_source_at` does. It is treated as a daytime full refresh: a send in
 progress holds it by its cause, recorded as held, and then it runs as the
 catch-up with the hold's allowance. Before this cause
-exists (delivery step 1), the settings page
-says when a full refresh is overdue on save and offers **Run a full refresh
-now**.
+exists (delivery step 1), the settings page says when a full refresh is more
+than the lateness margin late and not running, and offers **Run a full
+refresh now** beside that notice.
 
 For example, the old schedule has full refreshes at 00:00 and every two
 hours from 08:00 to 20:00, and a send that started at 09:30 is holding the
@@ -1103,11 +1103,17 @@ scheduled full refresh is 02:00 tomorrow.
 
 - The alarm, the bulk-send hold and the Admin home page's problem line use
   the last full refresh and the out-of-date rule.
-- The System health page's
-  [ParishSoft refresh panel](../admin-portal/spec.md#parishsoft-refresh-panel),
-  Home, the refresh page, the daily digest and `pk-stewardship health` show
-  "data as of" and the connection line, and, when the data is out of date,
-  which scheduled refresh is late and by how long.
+- Home, the refresh page, the ParishSoft settings page, the daily digest and
+  the `source` member of `pk-admin status` (see the
+  [automation guide](../../../guides/stewardship-admin-automation.md#status))
+  show "data as of" and the connection line, and, when the data is out of
+  date, which scheduled refresh is late and by how long, or that a bulk
+  Family send is holding it. The System health page's
+  [ParishSoft refresh panel](../admin-portal/spec.md#parishsoft-refresh-panel)
+  will show the same when that page is built
+  ([#530](https://github.com/epiphany40223/parishkit/issues/530)).
+  `pk-stewardship health` reports only dependency checks and does not
+  carry these facts.
 - The settings page no longer refuses a schedule for its gaps: it states the
   longest wait for new data and when the alarm would sound (see
   [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary)).

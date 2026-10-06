@@ -56,6 +56,7 @@ from parishkit.stewardship.accounts.share_forms import (
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.jobs.views import EVENT_SORTING, TASK_SORTING
 from parishkit.stewardship.reports.chart_assets import VENDORED
+from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.security import CSP
@@ -101,6 +102,18 @@ from .user_components import components as user_components
 from .weekly_components import components as weekly_components
 
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
+# A scheduled full refresh two hours past due, with none running (#510).
+LATE_REFRESH = FullRefreshStatus(
+    NOW - timedelta(hours=4),
+    None,
+    False,
+    full_started_at=NOW - timedelta(hours=4, minutes=7),
+    data_as_of=NOW - timedelta(hours=4, minutes=7),
+    connection=Connection("working", NOW - timedelta(minutes=5)),
+    overdue_at=NOW - timedelta(hours=2),
+    out_of_date=True,
+    late_minutes=120,
+)
 # One running task shared by the background page's work summary and table.
 BACKGROUND_TASK = {
     "id": str(uuid4()),
@@ -520,6 +533,44 @@ def component_origin():
                 "target": "parishsoft",
                 "label": "ParishSoft",
                 "form": refused_refresh_times(),
+            },
+        ),
+        (
+            # Data age (#510): a scheduled full refresh two hours late, none
+            # running, so the notice carries the run button.
+            "/integration-settings-late",
+            "integration-settings",
+            {
+                "target": "parishsoft",
+                "label": "ParishSoft",
+                "summary": None,
+                "credential": None,
+                "full_refresh": LATE_REFRESH,
+                "refresh_key": uuid4(),
+                "form": IntegrationForm(
+                    "parishsoft",
+                    initial={"organization_id": 12345, "base_digest": "a" * 64},
+                ),
+            },
+        ),
+        (
+            "/home-data-age",
+            "home",
+            {
+                "configuration": SimpleNamespace(mode="production"),
+                "dashboard": {
+                    "campaign": None,
+                    "full_refresh": FullRefreshStatus(
+                        NOW,
+                        None,
+                        False,
+                        full_started_at=NOW - timedelta(hours=4),
+                        data_as_of=NOW - timedelta(hours=1),
+                        connection=Connection("working", NOW),
+                    ),
+                    "can_refresh": True,
+                    "refresh_key": uuid4(),
+                },
             },
         ),
         (
@@ -1318,18 +1369,52 @@ def component_origin():
             "/source-refresh",
             "source-refresh",
             {
-                "refreshed_at": NOW,
+                "full_refresh": FullRefreshStatus(
+                    NOW,
+                    None,
+                    False,
+                    full_started_at=NOW - timedelta(minutes=7),
+                    data_as_of=NOW - timedelta(minutes=7),
+                    connection=Connection("working", NOW),
+                ),
                 "pending": {"running": False, "waiting": False},
                 "request_key": uuid4(),
+                "lateness_minutes": 30,
             },
         ),
         (
             "/source-refresh-running",
             "source-refresh",
             {
-                "refreshed_at": None,
+                "full_refresh": FullRefreshStatus(
+                    None, None, True, connection=Connection("unknown")
+                ),
                 "pending": {"running": True, "waiting": False},
                 "request_key": uuid4(),
+                "lateness_minutes": 30,
+            },
+        ),
+        (
+            # Data age and connection (#510): a quick update brought changes
+            # after the last full refresh, the 10:00-style full refresh is
+            # late, and ParishSoft is failing.
+            "/source-refresh-late",
+            "source-refresh",
+            {
+                "full_refresh": FullRefreshStatus(
+                    NOW - timedelta(hours=3),
+                    None,
+                    False,
+                    full_started_at=NOW - timedelta(hours=3, minutes=7),
+                    data_as_of=NOW - timedelta(hours=1),
+                    connection=Connection("failing", NOW - timedelta(minutes=30)),
+                    overdue_at=NOW - timedelta(minutes=45),
+                    out_of_date=True,
+                    late_minutes=45,
+                ),
+                "pending": {"running": False, "waiting": False},
+                "request_key": uuid4(),
+                "lateness_minutes": 30,
             },
         ),
         ("/availability", "availability", {"setup": True, "admin": True}),

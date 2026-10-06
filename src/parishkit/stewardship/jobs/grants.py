@@ -240,8 +240,12 @@ def task_runtime_grants(role):
 
     columns["stewardship_operational_log"]["SELECT"].update({"id", "level"})
     if role is ServiceRole.WORKER:
+        # ``schema`` lets the source health check tell the scheduler's
+        # send-hold entry (``schedule``) from a refresh task's own held retry
+        # (``task``), both ``source_refresh_held`` (#510). Applied by the
+        # upgrade's database-grants step; no migration.
         columns["stewardship_operational_log"]["SELECT"].update(
-            {"event", "correlation_id"}
+            {"event", "correlation_id", "schema"}
         )
 
     add_boundary_grants(tables, columns, worker=role is ServiceRole.WORKER)

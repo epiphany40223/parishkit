@@ -13,6 +13,7 @@ from io import BytesIO
 from uuid import UUID
 
 from parishkit.email.base import InlineImage
+from parishkit.stewardship.source.data_age import DataAge
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.dates import format_date
 from parishkit.stewardship.web.digest_content import CHART_ALT, CHART_ID
@@ -34,6 +35,10 @@ class DailyDigestDocument:
     ``date_format`` is the parish date format of the configuration the
     snapshot pinned (None means the default style), so a compile retried
     after an Admin changes the format still renders as first captured.
+
+    ``source_age`` is the ParishSoft data age and connection as known at the
+    observation (#510), stated as one line in the parish's time zone; the
+    compiling worker reads it, and a document without it omits the line.
     """
 
     snapshot_id: UUID
@@ -41,6 +46,7 @@ class DailyDigestDocument:
     statistics: CampaignStatistics
     covered_dates: tuple[date, ...]
     date_format: str | None = None
+    source_age: DataAge | None = None
 
     def __post_init__(self):
         """Reject mixed cutoffs or incomplete coverage before rendering any output."""
@@ -50,6 +56,7 @@ class DailyDigestDocument:
             or not isinstance(chart, ParticipationDocument)
             or not isinstance(statistics, CampaignStatistics)
             or not isinstance(self.date_format, str | None)
+            or not isinstance(self.source_age, DataAge | None)
         ):
             raise ValueError("Daily digest requires typed immutable report inputs.")
         if (
@@ -102,6 +109,38 @@ class DailyDigestContent:
     html: str
     text: str
     chart: InlineImage = field(repr=False)
+
+
+def source_age_line(age, timezone):
+    """State the data age and connection in one line, in the parish's zone.
+
+    For example "ParishSoft data as of October 6, 2026 at 8:00 AM EDT.
+    Connection: working (last answered October 6, 2026 at 10:15 AM EDT)."
+    """
+
+    def at(value):
+        """One instant in the digest's single format."""
+        return dates.format_instant(value, timezone)
+
+    if age.data_as_of is None:
+        data = "ParishSoft data: not yet loaded."
+    elif age.full_started_at is not None and age.full_started_at != age.data_as_of:
+        data = (
+            f"ParishSoft data as of {at(age.data_as_of)}, last full refresh "
+            f"{at(age.full_started_at)}."
+        )
+    else:
+        data = f"ParishSoft data as of {at(age.data_as_of)}."
+    state, when = age.connection.state, age.connection.at
+    if state == "failing":
+        line = f"Connection: failing since {at(when)}."
+    elif state == "not_checked":
+        line = f"Connection: not checked since {at(when)}."
+    elif state == "working":
+        line = f"Connection: working (last answered {at(when)})."
+    else:
+        line = "Connection: not checked yet."
+    return f"{data} {line}"
 
 
 def _report_url(document, public_origin):
@@ -209,6 +248,8 @@ def _render_daily_digest(document, *, public_origin):
         "Statistics: Current active population at generation.",
         chart.as_of_label,
     )
+    if document.source_age is not None:
+        labels += (source_age_line(document.source_age, chart.campaign_timezone),)
     # Match weekly display normalization; retained observations remain exact.
     # The strict HTML compiler boundary rejects NBSP parser rewrites.
     labels = tuple(" ".join(label.split()) for label in labels)

@@ -19,19 +19,30 @@ source observations. The scheduler allocates opaque work; only the general
 worker records incidents. Each sample and its completed Task commit together.
 Do not introduce another scheduler, provider probe or mutable health cache.
 
-Configured freshness defaults to thirty minutes, allowing the fifteen-minute
-refresh cadence and normal two-to-three-minute full load. Intentional restore
-or purge holds produce neither failure nor recovery. A successful current-scope
-snapshot is required for recovery; task completion, old-window snapshots,
-elapsed cooldowns and unobserved state cannot establish health. Delayed critical
-log intake must finish before resolving its source incident, and a newer failed
-read must prevent an older successful snapshot from clearing that incident.
+Since [#510](https://github.com/epiphany40223/parishkit/issues/510) the
+`source_stale` alarm follows the
+[data age](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection):
+it sounds when the first scheduled full refresh after the newest promoted full
+refresh started is more than `source_stale_seconds` (thirty minutes by
+default) late. Quick updates no longer reset it, because they re-read only
+what ParishSoft's change list reports. Intentional restore or purge holds
+produce neither failure nor recovery. Recovery of `source_stale` requires a
+promoted current-scope full refresh with no later failure of any level,
+including a WARNING such as a retried provider error; a quick update never
+recovers it, so after a failure recovery can take until the next full
+refresh that succeeds. The other source incidents still recover on any
+successful current-scope snapshot. Task
+completion, old-window snapshots, elapsed cooldowns and unobserved state cannot
+establish health. Delayed critical log intake must finish before resolving its
+source incident, and a newer failed read must prevent an older successful
+snapshot from clearing that incident.
 
-Configure the threshold through the shared [operational policy settings](stewardship-operational-alerts.md#operational-policy-configuration).
-Freshness uses the current
-snapshot's pre-read start time, not its later promotion time; before the first
-snapshot, the earliest non-bootstrap activation of the configured organization
-anchors the initial grace; unrelated configuration edits cannot restart it.
+Configure the margin through the shared [operational policy settings](stewardship-operational-alerts.md#operational-policy-configuration).
+Data age uses the full refresh's pre-read start time, not its later promotion
+time, and counts only due times after the current schedule first became
+effective; before the first full refresh, the earliest non-bootstrap
+activation of the configured organization anchors the initial grace;
+unrelated configuration edits cannot restart it.
 Changing the threshold does not rewrite existing suppression/escalation policy.
 Delta ambiguity still requests its existing full fallback; definitive full-load
 loss and actual tenant mismatch produce the specific critical classification.

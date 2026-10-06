@@ -34,10 +34,16 @@ from parishkit.stewardship.jobs.operational_storage import (
 )
 from parishkit.stewardship.observability import Event
 
+from .data_age import (
+    is_out_of_date,
+    last_full_started_at,
+    overdue_full_slot,
+    source_timezone,
+)
 from .errors import SourceOrganizationChanged, SourceScopeChanged
 from .models import SourceCurrent, SourceSnapshot
 from .requests import _organization, _window
-from .send_hold import deltas_skipped, family_send_active, within_allowance
+from .send_hold import allowance_applies
 
 FAILURE_EVENTS = (
     Event.SOURCE_INVALID,
@@ -122,35 +128,23 @@ def observe_source_health():
         SourceCurrent.objects.select_related("snapshot").get(singleton=True).snapshot
     )
     policy = configured_policy()
-    observed_at = (
-        snapshot.started_at if snapshot is not None else initial_source_at(organization)
+    # Data age (#510): only a promoted full refresh re-reads everything, so
+    # the alarm measures from the newest one, and sounds when the first
+    # scheduled full refresh after it is more than the margin late.
+    last_full = last_full_started_at()
+    overdue = overdue_full_slot(
+        scope.instant,
+        after=last_full if last_full is not None else initial_source_at(organization),
+        timezone=source_timezone(scope.runtime.active_configuration_id),
     )
-    stale = scope.instant - observed_at >= timedelta(
-        seconds=policy.source_stale_seconds
-    )
-    if stale:
-        # The scheduler skips delta refreshes while a Family send is in
-        # progress (send_hold), so the source ages on purpose. Within the
-        # send's allowance, and only while deltas are actually being skipped,
-        # that is a hold: it neither alarms nor resolves.
-        if (
-            snapshot is not None
-            and within_allowance(observed_at, scope.instant)
-            and family_send_active()
-            and deltas_skipped(observed_at, scope.instant)
-        ):
+    if is_out_of_date(
+        overdue, scope.instant, timedelta(seconds=policy.source_stale_seconds)
+    ):
+        if last_full is not None and _held(overdue, scope.instant):
             return
         record_observation(
             IncidentKind.SOURCE_STALE, IncidentLevel.CRITICAL, policy=policy
         )
-        return
-    if (
-        snapshot is None
-        or snapshot.state != "promoted"
-        or snapshot.organization_id != organization
-        or snapshot.cursor.get("schema") != "source-refresh-v1"
-        or snapshot.cursor.get("window_digest") != _window(scope).digest
-    ):
         return
     if not OperationalIncident.objects.filter(
         kind__in=(IncidentKind.SOURCE_STALE, *FAILURE_KINDS), resolved_at__isnull=True
@@ -162,8 +156,6 @@ def observe_source_health():
         Q(event__in=FAILURE_EVENTS) | Q(event=Event.SOURCE_HELD, level="CRITICAL"),
         level__in=("WARNING", "ERROR", "CRITICAL"),
     )
-    if failures.filter(created_at__gte=snapshot.started_at).exists():
-        return
     if (
         failures.filter(level="CRITICAL")
         .exclude(pk__in=OperationalLogReceipt.objects.values("log_id"))
@@ -172,13 +164,60 @@ def observe_source_health():
         return
     # A looser configured threshold cannot make a pre-outage read into new
     # successful evidence. Staleness is sampled directly, unlike delayed logs.
-    record_recovery(IncidentKind.SOURCE_STALE, healthy_since=snapshot.promoted_at)
+    # Recovery of the data-age alarm needs a promoted full refresh in the
+    # current scope with no newer failure: a quick update, even one that
+    # changed records, no longer recovers it (#510).
+    full = _current(
+        SourceSnapshot.objects.filter(kind="full", state="promoted")
+        .order_by("-started_at")
+        .first(),
+        organization,
+        scope,
+    )
+    if (
+        full is not None
+        and not failures.filter(created_at__gte=full.started_at).exists()
+    ):
+        record_recovery(IncidentKind.SOURCE_STALE, healthy_since=full.promoted_at)
+    snapshot = _current(snapshot, organization, scope)
+    if (
+        snapshot is None
+        or failures.filter(created_at__gte=snapshot.started_at).exists()
+    ):
+        return
     for kind in FAILURE_KINDS:
         if kind is IncidentKind.SOURCE_DESTRUCTIVE_CHANGE and not _full_recovery_proof(
             snapshot, failures
         ):
             continue
         record_recovery(kind)
+
+
+def _current(snapshot, organization, scope):
+    """``snapshot`` if it is promoted source for the current scope, else None."""
+    if (
+        snapshot is None
+        or snapshot.state != "promoted"
+        or snapshot.organization_id != organization
+        or snapshot.cursor.get("schema") != "source-refresh-v1"
+        or snapshot.cursor.get("window_digest") != _window(scope).digest
+    ):
+        return None
+    return snapshot
+
+
+def failed_since(overdue):
+    """Whether a source refresh failed critically at or after ``overdue``."""
+    return OperationalLog.objects.filter(
+        Q(event__in=FAILURE_EVENTS) | Q(event=Event.SOURCE_HELD),
+        level="CRITICAL",
+        created_at__gte=overdue,
+    ).exists()
+
+
+def _held(overdue, now):
+    """Whether an out-of-date sample is a send hold: neither alarm nor recovery."""
+    return allowance_applies(overdue, now, failed_since=failed_since)
 
 
 def _full_recovery_proof(snapshot, failures):

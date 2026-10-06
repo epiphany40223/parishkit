@@ -359,8 +359,9 @@ key, as the backup runbook's
 ## ParishSoft outage
 
 **You see:** the `source_refresh_failed` incident (a refresh failed) or
-`source_stale` (no successful refresh within the freshness window, 30 minutes
-by default); the home page's latest refresh time stops advancing.
+`source_stale` (a scheduled full refresh is more than `source_stale_seconds`,
+30 minutes by default, late); the home page's "ParishSoft data as of" time
+stops advancing, and its connection line may read "failing since".
 
 **The system does:** it keeps serving the last successful snapshot, so the
 Family form, reports and staff pages keep working on that data; it retries on
@@ -425,9 +426,9 @@ until the drop is explained.
 
 4. Wait until the full refresh that **Refresh now** started has completed.
    Its progress page (where **Refresh now** takes you) shows it finished,
-   and on `/admin/source/refresh` the "Last full ParishSoft refresh" time
-   moves past the moment you clicked, with no "a full refresh is running
-   now". A 15-minute update that completes first is not enough: later
+   and on `/admin/source/refresh` the "last full refresh" time ("ParishSoft
+   data as of", when no quick update brought newer changes) moves past the
+   moment you clicked, with no "A full refresh is running now". A 15-minute update that completes first is not enough: later
    refreshes also compare with the last full refresh, so removing the
    override before the full one completes gets the next refresh refused
    again. Only then recreate the worker without the variable, so the 25%

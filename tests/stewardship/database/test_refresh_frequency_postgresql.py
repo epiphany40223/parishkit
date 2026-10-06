@@ -35,8 +35,11 @@ def source_singletons():
 
 
 def with_schedule(tmp_path, **settings):
-    """Apply refresh schedule settings through an ordinary configuration change."""
-    _, store, version, actor = configured(tmp_path)
+    """Apply refresh schedule settings through an ordinary configuration change.
+
+    Returns ``configured``'s credential, store, base version and actor.
+    """
+    credential, store, version, actor = configured(tmp_path)
     integration = version.document()["sections"]["integrations"][0]
     settings = integration["values"]["settings"] | settings
     patch = [
@@ -47,12 +50,14 @@ def with_schedule(tmp_path, **settings):
             "values": {"settings": settings},
         }
     ]
-    assert change(store, version, actor, patch).state == "applied"
+    applied = change(store, version, actor, patch)
+    assert applied.state == "applied"
+    return credential, store, version, actor
 
 
 def with_frequency(tmp_path, frequency, nightly_time="02:00"):
     """Apply a full-refresh frequency through an ordinary configuration change."""
-    with_schedule(tmp_path, full_refresh=frequency, nightly_time=nightly_time)
+    return with_schedule(tmp_path, full_refresh=frequency, nightly_time=nightly_time)
 
 
 def forged_tick(tick, **slot):

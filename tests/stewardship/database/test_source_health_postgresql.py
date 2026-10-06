@@ -1,5 +1,6 @@
 """Current source observations, not elapsed cooldowns, own alert recovery."""
 
+import math
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import timedelta
@@ -10,6 +11,7 @@ import pytest
 from django.db import connection, connections
 
 from parishkit.parishsoft_source import SourceOrganizationMismatch
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.work_locks import WORK_ORDER_LOCK, work_transaction
@@ -22,10 +24,11 @@ from parishkit.stewardship.jobs.operational_models import (
     OperationalNotice,
 )
 from parishkit.stewardship.jobs.operational_policy import IncidentPolicy
+from parishkit.stewardship.jobs.operational_sources import configured_policy
 from parishkit.stewardship.jobs.operational_storage import record_observation
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.observability import Event
-from parishkit.stewardship.source import health
+from parishkit.stewardship.source import data_age, health
 from parishkit.stewardship.source.attempts import begin_refresh_attempt
 from parishkit.stewardship.source.cursors import refresh_cursor
 from parishkit.stewardship.source.errors import SourceScopeChanged
@@ -91,6 +94,45 @@ def observe():
         health.observe_source_health()
 
 
+def overdue_slot():
+    """The full due time the next samples measure from (#510).
+
+    The first scheduled full time after the newest promoted full refresh
+    started, or after the tenant's first activation before any, under the
+    schedule actually applied.
+    """
+    with work_transaction():
+        after = data_age.last_full_started_at() or health.initial_source_at(12345)
+        active = SystemConfiguration.objects.values_list(
+            "active_configuration_id", flat=True
+        ).get()
+        return data_age.first_overdue(
+            data_age.schedule_runs(after),
+            data_age.source_timezone(active),
+            after,
+            after + timedelta(days=2),
+        )
+
+
+def stale_offset(extra=1):
+    """Seconds from now to when the overdue full slot is past the margin."""
+    with work_transaction():
+        now = database_now()
+    margin = configured_policy().source_stale_seconds
+    return math.ceil((overdue_slot() - now).total_seconds()) + margin + extra
+
+
+def at_instant(monkeypatch, instant):
+    """Observe at exactly ``instant``, keeping actual admission."""
+    original = health.require_source_refresh
+
+    def fixed(**kwargs):
+        """Real admission, this sample's instant."""
+        return replace(original(**kwargs), instant=instant)
+
+    monkeypatch.setattr(health, "require_source_refresh", fixed)
+
+
 def future_observation(monkeypatch, seconds):
     """Move only the observation input, never provider, lease or incident SQL clocks."""
     original = health.require_source_refresh
@@ -122,7 +164,8 @@ def test_missing_source_escalates_after_configured_grace_and_recovers_once(
     credential, *_ = configured(tmp_path)
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     with monkeypatch.context() as patch:
-        future_observation(patch, 121)
+        # The first scheduled full refresh after activation is past the margin.
+        future_observation(patch, stale_offset())
         observe()
         observe()
     stale = OperationalIncident.objects.get(kind="source_stale")
@@ -159,18 +202,21 @@ def test_old_window_success_cannot_resolve_current_source_incident(tmp_path):
 
 
 def test_snapshot_staleness_uses_exact_pre_read_boundary(tmp_path, monkeypatch):
-    """A recent promotion cannot hide an observation that began too long ago."""
+    """The data is out of date exactly the margin after the overdue full slot.
+
+    A recent promotion cannot hide a scheduled full refresh that is late
+    (#510): the boundary is the slot's due time plus ``source_stale_seconds``.
+    """
     credential, *_ = configured(tmp_path)
-    snapshot = publish(credential)
+    publish(credential)
+    overdue = overdue_slot()
     original = health.require_source_refresh
     for elapsed, expected in ((1799, False), (1800, True)):
 
         def scoped(elapsed=elapsed, **kwargs):
             """Keep real admission; select only this observation's instant."""
             scope = original(**kwargs)
-            return replace(
-                scope, instant=snapshot.started_at + timedelta(seconds=elapsed)
-            )
+            return replace(scope, instant=overdue + timedelta(seconds=elapsed))
 
         monkeypatch.setattr(health, "require_source_refresh", scoped)
         observe()
@@ -604,9 +650,12 @@ def test_unrelated_configuration_edit_cannot_restart_initial_grace(
     assert health.initial_source_at(12345) == initial
     original = health.require_source_refresh
 
+    # The first scheduled full time after that activation, then the margin.
+    deadline = overdue_slot() + timedelta(seconds=1800)
+
     def due(**kwargs):
         """Set exactly the original grace deadline, not a wall-clock sleep."""
-        return replace(original(**kwargs), instant=initial + timedelta(seconds=1800))
+        return replace(original(**kwargs), instant=deadline)
 
     monkeypatch.setattr(health, "require_source_refresh", due)
     observe()
@@ -621,7 +670,7 @@ def test_looser_threshold_cannot_resolve_without_a_new_success(
     publish(credential)
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=60)
     with monkeypatch.context() as patch:
-        future_observation(patch, 61)
+        future_observation(patch, stale_offset())
         observe()
     incident = OperationalIncident.objects.get(kind="source_stale")
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=3600)
@@ -658,3 +707,50 @@ def test_destructive_refusal_logs_which_count_fell(tmp_path, caplog):
     ]
     assert lines[0]["level"] == "CRITICAL" and "PRIVATE" not in json.dumps(lines)
     assert OperationalLog.objects.filter(event="source_destructive_change").exists()
+
+
+def test_stale_recovery_requires_a_promoted_full_refresh(tmp_path):
+    """A quick update no longer recovers the data-age alarm (#510).
+
+    Before, any promoted snapshot newer than the last failure resolved it;
+    now only a promoted full refresh with no newer failure does.
+    """
+    credential, *_ = configured(tmp_path)
+    publish(credential)
+    with work_transaction():
+        incident = record_observation(
+            IncidentKind.SOURCE_STALE, IncidentLevel.CRITICAL, policy=IncidentPolicy()
+        )
+        operational(Event.SOURCE_PROVIDER_FAILED, level="WARNING")
+    publish(credential, kind="delta")
+    observe()
+    incident.refresh_from_db()
+    assert incident.resolved_at is None
+    publish(credential)
+    observe()
+    incident.refresh_from_db()
+    assert incident.resolved_at is not None
+
+
+@pytest.mark.parametrize("warning", [False, True])
+def test_a_warning_after_the_full_refresh_keeps_stale_open(tmp_path, warning):
+    """A WARNING source failure after the full refresh started blocks recovery.
+
+    The alarm is open, then a full refresh promotes and the data is not out
+    of date, so without a later failure ``source_stale`` recovers; a retried
+    provider error logged after that refresh started keeps it open until the
+    next full refresh (#510).
+    """
+    credential, *_ = configured(tmp_path)
+    with work_transaction():
+        incident = record_observation(
+            IncidentKind.SOURCE_STALE, IncidentLevel.CRITICAL, policy=IncidentPolicy()
+        )
+    full = publish(credential)
+    if warning:
+        with work_transaction():
+            log = operational(Event.SOURCE_PROVIDER_FAILED, level="WARNING")
+        assert log.created_at > full.started_at
+    observe()
+    incident.refresh_from_db()
+    assert (incident.resolved_at is None) is warning
