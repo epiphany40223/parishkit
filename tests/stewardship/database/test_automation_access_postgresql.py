@@ -1,8 +1,10 @@
 """Automation access, revocation and dashboard notices in the browser (ADM-11).
 
-Automation access lists the Administrator's own sessions and every live
-session; any Administrator revokes any of them with an in-place form whose
-post redirects back to the page. The dashboard always renders the notices
+Automation access lists every live session first and, on request
+(``ended=yes``), the Administrator's own ended ones, never offered Revoke;
+both tables sort by allowlisted tokens only (#621). Any Administrator revokes
+any live session with an in-place form whose post redirects back to the page
+as the reader left it. The dashboard always renders the notices
 region for an Administrator, so acknowledging the last notice still swaps in
 place, and shows each notice in plain words with the label escaped.
 """
@@ -23,23 +25,28 @@ pytestmark = pytest.mark.django_db(transaction=True)
 ACCESS = "/admin/users/automation/"
 
 
-def test_access_lists_own_and_every_live_session(two_admins, google):  # noqa: F811
-    """Each Administrator sees their own sessions and everyone's live ones."""
+def test_access_lists_every_live_session_first(two_admins, google):  # noqa: F811
+    """Every Administrator sees every live session, first, each with Revoke."""
     _, _, mine = paired(two_admins)
     claims, _ = google
     claims.update(sub="other-subject", email="other@example.org")
     other, _ = signed_in(Client(enforce_csrf_checks=True))
     page = other.get(ACCESS)
     assert page.status_code == 200
-    assert b"You have no automation sessions." in page.content
-    assert b"admin@example.org" in page.content
-    assert b"launch &lt;assistant&gt;" in page.content
-    # Another Administrator sees it in the every-live-session region.
-    action = f'action="{ACCESS}sessions/{mine.pk}/#automation-live"'
-    assert action.encode() in page.content
-    assert b"data-in-place-region" in page.content
-    assert b'data-in-place-message="Session revoked."' in page.content
-    assert b'href="/admin/users/automation/approval/"' in page.content
+    html = page.content.decode()
+    # The first table on the page is the live one (#621).
+    assert html.split("<table", 1)[1].startswith(
+        '><caption id="automation-live-caption">'
+    )
+    assert "admin@example.org" in html
+    assert "launch &lt;assistant&gt;" in html
+    # Another Administrator revokes it from the live region, in place.
+    action = f'action="{ACCESS}sessions/{mine.pk}/#live-table"'
+    assert action in html
+    assert '<div id="live-table" data-table-region>' in html
+    assert '<div id="ended-table" data-table-region></div>' in html
+    assert 'data-in-place-message="Session revoked."' in html
+    assert 'href="/admin/users/automation/approval/"' in html
 
 
 def test_revoking_returns_to_the_session_list(two_admins, google):  # noqa: F811
@@ -47,7 +54,7 @@ def test_revoking_returns_to_the_session_list(two_admins, google):  # noqa: F811
     browser, _, mine = paired(two_admins)
     response = post(browser, f"{ACCESS}sessions/{mine.pk}/")
     assert response.status_code == 302
-    assert response["Location"] == ACCESS + "#automation-sessions"
+    assert response["Location"] == ACCESS + "#live-table"
     mine.refresh_from_db()
     assert mine.end_reason == "revoked_by_owner"
     _, _, second = paired(two_admins)
@@ -57,6 +64,62 @@ def test_revoking_returns_to_the_session_list(two_admins, google):  # noqa: F811
     assert post(other, f"{ACCESS}sessions/{second.pk}/").status_code == 302
     second.refresh_from_db()
     assert second.end_reason == "revoked_by_administrator"
+
+
+def test_ended_sessions_show_on_request_and_are_never_offered_revoke(
+    two_admins,  # noqa: F811
+    google,
+):
+    """ended=yes lists the own ended session, with its reason and no Revoke.
+
+    Revoking keeps the page's filter and sorts in the address it returns to,
+    validated as the page validates them.
+    """
+    browser, _, mine = paired(two_admins)
+    _, _, kept = paired(two_admins)
+    state = "?ended=yes&live_sort=label&ended_sort=-ended"
+    response = post(browser, f"{ACCESS}sessions/{mine.pk}/{state}")
+    assert response["Location"] == ACCESS + state + "#live-table"
+    hidden = browser.get(ACCESS).content.decode()
+    assert "Your ended sessions" not in hidden
+    assert f"sessions/{mine.pk}/" not in hidden
+    shown = browser.get(ACCESS + "?ended=yes").content.decode()
+    live, ended = shown.split('<div id="ended-table" data-table-region>')
+    assert f"sessions/{kept.pk}/?ended=yes#live-table" in live
+    assert "Your ended sessions" in ended and "Revoked by you" in ended
+    assert "launch &lt;assistant&gt;" in ended
+    assert ">Revoke<" not in ended and f"sessions/{mine.pk}/" not in shown
+    # Revoking an ended session changes nothing.
+    assert post(browser, f"{ACCESS}sessions/{mine.pk}/").status_code == 302
+    mine.refresh_from_db()
+    assert mine.end_reason == "revoked_by_owner"
+
+
+def test_tables_sort_by_their_allowlisted_tokens(two_admins, google):  # noqa: F811
+    """Newest approval first by default; created reverses it; others are refused."""
+    browser, _, older = paired(two_admins)
+    _, _, newer = paired(two_admins)
+    default = browser.get(ACCESS).content.decode()
+    assert default.index(f"sessions/{newer.pk}/") < default.index(
+        f"sessions/{older.pk}/"
+    )
+    oldest = browser.get(ACCESS + "?live_sort=created").content.decode()
+    assert oldest.index(f"sessions/{older.pk}/") < oldest.index(f"sessions/{newer.pk}/")
+    assert 'aria-sort="ascending" data-sort-column="created"' in oldest
+    for query in (
+        "?live_sort=created_at",
+        "?live_sort=ended",
+        "?ended_sort=administrator",
+        "?ended=true",
+        "?sort=-created",
+        "?dir=desc",
+    ):
+        assert browser.get(ACCESS + query).status_code == 400, query
+    # A revoke with an unknown sort is refused before anything changes.
+    response = post(browser, f"{ACCESS}sessions/{older.pk}/?live_sort=bogus")
+    assert response.status_code == 400
+    older.refresh_from_db()
+    assert older.revoked_at is None
 
 
 def test_approving_from_access_first_asks_for_a_fresh_sign_in(auth_service, google):

@@ -131,9 +131,14 @@ name may be wrong, or a database restore may be under way. Exit 127 means
   `"ended": false` with `"reason": "already_ended"` and that ending's
   `end_reason`, exits 0 and still deletes the file.
 - **Automation access** (`/admin/users/automation/`, in the Users and
-  access group) lists the Administrator's sessions, live and ended in the
-  last 30 days, and every live session of any Administrator; any of them can
-  be revoked there. Revocation takes effect at the next command.
+  access group) opens on every live session of any Administrator; any of
+  them can be revoked there. Tick **Include ended sessions** to also see
+  your own sessions that ended in the last 30 days, and choose a column
+  heading to sort a table. Revocation takes effect at the next command.
+- `pk-admin sessions` lists your live sessions; add `--include-ended` for
+  the ended ones and `--sort` to order them as the page does. Write a
+  descending sort with `=`, as in `--sort=-ended`: a separate `-ended`
+  would be read as an option.
 - A session ends by itself at its deadline, when its Administrator loses the
   Administrator role or is disabled or removed, and after an offline
   Admin-access recovery.
@@ -449,3 +454,9 @@ irreversible actions, and endings.
   `schedule confirm` and `config request show`, the first three-word
   command, `error.fields` on an `invalid` change, and `error.request_id`
   on an unknown outcome.
+- `pk-admin/1` (#621): a deliberate change of meaning, kept on version 1.
+  `sessions` lists live sessions only unless `--include-ended` is given
+  (it listed ended ones of the last 30 days too), and its `ended_at` is an
+  expired session's deadline (it was null; a revoked session's is still
+  its revocation time). It mirrors Automation access, and its only readers
+  are Administrator-run assistants. `--sort` is additive.

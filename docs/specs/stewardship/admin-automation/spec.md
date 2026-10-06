@@ -248,10 +248,11 @@ progress, counts and summaries, and nothing else.
   the operator guide recommends read-only sessions for assistants that only
   watch, and the shortest lifetime that fits the task.
 - **Revocation and listing.** The [Automation access](#revocation-and-listing)
-  page lists the Administrator's own sessions and every live session of any
-  Administrator, with label, scope, deadline, last use and host, liveness
-  computed at read time, and any Administrator may revoke any of them;
-  revocation takes effect at the next command, in Python and in SQL.
+  page lists every live session of any Administrator first and, on request,
+  the Administrator's own ended sessions, with label, scope, deadline, last
+  use and host, liveness computed at read time, and any Administrator may
+  revoke any live one; revocation takes effect at the next command, in Python
+  and in SQL.
 - **Ends on role loss, removal, recovery and restore.** Every command, and every
   guard that accepts automation, re-checks that the Administrator is still a
   live, enabled portal user with the Administrator role and that no offline
@@ -636,8 +637,14 @@ longer an Administrator.
   between admission and logout, nothing changes and it prints
   `{"ended": false, "reason": "already_ended", "end_reason": ...}` with
   that ending's reason; both exit 0, and the wrapper deletes the file.
-- `pk-stewardship admin sessions` lists the principal's sessions, live and
-  ended in the last 30 days, without secrets or digests.
+- `pk-stewardship admin sessions` lists the principal's live sessions, newest
+  approval first, without secrets or digests. `--include-ended` adds those
+  that ended in the last 30 days, and `--sort` takes Automation access's
+  tokens for its own sessions (`label`, `scope`, `created`, `expires`,
+  `used`, `ended`, each reversed by a leading `-` written with `=`, as in
+  `--sort=-ended`; default `-created`); an unknown token is `invalid`.
+  Each session's `ended_at` is its revocation time or, for one that
+  expired, its deadline (#621).
 
 ### Maintenance task
 
@@ -700,16 +707,28 @@ The source of truth is `stewardship_automation_session`.
 
 - **Automation access** (`/admin/users/automation/`), a new entry in the
   Users and access menu group (the portal has no separate account menu),
-  offered to Administrators only, lists that Administrator's sessions with
-  label, scope, approval time, deadline, last use, a short form of the host
-  digest and, for ended sessions, the end reason, and below them every live
-  session of any Administrator. Any live one is revoked with a CSRF-protected
-  in-place POST to `/admin/users/automation/sessions/<session>/`
-  (`revoked_by_owner` for one's own, `revoked_by_administrator` otherwise).
+  offered to Administrators only, opens on every live session of any
+  Administrator, the first table on the page, with the Administrator's
+  address, label, scope, approval time, deadline, last use and a short form
+  of the host digest. Its "Include ended sessions" checkbox (#621) adds that
+  Administrator's sessions that ended in the last 30 days, with when and how
+  each ended and never a Revoke control. The page's only parameters are
+  `ended=yes` (the checkbox, unticked by default), `live_sort` and
+  `ended_sort` (each table's sort, from that table's fixed tokens, newest
+  approval first by default); any other parameter, value or token is
+  refused. Host, status and action columns do not sort. The checkbox, the
+  headings and Revoke refresh the page in place, each keeping the others'
+  choices (see the portal's
+  [in-place controls](../admin-portal/spec.md#in-place-controls)).
+  Any live one is revoked with a CSRF-protected in-place POST to
+  `/admin/users/automation/sessions/<session>/` (`revoked_by_owner` for one's
+  own, `revoked_by_administrator` otherwise), whose query carries the page's
+  state so the page it returns to is unchanged.
   The list stays off Portal users, which the navigation work splits into
   several pages (NAV-15). Approving a new session from this page first asks
   for a fresh sign-in, as the approval page does.
-- `pk-stewardship admin sessions` lists the caller's own sessions.
+- `pk-stewardship admin sessions` lists the caller's own sessions, with the
+  page's filter and sort (`--include-ended`, `--sort`).
 
 Revocation sets `revoked_at` and `end_reason`, records
 `automation_session_ended` with the revoking Administrator as actor, and takes
@@ -899,7 +918,14 @@ streams an export:
   for versioned records include `version`.
 - Additive changes keep `pk-admin/1`. Removing or renaming a field, or
   changing its meaning, needs `pk-admin/2` and a changelog entry in the
-  operator guide.
+  operator guide. A one-time exception, not a precedent: `sessions`
+  changed meaning in #621 (live only by default, and an expired session's
+  `ended_at` is its deadline) and stayed on `pk-admin/1`, with a changelog
+  entry, because its only readers are Administrator-run assistants and it
+  mirrors Automation access (the default
+  [posted on #621](https://github.com/epiphany40223/parishkit/issues/621#issuecomment-6024219079),
+  pending Administrator confirmation). Every later change of meaning needs
+  `pk-admin/2`.
 - Output never contains credentials, session secrets or digests, Family
   access tokens, cipher material or exception text. Family-level personal data
   follows [personal data on the command line](#personal-data-on-the-command-line).
@@ -1504,7 +1530,7 @@ exemptions.
 | `presence` | `status`, its `presence.count` (PR 3a; see below) |
 | `login`, `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
 | `maintenance` | Permanent: the status page the access gate shows |
-| `automation_access`, `automation_approval`, `automation_session` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2) |
+| `automation_access`, `automation_approval`, `automation_session` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
 | `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8) |
 | `response_list`, `response_list_export` | Family-level rows, so export only: `export responses` (PR 8) |
 

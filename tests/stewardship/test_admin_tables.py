@@ -4,7 +4,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
-from parishkit.stewardship.web.tables import paginate, table_parameters
+from parishkit.stewardship.web.tables import paginate, table_parameters, whole_table
 
 ROWS = list(range(1, 131))
 
@@ -148,6 +148,21 @@ def test_in_memory_sort_is_stable_and_puts_missing_values_last():
     assert [row["id"] for row in newest] == [1, 3, 4, 2]
     oldest = paginate(NAMES, {"sort": "when"}, sorting=sorting).rows
     assert [row["id"] for row in oldest] == [4, 1, 3, 2]
+
+
+def test_a_whole_table_sorts_every_row_and_its_headings_carry_no_size():
+    """A short table without a navigator reads only its sort (#621)."""
+    sorting = _sorting()
+    table = whole_table(
+        NAMES, sorting=sorting, sort="-name", prefix="x_", carry=(("y", "1"),)
+    )
+    assert [row["id"] for row in table.rows] == [1, 3, 2, 4]
+    assert (table.number, table.pages, table.count) == (1, 1, 4)
+    assert table.anchor == "x-table"
+    assert parse_qs(table.heading_query("name")) == {"y": ["1"], "x_sort": ["name"]}
+    assert parse_qs(table.heading_query("when")) == {"y": ["1"], "x_sort": ["-when"]}
+    with pytest.raises(ValueError):
+        whole_table(NAMES, sorting=sorting, sort="id", prefix="x_")
 
 
 def test_sorted_links_keep_the_sort_and_headings_restart_at_page_one():

@@ -59,6 +59,7 @@ from parishkit.stewardship.observability import (
     current_correlation,
     emit,
 )
+from parishkit.stewardship.web.tables import Sorting
 
 from .automation_models import (
     SCOPES,
@@ -721,6 +722,67 @@ def session_row(row):
         "principal_email": getattr(row, "principal_email", None),
         "version": row.version,
     }
+
+
+def ended_at(row, now):
+    """When an ended session ended: its revocation, else its passed deadline.
+
+    A session that is neither live nor revoked has expired, or has lapsed
+    (its Administrator lost the role) before the hourly maintenance recorded
+    the ending; the latter has no known time yet, so it is None.
+    """
+    if row["live"]:
+        return None
+    if row["revoked_at"] is not None:
+        return row["revoked_at"]
+    return row["expires_at"] if row["expires_at"] <= now else None
+
+
+def own_sessions(principal_id, now, *, include_ended):
+    """This Administrator's sessions, live only unless ``include_ended``.
+
+    The rows ``sessions_of`` reads, each with its ``ended_at``; ended ones
+    reach back 30 days. Automation access and ``pk-admin sessions`` share it.
+    """
+    rows = [
+        row | {"ended_at": ended_at(row, now)} for row in sessions_of(principal_id, now)
+    ]
+    return rows if include_ended else [row for row in rows if row["live"]]
+
+
+def _text(name):
+    """A sort key on a text column that ignores case."""
+    return lambda row: (row[name] or "").casefold()
+
+
+def _value(name):
+    """A sort key on a column as stored (times; missing values sort last)."""
+    return lambda row: row[name]
+
+
+# The sort orders of the session tables (#621): every column but status,
+# host and actions, both directions, times newest first on a first choice,
+# and newest approval first by default. OWN_SORTING orders one
+# Administrator's sessions (Automation access's ended table and
+# ``pk-admin sessions --sort``); LIVE_SORTING orders every live session.
+TIMES = ("created", "expires", "used", "ended")
+_SHARED = {
+    "label": _text("label"),
+    "scope": _value("scope"),
+    "created": _value("created_at"),
+    "expires": _value("expires_at"),
+    "used": _value("last_used_at"),
+}
+OWN_SORTING = Sorting.by_column(
+    _SHARED | {"ended": _value("ended_at")},
+    default="-created",
+    descending_first=TIMES,
+)
+LIVE_SORTING = Sorting.by_column(
+    {"administrator": _text("principal_email")} | _SHARED,
+    default="-created",
+    descending_first=TIMES,
+)
 
 
 def revoke(session_id, actor, *, reason):

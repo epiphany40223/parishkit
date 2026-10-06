@@ -65,6 +65,9 @@ from ..campaign_factory import campaign, financial, schedule
 from ..content_factory import content
 from ..test_setup_final_steps import wizard as final_wizard
 from .automation_components import POSTS as AUTOMATION_POSTS
+from .automation_components import SLOW_GETS as AUTOMATION_SLOW_GETS
+from .automation_components import SLOW_POSTS as AUTOMATION_SLOW_POSTS
+from .automation_components import canonical
 from .automation_components import components as automation_components
 from .chart_components import components as chart_components
 from .delivery_components import components as delivery_components
@@ -1864,9 +1867,18 @@ def component_origin():
         """Suppress raw request logging; unknown routes are intentionally empty."""
 
         def do_GET(self):
-            """Serve only exact pre-rendered component fixtures with actual CSP."""
-            kind, body = responses.get(self.path, ("text/plain", ""))
-            self.send_response(200 if self.path in responses else 404)
+            """Serve only exact pre-rendered component fixtures with actual CSP.
+
+            A path not served exactly is tried with its query's pairs
+            sorted (``automation_components.canonical``), so a page may send
+            its state in any order. Automation access's race tests (#621)
+            get some answers after a pause.
+            """
+            path = self.path if self.path in responses else canonical(self.path)
+            if path in AUTOMATION_SLOW_GETS:
+                time.sleep(1.5)
+            kind, body = responses.get(path, ("text/plain", ""))
+            self.send_response(200 if path in responses else 404)
             self.send_header(
                 "Content-Type",
                 kind if kind == "image/png" else kind + "; charset=utf-8",
@@ -1899,7 +1911,7 @@ def component_origin():
                 return
             if self.path in posts:
                 status, location, body = posts[self.path]
-                if self.path in IN_PLACE_SLOW:
+                if self.path in IN_PLACE_SLOW | AUTOMATION_SLOW_POSTS:
                     time.sleep(1.5)
                 self.send_response(status)
                 if location:

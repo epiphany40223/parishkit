@@ -712,6 +712,9 @@
   // ("List refreshed.") is announced before the region's row count.
   const REGIONS = "[data-in-place-region][id], [data-table-region][id]";
   const isRegion = (node) => Boolean(node && node.matches(REGIONS));
+  // A checkbox that submits its own in-place form when it changes (#621).
+  const SUBMIT_ON_CHANGE = "form[data-in-place] input[type=checkbox][data-submit-on-change]";
+  const isBox = (node) => node instanceof HTMLInputElement && node.matches(SUBMIT_ON_CHANGE);
   // A form's submit buttons, including a <button> with no type (a submit
   // button by default).
   const SUBMIT = "button:not([type]), button[type=submit], input[type=submit]";
@@ -725,11 +728,24 @@
   tableStatus.className = "visually-hidden";
   tableStatus.setAttribute("role", "status");
   (document.querySelector("main") || document.body).append(tableStatus);
+  // Text waiting for the 50 ms announcement timer, or null.
+  let announcing = null;
   const announce = (text) => {
+    // A second message within the window joins the first instead of
+    // replacing it ("Session revoked." then "Ended sessions shown.").
+    if (announcing !== null) {
+      // Text already waiting is not said twice ("Still saving…").
+      if (!announcing.includes(text)) announcing = `${announcing} ${text}`;
+      return;
+    }
+    announcing = text;
     // Clearing first makes a repeated message (the same count after a
     // re-sort) read again.
     tableStatus.textContent = "";
-    window.setTimeout(() => { tableStatus.textContent = text; }, 50);
+    window.setTimeout(() => {
+      tableStatus.textContent = announcing;
+      announcing = null;
+    }, 50);
   };
   // One request in flight for the whole page: every response rewrites every
   // region, so a newer choice anywhere supersedes an older one, and an older
@@ -822,6 +838,14 @@
   const tableCount = (region) => squeeze(region.querySelector(".table-count")?.textContent);
   const describeTable = (fresh, control, owner) => {
     if (owner) {
+      // A submit-on-change box says what its state now shows ("Ended
+      // sessions shown.").
+      if (isBox(control)) {
+        // What the page now shows, which the box's tick may not match yet.
+        const shown = control.dataset.applied === "true";
+        const said = control.getAttribute(shown ? "data-message-on" : "data-message-off");
+        if (said) return said;
+      }
       const message = owner.getAttribute("data-in-place-message");
       if (message) return [message, tableCount(fresh)].filter(Boolean).join(" ");
       // A form without a message names what was done by its button's text
@@ -910,6 +934,12 @@
       if (!fresh) return;
       if (node instanceof HTMLFormElement) {
         syncHidden(node, fresh);
+        // The state a submit-on-change box's form now shows (see
+        // reconcileBoxes); the box keeps the reader's own tick.
+        fresh.querySelectorAll("[data-submit-on-change][data-applied][id]").forEach((copy) => {
+          const box = node.querySelector(`#${CSS.escape(copy.id)}`);
+          if (box) box.dataset.applied = copy.dataset.applied;
+        });
         return;
       }
       node.replaceWith(fresh);
@@ -1006,8 +1036,15 @@
     if (saving) {
       // The control was ignored; say why rather than doing nothing visibly.
       announce("Still saving…");
+      // A box applies itself once the save settles (reconcileBoxes), and
+      // says so beside it too.
+      if (isBox(control)) {
+        heldBoxes.add(control);
+        showHeld(control);
+      }
       return;
     }
+    if (isBox(control)) sentState.set(control, String(control.checked));
     tableRequest?.abort();
     const controller = new AbortController();
     tableRequest = controller;
@@ -1020,10 +1057,68 @@
       await refreshRegions(region, control, url, init, fallback, options, controller, form);
     } finally {
       if (saving === controller) saving = null;
+      // Nothing is in flight once the latest request settles (an aborted
+      // one leaves the newer request in place).
+      if (tableRequest === controller) tableRequest = null;
+      // After the submit handler has released its form (see settle).
+      window.setTimeout(reconcileBoxes, 0);
     }
+  };
+  // A box that submits its form when it changes (data-submit-on-change,
+  // #621) must not be left disagreeing with the page. Its data-applied
+  // attribute is the state the page was rendered for, taken from every
+  // fetched page (syncControls). A box is resubmitted only when its own
+  // change never got an answer of its own: it changed again while its
+  // request ran (the repeat was ignored), a newer request overtook its
+  // request, or a save held it back (heldBoxes). Never after its request
+  // fell back to a full load or got a page shown as returned (the page is
+  // leaving, or the server cannot answer: resending would loop), and
+  // never the same state again after that state failed (failedState),
+  // until the reader changes the box or a request succeeds.
+  const heldBoxes = new WeakSet();
+  const sentState = new WeakMap(); // box → "true"/"false" last sent
+  const failedState = new WeakMap(); // box → the state whose request failed
+  let leaving = false; // set when a fallback hands the page to the browser
+  const showHeld = (box) => {
+    if (box.form.querySelector("[data-held-note]")) return;
+    const note = document.createElement("p");
+    note.className = "helptext";
+    note.setAttribute("data-held-note", "");
+    note.textContent = "Still saving… this applies when the save finishes.";
+    (box.closest("label") || box).after(note);
+  };
+  const clearHeld = (box) => box.form?.querySelector("[data-held-note]")?.remove();
+  // A fallback that did not actually leave (the full load got no answer
+  // either, as WebKit shows offline) would leave a held box stuck with its
+  // note; the reader's next interaction shows the page is still here.
+  ["pointerdown", "keydown"].forEach((type) => document.addEventListener(type, () => {
+    if (!leaving) return;
+    leaving = false;
+    window.setTimeout(reconcileBoxes, 0);
+  }, true));
+  const reconcileBoxes = () => {
+    if (saving || tableRequest || leaving) return;
+    document.querySelectorAll(SUBMIT_ON_CHANGE).forEach((box) => {
+      if (!heldBoxes.has(box) || inFlight.has(box.form)) return;
+      heldBoxes.delete(box);
+      clearHeld(box);
+      const wanted = String(box.checked);
+      if (!box.hasAttribute("data-applied") || wanted === box.dataset.applied
+          || failedState.get(box) === wanted) return;
+      pendingControls.set(box.form, box);
+      box.form.requestSubmit();
+    });
   };
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
     const owner = options.owner || null;
+    // Every way out below that hands the page to the browser (a full load,
+    // a page shown as returned) marks it leaving, so no box resubmits, and
+    // marks a box's state as failed.
+    const leave = (act) => {
+      leaving = true;
+      if (isBox(control)) failedState.set(control, sentState.get(control));
+      act();
+    };
     const focus = focusAfter(region, control, owner);
     const id = region.id;
     region.setAttribute("aria-busy", "true");
@@ -1045,9 +1140,13 @@
       // otherwise this region is cleared, since nothing else will.
       const aborted = error.name === "AbortError";
       if (!aborted || busyRegion !== region) region.removeAttribute("aria-busy");
-      if (aborted) return;
+      if (aborted) {
+        // Overtaken by a newer request: the box applies itself afterwards.
+        if (isBox(control)) heldBoxes.add(control);
+        return;
+      }
       if (form) showUnreachable(form);
-      else fallback();
+      else leave(fallback);
       return;
     }
     const parsed = new DOMParser().parseFromString(text, "text/html");
@@ -1064,7 +1163,7 @@
     const refused = !response.ok || Boolean(parsed.querySelector("[data-error-summary]"));
     if (refused && init.method !== "POST") {
       region.removeAttribute("aria-busy");
-      fallback();
+      leave(fallback);
       return;
     }
     // A redirect chose the answer's address: a refusal that was redirected
@@ -1072,19 +1171,22 @@
     const otherOrigin = answered.origin !== window.location.origin;
     const foreign = otherOrigin || (response.redirected && answered.pathname !== window.location.pathname);
     if (refused && (foreign || !isRegion(fresh))) {
-      showAsReturned(text);
+      leave(() => showAsReturned(text));
       return;
     }
     const elsewhere = otherOrigin || (owner && answered.pathname !== window.location.pathname);
     if (!refused && (elsewhere || !isRegion(fresh))) {
       if (response.redirected || init.method !== "POST") {
-        window.location.assign(withFragment(response.url, id));
+        leave(() => window.location.assign(withFragment(response.url, id)));
       } else {
-        showAsReturned(text);
+        leave(() => showAsReturned(text));
       }
       return;
     }
     const summary = refused ? placeSummary(parsed, fresh) : null;
+    // The server answered with this page: nothing is leaving any more.
+    leaving = false;
+    if (isBox(control)) failedState.delete(control);
     document.querySelectorAll(REGIONS).forEach((other) => {
       const copy = parsed.getElementById(other.id);
       if (isRegion(copy)) swapRegion(other, copy);
@@ -1176,14 +1278,21 @@
       control = event.submitter || form.querySelector("[type=submit]") || form;
     } else if (form.matches("form[data-in-place]")) {
       region = targetRegion(form, written);
-      control = event.submitter || firstSubmit(form) || form;
+      // A box that submits its form when it changes (see below) was noted
+      // as the control, so focus stays on it.
+      control = event.submitter || pendingControls.get(form) || firstSubmit(form) || form;
+      pendingControls.delete(form);
       // The submitter's own form owns it, even when the button sits outside
       // that form (form="…"); the event's target is that same form.
       owner = event.submitter?.form || form;
     }
     if (!region || !sameOrigin(written || "")) return;
     event.preventDefault();
-    if (inFlight.has(form)) return;
+    if (inFlight.has(form)) {
+      // A box changed again while its request runs applies itself after.
+      if (isBox(control)) heldBoxes.add(control);
+      return;
+    }
     // The request is built before the form is marked in flight, so nothing
     // can fail between the two and leave the form locked.
     const action = new URL(written || "", document.baseURI);
@@ -1217,10 +1326,24 @@
       inFlight.delete(form);
       submitter?.removeAttribute("aria-disabled");
       submitter?.classList.remove("is-busy");
+      reconcileBoxes();
     };
     refreshTable(region, control, action.href, init, load, {owner, form: save ? form : null})
       .finally(settle);
   }, true);
+  // A checkbox marked data-submit-on-change applies at once (Automation
+  // access's "Include ended sessions", #621): it submits its own
+  // form[data-in-place], which the handler above sends in place, and is
+  // noted as the control so focus stays on it. The Admin portal requires
+  // script, so such a form has no Apply button.
+  document.addEventListener("change", (event) => {
+    const box = event.target;
+    if (!isBox(box)) return;
+    // The reader's own change may retry a state that failed before.
+    failedState.delete(box);
+    pendingControls.set(box.form, box);
+    box.form.requestSubmit();
+  });
 
   // Ordinary form submissions: show at once that the click registered, and
   // ignore repeats (double clicks, Enter pressed twice) until the browser
