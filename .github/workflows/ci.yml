@@ -1,15 +1,17 @@
 name: CI
 
-# Drafts get fast feedback; ready PR candidates get the full suite. Pushes to
-# main run only the light validate job (temporary, to stay within the free
-# plan's 20 concurrent jobs; see issue #158). A manual dispatch runs the
-# full suite on any ref, and releases require that full run on the tagged
+# Drafts get fast feedback. A full run comes from opened, synchronize or
+# reopened on a non-draft PR, or from a manual dispatch; marking a draft ready
+# starts no run (#624: delivery marks a PR ready seconds before it is merged).
+# Pushes to main run only the light validate job (temporary, to stay within
+# the free plan's 20 concurrent jobs; see issue #158). A manual dispatch runs
+# the full suite on any ref, and releases require that full run on the tagged
 # commit. Ready PRs skip the heavy job groups their changed paths cannot
 # affect (parishkit.stewardship.quality_paths); the aggregate gates accept only
 # that intentional skip, never a draft, failed, cancelled or unexpected skip.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    types: [opened, synchronize, reopened, converted_to_draft]
   push:
     branches: [main]
   workflow_dispatch:

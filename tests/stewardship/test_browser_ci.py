@@ -337,7 +337,10 @@ def test_browser_workflow_contract():
 
 
 def test_ci_cancels_only_superseded_pr_heads():
-    """Keep main evidence independent and omit duplicate merge-queue runs."""
+    """Keep main evidence independent and omit duplicate merge-queue runs.
+
+    Marking a draft ready starts no run (#624).
+    """
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     # PyYAML's YAML 1.1 resolver treats the Actions `on` key as a boolean.
     assert workflow[True] == {
@@ -346,7 +349,6 @@ def test_ci_cancels_only_superseded_pr_heads():
                 "opened",
                 "synchronize",
                 "reopened",
-                "ready_for_review",
                 "converted_to_draft",
             ]
         },

@@ -131,9 +131,10 @@ human merge-approval stops, including historical checkpoint wording below.
    for fast lint, packaging and workflow feedback alongside peer review. Run
    focused tests for changed behavior during corrections; do not repeatedly
    execute the complete suite locally or on every intermediate push. Keep the
-   PR draft until the review loop passes, then mark it ready to trigger the
-   complete exact-head CI suite. Draft skipped suites are not merge evidence:
-   required aggregate checks remain blocking until every full-suite job passes.
+   PR draft until the review loop passes, then dispatch the complete
+   exact-head CI suite; marking the PR ready starts no run. Draft skipped
+   suites are not merge evidence: required aggregate checks remain blocking
+   until every full-suite job passes.
    Return to draft before a multi-commit correction effort; ready-PR pushes
    still run the complete suite. Watch CI for the current head,
    fix failures, rerun affected checks, and push corrections until required CI
