@@ -333,7 +333,10 @@ US numeric (month first), European long, European medium, European numeric
 clock and the others with a 24-hour clock. Admin pages, Family pages, email
 and page placeholders, and PDF exports all use it; dense tables such as
 System logs, background work and deliveries use its compact variant (short
-month names or two-digit years, no time-zone abbreviation). Background output
+month names or two-digit years, no time-zone abbreviation), except that System
+logs rows add seconds and the time-zone abbreviation, with no UTC offset, so
+entries can be compared exactly
+([Logs](admin-portal/spec.md#logs)). Background output
 uses the format of the configuration it pinned, not whichever is active when
 it runs (issue #280): a PDF export uses its requesting configuration, a daily
 or weekly digest its snapshot's configuration, and a receipt the configuration

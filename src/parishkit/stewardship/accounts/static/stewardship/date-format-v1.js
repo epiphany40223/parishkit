@@ -53,23 +53,18 @@
       : `${two(hours)}:${minutes}`;
   }
 
-  // This browser's UTC offset at that instant, e.g. "UTC-07:00", so a time
-  // can be matched against UTC days and other people's clocks.
-  function offset(date) {
-    const total = -date.getTimezoneOffset(), size = Math.abs(total);
-    return `UTC${total < 0 ? "-" : "+"}${two(Math.floor(size / 60))}:${two(size % 60)}`;
-  }
-
   // A Date shown in this browser's time zone with the style's paired clock.
-  // Compact drops the zone name. Precise (System logs) adds seconds, the
-  // zone name and the UTC offset, since log times are compared exactly.
+  // Compact drops the zone name. Precise (System logs) adds seconds and the
+  // zone name, since log times are compared exactly; the zone name alone
+  // tells the repeated hour apart when clocks fall back ("PDT", then "PST"),
+  // so no UTC offset is shown (#635).
   function instant(date, options) {
     const compact = Boolean(options && options.compact);
     const code = style();
     const text = fields(date.getFullYear(), date.getMonth() + 1, date.getDate(), compact);
     if (options && options.precise) {
       const zone = zoneName(date);
-      return `${text} ${clock(date, true)}${zone ? " " + zone : ""} (${offset(date)})`;
+      return `${text} ${clock(date, true)}${zone ? " " + zone : ""}`;
     }
     const time = clock(date);
     if (compact) return `${text} ${time}`;
@@ -89,7 +84,7 @@
 
   // Rewrite every <time data-local-instant> in scope; data-compact marks the
   // dense-table cells (logs, background work, deliveries), data-precise adds
-  // seconds, zone and offset (System logs), and data-time-only a recent
+  // seconds and the zone name (System logs), and data-time-only a recent
   // instant shown as its clock time ("started 10:00 PM").
   function localize(scope) {
     (scope || document).querySelectorAll("time[data-local-instant]").forEach((node) => {
