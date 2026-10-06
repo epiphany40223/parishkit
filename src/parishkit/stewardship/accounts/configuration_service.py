@@ -10,6 +10,8 @@ from uuid import UUID, uuid4
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.jobs.service_status_grants import REPORT_COLUMNS
+from parishkit.stewardship.jobs.service_status_grants import TABLE as STATUS_TABLE
 from parishkit.stewardship.service_boundaries import admit_online_service
 
 from .authority import AuthorityStore
@@ -83,6 +85,9 @@ CONFIGURATION_GRANTS = {
     "stewardship_occurrence_transition": {"SELECT", "INSERT"},
     "stewardship_audit_event": {"INSERT"},
     "stewardship_audit_context": {"INSERT"},
+    # The installer's own service status record (ADM-13); refreshes are the
+    # column grants below, and the record's guard limits it to its own rows.
+    STATUS_TABLE: {"INSERT"},
 }
 
 CONFIGURATION_COLUMNS = {
@@ -99,6 +104,7 @@ CONFIGURATION_COLUMNS = {
     "stewardship_backup_run": {
         "SELECT": {"id", "completed_at", "recipient_fingerprint"}
     },
+    STATUS_TABLE: {"SELECT": {"id"}, "UPDATE": set(REPORT_COLUMNS)},
 }
 
 

@@ -39,10 +39,16 @@ class PeriodicAuthenticationHealth:
     Readiness/metrics HTTP calls neither start this observer nor mutate episodes.
     """
 
-    def __init__(self, limiter, *, check, active, retire):
-        """Retain the admitted limiter and child-specific lifecycle callbacks."""
+    def __init__(self, limiter, *, check, active, retire, status=None):
+        """Retain the admitted limiter and child-specific lifecycle callbacks.
+
+        ``status`` (a ``service_status.ServiceStatusReporter``) records this
+        web worker's service status when the thread starts and after each
+        pass, on this thread's own short connection (ADM-13).
+        """
         self.limiter, self.check = limiter, check
         self.active, self.retire = active, retire
+        self.status = status
         self.stop = Event()
         self.thread = Thread(
             target=self.run, name="stewardship-auth-health", daemon=True
@@ -58,8 +64,25 @@ class PeriodicAuthenticationHealth:
         if self.thread.ident is not None:
             self.thread.join(JOIN_SECONDS)
 
+    def report_status(self):
+        """Write the service status record when due, then close the connection.
+
+        The reporter logs and absorbs its own failures; the record is display
+        only and never affects the health observation.
+        """
+        if self.status is None:
+            return
+        from django.db import connections
+
+        try:
+            self.status.report(connect=True)
+        finally:
+            connections.close_all()
+
     def run(self):
         """Sample every thirty seconds; failures never become healthy silence."""
+        # This worker's status record first, so it shows as started at once.
+        self.report_status()
         # Stagger children that start together; proof still uses actual SQL
         # observations, not the random phase or elapsed wall time. Even the
         # latest first pass starts within the ninety-second continuity budget.
@@ -81,3 +104,4 @@ class PeriodicAuthenticationHealth:
                 # The limiter owns durable outage intents. This noncritical
                 # diagnostic cannot recursively create provider notifications.
                 emit_failure(error, event=LogEvent.AUTH_HEALTH_FAILED)
+            self.report_status()

@@ -58,6 +58,9 @@ class Event(StrEnum):
     # A Family sign-in or form issuance could not record its engagement row
     # (#477); the request itself went ahead and the funnel undercounts it.
     FAMILY_ENGAGEMENT_FAILED = "family_engagement_failed"
+    # A process could not write its service status record (ADM-13); it goes
+    # on working, and the System health page shows it as out of date.
+    SERVICE_STATUS_FAILED = "service_status_failed"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 

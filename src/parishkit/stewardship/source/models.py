@@ -4,6 +4,7 @@ from django.db import models
 
 from parishkit.stewardship.storage import MutableRecord, UTCDateTimeField
 
+from .drop_models import SourceDropCount  # noqa: F401
 from .refresh_models import (  # noqa: F401
     SourceRefreshAttempt,
     SourceRefreshCommand,

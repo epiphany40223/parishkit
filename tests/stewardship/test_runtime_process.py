@@ -539,12 +539,18 @@ def test_credential_service_publishes_only_after_admission(
         )
         failing.side_effect = RuntimeError("synthetic setup failure")
 
-    def serve(run_once, actual_lease, *, pending):
+    def serve(run_once, actual_lease, *, pending, status):
         """Queue processing cannot race ahead of the advertised encryption key."""
         publish.assert_called_once_with(installer.files.private)
         lease.check.assert_called_once()
         assert actual_lease is lease
         assert callable(pending)
+        # The installer reports its own status record, by target (ADM-13).
+        assert (status.service, status.process, status.target) == (
+            "credential-installer",
+            "main",
+            target,
+        )
         if failure:
             with pytest.raises(RuntimeError, match="synthetic setup failure"):
                 run_once()
@@ -627,13 +633,14 @@ def test_configuration_service_restores_on_an_idle_pass(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(runtime_process, "installer_request", lambda _: nullcontext())
 
-    def serve(run_once, actual_lease):
+    def serve(run_once, actual_lease, *, status):
         """The idle pass restores; a queued request is installed without one.
 
         The configuration installer has no cheap work check, so its loop
         runs the full pass on every wake.
         """
         assert actual_lease is lease
+        assert (status.service, status.target) == ("config-installer", None)
         run_once()
         installer.restore_refused.assert_called_once_with()
         installer.run_request.assert_not_called()
@@ -1060,3 +1067,118 @@ def test_background_failed_admission_restores_signals_without_publishing_receipt
     assert signal.getsignal(signal.SIGTERM) == previous
     receipts.assert_not_called()
     closes.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "role,options,process",
+    [
+        (ServiceRole.WORKER, {}, "main"),
+        (ServiceRole.WORKER, {"source": True}, "source"),
+        (ServiceRole.MAIL_DISPATCH, {}, "main"),
+        (ServiceRole.MAIL_DISPATCH, {"mail": True}, "mail"),
+        (ServiceRole.SCHEDULER, {}, "main"),
+    ],
+)
+def test_each_background_process_reports_its_own_status(
+    tmp_path, monkeypatch, role, options, process
+):
+    """ADM-13: service, process and sender, written at start, idle and heartbeat."""
+    from parishkit.stewardship import runtime_background, service_status
+
+    configuration = replace(configuration_at(tmp_path), service_role=role)
+    reporters = []
+
+    def reporter(service, **kwargs):
+        """Record the reporter each process builds."""
+        value = Mock(service=service, **kwargs)
+        reporters.append(value)
+        return value
+
+    def configure(config, *, stop, heartbeat, queues=None):
+        """The admitted process, before its loop starts."""
+        return SimpleNamespace(broker=Mock(), store=object(), handlers={}, receipts={})
+
+    def serve(actual, *, lease, stop, heartbeat, **kwargs):
+        """The loop: one heartbeat, and one idle pass for a consumer."""
+        status = reporters[0]
+        # Admission wrote the starting record on its own connection.
+        assert status.report.call_args_list == [((), {"connect": True})]
+        heartbeat()
+        assert status.report.call_args_list[-1] == ((), {})
+        if role is not ServiceRole.SCHEDULER:
+            kwargs["idle"]()
+            assert status.report.call_args_list[-1] == ((), {"connect": True})
+        return 0
+
+    monkeypatch.setattr(service_status, "ServiceStatusReporter", reporter)
+    monkeypatch.setattr(runtime_background, "configure_background", configure)
+    monkeypatch.setattr(runtime_process, "split_source", lambda _: False)
+    monkeypatch.setattr(runtime_process, "split_mail", lambda _: False)
+    monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_consumer", serve)
+    monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_scheduler", serve)
+    monkeypatch.setattr(
+        "parishkit.stewardship.consumer_runtime.publish_single_process_receipts",
+        Mock(),
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.credential_runtime.acknowledge_rotations", Mock()
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.installer_health.publish_heartbeat", Mock()
+    )
+    monkeypatch.setattr("django.db.connections.close_all", Mock())
+    assert runtime_process.serve_background(configuration, Mock(), **options) == 0
+    (status,) = reporters
+    assert (status.service, status.process) == (role.value, process)
+    if role is ServiceRole.MAIL_DISPATCH:
+        assert status.sender is runtime_process._family_sender
+    else:
+        assert status.sender is None
+
+
+def test_installer_heartbeat_reports_on_every_wake_and_keeps_the_connection(
+    monkeypatch,
+):
+    """ADM-13 with #639: the status record rides the heartbeat of every wake.
+
+    An idle installer runs only its cheap pending check on most wakes; the
+    reporter is still asked on each one (it writes at most once a minute
+    itself), the loop's kept connection is never closed for it, and the
+    idle backoff is unchanged.
+    """
+    status, closes, stop = Mock(), Mock(), Mock()
+    monkeypatch.setattr(
+        "parishkit.stewardship.installer_health.publish_heartbeat", Mock()
+    )
+    monkeypatch.setattr("django.db.connections.close_all", closes)
+    monkeypatch.setattr(runtime_process, "drop_unusable", Mock())
+    runs, now, wakes = Mock(return_value=False), [0.0], []
+
+    def wait(seconds):
+        """Each wake advances the clock; stop after six wakes."""
+        wakes.append(seconds)
+        now[0] += seconds
+        return False
+
+    stop.wait.side_effect = wait
+    stop.is_set.side_effect = lambda: len(wakes) >= 6
+    monkeypatch.setattr(runtime_process, "StopEvent", lambda: stop)
+    real_loop = runtime_process.bounded_loop
+
+    def loop(run_once, **kwargs):
+        """The real loop, with a controllable clock."""
+        real_loop(run_once, clock=lambda: now[0], **kwargs)
+
+    monkeypatch.setattr(runtime_process, "bounded_loop", loop)
+    assert (
+        runtime_process.serve_installer_loop(
+            runs, Mock(), pending=lambda: False, status=status
+        )
+        == 0
+    )
+    # Startup, then every one of the six wakes.
+    assert status.report.call_args_list == [((), {"connect": True})] * 7
+    closes.assert_not_called()
+    # Idle backoff as before: wakes at 0 to 10 seconds, full passes only at
+    # 0 and 4 (the gap doubled to 4, then to 8).
+    assert runs.call_count == 2

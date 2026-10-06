@@ -139,8 +139,22 @@ def admit_installer_database(target):
 
 def _admit_installer_grants(target):
     """Refuse any table, routine or metadata column grant beyond the target's list."""
+    from parishkit.stewardship.jobs.service_status_grants import (
+        add_service_status_writer_grants,
+    )
+    from parishkit.stewardship.runtime_grants import admit_columns
+
     tables, metadata = installer_permissions(target)
-    admit_grants(tables)
+    # The installer's own service status record (ADM-13): insert, refresh
+    # and an id read, admitted beside the target's queue grants.
+    status_tables, status_columns = {}, {}
+    add_service_status_writer_grants(status_tables, status_columns)
+    allowed = {table: set(names) for table, names in tables.items()}
+    for grants in (status_tables, status_columns):
+        for table, privileges in grants.items():
+            allowed.setdefault(table, set()).update(privileges)
+    admit_grants(allowed)
+    admit_columns(connection, status_tables, status_columns)
     with connection.cursor() as cursor:
         # Attribution is column-scoped: no full YAML or public draft payloads.
         # Target-specific candidate context is separately scoped by its RLS;

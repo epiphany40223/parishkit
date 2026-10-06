@@ -27,7 +27,7 @@ from parishkit.stewardship.source.errors import (
 )
 from parishkit.stewardship.source.failures import classify_read_failure
 from parishkit.stewardship.source.leases import SourceFenceLost, SourceLeaseUnavailable
-from parishkit.stewardship.source.loading import DestructiveSourceChange
+from parishkit.stewardship.source.loading import CountCheck, DestructiveSourceChange
 from parishkit.stewardship.source.outcomes import failure_action, retry_delay
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -62,6 +62,21 @@ def test_destructive_change_carries_only_its_closed_loss_detail():
     assert decision.loss == ("portal_eligible_families", 1238, 12)
     unnamed = DestructiveSourceChange("PRIVATE", measure="PRIVATE", before=1, after=0)
     assert classify_read_failure(unnamed, has_source_claim=True).loss is None
+
+
+def test_destructive_change_carries_every_checked_count():
+    """ADM-13: the settlement receives every count to record with the refusal."""
+    checks = (
+        CountCheck("family", 100, 50, 25, True),
+        CountCheck("member", 200, 190, 25, False),
+    )
+    error = DestructiveSourceChange(
+        "PRIVATE", measure="family", before=100, after=50, checks=checks
+    )
+    decision = classify_read_failure(error, has_source_claim=True)
+    assert decision.checks == checks
+    other = classify_read_failure(SourceScopeChanged("PRIVATE"), has_source_claim=True)
+    assert other.checks == ()
 
 
 def test_shifted_scan_is_a_retryable_provider_failure():

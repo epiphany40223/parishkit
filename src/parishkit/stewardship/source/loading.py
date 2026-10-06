@@ -16,20 +16,10 @@ from parishkit.stewardship.observability import debug_logging_enabled
 
 from .canonical import InvalidSourcePayload
 from .corpus import KINDS, normalize_core
+from .count_names import DERIVED_COUNTS, TREND_COLLECTIONS
 from .giving import load_giving
 from .windows import RefreshWindow
 
-TREND_COLLECTIONS = ("family", "member", "ministry", "roster", "fund")
-# Counts derived from the records rather than of them. ParishSoft can keep
-# every row while dropping or nulling the fields eligibility is derived from
-# (organization, status, member type, email); promotion would then make those
-# Families ineligible at once (#320). The same loss threshold applies to these.
-DERIVED_COUNTS = (
-    "portal_eligible_families",
-    "email_eligible_families",
-    "active_head_families",
-    "valid_email_contacts",
-)
 # The closed names a refusal may report: a record collection, a derived count,
 # or "empty" for a load with no Families or Members.
 LOSS_MEASURES = frozenset({*TREND_COLLECTIONS, *DERIVED_COUNTS, "empty"})
@@ -59,14 +49,35 @@ class DestructiveSourceChange(InvalidSourcePayload):
     """Complete-looking source data unexpectedly removes core parish records.
 
     ``loss`` names which count fell, from ``LOSS_MEASURES``, with its before
-    and after values. These are counts, never record values, so the refusal
-    can be logged in ordinary output for the operator.
+    and after values: the first failing count, or "empty". ``checks`` holds
+    every count the load was checked on (``CountCheck``), failing or not, so
+    the refusal can record all of them (ADM-13). These are counts, never
+    record values, so the refusal can be logged in ordinary output for the
+    operator.
     """
 
-    def __init__(self, message, *, measure=None, before=None, after=None):
+    def __init__(self, message, *, measure=None, before=None, after=None, checks=()):
         """Keep the closed measure name and counts alongside the fixed message."""
         super().__init__(message)
         self.loss = (measure, before, after) if measure in LOSS_MEASURES else None
+        self.checks = tuple(check for check in checks if isinstance(check, CountCheck))
+
+
+@dataclass(frozen=True)
+class CountCheck:
+    """One count a load was checked on (ADM-13, #530).
+
+    ``measure`` is a record collection or derived count name; ``before`` is
+    the baseline compared with (``None`` before the first promoted load);
+    ``after`` is this load's value; ``limit_percent`` is the loss allowed;
+    ``failed`` says whether it fell too far. Counts only, never parish data.
+    """
+
+    measure: str
+    before: int | None
+    after: int
+    limit_percent: int
+    failed: bool
 
 
 @dataclass(frozen=True)
@@ -78,16 +89,52 @@ class SourceLoad:
     evidence: dict
 
 
-def validate_count_trend(counts, *, previous_full_counts, maximum_drop_percent=25):
-    """Unexpected empty/large-loss core data cannot replace the last full baseline.
+def _valid_limit(maximum_drop_percent):
+    """Refuse a threshold that is not a whole percent from 0 to 100."""
+    if type(maximum_drop_percent) is not int or not 0 <= maximum_drop_percent <= 100:
+        raise ValueError("The source loss threshold must be between 0 and 100 percent.")
+
+
+def _fell(before, after, maximum_drop_percent):
+    """Whether a nonzero count fell to zero or by more than the percent.
+
+    A threshold of 100 accepts every drop. Below that, even a count of one or
+    two falling to zero is refused: on a tiny parish that is still a loss of
+    every such record, which the operator must accept explicitly. The SQL
+    guard on stewardship_source_drop_count applies the same rule.
+    """
+    return bool(
+        maximum_drop_percent < 100
+        and before
+        and (not after or (before - after) * 100 > before * maximum_drop_percent)
+    )
+
+
+def _checks(names, before, after, maximum_drop_percent):
+    """Check each named count of ``after`` against ``before`` (``None``: none)."""
+    return [
+        CountCheck(
+            name,
+            None if before is None else before[name],
+            after[name],
+            maximum_drop_percent,
+            before is not None
+            and _fell(before[name], after[name], maximum_drop_percent),
+        )
+        for name in names
+    ]
+
+
+def count_checks(counts, *, previous_full_counts, maximum_drop_percent=25):
+    """Check each record collection against the last full baseline.
 
     Giving is excluded: its scope intentionally changes with campaign windows,
     and records can legitimately decrease after adjustments. Contact/address
     edits likewise do not imply lost core identities. This is a validation
     threshold, never permission to truncate a collection or bypass completeness.
+    Missing counts (``None``) give no checks; the caller refuses them as empty.
     """
-    if type(maximum_drop_percent) is not int or not 0 <= maximum_drop_percent <= 100:
-        raise ValueError("The source loss threshold must be between 0 and 100 percent.")
+    _valid_limit(maximum_drop_percent)
     for values in (counts, previous_full_counts):
         if values is not None and (
             type(values) is not dict
@@ -95,38 +142,56 @@ def validate_count_trend(counts, *, previous_full_counts, maximum_drop_percent=2
             or any(type(value) is not int or value < 0 for value in values.values())
         ):
             raise InvalidSourcePayload("Source count evidence is incomplete.")
-    if counts is None or counts["family"] == 0 or counts["member"] == 0:
+    if counts is None:
+        return []
+    return _checks(
+        TREND_COLLECTIONS, previous_full_counts, counts, maximum_drop_percent
+    )
+
+
+def derived_checks(counts, *, baseline_counts, maximum_drop_percent=25):
+    """Check each derived count against the baseline from ``derived_baseline``.
+
+    ``counts`` are this load's ``derived_counts``; ``baseline_counts`` is
+    ``None`` before the first promotion.
+    """
+    _valid_limit(maximum_drop_percent)
+    if baseline_counts is not None and not valid_derived_counts(baseline_counts):
+        raise InvalidSourcePayload("Source count evidence is incomplete.")
+    return _checks(DERIVED_COUNTS, baseline_counts, counts, maximum_drop_percent)
+
+
+def refuse_drops(checks, *, empty=False):
+    """Raise ``DestructiveSourceChange`` carrying every check if the load fails.
+
+    A load with no Families or no Members is refused at any threshold;
+    otherwise the first failing count names the refusal, and the message says
+    whether a record or an eligibility count fell.
+    """
+    if empty:
         raise DestructiveSourceChange(
             "Source Family/Member corpus is unexpectedly empty.",
             measure="empty",
             before=None,
             after=0,
+            checks=checks,
         )
-    if previous_full_counts is None:
-        return
-    for kind in TREND_COLLECTIONS:
-        _check_drop(
-            kind,
-            previous_full_counts[kind],
-            counts[kind],
-            maximum_drop_percent,
-            "Source corpus exceeds the permitted count loss.",
-        )
-
-
-def _check_drop(measure, before, after, maximum_drop_percent, message):
-    """Refuse a nonzero count that fell to zero or by more than the percent.
-
-    A threshold of 100 accepts every drop. Below that, even a count of one or
-    two falling to zero is refused: on a tiny parish that is still a loss of
-    every such record, which the operator must accept explicitly.
-    """
-    if maximum_drop_percent < 100 and (
-        before and (not after or (before - after) * 100 > before * maximum_drop_percent)
-    ):
+    failed = next((check for check in checks if check.failed), None)
+    if failed is not None:
         raise DestructiveSourceChange(
-            message, measure=measure, before=before, after=after
+            "Source corpus exceeds the permitted count loss."
+            if failed.measure in TREND_COLLECTIONS
+            else "Source eligibility exceeds the permitted count loss.",
+            measure=failed.measure,
+            before=failed.before,
+            after=failed.after,
+            checks=checks,
         )
+
+
+def _empty(counts):
+    """Whether a load has no Families or no Members (or no counts at all)."""
+    return counts is None or counts["family"] == 0 or counts["member"] == 0
 
 
 def derived_counts(corpus):
@@ -182,26 +247,55 @@ def derived_baseline(*candidates):
     return {name: max(value[name] for value in usable) for name in DERIVED_COUNTS}
 
 
-def validate_derived_trend(counts, *, baseline_counts, maximum_drop_percent=25):
-    """Refuse a load whose derived counts fell too far below the baseline.
+def check_source_counts(
+    counts,
+    derived,
+    *,
+    previous_full_counts,
+    previous_derived_counts,
+    maximum_drop_percent,
+):
+    """Check every record and eligibility count, then refuse once with all of them.
 
-    ``counts`` are this load's ``derived_counts``. ``baseline_counts`` come
-    from ``derived_baseline`` (``None`` before the first promotion). The
-    threshold and the refusal are the record-count guard's. Call
-    ``validate_count_trend`` first, since it validates the threshold.
+    Before ADM-13 the check stopped at the first count that fell; now every
+    count is compared first, so a refusal carries all of them (failing or
+    not) for the refused attempt to record. The first failing count still
+    names the refusal, as before. Returns the checks of an accepted load.
     """
-    if baseline_counts is None:
-        return
-    if not valid_derived_counts(baseline_counts):
-        raise InvalidSourcePayload("Source count evidence is incomplete.")
-    for name in DERIVED_COUNTS:
-        _check_drop(
-            name,
-            baseline_counts[name],
-            counts[name],
-            maximum_drop_percent,
-            "Source eligibility exceeds the permitted count loss.",
+    checks = count_checks(
+        counts,
+        previous_full_counts=previous_full_counts,
+        maximum_drop_percent=maximum_drop_percent,
+    )
+    if _empty(counts):
+        # As before ADM-13, an empty load is refused before the eligibility
+        # baseline is examined. Loads pass derived_baseline()'s result,
+        # which is always usable or None; the check is defensive, so a
+        # malformed baseline can never turn an empty refusal into another
+        # error.
+        usable = previous_derived_counts is None or valid_derived_counts(
+            previous_derived_counts
         )
+        refuse_drops(
+            checks
+            + (
+                derived_checks(
+                    derived,
+                    baseline_counts=previous_derived_counts,
+                    maximum_drop_percent=maximum_drop_percent,
+                )
+                if usable
+                else []
+            ),
+            empty=True,
+        )
+    checks += derived_checks(
+        derived,
+        baseline_counts=previous_derived_counts,
+        maximum_drop_percent=maximum_drop_percent,
+    )
+    refuse_drops(checks)
+    return checks
 
 
 def load_full_source(
@@ -268,15 +362,12 @@ def load_full_source(
             "The source load contains invalid provider data."
         ) from None
     counts = {kind: len(rows) for kind, rows in corpus.items()}
-    validate_count_trend(
-        counts,
-        previous_full_counts=previous_full_counts,
-        maximum_drop_percent=maximum_drop_percent,
-    )
     derived = derived_counts(corpus)
-    validate_derived_trend(
+    check_source_counts(
+        counts,
         derived,
-        baseline_counts=previous_derived_counts,
+        previous_full_counts=previous_full_counts,
+        previous_derived_counts=previous_derived_counts,
         maximum_drop_percent=maximum_drop_percent,
     )
     return SourceLoad(

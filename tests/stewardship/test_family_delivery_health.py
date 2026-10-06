@@ -145,3 +145,49 @@ def test_a_failed_probe_pauses_again_at_once(monkeypatch):
         clock[0] += 60
     # A new outage after a healthy result is reported as new again.
     assert health.halted.is_set() and not health.repeated
+
+
+def test_sender_state_names_each_state_and_when_it_ends(monkeypatch, tmp_path):
+    """ADM-13: a consumer's status record reports its sender in fixed words."""
+    clock = [100.0]
+    monkeypatch.setattr(worker, "monotonic", lambda: clock[0])
+    marker = tmp_path / "stop"
+    health = worker.DeliveryCircuit(
+        recovery_seconds=600, systemic_stops=True, shared_stop=marker
+    )
+    assert health.sender_state() == ("running", None)
+    health.note_capped(True)
+    assert health.sender_state() == ("daily_limit", None)
+    health.note_capped(False)
+    health.hold(120)
+    assert health.sender_state() == ("gmail_held", 120)
+    clock[0] += 120
+    assert health.sender_state() == ("running", None)
+    for _ in range(3):
+        health.observe(Health.UNAVAILABLE)
+    assert health.sender_state() == ("outage_paused", 600)
+    clock[0] += 700
+    assert health.sender_state() == ("outage_paused", 0.0)
+    assert not health.blocks_new_send()
+    assert health.sender_state() == ("running", None)
+    # The other consumer's SYSTEMIC stop halts this one's report too.
+    marker.write_bytes(b"stopped")
+    assert health.sender_state() == ("halted", None)
+    # Reporting only looks: the circuit follows the marker at its next
+    # admission check, which is where the stop is logged.
+    assert not health.stopped and not health.halted.is_set()
+    assert health.blocks_new_send() and health.stopped
+
+
+def test_the_family_sender_state_follows_this_process_s_circuit(monkeypatch):
+    """No circuit yet reads as running; the built handler's circuit is used."""
+    monkeypatch.setattr(worker, "FAMILY_CIRCUIT", None)
+    assert worker.family_sender_state() == ("running", None)
+    worker.delivery_handler(object(), credential_path=Path("key"))
+    circuit = worker.FAMILY_CIRCUIT
+    assert isinstance(circuit, worker.DeliveryCircuit)
+    circuit.observe(Health.SYSTEMIC)
+    assert worker.family_sender_state() == ("halted", None)
+    # A scheduler's metadata-only handler never replaces the consumer's.
+    worker.delivery_handler(object(), scheduler=True)
+    assert worker.FAMILY_CIRCUIT is circuit

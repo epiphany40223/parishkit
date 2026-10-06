@@ -37,6 +37,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .attempts import _bindings
 from .canonical import InvalidSourcePayload
+from .drop_counts import record_drop_counts
 from .errors import (
     SourceAuthorityChanging,
     SourceCredentialChanged,
@@ -66,6 +67,9 @@ class ReadFailure:
     # For a destructive change: the closed measure name and its before/after
     # counts, logged so the operator can see what dropped (see loading.py).
     loss: tuple | None = None
+    # For a destructive change: every count the load was checked on
+    # (loading.CountCheck), recorded with the refusal (ADM-13).
+    checks: tuple = ()
 
 
 def classify_read_failure(error, *, has_source_claim):
@@ -85,7 +89,11 @@ def classify_read_failure(error, *, has_source_claim):
         return ReadFailure(False, False, Event.SOURCE_TENANT_MISMATCH)
     if isinstance(error, DestructiveSourceChange):
         return ReadFailure(
-            False, False, Event.SOURCE_DESTRUCTIVE_CHANGE, loss=error.loss
+            False,
+            False,
+            Event.SOURCE_DESTRUCTIVE_CHANGE,
+            loss=error.loss,
+            checks=error.checks,
         )
     if isinstance(error, ShiftedSourceScan):
         # The provider's paging moved mid-scan (validated 2026-09-28: the same
@@ -242,6 +250,13 @@ def settle_failed_read(execution, error, *, source_claim=None):
                     "outcome": Outcome.RETRY if retry else Outcome.FAILED,
                 },
             )
+            if decision.checks and attempt is not None:
+                # Every count the refused load was checked on, with the
+                # refusal itself, so the System health page and a later
+                # acceptance read them from this record, not the log.
+                record_drop_counts(
+                    attempt.pk, decision.checks, actor_id=execution.claim.worker_id
+                )
         if decision.loss is not None:
             # The durable event above has no place for this detail, so the
             # process log names the count that fell and its before and after

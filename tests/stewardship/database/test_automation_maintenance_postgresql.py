@@ -104,3 +104,25 @@ def test_a_scheduler_cannot_execute_the_task():
     with pytest.raises(PermissionError):
         handler.execute(None)
     assert AutomationSession.objects.count() == 0
+
+
+def test_the_worker_prunes_service_status_records_silent_for_a_day():
+    """ADM-13: a run removes stale status rows and keeps the rest."""
+    from parishkit.stewardship.jobs.service_status_models import ServiceStatus
+
+    ages = {"stale": timedelta(days=1, minutes=1), "fresh": timedelta(hours=23)}
+    rows = {}
+    for name, age in ages.items():
+        rows[name] = uuid4()
+        with connection.cursor() as cursor:
+            # The schema owner may date a row; logins get the database clock.
+            cursor.execute(
+                "INSERT INTO stewardship_service_status (id,service,process,"
+                "started_at,reported_at,application_version,debug_logging) "
+                "VALUES (%s,'scheduler','main',now()-%s,now()-%s,'1.0.0',false)",
+                [rows[name], age, age],
+            )
+    [identifier] = produce(maintenance.MaintenanceProducer())
+    assert consume(identifier)
+    assert TaskRun.objects.get(pk=identifier).state == "succeeded"
+    assert list(ServiceStatus.objects.values_list("pk", flat=True)) == [rows["fresh"]]

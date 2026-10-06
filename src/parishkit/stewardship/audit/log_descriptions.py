@@ -226,6 +226,10 @@ DESCRIPTIONS = {
     "authentication_health_observation_failed": _(
         "The sign-in protection's health check could not be recorded."
     ),
+    "service_status_failed": _(
+        "A service could not record its status for the System health page; "
+        "it kept working, but the page may show it as out of date."
+    ),
     "unstructured_log_suppressed": _(
         "A library wrote a free-text message; it was withheld because only "
         "reviewed messages are kept."

@@ -13,6 +13,8 @@ transactions:
 - records the endings that role loss, removal or recovery already imply
   (``role_lost``, ``user_removed``, ``recovery``) with their notices;
 - resolves the automation incident episodes quiet for an hour.
+- removes the service status records of processes that have not reported
+  for a day (ADM-13; ``service_status.prune_service_status``).
 
 Every step is repeat-safe, so an interrupted run is simply retried.
 """
@@ -122,11 +124,18 @@ def admit_maintenance(action, status):
 
 def _execute(execution):
     """Run one maintenance pass, each step in its own fenced effect."""
+    from parishkit.stewardship.service_status import prune_service_status
+
     from .automation_sessions import maintain
 
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Automation maintenance requires its ownership.")
     maintain(effect=execution.effect, check=execution.check)
+    # The worker's hourly housekeeping also removes the service status
+    # records of processes that stopped reporting a day ago (ADM-13).
+    execution.check()
+    with execution.effect():
+        prune_service_status()
     execution.transition("complete")
 
 
