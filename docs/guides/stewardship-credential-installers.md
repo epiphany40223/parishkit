@@ -26,7 +26,11 @@ OPS-02/OPS-04 work; tests create and remove their own disposable restricted role
 
 `CredentialInstaller.from_configuration` validates real kernel mounts and SQL
 identity before loading the one target handoff private key. Queue operations
-repeat SQL admission, including after reconnects. The existing
+repeat the SQL identity check; the full grant inspection runs on every new
+connection, including reconnects, and again each time five minutes have
+passed, as the
+[installer idle polling](../specs/stewardship/operations/spec.md#installer-idle-polling)
+rules describe. The existing
 [runtime storage rules](../specs/stewardship/operations/spec.md#runtime-storage)
 control actual mounts. No role string or request UUID grants filesystem access.
 

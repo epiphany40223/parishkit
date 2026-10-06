@@ -63,6 +63,13 @@ def _check(credential_path, row, session_factory):
     return None
 
 
+def has_pending():
+    """Whether any access check is waiting: one cheap read for the idle loop (#639)."""
+    from .jobs.backup_models import BackupDriveProbe
+
+    return BackupDriveProbe.objects.filter(state="pending").exists()
+
+
 def run_pending_probes(
     credential_path, *, session_factory=workspace_session, check=lambda: None
 ):

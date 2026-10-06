@@ -674,6 +674,8 @@ def test_the_installer_answers_access_checks(workspace, monkeypatch):
         assert latest_probe(actor, database_now()).kind == "pending"
     monkeypatch.setattr(backup_probes, "DriveClient", client)
     with target_login("google_workspace"):
+        # The idle loop's lock-free check (#639) sees waiting checks.
+        assert backup_probes.has_pending()
         # One check per installer pass, so a hung Drive cannot hold one pass
         # past the installer's heartbeat limit.
         for _ in range(3):
@@ -689,6 +691,7 @@ def test_the_installer_answers_access_checks(workspace, monkeypatch):
             )
             == 0
         )
+        assert not backup_probes.has_pending()
     for row in (first, missing, broken):
         row.refresh_from_db()
     assert (broken.state, broken.failure_kind) == ("failed", "unexpected")

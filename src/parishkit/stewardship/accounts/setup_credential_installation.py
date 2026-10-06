@@ -40,6 +40,36 @@ def ready_live(readiness_id):
         return cursor.fetchone() == (True,)
 
 
+def _frozen():
+    """Whether any setup attempt is frozen: the lock-free gate for staging (#639).
+
+    Only a frozen setup attempt can have initial input to stage; a deployment
+    past setup has none, so its idle installer takes neither its file lock nor
+    the work-order lock in stage_initial_credential. Whether the setup is
+    still live is decided under those locks.
+    """
+    return SetupReadinessBinding.objects.filter(
+        intent__attempt__state="frozen"
+    ).exists()
+
+
+def has_pending(target):
+    """Whether ``target`` still has initial input to stage: a lock-free read.
+
+    The installer loop's work check (#639). A frozen setup whose installation
+    for this target is already recorded is not new work: that request is the
+    credential queue's own pending work until it ends, and afterwards nothing
+    is left to stage, so the loop can back off. An optional target the setup
+    left disabled still matches while the setup stays frozen; that only keeps
+    the loop at its 2 s pace until setup completes or expires.
+    """
+    return (
+        SetupReadinessBinding.objects.filter(intent__attempt__state="frozen")
+        .exclude(setupcredentialinstallation__target=target)
+        .exists()
+    )
+
+
 def stage_initial_credential(files):
     """Copy only the target's exact sealed input in an atomic installation intake.
 
@@ -52,6 +82,8 @@ def stage_initial_credential(files):
         raise TypeError("An isolated setup credential target is required.")
     target = files.private.target
     admit_installer_database(target)
+    if not _frozen():
+        return None
     with files.lock(), work_transaction():
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_xact_lock(736213,1)")

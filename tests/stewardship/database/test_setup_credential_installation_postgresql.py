@@ -21,6 +21,7 @@ from parishkit.stewardship.accounts.secret_models import SecretReplacementReques
 from parishkit.stewardship.accounts.secret_requests import _transaction, _transition
 from parishkit.stewardship.accounts.setup_confirmation import freeze_setup
 from parishkit.stewardship.accounts.setup_credential_installation import (
+    has_pending,
     stage_initial_credential,
 )
 from parishkit.stewardship.accounts.setup_install_models import (
@@ -64,7 +65,11 @@ def test_initial_intake_preserves_namespace_and_holds_rollback_after_consumer_ac
     """Real target files and real restricted SQL implement the initial hold barrier."""
     _, _, installer = setup_installer(setup_service, monkeypatch, tmp_path, target)
     with target_login(target):
+        # The idle loop's lock-free check (#639) sees the frozen input, and
+        # stops counting it once its installation is recorded.
+        assert has_pending(target)
         staged = stage_initial_credential(installer.files)
+        assert not has_pending(target)
         assert stage_initial_credential(installer.files) == staged
         binding = SetupCredentialInstallation.objects.get()
         assert binding.request_id == binding.credential_id == staged.request_id

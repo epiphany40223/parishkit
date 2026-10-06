@@ -1,10 +1,24 @@
 """Real PostgreSQL identities admit target-specific credential queue operations."""
 
-from django.db import connection
+from time import monotonic
+
+from django.db import DEFAULT_DB_ALIAS, connection, connections
+from django.db.backends.signals import connection_created
 
 from parishkit.config import ConfigError
 
 from .secret_models import SECRET_TARGETS
+
+# How long one connection's full grant admission stays trusted (#639). The
+# identity check still runs on every queue operation; only the catalog-wide
+# grant inspection (admit_grants and the metadata column check) is repeated
+# at most this often on a connection that has already passed it. A new
+# connection, including every reconnect, always runs the full check first.
+# Grants change only at a deploy or upgrade, which restarts every installer,
+# so the window applies only to a grant change made by hand on a live
+# database; see the operations spec's "Installer idle polling" section. The
+# default is chosen; the Administrator's decision on it is open on #639.
+GRANT_RECHECK_SECONDS = 300
 
 INSTALLER_GRANTS = {
     "stewardship_provider_context": {"SELECT"},
@@ -48,7 +62,19 @@ def installer_permissions(target):
 
 
 def _identity(expected, *, database=None):
-    """Reject superusers, SET ROLE impersonation and any inherited role authority."""
+    """Reject superusers, SET ROLE impersonation and any inherited role authority.
+
+    A login that has been disabled (NOLOGIN) or has passed its VALID UNTIL is
+    refused too. PostgreSQL checks NOLOGIN only when a session starts, and
+    VALID UNTIL only when it authenticates a password, while a service keeps
+    its connection open between passes (#639); this check is what makes the
+    service's own code stop on a kept session once its login is withdrawn.
+    A compromised process can skip it, so containment still needs the
+    backend ended (see the operations spec's installer idle polling).
+
+    Returns the login's role OID, so a caller can tell a recreated role of the
+    same name from the one it already admitted.
+    """
     database = connection if database is None else database
     if database.vendor != "postgresql":
         raise ConfigError("Credential services require PostgreSQL isolation.")
@@ -57,24 +83,62 @@ def _identity(expected, *, database=None):
             "SELECT current_user, session_user, rolsuper, rolbypassrls, rolcreatedb, "
             "rolcreaterole, rolreplication, rolinherit, "
             "EXISTS(SELECT 1 FROM pg_auth_members WHERE member=r.oid), "
-            "has_schema_privilege(current_user,'public','CREATE') "
-            "FROM pg_roles r WHERE rolname=current_user"
+            "has_schema_privilege(current_user,'public','CREATE'), "
+            "NOT rolcanlogin, coalesce(rolvaliduntil<=clock_timestamp(),false), "
+            "r.oid FROM pg_roles r WHERE rolname=current_user"
         )
         row = cursor.fetchone()
-    if row is None or row[:2] != (expected, expected) or any(row[2:]):
+    if row is None or row[:2] != (expected, expected) or any(row[2:-1]):
         raise ConfigError("Credential service database identity is not isolated.")
+    return row[-1]
+
+
+def _forget_admission(sender, connection, **kwargs):
+    """A newly opened connection must pass the full grant admission again."""
+    connection.stewardship_installer_admission = None
+
+
+# Every new connection, including a reconnect after an error or a deliberate
+# close, clears that connection's admission record (#639).
+connection_created.connect(
+    _forget_admission, dispatch_uid="stewardship-installer-admission"
+)
 
 
 def admit_installer_database(target):
-    """Check actual login and grants on every queue operation, including reconnects.
+    """Check the actual login on every queue operation, and its grants regularly.
 
     RLS supplies target scoping; deployment provisioning owns these narrow grants.
     The online installer cannot be a table owner, read campaign answers, inspect
     audit payloads, or bypass the target-scoped staging store's row policies.
+
+    The identity check (one pg_roles row) runs on every call. The full grant
+    inspection reads the whole catalog, so it runs when this connection has
+    not passed it yet (startup and every reconnect), when the login's role
+    differs from the one admitted, and otherwise at most every
+    ``GRANT_RECHECK_SECONDS`` (#639). PostgreSQL still enforces every grant,
+    and every revocation, on each statement; the inspection only catches
+    authority beyond the closed list.
     """
     if type(target) is not str or target not in SECRET_TARGETS:
         raise ConfigError("Unknown credential target.")
-    _identity("pk_stewardship_credential_" + target)
+    role = _identity("pk_stewardship_credential_" + target)
+    database = connections[DEFAULT_DB_ALIAS]
+    admitted = getattr(database, "stewardship_installer_admission", None)
+    if (
+        admitted is not None
+        and admitted[0] == (target, role)
+        and monotonic() - admitted[1] < GRANT_RECHECK_SECONDS
+    ):
+        return
+    # A refusal below must leave no record that a later call could trust.
+    database.stewardship_installer_admission = None
+    _admit_installer_grants(target)
+    database.stewardship_installer_admission = ((target, role), monotonic())
+
+
+def _admit_installer_grants(target):
+    """Refuse any table, routine or metadata column grant beyond the target's list."""
     tables, metadata = installer_permissions(target)
     admit_grants(tables)
     with connection.cursor() as cursor:

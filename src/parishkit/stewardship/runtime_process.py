@@ -212,30 +212,87 @@ def next_configuration_request():
     )
 
 
-def bounded_loop(run_once, *, lease, stop, wait_seconds=2, heartbeat=None):
+# The longest gap between an idle installer's full passes (#639). The cheap
+# ``pending`` read still runs every ``wait_seconds``, so work it can see starts
+# at once; this bounds only work that it cannot see.
+IDLE_PASS_SECONDS = 30
+
+
+def bounded_loop(
+    run_once,
+    *,
+    lease,
+    stop,
+    wait_seconds=2,
+    heartbeat=None,
+    pending=None,
+    idle_seconds=IDLE_PASS_SECONDS,
+    clock=monotonic,
+):
     """Retry transient work without spinning; SIGTERM stops between bounded passes.
 
-    A failed lease is fatal rather than a retryable dependency outage. Database
-    sockets close after each pass so idle installers do not consume interactive
-    headroom. Durable engines retain their own request checkpoints and retries.
+    A failed lease is fatal rather than a retryable dependency outage. Durable
+    engines retain their own request checkpoints and retries.
+
+    The loop wakes every ``wait_seconds`` (longer after a failure) and
+    publishes its heartbeat on every wake, so container health never depends
+    on how often the full pass runs. Without ``pending`` every wake runs
+    ``run_once``. With it (#639), a wake first asks ``pending()``, one cheap
+    read that takes no lock, and runs the full pass only when that finds work
+    or when the idle gap has elapsed. The gap doubles after each full pass
+    that reports no work (``run_once`` returning a false value), from
+    ``wait_seconds`` up to ``idle_seconds``, and drops back to
+    ``wait_seconds`` once a pass does work.
+
+    The database connection stays open between passes, so an idle loop does
+    not reconnect and repeat its full admission every few seconds. Each wake
+    first drops a kept connection that no longer answers (after a PostgreSQL
+    restart, say), so the wake reconnects quietly instead of logging a
+    failure. Any failure closes it too, so the next wake reconnects, and a
+    reconnect makes the installer's admission run in full again.
     """
     from django.db import connections
 
-    delay = wait_seconds
+    delay = wait_seconds  # Between wakes; grows only after a failure.
+    gap = wait_seconds  # Between full passes while idle.
+    due = clock()  # The first wake always runs a full pass.
     while not stop.is_set():
         lease.check()
         try:
-            run_once()
+            drop_unusable(connections)
+            if pending is None or clock() >= due or pending():
+                worked = run_once()
+                if worked or pending is None:
+                    gap = wait_seconds
+                else:
+                    gap = min(idle_seconds, gap * 2)
+                due = clock() + gap
         except Exception as error:
             emit_failure(error)
+            # The connection may be broken or mid-transaction: drop it so the
+            # next wake reconnects (and readmits), and retry with a full pass.
+            connections.close_all()
             delay = min(60, max(wait_seconds, delay * 2))
+            gap, due = wait_seconds, clock()
         else:
             delay = wait_seconds
-        finally:
-            connections.close_all()
         if heartbeat is not None:
             heartbeat()
         stop.wait(delay)
+
+
+def drop_unusable(connections):
+    """Close each kept database connection that no longer answers (#639).
+
+    ``is_usable`` runs one ``SELECT 1``. A connection the server ended (a
+    restart, or an operator's pg_terminate_backend) fails it and is closed
+    here, so the caller's next statement opens a new connection, which is
+    admitted in full. If the database is still down, that new connection's
+    failure is logged as usual.
+    """
+    for database in connections.all(initialized_only=True):
+        if database.connection is not None and not database.is_usable():
+            database.close()
 
 
 def serve_configuration_installer(configuration, lease):
@@ -282,6 +339,7 @@ def serve_credential_installer(configuration, lease):
     configure_operator_database(configuration)
     admit_runtime_database(configuration)
     from .accounts.credential_installation import CredentialInstaller
+    from .accounts.setup_credential_installation import TARGETS
     from .credential_runtime import (
         validate_metrics_candidate,
         validation_unavailable,
@@ -302,8 +360,7 @@ def serve_credential_installer(configuration, lease):
                 check=lease.check,
                 profile=configuration.profile,
             )
-            if configuration.credential_target
-            in {"parishsoft", "google_workspace", "slack"}
+            if configuration.credential_target in TARGETS
             else None
         ),
     )
@@ -318,42 +375,78 @@ def serve_credential_installer(configuration, lease):
         Cancellation rollback and ordinary rotations must get a turn even when
         a setup exchange is stuck. Newly staged setup input is consumed on the
         next bounded pass; no new authority or implicit retry is introduced.
+        Returns whether any step found work, which keeps the loop polling
+        quickly (see bounded_loop).
         """
-        installer.run_once()
+        worked = [installer.run_once() is not None]
         if configuration.credential_target == "parishsoft":
             from .source.setup_exchange import relay_pending
 
             lease.check()
-            relay_pending(installer.files.private)
+            worked.append(relay_pending(installer.files.private))
         elif configuration.credential_target == "google_workspace":
             from .accounts.setup_mail_exchange import relay_pending
 
             lease.check()
-            relay_pending(installer.files.private)
+            worked.append(relay_pending(installer.files.private))
             # Off-site backup "Test access" checks need this key and egress.
             from .backup_probes import run_pending_probes
 
-            run_pending_probes(installer.files.path, check=lease.check)
+            worked.append(run_pending_probes(installer.files.path, check=lease.check))
         elif configuration.credential_target == "slack":
             from .accounts.setup_notifications import run_pending
 
             lease.check()
-            run_pending(installer.files.private, check=lease.check)
-        if configuration.credential_target in {
-            "parishsoft",
-            "google_workspace",
-            "slack",
-        }:
+            worked.append(run_pending(installer.files.private, check=lease.check))
+        if configuration.credential_target in TARGETS:
+            from .accounts.secret_models import SECRET_PENDING
             from .accounts.setup_credential_installation import stage_initial_credential
 
             lease.check()
-            stage_initial_credential(installer.files)
+            # An already recorded installation returns its receipt on every
+            # pass; it is work only while its request is still pending.
+            staged = stage_initial_credential(installer.files)
+            worked.append(staged is not None and staged.state in SECRET_PENDING)
+        return any(worked)
 
-    return serve_installer_loop(run_once, lease)
+    return serve_installer_loop(
+        run_once,
+        lease,
+        pending=installer_pending(installer, configuration.credential_target),
+    )
 
 
-def serve_installer_loop(run_once, lease):
-    """Share bounded retry, signal restoration and socket cleanup across installers."""
+def installer_pending(installer, target):
+    """Build the target's cheap work check for the idle loop (#639).
+
+    It asks, without taking any lock, whether the queue or any of this
+    target's setup or access-check steps has something to do, admitting the
+    installer first (its full grant check runs here too once its interval
+    is up, even while full passes are backed off).
+    """
+    from . import backup_probes
+    from .accounts import setup_credential_installation as initial
+    from .accounts import setup_mail_exchange, setup_notifications
+    from .source import setup_exchange
+
+    checks = [installer.pending]
+    if target == "parishsoft":
+        checks.append(setup_exchange.has_pending)
+    elif target == "google_workspace":
+        checks += [setup_mail_exchange.has_pending, backup_probes.has_pending]
+    elif target == "slack":
+        checks.append(setup_notifications.has_pending)
+    if target in initial.TARGETS:
+        checks.append(lambda: initial.has_pending(target))
+    return lambda: any(check() for check in checks)
+
+
+def serve_installer_loop(run_once, lease, *, pending=None):
+    """Share bounded retry, signal restoration and socket cleanup across installers.
+
+    ``pending``, when given, is the installer's cheap work check; see
+    bounded_loop for how it lets an idle installer back off.
+    """
     stop = StopEvent()
 
     def stopping(signum, frame):
@@ -368,7 +461,13 @@ def serve_installer_loop(run_once, lease):
 
         emit(Event.STARTUP_VALIDATED)
         publish_heartbeat()
-        bounded_loop(run_once, lease=lease, stop=stop, heartbeat=publish_heartbeat)
+        bounded_loop(
+            run_once,
+            lease=lease,
+            stop=stop,
+            heartbeat=publish_heartbeat,
+            pending=pending,
+        )
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
