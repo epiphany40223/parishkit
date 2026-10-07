@@ -86,7 +86,7 @@ def test_financial_mobile_keyboard_and_accessibility(
     # A refused filter explains the money format and offers a way back.
     page.goto(component_origin + "/financial-error-400")
     assert page.get_by_role("alert").get_by_text("without commas", exact=False).count()
-    assert page.get_by_role("link", name="Return to this campaign", exact=False).count()
+    assert page.get_by_role("link", name="Return to Financial stewardship").count()
     page.goto(component_origin + "/financial-error-503")
     assert page.get_by_role("alert").get_by_text("retry later", exact=False).count()
 

@@ -411,7 +411,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.05 — NAV-3: grey out multi-campaign controls with the #145 tip, refuse their actions on the server, and remove New campaign.
 - [x] ADM-12.06 — NAV-4: give Campaign setup and Mail pages one name each, including Cancel go-live.
 - [x] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages, and the remaining setup wizard steps, one name each.
-- [ ] ADM-12.08 — NAV-5b: give report pages one name each.
+- [x] ADM-12.08 — NAV-5b: give report pages one name each.
 - [ ] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
 - [ ] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
 - [ ] ADM-12.11 — NAV-8: move Mail and Family portal URLs.
@@ -525,6 +525,17 @@ loses its hand-written Administration link, and "Back to" links become
 `tests/stewardship/test_admin_page_names.py` (the new groups, Home, Change
 status and every setup step; more retired names) and the updated page,
 setup and browser suites.
+ADM-12.08 (NAV-5b) names the report pages after the placement table
+(Participation, Financial stewardship, Additional information and
+Information request, Latest-data export, Ministry requests with Members
+joining and Members leaving, Ministry follow-up and Follow-up request, Send
+a weekly report now, Weekly report and Weekly report item); templates
+shared by a list and its item switch their heading by context, and the
+empty-report page is named after the report opened. "Return to" links name
+their page, including an export's report and Home. It is proven by
+`tests/stewardship/test_admin_page_names.py` (the Responses and reports
+group, the empty-report page, more retired names) and the updated report
+suites.
 
 ## ADM-13: System health page
 

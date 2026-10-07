@@ -6,7 +6,7 @@
 {% aboutpage "response-dashboard" %}<p>{% translate "Each stage counts Families, once each, up to the moment shown as Counted at. Shares are compared with the Families invited; a Family can follow its link or submit without a delivered invitation, so a share can pass 100%." %}</p>
 <p>{% translate "A mail scanner that opens a Family's personal link counts as a link follow, so that stage includes such prefetches. A Family that submitted counts as having opened the form and progressed, since a submission passes every step; other progress is recorded from ParishKit 1.2.0 on." %}</p>
 <p>{% translate "The activity chart counts each Family the first time it followed its link, opened the form or submitted, in the campaign's time zone. The dashed lines mark when each invitation and reminder was scheduled." %}</p>{% endaboutpage %}
-<p><a href="{% url 'admin:participation' campaign.pk %}">{% translate "Campaign reports and selection" %}</a></p>
+<p><a href="{% url 'admin:participation' campaign.pk %}">{% translate "Participation" %}</a></p>
 {# The mode and grain links refresh this region in place (ui-v1.js, a[data-in-place]); without script they load the page at the region. #}
 <div id="response-dashboard" data-in-place-region>
 <p>{{ campaign.active_configuration.name }} — {% if testing %}{% translate "Testing rehearsal" %}{% else %}{% translate "Production" %}{% endif %}</p>

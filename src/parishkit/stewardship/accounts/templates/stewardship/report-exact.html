@@ -1,8 +1,8 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
-{% block title %}{% translate "Queued participation export" %}{% endblock %}
+{% block title %}{% translate "Latest-data export" %}{% endblock %}
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
-<h1>{% translate "Queued participation export" %}</h1>
+<h1>{% translate "Latest-data export" %}</h1>
 <section class="panel export-live" aria-live="polite" data-live-status="exact" data-export-state="{{ status.state }}"{% if not status.export_id and status.state != 'failed' and status.state != 'abandoned' and status.state != 'cancelled' %} data-live-pending{% endif %}>
 {% if status.export_id %}
 <p class="export-state export-state-ready" role="status">{% translate "The export's figures are ready." %}</p>
@@ -14,7 +14,7 @@
 <p class="help">{% translate "This usually takes a few seconds, and this page updates by itself. The file always uses the data as it was when you requested it." %}</p>{% endif %}
 {% if can_cancel %}<form method="post" action="{% url 'admin:report_exact_cancel' job.pk %}">{% csrf_token %}<button type="submit" class="button-secondary"{% if not mutable %} disabled{% endif %}>{% translate "Cancel export" %}</button></form>{% endif %}
 </section>
-<p><a href="{% url 'admin:report_exact' job.pk %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to this campaign report" %}</a></p>
+<p><a href="{% url 'admin:report_exact' job.pk %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to Participation" %}</a></p>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
 <dt>{% translate "Population" %}</dt><dd>{% if job.population_scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</dd>
 <dt>{% translate "ParishSoft data as of" %}</dt><dd><time datetime="{{ source.promoted_at|date:'c' }}" data-local-instant>{{ source.promoted_at|date:'c' }}</time></dd>
