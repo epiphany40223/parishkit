@@ -96,10 +96,10 @@ separation remains an OPS-02/OPS-04 prerequisite before deployment.
 ## Nightly source cadence extension
 
 The Phase 2 ParishSoft editor emits `source-cadence-v8` when public integration
-settings contain any of `nightly_time`, `full_refresh`, `full_refresh_times`
-or `delta_refresh`, and, once the integrated refresh schedule
-([#632](https://github.com/epiphany40223/parishkit/issues/632)) lands,
-`quick_refresh_times` or `refresh_rules`. The times use parish-local `HH:MM`,
+settings contain any of `nightly_time`, `full_refresh`, `full_refresh_times`,
+`delta_refresh`, or the integrated refresh schedule's
+([#632](https://github.com/epiphany40223/parishkit/issues/632))
+`quick_refresh_times` and `refresh_rules`. The times use parish-local `HH:MM`,
 the lists are sorted and unique and the full list names the nightly time;
 their scheduling and default behavior remain owned by the
 [refresh schedule specification](../specs/stewardship/background-processing/spec.md#stored-schedule-and-upgrade).

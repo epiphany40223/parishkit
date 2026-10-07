@@ -492,3 +492,16 @@ def test_facts_come_from_the_end_of_the_combined_row():
     outcomes = (LATE, None, False, None, DELTA_OK, None)
     facts = (EARLY, DELTA_OK, LATE, LATE, True, EARLY, NOW)
     assert real_facts(outcomes + facts) == SourceFacts(*facts)
+
+
+def test_listed_quick_times_are_called_quick_updates():
+    """A schedule with listed quick times (#632) names them quick updates."""
+    listed = FullRefreshStatus(
+        EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00",), "times"
+    )
+    assert listed.has_deltas and listed.deltas_healthy is True
+    html = render_to_string(
+        "stewardship/full-refresh-status.html", {"status": listed, "can_refresh": True}
+    )
+    assert "Last quick update:" in html and "quick updates are working" in html
+    assert "15-minute" not in html and "hourly" not in html

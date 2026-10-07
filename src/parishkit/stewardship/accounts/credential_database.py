@@ -139,10 +139,11 @@ def admit_installer_database(target):
 
 def _admit_installer_grants(target):
     """Refuse any table, routine or metadata column grant beyond the target's list."""
+    from parishkit.stewardship.deployment import ServiceRole
     from parishkit.stewardship.jobs.service_status_grants import (
         add_service_status_writer_grants,
     )
-    from parishkit.stewardship.runtime_grants import admit_columns
+    from parishkit.stewardship.runtime_grants import admit_columns, runtime_functions
 
     tables, metadata = installer_permissions(target)
     # The installer's own service status record (ADM-13): insert, refresh
@@ -153,7 +154,12 @@ def _admit_installer_grants(target):
     for grants in (status_tables, status_columns):
         for table, privileges in grants.items():
             allowed.setdefault(table, set()).update(privileges)
-    admit_grants(allowed)
+    # The definer routines this installer may EXECUTE: the automation
+    # sign-in check for the targets an automation session may replace.
+    admit_grants(
+        allowed,
+        functions=runtime_functions(ServiceRole.CREDENTIAL_INSTALLER, target=target),
+    )
     admit_columns(connection, status_tables, status_columns)
     with connection.cursor() as cursor:
         # Attribution is column-scoped: no full YAML or public draft payloads.

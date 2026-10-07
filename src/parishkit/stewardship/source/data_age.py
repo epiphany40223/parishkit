@@ -161,14 +161,15 @@ def changed(cursor):
 def connection_threshold(settings, margin):
     """How long without a successful attempt reads as "not checked".
 
-    The schedule's longest gap between any two scheduled refreshes plus the
-    lateness margin.
+    The schedule's longest gap between any two scheduled refreshes, listed
+    quick times included (#632), plus the lateness margin.
     """
     return (
         longest_gap(
             frequency=settings["frequency"],
             full_refresh_times=settings["full_refresh_times"],
             delta_refresh=settings["delta_refresh"],
+            quick_refresh_times=settings.get("quick_refresh_times", ()),
         )
         + margin
     )
@@ -348,6 +349,32 @@ def current_overdue(now):
         overdue_full_slot(now, after=last_full, timezone=source_timezone(active)),
         last_full,
     )
+
+
+def catch_up_at(timezone):
+    """When the current schedule took effect, if it must request a catch-up.
+
+    The schedule-change catch-up (#632): when a new schedule takes effect
+    while a full slot of an earlier one is already overdue (due, and no full
+    refresh that started at or after its due time has promoted, whether or
+    not the margin has run out), the new schedule may never create that
+    slot, so the scheduler requests one full refresh due at this instant
+    instead. None when no full refresh has promoted yet, when the schedule
+    has not changed since the last one started, or when nothing was overdue
+    as it changed. Once a full refresh promotes after the overdue slot, this
+    returns None again. ``timezone`` is the zone the slots resolve in. Four
+    queries.
+    """
+    last_full = last_full_started_at()
+    if last_full is None:
+        return None
+    runs = schedule_runs(last_full)
+    if len(runs) < 2 or runs[-1][1] is None:
+        return None
+    start = runs[-1][0]
+    if first_overdue(runs[:-1], timezone, last_full, start) is None:
+        return None
+    return start
 
 
 @dataclass(frozen=True)

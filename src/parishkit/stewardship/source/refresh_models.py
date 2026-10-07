@@ -5,7 +5,10 @@ from django.db import models
 from parishkit.stewardship.storage import ImmutableRecord, UTCDateTimeField
 
 REFRESH_KINDS = ("full", "delta")
-REFRESH_CAUSES = ("manual", "nightly", "initial", "delta", "fallback")
+# ``catch_up`` is the schedule-change catch-up (#632): one full refresh the
+# scheduler requests when a new schedule takes effect while a full slot of
+# the previous one is already overdue.
+REFRESH_CAUSES = ("manual", "nightly", "initial", "delta", "fallback", "catch_up")
 
 
 class SourceRefreshRequest(ImmutableRecord):

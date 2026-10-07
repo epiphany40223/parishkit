@@ -116,6 +116,12 @@ class FailureKind(StrEnum):
     # campaign and configuration, riding on the reviewed startup_validated
     # event until it has its own (see the follow-up issue on #447).
     REFRESH_IN_LEAD_WINDOW = "full_refresh_in_lead_window"
+    # The database's refresh-tick guard refused the schedule-change catch-up
+    # full refresh (#632): only that request was rolled back, and the
+    # scheduler's other refreshes still run. Logged once per scheduler
+    # process for each catch-up slot, riding on startup_validated like the
+    # lead-window advice; not a failed refresh.
+    REFRESH_CATCH_UP_REFUSED = "refresh_catch_up_refused"
     # ``pk-stewardship load-check`` stopped because something it measures
     # changed under it (#633): the ParishSoft data, the Testing Family
     # portal, or the campaign. Each says to run the check again.
@@ -296,6 +302,7 @@ def emit(
     ministry_duid: int | None = None,
     shaping: str | None = None,
     error_class: str | None = None,
+    confirmation: str | None = None,
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text.
 
@@ -312,7 +319,8 @@ def emit(
     ``SOURCE_MINISTRY_NAME_REPAIRED``. ``shaping`` names the display-only
     comparison (``SHAPING_STEPS``), only with ``REPORT_SHAPING_FAILED``.
     ``error_class`` names a failure's exception type (see ``class_name_of``),
-    only with a ``failure_kind``.
+    only with a ``failure_kind``. ``confirmation`` is how an Admin automation
+    command was confirmed (``prompt`` or ``yes``), only with ``TASK_STARTED``.
     """
     if not isinstance(event, Event) or level not in {
         logging.DEBUG,
@@ -360,6 +368,10 @@ def emit(
         failure_kind is None or not _class_name(error_class)
     ):
         raise ValueError("An error class must be a failure's dotted class name.")
+    if confirmation is not None and (
+        event is not Event.TASK_STARTED or confirmation not in {"prompt", "yes"}
+    ):
+        raise ValueError("A confirmation is prompt or yes, as a command starts.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
@@ -378,6 +390,7 @@ def emit(
                 "ministry_duid": ministry_duid,
                 "shaping": shaping,
                 "error_class": error_class,
+                "confirmation": confirmation,
             }
         ),
     )
@@ -691,6 +704,11 @@ class SafeJsonFormatter(JsonLogFormatter):
                 safe.extra["drive_failure"] = context["drive_failure"]
             if context.get("timeout") in TIMEOUT_LIMITS:
                 safe.extra["timeout"] = context["timeout"]
+            if record.msg is Event.TASK_STARTED and context.get("confirmation") in {
+                "prompt",
+                "yes",
+            }:
+                safe.extra["confirmation"] = context["confirmation"]
             for key in ("limit_seconds", "elapsed_seconds"):
                 if _seconds(context.get(key)):
                     safe.extra[key] = context[key]

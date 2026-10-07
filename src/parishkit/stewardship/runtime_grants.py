@@ -238,19 +238,43 @@ MINISTRY_CATALOG_FUNCTION = "stewardship_ministry_catalog_v1()"
 # The automation maintenance task's Django session purge for ended Admin
 # sessions (ADM-11): the worker never reads a session key itself.
 SESSION_PURGE_FUNCTION = "stewardship_admin_session_purge_v1(uuid[])"
+# The mail consumers' 24-hour Family mail count, for System health (ADM-13):
+# one number, without the web reading any routed recipient address.
+DAILY_SENDS_FUNCTION = "stewardship_family_daily_sends_v1()"
+# Whether a sign-in instant recorded on a secret request is a live full-scope
+# automation session's (ADM-11 PR 5): the web's intake guard and each
+# credential installer's staged-to-testing guard call it, and the installers
+# read no automation table.
+AUTOMATION_FRESH_FUNCTION = (
+    "stewardship_automation_fresh_principal_v1(uuid, timestamp with time zone)"
+)
+# The credential installers whose secret requests an automation session may
+# make (key replacement); the other targets have no such request.
+AUTOMATION_SECRET_TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
 
 
 def runtime_functions(role, *, target=None):
     """Return the definer routines this login may EXECUTE.
 
-    Web signs Families in; the configuration installer checks that a Ministry
+    Web signs Families in and reads the 24-hour Family mail count (System
+    health); the configuration installer checks that a Ministry
     added to a live campaign is in the promoted catalog, without source grants;
     the general worker purges the Django sessions of ended Admin sessions.
+    Web and the parishsoft, google_workspace and slack credential installers
+    check a secret request's automation sign-in instant (ADM-11 PR 5).
     """
     role = _identity_role(role, target)
+    if role is ServiceRole.CREDENTIAL_INSTALLER:
+        return frozenset(
+            {AUTOMATION_FRESH_FUNCTION} if target in AUTOMATION_SECRET_TARGETS else ()
+        )
     return frozenset(
         {
-            ServiceRole.WEB: {FAMILY_LOGIN_FUNCTION},
+            ServiceRole.WEB: {
+                FAMILY_LOGIN_FUNCTION,
+                DAILY_SENDS_FUNCTION,
+                AUTOMATION_FRESH_FUNCTION,
+            },
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
             ServiceRole.WORKER: {SESSION_PURGE_FUNCTION},
         }.get(role, ())

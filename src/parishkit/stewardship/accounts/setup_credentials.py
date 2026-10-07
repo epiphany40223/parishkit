@@ -12,6 +12,7 @@ from parishkit.stewardship.mail_catcher import MailTransport, workspace_transpor
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.web.contracts import check_version
 
+from .admin_caller import is_automation
 from .handoff_discovery import public_handoff
 from .integration_candidates import slack_candidate, workspace_info
 from .metrics_credentials import credential_receipt
@@ -131,6 +132,10 @@ def stage_credential(
     and attempt both advance versions. Starting a source load freezes this input.
     An expired attempt cannot regain authority by supplying valid credential bytes.
     """
+    if is_automation(request):
+        # The first-Admin wizard is browser-only (a permanent exemption of
+        # the Admin automation interface); refuse its credentials outright.
+        raise PermissionError("Setup credentials need the browser.")
     with work_transaction():
         actor, attempt = _owned(request, service, attempt_id)
         check_version(attempt, expected_version)

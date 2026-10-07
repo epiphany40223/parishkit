@@ -80,6 +80,12 @@ def isolated_roles():
                         "GRANT SELECT ON stewardship_setup_credential_install "
                         f'TO "{role}"'
                     )
+                    # As database-grants does (runtime_functions, ADM-11 PR 5).
+                    cursor.execute(
+                        "GRANT EXECUTE ON FUNCTION public."
+                        "stewardship_automation_fresh_principal_v1"
+                        f'(uuid, timestamptz) TO "{role}"'
+                    )
                 cursor.execute(
                     "GRANT SELECT(active_configuration_id) ON "
                     f'stewardship_system_configuration TO "{role}"'

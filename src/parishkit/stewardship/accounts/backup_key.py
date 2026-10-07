@@ -261,7 +261,7 @@ def _patch(configuration, record, text):
 def _render(request, configuration, *, status=200, **context):
     """The key page: the key in use, and whichever step of a change is next."""
     try:
-        require_fresh(request)
+        require_fresh(request, record=False)
         fresh = True
     except FreshAuthenticationRequired:
         fresh = False
@@ -329,7 +329,7 @@ def _review(request, service, configuration, actor, text):
 def _fresh(request):
     """Whether the Administrator signed in with Google in the last five minutes."""
     try:
-        require_fresh(request)
+        require_fresh(request, record=False)
     except FreshAuthenticationRequired:
         return False
     return True

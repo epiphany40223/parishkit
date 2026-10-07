@@ -134,6 +134,18 @@ def sends_in_last_day():
     return total or 0
 
 
+def daily_sends():
+    """``sends_in_last_day`` for a login that may not read the outbox (the web).
+
+    The same count, through the SECURITY DEFINER function of
+    ``schema/migrations/0012_daily_send_count.sql``, which returns one number
+    and never a recipient. A test keeps the two counts equal.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT public.stewardship_family_daily_sends_v1()")
+        return cursor.fetchone()[0]
+
+
 def over_daily_limit(purpose, sent, recipients=1):
     """Whether ``recipients`` more of ``purpose`` would pass the daily limit."""
     limit = DAILY_SEND_LIMIT - (RESERVED_SENDS if purpose in BULK_PURPOSES else 0)
