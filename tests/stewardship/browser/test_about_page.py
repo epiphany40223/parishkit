@@ -97,6 +97,8 @@ CONVERTED_PAGES = {
     "/setup-mail-test": "Send a fictional sample only",
     "/setup-shares": "Saving changes only this temporary wizard draft.",
     "/setup-branding": "This logo is private",
+    "/setup-source": "Starting the load fixes the parish time zone",
+    "/setup-credential": "never shown again",
 }
 
 

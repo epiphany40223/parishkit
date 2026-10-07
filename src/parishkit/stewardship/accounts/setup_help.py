@@ -52,12 +52,14 @@ ACCESS = {
         "line, for example yourparish.org. Staff can use reports and follow-up "
         "work but cannot change settings. Personal email domains such as "
         "gmail.com are not allowed. Leave empty to grant Staff access only to "
-        "the individual addresses below."
+        "the individual addresses below. A domain never grants Administrator "
+        "access."
     ),
     "ministry_domains": _(
         "Domains whose accounts may sign in as Ministry leaders, one per line. "
         "A Ministry leader sees only the Ministries they are assigned to, so the "
-        "domain alone shows no Ministry information."
+        "domain alone shows no Ministry information. A domain never grants "
+        "Administrator access."
     ),
     "staff_addresses": _(
         "Individual email addresses that get Staff access, one per "
@@ -310,7 +312,10 @@ HINTS = {
     "delegated_email": _("A licensed Workspace user, not the service account."),
     "sender": _("The mailbox itself or one of its verified Gmail aliases."),
     "channel_id": _("For example C0123456789 (the ID, not the name)."),
-    "testing_recipient": _("A staff mailbox only trusted people can read."),
+    "testing_recipient": _(
+        "In Testing mode every email goes to this one address; use a trusted "
+        "staff mailbox."
+    ),
     "logo": _("PNG, JPEG or WebP, up to 5 MB."),
     "candidate": _("Paste it exactly. It is never displayed again."),
     "organization_id": _("For example 1234."),

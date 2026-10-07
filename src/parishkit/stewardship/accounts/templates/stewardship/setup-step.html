@@ -10,7 +10,7 @@
 {% elif step == 'slack' %}<p>{% translate "Optionally post alerts about problems that need an administrator to a Slack channel. If you turn this on, the next step asks for the Slack app's bot token." %}</p>
 {% elif step == 'testing' %}<p>{% translate "The system starts, and stays until you deliberately switch it, in Testing mode. In Testing mode no email reaches Families: every message goes to the one address you enter here, so staff can check the real content safely." %}</p>
 {% endif %}
-{% if step == 'access' %}<p>{% translate "The bootstrap Administrator is always preserved. Domains may grant Staff or Ministry-leader roles, never Administrator. Ministry access also requires a Ministry assignment." %}</p>{% endif %}
+{% if step == 'access' %}<p>{% translate "The Administrator account you are signed in with always keeps its access. Domains may grant Staff or Ministry-leader roles, never Administrator. Ministry access also requires a Ministry assignment." %}</p>{% endif %}
 {% if step == 'mail' %}<p>{% translate "These are public sender settings only. Credential verification and test delivery are separate required checks." %}</p>{% endif %}{% endaboutpage %}
 <p class="notice">{% translate "Testing mode. These settings remain temporary until final setup completes. Do not enter API tokens, passwords or service-account JSON here." %}</p>
 <form method="post" class="panel">

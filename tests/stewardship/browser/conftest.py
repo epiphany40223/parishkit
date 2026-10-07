@@ -832,6 +832,8 @@ def component_origin():
                 },
             },
         ),
+        # Load parish data before the load starts (#227: its time-zone caution).
+        ("/setup-source", "setup-source", {"draft": setup_draft}),
         (
             "/setup-shares",
             "setup-shares",
