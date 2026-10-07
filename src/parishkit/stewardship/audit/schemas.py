@@ -101,6 +101,8 @@ class Action(StrEnum):
     DASHBOARD_VIEWED = "dashboard_viewed"
     SYSTEM_LOGS_VIEWED = "system_logs_viewed"
     SYSTEM_LOGS_EXPORTED = "system_logs_exported"
+    # Opening System health (ADM-13); its count is the problems it showed.
+    SYSTEM_HEALTH_VIEWED = "system_health_viewed"
     PRESENCE_VIEWED = "family_presence_viewed"
     # The operator's one-time engagement backfill (#477), with its counts.
     FAMILY_ENGAGEMENT_BACKFILLED = "family_engagement_backfilled"

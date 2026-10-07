@@ -584,6 +584,7 @@ SPEC_ORDER = [
     "users",
     "automation_access",
     # System
+    "system_health",
     "integrations",
     "background",
     "logs",

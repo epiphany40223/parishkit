@@ -1695,16 +1695,21 @@ pause, and closing work is the closed-campaign resolution. See
 | `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9) |
 | `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9) |
 | `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-clear` (PR 9) |
-| `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
+| `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
 | `system_backup_request` (ADM-13) | `system backup-now` (keyed), `system backup-status --watch` |
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
 | `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
 | `system_debug_off`, `system_debug_allow` (ADM-13) | `system debug-off`; `system debug-allow` (Testing only) |
 
-The ADM-13 rows are pending exemptions until ADM-11 PR 3 (the read) and
-PR 5 (the actions) land. The ADM-13 action routes are POSTs to the
-[System health](../admin-portal/spec.md#health-actions) page, and
-`system_health_status` is its passive status fragment.
+The ADM-13 rows are pending exemptions until their commands land. ADM-13
+PR 2b, the next ADM-13 pull request, adds `system health`; the ledger
+records it against ADM-11 PR 8 (the log commands), so it must land no later
+than that. Each action's command lands with its own ADM-13 pull request
+(PR 3 to PR 6), once ADM-11 PR 5 lets automation pass the fresh-sign-in
+check. The ADM-13 action routes are
+POSTs to the [System health](../admin-portal/spec.md#health-actions) page,
+`system_health_status` is its passive status fragment, and `system`
+(`/admin/system/`) only redirects to it.
 
 ### Users and follow-up
 

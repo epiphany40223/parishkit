@@ -100,6 +100,7 @@ from .security_components import components as security_components
 from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
 from .step_up_components import components as step_up_components
+from .system_health_components import components as system_health_components
 from .talent_components import components as talent_components
 from .user_components import components as user_components
 from .weekly_components import components as weekly_components
@@ -1869,6 +1870,7 @@ def component_origin():
     responses.update(pause_components(context, admin))
     responses.update(send_progress_components(context, admin))
     responses.update(send_history_components(context, admin))
+    responses.update(system_health_components(context, admin))
     responses.update(hosted_file_components(context, admin))
     responses.update(talent_components(context, admin))
     responses.update(in_place_components(context, admin))

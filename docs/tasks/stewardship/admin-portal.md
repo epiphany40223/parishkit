@@ -534,3 +534,14 @@ checks in full and the worker records with each refused attempt, checked by
 `tests/stewardship/database/test_system_health_records_postgresql.py`,
 `tests/stewardship/database/test_automation_maintenance_postgresql.py`, the
 migration-file and upgrade-parity tests and the regenerated schema baseline.
+ADM-13.02 is in progress in parts. Part 2a adds the read model
+`parishkit.stewardship.system_health` (`SystemHealth`), the Administrator-only
+page at `/admin/system/health/` with its problems list and six panels, the
+passive 10-second status fragment, `/admin/system/` opening it, the first
+System menu entry, the `system_health_viewed` audit event and the debug
+logging and critical-problems banners' links, with no schema or grant change, checked by
+`tests/stewardship/test_system_health.py`,
+`tests/stewardship/database/test_system_health_postgresql.py`,
+`tests/stewardship/browser/test_system_health.py` and the navigation and
+route-parity tests. Home's problem lines, the `system health` command and
+the 24-hour daily-limit count remain (see the work package).
