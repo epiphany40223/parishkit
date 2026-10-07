@@ -1000,6 +1000,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 operation.assert_not_called()
             return
         hold.assert_not_called()
+        from parishkit.stewardship.jobs.loop_settings import LoopSettings
         from parishkit.stewardship.jobs.security_owner import SECURITY
 
         assert operational_fanout.call_args_list == [
@@ -1007,17 +1008,21 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             call(guard, SECURITY),
         ]
         operational_slack.assert_called_once_with(guard)
-        boundary.assert_called_once_with(guard)
+        # One loop's runtime settings, shared by the producers that read
+        # them before the work-order lock (#715).
+        settings = boundary.call_args.kwargs["settings"]
+        assert isinstance(settings, LoopSettings)
+        boundary.assert_called_once_with(guard, settings=settings)
         schedules.assert_called_once_with(guard)
-        digests.assert_called_once_with(guard)
-        daily.assert_called_once_with(guard)
+        digests.assert_called_once_with(guard, settings=settings)
+        daily.assert_called_once_with(guard, settings=settings)
         daily_finalization.assert_called_once_with(guard)
-        weekly.assert_called_once_with(guard)
+        weekly.assert_called_once_with(guard, settings=settings)
         weekly_finalization.assert_called_once_with(guard)
-        producer.assert_called_once_with(guard)
+        producer.assert_called_once_with(guard, settings=settings)
         cleanup.assert_called_once_with(guard)
         export_cleanup.assert_called_once_with(guard)
-        facts.assert_called_once_with(guard)
+        facts.assert_called_once_with(guard, settings=settings)
         verification.assert_called_once_with(guard)
         expiry.assert_called_once_with(guard)
         mail_recovery.assert_called_once_with()

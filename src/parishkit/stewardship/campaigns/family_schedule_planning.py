@@ -436,8 +436,58 @@ def _read_planning_scope(
     UPDATE, for admission-only callers; see jobs.admission._scope.
     """
     scope = _scope(campaign_id, share=share)
+    runtime = scope.runtime
+    if _planning_held(
+        campaign_id,
+        scope,
+        postclose=postclose,
+        gated=lambda: (
+            CampaignWorkGate.objects.filter(campaign_id=campaign_id)
+            .exclude(state="released")
+            .exists()
+        ),
+        catching_up=lambda: ActivationCatchUpDemand.objects.filter(
+            campaign_id=campaign_id, completed_at__isnull=True
+        ).exists(),
+    ):
+        raise PermissionError("Ordinary schedule planning is held.")
+    if share:
+        # A Family login takes this row FOR SHARE as well (#147). Django has
+        # no FOR SHARE, so one raw statement locks and reads the row: the
+        # go_live_gate filter is evaluated once, on the row that is locked.
+        credentials = next(
+            iter(
+                CampaignCredentialState.objects.raw(
+                    "SELECT * FROM stewardship_campaign_credentials"
+                    " WHERE campaign_id=%s AND NOT go_live_gate"
+                    " ORDER BY id LIMIT 1 FOR SHARE",
+                    [campaign_id],
+                )
+            ),
+            None,
+        )
+    else:
+        credentials = (
+            CampaignCredentialState.objects.select_for_update()
+            .filter(campaign_id=campaign_id, go_live_gate=False)
+            .first()
+        )
+    return scope, _planning_epoch(
+        runtime, credentials, campaign_id, allow_missing_epoch=allow_missing_epoch
+    )
+
+
+def _planning_held(campaign_id, scope, *, postclose, gated, catching_up):
+    """Whether ordinary planning is held for ``scope``'s runtime and campaign.
+
+    ``gated`` and ``catching_up`` are callables that read whether the
+    campaign has an unreleased work gate or unfinished activation catch-up;
+    each is called only when the conditions before it pass, as before. The
+    locked scope and the scheduler's unlocked loop snapshot (#715) both use
+    this one predicate, so the two cannot drift apart.
+    """
     campaign, runtime = scope.campaign, scope.runtime
-    if (
+    return (
         campaign is None
         or runtime.current_campaign_id != campaign_id
         or runtime.restore_review_required
@@ -462,50 +512,60 @@ def _read_planning_scope(
                 else {"scheduled", "active"}
             )
         )
-        or CampaignWorkGate.objects.filter(campaign_id=campaign_id)
-        .exclude(state="released")
-        .exists()
-        or (
-            runtime.mode == "production"
-            and ActivationCatchUpDemand.objects.filter(
-                campaign_id=campaign_id, completed_at__isnull=True
-            ).exists()
-        )
-    ):
-        raise PermissionError("Ordinary schedule planning is held.")
-    if share:
-        # A Family login takes this row FOR SHARE as well (#147). Django has
-        # no FOR SHARE, so one raw statement locks and reads the row: the
-        # go_live_gate filter is evaluated once, on the row that is locked.
-        credentials = next(
-            iter(
-                CampaignCredentialState.objects.raw(
-                    "SELECT * FROM stewardship_campaign_credentials"
-                    " WHERE campaign_id=%s AND NOT go_live_gate"
-                    " ORDER BY id LIMIT 1 FOR SHARE",
-                    [campaign_id],
-                )
-            ),
-            None,
-        )
-    else:
-        credentials = (
-            CampaignCredentialState.objects.select_for_update()
-            .filter(campaign_id=campaign_id, go_live_gate=False)
-            .first()
-        )
+        or gated()
+        or (runtime.mode == "production" and catching_up())
+    )
+
+
+def _planning_epoch(runtime, credentials, campaign_id, *, allow_missing_epoch):
+    """The active rehearsal epoch Testing planning needs, or None in Production.
+
+    Raises PermissionError without a current credential row, or in Testing
+    without an active epoch (unless ``allow_missing_epoch`` and none is set).
+    """
     if credentials is None:
         raise PermissionError("Schedule planning requires current credential scope.")
-    epoch = None
-    if runtime.mode == "testing":
-        if credentials.rehearsal_epoch_id is None and allow_missing_epoch:
-            return scope, None
-        epoch = RehearsalEpoch.objects.filter(
-            pk=credentials.rehearsal_epoch_id, campaign_id=campaign_id, state="active"
-        ).first()
-        if epoch is None:
-            raise PermissionError("Testing planning requires an active rehearsal.")
-    return scope, epoch
+    if runtime.mode != "testing":
+        return None
+    if credentials.rehearsal_epoch_id is None and allow_missing_epoch:
+        return None
+    epoch = RehearsalEpoch.objects.filter(
+        pk=credentials.rehearsal_epoch_id, campaign_id=campaign_id, state="active"
+    ).first()
+    if epoch is None:
+        raise PermissionError("Testing planning requires an active rehearsal.")
+    return epoch
+
+
+def snapshot_planning_scope(settings, *, postclose=False):
+    """The current campaign's planning scope from one loop's LoopSettings (#715).
+
+    It decides exactly as _read_planning_scope does, from the same predicate,
+    but on rows read without the work-order lock or row locks and at most
+    once per scheduler loop, and with a fresh clock reading. It is only for
+    a producer's "anything to do?" read before the lock: a producer that
+    finds work reads its scope again under the lock. Returns ``(scope,
+    epoch)`` or raises PermissionError where planning would be held.
+    """
+    from parishkit.stewardship.campaigns.runtime import _now
+    from parishkit.stewardship.jobs.admission import WorkScope
+
+    runtime = settings.runtime
+    if runtime is None or runtime.active_configuration_id is None:
+        raise PermissionError("Background work requires applied configuration.")
+    campaign_id = runtime.current_campaign_id
+    scope = WorkScope(runtime, settings.campaign, _now())
+    if _planning_held(
+        campaign_id,
+        scope,
+        postclose=postclose,
+        gated=lambda: settings.gated,
+        catching_up=lambda: settings.catching_up,
+    ):
+        raise PermissionError("Ordinary schedule planning is held.")
+    return scope, _planning_epoch(
+        runtime, settings.credentials, campaign_id, allow_missing_epoch=False
+    )
 
 
 def _dispatch_cancellable(row):

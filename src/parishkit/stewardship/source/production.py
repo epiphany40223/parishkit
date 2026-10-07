@@ -3,6 +3,7 @@
 import logging
 from uuid import UUID
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import connection, transaction
 from django.db.models import Q
 
@@ -14,7 +15,8 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import ContextKind
 from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.jobs.admission import require_source_refresh
+from parishkit.stewardship.jobs.admission import WorkScope, require_source_refresh
+from parishkit.stewardship.jobs.loop_settings import LoopSettings
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.scanning import ScanCursor
@@ -42,12 +44,15 @@ class SourceProducer:
         # Slots already logged as skipped, so each is logged once.
         self.skipped = set()
 
-    def __call__(self, guard):
-        """Retire a bounded stale page before producing current-scope cadence slots."""
+    def __call__(self, guard, *, settings=None):
+        """Retire a bounded stale page before producing current-scope cadence slots.
+
+        ``settings`` is the scheduler loop's LoopSettings (see produce_refreshes).
+        """
         _, self.cursor = sweep_superseded_refreshes(
             guard, worker_id=self.worker_id, cursor=self.cursor
         )
-        return produce_refreshes(guard, skipped=self.skipped)
+        return produce_refreshes(guard, skipped=self.skipped, settings=settings)
 
 
 def sweep_superseded_refreshes(guard, *, worker_id, cursor=None, limit=100):
@@ -83,7 +88,68 @@ def sweep_superseded_refreshes(guard, *, worker_id, cursor=None, limit=100):
     return cancelled, position
 
 
-def produce_refreshes(guard, *, skipped=None):
+def _due_slots(scope, organization, now):
+    """The current refresh slots: ``(window, nightly_time, timezone, slots)``.
+
+    Plain reads and pure slot arithmetic, so the same computation runs on the
+    loop's snapshot rows before the work-order lock and again under it (#715).
+    """
+    window = _window(scope)
+    integration = AppliedIntegration.objects.get(
+        configuration_id=scope.runtime.active_configuration_id, kind="parishsoft"
+    )
+    timezone = (
+        scope.campaign.active_configuration.timezone
+        if scope.campaign is not None
+        else Parish.objects.values_list("timezone", flat=True).get(
+            configuration_id=scope.runtime.active_configuration_id
+        )
+    )
+    schedule = refresh_settings(integration.settings)
+    slots = due_slots(
+        now=now,
+        timezone=timezone,
+        scope_fingerprint=scope_fingerprint(organization, window.digest),
+        **schedule,
+    )
+    return window, schedule["nightly_time"], timezone, slots
+
+
+def _ticked(settings):
+    """The current slots' receipts when every slot already has its tick, else None.
+
+    The locked pass below creates a command only for a current slot with no
+    tick; when every current slot has one it can only return their receipts
+    (or nothing, while the source scope is held). This computes the same
+    slots from the loop's snapshot rows and a fresh clock without the
+    work-order lock (#715). Anything it cannot compute (no applied
+    configuration, an unconfigured organization, a missing row or an invalid
+    window) returns None, so the locked pass decides as before.
+    """
+    runtime, campaign = settings.runtime, settings.campaign
+    if (
+        runtime is None
+        or runtime.active_configuration_id is None
+        or (settings.campaign_id is not None and campaign is None)
+    ):
+        return None
+    scope = WorkScope(runtime, campaign, None)
+    try:
+        slots = _due_slots(scope, _organization(scope), database_now())[-1]
+    except (PermissionError, ValueError, ObjectDoesNotExist):
+        return None
+    ticks = {
+        tick.slot_key: tick
+        for tick in SourceRefreshTick.objects.select_related("command__request").filter(
+            slot_key__in=[slot.slot_key for slot in slots]
+        )
+    }
+    if any(slot.slot_key not in ticks for slot in slots):
+        return None
+    return tuple(_receipt(ticks[slot.slot_key].command) for slot in slots)
+
+
+def produce_refreshes(guard, *, skipped=None, settings=None):
     """Create at most two current slots, without network or a new SQL connection.
 
     The scheduler retains its pinned session throughout. Restore/purge and absent
@@ -98,12 +164,23 @@ def produce_refreshes(guard, *, skipped=None):
     current slot's refresh, which catches up. ``skipped`` holds the slot keys
     already logged, so each held slot logs one INFO line, and a held full slot
     also writes one durable entry, per scheduler process (#510).
+
+    ``settings`` is the scheduler loop's LoopSettings. When _ticked() shows
+    every current slot already has its tick, the work-order lock is skipped
+    and the slots' receipts are returned (#715).
     """
     if not isinstance(guard, SchedulerGuard):
         raise TypeError("Refresh production requires actual scheduler ownership.")
     if connection.in_atomic_block:
         raise StorageInvariantError("Refresh production must own its slot transaction.")
     guard.check()
+    with transaction.atomic():
+        receipts = _ticked(LoopSettings() if settings is None else settings)
+    if receipts is not None:
+        # As the locked pass does when no current slot waits for a send.
+        if skipped is not None:
+            skipped.clear()
+        return receipts
     # Decide before joining the work-order lock: a send is what saturates it,
     # and this read takes no lock, so the lock is not held any longer for it.
     with transaction.atomic():
@@ -118,24 +195,8 @@ def produce_refreshes(guard, *, skipped=None):
             organization = _organization(scope)
         except PermissionError:
             return ()
-        window = _window(scope)
-        integration = AppliedIntegration.objects.get(
-            configuration_id=scope.runtime.active_configuration_id, kind="parishsoft"
-        )
-        timezone = (
-            scope.campaign.active_configuration.timezone
-            if scope.campaign is not None
-            else Parish.objects.values_list("timezone", flat=True).get(
-                configuration_id=scope.runtime.active_configuration_id
-            )
-        )
-        schedule = refresh_settings(integration.settings)
-        nightly_time = schedule["nightly_time"]
-        slots = due_slots(
-            now=database_now(),
-            timezone=timezone,
-            scope_fingerprint=scope_fingerprint(organization, window.digest),
-            **schedule,
+        window, nightly_time, timezone, slots = _due_slots(
+            scope, organization, database_now()
         )
         result = []
         waiting = set()

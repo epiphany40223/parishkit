@@ -96,22 +96,37 @@ def _change(row, state, *, actor_id=None, **values):
     return row
 
 
+# What this sweep recovers, locked FOR UPDATE (#715 cross-checks it
+# against RECOVERABLE_STATES, the read before the lock).
+RECOVERABLE = (
+    "SELECT id FROM public.stewardship_setup_slack_delivery d "
+    "WHERE (d.state='submitting' AND d.deadline_at<=clock_timestamp()) "
+    "OR (d.state='queued' AND NOT public.stewardship_setup_slack_live_v1("
+    "d.attempt_id,d.attempt_version,d.credential_id,d.credential_version,"
+    "d.fingerprint)) ORDER BY d.created_at,d.id LIMIT 100 FOR UPDATE"
+)
+# Every row RECOVERABLE can select is in one of these states.
+RECOVERABLE_STATES = ("queued", "submitting")
+
+
 def recover_pending():
-    """Bounded metadata-only recovery never resubmits an uncertain notification."""
+    """Bounded metadata-only recovery never resubmits an uncertain notification.
+
+    Only a queued or submitting delivery can be recovered, so when none
+    exists the work-order lock is skipped (#715).
+    """
     with connection.cursor() as cursor:
         cursor.execute("SELECT current_user")
         name = cursor.fetchone()[0]
     if name not in {"pk_stewardship_credential_slack", "pk_stewardship_scheduler"}:
         raise PermissionError("Notification recovery requires its isolated owner.")
     _identity(name)
+    if not SetupSlackDelivery.objects.filter(state__in=RECOVERABLE_STATES).exists():
+        return 0
     with work_transaction():
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT id FROM public.stewardship_setup_slack_delivery d "
-                "WHERE (d.state='submitting' AND d.deadline_at<=clock_timestamp()) "
-                "OR (d.state='queued' AND NOT public.stewardship_setup_slack_live_v1("
-                "d.attempt_id,d.attempt_version,d.credential_id,d.credential_version,"
-                "d.fingerprint)) ORDER BY d.created_at,d.id LIMIT 100 FOR UPDATE"
+                RECOVERABLE,
             )
             identifiers = [row[0] for row in cursor.fetchall()]
         for row in SetupSlackDelivery.objects.filter(pk__in=identifiers):

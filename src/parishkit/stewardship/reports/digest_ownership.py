@@ -11,13 +11,17 @@ from uuid import UUID, uuid4
 from django.db import connection
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.campaigns.family_schedule_planning import _planning_scope
+from parishkit.stewardship.campaigns.family_schedule_planning import (
+    _planning_scope,
+    snapshot_planning_scope,
+)
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
 )
+from parishkit.stewardship.jobs.loop_settings import LoopSettings
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
@@ -116,12 +120,82 @@ class DailyDigestProducer:
             raise ValueError("Daily production requires a scheduler identity.")
         self.worker_id = worker_id
 
-    def __call__(self, guard):
-        """Original-slot production runs first; the worker completes the full range."""
+    def _due(self, campaign_id, scope, epoch):
+        """The daily definition with a day to prepare, or None.
+
+        Plain reads only, so the same decision runs before the work-order
+        lock on the loop's snapshot scope and again under the lock (#715).
+        """
+        definition = ScheduleDefinition.objects.filter(
+            campaign_id=campaign_id,
+            kind="daily_digest",
+            current_revision__isnull=False,
+        ).first()
+        if (
+            definition is None
+            or DailyDigestPreparation.objects.filter(
+                definition_id=definition.pk,
+                mode=scope.runtime.mode,
+                task_id__in=TaskRun.objects.filter(state__in=NONTERMINAL_STATES).values(
+                    "root_id"
+                ),
+            )
+            .exclude(phase__in=TERMINAL_PHASES)
+            .exists()
+        ):
+            return None
+        # An already owned retry/unknown result is not a new reporting day.
+        # Coverage holds are checked by the page owner before selection.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
+                WHERE o.revision_id=%s AND o.mode=%s AND o.target='admins'
+                  AND o.state='pending'
+                  AND o.task_id IS NULL AND o.outbox_id IS NULL
+                  AND o.due_at<=%s
+                  AND NOT EXISTS(SELECT 1
+                      FROM stewardship_daily_digest_preparation p
+                      WHERE p.occurrence_id=o.id)
+                  AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_fulfillment f
+                      WHERE f.definition_id=o.definition_id AND f.mode=o.mode
+                        AND f.target=o.target AND f.slot=o.slot)
+                  AND NOT EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold h
+                      WHERE h.definition_id=o.definition_id AND h.mode=o.mode
+                        AND h.target=o.target AND h.slot=o.slot
+                        AND h.state IN ('unreviewed','assumed_delivered')))
+                OR EXISTS(SELECT 1 FROM
+                    stewardship_daily_digest_predecessors_v1(%s,%s,%s))""",
+                (
+                    definition.current_revision_id,
+                    scope.runtime.mode,
+                    scope.instant,
+                    definition.pk,
+                    scope.runtime.mode,
+                    epoch.pk if epoch else None,
+                ),
+            )
+            return definition if cursor.fetchone()[0] else None
+
+    def __call__(self, guard, *, settings=None):
+        """Original-slot production runs first; the worker completes the full range.
+
+        ``settings`` is the scheduler loop's LoopSettings. Before taking the
+        work-order lock the producer makes the same decision, _due() on the
+        same planning predicate, from those rows and a fresh clock, and
+        returns at once when it finds no day to prepare (#715).
+        """
         if not isinstance(guard, SchedulerGuard):
             raise TypeError("Daily production requires scheduler ownership.")
         if connection.in_atomic_block:
             raise StorageInvariantError("Daily production must own its transaction.")
+        guard.check()
+        settings = LoopSettings() if settings is None else settings
+        try:
+            scope, epoch = snapshot_planning_scope(settings, postclose=True)
+        except PermissionError:
+            return ()
+        if self._due(settings.campaign_id, scope, epoch) is None:
+            return ()
         guard.check()
         with work_transaction():
             campaign_id = SystemConfiguration.objects.values_list(
@@ -131,56 +205,9 @@ class DailyDigestProducer:
                 scope, epoch = _planning_scope(campaign_id, postclose=True)
             except PermissionError:
                 return ()
-            definition = ScheduleDefinition.objects.filter(
-                campaign_id=campaign_id,
-                kind="daily_digest",
-                current_revision__isnull=False,
-            ).first()
-            if (
-                definition is None
-                or DailyDigestPreparation.objects.filter(
-                    definition_id=definition.pk,
-                    mode=scope.runtime.mode,
-                    task_id__in=TaskRun.objects.filter(
-                        state__in=NONTERMINAL_STATES
-                    ).values("root_id"),
-                )
-                .exclude(phase__in=TERMINAL_PHASES)
-                .exists()
-            ):
+            definition = self._due(campaign_id, scope, epoch)
+            if definition is None:
                 return ()
-            # An already owned retry/unknown result is not a new reporting day.
-            # Coverage holds are checked by the page owner before selection.
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """SELECT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
-                    WHERE o.revision_id=%s AND o.mode=%s AND o.target='admins'
-                      AND o.state='pending'
-                      AND o.task_id IS NULL AND o.outbox_id IS NULL
-                      AND o.due_at<=%s
-                      AND NOT EXISTS(SELECT 1
-                          FROM stewardship_daily_digest_preparation p
-                          WHERE p.occurrence_id=o.id)
-                      AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_fulfillment f
-                          WHERE f.definition_id=o.definition_id AND f.mode=o.mode
-                            AND f.target=o.target AND f.slot=o.slot)
-                      AND NOT EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold h
-                          WHERE h.definition_id=o.definition_id AND h.mode=o.mode
-                            AND h.target=o.target AND h.slot=o.slot
-                            AND h.state IN ('unreviewed','assumed_delivered')))
-                    OR EXISTS(SELECT 1 FROM
-                        stewardship_daily_digest_predecessors_v1(%s,%s,%s))""",
-                    (
-                        definition.current_revision_id,
-                        scope.runtime.mode,
-                        scope.instant,
-                        definition.pk,
-                        scope.runtime.mode,
-                        epoch.pk if epoch else None,
-                    ),
-                )
-                if not cursor.fetchone()[0]:
-                    return ()
             guard.check()
             identifier = uuid4()
             task = enqueue(
