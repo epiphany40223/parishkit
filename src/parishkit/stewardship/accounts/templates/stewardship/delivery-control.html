@@ -11,12 +11,12 @@
 <section class="panel"><h2>{% translate "Current live-mail inventory" %}</h2>
 <dl><dt>{% translate "Queued messages" %} {% translate "Waiting for their send time or for the mail worker to pick them up." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="inventory-queued-tip" tip_text=tip %}</dt><dd>{{ inventory.queued|number }}</dd>
 <dt>{% translate "Held messages" %} {% translate "Stopped by a pause. They are sent or cancelled when you resume or resolve them." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="inventory-held-tip" tip_text=tip %}</dt><dd>{{ inventory.held|number }}</dd>
-<dt>{% translate "Already submitting" %} {% translate "Being handed to the mail service right now. A pause cannot stop these." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="inventory-submitting-tip" tip_text=tip %}</dt><dd>{{ inventory.submitting|number }}</dd>
-<dt>{% translate "Delivery unknown" %} {% translate "The mail service did not confirm whether these arrived. Resolve them on the Outgoing mail page." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="inventory-unknown-tip" tip_text=tip %}</dt><dd>{{ inventory.unknown|number }}</dd></dl>
+<dt>{% translate "Still sending (handing to the mail service)" %} {% translate "Being handed to the mail service right now. A pause cannot stop these." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="inventory-submitting-tip" tip_text=tip %}</dt><dd>{{ inventory.submitting|number }}</dd>
+<dt>{% translate "Not sure it arrived" %} {% translate "The mail service did not confirm whether these arrived. Resolve them on the Outgoing mail page." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="inventory-unknown-tip" tip_text=tip %}</dt><dd>{{ inventory.unknown|number }}</dd></dl>
 {% if next_due.at %}<p>{% translate "Next scheduled send" %}: <time data-local-instant datetime="{{ next_due.at }}">{{ next_due.at }}</time>. {% translate "Schedules due then" %}: {{ next_due.count|number }}.</p>
 <p>{% translate "This counts schedules, not emails. Who receives each email, and what a report contains, is decided when it is sent." %}</p>
 {% else %}<p>{% translate "No more scheduled sends remain in this campaign." %}</p>{% endif %}
-{% if inventory.types %}<table><caption>{% translate "Live mail by type" %}</caption><thead><tr><th scope="col">{% translate "Type" %}</th><th scope="col">{% translate "Queued" %}</th><th scope="col">{% translate "Held" %}</th><th scope="col">{% translate "Submitting" %}</th><th scope="col">{% translate "Unknown" %}</th></tr></thead><tbody>
+{% if inventory.types %}<table><caption>{% translate "Live mail by type" %}</caption><thead><tr><th scope="col">{% translate "Type" %}</th><th scope="col">{% translate "Queued" %}</th><th scope="col">{% translate "Held" %}</th><th scope="col">{% translate "Handing to the mail service" %}</th><th scope="col">{% translate "Not sure it arrived" %}</th></tr></thead><tbody>
 {% for kind, counts in inventory.types.items %}<tr><th scope="row">{{ kind }}</th><td>{{ counts.queued|number }}</td><td>{{ counts.held|number }}</td><td>{{ counts.submitting|number }}</td><td>{{ counts.unknown|number }}</td></tr>{% endfor %}
 </tbody></table>{% endif %}</section>
 {% if available %}
@@ -57,7 +57,7 @@
 {% endif %}
 {% if resolve_available %}<section class="panel"><h2>{% translate "Resolve held messages" %}</h2>
 <p>{% translate "The campaign is closed, so held invitations and reminders are not sent and cannot be released here. You can release held receipts or Admin reports (after a test email check), or cancel them, with a reason. This does not reopen the campaign to Families." %}</p>
-{% if inventory.stranded %}<p>{% translate "Held invitations and reminders nothing will send any more" %}: {{ inventory.stranded|number }}. {% translate "Any resolution cancels them, because the campaign is closed. When nothing else is held, being sent or uncertain, choose Clear with no types selected to cancel them and end the pause." %}</p>{% endif %}
+{% if inventory.stranded %}<p>{% translate "Held invitations and reminders nothing will send any more" %}: {{ inventory.stranded|number }}. {% translate "Any resolution cancels them, because the campaign is closed. When nothing else is held or still sending, and no email is marked Not sure it arrived, choose Clear with no types selected to cancel them and end the pause." %}</p>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_resolve">
 <fieldset><legend>{% translate "Message types" %}</legend>
 <label><input type="checkbox" name="receipt" value="yes"> {% translate "Submission receipts" %} ({{ inventory.types.receipt.held|default:0|number }})</label>
@@ -71,13 +71,13 @@
 <ul>{% for kind, counts in preview.inventory.types.items %}{% if kind in preview.selection.types %}<li>{{ kind }}: {{ counts.held|number }} {% translate "held messages" %}</li>{% endif %}{% endfor %}</ul>
 {% if preview.inventory.stranded %}<p>{% translate "Held invitations and reminders to cancel because the campaign is closed" %}: {{ preview.inventory.stranded|number }}.</p>{% endif %}
 {% for kind, counts in preview.selection.coverage.items %}<p>{{ kind }}: {% translate "Follow-up items covered" %}: {{ counts.items|number }}; {% translate "Daily report ranges covered" %}: {{ counts.daily_ranges|number }}.</p>{% endfor %}
-<p>{% translate "These counts are checked again when you confirm. Other held types and uncertain deliveries stay as they are. The pause ends only when no held or uncertain email remains." %}</p>
+<p>{% translate "These counts are checked again when you confirm. Other held types and emails that may not have arrived stay as they are. The pause ends only when no email is held or waiting for a decision on whether it arrived." %}</p>
 {% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm held-message resolution" %}</button></form>{% endif %}</section>{% endif %}</section>{% endif %}
 {% else %}
 <p class="help" id="pause-reason-help">{% translate "Families can still respond while email is paused. Email already being handed to the mail service when you pause may still go out; pausing cannot recall it." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_pause"><label for="pause-reason">{% translate "Reason for pausing live delivery" %}</label><textarea id="pause-reason" name="reason" required maxlength="1024" aria-describedby="pause-reason-help">{{ preview.reason }}</textarea><button type="submit">{% translate "Preview pause" %}</button></form>
 {% if preview %}<section class="panel"><h2>{% translate "Pause preview" %}</h2><p>{{ preview.reason }}</p>
-<p>{% translate "Unsent messages to hold" %}: {{ preview.inventory.queued|number }}. {% translate "Already submitting" %}: {{ preview.inventory.submitting|number }}. {% translate "Delivery unknown" %}: {{ preview.inventory.unknown|number }}.</p>
+<p>{% translate "Unsent messages to hold" %}: {{ preview.inventory.queued|number }}. {% translate "Still sending (handing to the mail service)" %}: {{ preview.inventory.submitting|number }}. {% translate "Not sure it arrived" %}: {{ preview.inventory.unknown|number }}.</p>
 <p>{% translate "Email may keep going out while you read this. Confirming holds every unsent live email at that moment and records the counts. If the campaign settings or your permissions change first, you need a new preview." %}</p>
 {% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm pause of live delivery" %}</button></form>{% endif %}</section>{% endif %}
 {% endif %}

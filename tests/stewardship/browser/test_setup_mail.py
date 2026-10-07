@@ -20,9 +20,7 @@ def status(*, pending=False, unknown=False, revision=2):
             {
                 "id": "synthetic-delivery",
                 "state": "delivery_unknown" if unknown else "accepted",
-                "label": "Delivery uncertain"
-                if unknown
-                else "Provider accepted the test",
+                "label": "Not sure it arrived" if unknown else "Delivered",
                 "created_at": NOW.isoformat(),
                 "current": True,
             }

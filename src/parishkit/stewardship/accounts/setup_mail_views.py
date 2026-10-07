@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 
 from .authentication import runtime
@@ -20,13 +21,16 @@ from .setup_mail import request_sample
 from .setup_preview import PREVIEW_SALT, prepare_preview
 from .setup_views import ERRORS, _checked, _closed, _context, error_response, page_error
 
+# A setup test email has its own states, named with the outbox's nearest
+# plain words (STATE_LABELS) so a test result reads like the same result on
+# Outgoing mail (#678).
 LABELS = {
-    "queued": _("Awaiting mail worker"),
-    "submitting": _("Submitting to provider"),
-    "accepted": _("Provider accepted the test"),
-    "not_sent": _("Not sent"),
-    "delivery_unknown": _("Delivery uncertain — it may have arrived"),
-    "cancelled": _("Cancelled before submission"),
+    "queued": STATE_LABELS["pending"],
+    "submitting": STATE_LABELS["submitting"],
+    "accepted": STATE_LABELS["delivered"],
+    "not_sent": STATE_LABELS["permanent_failure"],
+    "delivery_unknown": STATE_LABELS["delivery_unknown"],
+    "cancelled": STATE_LABELS["cancelled"],
 }
 
 

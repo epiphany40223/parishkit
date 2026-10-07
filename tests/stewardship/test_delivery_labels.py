@@ -3,12 +3,22 @@
 from pathlib import Path
 
 import parishkit.stewardship.accounts as accounts
+from parishkit.stewardship.accounts import (
+    campaign_family_test_views,
+    setup_mail_views,
+    setup_notification_views,
+)
 from parishkit.stewardship.accounts.templatetags.delivery import (
     delivery_event_label,
     delivery_label,
     delivery_task_label,
 )
-from parishkit.stewardship.jobs.delivery_metadata import OUTCOMES, PURPOSES, STATES
+from parishkit.stewardship.jobs.delivery_metadata import (
+    OUTCOMES,
+    PURPOSES,
+    STATE_LABELS,
+    STATES,
+)
 from parishkit.stewardship.jobs.models import TASK_STATES
 from parishkit.stewardship.reports import family_timeline
 
@@ -78,3 +88,55 @@ def test_outgoing_mail_about_panel_defines_the_plain_words():
         assert f'<dt>{{% translate "{word}" %}}</dt>' in source, word
     assert '<dt>{% translate "Not sent (cancelled)" %}</dt>' in source
     assert "Delivery unknown" not in source
+
+
+# Pages that count or link to outbox states by name (#678).
+STATE_PAGES = (
+    "admin-status.html",
+    "admin-banners.html",
+    "delivery-control.html",
+    "family-email-progress.html",
+    "family-email-progress-status.html",
+    "family-email-sends.html",
+    "family-email-sends-table.html",
+)
+OLD_NAMES = (
+    "Delivery unknown",
+    "Already submitting",
+    '"Uncertain',
+    "failed or uncertain",
+    "Review uncertain",
+    "}} uncertain",
+    "not sure to have",
+)
+
+
+def test_state_counts_use_the_plain_words_elsewhere():
+    """The status bar, pause pages and Family email progress and sends say
+    "Not sure it arrived", the Outgoing mail filter's word, never the old
+    names one click away from it (#678)."""
+    for name in STATE_PAGES:
+        source = (TEMPLATES / name).read_text()
+        assert str(OUTCOMES["delivery_unknown"]) in source, name
+        for old in OLD_NAMES:
+            assert old not in source, (name, old)
+    for name in ("admin-banners.html", "delivery-control.html"):
+        source = (TEMPLATES / name).read_text()
+        assert str(STATE_LABELS["submitting"]) in source, name
+
+
+def test_test_email_results_use_the_shared_words():
+    """Test-email results read like the same result on Outgoing mail (#678).
+
+    A chosen-Family test is an outbox message, so it uses the outbox labels
+    as they are; setup's test states map to their nearest outbox words, and
+    a Slack test names Slack rather than the mail service.
+    """
+    assert campaign_family_test_views.MESSAGE_LABELS is STATE_LABELS
+    words = {str(label) for label in STATE_LABELS.values()}
+    assert {str(label) for label in setup_mail_views.LABELS.values()} <= words
+    assert str(setup_mail_views.LABELS["delivery_unknown"]) == "Not sure it arrived"
+    assert str(setup_mail_views.LABELS["accepted"]) == "Delivered"
+    slack = setup_notification_views.SLACK_LABELS
+    assert str(slack["submitting"]) == "Still sending (handing to Slack)"
+    assert all("mail" not in str(label) for label in slack.values())
