@@ -122,6 +122,10 @@ class FailureKind(StrEnum):
     # process for each catch-up slot, riding on startup_validated like the
     # lead-window advice; not a failed refresh.
     REFRESH_CATCH_UP_REFUSED = "refresh_catch_up_refused"
+    # The database's slot decision guard refused a scheduler's skip or hold
+    # record (#632): only that record was rolled back. Logged once per
+    # scheduler process for each slot, like a refused catch-up.
+    REFRESH_DECISION_REFUSED = "refresh_decision_refused"
     # ``pk-stewardship load-check`` stopped because something it measures
     # changed under it (#633): the ParishSoft data, the Testing Family
     # portal, or the campaign. Each says to run the check again.
