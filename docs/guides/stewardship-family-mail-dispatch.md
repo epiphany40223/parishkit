@@ -416,8 +416,8 @@ BG-12). What an operator sees during that lead window:
 - If a scheduled ParishSoft full refresh (the nightly time, any other
   configured full refresh time, or an hourly or quarter-hour full refresh)
   falls inside a reminder's lead window, the scheduler logs one WARNING
-  (`startup_validated` with the category `full_refresh_in_lead_window`)
-  per process for each campaign and configuration, so a settings or
+  (`refresh_lead_window_conflict` with the category
+  `full_refresh_in_lead_window`, #584) per process for each campaign and configuration, so a settings or
   schedule change is checked again: that refresh's promotion would pause
   preparation until the Family population is rebuilt. The default 02:00
   precedes an 08:00 reminder's window.

@@ -1818,8 +1818,9 @@ campaign's configuration starts; this campaign has only reminders left.
   flagged by a WARNING `refresh_lead_window_conflict` line (#584, category
   `full_refresh_in_lead_window`) when the bulk scheduler first plans the
   campaign under its configuration (once per process for each campaign and
-  configuration). It is process-log advice, not an operational incident. The other configured full refresh times, and hourly or
-  quarter-hour full refreshes, are checked the same way. With the
+  configuration). It is process-log advice, not an operational incident.
+  The other configured full refresh times, and hourly or quarter-hour full
+  refreshes, are checked the same way. With the
   [refresh schedule](#refresh-schedule)'s automatic exclusions on, only the
   nightly refresh can still fall inside a window, and the settings page
   shows it too.

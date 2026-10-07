@@ -188,7 +188,8 @@ DESCRIPTIONS = {
         "is waiting for it (up to the limit the detail gives). This is normal "
         "just after a server restart. A wait-ended entry follows when the "
         "database answers; if the limit runs out, a timeout entry follows and "
-        "the service restarts."
+        "the service stops, to be restarted by its restart policy (as "
+        "Production's services are)."
     ),
     # Process log only (#546); System health's debug logging panel shows
     # the same state for every running service.
@@ -210,8 +211,9 @@ DESCRIPTIONS = {
     ),
     "startup_wait_ended": _(
         "The database answered a starting service that had been waiting for "
-        "it; the detail says how many seconds the service waited. Nothing "
-        "needs to be done."
+        "it; the detail gives the seconds since the service started waiting. "
+        "A second such entry can follow when the service waits again while "
+        "checking its database access. Nothing needs to be done."
     ),
     "request_completed": _("A web request finished."),
     "report_audit_failed": _(
