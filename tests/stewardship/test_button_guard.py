@@ -43,7 +43,13 @@ RAW_ALLOWED = {
 }
 
 COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}", re.S)
-RAW = re.compile(r'<button\b|<a\b[^>]*\bclass="button\b')
+# A raw <button>, a link whose class list starts with "button" (either quote
+# style), or a submit or button <input>.
+RAW = re.compile(
+    r"<button\b"
+    r"""|<a\b[^>]*\bclass=["']button\b"""
+    r"""|<input\b[^>]*\btype=["']?(?:submit|button)\b"""
+)
 
 
 def raw_buttons(name):
@@ -81,6 +87,10 @@ def test_the_guard_catches_what_it_describes():
     assert RAW.search('<a href="/x" class="button button-secondary">')
     assert not RAW.search('{% button type="submit" %}Save{% endbutton %}')
     assert not RAW.search('<a href="/x" class="buttonish">')
+    assert RAW.search("<a href='/x' class='button'>")
+    assert RAW.search('<input type="submit" value="Go">')
+    assert RAW.search("<input type=button value=Go>")
+    assert not RAW.search('<input type="checkbox" name="submit">')
 
 
 def render(source, **context):
@@ -146,10 +156,13 @@ def test_boolean_and_optional_attributes(flags, expected):
         '{% button type="submit" href="/x" %}x{% endbutton %}',
         '{% button type="submit" type="button" %}x{% endbutton %}',
         '{% button type="submit" Bad=1 %}x{% endbutton %}',
+        '{% button href="/x" enabled=ok %}x{% endbutton %}',
+        '{% button href="/x" disabled %}x{% endbutton %}',
     ],
 )
 def test_misuse_fails_loudly(source):
-    """A missing type, a type on a link, repeats and bad names are errors."""
+    """A missing type, a type on a link, repeats, bad names and a disabled
+    link are errors."""
     with pytest.raises(TemplateSyntaxError):
         render(source)
 
@@ -166,3 +179,15 @@ def test_bad_variants_and_empty_links_fail_loudly(source, context):
     """An unknown variant or a link with no address never renders silently."""
     with pytest.raises(ValueError):
         render(source, **context)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [(True, ' aria-pressed="true"'), (False, ' aria-pressed="false"'), (None, "")],
+)
+def test_aria_states_are_spelled_out(value, expected):
+    """True and False are ARIA tokens, never a bare or dropped attribute."""
+    html = render(
+        '{% button type="button" aria-pressed=state %}x{% endbutton %}', state=value
+    )
+    assert html == f'<button type="button"{expected}>x</button>'

@@ -172,10 +172,14 @@ def button(parser, token):
     link; primary by default) and ``class`` (extra classes) render one class
     attribute where the first of them appears. ``enabled=x`` renders
     ``disabled`` when ``x`` is false; ``disabled``, ``hidden`` and the other
-    boolean attributes render by truthiness; a bare name (``data-bulk-action``)
-    renders as a bare attribute; any other value is escaped and omitted only
-    when it is None or False. ``href`` makes the button a link styled as one,
-    which takes no ``type``; a <button> must name its ``type``.
+    boolean attributes render by truthiness. A bare name (``data-bulk-action``)
+    or a value of True renders as a bare attribute, except that an ``aria-*``
+    attribute always spells its state: True and False render as "true" and
+    "false" (ARIA reads a bare aria-pressed as an empty, invalid token). Any
+    other value is escaped, and omitted only when it is None or False.
+    ``href`` makes the button a link styled as one, which takes no ``type``
+    and cannot be disabled (a link has no disabled state); a <button> must
+    name its ``type``.
     """
     arguments = []
     for bit in token.split_contents()[1:]:
@@ -191,6 +195,10 @@ def button(parser, token):
     if ("href" in names) == ("type" in names):
         raise template.TemplateSyntaxError(
             "button: give a <button> its type, or a link its href (not both)."
+        )
+    if "href" in names and names & {"enabled", "disabled"}:
+        raise template.TemplateSyntaxError(
+            "button: a link cannot be disabled; leave it out instead."
         )
     nodelist = parser.parse(("endbutton",))
     parser.delete_first_token()
@@ -230,6 +238,8 @@ class ButtonNode(template.Node):
                 parts.append("" if value else " disabled")
             elif name in BOOLEAN_ATTRIBUTES:
                 parts.append(f" {name}" if value else "")
+            elif name.startswith("aria-") and isinstance(value, bool):
+                parts.append(f' {name}="{str(value).lower()}"')
             elif value is True:
                 parts.append(f" {name}")
             elif value is not None and value is not False:

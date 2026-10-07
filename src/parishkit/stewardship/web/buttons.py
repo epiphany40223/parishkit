@@ -60,8 +60,11 @@ def email_button(label, href, *, variant="primary"):
     the button reads with images off, and the light-on-dark (or dark-on-
     light) pair stays legible when a dark mode inverts both colours.
     """
-    if urlsplit(href).scheme not in ("https", "http"):
-        raise ValueError("an email button must link to an http(s) address")
+    parts = urlsplit(href)
+    # A host is required too: "https:foo" and "http:///x" parse with an
+    # http(s) scheme but are not absolute addresses any mail program opens.
+    if parts.scheme not in ("https", "http") or not parts.hostname:
+        raise ValueError("an email button must link to an absolute http(s) address")
     background, text = _email_colors(variant)
     border = f"{BUTTON['button-border-width']} solid {hex6(COLORS['accent'])}"
     radius = f"{px(RADII['radius-small'])}px"

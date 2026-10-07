@@ -84,6 +84,8 @@ def test_secondary_email_button_inverts_the_colours():
     [
         ("javascript:alert(1)", "primary"),
         ("/relative", "primary"),
+        ("https:foo", "primary"),
+        ("http:///x", "primary"),
         ("https://example.org/", "link"),
     ],
 )
@@ -91,3 +93,16 @@ def test_email_button_refuses_unsafe_links_and_unknown_variants(href, variant):
     """Only absolute http(s) links and the two email variants are allowed."""
     with pytest.raises(ValueError):
         email_button("x", href, variant=variant)
+
+
+def test_no_token_value_contains_a_quote():
+    """Email inlines these values into style="…" attributes, so none may hold
+    a quote. (The portal's serif and sans stacks quote family names; email
+    never inlines them.)"""
+    values = [
+        *tokens.COLORS.values(),
+        *tokens.RADII.values(),
+        *tokens.BUTTON.values(),
+        tokens.EMAIL_SANS,
+    ]
+    assert not [value for value in values if '"' in value or "'" in value]
