@@ -27,8 +27,22 @@ ITEM = reverse("admin:information_item", args=[ITEM_ID])
 UPDATE = reverse("admin:information_update", args=[ITEM_ID])
 SAVED = ITEM + "?saved=1"
 OLDER, NEWER = ITEM + "?page=2", ITEM + "?page=1"
-# The fixture server's answer to a Save (status, Location, body).
-POSTS = {UPDATE: (303, SAVED, "")}
+# Save and next (#534): an item whose save moves to the next item in the
+# remembered queue view, the next item's page, and the queue view itself.
+TOKEN = "cd" * 16
+ADVANCE_ID, NEXT_ID, LAST_ID = UUID(int=85), UUID(int=86), UUID(int=87)
+ADVANCE_ITEM = reverse("admin:information_item", args=[ADVANCE_ID])
+ADVANCE_UPDATE = reverse("admin:information_update", args=[ADVANCE_ID])
+NEXT_ITEM = reverse("admin:information_item", args=[NEXT_ID]) + f"?queue={TOKEN}"
+LAST_ITEM = reverse("admin:information_item", args=[LAST_ID])
+LAST_UPDATE = reverse("admin:information_update", args=[LAST_ID])
+QUEUE_VIEW = reverse("admin:information_queue") + f"?queue={TOKEN}"
+# The fixture server's answers to a Save (status, Location, body).
+POSTS = {
+    UPDATE: (303, SAVED, ""),
+    ADVANCE_UPDATE: (303, NEXT_ITEM, ""),
+    LAST_UPDATE: (303, QUEUE_VIEW, ""),
+}
 
 
 def components(context, admin):
@@ -181,6 +195,33 @@ def components(context, admin):
                 ],
             },
         ),
+        ADVANCE_ITEM: (
+            "information",
+            values
+            | {
+                "item": item | {"id": ADVANCE_ID, "family_name": "First Family"},
+                "queue_token": TOKEN,
+                "next_id": str(NEXT_ID),
+            },
+        ),
+        NEXT_ITEM: (
+            "information",
+            values
+            | {
+                "item": item | {"id": NEXT_ID, "family_name": "Second Family"},
+                "queue_token": TOKEN,
+                "next_id": str(LAST_ID),
+            },
+        ),
+        LAST_ITEM: (
+            "information",
+            values
+            | {
+                "item": item | {"id": LAST_ID, "family_name": "Last Family"},
+                "queue_token": TOKEN,
+            },
+        ),
+        QUEUE_VIEW: ("information", values | {"queue_token": TOKEN}),
         "/information-gated": (
             "information",
             values | {"item": item, "mutable": False},

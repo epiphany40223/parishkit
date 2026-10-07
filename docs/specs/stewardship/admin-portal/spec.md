@@ -3431,6 +3431,29 @@ Save follow-up on an information item and on a Ministry follow-up request acts
 history are refreshed where the reader is, and "Follow-up saved." is
 announced.
 
+Both follow-up queues remember the view the reader is working through
+([#534](https://github.com/epiphany40223/parishkit/issues/534)). Each queue page
+remembers its applied filters, sort, page and page size in the signed-in
+session (never in the URL), as a change's origin is remembered (navigation
+rule 5). Links carry only an opaque token, and the session keeps the last 20
+views. An item opened from the queue carries the token, so its "Return to"
+link reopens the same filters, sort and page. A token the session no longer
+holds opens the default queue. Beside Save follow-up, **Save and next** saves
+the same way (the same optimistic version check, history and audit event) and
+then opens the next open item after this one in that view. The item just saved
+is skipped, and so is any item that is not open: a Ministry request that is no
+longer New or In progress, or an information item that is not a current
+actionable request awaiting completion. An item that isn't in the view leads
+to the view's first open item. The item page finds the next item while it
+renders, inside its own guarded read, and a help line beside the button says
+where it leads. After the last item, Save and next returns to the queue view
+(Administrator decision, 2026-10-04). It acts [in place](#in-place-controls):
+the next item's panel replaces this one, the address becomes that item's, focus
+moves to its heading, and "Follow-up saved." is announced with the item's name.
+A refused or stale save stays on the item exactly as Save does. The Save gate
+holds both buttons until the save is valid. Opening the next item records the
+same read audit as opening it from the queue.
+
 Ministry workflow permissions are row-scoped. Admin/Staff see all; leaders see
 and edit only assigned Ministries. The interface supports queue filters,
 status/outcome, contact-attempt entry, notes, history, and links to the

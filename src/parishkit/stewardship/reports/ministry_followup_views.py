@@ -1,5 +1,6 @@
 """Private native Ministry follow-up queue, history and optimistic editing."""
 
+from dataclasses import replace
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -22,7 +23,7 @@ from parishkit.stewardship.storage import StaleRecordError, StorageInvariantErro
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.dates import UnknownZone, browser_instant
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.tables import report_table
+from parishkit.stewardship.web.tables import PAGE_SIZES, report_table
 from parishkit.stewardship.workflows.followup import (
     FollowupRefusal,
     WorkflowChange,
@@ -51,10 +52,41 @@ from .ministry_followup import (
     followup_page,
 )
 from .read_admission import admit_report_read
-from .report_paging import clamp_query
+from .report_paging import (
+    clamp_query,
+    next_open,
+    pop_navigation,
+    queue_token,
+    recall_queue,
+    remember_queue,
+    with_queue,
+)
 
 TEMPLATE = "stewardship/ministry-followup.html"
 FORMER = "Former portal user"
+# The name this queue's views are remembered under (report_paging.py).
+QUEUE = "ministry_followup"
+# Rows per read while finding the next open request (the selection takes any
+# LIMIT, so the largest page size keeps the scan to a few reads).
+SCAN_SIZE = max(PAGE_SIZES)
+
+
+def _recalled(request, campaign_id, token):
+    """The remembered queue view's filters, or the default queue's.
+
+    A token that is unknown here (another sign-in, an older view, or values a
+    later release no longer accepts) shows the default queue, not an error.
+    """
+    values = recall_queue(request, QUEUE, campaign_id, token)
+    try:
+        return FollowupQuery.parse(values) if values is not None else FollowupQuery()
+    except ValueError:
+        return FollowupQuery()
+
+
+def _view_values(query):
+    """What a queue view remembers: its filters, sort, page and page size."""
+    return query.form_values() | {"page": str(query.page), "size": query.size}
 
 
 def _principal(request, store, *, read_only=False):
@@ -215,13 +247,41 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
         principal = _principal(request, service.store)
         if request_id is None:
             if request.GET:
-                raise ValueError("Search and filters require a POST body.")
-            parameters = request.POST.copy()
-            parameters.pop("csrfmiddlewaretoken", None)
-            query, history_page = FollowupQuery.parse(parameters), 1
+                # Only "Return to Ministry follow-up" carries a query string:
+                # the token of a remembered view, never a filter (#534).
+                if request.method != "GET":
+                    raise ValueError("Search and filters require a POST body.")
+                values = filters(request.GET, allowed={"queue"})
+                query = _recalled(request, campaign_id, queue_token(values["queue"]))
+            else:
+                parameters = request.POST.copy()
+                parameters.pop("csrfmiddlewaretoken", None)
+                query = FollowupQuery.parse(parameters)
+            history_page = 1
+            # Remembered before the response streams: the session is saved
+            # once the view returns.
+            token = remember_queue(request, QUEUE, campaign_id, _view_values(query))
+            queue_view, history_only = query, False
         else:
-            values = filters(request.GET, allowed={"page"})
+            values = filters(request.GET, allowed={"page", "queue"})
             history_page = parse_page(values.get("page", "1"))
+            # A refused save shows this page again from its own POST body.
+            token = queue_token(
+                request.POST.get("queue", "")
+                if refusal is not None
+                else values.get("queue", "")
+            )
+            # A token the session doesn't hold (another sign-in, an older
+            # view) is not echoed into this page's links and form.
+            if token and recall_queue(request, QUEUE, campaign_id, token) is None:
+                token = ""
+            queue_view = _recalled(request, campaign_id, token)
+            # An in-place history page swaps only the history (its links
+            # are data-in-place-only), so it skips the scan; a reload of
+            # that address is an ordinary load and scans as usual.
+            history_only = (
+                "page" in values and request.headers.get("X-Requested-With") == "fetch"
+            )
             query = FollowupQuery(state="any", history="all")
         admit_report_read(campaign_id)
         _audit(principal, campaign_id, Outcome.STARTED)
@@ -271,6 +331,22 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
             except PermissionError:
                 mutable = False
             item = result["rows"][0] if request_id else None
+            # Save and next opens the next open request after this one in
+            # the remembered queue, found now under this guarded read (#534).
+            following = (
+                next_open(
+                    lambda number: followup_page(
+                        campaign_id,
+                        replace(queue_view, page=number, size=str(SCAN_SIZE)),
+                        principal,
+                    )["rows"],
+                    SCAN_SIZE,
+                    request_id,
+                    lambda row: row["open"],
+                )
+                if item and item["open"] and mutable and not history_only
+                else None
+            )
             # The form's values: the request's own, or what was just submitted.
             form = (
                 dict(
@@ -331,6 +407,8 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 ),
                 mutable=mutable,
                 item=item,
+                queue_token=token,
+                next_id=following,
                 history=history,
                 previous_history=history_page - 1 if history_page > 1 else None,
                 next_history=history_page + 1 if more_history else None,
@@ -489,8 +567,7 @@ def _mutation(request, campaign_id, request_id, work):
         principal = _principal(request, service.store)
         if request.GET:
             raise ValueError("Follow-up edits require a POST body.")
-        target = work(service.store, principal.identity)
-        response = redirect(target[0], **target[1])
+        response = redirect(work(service.store, principal.identity))
         response["Cache-Control"] = "no-store"
         return response
     except StaleRecordError:
@@ -549,12 +626,26 @@ def _refused(request, campaign_id, request_id, refusal, store, principal):
 
 @require_POST
 def update(request, campaign_id, request_id):
-    """Apply one optimistic edit, then redirect to the request's fresh detail."""
+    """Apply one optimistic edit, then redirect to the request's fresh detail.
+
+    Save and next redirects instead to the next open request the page found,
+    or, after the last one, to the remembered queue view (#534). A refused or
+    stale save never moves on.
+    """
 
     def work(store, actor):
-        values = change_values(request.POST)
+        parameters = request.POST.copy()
+        token, advance, following = pop_navigation(parameters)
+        values = change_values(parameters)
         _in_campaign(campaign_id, [request_id])
         update_request(store, actor, request_id, **values)
-        return "admin:ministry_followup_item", {"request_id": request_id}
+        if advance and following is None:
+            url = reverse("admin:ministry_followup")
+        else:
+            url = reverse(
+                "admin:ministry_followup_item",
+                args=[following if advance else request_id],
+            )
+        return with_queue(url, token)
 
     return _mutation(request, campaign_id, request_id, work)

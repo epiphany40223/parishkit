@@ -1,10 +1,11 @@
 """Private native staff queue, history and optimistic follow-up editing."""
 
+from dataclasses import replace
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.http import HttpResponse
+from django.http import HttpResponse, QueryDict
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -38,7 +39,43 @@ from .information import (
     parse_page,
 )
 from .read_admission import admit_report_read
-from .report_paging import carried_filters, clamp_query, pop_page_size
+from .report_paging import (
+    carried_filters,
+    clamp_query,
+    next_open,
+    pop_navigation,
+    pop_page_size,
+    queue_token,
+    recall_queue,
+    remember_queue,
+    with_queue,
+)
+
+# The name this queue's views are remembered under (report_paging.py).
+QUEUE = "information"
+
+
+def _recalled(request, campaign_id, token):
+    """The remembered queue view's filters and page size, or the default's.
+
+    A token that is unknown here (another sign-in, an older view, or values a
+    later release no longer accepts) shows the default queue, not an error.
+    """
+    values = recall_queue(request, QUEUE, campaign_id, token)
+    if values is None:
+        return InformationQuery(), PAGE_SIZE
+    try:
+        parameters = QueryDict(mutable=True)
+        parameters.update(values)
+        size = pop_page_size(parameters, PAGE_SIZES, default=PAGE_SIZE)
+        return InformationQuery.parse(parameters), size
+    except ValueError:
+        return InformationQuery(), PAGE_SIZE
+
+
+def _open(row):
+    """An item Save and next stops at: current, actionable and not completed."""
+    return row["disposition"] == "current_actionable" and not row["followed_up_at"]
 
 
 def _principal(request, store, *, read_only=False):
@@ -104,15 +141,44 @@ def _page_response(request, campaign_id, *, item_id=None):
         principal = _principal(request, service.store)
         if item_id is None:
             if request.GET:
-                raise ValueError("Search and filters require a POST body.")
-            parameters = request.POST.copy()
-            parameters.pop("csrfmiddlewaretoken", None)
-            size = pop_page_size(parameters, PAGE_SIZES, default=PAGE_SIZE)
-            query = InformationQuery.parse(parameters)
+                # Only "Return to Additional information" carries a query
+                # string: the token of a remembered view, never a filter (#534).
+                if request.method != "GET":
+                    raise ValueError("Search and filters require a POST body.")
+                values = filters(request.GET, allowed={"queue"})
+                query, size = _recalled(
+                    request, campaign_id, queue_token(values["queue"])
+                )
+            else:
+                parameters = request.POST.copy()
+                parameters.pop("csrfmiddlewaretoken", None)
+                size = pop_page_size(parameters, PAGE_SIZES, default=PAGE_SIZE)
+                query = InformationQuery.parse(parameters)
             history_page = 1
+            # Remembered before the response streams: the session is saved
+            # once the view returns.
+            token = remember_queue(
+                request,
+                QUEUE,
+                campaign_id,
+                query.form_values() | {"page": str(query.page), "size": str(size)},
+            )
+            queue_view, history_only = None, False
         else:
-            values = filters(request.GET, allowed={"page"})
+            values = filters(request.GET, allowed={"page", "queue"})
             history_page = parse_page(values.get("page", "1"))
+            token = queue_token(values.get("queue", ""))
+            # A token the session doesn't hold (another sign-in, an older
+            # view) is not echoed into this page's links and form.
+            if token and recall_queue(request, QUEUE, campaign_id, token) is None:
+                token = ""
+            queue_view, _ = _recalled(request, campaign_id, token)
+            # An in-place history page swaps only the history (its links
+            # are data-in-place-only), so it skips the scan; a reload of
+            # that address is an ordinary load and scans as usual.
+            history_only = (
+                "page" in values and request.headers.get("X-Requested-With") == "fetch"
+            )
             query = InformationQuery(disposition="all")
             size = PAGE_SIZE
         admit_report_read(campaign_id)
@@ -157,6 +223,22 @@ def _page_response(request, campaign_id, *, item_id=None):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
+            # Save and next opens the next open item after this one in the
+            # remembered queue, found now under this guarded read (#534).
+            following = (
+                next_open(
+                    lambda number: information_page(
+                        campaign_id,
+                        replace(queue_view, page=number),
+                        page_size=max(PAGE_SIZES),
+                    )["rows"],
+                    max(PAGE_SIZES),
+                    item_id,
+                    _open,
+                )
+                if item_id and mutable and not history_only
+                else None
+            )
             history, more_history = (
                 information_history(
                     item_id, history_page, version=result["rows"][0]["version"]
@@ -190,6 +272,8 @@ def _page_response(request, campaign_id, *, item_id=None):
                 query_fields=query.form_values(),
                 mutable=mutable,
                 item=result["rows"][0] if item_id else None,
+                queue_token=token,
+                next_id=following,
                 history=history,
                 history_page=history_page,
                 previous_history=history_page - 1 if history_page > 1 else None,
@@ -274,19 +358,33 @@ def change_values(parameters):
 
 @require_POST
 def update(request, campaign_id, item_id):
-    """Bind the route's campaign, recheck policy in the owner, then redirect safely."""
+    """Bind the route's campaign, recheck policy in the owner, then redirect safely.
+
+    Save and next redirects instead to the next open item the page found, or,
+    after the last one, to the remembered queue view (#534). A refused or
+    stale save never moves on.
+    """
     try:
         service = runtime()
         principal = _principal(request, service.store)
         if request.GET:
             raise ValueError("Follow-up edits require a POST body.")
-        values = change_values(request.POST)
+        parameters = request.POST.copy()
+        token, advance, following = pop_navigation(parameters)
+        values = change_values(parameters)
         if not AdditionalInformationItem.objects.filter(
             pk=item_id, submission__campaign_id=campaign_id, submission__mode="live"
         ).exists():
             raise PermissionError("This item is unavailable.")
         update_information(service.store, principal.identity, item_id, **values)
-        response = redirect("admin:information_item", item_id=item_id)
+        if advance and following is None:
+            url = reverse("admin:information_queue")
+        else:
+            url = reverse(
+                "admin:information_item",
+                args=[following if advance else item_id],
+            )
+        response = redirect(with_queue(url, token))
         response["Cache-Control"] = "no-store"
         return response
     except StaleRecordError:
