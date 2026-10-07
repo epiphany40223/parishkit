@@ -3,16 +3,15 @@
 from django import template
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
+
 register = template.Library()
-LABELS = {
+# Outbox states use the shared plain words (STATE_LABELS), the same table the
+# Family timeline reads, so one email reads alike a click apart (#589).
+# Attempt-history actions below describe events, not outcomes, and keep
+# their own wording.
+LABELS = STATE_LABELS | {
     "all": _("All"),
-    "delivery_unknown": _("Delivery unknown"),
-    "permanent_failure": _("Failed delivery"),
-    "pending": _("Pending"),
-    "retry_wait": _("Waiting to retry"),
-    "submitting": _("Submitting"),
-    "delivered": _("Delivered"),
-    "cancelled": _("Cancelled"),
     "initial": _("Initial invitation"),
     "reminder": _("Reminder"),
     "daily_digest": _("Daily Administrator report"),
@@ -21,11 +20,6 @@ LABELS = {
     "family_test": _("Selected-Family test"),
     "production": _("Production"),
     "testing": _("Testing"),
-    "queued": _("Queued"),
-    "running": _("Running"),
-    "failed": _("Failed"),
-    "succeeded": _("Succeeded"),
-    "abandoned": _("Lease expired"),
     "note": _("Evidence note"),
     "accept": _("Delivery confirmed"),
     "confirm_unsent": _("Provider confirmed not sent"),
@@ -46,6 +40,18 @@ LABELS = {
     "verified_admin": _("Verified by an Administrator"),
     "source_changed": _("Corrected by source refresh"),
 }
+# A background task's states. Two share a key with outbox states
+# (retry_wait, cancelled) but mean something else for a task, so tasks
+# have their own table and filter.
+TASK_LABELS = {
+    "queued": _("Queued"),
+    "running": _("Running"),
+    "retry_wait": _("Waiting to retry"),
+    "abandoned": _("Lease expired"),
+    "succeeded": _("Succeeded"),
+    "failed": _("Failed"),
+    "cancelled": _("Cancelled"),
+}
 # Admin evidence reuses a provider outcome action (confirm_unsent records
 # fail_unaccepted), so history names such events by their Admin reason.
 EVENT_REASONS = {
@@ -57,6 +63,12 @@ EVENT_REASONS = {
 def delivery_label(value):
     """Unknown internal values never become untranslated implementation jargon."""
     return LABELS.get(value, _("Unknown status"))
+
+
+@register.filter
+def delivery_task_label(value):
+    """A background task's state, never read as an email's delivery state."""
+    return TASK_LABELS.get(value, _("Unknown status"))
 
 
 @register.filter

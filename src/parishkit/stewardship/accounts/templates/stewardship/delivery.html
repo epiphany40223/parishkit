@@ -6,10 +6,10 @@
 <p>{% if delivery.family__family_duid %}{% translate "Family DUID:" %} {{ delivery.family__family_duid|duid }}{% else %}{% translate "Administrator report" %}{% endif %}</p>
 <p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Delivery ID" %}</dt><dd>{{ delivery.id }}</dd></dl></details>
-{% if task %}<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Latest background task" %}</a>: {{ task.state|delivery_label }}</p>{% endif %}
+{% if task %}<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Latest background task" %}</a>: {{ task.state|delivery_task_label }}</p>{% endif %}
 {% if delivery.state == 'delivery_unknown' %}
 <aside class="notice">
-  <h2>{% translate "Delivery is unknown, not failed" %}</h2>
+  <h2>{% translate "Not sure it arrived, which is not the same as failed" %}</h2>
   <p>{% translate "Automatic retries have stopped. The mail service cannot tell us whether this email arrived, and sending it again could give the recipient a second copy. Check other evidence first, such as the sending mailbox's Sent folder or asking the recipient, then choose one of the actions below." %}</p>
 </aside>
 {% endif %}

@@ -92,7 +92,11 @@ def test_uncertainty_warns_once_and_admin_metadata_never_discloses_payload(
         for path in ("/admin/", "/admin/deliveries", f"/admin/deliveries/{message.pk}"):
             response = browser.get(path)
             assert response.status_code == 200
-            assert b"Delivery unknown" in response.content
+            # The status bar names the state on every Admin page; Outgoing
+            # mail and the Mail message page use the plain words (#589).
+            assert (
+                b"Delivery unknown" if path == "/admin/" else b"Not sure it arrived"
+            ) in response.content
             assert family_mail.code.encode() not in response.content
             assert message.sealed_substitutions.encode() not in response.content
             assert b"sealed_substitutions" not in response.content
