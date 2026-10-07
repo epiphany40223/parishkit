@@ -23,6 +23,12 @@
 <a href="{{ admin_chrome.delivery_pause.url }}">{% translate "Review held message types and delivery controls" %}</a>{% endif %}</aside>{% endif %}
 {% if admin_chrome.family_closed %}<aside class="notice notice-error">{% translate "The Family portal is closed for maintenance. Families see a “temporarily unavailable” page." %}{% if admin_chrome.admin %} <a href="{{ admin_chrome.family_portal_url }}">{% translate "Family portal availability" %}</a>{% endif %}</aside>{% endif %}
 {% if admin_chrome.go_live %}<aside class="notice">{% translate "Production preparation is in progress. Rehearsal access is unavailable while cleanup completes." %}</aside>{% endif %}
+{% comment %}A key change holds every later settings change in the installer's queue (#456 M4); say so before the Administrator saves one.{% endcomment %}
+{% if admin_chrome.key_changes %}<aside class="notice" aria-labelledby="key-changes-title" data-key-changes>
+  <strong id="key-changes-title">{% translate "An integration key change is in progress" %}</strong>
+  <p>{% translate "A new key is being checked and installed for:" %} {% for change in admin_chrome.key_changes %}<a href="{{ change.url }}">{{ change.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+  <p>{% translate "Other settings changes wait until it finishes. This usually takes a minute; if this notice is still here after an hour, ask the server operator to check the server. If the new key is accepted, a change saved before then is not applied, so make it again afterwards." %}</p>
+</aside>{% endif %}
 {% comment %}The critical-problems banner's region (#519) is drawn for every Administrator, empty when there is nothing to show, so whichever Admin page answers Acknowledge (the server returns Home) carries it: the banner is taken from that answer in place (data-in-place-anywhere) on the page the Administrator is on.{% endcomment %}
 {% if admin_chrome.admin %}<div id="critical-events" data-in-place-region>{% if admin_chrome.critical_count %}<aside class="notice notice-error critical-events" aria-labelledby="critical-events-title">
   <strong id="critical-events-title">{% if admin_chrome.critical_all_ended %}{% translate "Critical problems in the past 24 hours (all have ended)" %}{% else %}{% translate "Critical problems in the past 24 hours" %}{% endif %}</strong>

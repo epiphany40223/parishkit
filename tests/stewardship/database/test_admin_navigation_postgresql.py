@@ -379,6 +379,10 @@ CHROME_QUERIES = {
     ("ministry_leader", False): (2, 2),
     ("ministry_leader", True): (4, 4),
 }
+# Not menu cost: since #456 the Administrator's chrome also reads whether an
+# integration key change holds the settings queue (one small indexed query),
+# for the banner that says other changes wait.
+BANNER_QUERIES = {"administrator": 1}
 
 
 @pytest.mark.parametrize("draft", [False, True])
@@ -438,4 +442,4 @@ def test_building_the_menu_adds_no_query(
     assert response.status_code == 200
     assert b'aria-label="Administration"' in response.content
     before, now = CHROME_QUERIES[(role, draft)]
-    assert counts == [now] and now <= before, counts
+    assert counts == [now + BANNER_QUERIES.get(role, 0)] and now <= before, counts

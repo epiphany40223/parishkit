@@ -457,6 +457,54 @@ def test_rejected_key_keeps_the_old_one_and_says_so(working):
     assert b"The previous key is still in use." in page
 
 
+def test_key_change_in_progress_is_announced_on_admin_pages(working):
+    """While a key is checked, Admin pages say other changes wait (#456 M4).
+
+    Every later settings change waits behind the key's selection request,
+    and one saved meanwhile fails if the key is accepted, so the banner says
+    so before an Administrator saves anything. It goes once the change ends.
+    """
+    assert save(working, candidate=b"synthetic-wrong-key").status_code == 302
+    home = working["browser"].get("/admin/").content.decode()
+    assert "data-key-changes" in home and "Other settings changes wait" in home
+    assert f'<a href="{URL}">ParishSoft</a>' in home
+    with identity("pk_stewardship_credential_parishsoft"):
+        working["installer"].run_once()
+        working["installer"].run_once()
+    assert SecretReplacementRequest.objects.get().state == "failed"
+    assert "data-key-changes" not in working["browser"].get("/admin/").content.decode()
+
+
+def test_key_change_banner_stays_until_an_accepted_key_is_installed(working):
+    """An accepted key keeps the banner through installation, then it clears.
+
+    The banner follows the key change itself: it shows while the key is
+    checked, installed and acknowledged, and goes once the installer has
+    applied it, whether or not the selection has run yet.
+    """
+
+    def banner():
+        """Whether the Admin home page shows the key-change banner."""
+        return "data-key-changes" in working["browser"].get("/admin/").content.decode()
+
+    assert save(working).status_code == 302
+    row = SecretReplacementRequest.objects.get()
+    assert banner()
+    with identity("pk_stewardship_credential_parishsoft"):
+        assert working["installer"].run_once().state == "awaiting_ack"
+    assert banner()
+    with identity("pk_stewardship_worker"):
+        acknowledge_rotations(working["worker"], {})
+    with identity("pk_stewardship_credential_parishsoft"):
+        assert working["installer"].run_once().state == "applied"
+    assert not banner()
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(row.pk)
+    )
+    assert install(working, selection.pk).state == "applied"
+    assert not banner()
+
+
 def test_worker_acknowledges_only_bytes_it_reads_from_its_mount(working, tmp_path):
     """A consumer whose folder still holds the old key does not acknowledge."""
     save(working)

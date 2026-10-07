@@ -14,6 +14,7 @@ import hashlib
 import json
 from datetime import timedelta
 
+from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
 # The installer copies the original sign-in instant into each credential
@@ -37,8 +38,25 @@ CREDENTIAL_TEXT = {
         "This step is done on the server; see the deployment runbook."
     ),
     "acknowledged": _("Installed and acknowledged by the server."),
-    "rolled_back": _("The installation was rolled back."),
 }
+
+# Why a credential was not installed (#456 L2), keyed by its final state, or
+# by its cleanup reason while the installer is still removing it. A provider
+# rejection ("failed") is said per provider by ``rejected``.
+CREDENTIAL_FAILURES = {
+    "expired": _(
+        "The credential was not installed in time, so it was removed. Cancel "
+        "this setup and start a new one. If it happens again, ask the server "
+        "operator to check that the credential installers are running."
+    ),
+    "cancelled": _(
+        "The credential installation was cancelled. Cancel this setup and "
+        "start a new one."
+    ),
+}
+FALLBACK_FAILURE = _(
+    "The credential was not installed. Cancel this setup and start a new one."
+)
 
 CHECKPOINT_FAILURES = {
     "stale_base": _(
@@ -98,7 +116,30 @@ def _credential(target, item):
         state == "cleanup_pending" and item["request__cleanup_reason"] == "applied"
     ):
         return _row(target, label, "done", CREDENTIAL_TEXT["acknowledged"])
-    return _row(target, label, "failed", CREDENTIAL_TEXT["rolled_back"])
+    reason = item["request__cleanup_reason"] if state == "cleanup_pending" else state
+    return _row(target, label, "failed", failure_text(target, reason))
+
+
+def failure_text(target, reason):
+    """Say why ``target``'s credential was not installed and what to do next.
+
+    A provider rejection repeats what the integration's settings page says
+    about a rejected key (``integration_credentials.FAILED``), so both pages
+    name the same things to check; the provider's own error is never shown,
+    because it can contain the key. Setup cannot take a corrected key once it
+    is confirmed, so the shared advice's "try again" is spelled out as a new
+    setup attempt.
+    """
+    if reason == "failed":
+        from .integration_credentials import FAILED
+
+        if target in FAILED:
+            return format_lazy(
+                "{} {}",
+                FAILED[target],
+                _("To try again, cancel this setup and start a new one."),
+            )
+    return CREDENTIAL_FAILURES.get(reason, FALLBACK_FAILURE)
 
 
 def finishing(status, *, completed=False):
