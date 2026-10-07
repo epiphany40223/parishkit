@@ -146,10 +146,7 @@ def campaign_ministries_url(configuration):
     """
     if configuration.current_campaign_id is None:
         return None
-    return (
-        reverse("admin:campaign_settings", args=[configuration.current_campaign_id])
-        + "#ministry-selections"
-    )
+    return reverse("admin:campaign_settings") + "#ministry-selections"
 
 
 def _preview(request, service, principal):

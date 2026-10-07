@@ -54,7 +54,7 @@ def draft(store):
     result, _, _ = add_draft(store, store.active(), uuid4())
     assert result.state == "applied"
     row = Campaign.objects.get()
-    return row, f"/admin/campaign/{row.pk}/images"
+    return row, "/admin/campaign/images/"
 
 
 def artwork(row):
@@ -68,7 +68,7 @@ def select(browser, service, path, slot, upload):
     with task_login(ServiceRole.WEB):
         staged = post(
             browser,
-            f"{path}/{slot}",
+            f"{path}{slot}/",
             {"base_digest": service.store.active().digest, "image": upload},
         )
         assert staged.status_code == 302, staged.content
@@ -85,11 +85,11 @@ def select(browser, service, path, slot, upload):
 def remove(browser, path, slot):
     """Review and confirm removing one slot's image."""
     with task_login(ServiceRole.WEB):
-        review = browser.get(f"{path}/{slot}/remove")
+        review = browser.get(f"{path}{slot}/removal/")
         assert flow_steps(review.content) == (STEPS, "Review")
         token = preview_token(review)
         return post(
-            browser, f"{path}/{slot}/remove", {"action": "confirm", "preview": token}
+            browser, f"{path}{slot}/removal/", {"action": "confirm", "preview": token}
         )
 
 
@@ -135,7 +135,7 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
     apply(store, removed)
     # The removal review now refuses (nothing left to remove): named, not
     # linked, and Return goes to Campaign images (#196).
-    assert browser.get(f"{path}/financial/remove").status_code != 200
+    assert browser.get(f"{path}financial/removal/").status_code != 200
     status = browser.get(removed["Location"]).content
     assert flow_steps(status) == (STEPS, "Apply")
     assert b"<li><span>Remove campaign image</span></li>" in status
@@ -163,14 +163,14 @@ def test_a_slot_refuses_the_wrong_image_kind(auth_service, google, media, monkey
     with task_login(ServiceRole.WEB):
         staged = post(
             browser,
-            f"{path}/member",
+            f"{path}member/",
             {"base_digest": store.active().digest, "image": image(90, 90)},
         )
         assert staged.status_code == 302, staged.content
         bundle = staged["Location"].rstrip("/").rsplit("/", 1)[-1]
         # The same staged icon is not an image for the banner slot.
-        assert browser.get(f"{path}/banner/{bundle}").status_code == 404
-        assert browser.get(f"{path}/unknown/{bundle}").status_code == 404
+        assert browser.get(f"{path}banner/{bundle}/").status_code == 404
+        assert browser.get(f"{path}unknown/{bundle}/").status_code == 404
     section = BrandingAsset.objects.get(bundle_id=bundle)
     patch = [
         {
@@ -194,7 +194,8 @@ def test_only_the_current_campaign_has_an_images_page(auth_service, google, medi
     """Unknown campaigns are refused rather than silently edited."""
     draft(auth_service.store)
     browser, _ = signed_in()
-    assert browser.get(f"/admin/campaign/{uuid4()}/images").status_code == 404
+    # An old address naming another campaign is gone (#525).
+    assert browser.get(f"/admin/campaign/{uuid4()}/images").status_code == 410
 
 
 def test_upload_rejects_non_images(auth_service, google, media):
@@ -205,7 +206,7 @@ def test_upload_rejects_non_images(auth_service, google, media):
     with task_login(ServiceRole.WEB):
         result = post(
             browser,
-            f"{path}/banner",
+            f"{path}banner/",
             {
                 "base_digest": store.active().digest,
                 "image": SimpleUploadedFile("x.png", b"not an image"),
@@ -221,7 +222,7 @@ def test_each_family_email_chooses_whether_to_show_the_banner(auth_service, goog
     store = auth_service.store
     row, _ = draft(store)
     browser, _ = signed_in()
-    path = f"/admin/campaign/{row.pk}/content/email/reminder"
+    path = "/admin/campaign/content/email/reminder/"
     page = browser.get(path)
     assert b"Show the campaign banner at the top of this email" in page.content
     assert b'name="show_banner"' in page.content and b"checked" in page.content
@@ -247,13 +248,11 @@ def test_each_family_email_chooses_whether_to_show_the_banner(auth_service, goog
     # Admin-only emails and pages offer no banner choice.
     assert (
         b"show_banner"
-        not in browser.get(
-            f"/admin/campaign/{row.pk}/content/email/daily_digest"
-        ).content
+        not in browser.get("/admin/campaign/content/email/daily_digest/").content
     )
     assert (
         b"show_banner"
-        not in browser.get(f"/admin/campaign/{row.pk}/content/page/welcome").content
+        not in browser.get("/admin/campaign/content/page/welcome/").content
     )
 
 

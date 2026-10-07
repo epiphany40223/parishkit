@@ -503,11 +503,11 @@ def test_renamed_visible_ministry_never_breaks_family_or_admin_pages(
         assert form["ministries"]["members"]["3"]["current"] == [4]
         for url in (
             "/admin/parish/ministries/",
-            f"/admin/campaign/{harness.campaign.pk}/settings",
+            "/admin/campaign/settings/",
         ):
             page = admin.get(url)
             assert page.status_code == 200, url
             assert shown.encode() in page.content, url
-        settings = admin.get(f"/admin/campaign/{harness.campaign.pk}/settings")
+        settings = admin.get("/admin/campaign/settings/")
         fund = "Fund 9" if shown == "Ministry 4" else shown
         assert fund.encode() in settings.content

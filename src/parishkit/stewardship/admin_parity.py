@@ -64,6 +64,11 @@ LEGACY = (
     "new page's entry covers it"
 )
 
+GROUP_ROOT = (
+    "a menu group's root URL, which only redirects to the group's first "
+    "open entry; that entry covers it"
+)
+
 LEDGER = {
     # Status and session routes.
     "index": command("status"),
@@ -222,6 +227,9 @@ LEDGER = {
     # System health (ADM-13): the page, its polled fragment (``--watch``)
     # and /admin/system/, which only redirects to the page.
     "system": command("system health"),
+    "campaign_root": permanent(GROUP_ROOT),
+    "mail_root": permanent(GROUP_ROOT),
+    "parish_root": permanent(GROUP_ROOT),
     "system_health": command("system health"),
     "system_health_status": command("system health"),
     # Operations.

@@ -276,7 +276,7 @@ def _preview(request, service, actor, state, campaign, form):
                 request, configuration, campaign, form, editable=True, status=400
             )
         return HttpResponseRedirect(
-            reverse("admin:schedule_settings", args=[campaign.pk])
+            reverse("admin:schedule_settings")
             + "?"
             + urlencode({name: values[name] for name in sorted(window_fields)})
         )
@@ -347,9 +347,7 @@ def retired_new(request):
     except (ConfigError, DatabaseError, LimiterUnavailable, PermissionError) as error:
         return error_response(error)
     response = HttpResponseRedirect(
-        reverse("admin:campaign_settings", args=[current])
-        if current
-        else reverse("admin:index")
+        reverse("admin:campaign_settings") if current else reverse("admin:index")
     )
     response["Cache-Control"] = "no-store"
     return response

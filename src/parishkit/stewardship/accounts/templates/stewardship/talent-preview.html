@@ -8,5 +8,5 @@
 <p>{% translate "Confirm to save these talents." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply changes" %}</button></form>
 {% endif %}
-<p><a href="{% url 'admin:talent_settings' campaign.pk %}">{% translate "Return to Member talents" %}</a></p>
+<p><a href="{% url 'admin:talent_settings' %}">{% translate "Return to Member talents" %}</a></p>
 {% endblock %}

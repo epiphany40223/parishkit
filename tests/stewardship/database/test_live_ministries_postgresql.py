@@ -259,7 +259,7 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
     harness = setup(response_service)
     browser, _ = signed_in()
     url = f"/admin/campaign/{harness.campaign.pk}/ministries"
-    settings = browser.get(f"/admin/campaign/{harness.campaign.pk}/settings")
+    settings = browser.get("/admin/campaign/settings/")
     assert url.encode() in settings.content
     form = browser.get(url)
     assert form.status_code == 200, form.content

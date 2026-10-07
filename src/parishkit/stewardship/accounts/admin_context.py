@@ -168,6 +168,26 @@ def _navigation_items(actor, admin, campaign, configuration):
     return admin_navigation.menu(state, may_open)
 
 
+def first_entry_url(actor, section):
+    """The first entry of menu group ``section`` the actor may open now, or None.
+
+    A group's root URL opens this (admin-portal spec, "Menu groups"): the
+    same menu the sidebar shows, so the root never offers a page the sidebar
+    greys out or hides.
+    """
+    configuration = SystemConfiguration.objects.select_related(
+        "current_campaign__active_configuration"
+    ).first()
+    if configuration is None:
+        return None
+    campaign = _current_campaign(configuration)
+    admin = allows(actor, Capability.CONFIGURE)
+    items = _navigation_items(actor, admin, campaign, configuration)
+    return next(
+        (item.url for item in items if item.section == section and item.url), None
+    )
+
+
 def _find_family(actor, items, campaign):
     """The header's Find a Family box (#561), or None when the viewer gets none.
 

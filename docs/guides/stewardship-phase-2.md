@@ -1030,8 +1030,9 @@ around file removal; interrupted cleanup resumes idempotently, preserving safe
 receipts. Automatic retries are bounded, and terminal failure does not produce
 a fresh retry root on every scheduling pass.
 
-`/admin/campaign/<id>/content/history` provides read-only fictional samples from
-the campaign's selected applied version. Archived previews retain that version's
+`/admin/campaign/content/history/` (formerly
+`/admin/campaign/<id>/content/history`) provides read-only fictional samples
+from the campaign's selected applied version. Archived previews retain that version's
 Parish name, logo and substitutions after a new global Parish edit. Revision
 lookups are campaign-scoped, writes are refused, and all responses recheck Admin
 authorization and remain non-cacheable. No real Family or provider is consulted.

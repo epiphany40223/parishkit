@@ -37,10 +37,12 @@ pytestmark = pytest.mark.django_db(transaction=True)
 TIP = "Disabled; will be removed with the single-campaign change (#145)"
 
 
-def setup(store, *, archived=True, before_archive=None):
+def setup(store, *, archived=True, before_archive=None, returned=True):
     """Archive with genuine lifecycle owners rather than editing protected state.
 
-    ``before_archive(owner_id)`` may apply extra source content first.
+    ``before_archive(owner_id)`` may apply extra source content first. With
+    ``returned=False`` the archived campaign stays the current campaign (no
+    Return to Testing), so its campaign pages remain addressable (#525).
     """
     actor = uuid4()
     result, owner, mail = add_draft(store, store.active(), actor)
@@ -74,6 +76,7 @@ def setup(store, *, archived=True, before_archive=None):
             command(campaign, actor, Action.ACTIVATE)
         close_campaign(campaign, actor)
         command(campaign, actor, Action.ARCHIVE)
+    if archived and returned:
         return_to_testing(
             campaign_id=campaign.pk,
             request_id=uuid4(),
@@ -82,7 +85,7 @@ def setup(store, *, archived=True, before_archive=None):
             correlation_id=uuid4(),
             admit=admit_test_work,
         )
-    return campaign, f"/admin/campaign/{campaign.pk}/clone"
+    return campaign, "/admin/campaign/copy/"
 
 
 def administrator():
@@ -167,9 +170,8 @@ def test_campaign_settings_show_copy_campaign_greyed_out(auth_service, google):
     """Copy campaign is an unavailable control with the #145 tip, not a link."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
-    row = Campaign.objects.get()
     browser, _ = signed_in()
-    body = browser.get(f"/admin/campaign/{row.pk}/settings").content.decode()
+    body = browser.get("/admin/campaign/settings/").content.decode()
     assert (
         '<a class="disabled-control-link" role="link" aria-disabled="true" '
         'tabindex="0" aria-describedby="copy-campaign-tip" data-menu-tip>'

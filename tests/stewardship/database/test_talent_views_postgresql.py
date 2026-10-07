@@ -31,7 +31,7 @@ def setup(store):
     )
     assert result.state == "applied"
     row = Campaign.objects.get()
-    return row, default_talent_options(), f"/admin/campaign/{row.pk}/talents"
+    return row, default_talent_options(), "/admin/campaign/talents/"
 
 
 def test_first_save_keeps_the_default_identities(auth_service, google):
@@ -100,6 +100,5 @@ def test_census_only_campaign_has_no_talent_controls(auth_service, google):
     """Without the Ministry page there is nothing to edit."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
-    row = Campaign.objects.get()
     browser, _ = signed_in()
-    assert browser.get(f"/admin/campaign/{row.pk}/talents").status_code == 409
+    assert browser.get("/admin/campaign/talents/").status_code == 409

@@ -16,8 +16,9 @@ from django.test import Client, RequestFactory, override_settings
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.web.admin_routes import current_campaign
 
+from ..policy_factory import address
 from .auth_builders import signed_in
-from .campaign_builders import add_draft
+from .campaign_builders import add_draft, change
 from .test_clone_views_postgresql import setup
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -200,3 +201,79 @@ def test_old_mail_form_with_a_bad_csrf_token_is_refused(auth_service, google):
     assert response.status_code == 403
     # Refused at the old address or after the 308: either way nothing changed.
     assert not family_maintenance.current_state(cached=False).closed
+
+
+def test_old_campaign_setup_addresses_redirect_only_the_current_campaign(
+    auth_service, google
+):
+    """Campaign setup's old addresses named a campaign (NAV-9)."""
+    current = _current(auth_service.store)
+    browser, _ = signed_in()
+    old = f"/admin/campaign/{current}"
+    for path, new in (
+        ("settings", "/admin/campaign/settings/"),
+        ("content", "/admin/campaign/content/"),
+        ("content/email/initial", "/admin/campaign/content/email/initial/"),
+        ("content/history", "/admin/campaign/content/history/"),
+        ("images", "/admin/campaign/images/"),
+        ("schedules", "/admin/campaign/schedules/"),
+    ):
+        moved = browser.get(f"{old}/{path}?start=default")
+        assert moved.status_code == 301, path
+        assert moved["Location"] == f"{new}?start=default"
+        assert "no-store" in moved["Cache-Control"]
+        assert browser.get(new).status_code == 200, new
+    for path in ("settings", "content", "images/logo/remove", "share-options"):
+        gone = browser.get(f"/admin/campaign/{uuid4()}/{path}")
+        assert gone.status_code == 410, path
+        assert REFUSAL.encode() in gone.content
+
+
+def test_group_roots_open_the_first_entry_the_viewer_may_open(auth_service, google):
+    """/admin/campaign/, /admin/mail/ and /admin/parish/ follow the menu."""
+    _current(auth_service.store)
+    browser, _ = signed_in()
+    for root, first in (
+        ("/admin/campaign/", "/admin/campaign/settings/"),
+        # Pause and resume mail is greyed out in Testing mode.
+        ("/admin/mail/", "/admin/mail/family-progress/"),
+        ("/admin/parish/", "/admin/parish/settings/"),
+    ):
+        response = browser.get(root)
+        assert response.status_code == 302, root
+        assert response["Location"] == first
+        assert "no-store" in response["Cache-Control"]
+    for root in ("/admin/campaign/", "/admin/mail/", "/admin/parish/"):
+        # Signed out: the sign-in refusal, never the group's first entry.
+        signed_out = Client().get(root)
+        assert signed_out.status_code == 403, root
+        assert "Location" not in signed_out
+        assert b"Sign in again" in signed_out.content
+    # The no-slash form redirects to the root (no CommonMiddleware).
+    moved = browser.get("/admin/campaign")
+    assert moved.status_code == 301
+    assert moved["Location"] == "/admin/campaign/"
+
+
+def test_group_roots_without_an_open_entry_go_home(auth_service, google):
+    """Staff open no Campaign setup page, so its root takes them Home."""
+    store = auth_service.store
+    _current(store)
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "add",
+                "section": "login_rules",
+                **address("reader@example.org", roles=("staff",)),
+            }
+        ],
+    )
+    google[0]["email"] = "reader@example.org"
+    browser, _ = signed_in()
+    for root in ("/admin/campaign/", "/admin/mail/", "/admin/parish/"):
+        response = browser.get(root)
+        assert response.status_code == 302, root
+        assert response["Location"] == "/admin/"

@@ -14,8 +14,11 @@ from ..accounts import (
     parish_views,
     refresh_views,
 )
+from ..accounts.group_root_views import group_root
 
 patterns = [
+    # The group root opens the first entry the viewer may open now.
+    path("parish/", group_root("parish"), name="parish_root"),
     path("parish/settings/", parish_views.parish_settings, name="parish_settings"),
     path("parish/logos/", branding_views.branding_settings, name="branding_settings"),
     path(

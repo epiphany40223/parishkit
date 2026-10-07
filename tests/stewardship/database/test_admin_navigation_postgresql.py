@@ -11,7 +11,6 @@ from django.test import Client
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.services import operational
-from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.observability import Event
@@ -95,10 +94,9 @@ def test_every_admin_page_offers_sign_out_in_the_menu(auth_service, google):
     store = auth_service.store
     _, owner, _ = add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
-    campaign = owner["id"]
     for path in (
         "/admin/",
-        f"/admin/campaign/{campaign}/content",
+        "/admin/campaign/content/",
         "/admin/system/logs/",
     ):
         body = browser.get(path).content.decode()
@@ -123,15 +121,14 @@ def test_campaign_pages_show_breadcrumbs_and_highlight_the_sidebar(
     """Campaign › Pages and emails › <email>, with the sidebar entry current."""
     store = auth_service.store
     result, owner, _ = add_draft(store, store.active(), uuid4())
-    campaign = owner["id"]
     browser, _ = signed_in()
-    catalog = f"/admin/campaign/{campaign}/content"
+    catalog = "/admin/campaign/content/"
     body = browser.get(catalog).content
     assert b'aria-label="Breadcrumb"' in body
     assert b'<span aria-current="page">Pages and emails</span>' in body
     assert f'<a href="{catalog}" aria-current="page">'.encode() in body
     assert b"admin-section is-current" in body
-    edit = browser.get(f"{catalog}/email/initial")
+    edit = browser.get(f"{catalog}email/initial/")
     assert edit.status_code == 200
     # The trail links back to the catalog and names the email being edited.
     assert f'<li><a href="{catalog}">Pages and emails</a></li>'.encode() in edit.content
@@ -166,7 +163,7 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
-    content = f"/admin/campaign/{Campaign.objects.get().pk}/content/email/initial"
+    content = "/admin/campaign/content/email/initial/"
     assert flow_steps(browser.get(content).content) == (STEPS, "Make changes")
     assert flow_steps(browser.get(parish.URL).content) == (STEPS, "Make changes")
     # Pages outside a flow show no indicator.

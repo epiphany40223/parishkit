@@ -718,7 +718,7 @@ def test_email_editor_preview_shows_the_banner_it_would_send(campaign_test, sett
     service, browser, _, _ = campaign_test
     campaign = Campaign.objects.get()
     asset = set_banner(service.store, campaign.pk)
-    path = f"/admin/campaign/{campaign.pk}/content/email/initial"
+    path = "/admin/campaign/content/email/initial/"
     html = "<p>{{ family_code }} {{ family_url }}</p>"
     image = f"{ORIGIN}/branding/{asset}.png".encode()
     shown = post(

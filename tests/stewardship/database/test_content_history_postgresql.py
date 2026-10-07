@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 import pytest
+from django.test import override_settings
 
 from parishkit.stewardship.accounts.branding_models import BrandingAsset
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
@@ -12,6 +13,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import change, restored_runtime
+from .retained_content_urls import RETAINED
 from .test_background_grants_postgresql import task_login
 from .test_branding_postgresql import branding_patch, ready
 from .test_clone_views_postgresql import setup
@@ -19,6 +21,7 @@ from .test_clone_views_postgresql import setup
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+@override_settings(ROOT_URLCONF="tests.stewardship.database.retained_content_urls")
 def test_archived_samples_keep_old_parish_content_and_logo(auth_service, google):
     """A global Parish edit neither repaints an archive nor changes substitutions."""
     store = auth_service.store
@@ -35,11 +38,12 @@ def test_archived_samples_keep_old_parish_content_and_logo(auth_service, google)
     patch[0]["values"]["name"] = "New Parish Name"
     assert change(store, current, actor, patch).state == "applied"
     browser, _ = signed_in()
-    url = f"/admin/campaign/{campaign.pk}/content/history"
+    # No longer the current campaign, so only the test route reaches it.
+    url = RETAINED.format(campaign=campaign.pk)
     with task_login(ServiceRole.WEB):
         catalog = browser.get(url)
         assert catalog.status_code == 200
-        response = browser.get(url + "/" + record["id"])
+        response = browser.get(url + record["id"] + "/")
         assert response.status_code == 200, response.content
     assert response["Cache-Control"] == "no-store"
     assert b"Read-only fictional sample" in response.content
@@ -52,17 +56,18 @@ def test_archived_samples_keep_old_parish_content_and_logo(auth_service, google)
     assert b"Welcome to" in response.content
     assert b"Apply changes" not in response.content
     assert b"contenteditable" not in response.content
-    settings = browser.get(f"/admin/campaign/{campaign.pk}/settings")
-    assert url.encode() in settings.content
-    assert b"Edit Pages and emails" not in settings.content
 
 
 def test_history_is_get_only_and_revision_is_campaign_scoped(auth_service, google):
     """A UUID cannot select an absent revision or turn a preview into a write."""
-    campaign, _ = setup(auth_service.store)
+    campaign, _ = setup(auth_service.store, returned=False)
     browser, _ = signed_in()
-    path = f"/admin/campaign/{campaign.pk}/content/history"
+    path = "/admin/campaign/content/history/"
     assert browser.get(path).status_code == 200
+    # The archived current campaign's settings link its history, not editing.
+    settings = browser.get("/admin/campaign/settings/")
+    assert path.encode() in settings.content
+    assert b"Edit Pages and emails" not in settings.content
     count = ConfigurationChangeRequest.objects.count()
     assert (
         browser.post(
@@ -70,9 +75,9 @@ def test_history_is_get_only_and_revision_is_campaign_scoped(auth_service, googl
         ).status_code
         == 405
     )
-    assert browser.get(path + "/" + str(uuid4())).status_code == 404
+    assert browser.get(f"{path}{uuid4()}/").status_code == 404
     assert browser.get(path, {"configuration": str(uuid4())}).status_code == 400
-    assert browser.get(f"/admin/campaign/{uuid4()}/content/history").status_code == 404
+    assert browser.get(f"/admin/campaign/{uuid4()}/content/history").status_code == 410
     assert ConfigurationChangeRequest.objects.count() == count
 
 
@@ -95,9 +100,7 @@ def test_non_admin_cannot_read_retained_configuration(auth_service, google, role
     )
     google[0]["email"] = "observer@example.org"
     browser, _ = signed_in()
-    assert (
-        browser.get(f"/admin/campaign/{campaign.pk}/content/history").status_code == 403
-    )
+    assert browser.get("/admin/campaign/content/history/").status_code == 403
 
 
 def test_current_campaign_without_content_has_read_only_empty_catalog(
@@ -110,7 +113,7 @@ def test_current_campaign_without_content_has_read_only_empty_catalog(
     add_draft(store, store.active(), uuid4())
     campaign = Campaign.objects.get()
     browser, _ = signed_in()
-    path = f"/admin/campaign/{campaign.pk}/content/history"
+    path = "/admin/campaign/content/history/"
     response = browser.get(path)
     assert response.status_code == 200
     assert b"No content was configured" in response.content
@@ -134,19 +137,19 @@ def test_history_never_waits_behind_the_work_lock(auth_service, google):
 
     from .test_schedule_views_postgresql import other_session
 
-    campaign, _ = setup(auth_service.store)
+    campaign, _ = setup(auth_service.store, returned=False)
     record = campaign.active_configuration.configuration.canonical_document["sections"][
         "content"
     ][0]
     browser, _ = signed_in()
-    path = f"/admin/campaign/{campaign.pk}/content/history"
+    path = "/admin/campaign/content/history/"
     with other_session() as holder:
         holder.execute("SELECT pg_advisory_lock(%s,%s)", WORK_ORDER_LOCK)
         with connection.cursor() as cursor:
             cursor.execute("SET statement_timeout = '3s'")
         try:
             assert browser.get(path).status_code == 200
-            assert browser.get(path + "/" + record["id"]).status_code == 200
+            assert browser.get(path + record["id"] + "/").status_code == 200
         finally:
             with connection.cursor() as cursor:
                 cursor.execute("RESET statement_timeout")

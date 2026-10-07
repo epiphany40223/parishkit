@@ -108,7 +108,7 @@ def _catalog(request, configuration, campaign):
         pages.append(
             {
                 "label": label,
-                "url": reverse("admin:content_edit", args=[campaign.pk, "page", slot]),
+                "url": reverse("admin:content_edit", args=["page", slot]),
                 "state": _content_state(record),
             }
         )
@@ -131,13 +131,13 @@ def _catalog(request, configuration, campaign):
                 ),
                 "url": reverse(
                     "admin:content_revision",
-                    args=[campaign.pk, "email", slot, row["id"]],
+                    args=["email", slot, row["id"]],
                 ),
             }
             for row in records
             if (row["values"]["kind"], row["values"]["slot"]) == ("email", slot)
         ]
-        editor = reverse("admin:content_edit", args=[campaign.pk, "email", slot])
+        editor = reverse("admin:content_edit", args=["email", slot])
         if note and slot == "confirmation" and not revisions:
             # Receipts send the built-in email plus the note; list that pair
             # as the confirmation email the editor opens (#260).

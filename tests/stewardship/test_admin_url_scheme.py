@@ -15,11 +15,24 @@ from django.test import RequestFactory
 from django.urls import resolve, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
-from parishkit.stewardship.admin_urls import legacy, mail, parish, system
+from parishkit.stewardship.admin_urls import campaign, legacy, mail, parish, system
 
 # Menu groups whose URLs follow the scheme so far, by URL segment.
-MOVED = {"system", "parish", "mail"}
-GROUPS = system.patterns + parish.patterns + mail.patterns
+MOVED = {"system", "parish", "mail", "campaign"}
+GROUPS = system.patterns + parish.patterns + mail.patterns + campaign.patterns
+# Campaign setup pages that move with part B (NAV-10).
+PART_B = {
+    "campaign_mail",
+    "campaign_mail_families",
+    "campaign_ministries",
+    "go_live",
+    "go_live_cleanup",
+    "go_live_families",
+    "go_live_links",
+    "production_confirmation",
+    "production_progress",
+    "production_withdrawal",
+}
 # Route segments that would be a GET target naming an action.
 VERBS = {
     "acknowledge",
@@ -38,7 +51,7 @@ VERBS = {
 # JSON reads that scripts poll; they keep their old addresses (decision 8).
 POLLED = {"background_counts", "background_tasks", "background_task"}
 TASK = UUID(int=7)
-SAMPLES = {"uuid": str(TASK), "str": "parishsoft"}
+SAMPLES = {"uuid": str(TASK), "str": "parishsoft", "slug": "logo"}
 
 
 def _example(route):
@@ -64,7 +77,11 @@ def test_moved_routes_follow_the_scheme(pattern):
 
 @pytest.mark.parametrize(
     "name",
-    sorted(name for name, page in navigation.PAGES.items() if page.section in MOVED),
+    sorted(
+        name
+        for name, page in navigation.PAGES.items()
+        if page.section in MOVED and name not in PART_B
+    ),
 )
 def test_every_moved_page_reverses_under_its_group(name):
     """Each page's URL is /admin/<group>/…/ for its menu group."""
@@ -202,6 +219,27 @@ EXPECTED = {
     f"/admin/parish/files/{T}/name": f"/admin/parish/files/{T}/name/",
     "/admin/parish/parishsoft-refresh": "/admin/parish/parishsoft-refresh/",
     f"/admin/changes/{T}": f"/admin/changes/{T}/",
+    "/admin/campaign": "/admin/campaign/",
+    "/admin/mail": "/admin/mail/",
+    "/admin/parish": "/admin/parish/",
+    "/admin/campaign/settings": "/admin/campaign/settings/",
+    "/admin/campaign/copy": "/admin/campaign/copy/",
+    "/admin/campaign/content": "/admin/campaign/content/",
+    "/admin/campaign/content/history": "/admin/campaign/content/history/",
+    f"/admin/campaign/content/history/{T}": f"/admin/campaign/content/history/{T}/",
+    "/admin/campaign/content/parishsoft/parishsoft": (
+        "/admin/campaign/content/parishsoft/parishsoft/"
+    ),
+    f"/admin/campaign/content/parishsoft/parishsoft/{T}": (
+        f"/admin/campaign/content/parishsoft/parishsoft/{T}/"
+    ),
+    "/admin/campaign/images": "/admin/campaign/images/",
+    "/admin/campaign/images/logo": "/admin/campaign/images/logo/",
+    "/admin/campaign/images/logo/removal": "/admin/campaign/images/logo/removal/",
+    f"/admin/campaign/images/logo/{T}": f"/admin/campaign/images/logo/{T}/",
+    "/admin/campaign/schedules": "/admin/campaign/schedules/",
+    "/admin/campaign/share-options": "/admin/campaign/share-options/",
+    "/admin/campaign/talents": "/admin/campaign/talents/",
     "/admin/mail/controls": "/admin/mail/controls/",
     "/admin/mail/family-progress": "/admin/mail/family-progress/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
@@ -218,8 +256,28 @@ EXPECTED = {
 
 # Old addresses that name a campaign: they redirect only for the current
 # campaign, which the PostgreSQL suite checks through the real session.
+C = f"/admin/campaign/{T}"
 CAMPAIGN_EXPECTED = {
-    f"/admin/campaign/{T}/delivery": "/admin/mail/controls/",
+    f"{C}/delivery": "/admin/mail/controls/",
+    # Campaign setup, part A (NAV-9).
+    f"{C}/settings": "/admin/campaign/settings/",
+    f"{C}/clone": "/admin/campaign/copy/",
+    f"{C}/content": "/admin/campaign/content/",
+    f"{C}/content/history": "/admin/campaign/content/history/",
+    f"{C}/content/history/{T}": f"/admin/campaign/content/history/{T}/",
+    f"{C}/content/parishsoft/parishsoft": (
+        "/admin/campaign/content/parishsoft/parishsoft/"
+    ),
+    f"{C}/content/parishsoft/parishsoft/{T}": (
+        f"/admin/campaign/content/parishsoft/parishsoft/{T}/"
+    ),
+    f"{C}/images": "/admin/campaign/images/",
+    f"{C}/images/logo": "/admin/campaign/images/logo/",
+    f"{C}/images/logo/remove": "/admin/campaign/images/logo/removal/",
+    f"{C}/images/logo/{T}": f"/admin/campaign/images/logo/{T}/",
+    f"{C}/schedules": "/admin/campaign/schedules/",
+    f"{C}/share-options": "/admin/campaign/share-options/",
+    f"{C}/talents": "/admin/campaign/talents/",
 }
 
 
@@ -233,7 +291,8 @@ def test_every_old_address_is_listed_once_and_expected():
     for old, new in CAMPAIGN_EXPECTED.items():
         match = resolve(old)
         assert match.func.legacy_campaign
-        assert reverse(f"admin:{match.func.legacy_target}") == new
+        arguments = {k: v for k, v in match.kwargs.items() if k != "campaign_id"}
+        assert reverse(f"admin:{match.func.legacy_target}", kwargs=arguments) == new
     routes = navigation.route_parameters()
     for _old, new, _campaign, _suffix in legacy.ROWS:
         assert new in routes and not new.startswith(legacy.PREFIX)
@@ -270,3 +329,26 @@ def test_old_addresses_name_their_pages_for_remembered_origins():
     match = resolve("/admin/configuration/integrations/parishsoft")
     assert navigation.LEGACY_TARGETS[match.url_name] == "integration_settings"
     assert match.url_name in navigation.LEGACY
+
+
+@pytest.mark.parametrize(
+    ("section", "name"),
+    [("campaign", "campaign_root"), ("mail", "mail_root"), ("parish", "parish_root")],
+)
+def test_group_roots_open_their_group(section, name):
+    """/admin/<group>/ is the group's root view; System has its own (ADM-13)."""
+    url = reverse(f"admin:{name}")
+    assert url == f"/admin/{section}/"
+    assert resolve(url).func.group_root == section
+    assert name in navigation.NON_PAGES
+    # The form without the slash redirects, as /admin/system does.
+    slashless = resolve(url.rstrip("/"))
+    assert slashless.url_name == f"{legacy.PREFIX}{name}_slashless"
+    assert slashless.func(RequestFactory().get(url.rstrip("/")))["Location"] == url
+
+
+def test_old_test_email_addresses_still_reach_their_pages():
+    """Until NAV-10 moves them, the test email pages beat the old editor route."""
+    old = f"/admin/campaign/{T}/content/test/{T}"
+    assert resolve(old).url_name == "campaign_mail"
+    assert resolve(old + "/families").url_name == "campaign_mail_families"

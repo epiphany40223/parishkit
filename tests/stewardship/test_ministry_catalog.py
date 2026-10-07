@@ -150,7 +150,7 @@ def test_the_notice_names_changes_and_links_to_ministry_activity():
     assert "Greeters (DUID 77) — in the current campaign" in html
     assert "Choir → X-Choir (DUID 3) — possibly retired" in html
     assert 'href="/admin/parish/ministries/"' in html
-    assert f"/admin/campaign/{CAMPAIGN}/settings#ministry-selections" in html
+    assert "/admin/campaign/settings/#ministry-selections" in html
 
 
 @pytest.mark.parametrize("step", ["ministry_catalog", "source_changes"])

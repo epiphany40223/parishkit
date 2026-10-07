@@ -30,7 +30,7 @@ NEW = "/admin/campaign/new"
 
 def url(row):
     """Each retained campaign has its own authorized structural editor."""
-    return f"/admin/campaign/{row.pk}/settings"
+    return "/admin/campaign/settings/"
 
 
 def fields(store, row=None, **changes):
@@ -380,7 +380,7 @@ def test_non_admin_cannot_read_or_write_campaign_settings(auth_service, google, 
     browser, _ = signed_in()
     assert browser.get(NEW).status_code == 403
     assert post(browser, NEW, fields(store)).status_code == 403
-    assert browser.get(f"/admin/campaign/{uuid4()}/settings").status_code == 403
+    assert browser.get("/admin/campaign/settings/").status_code == 403
 
 
 def test_noop_bad_signature_missing_target_and_query_are_closed(auth_service, google):
@@ -397,7 +397,7 @@ def test_noop_bad_signature_missing_target_and_query_are_closed(auth_service, go
         post(browser, url(row), {"action": "confirm", "preview": "forged"}).status_code
         == 400
     )
-    assert browser.get(f"/admin/campaign/{uuid4()}/settings").status_code == 404
+    assert browser.get(f"/admin/campaign/{uuid4()}/settings").status_code == 410
     assert browser.get(url(row) + "?extra=value").status_code == 400
     assert Client().get(url(row)).status_code == 403
 
@@ -410,7 +410,7 @@ def test_campaign_edit_cannot_strand_existing_initial_mail(auth_service, google)
     browser, _ = signed_in()
     response = post(browser, url(row), fields(store, row, start_date="2054-10-02"))
     assert response.status_code == 302
-    assert "/schedules?" in response["Location"]
+    assert "/admin/campaign/schedules/?" in response["Location"]
     assert "start_date=2054-10-02" in response["Location"]
     row.refresh_from_db()
     assert row.active_configuration.start_date.isoformat() == "2054-10-01"

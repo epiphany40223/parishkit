@@ -325,7 +325,7 @@ def test_family_test_pages_show_their_email_trail_and_steps(family_test):
     """
     harness, browser, path, sample = family_test
     template = sample.rsplit("/", 1)[-1]
-    editor = f"/admin/campaign/{harness.campaign.pk}/content/email/initial/{template}"
+    editor = f"/admin/campaign/content/email/initial/{template}/"
     with web_login():
         page = browser.get(sample)
     body = page.content.decode()
@@ -1356,8 +1356,7 @@ def test_stale_sign_in_keeps_the_review_and_never_looks_sent(family_test):
 def test_testing_mode_explains_live_codes_and_offers_a_test_send(family_test):
     """Admin pages that list live codes point to the chosen-Family test send."""
     harness, browser, families, _ = family_test
-    campaign = harness.campaign.pk
-    settings_page = browser.get(f"/admin/campaign/{campaign}/settings").content
+    settings_page = browser.get("/admin/campaign/settings/").content
     assert b"Try the Family form as a chosen Family" in settings_page
     assert families.encode() in settings_page
 

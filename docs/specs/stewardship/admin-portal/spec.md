@@ -401,8 +401,11 @@ name until NAV-15 splits it into Sign-in rules, Ministry assignments and
 Chairpersons, and the Emailed reports, Ministry assignments and Chairpersons
 pages, which do not exist yet. The System pages already have their new
 addresses (NAV-6), and so do the Parish data pages and a change's status page
-(NAV-7) and the Mail and Family portal pages (NAV-8), with every old address
-redirecting. Until the rest of the URL work
+(NAV-7), the Mail and Family portal pages (NAV-8) and the first Campaign
+setup pages (NAV-9: settings, Copy campaign, content and its history, images,
+schedules, Share options and Member talents), with every old address
+redirecting; the Campaign setup, Mail and Family portal and Parish data group
+roots open their first entry. Until the rest of the URL work
 lands, other pages keep their "Current URL", and so does every other section
 of this spec and the other stewardship specs that name an Admin URL; those
 follow-up issues update them with the code.
@@ -678,22 +681,22 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. |
 | `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same; old address redirects) |  |
-| `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/<campaign>/settings` | `/admin/campaign/settings/` |  |
-| `campaign_clone` | Copy campaign | Campaign settings | Administrator | Clone archived campaign | `/admin/campaign/<campaign>/clone` | `/admin/campaign/copy/` | Decision 18: until #145 removes it, Campaign settings shows Copy campaign greyed out, not an action, with the tip "Disabled; will be removed with the single-campaign change (#145)". The server refuses the clone action. |
-| `content_history` | Content history | Campaign settings | Administrator | Retained campaign content | `/admin/campaign/<campaign>/content/history` | `/admin/campaign/content/history/` |  |
-| `content_history_revision` | Earlier version | Content history | Administrator | Retained campaign content; Revision | `/admin/campaign/<campaign>/content/history/<revision>` | `/admin/campaign/content/history/<revision>/` |  |
-| `content_catalog` | Pages and emails | Menu: Pages and emails | Administrator | Campaign content and templates | `/admin/campaign/<campaign>/content` | `/admin/campaign/content/` |  |
-| `content_edit` | _page or email name_ | Pages and emails | Administrator | Edit page or email | `/admin/campaign/<campaign>/content/<kind>/<slot>` | `/admin/campaign/content/<kind>/<slot>/` | Object-named (exception). |
-| `content_revision` | _email name_ | Pages and emails | Administrator | _email template name_; Content revision | `/admin/campaign/<campaign>/content/email/<slot>/<revision>` | `/admin/campaign/content/email/<slot>/<revision>/` | Object-named (exception); links its own test page. |
+| `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/settings/` | (same; old address redirects) |  |
+| `campaign_clone` | Copy campaign | Campaign settings | Administrator | Clone archived campaign | `/admin/campaign/copy/` | (same; old address redirects) | Decision 18: until #145 removes it, Campaign settings shows Copy campaign greyed out, not an action, with the tip "Disabled; will be removed with the single-campaign change (#145)". The server refuses the clone action. |
+| `content_history` | Content history | Campaign settings | Administrator | Retained campaign content | `/admin/campaign/content/history/` | (same; old address redirects) |  |
+| `content_history_revision` | Earlier version | Content history | Administrator | Retained campaign content; Revision | `/admin/campaign/content/history/<revision>/` | (same; old address redirects) |  |
+| `content_catalog` | Pages and emails | Menu: Pages and emails | Administrator | Campaign content and templates | `/admin/campaign/content/` | (same; old address redirects) |  |
+| `content_edit` | _page or email name_ | Pages and emails | Administrator | Edit page or email | `/admin/campaign/content/<kind>/<slot>/` | (same; old address redirects) | Object-named (exception). |
+| `content_revision` | _email name_ | Pages and emails | Administrator | _email template name_; Content revision | `/admin/campaign/content/email/<slot>/<revision>/` | (same; old address redirects) | Object-named (exception); links its own test page. |
 | `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/<campaign>/content/test/<revision>` | `/admin/campaign/content/test/<revision>/` | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
 | `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/<campaign>/content/test/<revision>/families` | `/admin/campaign/content/test/<revision>/families/` |  |
-| `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/<campaign>/images` | `/admin/campaign/images/` |  |
-| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/<campaign>/images/<slot>` | `/admin/campaign/images/<slot>/` (POST only) | POST-only error re-render of Campaign images; reclassify as a form action. |
-| `artwork_preview` | Review campaign image | Campaign images | Administrator | (same) | `/admin/campaign/<campaign>/images/<slot>/<bundle>` | `/admin/campaign/images/<slot>/<bundle>/` |  |
-| `artwork_remove` | Remove campaign image | Campaign images | Administrator | (same) | `/admin/campaign/<campaign>/images/<slot>/remove` | `/admin/campaign/images/<slot>/removal/` |  |
-| `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/<campaign>/schedules` | `/admin/campaign/schedules/` |  |
-| `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/<campaign>/share-options` | `/admin/campaign/share-options/` | Gains a Return link and About panel. |
-| `talent_settings` | Member talents | Menu: Member talents | Administrator | Talents Members can share | `/admin/campaign/<campaign>/talents` | `/admin/campaign/talents/` | Gains a Return link and About panel. |
+| `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/images/` | (same; old address redirects) |  |
+| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same; old address redirects) | POST-only error re-render of Campaign images; reclassify as a form action. |
+| `artwork_preview` | Review campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/<bundle>/` | (same; old address redirects) |  |
+| `artwork_remove` | Remove campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/removal/` | (same; old address redirects) |  |
+| `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same; old address redirects) |  |
+| `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same; old address redirects) | Gains a Return link and About panel. |
+| `talent_settings` | Member talents | Menu: Member talents | Administrator | Talents Members can share | `/admin/campaign/talents/` | (same; old address redirects) | Gains a Return link and About panel. |
 | `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/<campaign>/go-live` | `/admin/campaign/go-live/` |  |
 | `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/<campaign>/go-live/families` | `/admin/campaign/go-live/families/` |  |
 | `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/<campaign>/go-live/cleanup/<request>` | `/admin/campaign/go-live/cleanup/<request>/` |  |

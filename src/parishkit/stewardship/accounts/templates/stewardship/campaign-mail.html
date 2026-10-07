@@ -12,5 +12,5 @@
 <section class="panel"><h2>{% translate "Recent test results" %}</h2><ul>{% for item in items %}<li>{{ item.label }} — <time data-local-instant datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:'c' }}</time>{% if not item.current %} ({% translate "earlier configuration or template" %}){% endif %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Test reference" %}</dt><dd><code>{{ item.id }}</code></dd></dl></details></li>{% empty %}<li>{% translate "No tests have been requested. Select Send this test email to send one." %}</li>{% endfor %}</ul></section>
 {% if families_url %}<p><a href="{{ families_url }}">{% translate "Send this email to chosen real Families (Testing recipient only)" %}</a></p>{% endif %}
 <p><a href="">{% translate "Refresh test results" %}</a></p>
-<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Return to Pages and emails" %}</a></p>
+<p><a href="{% url 'admin:content_catalog' %}">{% translate "Return to Pages and emails" %}</a></p>
 {% endblock %}

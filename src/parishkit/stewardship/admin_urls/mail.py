@@ -11,10 +11,13 @@ only the page moves, and that old address still redirects its page reads.
 from django.urls import path
 
 from ..accounts import delivery_control_views, family_maintenance_views, presence
+from ..accounts.group_root_views import group_root
 from ..jobs import delivery_views, send_history_views, send_progress_views
 from ..web.admin_routes import current_campaign, legacy
 
 patterns = [
+    # The group root opens the first entry the viewer may open now.
+    path("mail/", group_root("mail"), name="mail_root"),
     path(
         "mail/controls/",
         current_campaign(delivery_control_views.control),

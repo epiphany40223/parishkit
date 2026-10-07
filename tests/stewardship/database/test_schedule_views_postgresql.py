@@ -49,7 +49,7 @@ def setup(store):
         ).state
         == "applied"
     )
-    return Campaign.objects.get(), f"/admin/campaign/{owner['id']}/schedules"
+    return Campaign.objects.get(), "/admin/campaign/schedules/"
 
 
 def fields(store, campaign, *, editable=True):
@@ -386,9 +386,9 @@ def test_read_pages_never_wait_behind_the_work_lock(auth_service, google):
                 "/admin/",
                 "/admin/users",
                 path,
-                f"/admin/campaign/{campaign.pk}/settings",
-                f"/admin/campaign/{campaign.pk}/content",
-                f"/admin/campaign/{campaign.pk}/content/email/initial",
+                "/admin/campaign/settings/",
+                "/admin/campaign/content/",
+                "/admin/campaign/content/email/initial/",
             ):
                 assert browser.get(url).status_code == 200, url
             assert post(browser, path, data).status_code == 503

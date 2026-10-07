@@ -10,7 +10,7 @@ from parishkit.stewardship.accounts.ministry_views import campaign_ministries_ur
 from parishkit.stewardship.web.tables import paginate
 
 CAMPAIGN = uuid4()
-URL = f"/admin/campaign/{CAMPAIGN}/settings#ministry-selections"
+URL = "/admin/campaign/settings/#ministry-selections"
 
 
 def ministry(name, duid, *, included):

@@ -13,5 +13,5 @@
 <form method="post" action="{{ post_url }}" data-content-form>{% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/content-fields.html' %}
 <button type="submit">{% translate "Preview changes" %}</button></form>
-<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Return to Pages and emails" %}</a></p>
+<p><a href="{% url 'admin:content_catalog' %}">{% translate "Return to Pages and emails" %}</a></p>
 {% endblock %}

@@ -29,7 +29,7 @@ def setup(store):
     result, _, schedule = add_draft(store, store.active(), uuid4())
     assert result.state == "applied"
     campaign = Campaign.objects.get()
-    return campaign, f"/admin/campaign/{campaign.pk}/content", schedule
+    return campaign, "/admin/campaign/content/", schedule
 
 
 def values(store, **changes):
@@ -41,7 +41,7 @@ def test_page_content_apply_sanitizes_samples_and_replays(auth_service, google):
     """Preview emits sanitized fictional data; confirmation installs separately."""
     store = auth_service.store
     campaign, catalog, _ = setup(store)
-    path = catalog + "/page/welcome"
+    path = catalog + "page/welcome/"
     browser, _ = signed_in()
     assert browser.get(catalog).status_code == 200
     editor = browser.get(path)
@@ -95,7 +95,7 @@ def test_content_invalid_fields_never_create_requests(auth_service, google, chan
     browser, _ = signed_in()
     count = ConfigurationChangeRequest.objects.count()
     assert (
-        post(browser, path + "/page/welcome", values(store, **changes)).status_code
+        post(browser, path + "page/welcome/", values(store, **changes)).status_code
         == 400
     )
     assert ConfigurationChangeRequest.objects.count() == count
@@ -131,7 +131,7 @@ def test_email_edit_reconciles_subject_and_preserves_unrelated_templates(
         == "applied"
     )
     browser, _ = signed_in()
-    path = catalog + "/email/initial/" + row["id"]
+    path = catalog + "email/initial/" + row["id"] + "/"
     assert browser.get(path).status_code == 200
     preview = post(
         browser,
@@ -156,7 +156,7 @@ def test_email_create_and_explicit_page_remove_with_web_grants(auth_service, goo
     store = auth_service.store
     campaign, catalog, _ = setup(store)
     browser, _ = signed_in()
-    path = catalog + "/email/reminder"
+    path = catalog + "email/reminder/"
     with task_login(ServiceRole.WEB):
         assert browser.get(catalog).status_code == 200
         assert browser.get(path).status_code == 200
@@ -183,7 +183,7 @@ def test_email_create_and_explicit_page_remove_with_web_grants(auth_service, goo
         ).state
         == "applied"
     )
-    path = catalog + "/page/login_help"
+    path = catalog + "page/login_help/"
     proposal = token(post(browser, path, values(store, clear="on")))
     apply(store, post(browser, path, {"action": "confirm", "preview": proposal}))
     assert (
@@ -200,7 +200,7 @@ def test_nonstructural_content_edit_survives_lock_but_stale_preview_does_not(
     store = auth_service.store
     campaign, catalog, _ = setup(store)
     browser, _ = signed_in()
-    path = catalog + "/page/welcome"
+    path = catalog + "page/welcome/"
     proposal = token(post(browser, path, values(store)))
     command(campaign, uuid4(), Action.ACTIVATE)
     assert (
@@ -216,7 +216,7 @@ def test_content_stale_base_noop_and_route_scope(auth_service, google):
     store = auth_service.store
     _, catalog, _ = setup(store)
     browser, _ = signed_in()
-    path = catalog + "/page/welcome"
+    path = catalog + "page/welcome/"
     assert (
         post(browser, path, values(store) | {"base_digest": "f" * 64}).status_code
         == 409
@@ -226,13 +226,13 @@ def test_content_stale_base_noop_and_route_scope(auth_service, google):
     assert (
         post(
             browser,
-            catalog + "/page/review",
+            catalog + "page/review/",
             {"action": "confirm", "preview": proposal},
         ).status_code
         == 400
     )
-    assert browser.get(catalog + "/page/financial").status_code == 404
-    assert browser.get(catalog + "/unknown/welcome").status_code == 404
+    assert browser.get(catalog + "page/financial/").status_code == 404
+    assert browser.get(catalog + "unknown/welcome/").status_code == 404
     assert browser.get(path + "?html=hidden").status_code == 400
     assert post(browser, catalog, values(store)).status_code == 400
 
@@ -255,7 +255,7 @@ def test_receipt_template_edits_one_selection_and_retains_old_revision(
     )
     before = SystemConfiguration.objects.get().active_configuration
     browser, _ = signed_in()
-    path = catalog + "/email/confirmation"
+    path = catalog + "email/confirmation/"
     with task_login(ServiceRole.WEB):
         assert b"Edit confirmation email" in browser.get(catalog).content
         assert b"Before" in browser.get(path).content
@@ -269,7 +269,7 @@ def test_receipt_template_edits_one_selection_and_retains_old_revision(
     )
     assert current.content_versions.get(slot="confirmation").subject == "After"
     assert before.content_versions.get(record_id=row["id"]).subject == "Before"
-    assert browser.get(path + "/" + row["id"]).status_code == 404
+    assert browser.get(path + row["id"] + "/").status_code == 404
 
 
 def test_staff_cannot_read_or_edit_content(auth_service, google):
@@ -289,14 +289,14 @@ def test_staff_cannot_read_or_edit_content(auth_service, google):
     google[0]["email"] = "staff@example.org"
     browser, _ = signed_in()
     assert browser.get(catalog).status_code == 403
-    assert post(browser, catalog + "/page/welcome", values(store)).status_code == 403
+    assert post(browser, catalog + "page/welcome/", values(store)).status_code == 403
 
 
 def test_empty_content_editor_can_start_from_the_default(auth_service, google):
     """An empty slot's editor pre-fills its default without creating a request."""
     store = auth_service.store
     campaign, catalog, _ = setup(store)
-    path = catalog + "/page/welcome"
+    path = catalog + "page/welcome/"
     browser, _ = signed_in()
     requests = ConfigurationChangeRequest.objects.count()
     empty = browser.get(path)
@@ -310,7 +310,7 @@ def test_empty_content_editor_can_start_from_the_default(auth_service, google):
     assert browser.get(path + "?start=other").status_code == 400
     assert browser.get(catalog + "?start=default").status_code == 400
     assert ConfigurationChangeRequest.objects.count() == requests
-    email = browser.get(catalog + "/email/reminder?start=default")
+    email = browser.get(catalog + "email/reminder/?start=default")
     assert email.status_code == 200 and b"Complete your household" in email.content
 
 
@@ -321,7 +321,7 @@ def test_configured_content_editor_can_reset_to_the_default(auth_service, google
 
     store = auth_service.store
     campaign, catalog, _ = setup(store)
-    path = catalog + "/page/welcome"
+    path = catalog + "page/welcome/"
     browser, _ = signed_in()
     browser.get(path)
     mine = post(browser, path, values(store, html="<p>Mine</p>"))
@@ -381,14 +381,14 @@ def test_removing_a_scheduled_template_explains_the_fix_inline(auth_service, goo
         == "applied"
     )
     browser, _ = signed_in()
-    path = catalog + "/email/initial/" + row["id"]
+    path = catalog + "email/initial/" + row["id"] + "/"
     browser.get(path)
     requests = ConfigurationChangeRequest.objects.count()
     refused = post(browser, path, values(store, subject="Invitation", clear="on"))
     body = refused.content.decode()
     assert refused.status_code == 400
     assert "used by a mail schedule, so it can&#x27;t be removed" in body
-    assert f'<a href="/admin/campaign/{campaign.pk}/schedules">' in body
+    assert '<a href="/admin/campaign/schedules/">' in body
     assert ConfigurationChangeRequest.objects.count() == requests
 
 
@@ -397,7 +397,7 @@ def test_stale_content_form_says_to_reload(auth_service, google):
     store = auth_service.store
     _, catalog, _ = setup(store)
     browser, _ = signed_in()
-    path = catalog + "/page/welcome"
+    path = catalog + "page/welcome/"
     browser.get(path)
     stale = post(browser, path, values(store) | {"base_digest": "0" * 64})
     assert stale.status_code == 409
@@ -479,8 +479,8 @@ def test_confirmation_editor_folds_a_retired_closing_note(
     browser, _ = signed_in()
     body = browser.get(catalog).content.decode()
     assert "closing note" not in body and "submission_confirmation" not in body
-    assert browser.get(catalog + "/page/submission_confirmation").status_code != 200
-    path = catalog + "/email/confirmation"
+    assert browser.get(catalog + "page/submission_confirmation/").status_code != 200
+    path = catalog + "email/confirmation/"
     assert "Call the office." in browser.get(path).content.decode()
     # Saving the email exactly as shown folds the note into its body.
     html = email["values"]["html"] + note["values"]["html"]
@@ -532,7 +532,7 @@ def test_confirmation_reset_to_default_removes_a_retired_closing_note(
     email = content(str(campaign.pk), kind="email", slot="confirmation")
     plant(store, monkeypatch, email, closing_note(campaign))
     browser, _ = signed_in()
-    path = catalog + "/email/confirmation"
+    path = catalog + "email/confirmation/"
     editor = browser.get(path + "?start=default").content.decode()
     assert "Call the office." not in editor
     default = default_data("email", "confirmation")
@@ -575,7 +575,7 @@ def test_closing_note_without_confirmation_email_is_listed_and_folded(
     fallback = ReceiptTemplate()
     assert fallback.subject in confirmation
     assert "No template yet." not in confirmation
-    path = catalog + "/email/confirmation"
+    path = catalog + "email/confirmation/"
     editor = browser.get(path)
     assert "Call the office." in editor.content.decode()
     # Saved text is offered a reset, not a fresh start from the default.
