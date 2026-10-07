@@ -94,13 +94,17 @@ def refresh_result(task_id):
 
     Reads the counts and the changed-record counts (#242) that the run's
     promoted snapshot recorded (one indexed query, columns the web role may
-    read). Returns None when this run promoted nothing. A snapshot promoted
-    before changes were recorded still says how many records were checked.
+    read). A quick update recorded as unchanged (#630) carries the current
+    snapshot's counts and no changes, so it says none changed. Returns None
+    when this run promoted nothing. A snapshot promoted before changes were
+    recorded still says how many records were checked.
     """
     from parishkit.stewardship.source.snapshot_models import SourceSnapshot
 
     row = (
-        SourceSnapshot.objects.filter(task_id=task_id, state="promoted")
+        SourceSnapshot.objects.filter(
+            task_id=task_id, state__in=("promoted", "unchanged")
+        )
         .values_list("counts", "cursor")
         .first()
     )

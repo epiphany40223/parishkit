@@ -23,7 +23,7 @@ from parishkit.stewardship.observability import Event, emit
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .attempts import _scope, begin_refresh_attempt, verify_refresh_attempt
-from .canonical import InvalidSourcePayload
+from .canonical import InvalidSourcePayload, canonical_payload
 from .cursors import refresh_cursor
 from .delta import load_delta_source
 from .loading import (
@@ -36,7 +36,12 @@ from .loading import (
 )
 from .requests import _window
 from .snapshot_models import SourceCurrent, SourceSnapshot
-from .snapshots import finish_snapshot, reconstruct_snapshot, stage_entities
+from .snapshots import (
+    finish_snapshot,
+    finish_unchanged,
+    reconstruct_snapshot,
+    stage_entities,
+)
 from .transport import runtime_profile, source_session
 from .windows import RefreshWindow
 
@@ -73,6 +78,29 @@ def _recorded_derived(snapshot):
     return value if valid_derived_counts(value) else None
 
 
+def _base_cursor(current_id):
+    """The cursor a quick update reads on from: the newest read of the corpus.
+
+    That is the newest ``unchanged`` quick update read against the current
+    snapshot, else the current snapshot itself. An unchanged read saw the
+    same corpus as the current snapshot up to its own start, so its
+    watermark is as good a boundary as a promoted copy's would have been;
+    without it the change-list window would grow from the last promotion
+    until the next one, and a week of unchanged reads would force a full
+    refresh (#630). Its full-coverage fields were copied from the current
+    snapshot's, which the completion guard checks.
+    """
+    newest = (
+        SourceSnapshot.objects.filter(base_id=current_id, state="unchanged")
+        .order_by("-started_at")
+        .values_list("cursor", flat=True)
+        .first()
+    )
+    if newest is not None:
+        return newest
+    return SourceSnapshot.objects.values_list("cursor", flat=True).get(pk=current_id)
+
+
 def _inputs(attempt_id, execution, claim):
     """Read the actual current base and permanent last-full count evidence."""
     with execution.effect():
@@ -102,7 +130,7 @@ def _inputs(attempt_id, execution, claim):
             counts = full.counts
             if snapshot.kind == "delta":
                 base = reconstruct_snapshot(current.snapshot_id)
-                cursor = SourceSnapshot.objects.get(pk=current.snapshot_id).cursor
+                cursor = _base_cursor(current.snapshot_id)
             # Eligibility is compared with both the last full and the current
             # snapshot (#320), from the derived counts each load records in its
             # manifest, so normally nothing is reconstructed for this.
@@ -136,13 +164,43 @@ def _inputs(attempt_id, execution, claim):
         )
 
 
-def load_and_stage_attempt(execution, claim, credential):
+def same_corpus(corpus, base):
+    """Whether ``corpus`` stages exactly the payloads ``base`` already holds.
+
+    Compared as staging would store them: by canonical payload digest, so a
+    value that is equal in Python but canonically different (``True`` and
+    ``1``) counts as a change. A delta copies the base's row objects for
+    everything it did not reload, so only rows that are new objects need
+    hashing; usually that is just the re-evaluated roster.
+    """
+    if corpus.keys() != base.keys():
+        return False
+    for kind, rows in corpus.items():
+        before = base[kind]
+        if rows.keys() != before.keys():
+            return False
+        for key, row in rows.items():
+            old = before[key]
+            if row is not old and (
+                canonical_payload(row)[1] != canonical_payload(old)[1]
+            ):
+                return False
+    return True
+
+
+def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
     """Observe once with finite private HTTP, then stage in small fenced batches.
 
     The caller must already maintain Task/source ownership. No SQL transaction
     spans provider I/O. Every attempt/retry repeats credential and current-scope
     validation, and every staging batch repeats it again. Exceptions preserve
     staging for the owning rejection/recovery workflow; none implies success.
+
+    ``unchanged(snapshot, corpus, execution, claim)``, when given, decides
+    whether promoting a quick update whose corpus equals the current one
+    would change any owning-domain state. When it would not, nothing is
+    staged and the snapshot ends ``unchanged`` (#630); the caller then skips
+    promotion. Otherwise, and always for a full refresh, staging is as before.
     """
     if connection.in_atomic_block:
         raise StorageInvariantError("Source observation cannot hold a transaction.")
@@ -213,6 +271,21 @@ def load_and_stage_attempt(execution, claim, credential):
         if snapshot is not None and current.snapshot_id != snapshot.pk:
             raise PermissionError("Staging belongs to another source attempt.")
         return True
+
+    # Most quick updates find nothing (#629): the change list is empty, so
+    # the corpus is the current one exactly (a day change that flips a
+    # roster's "current" flag is a difference and stages as before). Any
+    # doubt falls through to the ordinary staging path below.
+    if (
+        claim.phase == "delta"
+        and unchanged is not None
+        and same_corpus(loaded.corpus, inputs.base)
+    ):
+        with execution.effect():
+            if unchanged(attempt.snapshot, inputs.base, execution, claim) is True:
+                return finish_unchanged(
+                    attempt.snapshot_id, claim, cursor=cursor, admit=admitted
+                )
 
     total, done = sum(loaded.counts.values()), 0
     reported = done

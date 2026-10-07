@@ -204,7 +204,7 @@ your roles would not show on the page is `null`.
 | --- | --- |
 | `as_of`, `mode` | When it was read; `testing` or `production` |
 | `campaign` | The current campaign's `id`, `name`, `state`, `version`, `starts_at`, `ends_at` and `delivery_paused`, or `null` |
-| `source` | The last ParishSoft refresh: `refreshed_at`, the last full refresh's success, failure (with `full_failed_task_id`) and `full_running`, incremental success and failure, `frequency`, `next_full_at`, `delta_refresh`; the [data age and connection](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection): `full_started_at`, `data_as_of`, `connection` (`failing`, `not_checked`, `working` or `unknown`) with `connection_at`; `overdue_full_at`, the due time of the first scheduled full refresh since the last one started that has not yet run (`null` when none is due), `out_of_date` when it is more than `source_stale_seconds` late, and `held_for_send` when a bulk Family send is holding it within the send's allowance |
+| `source` | The last ParishSoft refresh: `refreshed_at` (when the current snapshot was promoted), the last full refresh's success, failure (with `full_failed_task_id`) and `full_running`, incremental success and failure, `frequency`, `next_full_at`, `delta_refresh`; the [data age and connection](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection): `full_started_at`, `data_as_of`, `connection` (`failing`, `not_checked`, `working` or `unknown`) with `connection_at`; `overdue_full_at`, the due time of the first scheduled full refresh since the last one started that has not yet run (`null` when none is due), `out_of_date` when it is more than `source_stale_seconds` late, and `held_for_send` when a bulk Family send is holding it within the send's allowance |
 | `next_mail` | The next Family mail's `kind` and `due_at` |
 | `families` | Counts: `active`, `eligible`, `responded`, `eligible_responded` |
 | `unreachable_families` | Families no mail can reach (a count) |
@@ -463,3 +463,11 @@ irreversible actions, and endings.
 - `pk-admin/1` (#510): additive. `status` `source` gains `full_started_at`,
   `data_as_of`, `connection`, `connection_at`, `overdue_full_at`,
   `out_of_date` and `held_for_send`.
+- `pk-admin/1` (#630): a change of meaning, kept on version 1. A quick
+  update that found nothing new is recorded instead of promoted, so
+  `status` `source` `refreshed_at` (the current snapshot's promotion time)
+  no longer moves on an empty quick update; it moves only when new data is
+  promoted. `delta_succeeded_at` and `connection_at` still move on every
+  quick update that ParishSoft answered, so a reader that used
+  `refreshed_at` as "ParishSoft answered recently" should read
+  `connection_at` instead.

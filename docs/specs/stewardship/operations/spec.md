@@ -1025,7 +1025,10 @@ and the slot decision records (skipped and held).
      scheduled refreshes were held for a send or skipped around a Family
      email does not count toward that gap, so a send alone never makes the
      line read "not checked".
-  3. "Working" with the time ParishSoft last answered.
+  3. "Working" with the time ParishSoft last answered. A quick update that
+     found nothing new and so was recorded
+     [unchanged](../data/spec.md#source-snapshot) instead of promoted counts
+     as an answer.
 
   Connection problems keep their existing alarms (repeated refresh failure,
   a refused organization or a refused large change); the connection line

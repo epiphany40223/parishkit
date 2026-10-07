@@ -19,32 +19,8 @@ def reconcile_ministry_requests(snapshot, corpus, *, campaign_id):
     proposed UUID supply no completion proof. No provider request is made here.
     """
     require_work_order()
-    memberships = {
-        (row["member_key"], row["ministry_key"])
-        for row in corpus["roster"].values()
-        if row["current"]
-    }
-    rows = MinistryRequest.objects.filter(
-        submission__campaign_id=campaign_id,
-        entity_kind="member",
-        state__in=ACTIONABLE_STATES,
-    ).annotate(family_duid=F("submission__family__family_duid"))
     count = 0
-    for row in rows.iterator(chunk_size=500):
-        member = corpus["member"].get(row.entity_key)
-        ministry = corpus["ministry"].get(str(row.ministry_duid))
-        if (
-            member is None
-            or member["family_key"] != str(row.family_duid)
-            or not member["active"]
-            or member["deceased"]
-            or ministry is None
-            or not ministry["catalog_present"]
-        ):
-            continue
-        current = (row.entity_key, str(row.ministry_duid)) in memberships
-        if current != (row.action == "join"):
-            continue
+    for row, current in _resolutions(corpus, campaign_id):
         pin_snapshot(
             snapshot.pk,
             parent_kind="submission",
@@ -60,3 +36,42 @@ def reconcile_ministry_requests(snapshot, corpus, *, campaign_id):
         )
         count += 1
     return count
+
+
+def ministry_requests_current(corpus, *, campaign_id):
+    """Whether ``reconcile_ministry_requests`` would resolve nothing for ``corpus``.
+
+    The same decision with no write, for the check before an identical quick
+    update skips promotion (#630).
+    """
+    return next(_resolutions(corpus, campaign_id), None) is None
+
+
+def _resolutions(corpus, campaign_id):
+    """Yield ``(row, current)`` for each open request ``corpus`` proves done."""
+    memberships = {
+        (row["member_key"], row["ministry_key"])
+        for row in corpus["roster"].values()
+        if row["current"]
+    }
+    rows = MinistryRequest.objects.filter(
+        submission__campaign_id=campaign_id,
+        entity_kind="member",
+        state__in=ACTIONABLE_STATES,
+    ).annotate(family_duid=F("submission__family__family_duid"))
+    for row in rows.iterator(chunk_size=500):
+        member = corpus["member"].get(row.entity_key)
+        ministry = corpus["ministry"].get(str(row.ministry_duid))
+        if (
+            member is None
+            or member["family_key"] != str(row.family_duid)
+            or not member["active"]
+            or member["deceased"]
+            or ministry is None
+            or not ministry["catalog_present"]
+        ):
+            continue
+        current = (row.entity_key, str(row.ministry_duid)) in memberships
+        if current != (row.action == "join"):
+            continue
+        yield row, current

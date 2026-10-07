@@ -2250,7 +2250,7 @@ CREATE TABLE public.stewardship_source_snapshot (
     CONSTRAINT source_snapshot_identity CHECK (((organization_id > 0) AND (source_fence > 0))),
     CONSTRAINT source_snapshot_kind CHECK (((kind)::text = ANY ((ARRAY['full'::character varying, 'delta'::character varying])::text[]))),
     CONSTRAINT source_snapshot_promotion_shape CHECK ((((generation > 0) AND (generation IS NOT NULL) AND (promoted_at IS NOT NULL) AND ((state)::text = 'promoted'::text)) OR ((NOT ((state)::text = 'promoted'::text)) AND (generation IS NULL) AND (promoted_at IS NULL)))),
-    CONSTRAINT source_snapshot_state CHECK (((state)::text = ANY ((ARRAY['staging'::character varying, 'ready'::character varying, 'rejected'::character varying, 'promoted'::character varying])::text[]))),
+    CONSTRAINT source_snapshot_state CHECK (((state)::text = ANY ((ARRAY['staging'::character varying, 'ready'::character varying, 'rejected'::character varying, 'promoted'::character varying, 'unchanged'::character varying])::text[]))),
     CONSTRAINT stewardship_source_snapshot_generation_check CHECK ((generation >= 0)),
     CONSTRAINT stewardship_source_snapshot_organization_id_check CHECK ((organization_id >= 0)),
     CONSTRAINT stewardship_source_snapshot_source_fence_check CHECK ((source_fence >= 0)),

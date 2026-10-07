@@ -389,6 +389,45 @@ Exactly one promoted snapshot is current. Promotion changes that pointer and
 all derived current indexes in one database transaction. A failed or rejected
 load never exposes a partial corpus.
 
+A quick update whose corpus equals the current snapshot's is not staged or
+promoted ([#630](https://github.com/epiphany40223/parishkit/issues/630)).
+Promoting it would add no ParishSoft data, yet it would write a full copy of
+the membership rows, rewrite every Family row with a new generation, and leave
+the old copy for compaction. Instead its snapshot ends in the terminal state
+`unchanged`. It has no membership rows, carries the current snapshot's counts
+and content digest, and its cursor counts no change. It never becomes
+current. This applies only when promotion would also change nothing outside
+the corpus:
+
+- the active configuration has already reconciled chairs for the current
+  snapshot;
+- every Family row already holds the current generation and exactly the
+  status that today's mail suppressions give it, so a new bounce still
+  promotes;
+- no eligible Family lacks its code or, under an active link generation,
+  its link, and the Family population evidence is clean;
+- reconciling open proposals and Ministry requests against the current
+  corpus would change none of them, with the same decision promotion makes,
+  so a new submission, a staff review edit or a row the last promotion
+  itself reconciled does not force another promotion;
+- an active Family link generation is still current (a stale one fails the
+  refresh, as promotion would).
+
+After a configuration activation that skipped its own chair reconciliation
+(no chair seeds and no open chair review), the next quick update promotes
+once more than strictly needed.
+
+Otherwise, and whenever the corpus differs in any way (compared by canonical
+payload digest, including a roster's "current" flag on a new day), the quick
+update stages and promotes as before.
+An `unchanged` snapshot completes its refresh run, counts as a successful
+ParishSoft answer for the
+[connection line](../operations/spec.md#parishsoft-data-age-and-connection)
+and for recovering refresh-failure alarms, and never moves "data as of". The
+next quick update reads the change list from its watermark, so the window
+does not grow while nothing changes. Its manifest is kept like every other;
+with no membership rows, there is nothing for compaction to remove.
+
 Source compaction uses UTC cutoff instants and never compacts the current
 snapshot, a snapshot still named by live campaign, credential, activation,
 recipient, fact-demand or setup state, or a snapshot protected by a submission baseline/effective version,

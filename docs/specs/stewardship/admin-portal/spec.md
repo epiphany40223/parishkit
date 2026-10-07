@@ -2976,7 +2976,9 @@ complete new copy and reuses unchanged records. Once a refresh has succeeded,
 its task page says how many records it checked and how many changed, by
 collection (for example, "Checked 30,639 records from ParishSoft; 12 changed
 (3 Families, 9 contacts)."); a refresh with no ParishSoft changes says 0
-changed. A record changed when its identity was added, removed or has a
+changed, including a quick update recorded as
+[unchanged](../data/spec.md#source-snapshot), which checked the current
+snapshot's records without copying them. A record changed when its identity was added, removed or has a
 different payload digest than in the previous promoted snapshot (the base
 the new snapshot must still match to be promoted). Staging computes this
 once, when it validates the corpus, and stores the per-collection counts as

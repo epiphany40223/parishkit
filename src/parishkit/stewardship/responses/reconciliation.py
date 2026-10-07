@@ -22,6 +22,9 @@ from .member_requests import REQUEST_FIELDS
 from .merge import KnownValue, MergeState, PriorChange, merge_value
 from .models import ProposedChange, Submission
 
+# The executions reconciliation still acts on.
+OPEN_EXECUTIONS = ("pending", "conflict", "queued", "failed")
+
 
 def reconcile_proposals(snapshot, corpus, *, campaign_id):
     """Use the promotion owner's coherent corpus, never fetch a second generation.
@@ -33,13 +36,56 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
     new retention pins or rewrite every pending proposal.
     """
     require_work_order()
+    count = 0
+    for row, current, execution in _proposal_updates(corpus, campaign_id):
+        pin_snapshot(
+            snapshot.pk,
+            parent_kind="submission",
+            parent_id=row.submission_id,
+            admit=_pin_admission,
+        )
+        ProposedChange.objects.filter(pk=row.pk).update(
+            current_available=current.available,
+            current_value=current.value,
+            current_source_id=snapshot.pk,
+            execution=execution,
+            version=F("version") + 1,
+        )
+        _release_unused_source(row.submission_id, row.current_source_id)
+        count += 1
+    return count
+
+
+def proposals_current(corpus, *, campaign_id):
+    """Whether ``reconcile_proposals`` would change no proposal for ``corpus``.
+
+    The same decision as reconciliation, with no write and no diagnostic: the
+    check before an identical quick update skips promotion (#630). A new
+    submission compared against this corpus, a staff review edit, and the
+    rows the last promotion itself reconciled all compare equal, so only a
+    proposal whose comparison really changes (or a block to re-merge) makes
+    the quick update promote. A household comparison that reconciliation
+    would refuse also answers False, so promotion raises it as before.
+    """
+    try:
+        return next(_proposal_updates(corpus, campaign_id, record=False), None) is None
+    except StorageInvariantError:
+        return False
+
+
+def _proposal_updates(corpus, campaign_id, *, record=True):
+    """Yield ``(row, current, execution)`` for each proposal ``corpus`` changes.
+
+    The one decision ``reconcile_proposals`` applies and ``proposals_current``
+    reads. ``record`` logs an unusable source value, as reconciliation does;
+    the read-only check passes False.
+    """
     definitions = {field.name: field for field in (*MEMBER_FIELDS, *REQUEST_FIELDS)}
     household_definitions = {field.name: field for field in FAMILY_FIELDS}
     proposals = ProposedChange.objects.filter(
         submission__campaign_id=campaign_id,
-        execution__in=["pending", "conflict", "queued", "failed"],
+        execution__in=OPEN_EXECUTIONS,
     ).annotate(family_duid=F("submission__family__family_duid"))
-    count = 0
     for row in proposals.iterator(chunk_size=500):
         if row.entity_kind == "proposed_member" and row.field == "new_member":
             # A local UUID has no provider identity to poll. Only the future
@@ -101,7 +147,8 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
             unusable = True
             if not row.current_available and row.execution == "conflict":
                 continue
-            record_unusable_source(error)
+            if record:
+                record_unusable_source(error)
         old_key = (
             canonical_value(field.kind, row.current_value)
             if row.current_available
@@ -140,22 +187,7 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
             if unusable or result.conflict
             else "pending"
         )
-        pin_snapshot(
-            snapshot.pk,
-            parent_kind="submission",
-            parent_id=row.submission_id,
-            admit=_pin_admission,
-        )
-        ProposedChange.objects.filter(pk=row.pk).update(
-            current_available=current.available,
-            current_value=current.value,
-            current_source_id=snapshot.pk,
-            execution=execution,
-            version=F("version") + 1,
-        )
-        _release_unused_source(row.submission_id, row.current_source_id)
-        count += 1
-    return count
+        yield row, current, execution
 
 
 def _release_unused_source(submission_id, snapshot_id):

@@ -4856,7 +4856,7 @@ DECLARE attempt stewardship_source_refresh_attempt%ROWTYPE;
         request stewardship_source_refresh_request%ROWTYPE;
         base_cursor jsonb;
 BEGIN
-    IF NEW.state NOT IN ('ready','promoted') OR OLD.state='promoted'
+    IF NEW.state NOT IN ('ready','promoted','unchanged') OR OLD.state='promoted'
        OR NOT EXISTS (SELECT 1 FROM stewardship_task_run WHERE id=NEW.task_id
            AND task_type='source_refresh') THEN
         RETURN NEW;
@@ -9566,6 +9566,7 @@ CREATE FUNCTION public.stewardship_source_snapshot_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE current_source stewardship_source_current%ROWTYPE;
+        base stewardship_source_snapshot%ROWTYPE;
         evidence jsonb;
 BEGIN
     IF TG_OP='DELETE' THEN
@@ -9600,7 +9601,8 @@ BEGIN
                 USING ERRCODE='23514';
         END IF;
         RETURN NEW;
-    ELSIF NOT ((OLD.state='staging' AND NEW.state IN ('staging','ready','rejected'))
+    ELSIF NOT ((OLD.state='staging'
+            AND NEW.state IN ('staging','ready','rejected','unchanged'))
         OR (OLD.state='ready' AND NEW.state IN ('promoted','rejected'))) THEN
         RAISE EXCEPTION 'Source snapshot transition is invalid' USING ERRCODE='23514';
     END IF;
@@ -9671,6 +9673,32 @@ BEGIN
         IF NEW.counts IS DISTINCT FROM evidence->'counts'
            OR NEW.content_digest IS DISTINCT FROM evidence->>'digest' THEN
             RAISE EXCEPTION 'Source evidence differs from its complete corpus'
+                USING ERRCODE='23514';
+        END IF;
+    END IF;
+    -- A quick update whose corpus equals the current one (#630) ends here
+    -- instead of staging a copy and promoting it: no membership rows, the
+    -- current snapshot's counts and digest, and a terminal state that no
+    -- later update may leave. It never becomes source truth.
+    IF NEW.state='unchanged' THEN
+        -- Hold the pointer still until commit, as promotion's FOR UPDATE
+        -- does, so a concurrent promotion cannot make this base stale.
+        SELECT * INTO current_source FROM stewardship_source_current
+            WHERE singleton FOR SHARE;
+        SELECT * INTO base FROM stewardship_source_snapshot WHERE id=NEW.base_id;
+        evidence := stewardship_source_corpus_evidence(NEW.id);
+        IF NEW.kind <> 'delta' OR base.id IS NULL OR base.state <> 'promoted'
+           OR NEW.base_id IS DISTINCT FROM current_source.snapshot_id
+           OR NEW.organization_id IS DISTINCT FROM base.organization_id
+           OR NEW.completed_at IS NULL OR NEW.completed_at < NEW.started_at
+           OR NEW.completed_at > clock_timestamp()
+           OR NEW.validation IS DISTINCT FROM
+              '{"schema":"source-unchanged-v1"}'::jsonb
+           OR NEW.counts IS DISTINCT FROM base.counts
+           OR NEW.content_digest IS DISTINCT FROM base.content_digest
+           OR EXISTS (SELECT 1 FROM jsonb_each_text(evidence->'counts') c
+                      WHERE c.value <> '0') THEN
+            RAISE EXCEPTION 'An unchanged quick update must match the current corpus'
                 USING ERRCODE='23514';
         END IF;
     END IF;

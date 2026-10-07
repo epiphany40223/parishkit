@@ -195,13 +195,15 @@ def connection_state(facts, *, now, threshold, sending=lambda: False):
 
 
 # One statement for every snapshot fact, so a page adds a single query. A
-# success is a snapshot whose read completed (ready or promoted); a failed
-# attempt is one rejected after it called ParishSoft. ``%(as_of)s`` limits the
-# facts to what was known at a past instant (the digest's observation).
+# success is a snapshot whose read completed (ready, promoted, or a quick
+# update recorded as unchanged, #630); a failed attempt is one rejected after
+# it called ParishSoft. An unchanged quick update never moves "data as of".
+# ``%(as_of)s`` limits the facts to what was known at a past instant (the
+# digest's observation).
 FACTS_SQL = (
     "WITH s AS (SELECT kind, state, started_at, completed_at, cursor "
     "FROM stewardship_source_snapshot "
-    "WHERE state IN ('ready','promoted','rejected') "
+    "WHERE state IN ('ready','promoted','unchanged','rejected') "
     "AND (%(as_of)s::timestamptz IS NULL OR started_at<=%(as_of)s)), "
     "ok AS (SELECT started_at, completed_at FROM s WHERE state<>'rejected' "
     "ORDER BY started_at DESC LIMIT 1) "
