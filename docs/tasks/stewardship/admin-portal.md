@@ -402,7 +402,12 @@ an unchanged guard, the refusals and the post-cleanup check),
 `tests/stewardship/test_schema_migration_files.py`, the regenerated schema
 baseline and the unchanged grant, credential, Family test, delivery
 control, confirmation and withdrawal suites. 5b adds the confirmation
-prompt, `--yes` and the fresh-gated notices.
+prompt (`admin_cli.confirm`, `--yes` for prompting commands, exit 4
+`confirmation_required`, the `confirmation` log field), the
+`automation_fresh_gate` audit event and the `fresh_gated` and
+`irreversible` notices from `require_fresh`; proven by
+`tests/stewardship/test_admin_prompt.py` and
+`tests/stewardship/database/test_automation_fresh_notices_postgresql.py`.
 ADM-11.10 lands in two pull requests. 9a adds `task retry`
 (`parishkit.stewardship.admin_operations`), with the retry pages' bodies,
 the delivery views' admission and their command scope moved into

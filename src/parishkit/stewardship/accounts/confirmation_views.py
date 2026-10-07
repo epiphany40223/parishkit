@@ -30,7 +30,7 @@ def _fresh_after_cleanup(request, transition_id):
     (ADM-11 PR 5).
     """
     try:
-        instant = require_fresh(request)
+        instant = require_fresh(request, record=False)
     except PermissionError:
         return False
     completed = (

@@ -31,7 +31,11 @@ SECRET = re.compile(r"pk-admin-session/1 ([A-Za-z0-9_-]{43})\n")
 
 FAKE_DOCKER = """#!/usr/bin/env bash
 printf '%s\\n' "$@" > "$FAKE_DOCKER_ARGS"
-cat > "$FAKE_DOCKER_STDIN"
+if [ -n "${FAKE_DOCKER_LINES:-}" ]; then
+    head -n "$FAKE_DOCKER_LINES" > "$FAKE_DOCKER_STDIN"
+else
+    cat > "$FAKE_DOCKER_STDIN"
+fi
 if [ -f "$FAKE_DOCKER_OUTPUT" ]; then cat "$FAKE_DOCKER_OUTPUT"; fi
 exit "${FAKE_DOCKER_STATUS:-0}"
 """
@@ -533,3 +537,51 @@ def test_the_wrapper_never_traces_the_secret(host):
     )
     assert result.returncode == 0, result.stderr
     assert ("a" * 43).encode() not in result.stderr
+
+
+def prompting(tmp_path):
+    """A copy of the wrapper whose PROMPTING list names ``test act``."""
+    text = WRAPPER.read_text()
+    assert text.count('PROMPTING=""') == 1
+    copy = tmp_path / "pk-admin-prompting"
+    copy.write_text(text.replace('PROMPTING=""', 'PROMPTING="test_act"'))
+    copy.chmod(0o755)
+    return copy
+
+
+def run_at_terminal(host, wrapper, typed=None, **extra):
+    """Run ``test act`` with a terminal as standard input, typing ``typed``."""
+    controller, terminal = pty.openpty()
+    try:
+        process = subprocess.Popen(
+            [str(wrapper), "test", "act"],
+            env={**host.environment, **extra},
+            stdin=terminal,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if typed is not None:
+            os.write(controller, typed)
+        process.communicate(timeout=20)
+    finally:
+        os.close(terminal)
+        os.close(controller)
+    return process.returncode
+
+
+def test_a_prompting_command_gets_one_typed_answer_line(host, tmp_path):
+    """From a terminal: the preamble, then exactly the line typed, then EOF."""
+    host.answer({"ok": True})
+    host.session()
+    assert run_at_terminal(host, prompting(tmp_path), b"yes\nmore\n") == 0
+    preamble = f"pk-admin-session/1 {'a' * 43} {host_digest()}\n".encode()
+    assert host.stdin() == preamble + b"yes\n"
+
+
+def test_the_wrapper_never_waits_for_an_answer_no_longer_needed(host, tmp_path):
+    """A command that ends before its prompt: the wrapper ends too, untyped."""
+    host.answer({"ok": False, "error": {"code": "denied"}}, status=1)
+    host.session()
+    assert run_at_terminal(host, prompting(tmp_path), FAKE_DOCKER_LINES="1") == 1
+    preamble = f"pk-admin-session/1 {'a' * 43} {host_digest()}\n".encode()
+    assert host.stdin() == preamble

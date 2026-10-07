@@ -497,6 +497,28 @@ cleanup). A key used only for another task is a new key here. Exit 6 (`outcome_u
 attributed to the approving Administrator with the automation session as
 its subject; it creates no automation notice.
 
+## Confirmations
+
+Every command for an action that needs a recent Google sign-in on its page,
+and every command whose page asks you to type a value or tick an
+acknowledgement, asks at a prompt before it acts (none in this release; the
+first arrive with the delivery, go-live and key commands). The command writes what it is
+about to do to standard error and waits for `yes`, or for the page's typed
+value (`Production` for the Production confirmation). Anything else, or the
+end of input, changes nothing and exits 4 (`confirmation_required`). The
+wrapper passes one line typed at your terminal to a prompting command, so
+run it from a terminal, or pass `--yes` in a script; `--yes` is required when the
+command also reads an input from standard input (`-`). Logs record whether
+the answer came from the prompt or from `--yes`.
+
+No command of this release does an action that needs a recent Google
+sign-in; they arrive in later releases. When a session stands in for one
+(pausing or resuming mail, a chosen-Family test, the Family portal switch,
+confirming Production, withdrawal, key changes), System logs record an
+`automation_fresh_gate` event beside the action, and the dashboard shows an
+automation notice; confirming Production and withdrawal are marked
+irreversible and also email and post to Slack.
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -531,3 +553,6 @@ its subject; it creates no automation notice.
 - `pk-admin/1` (ADM-11 PR 9a): additive. `task retry`, the first command
   that takes `--request-key`, and `error.request_id` on its unknown
   outcome, holding the key.
+- `pk-admin/1` (ADM-11 PR 5): additive. `--yes` on prompting commands,
+  the catalog's `prompts` flag in use, and exit 4 (`confirmation_required`)
+  when a prompt is not answered.
