@@ -45,7 +45,7 @@ from .test_integration_views_postgresql import (  # noqa: F401
 pytestmark = pytest.mark.django_db(transaction=True)
 PRIOR = b"synthetic-working-parishsoft-key"
 CANDIDATE = b"synthetic-next-parishsoft-key"
-SETTINGS = "/admin/configuration/integrations/parishsoft"
+SETTINGS = "/admin/system/integrations/parishsoft/"
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ def replacement(request, monkeypatch, tmp_path, google):
         selection=ConfigurationChangeRequest.objects.get(
             request_key=selection_key(row.pk)
         ),
-        url=f"/admin/configuration/credentials/{row.pk}/select",
+        url=f"/admin/system/key-changes/{row.pk}/selection/",
     )
 
 
@@ -527,7 +527,7 @@ def test_another_admin_can_select_with_own_preview_but_not_replay_original(
     assert response.status_code == 302, response.content
     assert (
         b"Switching to it now"
-        in browser.get("/admin/configuration/integrations/parishsoft").content
+        in browser.get("/admin/system/integrations/parishsoft/").content
     )
     row = ConfigurationChangeRequest.objects.get(
         pk=response["Location"].rsplit("/", 1)[-1]

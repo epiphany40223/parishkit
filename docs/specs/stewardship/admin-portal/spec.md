@@ -397,10 +397,12 @@ flow with a way back) and #525 (one URL scheme). Every page already uses the
 table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which keeps its
 name until NAV-15 splits it into Sign-in rules, Ministry assignments and
 Chairpersons, and the Emailed reports, Ministry assignments and Chairpersons
-pages, which do not exist yet. Until the URL work lands, every page keeps its
-"Current URL", and so does every other section of this spec and the other
-stewardship specs that name an Admin URL (for example the hosted-files
-spec's `/admin/files/`); those follow-up issues update them with the code.
+pages, which do not exist yet. The System pages already have their new
+addresses (NAV-6), with every old address redirecting. Until the rest of the
+URL work lands, other pages keep their "Current URL", and so does every other
+section of this spec and the other stewardship specs that name an Admin URL
+(for example the hosted-files spec's `/admin/files/`); those follow-up issues
+update them with the code.
 
 The Admin portal serves one current campaign. The system moves to a single
 campaign after this campaign (#145), so navigation already assumes it: there
@@ -746,13 +748,13 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); revoke posts to `/admin/users/automation/sessions/<session>/`. |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
-| `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/configuration/integrations` | `/admin/system/integrations/` |  |
-| `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/configuration/integrations/<target>` | `/admin/system/integrations/<target>/` | Object-named (exception); hand-written Integrations link removed. |
-| `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/configuration/credentials/<request>` | `/admin/system/key-changes/<request>/` |  |
-| `select_credential` | Finish switching to the new key | _integration name_ | Administrator | (same) | `/admin/configuration/credentials/<request>/select` | `/admin/system/key-changes/<request>/selection/` |  |
-| `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/background` | `/admin/system/background/` |  |
-| `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/background/task/<task>` | `/admin/system/background/<task>/` |  |
-| `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/logs` | `/admin/system/logs/` |  |
+| `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/system/integrations/` | (same; old address redirects) |  |
+| `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/system/integrations/<target>/` | (same; old address redirects) | Object-named (exception); hand-written Integrations link removed. |
+| `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/` | (same; old address redirects) |  |
+| `select_credential` | Finish switching to the new key | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/selection/` | (same; old address redirects) |  |
+| `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/system/background/` | (same; old address redirects) |  |
+| `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/system/background/<task>/` | (same; old address redirects) |  |
+| `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/system/logs/` | (same; old address redirects) |  |
 | `campaign_new` | (retired) | (retired) | Administrator | Create campaign draft; New campaign | `/admin/campaign/new` | (retired; redirects to `/admin/campaign/settings/`) | Decision 11: no New campaign control; the campaign is created in the setup wizard. The old address redirects to Campaign settings. |
 | `report_campaigns` | (retired) | (retired) | Administrator, Staff | Choose a retained campaign; Choose a campaign | `/admin/reports/campaigns/` | (retired; redirects to `/admin/reports/participation/`) | Decisions 10 and 19: no campaign chooser; reports show the current campaign. Its link on Participation is greyed out with the #145 tip until removed. The old address redirects to Participation. |
 | `ministry_report_campaigns` | (retired) | (retired) | Administrator, Staff, Ministry leader | Choose a retained campaign; Choose a campaign | `/admin/ministry-reports/campaigns/` | (retired; redirects to `/admin/reports/ministries/`) | Decisions 10 and 19: no campaign chooser. Its link on Ministry requests is greyed out with the #145 tip until removed. The old address redirects to Ministry requests. |
@@ -831,7 +833,10 @@ Admin URLs follow the menu, so the address says where the reader is
   of a campaign-UUID redirect depends on which campaign is current, and
   browsers cache 301 and 308 responses indefinitely, those redirects (and the
   410 refusals) are sent with `Cache-Control: no-store`; redirects that name
-  no campaign may be cached. Likewise a page for one record (an export, a
+  no campaign may be cached. Only a signed-in Admin portal user gets either
+  answer: anyone else gets the sign-in refusal before the campaign is
+  compared, so the choice between redirect and 410 never tells a stranger
+  which campaign is current. Likewise a page for one record (an export, a
   digest snapshot, a cleanup request) refuses a record whose campaign is not
   current. Sent digest emails, bookmarks and the operator runbooks link the
   old forms. A test lists every old pattern with its target.

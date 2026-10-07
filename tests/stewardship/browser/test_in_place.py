@@ -61,7 +61,7 @@ def test_background_refresh_rereads_the_view_in_place(page, component_origin):
     href = refresh.get_attribute("href")
     assert "page=1" in href and href.endswith("#table")
     offset = scroll_below(page, "#background-refresh")
-    gets = count_requests(page, "GET", "/admin/background?")
+    gets = count_requests(page, "GET", "/admin/system/background/?")
     refresh.click()
     has_text(page.locator("#background-counts"), _counts(2))
     assert page.evaluate(MARKED) == "kept"

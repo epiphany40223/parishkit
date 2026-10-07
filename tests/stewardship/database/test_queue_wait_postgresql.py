@@ -211,7 +211,7 @@ def test_task_status_fragment_explains_a_queued_run(auth_service, google):  # no
     task = new(task_type="report_export")
     browser, signed = signed_in()
     assert signed.status_code == 302
-    path = f"/admin/background/task/{task.run_id}/status"
+    path = f"/admin/system/background/{task.run_id}/status/"
     with task_login(ServiceRole.WEB):
         body = browser.get(path).content
     assert b"Waiting for the report totals update to finish" in body

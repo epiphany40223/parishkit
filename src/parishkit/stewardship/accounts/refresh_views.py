@@ -16,6 +16,7 @@ from django import forms
 from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
@@ -131,7 +132,9 @@ def _request(request, service, actor):
         raise ConfigError(
             "Source refresh requires its configured organization."
         ) from None
-    return HttpResponseRedirect(f"/admin/background/task/{receipt.task_root_id}")
+    return HttpResponseRedirect(
+        reverse("admin:background_task_page", args=[receipt.task_root_id])
+    )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

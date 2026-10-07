@@ -192,7 +192,7 @@ def test_task_listing_sorts_on_the_server_and_counts_its_pages(auth_service, goo
     # A page past the end shows the last page instead of an empty one.
     past = browser.get(BASE, {"size": 1, "page": 9}).json()
     assert past["page"] == 2 and past["tasks"][0]["id"] == str(first.run_id)
-    page = browser.get("/admin/background", {"size": 25, "page": 9}).content
+    page = browser.get("/admin/system/background/", {"size": 25, "page": 9}).content
     assert b"Page 1 of 1" in page and b"No rows on this page" not in page
     # A queued task has no heartbeat; newest heartbeat first lists the
     # claimed task first, never the tasks without one.
@@ -202,7 +202,7 @@ def test_task_listing_sorts_on_the_server_and_counts_its_pages(auth_service, goo
     assert all(task["heartbeat_at"] is None for task in beating["tasks"][1:])
     for token in ("created_at", "-id", "task_type"):
         assert browser.get(BASE, {"sort": token}).status_code == 400
-    page = browser.get("/admin/background", {"sort": "state", "size": 25})
+    page = browser.get("/admin/system/background/", {"sort": "state", "size": 25})
     assert page.status_code == 200
     html = page.content.decode()
     assert 'aria-sort="ascending"' in html and "Page 1 of 1" in html
@@ -264,7 +264,7 @@ def test_poll_in_activation_window_waits_and_answers(
     task = new()
     browser, _ = signed_in()
     path = (
-        f"/admin/background/task/{task.run_id}/status"
+        f"/admin/system/background/{task.run_id}/status/"
         if status
         else "/admin/background/counts"
     )
@@ -286,7 +286,7 @@ def test_poll_through_unfinished_activation_answers_retry_without_error(
     task = new()
     browser, _ = signed_in()
     path = (
-        f"/admin/background/task/{task.run_id}/status"
+        f"/admin/system/background/{task.run_id}/status/"
         if status
         else "/admin/background/counts"
     )
@@ -320,7 +320,7 @@ def test_task_html_detail_is_bounded_passive_and_preserves_history_filters(
     )
     browser, _ = signed_in()
     before = PortalSession.objects.get().last_activity_at
-    path = f"/admin/background/task/{task.run_id}"
+    path = f"/admin/system/background/{task.run_id}/"
     response = browser.get(path, {"page": 1, "size": 1})
     assert response.status_code == 200 and response["Cache-Control"] == "no-store"
     assert b"1,000 out of 4,000 (25%)" in response.content
@@ -330,7 +330,7 @@ def test_task_html_detail_is_bounded_passive_and_preserves_history_filters(
     assert 'aria-sort="ascending"' in oldest and '<td class="numeric">1</td>' in oldest
     assert browser.get(path, {"sort": "created_at"}).status_code == 400
     assert PortalSession.objects.get().last_activity_at == before
-    assert browser.get(f"/admin/background/task/{uuid4()}").status_code == 404
+    assert browser.get(f"/admin/system/background/{uuid4()}/").status_code == 404
     assert Client().get(path).status_code == 403
 
 
@@ -356,7 +356,11 @@ def test_html_render_or_final_revocation_cannot_record_success(
         return result
 
     monkeypatch.setattr(views, "render", render)
-    path = f"/admin/background/task/{task.run_id}" if detail else "/admin/background"
+    path = (
+        f"/admin/system/background/{task.run_id}/"
+        if detail
+        else "/admin/system/background/"
+    )
     if failure == "render":
         with pytest.raises(RuntimeError, match="Synthetic"):
             browser.get(path)
@@ -376,33 +380,33 @@ def test_polling_task_status_fragment_is_passive_and_unaudited(auth_service, goo
     task = act(new(), "claim")
     browser, _ = signed_in()
     before = PortalSession.objects.get().last_activity_at
-    path = f"/admin/background/task/{task.run_id}"
+    path = f"/admin/system/background/{task.run_id}/"
     page = browser.get(path)
     assert page.status_code == 200
-    assert f'data-live-url="{path}/status"'.encode() in page.content
+    assert f'data-live-url="{path}status/"'.encode() in page.content
     views_logged = AuditEvent.objects.filter(event_type="background_viewed")
     assert views_logged.count() == 1
     audit_count = AuditEvent.objects.count()
     for _ in range(3):
-        poll = browser.get(f"{path}/status")
+        poll = browser.get(f"{path}status/")
         assert poll.status_code == 200 and poll["Cache-Control"] == "no-store"
         assert b'data-live-status="task"' in poll.content
         assert b"data-live-pending" in poll.content
         # Only the region: no Admin chrome or task history table.
         assert b"Task history" not in poll.content and b"<html" not in poll.content
     # History paging copied from the page URL is ignored, never refused.
-    paged = browser.get(f"{path}/status", {"page": 99, "size": 1})
+    paged = browser.get(f"{path}status/", {"page": 99, "size": 1})
     assert paged.status_code == 200 and b"data-live-pending" in paged.content
     assert AuditEvent.objects.count() == audit_count
     # Completing the task audits its own work; the final poll adds no view.
     task = act(task, "complete")
-    finished = browser.get(f"{path}/status")
+    finished = browser.get(f"{path}status/")
     assert b"Finished successfully." in finished.content
     assert b"data-live-pending" not in finished.content
     assert views_logged.count() == 1
     assert PortalSession.objects.get().last_activity_at == before
-    assert browser.get(f"/admin/background/task/{uuid4()}/status").status_code == 404
-    assert Client().get(f"{path}/status").status_code == 403
+    assert browser.get(f"/admin/system/background/{uuid4()}/status/").status_code == 404
+    assert Client().get(f"{path}status/").status_code == 403
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
@@ -423,6 +427,6 @@ def test_task_status_fragment_is_administrator_only(auth_service, google, role):
     task = new()
     browser, signed = signed_in()
     assert signed.status_code == 302
-    response = browser.get(f"/admin/background/task/{task.run_id}/status")
+    response = browser.get(f"/admin/system/background/{task.run_id}/status/")
     assert response.status_code == 403
     assert str(task.run_id).encode() not in response.content

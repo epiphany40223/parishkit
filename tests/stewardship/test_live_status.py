@@ -129,9 +129,9 @@ def test_background_task_polls_its_passive_fragment_not_the_page():
     """Polling the audited page would log a view every few seconds (#308)."""
     html = render_to_string(
         "stewardship/background-task.html",
-        {"task": task("running"), "status_url": "/admin/background/task/x/status"},
+        {"task": task("running"), "status_url": "/admin/system/background/x/status/"},
     )
-    assert 'data-live-url="/admin/background/task/x/status"' in region(html, "task")
+    assert 'data-live-url="/admin/system/background/x/status/"' in region(html, "task")
 
 
 @pytest.mark.parametrize(

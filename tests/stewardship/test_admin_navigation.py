@@ -64,9 +64,9 @@ def test_every_admin_route_is_either_a_page_or_explicitly_not_one():
     """A new Admin route must be placed in the navigation or listed as a non-page."""
     pages = set(navigation.PAGES)
     assert not pages & navigation.NON_PAGES
-    assert set(ROUTES) == pages | navigation.NON_PAGES, set(ROUTES) ^ (
-        pages | navigation.NON_PAGES
-    )
+    assert not (pages | navigation.NON_PAGES) & navigation.LEGACY
+    known = pages | navigation.NON_PAGES | navigation.LEGACY
+    assert set(ROUTES) == known, set(ROUTES) ^ known
 
 
 def test_pages_form_acyclic_trees_within_known_sections():

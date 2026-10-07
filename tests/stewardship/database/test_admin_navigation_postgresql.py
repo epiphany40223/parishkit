@@ -69,7 +69,7 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     assert (b'href="/admin/users"' in body) == (role == "administrator")
     assert (b"Parish settings" in body) == (role == "administrator")
     # The combined logs are offered to Administrators only.
-    assert (b'href="/admin/logs"' in body) == (role == "administrator")
+    assert (b'href="/admin/system/logs/"' in body) == (role == "administrator")
     assert (b"Background work" in body) == (role == "administrator")
     assert (b"Family directory" in body) == (role != "ministry_leader")
     # The Postal outreach page merged into the Family directory (#202).
@@ -96,7 +96,11 @@ def test_every_admin_page_offers_sign_out_in_the_menu(auth_service, google):
     _, owner, _ = add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
     campaign = owner["id"]
-    for path in ("/admin/", f"/admin/campaign/{campaign}/content", "/admin/logs"):
+    for path in (
+        "/admin/",
+        f"/admin/campaign/{campaign}/content",
+        "/admin/system/logs/",
+    ):
         body = browser.get(path).content.decode()
         menu = body[body.index('aria-label="Administration"') :]
         menu = menu[: menu.index("</nav>")]
@@ -166,7 +170,7 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     assert flow_steps(browser.get(content).content) == (STEPS, "Make changes")
     assert flow_steps(browser.get(parish.URL).content) == (STEPS, "Make changes")
     # Pages outside a flow show no indicator.
-    assert flow_steps(browser.get("/admin/background").content) is None
+    assert flow_steps(browser.get("/admin/system/background/").content) is None
     # A review with nothing changed is refused back to the form, step 1.
     unchanged = parish.post(browser, parish.fields(store))
     assert unchanged.status_code == 400
@@ -210,7 +214,7 @@ def test_background_html_shows_exact_progress_and_does_not_renew_idle(
     act(task, "progress", progress=(1000, 3000), phase=TaskPhase.FETCHING)
     browser, _ = signed_in()
     activity = PortalSession.objects.get().last_activity_at
-    response = browser.get("/admin/background")
+    response = browser.get("/admin/system/background/")
     assert response.status_code == 200
     assert b"1,000 out of 3,000 (33.3%)" in response.content
     assert b"data-local-instant" in response.content
@@ -238,7 +242,7 @@ def test_background_html_is_not_accessible_through_direct_non_admin_url(
     )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
-    assert browser.get("/admin/background").status_code == 403
+    assert browser.get("/admin/system/background/").status_code == 403
 
 
 def test_background_pagination_preserves_filtered_scope(auth_service, google):
@@ -246,7 +250,7 @@ def test_background_pagination_preserves_filtered_scope(auth_service, google):
     for _ in range(2):
         act(act(new(), "claim"), "complete")
     browser, _ = signed_in()
-    response = browser.get("/admin/background?state=succeeded&size=1")
+    response = browser.get("/admin/system/background/?state=succeeded&size=1")
     assert response.status_code == 200
     following = b"state=succeeded&amp;sort=-created&amp;size=1&amp;page=2"
     assert following in response.content
@@ -265,7 +269,7 @@ def test_dashboard_failure_links_open_the_html_task_page(auth_service, google):
     with task_login(ServiceRole.WEB):
         response = browser.get("/admin/")
         assert response.status_code == 200
-        path = f"/admin/background/task/{task.run_id}"
+        path = f"/admin/system/background/{task.run_id}/"
         assert f'href="{path}"'.encode() in response.content
         detail = browser.get(path)
         assert detail.status_code == 200
@@ -314,7 +318,7 @@ def test_restricted_web_role_can_read_dashboard_and_status_pages(auth_service, g
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB):
         assert browser.get("/admin/").status_code == 200
-        assert browser.get("/admin/background").status_code == 200
+        assert browser.get("/admin/system/background/").status_code == 200
 
 
 @pytest.mark.parametrize("error", [ValueError, TypeError, LookupError])
@@ -343,7 +347,7 @@ def test_critical_event_warning_is_persistent_and_admin_only(auth_service, googl
     """The warning reports recent critical events without exposing their context."""
     operational(Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED))
     browser, _ = signed_in()
-    for path in ("/admin/", "/admin/background", "/admin/configuration/parish"):
+    for path in ("/admin/", "/admin/system/background/", "/admin/configuration/parish"):
         response = browser.get(path)
         assert b"Critical problems in the past 24 hours" in response.content
     store = auth_service.store

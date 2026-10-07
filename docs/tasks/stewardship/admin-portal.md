@@ -412,7 +412,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.06 — NAV-4: give Campaign setup and Mail pages one name each, including Cancel go-live.
 - [x] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages, and the remaining setup wizard steps, one name each.
 - [x] ADM-12.08 — NAV-5b: give report pages one name each.
-- [ ] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
+- [x] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
 - [ ] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
 - [ ] ADM-12.11 — NAV-8: move Mail and Family portal URLs.
 - [ ] ADM-12.12 — NAV-9: move Campaign setup URLs, part A, and add the group root.
@@ -536,6 +536,22 @@ their page, including an export's report and Home. It is proven by
 `tests/stewardship/test_admin_page_names.py` (the Responses and reports
 group, the empty-report page, more retired names) and the updated report
 suites.
+ADM-12.09 (NAV-6) adds the URL plumbing: `web/admin_routes.py` with
+`legacy()` (301 for GET and HEAD, 308 otherwise, query kept; for an old
+address naming a campaign, a redirect only for the current campaign and a
+never-cached 410 otherwise) and `current_campaign()`, and the
+`admin_urls/` package with the System group's routes and the old-to-new
+table. Integrations, key changes, Background work, its task pages and
+retries, and System logs move under `/admin/system/`; the JSON reads that
+scripts poll keep their addresses. Remembered change origins on old
+addresses still lead back to their page, the setup-time background
+allowance matches both forms, and the runbooks name the new addresses. It
+is proven by `tests/stewardship/test_admin_url_scheme.py` (scheme rules,
+every page reverses, each old address redirects keeping the query),
+`tests/stewardship/test_family_routes_frozen.py` (Family and OAuth routes
+unchanged), `tests/stewardship/database/test_admin_url_scheme_postgresql.py`
+(campaign redirects and refusals, `current_campaign`, bookmarks through the
+middleware) and the updated System suites.
 
 ## ADM-13: System health page
 

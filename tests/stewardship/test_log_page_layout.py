@@ -73,7 +73,9 @@ def _render(query=None, rows=None):
         "stewardship/logs.html",
         page_context(
             query or LogQuery(),
-            log_table(query or LogQuery(), rows, through=NOW, action="/admin/logs"),
+            log_table(
+                query or LogQuery(), rows, through=NOW, action="/admin/system/logs/"
+            ),
         ),
     )
 
@@ -278,7 +280,7 @@ def test_entries_cross_link_by_correlation_actor_campaign_and_task():
     assert html.count(">Same actor</button>") == rows
     assert html.count(">Same campaign</button>") == 1
     assert html.count(">Open task</a>") == 1
-    assert f'href="/admin/background/task/{UUID(int=304)}">Open task</a>' in html
+    assert f'href="/admin/system/background/{UUID(int=304)}/">Open task</a>' in html
     # A campaign filter only ever matches audit records, so it asks for them
     # alone: Audit record ticked, every level unticked (#601).
     form = re.search(r"<form[^>]*>(?:(?!</form>).)*>Same campaign<", html, re.S)

@@ -432,28 +432,29 @@ def test_preparation_retry_form_preserves_failed_task_and_hides_stale_action(
             act(_status(TaskRun.objects.get(pk=ticket.task_id)), "claim"),
             "permanent_failure",
         )
-        path = f"/admin/background/tasks/{ticket.task_id}"
-        page_path = f"/admin/background/task/{ticket.task_id}"
+        page_path = f"/admin/system/background/{ticket.task_id}/"
         values = {"command_id": str(uuid4())}
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = browser.get(page_path)
             assert (
-                page.status_code == 200 and b"retry-family-preparation" in page.content
+                page.status_code == 200 and b"family-preparation-retry/" in page.content
             )
             assert (
-                browser.post(path + "/retry-family-preparation", values).status_code
+                browser.post(
+                    page_path + "family-preparation-retry/", values
+                ).status_code
                 == 403
             )
             for _ in range(2):
                 result = browser.post(
-                    path + "/retry-family-preparation",
+                    page_path + "family-preparation-retry/",
                     values,
                     HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 )
                 assert result.status_code == 302
-            assert b"retry-family-preparation" not in browser.get(page_path).content
+            assert b"family-preparation-retry/" not in browser.get(page_path).content
             conflict = browser.post(
-                path + "/retry-family-preparation",
+                page_path + "family-preparation-retry/",
                 {"command_id": str(uuid4())},
                 HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
             )

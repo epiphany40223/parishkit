@@ -12,7 +12,7 @@ from parishkit.stewardship.web.namespaces import admin_return_path
         "/admin/setup",
         "/admin/setup/credentials/parishsoft",
         "/admin/campaigns/0b6f7e1c-7a44-4b43-9d52-2c6a1e0f3a10/delivery-control",
-        "/admin/logs?source=audit&event=admin_login",
+        "/admin/system/logs/?source=audit&event=admin_login",
         "/admin/users/",
     ],
 )

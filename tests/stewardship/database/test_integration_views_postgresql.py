@@ -31,8 +31,8 @@ from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_credential_isolation_postgresql import identity, isolated_roles  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
-INDEX = "/admin/configuration/integrations"
-URL = INDEX + "/parishsoft"
+INDEX = "/admin/system/integrations/"
+URL = INDEX + "parishsoft/"
 SECRET = "SYNTHETIC-PRIVATE-CANDIDATE"
 
 
@@ -74,7 +74,7 @@ def save_key(browser, candidate, page=None, **fields):
 
 def status_url(row):
     """The key change's details page."""
-    return f"/admin/configuration/credentials/{row.pk}"
+    return f"/admin/system/key-changes/{row.pk}/"
 
 
 def edit(store, **values):
@@ -567,7 +567,7 @@ def test_integrations_and_secrets_are_admin_only(auth_service, google, role):
     for url in (
         INDEX,
         URL,
-        "/admin/configuration/credentials/" + str(uuid4()),
+        "/admin/system/key-changes/" + str(uuid4()) + "/",
     ):
         assert browser.get(url).status_code == 403
     response = post(
@@ -589,13 +589,13 @@ def test_missing_handoff_and_unknown_targets_fail_closed(auth_service, google):
     assert b"stores new keys for this integration has not started" in page.content
     assert b"ask whoever manages the parish" in page.content
     assert b"system administrator" not in page.content
-    assert browser.get(INDEX + "/unknown").status_code == 404
+    assert browser.get(INDEX + "unknown/").status_code == 404
     # The unlinked stand-alone "replace credential" page is gone: it staged a
     # key with nothing to switch to it, which stopped mail (#307 M1).
     for target in ("parishsoft", "google_workspace", "slack", "email"):
-        assert browser.get(f"{INDEX}/{target}/credential").status_code == 404
+        assert browser.get(f"{INDEX}{target}/credential/").status_code == 404
     assert (
-        browser.get("/admin/configuration/credentials/" + str(uuid4())).status_code
+        browser.get("/admin/system/key-changes/" + str(uuid4()) + "/").status_code
         == 404
     )
 
