@@ -37,7 +37,10 @@ progress``, ``send history``, ``schedule show``, ``go-live readiness`` and
 take ``--watch``. The schedule change commands (``schedule preview`` and
 ``schedule confirm``, in ``admin_changes``) and ``config request show``
 (with ``--watch``) follow (PR 4), then ``task retry`` and the delivery
-commands (PR 9, in ``admin_operations``). Other areas join the same
+commands (PR 9, in ``admin_operations``) and ``logs list`` and ``logs
+export`` (PR 8a, in ``admin_reports``). A command that streams a file
+(``logs export``) writes the file's bytes, and nothing else, to standard
+output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it.
 """
@@ -190,6 +193,10 @@ class CommandSpec:
     # UUID), logged with a watch timeout (#807); None when it follows no
     # single record.
     watch_subject: str | None = None
+    # Whether it streams a file: the handler leaves the bytes in
+    # context["stream"]; they alone go to standard output, and every
+    # document (success or failure) to standard error.
+    streams: bool = False
     # The audit event a state-changing command records: by default its own
     # admin_cmd_<area>_<verb> type; the session commands record the session
     # events instead, and pairing records none until approval.
@@ -990,6 +997,50 @@ def families_status(args, preamble, runtime, context):
     return read_families_status(context["caller"], runtime)
 
 
+def _log_filters(args):
+    """The System logs page's filter fields from ``logs`` options."""
+    return {
+        "show": args.show,
+        "event": args.event,
+        "actor": args.actor,
+        "correlation": args.correlation,
+        "campaign": args.campaign,
+        "subject": args.subject,
+        "text": args.text,
+        "ministry": args.ministry,
+        "start": args.start,
+        "end": args.end,
+        "zone": args.zone,
+    }
+
+
+def logs_list(args, preamble, runtime, context):
+    """One page of System logs, filtered as the page (PR 8a)."""
+    from .admin_reports import read_logs
+
+    filters = _log_filters(args) | {
+        "through": args.through,
+        "page": args.page,
+        "size": args.size,
+        "sort": args.sort,
+    }
+    return read_logs(context["caller"], runtime, filters)
+
+
+def logs_export(args, preamble, runtime, context):
+    """The System logs page's download, streamed to standard output (PR 8a)."""
+    from .admin_reports import export_logs
+
+    return export_logs(
+        context["caller"],
+        runtime,
+        _log_filters(args),
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -1269,6 +1320,73 @@ def _delivery_resolve_options(parser):
         help="the evidence note, or - to read it from standard input",
     )
     _request_key_option(parser)
+
+
+# The System logs page's six kinds of entry (``audit.log_rows``): the five
+# levels and audit records. Spelled out because the parser is built before
+# Django is set up; a test keeps it equal to the page's.
+LOG_KINDS = ("debug", "info", "warning", "error", "critical", "audit")
+
+
+def _log_filter_options(parser):
+    """The System logs page's filters, shared by ``logs list`` and ``logs export``."""
+    parser.add_argument(
+        "--show",
+        action="append",
+        choices=LOG_KINDS,
+        help="a kind of entry to show; repeat for more (default: every "
+        "level but debug, and audit records)",
+    )
+    parser.add_argument("--event", metavar="TYPE", help="one event type, exactly")
+    parser.add_argument("--actor", type=_uuid, help="the acting user or process")
+    parser.add_argument("--correlation", type=_uuid, help="one correlation id")
+    parser.add_argument(
+        "--campaign", type=_uuid, help="one campaign (audit records only)"
+    )
+    parser.add_argument(
+        "--subject", type=_uuid, help="one subject record (audit records only)"
+    )
+    parser.add_argument(
+        "--text",
+        help="search text, as the page's search (no email address); give it "
+        "only when needed, since a shell keeps it in its history",
+    )
+    parser.add_argument("--ministry", metavar="DUID", help="one Ministry's DUID")
+    parser.add_argument("--start", metavar="DATE", help="from this day (YYYY-MM-DD)")
+    parser.add_argument("--end", metavar="DATE", help="through this day (YYYY-MM-DD)")
+    parser.add_argument(
+        "--zone",
+        help="the time zone --start and --end days fall in (required with them), "
+        "for example America/New_York",
+    )
+
+
+def _logs_list_options(parser):
+    """Options of ``logs list``: the page's filters, snapshot and window."""
+    _log_filter_options(parser)
+    parser.add_argument(
+        "--through",
+        metavar="INSTANT",
+        help="the snapshot a previous logs list printed, to page through it",
+    )
+    parser.add_argument("--page", type=int, help="page number (default 1)")
+    parser.add_argument("--size", type=int, help="rows per page: 25, 50, 100 or 250")
+    parser.add_argument(
+        "--sort", choices=("newest", "oldest"), help="default newest first"
+    )
+
+
+def _logs_export_options(parser):
+    """Options of ``logs export``: the page's filters, format and time zone."""
+    _log_filter_options(parser)
+    parser.add_argument(
+        "--format", choices=("csv", "jsonl"), default="csv", help="default csv"
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
+    )
 
 
 def _go_live_progress_options(parser):
@@ -1733,6 +1851,37 @@ def _test_specs():
     )
 
 
+def _report_specs():
+    """The report, export, digest and log commands (PR 8; 8a: the logs)."""
+    from .admin_reports import LogExport, LogList
+
+    return (
+        CommandSpec(
+            "logs list",
+            "List System logs entries, filtered as the page.",
+            logs_list,
+            "read_only",
+            False,
+            LogList.field_names(),
+            8,
+            options=(_logs_list_options,),
+            audit_event="system_logs_viewed",
+        ),
+        CommandSpec(
+            "logs export",
+            "Write the System logs download to standard output.",
+            logs_export,
+            "full",
+            False,
+            LogExport.field_names(),
+            8,
+            options=(_logs_export_options,),
+            audit_event="system_logs_exported",
+            streams=True,
+        ),
+    )
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -1740,6 +1889,7 @@ COMMANDS = (
     + _refresh_specs()
     + _test_specs()
     + _operation_specs()
+    + _report_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 
@@ -1850,6 +2000,7 @@ def catalog():
                 "options": options,
                 "arguments": arguments,
                 "watch": spec.watch,
+                "streams": spec.streams,
                 "result_fields": list(spec.result_fields),
                 "pr": spec.pr,
             }
@@ -1988,6 +2139,8 @@ def run(args, *, stdin, stdout, stderr):
     from .observability import correlation
 
     spec = BY_NAME[args.command_name]
+    # A streaming command's standard output holds the file alone.
+    documents = stderr if spec.streams else stdout
     with correlation() as correlation_id:
 
         def emit(result, *, final):
@@ -2002,7 +2155,7 @@ def run(args, *, stdin, stdout, stderr):
                 session=session_block(context.get("session")),
                 result=result,
             )
-            print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
+            print(json.dumps(output, sort_keys=True), file=documents, flush=True)
 
         # "audit": only the first read of a --watch records the page's view.
         context = {
@@ -2046,6 +2199,8 @@ def run(args, *, stdin, stdout, stderr):
                         )
 
                         close_command_session(caller.portal_session)
+            if spec.streams:
+                write_stream(stdout, context["stream"])
             emit(result, final=context["final"])
             return 0
         except Exception as error:
@@ -2075,8 +2230,25 @@ def run(args, *, stdin, stdout, stderr):
             if isinstance(error, WatchTimeout) and error.model is not None:
                 # The last state read, as the specification asks.
                 output["result"] = error.model.to_document()
-            print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
+            print(json.dumps(output, sort_keys=True), file=documents, flush=True)
             return EXIT_CODES[code]
+
+
+def write_stream(stdout, body):
+    """Write a streamed file's bytes, exactly, to standard output.
+
+    The bytes go to the binary buffer under a text stream, never through
+    its encoding; a text-only stream (a test's ``StringIO``) gets them
+    decoded as UTF-8, the only encoding a streamed file uses.
+    """
+    target = getattr(stdout, "buffer", None)
+    if target is None:
+        stdout.write(body.decode("utf-8"))
+        stdout.flush()
+        return
+    stdout.flush()
+    target.write(body)
+    target.flush()
 
 
 def watch(spec, args, preamble, runtime, context, emit):
@@ -2172,6 +2344,24 @@ def _limit_core_dumps():
         pass
 
 
+def streaming_command(argv):
+    """Whether the command line names a streaming command, parsed or not.
+
+    A usage error is found before any command is chosen, yet a streaming
+    command's standard output is the operator's file: its document goes to
+    standard error, as every other document of that command does.
+    """
+    words = list(argv)
+
+    def named(name):
+        """Whether ``name``'s words appear together, after any leading options
+        (``--config FILE logs export --bad`` is still ``logs export``)."""
+        size = len(name)
+        return any(words[i : i + size] == name for i in range(len(words)))
+
+    return any(spec.streams and named(spec.name.split()) for spec in COMMANDS)
+
+
 def main(argv=None, *, stdin=None, stdout=None, stderr=None):
     """Console entry for ``pk-stewardship admin``: parse, run, exit with its code."""
     from .observability import configure_logging
@@ -2221,7 +2411,12 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
             "session": None,
             "error": {"code": "usage", "message": MESSAGES["usage"]},
         }
-        print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
+        documents = (
+            stderr
+            if streaming_command(sys.argv[1:] if argv is None else argv)
+            else stdout
+        )
+        print(json.dumps(output, sort_keys=True), file=documents, flush=True)
         return 2
     configure_logging()
     return run(args, stdin=stdin, stdout=stdout, stderr=stderr)

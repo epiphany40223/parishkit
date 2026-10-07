@@ -462,6 +462,19 @@ allowlists with no recipient, DUID or note text),
 `tests/stewardship/database/test_admin_delivery_cli_postgresql.py` and the
 unchanged delivery view, recovery, command session and resolution suites.
 `resend` and `delivery refusal-clear` follow in 9c, at PR 5b's prompt.
+ADM-11.09 lands in five parts. 8a adds `logs list` and `logs export`, with
+the System logs page's reads moved into `audit.log_reads`, the first
+command that streams a file (its document on standard error) and the
+wrapper's refusal to write one to a terminal; proven by
+`tests/stewardship/test_admin_reports.py` (golden documents and allowlists
+with no actor email or Family DUID, the page's filters, the stream),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/test_pk_admin.py`,
+`tests/stewardship/database/test_admin_logs_cli_postgresql.py` (the page's
+rows, events, counts and download bytes) and the unchanged log view suites.
+8b (the export lifecycle and `export fetch`), 8c (report reads), 8d
+(digests) and 8e (Family-level exports) follow.
 
 ## ADM-12: Admin navigation overhaul
 

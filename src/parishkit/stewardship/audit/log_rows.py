@@ -485,6 +485,8 @@ def operational_row(record):
         "id": record["id"],
         "created_at": record["created_at"],
         "source": _("Operational"),
+        # The stored name of the source, which the command line prints.
+        "source_kind": "operational",
         "level": record["level"],
         "level_symbol": symbol,
         "level_label": label,
@@ -499,6 +501,7 @@ def operational_row(record):
         "subject_id": None,
         "details": _details(record["context"]),
         "detail_rows": detail_labels(_details(record["context"])),
+        "actor_kind": None,
         "actor_kind_label": None,
     }
 
@@ -509,6 +512,7 @@ def audit_row(record):
         "id": record["id"],
         "created_at": record["created_at"],
         "source": _("Audit"),
+        "source_kind": "audit",
         "level": None,
         "level_symbol": "",
         "level_label": AUDIT_LABEL,
@@ -523,8 +527,10 @@ def audit_row(record):
         "details": _details(record["auditcontext__context"]),
         "detail_rows": detail_labels(_details(record["auditcontext__context"])),
         # Audit contexts say what kind of actor acted; the page names portal
-        # users and workers itself and uses this for Families, the system
-        # and the operator, which have no portal account to look up.
+        # users and workers itself and uses the label for Families, the
+        # system and the operator, which have no portal account to look up.
+        # The stored kind is what the command line's ``logs list`` prints.
+        "actor_kind": record.get("auditcontext__actor_kind"),
         "actor_kind_label": ACTOR_KINDS.get(record.get("auditcontext__actor_kind")),
     }
 

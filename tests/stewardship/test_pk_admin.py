@@ -8,8 +8,9 @@ directory, exclusive create, the tagged 43-character secret), refusal of
 wider modes, malformed or oversize files and bad names before anything runs,
 session selection, the HMAC host digest and exit 2 without a machine
 identity, the preamble sent exactly once, standard input forwarded only for a
-terminal or a `-` input, and which outcomes delete the session file. Export
-fetching arrives with the export commands (ADM-11 PR 8).
+terminal or a `-` input, which outcomes delete the session file, and that a
+streamed file (``logs export``) is never written to a terminal. Export
+fetching arrives with the export commands (ADM-11 PR 8b).
 """
 
 import hashlib
@@ -373,6 +374,130 @@ def test_an_interactive_run_with_no_input_never_waits_on_the_terminal(host):
     assert result.returncode == 0
     preamble = f"pk-admin-session/1 {'a' * 43} {host_digest()}\n".encode()
     assert host.stdin() == preamble
+
+
+def test_a_streamed_file_is_never_written_to_a_terminal(host):
+    """``logs export`` with a terminal as standard output is refused at once."""
+    host.answer({"ok": True})
+    host.session()
+    controller, terminal = pty.openpty()
+    try:
+        result = subprocess.run(
+            [str(WRAPPER), "logs", "export", "--format", "csv"],
+            env=host.environment,
+            stdin=subprocess.DEVNULL,
+            stdout=terminal,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=20,
+        )
+    finally:
+        os.close(terminal)
+        os.close(controller)
+    assert result.returncode == 2
+    assert b"redirect standard output to a file" in result.stderr
+    assert host.calls() is None
+
+
+# A stand-in docker for a streaming command: the file's bytes on standard
+# output, then its logs and document on standard error, as the command
+# line writes them. While the command runs it records every byte the
+# wrapper's work directory holds, so a copy of the file would show.
+STREAMING_DOCKER = """#!/usr/bin/env bash
+printf '%s\\n' "$@" > "$FAKE_DOCKER_ARGS"
+cat > "$FAKE_DOCKER_STDIN"
+cat "$FAKE_DOCKER_BODY"
+printf '{"event": "info line"}\\n' >&2
+cat "$FAKE_DOCKER_OUTPUT" >&2
+sleep 0.2
+for path in "$TMPDIR"/pk-admin.*/*; do
+    # Regular files only: a FIFO there (the input writer's) would block.
+    [ -f "$path" ] && [ ! -L "$path" ] && cat "$path"
+done > "$FAKE_DOCKER_WORK"
+exit "${FAKE_DOCKER_STATUS:-0}"
+"""
+
+
+def run_streaming(host, body, document, status=0):
+    """Run ``logs export`` against STREAMING_DOCKER; return (result, work bytes)."""
+    state = host.root / "docker"
+    docker = host.root / "bin" / "docker"
+    docker.write_text(STREAMING_DOCKER)
+    docker.chmod(0o755)
+    (state / "body").write_bytes(body)
+    document = host.answer(document, status=status)
+    result = host.run(
+        "logs",
+        "export",
+        "--format",
+        "csv",
+        FAKE_DOCKER_BODY=str(state / "body"),
+        FAKE_DOCKER_WORK=str(state / "work"),
+    )
+    return result, document, (state / "work").read_bytes()
+
+
+def test_a_streamed_file_passes_through_and_is_never_copied(host):
+    """The bytes reach standard output as they are; no copy is kept on disk.
+
+    The command's standard error comes through with its document last.
+    """
+    body = b"time,actor_email\r\nT,admin@example.org\r\n\x00\xff\r\n"
+    host.session()
+    result, document, work = run_streaming(host, body, {"ok": True})
+    assert result.returncode == 0 and result.stdout == body
+    assert b"admin@example.org" not in work and body not in work
+    lines = result.stderr.decode().splitlines()
+    assert json.loads(lines[-1]) == document and "info line" in lines[0]
+    assert {"logs", "export"} <= set(host.calls())
+
+
+def test_a_streaming_command_on_an_ended_session_removes_its_file(host):
+    """The document on standard error still ends a dead session's file."""
+    path = host.session("ops")
+    result, document, _ = run_streaming(
+        host, b"", {"ok": False, "error": {"code": "session_ended"}}, status=5
+    )
+    assert result.returncode == 5 and result.stdout == b""
+    assert not path.exists()
+    assert b"removed session file" in result.stderr
+
+
+def test_a_streaming_commands_standard_error_is_shown_as_it_comes(host):
+    """Interrupted mid-run, the wrapper has already shown what arrived.
+
+    The stand-in prints its document, then keeps running until Ctrl-C (here
+    SIGINT to the wrapper's process group); the document is on the
+    operator's standard error before the interruption, never held back.
+    """
+    import signal
+
+    docker = host.root / "bin" / "docker"
+    docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "cat > /dev/null\n"
+        'printf \'{"command": "logs export", "ok": false}\\n\' >&2\n'
+        "sleep 20\n"
+    )
+    docker.chmod(0o755)
+    host.session()
+    process = subprocess.Popen(
+        [str(WRAPPER), "logs", "export"],
+        env=host.environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        line = process.stderr.readline()
+        os.killpg(process.pid, signal.SIGINT)
+        process.wait(timeout=20)
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+    assert json.loads(line) == {"command": "logs export", "ok": False}
+    assert process.returncode == 130
 
 
 @pytest.mark.parametrize(
