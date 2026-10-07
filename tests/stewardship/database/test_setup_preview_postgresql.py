@@ -147,7 +147,7 @@ def test_preview_http_is_private_inert_and_contains_all_named_slots(
         assert response.status_code == 200, response.content
         assert response["Cache-Control"] == "no-store"
         for expected in (
-            b"First-campaign setup preview",
+            b"<h1>Review</h1>",
             b"Sample Parish",
             b"Thank You page",
             b"Initial invitation",

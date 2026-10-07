@@ -395,14 +395,16 @@ through every Admin page (109 pages) and settled by the Administrator's
 [navigation decisions](#navigation-decisions) of 2026-10-04. The sidebar is
 moved to it, and the page names, links and URLs fixed against it, by the
 follow-up issues #520 (one name per page), #521 (every page reachable, every
-flow with a way back) and #525 (one URL scheme). The Campaign setup and Mail
-and Family portal pages already use the table's names (NAV-4), and so do the
-sections and specs that name them. Until the rest land, other pages keep the
-names in the table's "Current names" column, every page keeps its "Current
-URL", and so does every other section of this spec and the other stewardship
-specs that name an Admin page or URL (for example "Portal users" in
-[Admin tables](#admin-tables) and the hosted-files spec's `/admin/files/`);
-those follow-up issues update them with the code.
+flow with a way back) and #525 (one URL scheme). Home, the setup wizard and
+the Campaign setup, Mail and Family portal, Parish data, Users and access and
+System pages already use the table's names (NAV-4 and NAV-5a), except Portal
+users, which keeps its name until NAV-15 splits it into Sign-in rules,
+Ministry assignments and Chairpersons. Until the rest land, the report pages
+keep the names in the table's "Current names" column, every page keeps its
+"Current URL", and so does every other section of this spec and the other
+stewardship specs that name an Admin page or URL (for example "Portal users"
+in [Admin tables](#admin-tables) and the hosted-files spec's
+`/admin/files/`); those follow-up issues update them with the code.
 
 The Admin portal serves one current campaign. The system moves to a single
 campaign after this campaign (#145), so navigation already assumes it: there

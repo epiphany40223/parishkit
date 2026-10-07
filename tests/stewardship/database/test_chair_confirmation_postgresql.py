@@ -129,7 +129,7 @@ def test_a_confirmation_creates_the_seeded_rule_assignment_and_evidence(
     # The POST-only review is named, never linked; Return goes to users (#196).
     with web():
         status = browser.get(f"/admin/configuration/requests/{request.pk}").content
-    assert b"<li><span>Chair suggestions</span></li>" in status
+    assert b"<li><span>Review Chairperson suggestion</span></li>" in status
     assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
     assert request.request_schema == "chair-seed-patch-v9"
     rule = AddressRule.objects.filter(email="valid@example.org").latest("created_at")

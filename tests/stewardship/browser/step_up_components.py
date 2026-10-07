@@ -130,7 +130,7 @@ PAGES = {
             "state": "enter",
             "next": NEXT,
             "back": "/admin/automation",
-            "back_label": "Back to Automation access",
+            "back_label": "Return to Automation access",
         },
         ("For security, confirm your sign-in before approving a session.",),
     ),

@@ -339,7 +339,7 @@ def test_keeping_the_role_independently_survives_the_source(
     # The POST-only review is named, never linked; Return goes to users (#196).
     with web():
         status = browser.get(f"/admin/configuration/requests/{request.pk}").content
-    assert b"<li><span>Chair reviews</span></li>" in status
+    assert b"<li><span>Review Chairperson decision</span></li>" in status
     assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
     principal = current_principal(store, account.pk)
     assert "ministry_leader" in principal.roles and principal.ministries == frozenset()

@@ -1,9 +1,9 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Setup email test" %}{% endblock %}
+{% block title %}{% translate "Test email" %} — {% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
-<h1>{% translate "Setup email test" %}</h1>
+<h1>{% translate "Test email" %}</h1>
 {% aboutpage "setup-mail" %}<p>{% translate "If a selected template is empty, a generic fictional readiness sample is used." %}</p>
 <p>{% translate "This page checks status without extending your login's idle deadline." %}</p>{% endaboutpage %}
 <p class="setup-intro">{% translate "Send one fictional sample email to the Testing address to prove that Google Workspace sending works. A test accepted by Google for the current settings is required before setup can finish; after changing any setting, send a new test. Once Google accepts it, Continue takes you to the next step." %}</p>

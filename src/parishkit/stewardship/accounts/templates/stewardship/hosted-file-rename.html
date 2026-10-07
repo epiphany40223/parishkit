@@ -6,7 +6,7 @@
 {% if uses %}
 <div class="notice notice-error" role="alert"><p>{% translate "This file is in use, so its placeholder name can't change. Remove it from these pages and emails first:" %}</p>
 <ul>{% for use in uses %}<li>{{ use.description }}</li>{% endfor %}</ul></div>
-<p><a href="{% url 'admin:hosted_files' %}">{% translate "Back to Hosted files" %}</a></p>
+<p><a href="{% url 'admin:hosted_files' %}">{% translate "Return to Hosted files" %}</a></p>
 {% else %}
 <p>{% translate "The file's link stays the same; only the name used in placeholders changes." %}</p>
 <form method="post" class="panel">{% csrf_token %}{{ form.as_div }}

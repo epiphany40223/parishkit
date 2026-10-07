@@ -1,9 +1,9 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n %}
-{% block title %}{% translate "Finish initial setup" %}{% endblock %}
+{% block title %}{% translate "Finish setup" %} — {% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
-<h1>{% translate "Finish initial setup" %}</h1>
+<h1>{% translate "Finish setup" %}</h1>
 <p class="setup-intro">{% translate "Confirm to make these settings the system's configuration. The system stays in Testing mode afterwards, so no Family receives anything until you later choose to go live. Finishing first checks that everything is ready, including accepted tests of these exact settings." %}</p>
 <p class="notice">{% translate "The system will remain in Testing mode. This does not activate a live campaign or send invitations to Families." %}</p>
 <p>{% translate "Confirming locks in these settings. The system then saves your keys, loads fresh parish data for the selected financial periods, and finishes setup. This usually takes a few minutes." %}</p>

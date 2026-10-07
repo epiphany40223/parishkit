@@ -8,5 +8,5 @@
 <p>{% translate "Uploads that are never confirmed are discarded after a day." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
 <button type="submit">{% translate "Confirm new logos" %}</button></form>
-<p><a href="{% url 'admin:branding_settings' %}">{% translate "Back to parish logos" %}</a></p>
+<p><a href="{% url 'admin:branding_settings' %}">{% translate "Return to Parish logos" %}</a></p>
 {% endblock %}

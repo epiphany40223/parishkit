@@ -127,7 +127,7 @@ def _fill_defaults(request, service):
                 "the confirmation box and submit again."
             ),
             link=reverse("admin:setup_content"),
-            link_label=_("Back to the content list"),
+            link_label=_("Return to Pages and emails"),
         )
     draft, campaign = _draft(request, service)
     version = expected_version(request.POST.get("version"))

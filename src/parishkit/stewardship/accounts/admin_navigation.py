@@ -207,29 +207,36 @@ PAGES = {
     "branding_settings": Page("parish", _("Parish logos")),
     # Reviews one staged logo and refuses once it is chosen.
     "branding_preview": Page(
-        "parish", _("Logo preview"), "branding_settings", linkable=False
+        "parish", _("Review parish logos"), "branding_settings", linkable=False
     ),
     "hosted_files": Page("parish", _("Hosted files")),
     "hosted_file_delete": Page("parish", _("Delete hosted files"), "hosted_files"),
     "hosted_file_rename": Page("parish", _("Change placeholder name"), "hosted_files"),
-    "ministries": Page("parish", _("Ministry activity")),
+    "ministries": Page("parish", _("Ministries")),
     # A sidebar entry of its own, so a manual refresh is found without Home.
-    "source_refresh": Page("parish", _("ParishSoft refresh")),
+    "source_refresh": Page("parish", _("Refresh from ParishSoft")),
     # A configuration change can come from any settings page, so its status
     # page is registered under Home; the view places it under the page the
     # change was confirmed on when this sign-in remembers it.
-    "configuration_request": Page(None, _("Configuration change")),
+    "configuration_request": Page(None, _("Change status")),
     # Users
+    # Keeps its name until NAV-15 splits it into Sign-in rules, Ministry
+    # assignments and Chairpersons; renaming the combined page earlier would
+    # mislabel its other tables.
     "users": Page("users", _("Portal users")),
     # Only the review of a change started on Portal users (a POST from that
     # page) renders at these routes, so trails name them but never link them.
-    "user_rules": Page("users", _("Sign-in rules"), "users", linkable=False),
+    "user_rules": Page("users", _("Review sign-in rules"), "users", linkable=False),
     "rule_request": Page("users", _("Rule change"), "user_rules"),
     "chair_confirmations": Page(
-        "users", _("Chair suggestions"), "users", linkable=False
+        "users", _("Review Chairperson suggestion"), "users", linkable=False
     ),
-    "chair_reviews": Page("users", _("Chair reviews"), "users", linkable=False),
-    "assignments": Page("users", _("Assignments"), "users", linkable=False),
+    "chair_reviews": Page(
+        "users", _("Review Chairperson decision"), "users", linkable=False
+    ),
+    "assignments": Page(
+        "users", _("Review Ministry assignment"), "users", linkable=False
+    ),
     # The Administrator's own automation sessions (ADM-11), and the approval
     # of a pending one, which the command line links to.
     "automation_access": Page("users", _("Automation access")),

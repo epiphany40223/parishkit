@@ -206,7 +206,7 @@ def test_export_page_explains_its_wait_through_the_web_login(
 
 
 def test_task_status_fragment_explains_a_queued_run(auth_service, google):  # noqa: F811
-    """Background task details carry the same reason in their polled fragment."""
+    """Background task pages carry the same reason in their polled fragment."""
     running("report_facts")
     task = new(task_type="report_export")
     browser, signed = signed_in()

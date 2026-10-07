@@ -74,7 +74,7 @@ def test_admin_can_preview_apply_and_reactivate_without_optimistic_saved_claim(
     assert receipt.state == "applied"
     applied = browser.get(response["Location"]).content
     assert b"Applied" in applied
-    assert f'<a href="{URL}">Return to Ministry activity</a>'.encode() in applied
+    assert f'<a href="{URL}">Return to Ministries</a>'.encode() in applied
     assert b"data-live-pending" not in applied
     runtime = SystemConfiguration.objects.get()
     policy = MinistryActivity.objects.get(

@@ -62,7 +62,9 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     body = response.content
     assert b"Testing mode" in body
     assert (b"test@example.org" in body) == (role == "administrator")
-    assert (b"Ministry activity" in body) == (role == "administrator")
+    assert (b'href="/admin/configuration/ministries"' in body) == (
+        role == "administrator"
+    )
     # Who else holds access is offered to Administrators only.
     assert (b'href="/admin/users"' in body) == (role == "administrator")
     assert (b"Parish settings" in body) == (role == "administrator")
@@ -180,7 +182,7 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     body = status.content
     assert flow_steps(body) == (STEPS, "Apply")
     assert f'<li><a href="{parish.URL}">Parish settings</a></li>'.encode() in body
-    assert b'<span aria-current="page">Configuration change</span>' in body
+    assert b'<span aria-current="page">Change status</span>' in body
     assert f'<a href="{parish.URL}">Return to Parish settings</a>'.encode() in body
     # The sidebar marks the editor the change came from.
     assert f'<a href="{parish.URL}" aria-current="true">'.encode() in body
@@ -196,7 +198,7 @@ def test_anonymous_and_family_pages_do_not_gain_admin_chrome(auth_service, googl
     """Rendering public/login/error content never derives a menu from runtime alone."""
     for path in ("/", "/admin/login"):
         response = Client().get(path)
-        assert b"Ministry activity" not in response.content
+        assert b'href="/admin/configuration/ministries"' not in response.content
         assert b"test@example.org" not in response.content
 
 

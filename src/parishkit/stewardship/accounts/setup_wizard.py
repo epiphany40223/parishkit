@@ -62,7 +62,7 @@ PAGES = (
         "slack_credential", _("Slack connection"), "admin:setup_credential", ("slack",)
     ),
     Page("source", _("Load parish data"), "admin:setup_source"),
-    Page("branding", _("Parish logo"), "admin:setup_branding"),
+    Page("branding", _("Parish logos"), "admin:setup_branding"),
     Page("access", _("Administrative access"), "admin:setup_step", ("access",)),
     Page("campaign", _("First campaign"), "admin:setup_campaign"),
     Page(
