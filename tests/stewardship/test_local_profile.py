@@ -64,23 +64,25 @@ GOLDEN_ROOT = Path("/opt/parishkit")
 # rendering on main at cbea35b2 (2026-10-03), before the LOCAL profile existed;
 # the Compose digests were regenerated once when application mounts gained a
 # fixed order (#480; infrastructure volume lists unchanged).
+# Intentional Production change since: #392 L3 adds oom_score_adj to every
+# application-image service (the Compose digests and fixture only).
 # The "configured" Compose document and the Caddyfile are also committed in
 # full under fixtures/ so a difference can be read, not just detected.
 GOLDEN_DIGESTS = {
     ("initial", "compose"): (
-        "ec0b81b692e4053b79c8b0df6b8fae0fc947b40db77717f1214929bb0764f3ab"
+        "5b8fd171cc1b5cdc1d5bfe9cd3a1a30c95aa48652f5ed532e581cc43322f7d6f"
     ),
     ("initial", "documents"): (
         "7e34be432d98fe26781a67030ffb76d1f0ed85f850bb072bad74b4a8c9dfdeba"
     ),
     ("configured", "compose"): (
-        "f7fd5df9addf636e4713e13fbb4d6b6a274a8c9ccec4fa44244b6ed469a40524"
+        "d8da9f4b57f95ee91775502e393b2f285fac7aa843ba67bffe965440be92f7e3"
     ),
     ("configured", "documents"): (
         "9d65bab1d7b28eebd476ee671871d675f86ff81cff6259cd82ded7b936a1d360"
     ),
     ("configured-slack", "compose"): (
-        "c3d847dafa2ac71048094fadf0a0261eacfdcfbd62ddee7d5ffad14f19b941aa"
+        "4ba584cfbbdedc6ebc71b644f855d4579ae1e707e798880d1b70f0c75dca46aa"
     ),
     ("configured-slack", "documents"): (
         "81fa8932b36a6d3a9e41c0301d63dc9ab30501f950cf815bf3e8b2caf2dc8b6c"

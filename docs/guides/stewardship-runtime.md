@@ -233,6 +233,10 @@ deployment about 1 GB (about 20 services at 50 MB each).
 50 MB; durable evidence is in the database. Docker applies the cap when it
 creates a container, so a deployment rendered before the cap gets it on the
 next `retarget-image` and `up`, which recreate the containers.
+Application-image services likewise get `oom_score_adj: 500` on that next
+recreation, so under memory pressure the host's OOM killer takes one of them,
+not PostgreSQL; `docker inspect -f '{{.HostConfig.OomScoreAdj}}' CONTAINER`
+shows `500` for them and `0` for `postgres`, `valkey` and `caddy`.
 Selected installer failures log `installer_request_failed`, using the durable
 request UUID as the correlation ID and a closed database, credential,
 configuration, filesystem or unexpected-failure category. A separate failed-pass

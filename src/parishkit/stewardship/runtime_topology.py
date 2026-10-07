@@ -66,6 +66,17 @@ CONTAINER_LOGGING = {
     "options": {"max-size": "10m", "max-file": "5"},
 }
 
+# Under host memory exhaustion the kernel's OOM killer picks the process with
+# the highest badness score. Every application-image service raises its own
+# score, so a runaway export or a leak kills that application process (an
+# online service restarts; a one-shot run fails and is re-run) before it can
+# take PostgreSQL, Valkey or Caddy, which keep the default 0 (#392 L3). It
+# limits and slows nothing in normal operation, and a positive value needs no
+# extra privilege. Hard memory limits were rejected until peak usage per
+# service is measured: one set too low would kill web or a large export
+# mid-campaign.
+APPLICATION_OOM_SCORE_ADJ = 500
+
 
 def bind(path, *, target=None, read_only=True):
     """Never let Compose implicitly create a misspelled host source directory."""
@@ -476,6 +487,10 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 service["restart"] = "unless-stopped"
     for service in services.values():
         service["logging"] = deepcopy(CONTAINER_LOGGING)
+        # Only the application image: the stock images (PostgreSQL first)
+        # share _application's hardening but keep the default OOM score.
+        if service["image"] == image:
+            service["oom_score_adj"] = APPLICATION_OOM_SCORE_ADJ
     return {
         "name": _project_name(configuration),
         "services": services,
