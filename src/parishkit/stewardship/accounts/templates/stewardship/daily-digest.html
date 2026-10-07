@@ -7,19 +7,20 @@
 {% block content %}
 <h1>{{ document.title }}</h1>
 {% aboutpage "daily-digest" %}<p>{% translate "Campaign dates use the campaign's time zone. Times above use your computer's time zone when your browser allows it." %}</p>
-<p>{% translate "This chart and table include every campaign day up to when the report was made. The email's table shows only the dates that mailing covered; all values come from this same saved report." %}</p>{% endaboutpage %}
+<p>{% translate "This chart and table include every campaign day up to the end of the report day; the totals are that day's last point. The email's table shows only the dates that mailing covered; all values come from this same saved report." %}</p>{% endaboutpage %}
 <p>{{ chart.parish_name }} — {{ chart.campaign_name }}</p>
 <p class="notice">{% translate "Saved report: these are the exact values this report email used, not today's live totals." %}</p>
 {% if mode == 'testing' %}<p class="notice">{% translate "This report was generated for a Testing-mode digest." %}</p>{% endif %}
+<p>{{ document.as_of }}</p>
 <dl>
-<dt>{% translate "Counted at" %}</dt><dd><time datetime="{{ document.statistics.observed_at|date:'c' }}" data-local-instant>{{ document.statistics.observed_at|date:'c' }}</time></dd>
+<dt>{% translate "Made at" %}</dt><dd><time datetime="{{ document.statistics.observed_at|date:'c' }}" data-local-instant>{{ document.statistics.observed_at|date:'c' }}</time></dd>
 {% with age=document.source_age %}<dt>{% translate "ParishSoft data as of" %}</dt><dd>{% if age.data_as_of %}<time datetime="{{ age.data_as_of|date:'c' }}" data-local-instant>{{ age.data_as_of|date:'c' }}</time>{% if age.full_started_at and age.full_started_at != age.data_as_of %}, {% translate "last full refresh" %} <time datetime="{{ age.full_started_at|date:'c' }}" data-local-instant>{{ age.full_started_at|date:'c' }}</time>{% endif %}{% else %}<time datetime="{{ chart.source_as_of|date:'c' }}" data-local-instant>{{ chart.source_as_of|date:'c' }}</time>{% endif %}</dd>
 {% if age %}<dt>{% translate "Connection" %}</dt><dd>{% if age.connection.state == "failing" %}{% translate "failing since" %} <time datetime="{{ age.connection.at|date:'c' }}" data-local-instant>{{ age.connection.at|date:'c' }}</time>{% elif age.connection.state == "not_checked" %}{% translate "not checked since" %} <time datetime="{{ age.connection.at|date:'c' }}" data-local-instant>{{ age.connection.at|date:'c' }}</time>{% elif age.connection.state == "working" %}{% translate "working" %} ({% translate "last answered" %} <time datetime="{{ age.connection.at|date:'c' }}" data-local-instant>{{ age.connection.at|date:'c' }}</time>){% else %}{% translate "not checked yet" %}{% endif %}</dd>{% endif %}{% endwith %}
 <dt>{% translate "Campaign timezone" %}</dt><dd>{{ chart.campaign_timezone }}</dd>
 </dl>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "ParishSoft data load" %}</dt><dd>{{ chart.source_generation|number }}</dd>
 <dt>{% translate "Responses included up to number" %}</dt><dd>{{ chart.submission_watermark|number }}</dd></dl></details>
-<section class="panel"><h2>{% translate "Statistics when this report was made" %}</h2>
+<section class="panel"><h2>{% translate "Campaign totals" %}</h2>
 <dl>{% for label,value in cards %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
 </section>
 <section class="panel" data-digest-chart>

@@ -7,10 +7,11 @@ an inline report image must not enable arbitrary images in Family templates.
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, time
 from html import escape
 from io import BytesIO
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from parishkit.email.base import InlineImage
 from parishkit.stewardship.source.data_age import DataAge
@@ -28,9 +29,13 @@ from .statistics import CampaignStatistics
 class DailyDigestDocument:
     """One exact snapshot, including immutable missed-slot coverage when recovering.
 
-    Statistics describe the current population at generation. The chart uses
-    historical daily populations, so their totals need not be identical. Their
-    source and submission cutoffs must nevertheless come from one observation.
+    The report day is the last covered date, which the schedule slot fixes
+    (#721): a late, retried or recovery send never moves it. Every figure the
+    email and saved page show comes from that day's end-of-day fact, the same
+    row the chart ends on, so the chart, the table and the text always agree.
+    ``statistics`` is the retained send-time observation; it binds the chart's
+    source and submission cutoffs but is not shown, because its counts are
+    live at the send time rather than at the end of the report day.
 
     ``date_format`` is the parish date format of the configuration the
     snapshot pinned (None means the default style), so a compile retried
@@ -93,6 +98,26 @@ class DailyDigestDocument:
         return (
             f"Recovery campaign digest — {format_date(first)} through "
             f"{format_date(last)}"
+        )
+
+    @property
+    def report_day(self):
+        """The chart's last day: the report day's end-of-day participation fact."""
+        return self.participation.days[-1]
+
+    @property
+    def as_of(self):
+        """One plain line naming the moment every figure describes.
+
+        The zone is the abbreviation in force at the end of the report day,
+        for example EDT in October and EST after daylight saving time ends.
+        """
+        local_date = self.report_day.local_date
+        zone = ZoneInfo(self.participation.campaign_timezone)
+        abbreviation = datetime.combine(local_date, time.max, zone).tzname()
+        return (
+            f"All figures are as of the end of {format_date(local_date)} "
+            f"({abbreviation})."
         )
 
     @property
@@ -190,6 +215,31 @@ def population_cards(active, *, financial_enabled, inactive=False):
     return tuple(rows)
 
 
+# One label for the card, the table column and the spec (#721).
+PLEDGE_HEADING = "Cumulative annual pledges (USD)"
+
+
+def report_day_cards(document):
+    """Label the report day's end-of-day totals, the chart's own last point.
+
+    These replace the send-time population statistics in the daily email and
+    its saved page (#721): live counts would disagree with the chart whenever
+    Families respond between midnight and the send. The values are the
+    table's own last row, so cards and table can never format differently.
+    """
+    chart = document.participation
+    day = document.report_day
+    row = participation_row(day, financial_enabled=chart.financial_enabled)
+    labels = (
+        "Families that have responded",
+        f"First submissions on {format_date(day.local_date)}",
+    )
+    cards = [(labels[0], row[2]), (labels[1], row[1])]
+    if chart.financial_enabled:
+        cards.append((PLEDGE_HEADING, row[3]))
+    return tuple(cards)
+
+
 def participation_row(day, *, financial_enabled):
     """Format one exact daily fact identically in email, web tables and tooltips."""
     cells = [
@@ -236,20 +286,17 @@ def _render_daily_digest(document, *, public_origin):
     url = _report_url(document, public_origin)
     headings = ["Campaign date", "First submissions", "Cumulative participation"]
     if chart.financial_enabled:
-        headings.append("Cumulative annual pledges (USD)")
-    cards = statistics_cards(document.statistics)
+        headings.append(PLEDGE_HEADING)
+    cards = report_day_cards(document)
     rows = digest_rows(document)
-    labels = (
-        chart.parish_name,
-        chart.campaign_name,
-        document.title,
-        f"Campaign dates use {chart.campaign_timezone}.",
-        "Daily chart and table: Historical as of day.",
-        "Statistics: Current active population at generation.",
-        chart.as_of_label,
-    )
+    labels = (chart.parish_name, chart.campaign_name, document.title, document.as_of)
     if document.source_age is not None:
-        labels += (source_age_line(document.source_age, chart.campaign_timezone),)
+        # The ParishSoft line is connection health at the send, not the time
+        # the figures describe; say so, so it cannot read as a second "as of".
+        labels += (
+            "When this email was made: "
+            + source_age_line(document.source_age, chart.campaign_timezone),
+        )
     # Match weekly display normalization; retained observations remain exact.
     # The strict HTML compiler boundary rejects NBSP parser rewrites.
     labels = tuple(" ".join(label.split()) for label in labels)
@@ -260,7 +307,7 @@ def _render_daily_digest(document, *, public_origin):
     text += "\n\nOpen this exact report (staff login required): " + url
     # Canonical HTML leaves quotes literal in text nodes, not in attributes.
     html = "".join("<p>" + escape(label, quote=False) + "</p>" for label in labels)
-    html += "<h2>Current population statistics</h2><dl>"
+    html += "<h2>Campaign totals</h2><dl>"
     html += "".join(
         "<dt>"
         + escape(label, quote=False)
@@ -271,7 +318,7 @@ def _render_daily_digest(document, *, public_origin):
     )
     html += "</dl><h2>Daily participation</h2>"
     html += f'<img src="cid:{CHART_ID}" alt="{CHART_ALT}" width="720">'
-    html += "<table><caption>Historical as of day</caption><thead><tr>"
+    html += "<table><caption>Day by day</caption><thead><tr>"
     html += "".join(
         '<th scope="col">' + escape(label, quote=False) + "</th>" for label in headings
     )

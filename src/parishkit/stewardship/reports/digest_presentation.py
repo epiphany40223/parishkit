@@ -3,17 +3,17 @@
 from decimal import ROUND_HALF_UP, Decimal
 
 from .charts import PLOT_LAYOUT, participation_limits
-from .daily_digest import participation_row, statistics_cards
+from .daily_digest import PLEDGE_HEADING, participation_row, report_day_cards
 
 
 def snapshot_context(document, *, mode, chart_url, download_url):
-    """Use the email's exact formatting without recalculating report statistics."""
+    """Show the email's exact report-day figures; nothing is recalculated."""
     chart = document.participation
     return {
         **participation_context(chart),
         "document": document,
         "mode": mode,
-        "cards": statistics_cards(document.statistics),
+        "cards": report_day_cards(document),
         "chart_url": chart_url,
         "download_url": download_url,
     }
@@ -59,7 +59,7 @@ def participation_context(chart):
     ]
     headings = ["Campaign date", "First submissions", "Cumulative participation"]
     if chart.financial_enabled:
-        headings.append("Cumulative annual pledges (USD)")
+        headings.append(PLEDGE_HEADING)
     labels = [
         chart.scope_label
         + "; "

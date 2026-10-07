@@ -74,26 +74,28 @@ def test_imported_labels_compile_without_mutating_retained_names(separator):
 
 
 def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
-    """MIME chart and table share the same document; cards stay current-population."""
+    """MIME chart, table and cards share the report day's end-of-day fact (#721)."""
     value = document()
     with localcontext(prec=2):
         result = render(value)
     assert result.subject == "Daily campaign digest — November 2, 2026"
     for required in (
-        "Active Families: 1,000",
-        "Active Members: 2,345",
-        "Families with eligible email: 900 out of 1,000 (90%)",
-        "Families with deliverable email: 800 out of 1,000 (80%)",
-        "Families that have responded: 2 out of 1,000 (0.2%)",
-        "Current annual pledges: $2,234.56",
-        "Configured comparison pledges: $1,000.00",
+        "All figures are as of the end of November 2, 2026 (EST).",
+        "Families that have responded: 3 out of 1,234 (0.2%)",
+        "First submissions on November 2, 2026: 1",
+        "Cumulative annual pledges (USD): $3,234.56",
         "Nov 2, 2026 | 1 | 3 out of 1,234 (0.2%) | $3,234.56",
-        "Source #3 as of November 2, 2026 at 12:00 AM EST",
-        "submission cutoff 1,001",
         value.report_path,
     ):
         assert required in result.text
-    assert "<caption>Historical as of day</caption>" in result.html
+    # The send-time statistics (2 of 1,000 Families, $2,234.56) are live, so
+    # they never appear: they would disagree with the chart's last point.
+    for live in ("1,000", "2,345", "2,234.56", "Active Members", "comparison"):
+        assert live not in result.text and live not in result.html
+    for jargon in ("Historical as of day.", "Current active population", "Source #"):
+        assert jargon not in result.text
+    assert "<caption>Day by day</caption>" in result.html
+    assert "Historical as of day" not in result.html
     assert '<th scope="col">Campaign date</th>' in result.html
     assert f"cid:{CHART_ID}" in result.html
     with Image.open(BytesIO(result.chart.data)) as image:
@@ -146,7 +148,7 @@ def test_disabled_financial_is_not_rendered_even_if_inputs_have_amounts():
 
 
 def test_missing_observations_remain_unavailable_and_zero_remains_zero():
-    """Missing source facts and missing comparison totals never become zero."""
+    """Missing source facts never become zero, in the table or the cards."""
     value = document()
     days = value.participation.days
     missing = replace(
@@ -171,17 +173,20 @@ def test_missing_observations_remain_unavailable_and_zero_remains_zero():
         value,
         covered_dates=tuple(day.local_date for day in days),
         participation=replace(value.participation, days=(missing, zero, days[2])),
-        statistics=replace(
-            value.statistics,
-            active=replace(
-                value.statistics.active, comparison_pledge=MoneyAmount(None)
-            ),
-        ),
     )
     result = render(value)
     assert "Oct 31, 2026 | Unavailable | Unavailable | Unavailable" in result.text
     assert "Nov 1, 2026 | 0 | 0 out of 0 (—) | $0.00" in result.text
-    assert "Configured comparison pledges: Unavailable" in result.text
+    # The report day's own unavailable fact stays unavailable in the cards.
+    last = replace(missing, local_date=days[2].local_date)
+    gap = render(
+        replace(
+            value, participation=replace(value.participation, days=(*days[:2], last))
+        )
+    )
+    assert "Families that have responded: Unavailable" in gap.text
+    assert "First submissions on November 2, 2026: Unavailable" in gap.text
+    assert "Cumulative annual pledges (USD): Unavailable" in gap.text
 
 
 @pytest.mark.parametrize(
@@ -295,3 +300,36 @@ def test_date_format_must_be_text_or_unset():
     """A non-string style is rejected before anything is rendered."""
     with pytest.raises(ValueError, match="typed immutable"):
         replace(document(), date_format=5)
+
+
+def test_recovery_range_states_its_last_covered_day():
+    """A recovery digest's as-of line and totals use its last covered day.
+
+    The fixture's days straddle the end of daylight saving time (November 1,
+    2026), so the zone abbreviation follows the report day: EST, not EDT.
+    """
+    value = document()
+    days = value.participation.days
+    result = render(replace(value, covered_dates=tuple(day.local_date for day in days)))
+    assert result.subject == (
+        "Recovery campaign digest — October 31, 2026 through November 2, 2026"
+    )
+    for required in (
+        "All figures are as of the end of November 2, 2026 (EST).",
+        "Families that have responded: 3 out of 1,234 (0.2%)",
+        "First submissions on November 2, 2026: 1",
+        "Cumulative annual pledges (USD): $3,234.56",
+        "Oct 31, 2026 | 1 | 1 out of 1,234 (0.1%) | $1,234.56",
+    ):
+        assert required in result.text
+    # A report day before the change still says EDT.
+    first = replace(
+        value.participation,
+        days=days[:1],
+        last_date=days[0].local_date,
+    )
+    earlier = render(
+        replace(value, participation=first, covered_dates=(days[0].local_date,))
+    )
+    assert "as of the end of October 31, 2026 (EDT)." in earlier.text
+    assert "Families that have responded: 1 out of 1,234 (0.1%)" in earlier.text
