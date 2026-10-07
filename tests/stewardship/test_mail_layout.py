@@ -7,6 +7,7 @@ from parishkit.stewardship.mail_layout import (
     FONT,
     LINK_STYLE,
     NOTICE_STYLE,
+    REPORT_WIDTH,
     TAG_STYLES,
     email_document,
 )
@@ -28,6 +29,14 @@ def test_document_is_a_complete_centered_readable_page():
     assert '<table role="presentation" width="600"' in page  # Outlook width
     assert page.endswith("</body></html>")
     assert "<style>" in page and ".pk-body p{margin:0 0 16px;}" in page
+
+
+def test_report_mail_uses_the_wider_desktop_column():
+    """Admin report emails are desktop-first (#720); Outlook gets the same width."""
+    page = email_document(BODY.html, width=REPORT_WIDTH)
+    assert REPORT_WIDTH == 960
+    assert "max-width:960px" in page and "max-width:600px" not in page
+    assert '<table role="presentation" width="960"' in page
 
 
 def test_bare_sanitized_tags_get_inline_styles_and_text_is_unchanged():

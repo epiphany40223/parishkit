@@ -1,5 +1,6 @@
 """Daily digests reuse exact report observations without database/provider access."""
 
+import re
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal, localcontext
@@ -10,11 +11,20 @@ import pytest
 from PIL import Image
 
 from parishkit.email.base import Email, build_message
+from parishkit.stewardship.reports.charts import (
+    EMAIL_PLOT_LAYOUT,
+    EMAIL_RENDERER_VERSION,
+    PLOT_LAYOUT,
+    render_participation,
+)
 from parishkit.stewardship.reports.daily_digest import (
     CHART_ID,
     DailyDigestDocument,
+    bar,
+    digest_rows,
     render_daily_digest,
 )
+from parishkit.stewardship.reports.digest_presentation import chart_layout
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.statistics import (
     CampaignStatistics,
@@ -90,14 +100,33 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
         assert required in result.text
     # The send-time statistics (2 of 1,000 Families, $2,234.56) are live, so
     # they never appear: they would disagree with the chart's last point.
-    for live in ("1,000", "2,345", "2,234.56", "Active Members", "comparison"):
+    for live in ("1,000", "2,345", "Active Members", "comparison"):
         assert live not in result.text and live not in result.html
+    # The live pledge total equals an earlier day's cumulative pledges in this
+    # fixture, and the week table shows that day (#720), so check the totals.
+    totals = result.text.split("Campaign date |")[0]
+    assert "2,234.56" not in totals
     for jargon in ("Historical as of day.", "Current active population", "Source #"):
         assert jargon not in result.text
-    assert "<caption>Day by day</caption>" in result.html
+    assert ">Day by day</caption>" in result.html
     assert "Historical as of day" not in result.html
-    assert '<th scope="col">Campaign date</th>' in result.html
+    assert ">Campaign date</th>" in result.html
     assert f"cid:{CHART_ID}" in result.html
+    # Visuals first (#720): the as-of caption, then one line per total with
+    # its bar, then the chart; the ParishSoft line is small print at the end.
+    html = result.html
+    assert (
+        html.index("All figures are as of")
+        < html.index("Campaign totals")
+        < html.index("cid:")
+        < html.index("Day by day")
+        < html.index("Open this exact report")
+    )
+    assert html.count('bgcolor="#1f6fae"') == 2
+    assert "<strong>3 out of 1,234 (0.2%)</strong>" in html
+    assert (
+        'alt="Daily participation chart, October 31, 2026 to November 2, 2026.' in html
+    )
     with Image.open(BytesIO(result.chart.data)) as image:
         assert image.format == "PNG" and image.size == (1440, 840)
         image.verify()
@@ -132,6 +161,60 @@ def test_recovery_covers_complete_range_even_with_intervening_success():
     assert "Oct 31, 2026 | 1 | 1 out of 1,234 (0.1%) | $1,234.56" in result.text
     assert "Nov 1, 2026 | 1 | 2 out of 1,234 (0.2%) | $2,234.56" in result.text
     assert "Nov 2, 2026 | 1 | 3 out of 1,234 (0.2%) | $3,234.56" in result.text
+
+
+def long_document(days):
+    """A campaign of ``days`` days, one first submission each, ending Nov 2."""
+    value = document()
+    chart = value.participation
+    last = chart.days[-1]
+    first_date = chart.last_date - timedelta(days=days - 1)
+    series = tuple(
+        replace(
+            last,
+            local_date=first_date + timedelta(days=index),
+            first_responses=1,
+            cumulative_responses=index + 1,
+            pledge_total=Decimal(index + 1),
+        )
+        for index in range(days)
+    )
+    chart = replace(chart, first_date=first_date, days=series)
+    return replace(value, participation=chart)
+
+
+def test_table_shows_the_last_week_and_every_recovered_day():
+    """The table has at least the last 7 days, and all of a longer recovery (#720)."""
+    value = long_document(12)
+    dates_shown = [row[0] for row in digest_rows(value)]
+    assert dates_shown[0] == "Oct 27, 2026" and len(dates_shown) == 7
+    first = value.participation.first_date
+    recovery = replace(
+        value,
+        covered_dates=tuple(first + timedelta(days=index) for index in range(12)),
+    )
+    assert len(digest_rows(recovery)) == 12
+    assert "Oct 22, 2026 | 1 | 1 out of 1,234" in render(recovery).text
+
+
+@pytest.mark.parametrize(
+    ("part", "whole", "cells"),
+    [
+        (None, 10, None),
+        (3, 0, None),
+        (0, 10, ["100%"]),
+        (1, 1000, ["1%", "99%"]),
+        (5, 10, ["50%", "50%"]),
+        (10, 10, ["100%"]),
+    ],
+)
+def test_bars_never_hide_a_nonzero_share_or_draw_without_a_base(part, whole, cells):
+    """A bar is table cells; a tiny share keeps a sliver, no base draws nothing."""
+    html = bar(part, whole)
+    if cells is None:
+        assert html == ""
+    else:
+        assert re.findall(r'width="(\d+%)" bgcolor', html) == cells
 
 
 def test_disabled_financial_is_not_rendered_even_if_inputs_have_amounts():
@@ -333,3 +416,16 @@ def test_recovery_range_states_its_last_covered_day():
     )
     assert "as of the end of October 31, 2026 (EDT)." in earlier.text
     assert "Families that have responded: 1 out of 1,234 (0.1%)" in earlier.text
+
+
+def test_saved_page_hit_tests_the_drawing_the_digest_retained():
+    """New digests carry the email drawing; earlier retained ones keep theirs."""
+    result = render(document())
+    assert chart_layout(result.chart.data) == EMAIL_PLOT_LAYOUT
+    with Image.open(BytesIO(result.chart.data)) as image:
+        assert image.size == (1440, 840)
+        assert image.text["Creator"] == EMAIL_RENDERER_VERSION
+    older = BytesIO()
+    render_participation(document().participation, older, format="png")
+    assert chart_layout(older.getvalue()) == PLOT_LAYOUT
+    assert chart_layout(b"not a png") == PLOT_LAYOUT

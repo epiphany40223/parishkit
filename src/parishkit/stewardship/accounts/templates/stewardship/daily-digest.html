@@ -7,7 +7,7 @@
 {% block content %}
 <h1>{{ document.title }}</h1>
 {% aboutpage "daily-digest" %}<p>{% translate "Campaign dates use the campaign's time zone. Times above use your computer's time zone when your browser allows it." %}</p>
-<p>{% translate "This chart and table include every campaign day up to the end of the report day; the totals are that day's last point. The email's table shows only the dates that mailing covered; all values come from this same saved report." %}</p>{% endaboutpage %}
+<p>{% translate "This chart and table include every campaign day up to the end of the report day; the totals are that day's last point. The email's table shows the last seven days and every date that mailing covered; all values come from this same saved report." %}</p>{% endaboutpage %}
 <p>{{ chart.parish_name }} — {{ chart.campaign_name }}</p>
 <p class="notice">{% translate "Saved report: these are the exact values this report email used, not today's live totals." %}</p>
 {% if mode == 'testing' %}<p class="notice">{% translate "This report was generated for a Testing-mode digest." %}</p>{% endif %}

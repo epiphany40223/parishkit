@@ -57,9 +57,9 @@ def test_digest_reports_previous_day_end_not_send_time(
     total = f"{day.cohort_denominator:,}"
     assert f"Families that have responded: 0 out of {total}" in content.text
     assert "First submissions on October 7, 2054: 0" in content.text
-    assert (
-        "<dt>Families that have responded</dt><dd>0 out of " + total
-    ) in content.html
+    # One line per total (#720): the label, its bar, then the exact value.
+    assert ">Families that have responded</td>" in content.html
+    assert f"<strong>0 out of {total} (0%)</strong>" in content.html
     for body in (content.text, content.html):
         assert as_of in body
         assert f"1 out of {total}" not in body

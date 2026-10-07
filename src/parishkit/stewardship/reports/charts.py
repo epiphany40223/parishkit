@@ -14,7 +14,13 @@ from .participation import ParticipationDocument
 
 _RENDER_LOCK = RLock()
 RENDERER_VERSION = "participation-v2"
+# The daily email's drawing (#720), named in its PNG's Creator text so the
+# saved report page can tell which drawing a retained digest holds.
+EMAIL_RENDERER_VERSION = "participation-email-v1"
 PLOT_LAYOUT = {"left": 0.09, "right": 0.89, "top": 0.74, "bottom": 0.29}
+# The daily email's drawing has no page title or footer, so its plot fills
+# the image (#720). The saved report page hit-tests whichever one it shows.
+EMAIL_PLOT_LAYOUT = {"left": 0.09, "right": 0.89, "top": 0.90, "bottom": 0.17}
 
 
 def family_axis_top(days):
@@ -60,8 +66,13 @@ def rendering_style():
 
 
 @contextmanager
-def participation_figure(document):
-    """Own plotting state until consumption ends; callers cannot leak a figure."""
+def participation_figure(document, *, email=False):
+    """Own plotting state until consumption ends; callers cannot leak a figure.
+
+    ``email`` drops the page furniture (parish and campaign names, the scope
+    title and the renderer footer) that the daily email already states in its
+    text (#720), and lets the plot fill the image (``EMAIL_PLOT_LAYOUT``).
+    """
     if not isinstance(document, ParticipationDocument):
         raise TypeError("Rendering requires an immutable participation document.")
     from matplotlib.figure import Figure
@@ -69,21 +80,22 @@ def participation_figure(document):
     with rendering_style():
         figure = Figure(figsize=(12, 7), dpi=120, facecolor="white")
         try:
-            _draw(figure, document)
+            _draw(figure, document, email=email)
             yield figure
         finally:
             figure.clear()
 
 
-def _draw(figure, document):
+def _draw(figure, document, *, email=False):
     """Separate units and line patterns; floats are only plot coordinates."""
     from matplotlib.ticker import FuncFormatter, MaxNLocator
 
     axes = figure.add_subplot(111)
-    figure.subplots_adjust(**PLOT_LAYOUT)
-    figure.text(0.5, 0.96, document.parish_name, ha="center", fontsize=14)
-    figure.text(0.5, 0.915, document.campaign_name, ha="center", fontsize=12)
-    axes.set_title(f"Family participation — {document.scope_label}", pad=38)
+    figure.subplots_adjust(**(EMAIL_PLOT_LAYOUT if email else PLOT_LAYOUT))
+    if not email:
+        figure.text(0.5, 0.96, document.parish_name, ha="center", fontsize=14)
+        figure.text(0.5, 0.915, document.campaign_name, ha="center", fontsize=12)
+        axes.set_title(f"Family participation — {document.scope_label}", pad=38)
     axes.set_xlabel(f"Campaign date ({document.campaign_timezone})")
     axes.set_ylabel("Families (count)")
     # Round 1/2/5 steps (10, 20, 50, ...) read more easily than 30 or 25.
@@ -186,9 +198,11 @@ def _draw(figure, document):
         handles,
         labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.805),
+        # Without the page title the email's legend sits at the very top.
+        bbox_to_anchor=(0.5, 0.99 if email else 0.805),
         ncol=3,
-        fontsize=8,
+        fontsize=11 if email else 8,
+        frameon=not email,
     )
     unavailable = any(
         not day.population_available
@@ -197,7 +211,8 @@ def _draw(figure, document):
     )
     note = "Missing observations are gaps, not zero." if unavailable else ""
     figure.text(0.09, 0.055, note, fontsize=8)
-    figure.text(0.89, 0.035, f"{RENDERER_VERSION} · Page 1", fontsize=7, ha="right")
+    if not email:
+        figure.text(0.89, 0.035, f"{RENDERER_VERSION} · Page 1", fontsize=7, ha="right")
 
 
 def provenance_text(document):
@@ -205,12 +220,18 @@ def provenance_text(document):
     return " ".join(document.as_of_label.split("\n"))
 
 
-def render_participation(document, output, *, format):
-    """Write a fixed-layout artifact without host clock or random PDF metadata."""
+def render_participation(document, output, *, format, email=False):
+    """Write a fixed-layout artifact without host clock or random PDF metadata.
+
+    ``email`` selects the daily email's drawing (see ``participation_figure``).
+    """
     if format not in {"png", "pdf"}:
         raise ValueError("Participation charts support PNG or PDF.")
-    with participation_figure(document) as figure:
-        metadata = {"Title": "Family participation", "Creator": RENDERER_VERSION}
+    with participation_figure(document, email=email) as figure:
+        metadata = {
+            "Title": "Family participation",
+            "Creator": EMAIL_RENDERER_VERSION if email else RENDERER_VERSION,
+        }
         # The image no longer draws the source snapshot and request time; the
         # file keeps them as metadata instead (Administrator decision, #575).
         # PNG takes any text key; PDF only the standard Info keys, so Subject.

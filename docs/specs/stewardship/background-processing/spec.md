@@ -1660,6 +1660,24 @@ retries while that exact generation is building; a failed materialization makes
 the digest visibly failed/retryable rather than substituting stale or mixed
 facts. Later source/status changes do not rewrite the sent digest.
 
+The email is desktop-first and visual
+([#720](https://github.com/epiphany40223/parishkit/issues/720)): a 960px
+column (fixed at 960px in Outlook for Windows; a narrower window shrinks it),
+not the 600px column of Family mail. The parish and campaign name, the title
+and the as-of line come first as a short header, then **Campaign totals**, one
+line per figure: its label, a bar drawn with table cells (so it shows in every
+mail program, with images off too), and the exact value, for example "Families
+that have responded — 10 out of 93 (10.8%)". Families that have responded are
+drawn against the Families they are out of, and the report day's first
+submissions against the busiest campaign day so far, which is stated beside the
+number; pledges have no bar, since their only comparison is a live figure.
+The chart follows, with alt text carrying the same totals, then the
+day-by-day table of the last seven campaign days (every covered date of a
+recovery digest, however many), the link to the saved report, and the
+ParishSoft line as small print at the end. The digest validator admits only
+the compiler's closed set of inline styles, bar colours and table attributes,
+so this markup cannot carry anything else.
+
 If multiple daily digest occurrences are overdue at recovery, the system sends
 one recovery digest per campaign covering the complete missed local-date range.
 It includes per-day rows and the end-of-range cumulative statistics/chart rather

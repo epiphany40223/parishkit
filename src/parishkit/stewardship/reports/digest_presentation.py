@@ -1,16 +1,28 @@
 """Shared exact-value presentation for the digest's protected snapshot page."""
 
 from decimal import ROUND_HALF_UP, Decimal
+from io import BytesIO
 
-from .charts import PLOT_LAYOUT, participation_limits
+from PIL import Image
+
+from .charts import (
+    EMAIL_PLOT_LAYOUT,
+    EMAIL_RENDERER_VERSION,
+    PLOT_LAYOUT,
+    participation_limits,
+)
 from .daily_digest import PLEDGE_HEADING, participation_row, report_day_cards
 
 
-def snapshot_context(document, *, mode, chart_url, download_url):
-    """Show the email's exact report-day figures; nothing is recalculated."""
+def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOUT):
+    """Show the email's exact report-day figures; nothing is recalculated.
+
+    ``plot`` is where the retained chart image draws its plot, for the date
+    hit-testing; see ``chart_layout``.
+    """
     chart = document.participation
     return {
-        **participation_context(chart),
+        **participation_context(chart, plot=plot),
         "document": document,
         "mode": mode,
         "cards": report_day_cards(document),
@@ -51,7 +63,23 @@ def tooltip_point(day, row):
     return {"date": row[0], "rows": rows}
 
 
-def participation_context(chart):
+def chart_layout(chart):
+    """Return the plot layout of a retained digest chart from its PNG bytes.
+
+    Digests compiled since #720 carry the email drawing, named in the PNG's
+    Creator text; earlier ones carry the Participation page's drawing. The
+    retained bytes are never redrawn, so the page hit-tests the drawing it
+    actually shows. Unreadable metadata falls back to the older layout.
+    """
+    try:
+        with Image.open(BytesIO(chart)) as image:
+            creator = image.text.get("Creator")
+    except (OSError, ValueError, SyntaxError):
+        creator = None
+    return EMAIL_PLOT_LAYOUT if creator == EMAIL_RENDERER_VERSION else PLOT_LAYOUT
+
+
+def participation_context(chart, *, plot=PLOT_LAYOUT):
     """Shared exact chart/table/hover presentation for live and pinned pages."""
     rows = [
         participation_row(day, financial_enabled=chart.financial_enabled)
@@ -78,7 +106,7 @@ def participation_context(chart):
                 tooltip_point(day, row)
                 for day, row in zip(chart.days, rows, strict=True)
             ],
-            "plot": PLOT_LAYOUT,
+            "plot": plot,
             "limits": participation_limits(len(labels)),
         },
         "chart_last_index": len(labels) - 1,
