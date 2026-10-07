@@ -1066,11 +1066,16 @@ section records why they look that way:
   Common advice for marketing mail is 600–640px
   ([Litmus, email myths](https://www.litmus.com/blog/7-myths-of-email-development));
   the Administrator chose desktop instead.
-- **Each fact once, content first.** The subject names the report, so the
-  body has no title; one line names the parish and campaign; one as-of or
-  capture line is the only place that names the time zone. The first screen
-  is content: the daily totals with their bars and the chart, or the weekly
-  numbered requests. Explanations are small print at the end.
+- **Each fact once, content first.** The subject names the report, its day,
+  the campaign and the parish, so the body names none of them. The daily
+  email starts with its as-of line (the report-day definition, and the only
+  place naming the time zone); the weekly email starts with its numbered
+  requests. There is no small print: the data age and connection are on the
+  saved report page.
+- **Portal look.** The report button is the Admin portal's primary button
+  (accent colour, radius, padding, bold label) drawn as a table cell, and
+  links use the portal's link colour. Shared tokens for every email and the
+  portal are [#732](https://github.com/epiphany40223/parishkit/issues/732).
 - **Construction.** Tables for layout, every style inline, no flexbox, grid,
   gradients, background images, SVG or `data:` images, none of which Gmail or
   Outlook for Windows renders reliably
