@@ -194,8 +194,9 @@ def test_timeline_for_administrators_and_staff(
     # this one); the Testing sign-in before activation is not among them.
     assert shown.count("Signed in") == 2 and "Opened the form" in shown
     assert "Submitted a response" not in shown
-    # The live code opens the form, carried only in the URL fragment.
-    assert f'href="/#code={code}" target="_blank"'.encode() in body
+    # Open form is a POST hand-off (#529); the code is in no URL.
+    assert f'action="{corpus}open-form" target="_blank"'.encode() in body
+    assert b"#code=" not in body
     # The rehearsal is over, so Testing has nothing to show.
     _, body = as_web(admin, corpus + "?mode=testing")
     assert b"no Testing rehearsal now" in body

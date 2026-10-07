@@ -578,7 +578,7 @@ def test_reach_preset_link_and_dashboard_readiness(live_response_service, google
         mode = SystemConfiguration.objects.values_list("mode", flat=True).get()
         assert (b"work only after go-live" in body) is (mode == "testing")
         # The "Open form" links appear only once those codes actually work.
-        assert (b"data-open-form>" in body) is (mode != "testing")
+        assert (b"data-open-form " in body) is (mode != "testing")
         assert read(browser, route + "?reach=sometimes")[0].status_code == 400
         assert read(browser, route + "?reach=neither&search=x")[0].status_code == 400
         home = browser.get("/admin/").content

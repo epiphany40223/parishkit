@@ -203,6 +203,13 @@ FIRST_SUBMITTED = Column(
 SUBMISSIONS = Column(
     "submissions", _("Submissions"), lambda row: row.response.submissions, "count"
 )
+# Responses Staff entered for the Family through Open form (#529); never who.
+STAFF_ENTERED = Column(
+    "staff_entered",
+    _("Entered by Staff"),
+    lambda row: row.response.staff_entered,
+    "count",
+)
 
 LISTS = {
     spec.key: spec
@@ -211,7 +218,14 @@ LISTS = {
             key="submitted",
             title=_("Families that submitted"),
             description=_("Every Family with a submission"),
-            columns=(FIRST_SUBMITTED, FAMILY, DUID, ENVELOPE, SUBMISSIONS),
+            columns=(
+                FIRST_SUBMITTED,
+                FAMILY,
+                DUID,
+                ENVELOPE,
+                SUBMISSIONS,
+                STAFF_ENTERED,
+            ),
             # Chronological: the first submission first.
             default_sort="submitted",
             choices=(
@@ -331,6 +345,7 @@ LISTS = {
                 FAMILY,
                 DUID,
                 ENVELOPE,
+                STAFF_ENTERED,
             ),
             default_sort="-submissions",
             choices=(Choice(EVERYONE, _("Everyone"), _keep_all),),

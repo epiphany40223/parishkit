@@ -1,0 +1,11 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% comment %}
+  Open form refused (#529): one page for every reason, so it reveals none.
+  It opens only in Production, for a Family of the current campaign that has
+  a Family code, for roles that may see Family codes.
+{% endcomment %}
+{% block title %}{% translate "Open form not available" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Open form not available" %}</h1>
+<p>{% translate "This Family's form cannot be opened now. Close this tab and try again." %}</p>
+{% endblock %}

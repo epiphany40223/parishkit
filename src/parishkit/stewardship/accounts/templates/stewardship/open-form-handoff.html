@@ -1,0 +1,17 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static %}
+{% comment %}
+  Open form's hand-off (#529), shown in the new tab Open form opens. It posts
+  the single-use hand-off to the Family form at once (open-form-v1.js). The
+  hand-off travels only in this POST body, never in a URL; the Family's code
+  is not on this page at all.
+{% endcomment %}
+{% block title %}{% translate "Opening the Family form" %}{% endblock %}
+{% block content %}
+<script src="{% static 'stewardship/open-form-v1.js' %}" defer></script>
+<h1>{% translate "Opening the Family form" %}</h1>
+<form method="post" action="{{ action }}" data-open-form-handoff data-return="{{ return_url }}">
+<input type="hidden" name="handoff" value="{{ secret }}">
+<p>{% translate "The Family form opens in this tab. Responses you submit there are marked as entered by Staff for the Family." %}</p>
+<button type="submit">{% translate "Open the Family form" %}</button>
+</form>
+{% endblock %}

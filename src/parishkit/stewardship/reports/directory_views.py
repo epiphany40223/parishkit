@@ -45,6 +45,7 @@ from .directories import (
     DirectoryQuery,
     directory_page,
     find_families,
+    staff_entered,
     testing_codes_context,
 )
 from .directory_documents import export_headings, head_names
@@ -273,6 +274,10 @@ def directory(request, campaign_id, *, postal=False):
                     ),
                     "reasons": REASONS,
                     "reaches": REACH,
+                    # Responses Staff entered through Open form (#529).
+                    "staff_entered": staff_entered(
+                        campaign_id, [row["family_id"] for row in report["rows"]]
+                    ),
                     "export_headings": export_headings(
                         postal=postal, reach=query.reach
                     ),

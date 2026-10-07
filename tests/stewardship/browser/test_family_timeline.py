@@ -126,9 +126,13 @@ def test_when_heading_sorts_in_place_both_ways(page, component_origin):
 def test_staff_see_the_summary_only(page, component_origin):
     """Submitted, last email and code with Open form; no timeline or switch."""
     page.goto(component_origin + STAFF)
-    open_form = page.get_by_role("link", name="Open form in a new tab")
-    assert open_form.get_attribute("target") == "_blank"
-    assert open_form.get_attribute("href").endswith("#code=ABCD-EFGH")
+    # Open form posts its hand-off to a new tab; no URL carries the code.
+    button = page.get_by_role("button", name="Open form in a new tab")
+    form = page.locator("form[data-open-form]").filter(has=button)
+    assert form.get_attribute("method") == "post"
+    assert form.get_attribute("target") == "_blank"
+    assert form.get_attribute("action").endswith("/open-form")
+    assert page.locator("a[href*='#code=']").count() == 0
     assert page.get_by_role("heading", name="Timeline", exact=True).count() == 0
     assert page.locator("[data-in-place]").count() == 0
 
@@ -140,4 +144,4 @@ def test_unavailable_open_form_is_disabled_with_its_reason(page, component_origi
     assert button.is_disabled()
     reason = page.locator("#open-form-reason")
     visible(reason.get_by_text("accepts only Testing codes", exact=False))
-    assert page.get_by_role("link", name="Open form in a new tab").count() == 0
+    assert page.locator("form[data-open-form]").count() == 0

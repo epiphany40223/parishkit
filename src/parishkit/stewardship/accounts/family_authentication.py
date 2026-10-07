@@ -279,24 +279,31 @@ def _mint_session(session_key, family_id, *, digests=None, token=None):
         return cursor.fetchone()[0]
 
 
-def issue_family(request, service, identity, *, code=None, token=None):
+def issue_family(
+    request, service, identity, *, code=None, token=None, assisted_by=None
+):
     """Mint a token-free, mode-bound session after checking current admission.
 
     Python keeps the lookup, rate limiting, prior-session revocation, audit
     and CSRF rotation; SQL creates the session row only after proving the
     same credential again (``_mint_session``). A SQL refusal rolls this whole
     sign-in back and restores the browser's previous session, so it ends in
-    the same uniform denial as any other rejected credential.
+    the same uniform denial as any other rejected credential. ``assisted_by``
+    is the Admin whose Open form hand-off started this sign-in (#529).
     """
     previous = request.session
     try:
-        return _issue_family(request, service, identity, code=code, token=token)
+        return _issue_family(
+            request, service, identity, code=code, token=token, assisted_by=assisted_by
+        )
     except _SessionRefused:
         request.session = previous
         return False
 
 
-def _issue_family(request, service, identity, *, code=None, token=None):
+def _issue_family(
+    request, service, identity, *, code=None, token=None, assisted_by=None
+):
     """The transaction behind ``issue_family``; see there."""
     digests = None
     with transaction.atomic(), connection.cursor() as cursor:
@@ -352,6 +359,10 @@ def _issue_family(request, service, identity, *, code=None, token=None):
         AuditEvent.objects.create(
             event_type="family_login", subject_id=row_id, actor_id=family_id
         )
+        if assisted_by is not None:
+            from .assisted_entry import mark
+
+            mark(request, row_id, assisted_by)
         # "Link followed" for the response funnel (#477): durable, unlike the
         # session row, which cleanup removes an hour after the last activity.
         record_engagement_best_effort(

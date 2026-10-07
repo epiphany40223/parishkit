@@ -177,6 +177,10 @@ LEDGER = {
     "response_list_export": pending("PR 8", "export responses"),
     "family_directory": pending("PR 8", "export directory"),
     "family_timeline": pending("PR 8", "report family-timeline"),
+    "family_open_form": permanent(
+        "Open form signs this browser in to the Family form for a Family on "
+        "the phone; a browser hand-off by nature (#529)"
+    ),
     # The header's Find a Family box (#561) runs the directory's search.
     "find_family": pending("PR 8", "export directory"),
     "postal_directory": pending("PR 8", "export postal"),

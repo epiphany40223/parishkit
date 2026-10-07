@@ -92,6 +92,9 @@ FROZEN = {
     "0020_download_audit_context.sql": (
         "52d5824c9b708b6a2b0412d0a1c3e86daf6b30eb418d07bbd3cf74b6e033fc3a"
     ),
+    "0021_staff_entered.sql": (
+        "b50691b24753ea1cfe786d2528a886a2ac39574d6d6a1f441085089baa1c49ad"
+    ),
 }
 
 

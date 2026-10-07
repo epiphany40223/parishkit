@@ -274,7 +274,12 @@ def test_administrator_page_shows_summary_and_timeline():
     assert "Yes, <time" in page and "2 times; most recently" in page
     assert "Submission receipt, <time" in page and "<strong>Delivered</strong>" in page
     assert "<code>ABCD-EFGH</code>" in page
-    assert 'href="/#code=ABCD-EFGH" target="_blank" rel="noopener"' in page
+    # Open form posts its hand-off (#529); the code is in no URL.
+    assert (
+        f'action="/admin/reports/{CAMPAIGN.pk}/families/{FAMILY}/open-form"'
+        ' target="_blank" rel="noopener" data-open-form data-submit-repeatable>'
+    ) in page
+    assert "#code=" not in page
     # The directory's notice is not repeated here (Administrator, #590).
     assert "signs this browser in" not in page and "data-open-form-notice" not in page
     assert "Campaign email can reach this Family" in page
@@ -367,3 +372,29 @@ def test_empty_states_say_what_to_do():
     page = render(None, mode="testing")
     assert "no Testing rehearsal now" in page and "Summary" not in page
     assert 'aria-current="page">Testing rehearsal</a>' in page
+
+
+def test_staff_entered_responses_are_marked_without_a_name():
+    """Entered by Staff shows on the event, combined with no receipt (#529).
+
+    The summary counts how many of the Family's responses Staff entered:
+    "Entered by Staff for the Family" when all were, a count when only some
+    were, and nothing when none was.
+    """
+    staffed = Submitted(FIRST.id, FIRST.at, no_receipt=True, by_staff=True)
+    lines = events([], [staffed, SECOND])
+    assert [str(line.detail) for line in lines] == [
+        "Entered by Staff for the Family; No receipt: no email address",
+        "",
+    ]
+    partial = summary([], [staffed, SECOND])
+    assert (partial.count, partial.by_staff) == (2, 1)
+    page = render(Timeline(partial, lines))
+    assert "1 entered by Staff for the Family" in page
+    whole = summary([], [staffed])
+    page = render(Timeline(whole, events([], [staffed])))
+    assert "· Entered by Staff for the Family" in page
+    assert "1 entered by Staff" not in page
+    assert "entered by Staff" not in render(TIMELINE).replace(
+        "marked as entered by Staff", ""
+    )

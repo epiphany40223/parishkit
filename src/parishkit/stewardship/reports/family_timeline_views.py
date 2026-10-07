@@ -164,6 +164,10 @@ def page_context(campaign, family_id, identity, mode, timeline, as_of, **options
         "show_codes": options.get("show_codes", False),
         "open_form": available,
         "open_form_reason": reason,
+        # Open form posts here (#529); the code never goes into a URL.
+        "open_form_url": reverse(
+            "admin:family_open_form", args=[campaign.pk, family_id]
+        ),
         "family_test_url": options.get("family_test_url"),
         "production_url": timeline_url(campaign.pk, family_id, sort=sort),
         "testing_url": timeline_url(campaign.pk, family_id, "testing", sort),
