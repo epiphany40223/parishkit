@@ -17,6 +17,10 @@
 #       End the session, then delete its file.
 #   pk-admin [--session NAME] AREA VERB [OPTIONS]
 #       Any other command, for example `whoami`, `sessions` or `commands`.
+#   pk-admin [--session NAME] logs export [OPTIONS] >FILE
+#       A command that streams a file writes its bytes to standard output
+#       and its document to standard error; it is refused when standard
+#       output is a terminal.
 #
 # Session files live in ${PARISHKIT_ROOT:-/opt/parishkit}/run/admin-automation
 # (or --session-dir), a directory owned by you with mode 0700; each file is
@@ -220,6 +224,37 @@ case $secret in
 esac
 [ "${#secret}" -eq 43 ] || refuse "$file is not a session file"
 
+# Commands that stream a file to standard output, as AREA_VERB words
+# separated by spaces. Their bytes are never written to a terminal: redirect
+# standard output to a file.
+STREAMING="logs_export"
+# The work file the command's document is read from (see `reports`).
+documents=output
+for command in $STREAMING; do
+    if [ "$command" = "$1${2:+_$2}" ]; then
+        [ ! -t 1 ] || refuse "$1 $2 writes a file; redirect standard output to a file"
+        documents=errors
+    fi
+done
+if [ "$documents" = errors ]; then
+    # For a streaming command, `docker` below is this function. The
+    # command's standard output is this run's own (descriptor 6), so the
+    # file's bytes go straight to the operator's file, are never copied,
+    # and a failure to write them reaches the command, which reports it.
+    # Its standard error, which carries its document last, is shown as it
+    # comes and kept in the work directory for `reports`, so an interrupted
+    # run has already shown what arrived. The pipeline's status is tee's,
+    # so the command's own is passed through a file.
+    exec 6>&1
+    docker() {
+        {
+            command docker "$@" 2>&1 >&6 6>&-
+            printf '%s\n' "$?" >"$work/stream-status"
+        } | tee "$work/errors" >&2
+        return "$(cat "$work/stream-status" 2>/dev/null || echo 1)"
+    }
+fi
+
 # Commands that prompt for a confirmation, as AREA_VERB words separated by
 # spaces (for example "send_confirm"). They read their answer from a
 # terminal after the preamble.
@@ -271,7 +306,7 @@ remove_file() {
 # this top-level error code: `"error": {"code": "...", ...}` directly in the
 # document, never a match anywhere in its text.
 reports() {
-    tail -n 1 "$work/output" | grep -q "^{\"command\": [^{]*, \"error\": {\"code\": \"$1\", "
+    tail -n 1 "$work/$documents" | grep -q "^{\"command\": [^{]*, \"error\": {\"code\": \"$1\", "
 }
 
 if [ "$status" -eq 5 ] && reports session_ended; then
