@@ -257,7 +257,7 @@ def test_the_view_renders_local_wording_through_the_request(monkeypatch, setting
             objects=Value(values_list=lambda *fields: Value(first=lambda: (None, None)))
         ),
     )
-    request = RequestFactory().get("/admin/family-portal")
+    request = RequestFactory().get("/admin/mail/family-portal/")
     request.portal_session = None
     response = views.family_portal(request)
     page = flatten(response.content.decode())

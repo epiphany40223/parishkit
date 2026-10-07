@@ -259,7 +259,8 @@ Then take the backup that step 8 of the activation asks for.
 **You see:** the `mail_provider_unavailable` incident opens, reaching you by
 Slack if configured (its email may not arrive, for the reason above) and as
 the critical-events banner; Family or staff mail stops arriving; the
-deliveries page (`/admin/deliveries`) shows messages in `retry_wait`.
+**Outgoing mail** page (`/admin/mail/outgoing/`) shows messages in
+`retry_wait`.
 
 **The system does:** it opens the incident on a systemic failure or on three
 consecutive unavailable results for the same provider configuration, and
@@ -312,7 +313,7 @@ to `DATA`, for example), becomes
    all work while paused), then resume once the page's other resume
    conditions hold (see
    [Pausing and resuming delivery](#pausing-and-resuming-delivery)). On
-   the deliveries page (`/admin/deliveries`), choose the **Failed** state
+   the **Outgoing mail** page (`/admin/mail/outgoing/`), choose the **Failed** state
    and look at the messages last changed during the outage.
    Open each one that should still go and choose **Retry failed delivery** on
    its page (the button is offered only when delivery is not paused). Then
@@ -482,9 +483,8 @@ It is the tool for a provider outage, a content mistake found after the
 schedule started, or any moment when mail must stop now. The controls exist
 only for the current Production campaign.
 
-1. Open the campaign's **Pause and resume mail** page
-   (`/admin/campaign/<campaign id>/delivery`), signed in with Google within the
-   last five minutes.
+1. Open the **Pause and resume mail** page (`/admin/mail/controls/`), signed
+   in with Google within the last five minutes.
 2. Choose **Preview pause**, give the reason, and confirm with the fresh
    preview. Messages already being submitted may still reach the provider and
    cannot be recalled; everything else unsent is held, and new mail created
@@ -579,7 +579,7 @@ owns the policy for each kind:
 and [Admin reports](../specs/stewardship/background-processing/spec.md#administrator-digests).
 The guides linked in step 4 own each kind's resolution workflow.
 
-For each message, from its detail page (`/admin/deliveries/<message id>`):
+For each message, from its detail page (`/admin/mail/outgoing/<message id>/`):
 
 1. Look for it in the provider's own record: the delegated mailbox's sent
    mail or the Workspace admin log, by time and recipient.

@@ -47,7 +47,7 @@ def form(family_mail, google, request):
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         if request.param == "resolution":
             message = failed_delivery(family_mail)
-            path = f"/admin/deliveries/{message.pk}/resolve"
+            path = f"/admin/mail/outgoing/{message.pk}/resolution/"
             values |= dict(
                 expected_version=str(message.version),
                 action="note",
@@ -58,7 +58,7 @@ def form(family_mail, google, request):
         elif request.param == "clearance":
             refusal = remember(refused(family_mail))
             source = SourceCurrent.objects.get()
-            path = f"/admin/deliveries/refusals/{refusal.pk}/clear"
+            path = f"/admin/mail/refusals/{refusal.pk}/clearance/"
             values |= dict(
                 source_snapshot_id=str(source.snapshot_id),
                 source_generation=str(source.generation),

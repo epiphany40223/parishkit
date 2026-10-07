@@ -199,7 +199,7 @@ def test_pause_is_atomic_exact_and_keeps_delivery_payload(
 ):
     """Pause holds current work despite live inventory churn, preserving its bytes."""
     item = delivery_scheduled
-    path = f"/admin/campaign/{item.campaign.pk}/delivery"
+    path = reverse("admin:delivery_control")
     with web_login():
         page = item.browser.get(path)
         assert page.status_code == 200 and "no-store" in page["Cache-Control"]

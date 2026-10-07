@@ -401,7 +401,8 @@ name until NAV-15 splits it into Sign-in rules, Ministry assignments and
 Chairpersons, and the Emailed reports, Ministry assignments and Chairpersons
 pages, which do not exist yet. The System pages already have their new
 addresses (NAV-6), and so do the Parish data pages and a change's status page
-(NAV-7), with every old address redirecting. Until the rest of the URL work
+(NAV-7) and the Mail and Family portal pages (NAV-8), with every old address
+redirecting. Until the rest of the URL work
 lands, other pages keep their "Current URL", and so does every other section
 of this spec and the other stewardship specs that name an Admin URL; those
 follow-up issues update them with the code.
@@ -700,15 +701,15 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `production_confirmation` | Confirm Production | Prepare Family links | Administrator | Final Production confirmation | `/admin/campaign/<campaign>/go-live/cleanup/<request>/links/<preparation>/confirm` | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` |  |
 | `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/<campaign>/production` | `/admin/campaign/production/` | Links its cleanup request and Outgoing mail. |
 | `production_withdrawal` | Cancel go-live | Production activation | Administrator | Withdraw from Production; Return to Testing | `/admin/campaign/<campaign>/production/withdraw` | `/admin/campaign/production/cancellation/` | Links Pause and resume mail and Outgoing mail where it names them. |
-| `delivery_control` | Pause and resume mail | Menu: Pause and resume mail | Administrator | Campaign delivery controls; Delivery controls | `/admin/campaign/<campaign>/delivery` | `/admin/mail/controls/` |  |
-| `family_email_progress` | Family email progress | Menu: Family email progress | Administrator | (same) | `/admin/deliveries/family-progress` | `/admin/mail/family-progress/` |  |
-| `family_email_sends` | Family email history | Menu: Family email history | Administrator | Family email sends | `/admin/deliveries/family-sends` | `/admin/mail/family-history/` |  |
-| `deliveries` | Outgoing mail | Menu: Outgoing mail | Administrator | (same) | `/admin/deliveries` | `/admin/mail/outgoing/` |  |
-| `delivery` | Mail message | Outgoing mail | Administrator | Mail delivery; Message | `/admin/deliveries/<message>` | `/admin/mail/outgoing/<message>/` |  |
-| `delivery_refusals` | Refused addresses | Outgoing mail | Administrator | (same) | `/admin/deliveries/refusals` | `/admin/mail/refusals/` |  |
-| `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/deliveries/refusals/<refusal>` | `/admin/mail/refusals/<refusal>/` |  |
-| `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/family-portal` | `/admin/mail/family-portal/` |  |
-| `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/presence` | `/admin/mail/presence/` |  |
+| `delivery_control` | Pause and resume mail | Menu: Pause and resume mail | Administrator | Campaign delivery controls; Delivery controls | `/admin/mail/controls/` | (same; old address redirects) |  |
+| `family_email_progress` | Family email progress | Menu: Family email progress | Administrator | (same) | `/admin/mail/family-progress/` | (same; old address redirects) |  |
+| `family_email_sends` | Family email history | Menu: Family email history | Administrator | Family email sends | `/admin/mail/family-history/` | (same; old address redirects) |  |
+| `deliveries` | Outgoing mail | Menu: Outgoing mail | Administrator | (same) | `/admin/mail/outgoing/` | (same; old address redirects) |  |
+| `delivery` | Mail message | Outgoing mail | Administrator | Mail delivery; Message | `/admin/mail/outgoing/<message>/` | (same; old address redirects) |  |
+| `delivery_refusals` | Refused addresses | Outgoing mail | Administrator | (same) | `/admin/mail/refusals/` | (same; old address redirects) |  |
+| `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/mail/refusals/<refusal>/` | (same; old address redirects) |  |
+| `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same; old address redirects) |  |
+| `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same; old address redirects) | The header's count is still polled at `/admin/presence?format=count` (decision 8); only page reads of that address redirect. |
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same) | `/admin/reports/<campaign>/responses/` | `/admin/reports/responses/` |  |
 | `response_list` | _list name_ | Response dashboard | Administrator, Staff | (new, #477) | `/admin/reports/<campaign>/responses/<key>/` | `/admin/reports/responses/<key>/` | Object-named (exception): each list behind a dashboard count is named after that list. Its CSV download (`<key>/csv/`) is a non-page action. |
 | `reports` | Participation | Menu: Participation | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | `/admin/reports/` (group root: redirects to Participation, or to Ministry requests for Ministry leaders) | Address kept as a redirect to Participation. |

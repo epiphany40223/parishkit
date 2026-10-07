@@ -188,8 +188,8 @@ def test_daily_delivery_pages_do_not_format_a_nonexistent_family_duid(
         browser, _ = signed_in()
         with task_login(ServiceRole.WEB, exact=True):
             for path in (
-                "/admin/deliveries?state=all",
-                f"/admin/deliveries/{message.pk}",
+                "/admin/mail/outgoing/?state=all",
+                f"/admin/mail/outgoing/{message.pk}/",
             ):
                 response = browser.get(path)
                 assert response.status_code == 200

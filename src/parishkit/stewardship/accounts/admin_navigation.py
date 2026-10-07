@@ -441,7 +441,7 @@ MENU = (
     Entry("go_live", _ADMIN, _draft, campaign=True),
     Entry("production_progress", _ADMIN, _confirmed, campaign=True),
     # Mail and Family portal
-    Entry("delivery_control", _ADMIN, _production, campaign=True),
+    Entry("delivery_control", _ADMIN, _production),
     Entry("family_email_progress", _ADMIN, _campaign),
     Entry("family_email_sends", _ADMIN, _campaign),
     Entry("deliveries", _ADMIN),
@@ -538,6 +538,8 @@ NON_PAGES = frozenset(
         "exact_export_retry",
         "exact_export_status",
         "family_email_progress_status",
+        # The header's presence count, polled at the old presence address.
+        "presence_count",
         "export_cancel",
         "export_create",
         "export_download",

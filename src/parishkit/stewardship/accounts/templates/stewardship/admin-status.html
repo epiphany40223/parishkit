@@ -1,13 +1,13 @@
 {% load i18n stewardship %}
 {% comment %}Header status indicators; the sidebar is admin-navigation.html.{% endcomment %}
 {% if admin_chrome.background %}
-<a href="{% url 'admin:background' %}" data-background-indicator>{% translate "Background work:" %} <span data-background-total>{{ admin_chrome.background.total|number }}</span> ({% translate "running:" %} <span data-background-running>{{ admin_chrome.background.running|number }}</span>)</a>
+<a href="{% url 'admin:background' %}" data-background-indicator data-background-url="{% url 'admin:background_counts' %}">{% translate "Background work:" %} <span data-background-total>{{ admin_chrome.background.total|number }}</span> ({% translate "running:" %} <span data-background-running>{{ admin_chrome.background.running|number }}</span>)</a>
 <span class="help" data-background-unavailable hidden>{% translate "Background status unavailable; open the list to retry." %}</span>
 {% endif %}
 {% if admin_chrome.admin %}
 <div role="status" aria-live="polite" aria-atomic="true"><p class="notice" data-delivery-warning{% if not admin_chrome.delivery_unknown %} hidden{% endif %}>
   <a href="{% url 'admin:deliveries' %}?state=delivery_unknown">{% translate "Not sure it arrived — review needed:" %} <span data-delivery-unknown>{{ admin_chrome.delivery_unknown|default:0|number }}</span></a>
 </p></div>
-<a href="{% url 'admin:presence' %}" data-presence-indicator title="{% translate 'Families with the Family form open in their browser within the last 90 seconds' %}">{% translate "Families on the form now:" %} <span data-presence-count>{% if admin_chrome.presence_count is not None %}{{ admin_chrome.presence_count|number }}{% else %}—{% endif %}</span></a>
+<a href="{% url 'admin:presence' %}" data-presence-indicator data-presence-url="{% url 'admin:presence_count' %}?format=count" title="{% translate 'Families with the Family form open in their browser within the last 90 seconds' %}">{% translate "Families on the form now:" %} <span data-presence-count>{% if admin_chrome.presence_count is not None %}{{ admin_chrome.presence_count|number }}{% else %}—{% endif %}</span></a>
 <span class="help" data-presence-unavailable hidden>{% translate "Presence status unavailable; open the list to retry." %}</span>
 {% endif %}

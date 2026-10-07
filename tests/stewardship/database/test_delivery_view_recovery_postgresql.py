@@ -42,15 +42,15 @@ def test_missing_delivery_refusal_and_task_are_not_outages(family_mail, google):
     browser, _ = signed_in()
     missing = uuid4()
     for path in (
-        f"/admin/deliveries/{missing}",
-        f"/admin/deliveries/refusals/{missing}",
+        f"/admin/mail/outgoing/{missing}/",
+        f"/admin/mail/refusals/{missing}/",
     ):
         assert browser.get(path).status_code == 404
     common = dict(command_id=str(uuid4()), note="Private evidence")
     assert (
         post(
             browser,
-            f"/admin/deliveries/{missing}/resolve",
+            f"/admin/mail/outgoing/{missing}/resolution/",
             common | dict(expected_version="1", action="note"),
         ).status_code
         == 404
@@ -59,7 +59,7 @@ def test_missing_delivery_refusal_and_task_are_not_outages(family_mail, google):
     assert (
         post(
             browser,
-            f"/admin/deliveries/refusals/{missing}/clear",
+            f"/admin/mail/refusals/{missing}/clearance/",
             common
             | dict(
                 source_snapshot_id=str(source.snapshot_id),
@@ -88,12 +88,12 @@ def test_refusal_clearance_hides_dirty_source_and_returns_conflict(family_mail, 
     CampaignCredentialState.objects.update(
         population_dirty=True, version=F("version") + 1
     )
-    path = f"/admin/deliveries/refusals/{refusal.pk}"
+    path = f"/admin/mail/refusals/{refusal.pk}/"
     page = browser.get(path)
     assert page.status_code == 200 and b'name="verified"' not in page.content
     response = post(
         browser,
-        path + "/clear",
+        path + "clearance/",
         dict(
             command_id=str(uuid4()),
             source_snapshot_id=str(source.snapshot_id),
@@ -134,7 +134,7 @@ def test_pause_offers_unknown_resend_but_hides_other_retries(
         message = failed_delivery(harness, status)
         control(harness.campaign, "pause")
         browser, _ = signed_in()
-        response = browser.get(f"/admin/deliveries/{message.pk}")
+        response = browser.get(f"/admin/mail/outgoing/{message.pk}/")
         assert response.status_code == 200
         for action in shown:
             assert f'name="action" value="{action}"'.encode() in response.content
@@ -156,7 +156,7 @@ def test_resend_replay_does_not_require_keys_again(family_mail, google, monkeypa
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         message = failed_delivery(family_mail)
         browser, _ = signed_in()
-        path = f"/admin/deliveries/{message.pk}/resolve"
+        path = f"/admin/mail/outgoing/{message.pk}/resolution/"
         values = dict(
             command_id=str(uuid4()),
             expected_version=str(message.version),
@@ -182,7 +182,7 @@ def test_paginated_empty_evidence_does_not_claim_no_evidence_exists(
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         message = failed_delivery(family_mail)
         browser, _ = signed_in()
-        response = browser.get(f"/admin/deliveries/{message.pk}?page=2&size=1")
+        response = browser.get(f"/admin/mail/outgoing/{message.pk}/?page=2&size=1")
         assert response.status_code == 200
         assert b"No Admin evidence on this page." in response.content
         assert b"Previous page" in response.content
@@ -198,6 +198,6 @@ def test_database_outage_has_fixed_private_recovery(auth_service, google, monkey
         raise DatabaseError("private-database-marker")
 
     monkeypatch.setattr(delivery_views, "listing", unavailable)
-    response = browser.get("/admin/deliveries")
+    response = browser.get("/admin/mail/outgoing/")
     assert response.status_code == 503 and response["Retry-After"] == "5"
     assert b"private-database-marker" not in response.content

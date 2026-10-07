@@ -13,6 +13,7 @@ from uuid import uuid4
 import pytest
 from django.contrib.staticfiles import finders
 from django.template.loader import render_to_string
+from django.urls import reverse
 from PIL import Image
 
 from parishkit.stewardship.accounts import setup_help
@@ -464,7 +465,10 @@ def component_origin():
     responses = {
         # Admin chrome immediately polls this endpoint, including on report pages.
         # Failure-specific tests can still replace it with an explicit route.
-        "/admin/presence?format=count": ("application/json", '{"count":0}'),
+        reverse("admin:presence_count") + "?format=count": (
+            "application/json",
+            '{"count":0}',
+        ),
         "/login": ("text/html", render_to_string("stewardship/login.html", context)),
         "/family-login": (
             "text/html",

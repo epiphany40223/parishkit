@@ -23,9 +23,7 @@ from .accounts import (
     content_history,
     content_views,
     critical_event_views,
-    delivery_control_views,
     family_authentication,
-    family_maintenance_views,
     go_live_views,
     hosted_file_serving,
     presence,
@@ -54,9 +52,9 @@ from .accounts import (
     withdrawal_views,
 )
 from .admin_urls import legacy as admin_legacy
+from .admin_urls import mail as admin_mail
 from .admin_urls import parish as admin_parish
 from .admin_urls import system as admin_system
-from .jobs import delivery_views, send_history_views, send_progress_views
 from .jobs import views as job_views
 from .reports import (
     campaign_picker,
@@ -110,6 +108,8 @@ admin_patterns = [
     *admin_system.patterns,
     *admin_parish.patterns,
     *admin_parish.change_patterns,
+    *admin_mail.patterns,
+    *admin_mail.polled_patterns,
     *admin_legacy.patterns,
     path("ministry-reports/", ministry_report_views.index, name="ministry_reports"),
     path(
@@ -401,12 +401,6 @@ admin_patterns = [
         content_views.content_settings,
         name="content_revision",
     ),
-    path("presence", presence.active_families, name="presence"),
-    path(
-        "family-portal",
-        family_maintenance_views.family_portal,
-        name="family_portal",
-    ),
     path(
         "campaign/<uuid:campaign_id>/share-options",
         share_views.share_settings,
@@ -475,11 +469,6 @@ admin_patterns = [
         name="production_withdrawal",
     ),
     path(
-        "campaign/<uuid:campaign_id>/delivery",
-        delivery_control_views.control,
-        name="delivery_control",
-    ),
-    path(
         "campaign/<uuid:campaign_id>/settings",
         campaign_views.campaign_settings,
         name="campaign_settings",
@@ -542,41 +531,6 @@ admin_patterns = [
         "system/health/status",
         system_health_views.system_health_status,
         name="system_health_status",
-    ),
-    path("deliveries", delivery_views.delivery_list, name="deliveries"),
-    path(
-        "deliveries/family-progress",
-        send_progress_views.family_email_progress,
-        name="family_email_progress",
-    ),
-    path(
-        "deliveries/family-sends",
-        send_history_views.family_email_sends,
-        name="family_email_sends",
-    ),
-    path(
-        "deliveries/family-progress/status",
-        send_progress_views.family_email_progress_status,
-        name="family_email_progress_status",
-    ),
-    path("deliveries/refusals", delivery_views.refusal_list, name="delivery_refusals"),
-    path(
-        "deliveries/refusals/<uuid:refusal_id>",
-        delivery_views.refusal_detail,
-        name="delivery_refusal",
-    ),
-    path(
-        "deliveries/refusals/<uuid:refusal_id>/clear",
-        delivery_views.clear_refusal,
-        name="delivery_refusal_clear",
-    ),
-    path(
-        "deliveries/<uuid:message_id>", delivery_views.delivery_detail, name="delivery"
-    ),
-    path(
-        "deliveries/<uuid:message_id>/resolve",
-        delivery_views.resolution_command,
-        name="delivery_resolve",
     ),
     path("background/tasks", job_views.task_list, name="background_tasks"),
     path(

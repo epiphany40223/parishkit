@@ -62,7 +62,7 @@ def family_portal(request):
                 if state.actor_id
                 else None,
                 "message_limit": family_maintenance.MESSAGE_LIMIT,
-                "delivery_url": reverse("admin:delivery_control", args=[campaign_id])
+                "delivery_url": reverse("admin:delivery_control")
                 if campaign_id and mode == "production"
                 else None,
             },

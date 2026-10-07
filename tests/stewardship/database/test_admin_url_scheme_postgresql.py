@@ -140,3 +140,63 @@ def test_empty_report_roots_are_named_after_their_report(auth_service, google):
         assert response.status_code == 200, root
         assert b"<h1>" + name + b"</h1>" in response.content, root
         assert b"Return to Home" in response.content
+
+
+def test_old_pause_and_resume_address_redirects_only_the_current_campaign(
+    auth_service, google
+):
+    """Pause and resume mail's old address named a campaign (NAV-8)."""
+    current = _current(auth_service.store)
+    browser, _ = signed_in()
+    moved = browser.get(f"/admin/campaign/{current}/delivery")
+    assert moved.status_code == 301
+    assert moved["Location"] == "/admin/mail/controls/"
+    assert "no-store" in moved["Cache-Control"]
+    posted = post(browser, f"/admin/campaign/{current}/delivery")
+    assert posted.status_code == 308
+    assert posted["Location"] == "/admin/mail/controls/"
+    for answer in (
+        browser.get(f"/admin/campaign/{uuid4()}/delivery"),
+        post(browser, f"/admin/campaign/{uuid4()}/delivery"),
+    ):
+        assert answer.status_code == 410
+        assert "no-store" in answer["Cache-Control"]
+        assert REFUSAL.encode() in answer.content
+
+
+def test_old_mail_addresses_redirect_through_the_middleware(auth_service, google):
+    """Mail bookmarks land on the moved pages; the header count still polls."""
+    _current(auth_service.store)
+    browser, _ = signed_in()
+    for old, new in (
+        ("/admin/deliveries?state=all", "/admin/mail/outgoing/?state=all"),
+        ("/admin/deliveries/refusals", "/admin/mail/refusals/"),
+        ("/admin/deliveries/family-sends", "/admin/mail/family-history/"),
+        ("/admin/family-portal", "/admin/mail/family-portal/"),
+        ("/admin/presence?size=25", "/admin/mail/presence/?size=25"),
+        ("/admin/mail/outgoing", "/admin/mail/outgoing/"),
+    ):
+        response = browser.get(old)
+        assert response.status_code == 301, old
+        assert response["Location"] == new
+        assert browser.get(new).status_code == 200, new
+    polled = browser.get("/admin/presence?format=count")
+    assert polled.status_code == 200
+    assert set(polled.json()) == {"count", "as_of"}
+
+
+def test_old_mail_form_with_a_bad_csrf_token_is_refused(auth_service, google):
+    """A form left open on an old address still needs its CSRF token (#525)."""
+    from parishkit.stewardship.accounts import family_maintenance
+
+    _current(auth_service.store)
+    browser, _ = signed_in()
+    browser.get("/admin/mail/family-portal/")
+    response = browser.post(
+        "/admin/family-portal",
+        {"csrfmiddlewaretoken": "x" * 64, "action": "close", "message": ""},
+        follow=True,
+    )
+    assert response.status_code == 403
+    # Refused at the old address or after the 308: either way nothing changed.
+    assert not family_maintenance.current_state(cached=False).closed
