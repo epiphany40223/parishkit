@@ -13,6 +13,8 @@ from parishkit.stewardship.reports.ministries import (
 )
 from parishkit.stewardship.web.tables import report_table
 
+from .information_components import DATED_ZONE
+
 
 def _table(rows, query, total, *, ministry, action):
     """The shared POST navigator/heading model the view builds (#203)."""
@@ -84,6 +86,10 @@ def components(context, admin):
     )
     detail = _table(values["rows"], query, 51, ministry=9, action=root + "join/")
     history = MinistryQuery(history="all")
+    # What Apply returns for submitted days in the browser's zone (#558).
+    dated = MinistryQuery(
+        search="Example", start="2026-11-01", end="2026-11-02", zone=DATED_ZONE
+    )
     summary = values | dict(ministry_id=None, action=None, rows=[], report_url=root)
     # The summary by Ministry name the other way, with a second Ministry on
     # the page: what its heading's POST form returns, served from a GET path
@@ -108,6 +114,12 @@ def components(context, admin):
         | dict(
             query=history,
             table=_table(values["rows"], history, 51, ministry=9, action=root),
+        ),
+        "/ministry-dated": values
+        | dict(
+            query=dated,
+            export_fields=dated.form_values(),
+            table=_table(values["rows"], dated, 51, ministry=9, action=root + "join/"),
         ),
         "/ministry-empty": values
         | dict(

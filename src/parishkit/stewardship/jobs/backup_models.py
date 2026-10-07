@@ -211,3 +211,93 @@ def failed_recent_set():
         if row.state == "failed":
             return row
     return None
+
+
+# A requested backup's states (ADM-13 PR 3, #530). A held request stays
+# "waiting"; its ``held_at`` says a poll saw a bulk Family send.
+REQUEST_STATES = ("waiting", "running", "finished", "failed", "expired")
+# A failure category: a ``FailureKind`` value the process log records, or
+# ``did_not_finish`` for a run that never came back.
+REQUEST_FAILURE = r"^[a-z][a-z0-9_]{0,47}$"
+
+
+class BackupRequest(models.Model):
+    """One Administrator's request for a backup now, and what became of it.
+
+    The web login records it (System health's Take a backup now, ADM-13
+    PR 3b); the backup login's request mode claims, runs and settles it. The
+    guard in ``schema/migrations/0016_backup_request.sql`` admits an insert
+    only from the web login, for a fresh Administrator sign-in, one request
+    at a time and never during a restore review, and lets only the backup
+    login move a request along its states. Every time is the database's.
+    No path, host or credential is stored.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = UTCDateTimeField(db_default=Now())
+    actor_id = models.UUIDField()
+    session_id = models.UUIDField()
+    authenticated_at = UTCDateTimeField()
+    state = models.CharField(max_length=16, db_default="waiting")
+    held_at = UTCDateTimeField(null=True)
+    claimed_at = UTCDateTimeField(null=True)
+    finished_at = UTCDateTimeField(null=True)
+    backup_run = models.ForeignKey(
+        BackupRun, null=True, on_delete=models.PROTECT, related_name="requests"
+    )
+    failure_kind = models.CharField(max_length=48, null=True)
+
+    class Meta:
+        db_table = "stewardship_backup_request"
+        indexes = [
+            models.Index(models.F("created_at").desc(), name="backup_request_newest")
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(state__in=REQUEST_STATES),
+                name="backup_request_state",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(failure_kind__isnull=True)
+                | models.Q(failure_kind__regex=REQUEST_FAILURE),
+                name="backup_request_failure_kind",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    state="waiting",
+                    claimed_at__isnull=True,
+                    finished_at__isnull=True,
+                    backup_run__isnull=True,
+                    failure_kind__isnull=True,
+                )
+                | models.Q(
+                    state="running",
+                    claimed_at__isnull=False,
+                    finished_at__isnull=True,
+                    backup_run__isnull=True,
+                    failure_kind__isnull=True,
+                )
+                | models.Q(
+                    state="finished",
+                    claimed_at__isnull=False,
+                    finished_at__isnull=False,
+                    backup_run__isnull=False,
+                    failure_kind__isnull=True,
+                )
+                | models.Q(
+                    state="failed",
+                    claimed_at__isnull=False,
+                    finished_at__isnull=False,
+                    backup_run__isnull=True,
+                    failure_kind__isnull=False,
+                )
+                | models.Q(
+                    state="expired",
+                    claimed_at__isnull=True,
+                    finished_at__isnull=False,
+                    backup_run__isnull=True,
+                    failure_kind__isnull=True,
+                ),
+                name="backup_request_shape",
+            ),
+        ]

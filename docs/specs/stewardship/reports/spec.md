@@ -684,6 +684,16 @@ shows only `current_actionable`; history filters expose superseded/withdrawn
 items. Search covers authorized text, Family name/DUID, notes, date, disposition,
 and workflow state. Exports include complete text and workflow history option.
 
+The submitted-date filters (on or after, on or before) are whole days in the
+viewer's browser time zone, under the
+[global presentation rules](../spec.md#global-presentation-rules), and work as
+the [Logs screen's date filters](../admin-portal/spec.md#logs) do: the form
+sends the browser's zone with the dates, and a date without a known zone is
+refused, never read in another zone. An export captures the filters with their
+zone, and its retry asks for exactly those filters; a capture made before
+schema migration 0017 has no zone, keeps its campaign-zone days and is retried
+unchanged.
+
 Editing is audited and uses optimistic concurrency. This report is also the
 source for the weekly Admin digest.
 
@@ -702,8 +712,14 @@ head whose surname differs from the Family's is shown in full ("Smith, Anna and
 John Jones"); without heads it is just the surname. The default order is
 surname, then that whole name, then DUID. Search supports full/partial
 case-insensitive match of that name (so a head's first name finds the Family),
-DUID and address. Exact canonicalized-code search uses
-a separate CSRF-protected POST body and never places the candidate in a URL or
+any active Member's first and last name or nickname and last name
+([#664](https://github.com/epiphany40223/parishkit/issues/664)), DUID,
+envelope number and address. A Member match changes nothing in the row: it
+shows the same Family name, heads and columns as any other match, and never
+the matched Member. Searching by a Member's name can still confirm that some
+Family has an active Member by that name, even one the directory does not list
+(for example, with no phone); Staff with report access accept this. Exact
+canonicalized-code search uses a separate CSRF-protected POST body and never places the candidate in a URL or
 query string. The code
 is directly visible to Admin and Staff; there is no per-row reveal action,
 reauthentication ceremony, distinct-Family reveal budget, or Valkey dependency.
@@ -853,7 +869,9 @@ explicitly authorized for this workflow. Birth date itself is not shown when
 age suffices.
 
 Lists are searchable/filterable/sortable and exportable as CSV, XLSX, or PDF.
-Every leader view/export is audited with Ministry scope.
+One Ministry's lists filter by submitted date in the viewer's browser time
+zone, as [Additional information](#additional-information) does; the packet
+has no date filter. Every leader view/export is audited with Ministry scope.
 An export audit event retains the sorted Ministry DUID set actually included
 after filtering, plus whether the captured contact projection was operational
 or publish-restricted. This result scope is distinct from the potentially wider

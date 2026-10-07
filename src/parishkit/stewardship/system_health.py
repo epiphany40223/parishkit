@@ -61,6 +61,10 @@ RUNBOOKS = {
         "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
         "stewardship-deployment-runbook.md"
     ),
+    "backup_schedule": (
+        "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
+        "stewardship-backup-runbook.md#the-nightly-backup"
+    ),
 }
 # Family email purposes, whose waiting retries the page counts.
 FAMILY_PURPOSES = ("initial", "reminder")
@@ -339,9 +343,11 @@ class SystemHealth(ReadModel):
     are not set up). ``refused_at`` and ``refused_counts`` describe the
     newest refused ParishSoft load, when no full refresh has promoted since.
     ``backup_key_matches`` is None when no backup key is configured or no
-    backup has finished. ``delivery_paused`` is Production's live delivery
-    pause; ``send_active`` and ``planning_held`` come from Family email
-    progress.
+    backup has finished; ``backup_bytes`` and ``backup_version`` are the
+    newest backup's size and the version that took it, and
+    ``backup_request`` the newest Take a backup now request (ADM-13 PR 3).
+    ``delivery_paused`` is Production's live delivery pause; ``send_active``
+    and ``planning_held`` come from Family email progress.
     """
 
     checked_at: datetime
@@ -363,6 +369,9 @@ class SystemHealth(ReadModel):
     refused_counts: tuple
     backup_at: datetime | None
     backup_key_matches: bool | None
+    backup_bytes: int | None
+    backup_version: str | None
+    backup_request: object
     offsite: object
 
     def to_document(self):
@@ -393,6 +402,14 @@ class SystemHealth(ReadModel):
                     {"kind": kind, "since": since}
                     for kind, since in sorted(value.items())
                 ]
+            elif item.name == "backup_request":
+                value = (
+                    None
+                    if value is None
+                    else {
+                        part.name: getattr(value, part.name) for part in fields(value)
+                    }
+                )
             elif item.name in {"problems", "processes", "refused_counts"}:
                 value = [
                     {part.name: getattr(entry, part.name) for part in fields(entry)}
@@ -604,7 +621,8 @@ def _refused(succeeded_at):
 
 
 def _backup(configuration):
-    """When the newest backup finished, and whether it used the configured key."""
+    """The newest backup: when it finished, whether it used the configured key,
+    its size in bytes (database and files) and the version that took it."""
     from parishkit.config import ConfigError
 
     from .accounts.backup_key import configured_key
@@ -613,14 +631,21 @@ def _backup(configuration):
 
     newest = (
         BackupRun.objects.order_by("-completed_at", "-id")
-        .values_list("completed_at", "recipient_fingerprint")
+        .values_list(
+            "completed_at",
+            "recipient_fingerprint",
+            "database_bytes",
+            "files_bytes",
+            "application_version",
+        )
         .first()
     )
     if newest is None:
-        return None, None
+        return None, None, None, None
+    size, version = newest[2] + newest[3], newest[4]
     record = configured_key(configuration)
     if record is None:
-        return newest[0], None
+        return newest[0], None, size, version
     try:
         configured = parse_public_key(record["values"]["settings"]["public_key"])
     except (SealError, KeyError, TypeError):
@@ -628,7 +653,71 @@ def _backup(configuration):
         # that cannot be read is a damaged configuration: the page answers
         # 503 (a ConfigError), never 400, which would blame the request.
         raise ConfigError("The configured backup key cannot be read.") from None
-    return newest[0], configured.fingerprint == newest[1]
+    return newest[0], configured.fingerprint == newest[1], size, version
+
+
+@dataclass(frozen=True)
+class BackupRequestStatus:
+    """The newest Take a backup now request, and how the page words it.
+
+    ``status`` is ``waiting``, ``held`` (a bulk Family send holds it),
+    ``not_picked_up`` (it waited 30 minutes without being claimed),
+    ``running``, ``did_not_finish`` (running for more than two hours, or
+    settled so), ``finished``, ``failed`` or ``restored`` (expired by a
+    restore): the stored state, read with the lapse rules request mode
+    applies, so the page is right even before the next poll records them.
+    """
+
+    state: str
+    status: str
+    created_at: datetime
+    held_at: datetime | None
+    claimed_at: datetime | None
+    finished_at: datetime | None
+    failure_kind: str | None
+
+
+def request_status(row, now):
+    """Word a request row's state as the page shows it, at ``now``."""
+    state = row["state"]
+    if state == "waiting":
+        since = max(row["created_at"], row["held_at"] or row["created_at"])
+        if now - since > timedelta(minutes=30):
+            return "not_picked_up"
+        return "held" if row["held_at"] else "waiting"
+    if state == "running" and now - row["claimed_at"] > timedelta(hours=2):
+        return "did_not_finish"
+    if state == "failed" and row["failure_kind"] == "did_not_finish":
+        return "did_not_finish"
+    if state == "expired":
+        # A restore marks requests expired as of their own creation (the
+        # backup runbook's restore step); request mode expires one only once
+        # it has waited 30 minutes, which the page words as not picked up.
+        if row["finished_at"] <= row["created_at"]:
+            return "restored"
+        return "not_picked_up"
+    return state
+
+
+def _backup_request(now):
+    """The newest backup request's status, or None when there is none."""
+    from .jobs.backup_models import BackupRequest
+
+    row = (
+        BackupRequest.objects.order_by("-created_at", "-id")
+        .values(
+            "state",
+            "created_at",
+            "held_at",
+            "claimed_at",
+            "finished_at",
+            "failure_kind",
+        )
+        .first()
+    )
+    if row is None:
+        return None
+    return BackupRequestStatus(status=request_status(row, now), **row)
 
 
 def _offsite(configuration):
@@ -723,7 +812,8 @@ def read_health(store):
         processes, missing = _processes(facts.rows, now)
         refresh = full_refresh_status(refresh_schedule(configuration), now)
         refused_at, refused_counts = _refused(refresh.succeeded_at)
-        backup_at, key_matches = _backup(configuration)
+        backup_at, key_matches, backup_bytes, backup_version = _backup(configuration)
+        backup_request = _backup_request(now)
         retry_waiting, next_retry_at = _retries()
         progress = read_progress()
         send = None if progress is None else progress["send"]
@@ -762,6 +852,160 @@ def read_health(store):
         refused_counts=refused_counts,
         backup_at=backup_at,
         backup_key_matches=key_matches,
+        backup_bytes=backup_bytes,
+        backup_version=backup_version,
+        backup_request=backup_request,
         offsite=offsite,
     )
     return model, page
+
+
+# ------------------------------------------------------- take a backup now
+
+# A request in these page statuses is live: another cannot be made.
+LIVE_REQUEST = frozenset({"waiting", "held", "running"})
+
+
+@dataclass(frozen=True)
+class BackupPreview:
+    """What Take a backup now's preview states before the Administrator confirms.
+
+    ``key`` becomes the request's identity, so a repeated confirmation
+    returns the first request instead of making a second. ``backup_at`` and
+    ``backup_bytes`` describe the newest backup, ``offsite`` whether
+    off-site copies are set up, and ``held`` whether a bulk Family send is
+    in progress, so the backup would wait for it.
+    """
+
+    key: object
+    backup_at: datetime | None
+    backup_bytes: int | None
+    offsite: bool
+    held: bool
+
+
+def _admit_action(caller, store):
+    """An enabled Administrator who may view System health and configure.
+
+    Returns ``(principal, signed-in instant)``; the instant must be within
+    the fresh sign-in window (``sessions.require_fresh``), or the caller
+    gets the "Confirm with Google" step-up.
+    """
+    from .accounts.policy import Capability, allows
+    from .accounts.sessions import authenticated_admin, require_fresh
+
+    actor = authenticated_admin(caller, store=store, activity=True)
+    if not (
+        allows(actor, Capability.SYSTEM_LOGS) and allows(actor, Capability.CONFIGURE)
+    ):
+        raise PermissionError("Take a backup now requires an Administrator.")
+    return actor, require_fresh(caller)
+
+
+def _refusal(now):
+    """Why a backup cannot be requested now, as a stored request, or None."""
+    request = _backup_request(now)
+    if request is not None and request.status in LIVE_REQUEST:
+        return request
+    return None
+
+
+def preview_backup(caller, store):
+    """Take a backup now's preview, for a freshly signed-in Administrator.
+
+    Refused (``StaleRecordError``) while a request is waiting or running.
+    Reads only what the page reads; changes nothing.
+    """
+    from uuid import uuid4
+
+    from .accounts.configuration_installation import coherent_configuration
+    from .accounts.sessions import database_now
+    from .campaigns.work_locks import read_transaction
+    from .source.send_hold import family_send_active
+    from .storage import StaleRecordError
+
+    _admit_action(caller, store)
+    with read_transaction():
+        configuration = coherent_configuration(store)
+        if configuration.restore_review_required:
+            raise StaleRecordError("No backup request during a restore review.")
+        now = database_now()
+        if _refusal(now) is not None:
+            raise StaleRecordError("A backup request is already waiting or running.")
+        backup_at, _, backup_bytes, _ = _backup(configuration)
+        return BackupPreview(
+            key=uuid4(),
+            backup_at=backup_at,
+            backup_bytes=backup_bytes,
+            offsite=_offsite(configuration) is not None,
+            held=family_send_active(),
+        )
+
+
+def request_backup(caller, store, *, key):
+    """Record one Take a backup now request; return ``(row, created)``.
+
+    The request's guard checks again, in the same transaction, that the
+    Administrator signed in within the fresh window, that no other request
+    is live and that no restore is under review. A repeated confirmation
+    with the same ``key`` returns the first request (``created`` false).
+    The audit event ``backup_requested`` is recorded with the request.
+    """
+    from django.db import DatabaseError, IntegrityError, transaction
+
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .jobs.backup_models import BackupRequest
+    from .storage import StaleRecordError
+
+    actor, fresh = _admit_action(caller, store)
+    session = caller.portal_session
+
+    def first():
+        """The request already recorded with this key, or None."""
+        previous = BackupRequest.objects.filter(pk=key).first()
+        if previous is not None and previous.actor_id != actor.identity:
+            raise PermissionError(
+                "This backup request was made by another Administrator."
+            )
+        return previous
+
+    try:
+        with transaction.atomic():
+            previous = first()
+            if previous is not None:
+                return previous, False
+            row = BackupRequest.objects.create(
+                id=key,
+                actor_id=actor.identity,
+                session_id=session.pk,
+                authenticated_at=fresh,
+            )
+            record_action(
+                Action.BACKUP_REQUESTED,
+                actor_kind=ActorKind.PORTAL_USER,
+                actor_id=actor.identity,
+                subject_id=row.pk,
+                context={"outcome": Outcome.SUCCEEDED},
+            )
+            return row, True
+    except IntegrityError as error:
+        # A simultaneous second click with the same key lost the race: it
+        # returns the first request. Otherwise the guard's one-at-a-time or
+        # restore-review refusal.
+        previous = first()
+        if previous is not None:
+            return previous, False
+        raise StaleRecordError(
+            "A backup request is already waiting or running."
+        ) from error
+    except DatabaseError as error:
+        # The guard's 42501: the sign-in is no longer fresh (it lapsed since
+        # the check above), so the reader gets the step-up.
+        if getattr(error.__cause__, "sqlstate", None) == "42501":
+            from .accounts.sessions import FreshAuthenticationRequired
+
+            raise FreshAuthenticationRequired(
+                "Please authenticate with Google again."
+            ) from error
+        raise

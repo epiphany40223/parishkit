@@ -72,6 +72,15 @@ FROZEN = {
     "0014_slot_decisions.sql": (
         "3b97fdb22903dd045f1067661626bee9d2cb8be820f01fd34d5fd771113b895f"
     ),
+    "0015_directory_member_search.sql": (
+        "dfd6c5bdf4608dae8de2ce57f8491ff57495d9257f2d74b083f3b234bc23bd15"
+    ),
+    "0016_backup_request.sql": (
+        "48adee71fe33b14c2d478e3178fce3f82a062a97c2fcd060323597a9ed449564"
+    ),
+    "0017_report_local_days.sql": (
+        "cc6153e9a907ed5f25a8fc0bcd11f7d199635dcac4f36546381b8c83e24db22b"
+    ),
 }
 
 
@@ -139,6 +148,17 @@ def test_every_frozen_migration_file_is_pinned_and_unchanged():
                 f"!src/parishkit/stewardship/schema/migrations/{name}"
                 in ignore.read_text()
             )
+
+
+def test_no_frozen_file_needs_the_temp_privilege():
+    """The deployed migration login cannot create temporary tables.
+
+    PostgreSQL test databases run as a superuser, so only the compose jobs
+    would otherwise notice; keep checks in settings or the DO block itself.
+    """
+    for path in MIGRATIONS.glob("*.sql"):
+        text = path.read_text(encoding="utf-8").upper()
+        assert "CREATE TEMP" not in text and "CREATE LOCAL TEMP" not in text, path.name
 
 
 def test_latest_migration_copy_of_each_replaced_function_equals_the_baseline():

@@ -130,6 +130,9 @@ WEB_READ_TABLES = frozenset(
         # count a refused ParishSoft load was checked on (counts only).
         "stewardship_service_status",
         "stewardship_source_drop_count",
+        # Take a backup now's requests (ADM-13 PR 3): who asked, when, and
+        # what became of each; no path, host or credential.
+        "stewardship_backup_request",
     ]
 )
 
@@ -137,11 +140,26 @@ WEB_READ_TABLES = frozenset(
 # encryption key page shows, and what a portal key change's security alert
 # names as the key before it. Sizes, digests and versions stay unread.
 BACKUP_KEY_COLUMNS = frozenset({"id", "completed_at", "recipient_fingerprint"})
+# System health's backups panel (ADM-13) also shows the newest backup's size
+# and the version it was taken with; digests and paths stay unread.
+BACKUP_PANEL_COLUMNS = BACKUP_KEY_COLUMNS | {
+    "database_bytes",
+    "files_bytes",
+    "application_version",
+}
+# What request mode may change on a backup request (ADM-13 PR 3); the guard
+# in schema/migrations/0016_backup_request.sql decides which moves are valid.
+BACKUP_REQUEST_COLUMNS = frozenset(
+    {"state", "held_at", "claimed_at", "finished_at", "backup_run_id", "failure_kind"}
+)
 
 WEB_INSERT_TABLES = frozenset(
     [
         "stewardship_hosted_file",
         "stewardship_backup_drive_probe",
+        # Take a backup now (ADM-13 PR 3): its guard admits only a freshly
+        # signed-in Administrator, one request at a time.
+        "stewardship_backup_request",
         "stewardship_source_refresh_request",
         "stewardship_source_refresh_command",
         "stewardship_chair_seed_intent",
@@ -373,11 +391,14 @@ def runtime_grants(role, *, target=None):
         # off-site copy outcome it appends after each set. A copy stopped by
         # its whole-copy deadline, or a backup task's lost lease, is logged
         # (#293): insert only, and a trigger admits only timeout events.
+        # Request mode (ADM-13 PR 3) reads requests and settles them through
+        # a column UPDATE; the request's guard checks every move.
         return {
             "stewardship_backup_run": {"SELECT", "INSERT"},
             "stewardship_backup_upload": {"SELECT", "INSERT"},
             "stewardship_operational_log": {"INSERT"},
-        }, {}
+            "stewardship_backup_request": {"SELECT"},
+        }, {"stewardship_backup_request": {"UPDATE": set(BACKUP_REQUEST_COLUMNS)}}
     if role not in {ServiceRole.WEB, "download"}:
         raise ConfigError(
             "This service's runtime database authority is not implemented."
@@ -416,8 +437,9 @@ def runtime_grants(role, *, target=None):
             }
         }
         # The Backup encryption key page names the key the newest backup used
-        # until an Administrator sets one (#198): those columns only.
-        columns["stewardship_backup_run"] = {"SELECT": set(BACKUP_KEY_COLUMNS)}
+        # until an Administrator sets one (#198), and System health shows the
+        # newest backup's size and version (ADM-13): those columns only.
+        columns["stewardship_backup_run"] = {"SELECT": set(BACKUP_PANEL_COLUMNS)}
         # Setup progress observes live source ownership, never mutates the lease.
         columns["stewardship_source_lease"] = {
             "SELECT": {

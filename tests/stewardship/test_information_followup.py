@@ -47,6 +47,35 @@ def test_private_query_values_are_post_state_not_repr():
     assert "private Family" not in repr(query)
 
 
+def test_date_filters_need_the_browsers_zone_and_an_unused_one_is_dropped():
+    """Days are the viewer's browser zone (#558): never guessed, never another."""
+    from parishkit.stewardship.web.dates import UnknownZone
+
+    for zone in ("", "Etc/Unknown", "UTC ", "../../etc/passwd"):
+        with pytest.raises(UnknownZone):
+            InformationQuery.parse({"start": "2026-01-01", "zone": zone})
+    assert InformationQuery.parse({"zone": "Mars/Base"}).zone == ""
+    query = InformationQuery.parse({"end": "2026-01-01", "zone": "Pacific/Auckland"})
+    assert query.form_values()["zone"] == "Pacific/Auckland"
+
+
+def test_a_retained_capture_from_before_zones_is_retried_unchanged():
+    """A pre-0017 capture's filters have no zone; its retry asks for the same."""
+    legacy = {
+        "search": "",
+        "disposition": "all",
+        "needed": "any",
+        "completed": "any",
+        "start": "2026-01-01",
+        "end": "2026-01-31",
+        "sort": "newest",
+    }
+    query = InformationQuery.retained(legacy)
+    assert query.zone is None and query.form_values() == legacy
+    zoned = legacy | {"zone": "America/Chicago"}
+    assert InformationQuery.retained(zoned).form_values() == zoned
+
+
 @pytest.mark.parametrize(
     "extra",
     [

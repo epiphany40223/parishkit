@@ -540,10 +540,10 @@ script cancels because a newer one started still runs to its end on the
 server, so it is audited too: a few audit records per lookup is the accepted
 cost of keeping one audit path with the directory. Down arrow moves
 from the box to the results, Up and Down move between them, and Escape closes
-them and returns to the box. Matching every member's name and the envelope
-number needs a change to the directory's installed selection, so it is
-deferred to [#664](https://github.com/epiphany40223/parishkit/issues/664). Its
-route (`find_family`) is a non-page action.
+them and returns to the box. Because it is the directory's search, it also
+finds a Family by any active Member's name and by its envelope number
+([#664](https://github.com/epiphany40223/parishkit/issues/664)). Its route
+(`find_family`) is a non-page action.
 
 Entries use the same capability checks as the pages they open, and a group
 with no entry for the viewer's role is omitted; the menu is not the security
@@ -1017,8 +1017,8 @@ follows them.
 21. **Who gets Find a Family, and how does it search?** Administrators and
     Staff only, results scoped to what the role may see (Administrator); by
     CSRF POST (coordinator) (#561). It matches what the directory search
-    matches; member names and the envelope number follow in #664
-    (coordinator, NAV-19).
+    matches, including any active Member's name and the envelope number
+    (coordinator, #664).
 22. **What are the #477 response lists?** (Coordinator.) One registry row,
     each named after its list, at `/admin/reports/responses/<key>/`; its CSV
     is a non-page.
@@ -3326,8 +3326,12 @@ server?" (ADM-35):
 - **Problems:** the open `backup_rpo_breach`, `backup_offsite_failed` and
   `backup_key_changed` incidents, in words.
 - **Requested backups:** the newest backup requested from this page, with
-  its state: waiting for the server, running, finished, failed (with its
-  category in words), or expired. See [take a backup now](#take-a-backup-now).
+  its state: waiting for the server, waiting for the email send to finish,
+  running, finished, failed (its category under Technical details), did
+  not finish, not picked up (it waited 30 minutes, linking the nightly
+  backup section), or cancelled by a restore. The page applies the lapse
+  rules before the next poll records them. See
+  [take a backup now](#take-a-backup-now).
 
 The web login already reads the run record's ID, completion time and
 recipient fingerprint. ADM-13 adds read access to its `database_bytes`,
@@ -3461,7 +3465,12 @@ the backup login. Instead:
    (for example during offline work), it also exits quietly; the page's
    "not picked up" message below is what shows a poll that never runs.
 3. When a request is waiting, request mode tries once to take the backup
-   lock that every backup run now takes, without waiting. If another backup
+   lock that every backup run now takes, without waiting. The lock is a
+   PostgreSQL session advisory lock, held while a run makes its backup set
+   (the off-site upload that follows is not covered); any database
+   login could take its key and stall backups, which the scheduled run's
+   timeout and the overdue-backup alert would then show (a lock file would
+   need a new mount on every host). If another backup
    holds it, request mode exits quietly and leaves the request waiting. It
    then takes the startup interlock shared, as every backup run does today;
    if offline work holds it, it exits quietly the same way. Otherwise it
@@ -3505,9 +3514,10 @@ the backup login. Instead:
    or running in any check.
 7. **Restore.** The restore procedure already stops the host's backup cron
    jobs. ADM-13 adds the request-mode entry to that step and to the restore
-   drill's warning, and adds a step that marks every restored request
-   `expired`, so a restored request is never run. A restored request older
-   than 30 minutes has expired anyway.
+   drill's warning, and adds a step that marks every restored waiting or
+   running request `expired` as of its own creation (`finished_at` set to
+   `created_at`), so a restored request is never run and the page shows it
+   as cancelled by a restore, not as not picked up.
 
 **Preview.** When the last backup finished, whether off-site copies are on,
 and the last backup's size; that the new backup follows the usual retention

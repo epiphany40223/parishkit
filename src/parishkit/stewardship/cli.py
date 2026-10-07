@@ -38,7 +38,7 @@ _COMMAND_OPTIONS = {
     "prepare-development": {"runtime_root"},
     "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
     "migrate": {"config"},
-    "backup": {"config"},
+    "backup": {"config", "request"},
     "backup-keygen": {"destination"},
     "backup-open": {"key", "input", "destination"},
     "backup-prove": {"key", "input"},
@@ -183,6 +183,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help=(
             "smoke only: post the one fixed Slack message, or copy the newest "
             "backup set to the Drive folder, after a valid check"
+        ),
+    )
+    parser.add_argument(
+        "--request",
+        action="store_true",
+        default=None,
+        help=(
+            "backup only: the five-minute poll for a backup an Administrator "
+            "requested; silent when none is waiting"
         ),
     )
     parser.add_argument(

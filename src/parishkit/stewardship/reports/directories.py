@@ -461,11 +461,12 @@ def find_families(campaign_id, query):
 
     Runs the installed directory selection itself, so the header's Find a
     Family box matches exactly what the Family directory's search matches
-    (the shown name with its heads, DUID and address) and lists in the same
-    order. Only the search filter is set. Unlike ``directory_page`` it
-    decrypts no Family code and reads no head emails: a match shows only
-    its name, DUID and envelope number. The caller holds the campaign read
-    guard, as for the directory page. Returns ``{"rows", "total"}``; each row
+    (the shown name with its heads, any active Member's name, DUID, envelope
+    number and address; #664) and lists in the same order. Only the search
+    filter is set. Unlike ``directory_page`` it decrypts no Family code and
+    reads no head emails: a match shows only its name, DUID and envelope
+    number. The caller holds the campaign read guard, as for the directory
+    page. Returns ``{"rows", "total"}``; each row
     has ``family_id`` (None for a Family without a campaign record),
     ``display_name``, ``family_duid`` and ``envelope``.
     """

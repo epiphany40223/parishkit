@@ -7,6 +7,7 @@ from django.views.decorators.http import require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.dates import UnknownZone, refuse_zoneless_dates
 
 from .export_services import ExportRequestBound
 from .export_ui import _redirect
@@ -26,10 +27,13 @@ def create(request, campaign_id):
         parameters.pop("csrfmiddlewaretoken", None)
         fields = {"format", "browser_timezone", "request_key"}
         query_fields = set(InformationQuery.__dataclass_fields__) - {"page"}
-        if (
-            request.GET
-            or set(parameters) - {"history"} != fields | query_fields
-            or any(len(parameters.getlist(key)) != 1 for key in parameters)
+        # A query string is refused first: only the POSTed form's own
+        # fields may earn the reload-the-page zone refusal.
+        if request.GET:
+            raise ValueError("Invalid information export fields.")
+        refuse_zoneless_dates(parameters, fields | query_fields)
+        if set(parameters) - {"history"} != fields | query_fields or any(
+            len(parameters.getlist(key)) != 1 for key in parameters
         ):
             raise ValueError("Invalid information export fields.")
         history = parameters.pop("history", [None])[0]
@@ -53,5 +57,7 @@ def create(request, campaign_id):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return _error(campaign_id, status=503)
+    except UnknownZone:
+        return _error(campaign_id, zone=True)
     except ValueError:
         return _error(campaign_id, status=400)

@@ -1,0 +1,13 @@
+{% load i18n stewardship %}{% comment %}
+  Take a backup now's button, or the same button greyed with its reason
+  while a request is waiting or running. Shared by the Take a backup now
+  region and the copy the polled status region carries
+  (template[data-live-mirror]), which live-status-v1.js puts in place on
+  each update, so the button follows a request that finishes or one
+  another Administrator makes. ``health`` is system_health.SystemHealth.
+  ``mirrored`` (the polled copy) leaves the CSRF token empty, so the polled
+  markup does not change on every poll; live-status-v1.js fills it from the
+  page's own token when it copies the button in.
+{% endcomment %}{% with request=health.backup_request %}{% if request.status == "waiting" or request.status == "held" or request.status == "running" %}<p><button type="button" disabled aria-describedby="backup-now-reason">{% translate "Take a backup now…" %}</button></p>
+<p class="help" id="backup-now-reason">{% translate "A backup was requested at" %} <time datetime="{{ request.created_at|instant }}" data-local-instant>{{ request.created_at|instant }}</time> {% if request.status == "running" %}{% translate "and is running." %}{% else %}{% translate "and is waiting." %}{% endif %}</p>
+{% else %}<form method="post" action="{% url 'admin:system_health' %}#backup-now" data-in-place="backup-preview" data-in-place-fallback="backup-confirm" data-in-place-message="{% translate 'Review the backup request.' %}"><input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}"><input type="hidden" name="action" value="preview"><button type="submit">{% translate "Take a backup now…" %}</button></form>{% endif %}{% endwith %}

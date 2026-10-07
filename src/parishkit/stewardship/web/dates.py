@@ -145,6 +145,21 @@ class UnknownZone(ValueError):
     """The browser sent no time zone, or one outside the IANA catalog."""
 
 
+def refuse_zoneless_dates(parameters, expected):
+    """Refuse an export form from a page loaded before its dates had a zone.
+
+    Such a form (a tab opened before #558's release) sends every expected
+    field except ``zone``. With dates in it, :class:`UnknownZone` lets the
+    view say to reload the page rather than call the fields invalid.
+    """
+    if (
+        "zone" not in parameters
+        and expected - {"zone"} <= set(parameters)
+        and (parameters.get("start") or parameters.get("end"))
+    ):
+        raise UnknownZone("The export form came from a page without zones.")
+
+
 def browser_instant(day, clock, zone):
     """Convert a date and time typed in the browser's time zone to a UTC instant.
 

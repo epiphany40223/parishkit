@@ -108,6 +108,8 @@ def test_selection_is_canonical_and_every_other_filter_is_neutral():
         start="",
         end="",
         sort="name",
+        # No dates, so no browser zone (#558); SQL requires it blank.
+        zone="",
     )
     chosen = packet_parameters((4, 9), history=True)
     assert chosen["ministries"] == [4, 9] and chosen["filters"]["history"] == "all"

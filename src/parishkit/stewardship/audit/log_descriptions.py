@@ -149,6 +149,7 @@ DESCRIPTIONS = {
     "dashboard_viewed": _("An Administrator opened the dashboard."),
     "system_logs_viewed": _("An Administrator opened System logs."),
     "system_health_viewed": _("An Administrator opened System health."),
+    "backup_requested": _("An Administrator asked the server to take a backup now."),
     "background_viewed": _("An Administrator opened Background work."),
     "delivery_viewed": _("An Administrator opened Outgoing mail."),
     "family_directory_viewed": _("Someone opened the Family directory."),

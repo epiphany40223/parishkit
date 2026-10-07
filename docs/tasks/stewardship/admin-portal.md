@@ -522,7 +522,11 @@ the directory's installed search by CSRF POST, rechecks directory and
 timeline access inside the campaign read guard, and audits the search as a
 directory view without its text; `find-family-v1.js` searches after a pause,
 for 2 or more characters, cancelling older searches. Member names and the
-envelope number are #664. It is proven by
+envelope number followed in #664 (frozen migration
+`0015_directory_member_search.sql`, proven by
+`tests/stewardship/database/test_directories_postgresql.py` and
+`tests/stewardship/database/test_directory_member_search_migration_postgresql.py`).
+It is proven by
 `tests/stewardship/test_find_family.py` (who gets the box, its markup and the
 results fragment), `tests/stewardship/database/test_directories_postgresql.py`
 (results, POST-only refusals, no codes, `no-store`, audit without the text,
@@ -597,3 +601,23 @@ attention), checked by the golden document and allowlist in
 `tests/stewardship/test_admin_reads.py`, `tests/stewardship/test_admin_cli.py`
 and `tests/stewardship/database/test_system_health_postgresql.py`. The
 24-hour daily-limit count (part 2c) remains.
+ADM-13.03 is in progress in parts. Part 3a adds the frozen forward
+migration `0016_backup_request.sql` (the request record and its guard),
+the web's and backup login's request grants and the web's read of the
+newest backup's size and version, request mode (`backup --request`) with
+the backup lock, the backups panel's size, version and request state, and
+the backup runbook's request-mode cron entry, restore step and drill
+warning, checked by `tests/stewardship/test_system_health.py`,
+`tests/stewardship/test_runtime_grants.py` and
+`tests/stewardship/database/test_backup_request_postgresql.py`. The Take a
+backup now button (part 3b) remains. Part 3b adds the button on System
+health: a preview (the last backup and its size, off-site copies,
+retention, and the wait during a bulk send), confirmation answered in place
+with a repeated confirmation returning the first request, the fresh
+sign-in step-up, the `backup_requested` audit event naming the request,
+the greyed button with its reason while a request is live (kept current
+by the page's poll), the steps posted to the System health page itself so
+they are answered in place, refusals and the step-up answered inside the
+section, and the commands owed by ADM-11 PR 5,
+checked by `tests/stewardship/database/test_backup_now_postgresql.py` and
+`tests/stewardship/browser/test_system_health.py`.

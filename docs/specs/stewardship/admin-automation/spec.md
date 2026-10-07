@@ -1725,7 +1725,7 @@ pause, and closing work is the closed-campaign resolution. See
 | `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b; `resend` owed by PR 9c) |
 | `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-show` (PR 9b), `delivery refusal-clear` (PR 9c) |
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
-| `system_backup_request` (ADM-13) | `system backup-now` (keyed), `system backup-status --watch` |
+| `system_health` POST, Take a backup now (ADM-13) | `system backup-now` (keyed), `system backup-status --watch` (owed by ADM-11 PR 5) |
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
 | `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
 | `system_debug_off`, `system_debug_allow` (ADM-13) | `system debug-off`; `system debug-allow` (Testing only) |
