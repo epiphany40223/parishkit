@@ -207,3 +207,145 @@ def test_zero_with_an_open_changed_record_choice_rebuilds(phone, component_origi
     assert "financial-annual_pledge" in page.evaluate(SAME_NODES, CONTROLS)
     expect(annual).to_be_focused()
     expect(annual).to_have_value("0")
+
+
+# #384 L5: controls that still rebuild the form keep the page still around
+# themselves: the control stays where it was on screen and keeps focus.
+STILL = 2  # pixels a rebuilt page may settle by (subpixel layout rounding)
+
+
+def screen_top(locator):
+    """Where ``locator`` sits on screen, in CSS pixels from the viewport top."""
+    return locator.evaluate("e => e.getBoundingClientRect().top")
+
+
+def stays_put(page, locator, action, focused=None):
+    """Scroll ``locator`` mid-screen, ``action()``, and check nothing moved."""
+    centered(page, locator)
+    before = screen_top(locator)
+    assert page.evaluate("window.scrollY") > 0
+    action()
+    expect(focused or locator).to_be_focused()
+    after = screen_top(locator)
+    assert abs(after - before) <= STILL, (before, after)
+
+
+def service_page(page, component_origin, *, last=False):
+    """The talents form, with long Ministry text so its controls sit low.
+
+    ``last`` drops the pages after the Member's, so it is the last page.
+    """
+    from .test_family_service import service_form
+
+    form = service_form()
+    form["content"]["ministry"] = "<p>Ministries serve our parish.</p>" * 30
+    if last:
+        form["additional_enabled"] = False
+        form["content"].pop("closing", None)
+    begin(page, component_origin, form, None)
+
+
+def test_cannot_participate_keeps_the_page_still(phone, component_origin):
+    """Ticking and unticking "cannot participate" does not jump the page."""
+    from .test_family_service import SERVE
+
+    page = phone
+    service_page(page, component_origin)
+    lock = show(page, page.get_by_label(SERVE))
+    stays_put(page, page.get_by_label(SERVE), lambda: lock.check())
+    expect(page.get_by_label(SERVE)).to_be_checked()
+    stays_put(
+        page, page.get_by_label(SERVE), lambda: page.get_by_label(SERVE).uncheck()
+    )
+    expect(page.get_by_label(SERVE)).not_to_be_checked()
+
+
+def test_free_text_talent_keeps_the_page_still(phone, component_origin):
+    """Ticking "Other" opens its text box without moving the checkbox."""
+    page = phone
+    service_page(page, component_origin)
+    other = show(page, page.get_by_label("Other", exact=True))
+    describe = page.get_by_label("Please describe your talent")
+    stays_put(page, page.get_by_label("Other", exact=True), other.check, describe)
+    stays_put(
+        page,
+        page.get_by_label("Other", exact=True),
+        lambda: page.get_by_label("Other", exact=True).uncheck(),
+    )
+    expect(describe).to_have_count(0)
+
+
+def test_household_status_keeps_the_page_still(phone, component_origin):
+    """Choosing a household change keeps the status menu where it was."""
+    from .test_family_response import form_payload
+    from .test_member_census import start
+
+    page = phone
+    form = form_payload()
+    form["content"]["member_census"] = "<p>Please check each person.</p>" * 30
+    start(page, component_origin, form=form)
+    status = show(page, page.get_by_label("Household status"))
+    expect(status).to_be_visible()
+    page.on("dialog", lambda dialog: dialog.accept())
+    stays_put(
+        page,
+        page.get_by_label("Household status"),
+        lambda: status.select_option("moved_household"),
+    )
+    expect(page.get_by_label("Household status")).to_have_value("moved_household")
+
+
+def test_add_member_opens_the_new_page_at_its_top(phone, component_origin):
+    """Adding a person shows the new page from the top, first name focused."""
+    from .test_family_response import form_payload
+    from .test_member_census import start
+
+    page = phone
+    form = form_payload()
+    form["content"]["member_census"] = "<p>Please check each person.</p>" * 30
+    start(page, component_origin, form=form)
+    add = show(
+        page,
+        page.get_by_role(
+            "button", name="Add a household member", exact=True, include_hidden=True
+        ),
+    )
+    expect(add).to_be_visible()
+    assert centered(page, add) > 0
+    add.click()
+    first = page.locator('input[id$="-first_name"]:focus')
+    expect(first).to_have_count(1)
+    assert page.evaluate("window.scrollY") == 0
+
+
+KEPT_HEIGHT = "() => document.getElementById('family-flow').style.minHeight"
+
+
+def test_the_kept_height_ends_with_the_page_and_never_reaches_review(
+    phone, component_origin
+):
+    """The height kept for a still page stays on that page only (#384 L5).
+
+    Moving to another page drops it, and so does every other screen: Review
+    (and Thank you) would otherwise end in a screenful of blank space after
+    a tick on the last page.
+    """
+    from .test_family_response import visit_every_page
+    from .test_family_service import SERVE
+
+    page = phone
+    service_page(page, component_origin, last=True)
+    show(page, page.get_by_label(SERVE)).check()
+    assert page.evaluate(KEPT_HEIGHT).endswith("px")
+    # A page change drops it.
+    page.locator("[data-page-back]").click()
+    assert page.evaluate(KEPT_HEIGHT) == ""
+    # On the last page, a tick keeps it again; Review drops it.
+    visit_every_page(page, required=False)
+    lock = page.get_by_label(SERVE)
+    assert lock.is_visible(), "the Member page is this form's last page"
+    lock.uncheck()
+    assert page.evaluate(KEPT_HEIGHT).endswith("px")
+    page.get_by_role("button", name="Review response").click()
+    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
+    assert page.evaluate(KEPT_HEIGHT) == ""
