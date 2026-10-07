@@ -1,18 +1,18 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
-{% block title %}{% translate "Participation and campaign statistics" %}{% endblock %}
+{% block title %}{% translate "Participation" %}{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{% static 'stewardship/digest-v1.css' %}">
 <script src="{% static 'stewardship/digest-v1.js' %}" defer></script>
 <script src="{% static 'stewardship/report-v1.js' %}" defer></script>
 {% endblock %}
 {% block content %}
-<h1>{% translate "Participation and campaign statistics" %}</h1>
+<h1>{% translate "Participation" %}</h1>
 {% aboutpage "participation" %}<p>{% translate "Track first responses and pledges. Repeat submissions do not increase participation. Testing responses are excluded." %}</p>
 <p>{% translate "The statistics cards count the Families who are eligible right now and their latest answers. The daily chart is calculated separately in the background, so it can lag a little behind the cards; when it is being updated, the latest complete chart is shown." %}</p>
 <p>{% translate "Historical as of day counts, for each day, every Family that had become eligible by then, including Families that later became inactive. Current population uses today's eligible Families for every day. The inactive subtotal is shown separately and never changes the active counts." %}</p>
 <p>{% translate "Generate export saves the chart shown on this page. Queue export with the latest data waits for a fresh calculation from the data as it is when you submit, so it can differ from the chart shown." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
-<p>{% multi_campaign_control "choose-campaign" _("Choose a retained campaign") %} · <a href="{% url 'admin:information_queue' campaign.pk %}">{% translate "Additional-information staff queue" %}</a>{% if 'financial' in campaign.active_configuration.values.modules %} · <a href="{% url 'admin:financial_report' campaign.pk %}">{% translate "Financial stewardship detail" %}</a>{% endif %} · <a href="{% url 'admin:response_dashboard' campaign.pk %}">{% translate "Response dashboard" %}</a> · <a href="{% url 'admin:talents_report' campaign.pk %}">{% translate "Talents and limitations" %}</a> · <a href="{% url 'admin:family_directory' campaign.pk %}">{% translate "Family directory (codes and postal mail)" %}</a></p>
+<p>{% multi_campaign_control "choose-campaign" _("Choose a retained campaign") %} · <a href="{% url 'admin:information_queue' campaign.pk %}">{% translate "Additional information" %}</a>{% if 'financial' in campaign.active_configuration.values.modules %} · <a href="{% url 'admin:financial_report' campaign.pk %}">{% translate "Financial stewardship" %}</a>{% endif %} · <a href="{% url 'admin:response_dashboard' campaign.pk %}">{% translate "Response dashboard" %}</a> · <a href="{% url 'admin:talents_report' campaign.pk %}">{% translate "Talents and limitations" %}</a> · <a href="{% url 'admin:family_directory' campaign.pk %}">{% translate "Family directory" %}</a></p>
 <form id="table-filters" data-table-sync method="get" action="{% url 'admin:participation' campaign.pk %}" data-report-options data-filter-reload>
 <label for="scope">{% translate "Chart population" %}</label>
 <select id="scope" name="scope"><option value="historical"{% if query.scope == 'historical' %} selected{% endif %}>{% translate "Historical as of day" %}</option><option value="current"{% if query.scope == 'current' %} selected{% endif %}>{% translate "Current population" %}</option></select>

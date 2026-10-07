@@ -64,6 +64,7 @@ def components(context, admin):
                 "status": {"state": "ready"},
                 "mutable": True,
                 "report_url": "/participation",
+                "report_name": "Participation",
             },
         ),
         "/report-export-busy": (
@@ -79,6 +80,7 @@ def components(context, admin):
             "mutable": True,
             "can_cancel": True,
             "report_url": "/participation",
+            "report_name": "Participation",
         },
     )
     # Queued behind a named task (#340): its start shows as a clock time and
@@ -97,6 +99,7 @@ def components(context, admin):
             "mutable": True,
             "can_cancel": True,
             "report_url": "/participation",
+            "report_name": "Participation",
         },
     )
     pages["/report-export-failed"] = (
@@ -107,6 +110,7 @@ def components(context, admin):
             "mutable": True,
             "retry_key": UUID(int=31),
             "report_url": "/participation",
+            "report_name": "Participation",
         },
     )
     pages["/report-export-expired"] = (
@@ -117,6 +121,7 @@ def components(context, admin):
             "mutable": True,
             "retry_key": UUID(int=30),
             "report_url": "/participation",
+            "report_name": "Participation",
         },
     )
     pages["/report-exact"] = (
@@ -139,6 +144,7 @@ def components(context, admin):
             "can_cancel": True,
             "mutable": True,
             "report_url": "/participation",
+            "report_name": "Participation",
         },
     )
     pages["/participation-auto?scope=historical"] = (

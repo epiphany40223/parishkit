@@ -174,27 +174,30 @@ PAGES = {
     # Responses and reports. Every report is a menu entry of its own. The
     # two report roots only redirect to the current campaign's report (or
     # show that there is none), so they stand alone, outside the menu.
-    "reports": Page("reports", _("Campaign reports")),
+    "reports": Page("reports", _("Participation")),
     "participation": Page("reports", _("Participation")),
-    "financial_report": Page("reports", _("Financial report")),
+    "financial_report": Page("reports", _("Financial stewardship")),
     "talents_report": Page("reports", _("Talents and limitations")),
     "response_dashboard": Page("reports", _("Response dashboard")),
     "response_list": Page("reports", _("Response list"), "response_dashboard"),
     "information_queue": Page("reports", _("Additional information")),
-    "information_item": Page("reports", _("Information item"), "information_queue"),
+    "information_item": Page("reports", _("Information request"), "information_queue"),
     "report_export": Page("reports", _("Report export"), "reports"),
-    "report_exact": Page("reports", _("Exact export"), "reports"),
-    "weekly_digest_manual": Page("reports", _("Manual information report")),
-    "weekly_digest_snapshot": Page("reports", _("Weekly summary"), "reports"),
+    "report_exact": Page("reports", _("Latest-data export"), "reports"),
+    "weekly_digest_manual": Page("reports", _("Send a weekly report now")),
+    # The emailed reports stand alone under the group until NAV-14 gives
+    # them the Emailed reports page; the reports root is Participation now,
+    # which they do not belong under.
+    "weekly_digest_snapshot": Page("reports", _("Weekly report")),
     "weekly_digest_item": Page(
-        "reports", _("Weekly summary item"), "weekly_digest_snapshot"
+        "reports", _("Weekly report item"), "weekly_digest_snapshot"
     ),
-    "daily_digest_snapshot": Page("reports", _("Daily report"), "reports"),
-    "ministry_reports": Page("reports", _("Ministry reports")),
-    "ministry_report": Page("reports", _("Ministry report")),
-    "ministry_joiners": Page("reports", _("Joining"), "ministry_report"),
-    "ministry_leavers": Page("reports", _("Leaving"), "ministry_report"),
-    "ministry_followup": Page("reports", _("Follow-up")),
+    "daily_digest_snapshot": Page("reports", _("Daily report")),
+    "ministry_reports": Page("reports", _("Ministry requests")),
+    "ministry_report": Page("reports", _("Ministry requests")),
+    "ministry_joiners": Page("reports", _("Members joining"), "ministry_report"),
+    "ministry_leavers": Page("reports", _("Members leaving"), "ministry_report"),
+    "ministry_followup": Page("reports", _("Ministry follow-up")),
     "ministry_followup_item": Page(
         "reports", _("Follow-up request"), "ministry_followup"
     ),

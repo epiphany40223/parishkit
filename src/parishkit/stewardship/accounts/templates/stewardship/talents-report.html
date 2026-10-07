@@ -5,7 +5,7 @@
 {% aboutpage "talents-report" %}<p>{% translate "Members who shared a talent or said they cannot participate in any ministries, and Families who said they cannot attend Mass or prayer services. Each Family's current live response is used; a later submission replaces the earlier one, and Testing responses are excluded. These answers are kept here; they are never written to ParishSoft." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
 {% if not collects_talents %}<p class="notice">{% translate "This campaign does not collect talents, so this report lists only Members who cannot participate in ministries and Families who cannot attend Mass or prayer services." %}</p>{% endif %}
-<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and selection" %}</a></p>
+<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Participation" %}</a></p>
 <div id="talents-summary" data-table-sync><h2>{% translate "Summary" %}</h2>
 <dl>
 <dt>{% translate "Members listed" %}</dt><dd>{{ summary.members|number }}</dd>

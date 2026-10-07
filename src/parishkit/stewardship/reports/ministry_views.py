@@ -9,6 +9,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods
 
+from parishkit.stewardship.accounts.admin_navigation import PAGES
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
@@ -64,7 +65,12 @@ def index(request):
         response = (
             redirect("admin:ministry_report", campaign_id=current)
             if current in choices
-            else render(request, "stewardship/report-empty.html")
+            else render(
+                request,
+                "stewardship/report-empty.html",
+                # Named after the report the reader opened (one name per page).
+                {"page_name": PAGES["ministry_reports"].label},
+            )
         )
         response["Cache-Control"] = "no-store"
         return response

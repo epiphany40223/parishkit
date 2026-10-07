@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.template import Context, Template
 from django.template.loader import render_to_string
 from django.urls import reverse
 
@@ -28,7 +29,7 @@ TEMPLATE_DIR = PACKAGE / "accounts/templates/stewardship"
 SPEC = ROOT / "docs/specs/stewardship/admin-portal/spec.md"
 
 # The menu groups whose page names are settled so far.
-GROUPS = {"campaign", "mail", "parish", "users", "system"}
+GROUPS = {"campaign", "mail", "reports", "parish", "users", "system"}
 # Pages outside every menu group whose names are settled too.
 UNGROUPED = {"index", "configuration_request"}
 
@@ -89,11 +90,40 @@ TEMPLATES = {
     "background": "background.html",
     "background_task_page": "background-task.html",
     "logs": "logs.html",
+    "participation": "participation.html",
+    "financial_report": "financial-report.html",
+    "talents_report": "talents-report.html",
+    "response_dashboard": "response-dashboard.html",
+    "information_queue": "information.html",
+    "information_item": "information.html",
+    "report_exact": "report-exact.html",
+    "weekly_digest_manual": "weekly-manual.html",
+    "weekly_digest_snapshot": "weekly-digest.html",
+    "weekly_digest_item": "weekly-digest.html",
+    "ministry_report": "ministry-report.html",
+    "ministry_joiners": "ministry-report.html",
+    "ministry_leavers": "ministry-report.html",
+    "ministry_followup": "ministry-followup.html",
+    "ministry_followup_item": "ministry-followup.html",
+    "family_directory": "directory.html",
+    "family_codes": "codes.html",
+    "family_timeline": "family-timeline.html",
     "index": "home.html",
     "configuration_request": "configuration-request.html",
 }
-# Each integration's page is named after the integration.
-OBJECT_NAMED = {"content_edit", "content_revision", "integration_settings"}
+# Each integration's page is named after the integration, each response
+# list after its list and each export after its report.
+OBJECT_NAMED = {
+    "content_edit",
+    "content_revision",
+    "integration_settings",
+    "response_list",
+    "report_export",
+}
+# Pages whose heading the view supplies. The two report roots render the
+# "no campaign" page named after the report opened (checked below), and a
+# daily report takes the title saved with the emailed report.
+VIEW_NAMED = {"reports", "ministry_reports", "daily_digest_snapshot"}
 # A sign-in rule change's status answers JSON only (the spec: not a page).
 NOT_PAGES = {"rule_request"}
 # Pages whose new name waits for a later slice, with that slice. Portal users
@@ -179,7 +209,9 @@ def _group_pages():
 
 def test_every_group_page_is_checked_or_object_named():
     """A new page in a settled group must join the names check."""
-    assert set(_group_pages()) == set(TEMPLATES) | OBJECT_NAMED | NOT_PAGES
+    assert set(_group_pages()) == (
+        set(TEMPLATES) | OBJECT_NAMED | NOT_PAGES | VIEW_NAMED
+    )
 
 
 @pytest.mark.parametrize(
@@ -219,9 +251,10 @@ def test_return_links_name_a_page(template):
         assert target in labels, (template, target)
 
 
-# Names the pages had before NAV-4 and NAV-5a. Each is a page name nobody should see
-# again: a new link or message that uses one would bring back a second name
-# for a renamed page. Matched case-sensitively, as a page name is written.
+# Names the pages had before NAV-4, NAV-5a and NAV-5b. Each is a page name
+# nobody should see again: a new link or message that uses one would bring
+# back a second name for a renamed page. Matched case-sensitively, as a
+# page name is written.
 RETIRED = (
     "Delivery controls",
     "Mail schedules",
@@ -232,6 +265,19 @@ RETIRED = (
     "Families with Testing submissions",
     "How Families will share",
     "Production activation progress",
+    # Retired by NAV-5b.
+    "Campaign reports",
+    "Financial stewardship detail",
+    "Additional-information staff queue",
+    "Ministry report pages",
+    "Participation and campaign statistics",
+    "Additional information and follow-up",
+    "Queued participation export",
+    "Weekly information report",
+    "Request a manual information report",
+    "Manual information report",
+    "Return to the administration portal",
+    "Return to this campaign",
     # Retired by NAV-5a.
     "Ministry activity",
     "Chair suggestions",
@@ -336,13 +382,32 @@ def _user_facing_texts():
                 yield relative, text
 
 
+# Retired names matched exactly as written, because their lowercase form is
+# ordinary prose or part of a current name: "Dates and mail schedules",
+# "delivery controls" in general wording, "ministry activity" as a state,
+# and "back to " in sentences.
+CASE_SENSITIVE = {
+    "Mail schedules",
+    "Delivery controls",
+    "Ministry activity",
+    "Back to ",
+}
+
+
+def _mentions(text, name):
+    """Whether ``text`` uses a retired ``name``: exactly, or in any case."""
+    if name in CASE_SENSITIVE:
+        return name in text
+    return name.lower() in text.lower()
+
+
 def test_retired_page_names_are_not_shown():
     """No template, script or user-facing message uses a retired page name."""
     found = {
         (relative, name)
         for relative, text in _user_facing_texts()
         for name in RETIRED
-        if name in text
+        if _mentions(text, name)
     }
     assert found <= ALLOWED, sorted(found - ALLOWED)
     # An allowance with nothing left to allow is stale.
@@ -436,3 +501,52 @@ def test_pending_names_match_the_spec_later():
     """A pending page keeps its old name and the spec still names its new one."""
     for name in PENDING:
         assert str(navigation.PAGES[name].label) != _spec_names()[name]
+
+
+@pytest.mark.parametrize(
+    ("view", "name"),
+    [
+        ("parishkit.stewardship.reports.workspace_views", "reports"),
+        ("parishkit.stewardship.reports.ministry_views", "ministry_reports"),
+    ],
+)
+def test_empty_report_page_is_named_after_its_report(view, name):
+    """The "no campaign" page takes the name of the report root that shows it."""
+    source = Path(__import__(view, fromlist=["_"]).__file__).read_text(encoding="utf-8")
+    assert f'{{"page_name": PAGES["{name}"].label}}' in source
+    html = render_to_string(
+        "stewardship/report-empty.html",
+        {"admin_chrome": None, "page_name": navigation.PAGES[name].label},
+    )
+    label = str(navigation.PAGES[name].label)
+    assert f"<h1>{label}</h1>" in html and f"<title>{label}" in html
+
+
+def _title(template, context):
+    """Render only a template's browser-title block with ``context``."""
+    source = _source(template)
+    block = re.search(r"{% block title %}(.*?){% endblock %}", source, re.S)
+    return Template("{% load i18n %}" + block.group(1)).render(Context(context))
+
+
+@pytest.mark.parametrize(
+    ("name", "context"),
+    [
+        ("information_queue", {}),
+        ("information_item", {"item": {"pk": 1}}),
+        ("ministry_followup", {}),
+        ("ministry_followup_item", {"item": {"pk": 1}}),
+        ("weekly_digest_snapshot", {}),
+        ("weekly_digest_item", {"detail": True}),
+        ("ministry_report", {"action": None}),
+        ("ministry_joiners", {"action": "join"}),
+        ("ministry_leavers", {"action": "leave"}),
+        ("content_history", {}),
+        ("content_history_revision", {"selected": {"id": "x"}}),
+    ],
+)
+def test_shared_templates_name_each_route(name, context):
+    """A template shared by a list and its item names each by the context
+    its route's view gives it (``item``, ``detail``, ``action``,
+    ``selected``)."""
+    assert _title(TEMPLATES[name], context) == str(navigation.PAGES[name].label)

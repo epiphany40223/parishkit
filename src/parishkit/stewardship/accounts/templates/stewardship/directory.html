@@ -10,7 +10,7 @@
 <p>{% translate "Across all active Families, those without deliverable email:" %} {{ postal_proportion }}.</p>
 {% if testing_codes %}<p class="notice" data-testing-codes>{% translate "These are the live codes; they work only after go-live. Links to open each Family's form appear next to the codes once the campaign is live. To try the Family form now, send yourself a test invitation." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}</p>{% else %}<p class="notice" data-open-form-notice>{% translate "Opening a Family's form signs this browser in as that Family and replaces any other Family form open in it; your Admin session is unaffected." %}</p>{% endif %}
 <p>{% translate "Family codes are private: share a code only with its own Family." %}</p>
-<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and selection" %}</a></p>
+<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Participation" %}</a></p>
 <form id="table-filters" data-table-sync method="post" action="{{ report_url }}" class="filter-bar">{% csrf_token %}
 <div><label for="directory-search">{% translate "Search by name, head of household, DUID or address" %}</label><input id="directory-search" name="search" maxlength="200" value="{{ query.search }}"></div>
 <div class="short"><label for="exact-code">{% translate "Exact Family code" %}</label><input id="exact-code" name="exact_code" maxlength="128" value="{{ query.exact_code }}" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>

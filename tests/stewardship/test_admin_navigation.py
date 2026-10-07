@@ -545,7 +545,7 @@ REPORTS = [
 ]
 # The Administrator's menu in the spec's order (admin-portal spec, "Menu
 # groups"), written out so that reordering MENU fails here. Entries for pages
-# that do not exist yet are absent; Manual information report holds the
+# that do not exist yet are absent; Send a weekly report now holds the
 # place of Emailed reports until NAV-14.
 SPEC_ORDER = [
     # Campaign setup

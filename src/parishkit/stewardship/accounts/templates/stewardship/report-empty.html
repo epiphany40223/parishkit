@@ -1,7 +1,10 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n %}
-{% block title %}{% translate "Campaign reports" %}{% endblock %}
+{% comment %}
+  Shown by a report root (Participation or Ministry requests) when there is no
+  current campaign report the reader may open; the view names the report.
+{% endcomment %}{% block title %}{{ page_name }}{% endblock %}
 {% block content %}
-<h1>{% translate "Campaign reports" %}</h1>
+<h1>{{ page_name }}</h1>
 <p>{% translate "There is no current campaign report for you to view." %}</p>
-<p><a href="{% url 'admin:index' %}">{% translate "Return to the administration portal" %}</a></p>
+<p><a href="{% url 'admin:index' %}">{% translate "Return to Home" %}</a></p>
 {% endblock %}

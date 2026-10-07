@@ -12,6 +12,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_GET
 
+from parishkit.stewardship.accounts.admin_navigation import PAGES
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -66,7 +67,12 @@ def index(request):
         # Only the current campaign is reported until #145 (rule 10); with no
         # current campaign the reader sees the "no campaign" page.
         if current not in choices:
-            response = render(request, "stewardship/report-empty.html")
+            response = render(
+                request,
+                "stewardship/report-empty.html",
+                # Named after the report the reader opened (one name per page).
+                {"page_name": PAGES["reports"].label},
+            )
         else:
             admit_report_read(current)
             response = redirect(query.url(current))

@@ -51,7 +51,7 @@ def test_weekly_report_remains_usable_without_scripts(browser_engine, component_
             "link", name="Open full captured request and current status"
         ).click()
         visible(page.get_by_role("heading", name="Full text at capture"))
-        visible(page.get_by_role("link", name="Return to this weekly report"))
+        visible(page.get_by_role("link", name="Return to Weekly report"))
     finally:
         context.close()
 
