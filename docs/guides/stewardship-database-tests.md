@@ -28,11 +28,12 @@ duplicating full local and CI acceptance runs during ordinary development.
 
 ## Parallel CI and live progress
 
-Pull-request CI runs fourteen deterministic PostgreSQL partitions on fourteen
-separate runners, each with its own PostgreSQL/Valkey cluster. With the two
-operational-scenario runners (two provider modes each), compose core and three
-browser engines, a full run is exactly the free plan's 20 concurrent jobs, so
-every job starts at once (#158). Only partition one also runs
+Pull-request CI runs fourteen deterministic PostgreSQL partitions on five
+runners, up to three at once per runner, each partition with its own
+PostgreSQL/Valkey cluster. Packing leaves runner slots free for other PRs'
+runs (#158, #625); the
+[test-efficiency guide](stewardship-test-efficiency.md#postgresql-partition-packing)
+explains the choice and how to retune it. Only partition one also runs
 the credential-free baseline into its raw coverage database. The required
 `stewardship-postgresql` check independently collects the full database test
 universe, requires successful receipts for all fourteen exact partitions from the
@@ -42,7 +43,7 @@ pass. Coverage percentages are never averaged across partitions.
 
 Partitions are cost-balanced, not equal-count hash buckets. The scheduler assigns
 known slow lease/drain and population tests first, then fills the least-loaded
-runner; shard one reserves time for baseline coverage. Rounded scheduling hints
+partition; shard one reserves time for baseline coverage. Rounded scheduling hints
 come from CI run `35309435892`. New tests always receive a default cost and are
 included. Hints change placement only, never deadlines, test assertions or
 membership. The one coupling is that the hang stack dump described below must
@@ -75,8 +76,8 @@ was killed by SIGSEGV`, and a traceback cut off just above that line is this
 hazard, not a test failure. A hang that begins in a shard's last five minutes
 reaches the shard deadline first and produces no stack trace. Browser jobs keep
 their own 120-second diagnostic. Each shard's test subprocesses share one
-20-minute deadline; each job has a 25-minute limit, and aggregation has a
-10-minute limit. Slowest-test summaries are retained in job logs. A deadline
+30-minute deadline; each packed job has a 40-minute limit, and aggregation has
+a 10-minute limit. Slowest-test summaries are retained in job logs. A deadline
 fails the gate rather than silently skipping work.
 
 The serial command above remains the equivalent developer/release coverage
@@ -129,7 +130,7 @@ python -m parishkit.stewardship.quality_ci combine --count 4 \
 ```
 
 Independent collection, exact execution receipts, same-tree checks, no-skip
-enforcement, the 20-minute shard deadline and both coverage floors are unchanged.
+enforcement, the 30-minute shard deadline and both coverage floors are unchanged.
 Never combine a failed shard or reuse an old artifact directory. The serial
 command remains available when only one disposable service pair is available.
 

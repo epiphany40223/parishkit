@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from parishkit.stewardship import quality_ci
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -82,9 +84,14 @@ def test_ci_explicitly_requires_postgresql_verification():
     )
     shards = workflow["jobs"]["stewardship-postgresql-shard"]
     gate = workflow["jobs"]["stewardship-postgresql"]
-    indexes = shards["strategy"]["matrix"]["shard"]
+    # Packed jobs together run every partition exactly once (#625).
+    indexes = [
+        index
+        for job in shards["strategy"]["matrix"]["job"]
+        for index in quality_ci.job_partitions(job, 14)
+    ]
     count = len(indexes)
-    assert 1 <= count <= 32 and indexes == list(range(1, count + 1))
+    assert count == 14 and indexes == list(range(1, count + 1))
     assert f"parishkit.stewardship.quality_ci combine --count {count} " in commands
     assert shards["strategy"]["fail-fast"] is False
     assert gate["needs"] == ["validate", "stewardship-postgresql-shard"]
@@ -100,16 +107,28 @@ def test_ci_explicitly_requires_postgresql_verification():
     # The behavioral gate test also executes failure/cancelled/skipped results;
     # explanatory output is not part of the protection contract.
     assert gate["steps"][0]["run"].strip().endswith('test "$SHARD_RESULT" = success')
-    assert shards["timeout-minutes"] == 25
+    # The job limit covers setup, one partition deadline and the upload.
+    assert shards["timeout-minutes"] == 40
+    assert shards["timeout-minutes"] >= quality_ci.SHARD_TIMEOUT // 60 + 5
     assert gate["timeout-minutes"] == 10
     assert any(
-        "quality_ci shard --index ${{ matrix.shard }} --count " + str(count) + " "
+        "quality_ci job --index ${{ matrix.job }} --count " + str(count) + " "
         in step.get("run", "")
         for step in shards["steps"]
     )
-    assert shards["services"]["postgres"]["env"]["POSTGRES_INITDB_ARGS"] == (
-        "--set=log_min_error_statement=panic"
+    download = next(
+        step
+        for step in gate["steps"]
+        if step.get("uses", "").startswith("actions/download-artifact@")
     )
+    # Each job's artifact holds partition-N directories; the combiner needs
+    # them merged side by side, not nested under per-artifact directories.
+    assert download["with"]["merge-multiple"] is True
+    for slot in range(1, quality_ci.PARTITIONS_PER_JOB + 1):
+        postgres = shards["services"][f"postgres-{slot}"]
+        assert postgres["env"]["POSTGRES_INITDB_ARGS"] == (
+            "--set=log_min_error_statement=panic"
+        )
 
 
 def test_ci_does_not_duplicate_the_coverage_baseline_in_lint_job():

@@ -1,10 +1,12 @@
 """Isolated CI partitions must account for every test and combine real coverage."""
 
 import hashlib
+import io
 import json
 import shutil
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -18,22 +20,94 @@ from parishkit.stewardship.quality_sharding import partition, tree_digest
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def workflow_partitions(job, count):
+    """Every partition the packed shard matrix runs, in matrix order."""
+    return [
+        index
+        for number in job["strategy"]["matrix"]["job"]
+        for index in ci.job_partitions(number, count)
+    ]
+
+
 def test_workflow_partition_count_matches_required_combiner():
     """The real matrix and strict coverage receipt count cannot silently drift."""
     import yaml
 
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     shard = jobs["stewardship-postgresql-shard"]
-    indexes = shard["strategy"]["matrix"]["shard"]
-    assert 1 <= len(indexes) <= 32
-    assert indexes == list(range(1, len(indexes) + 1))
-    for job, operation in (
-        (shard, "shard"),
-        (jobs["stewardship-postgresql"], "combine"),
-    ):
-        commands = [step.get("run", "") for step in job["steps"]]
-        command = next(line for line in commands if f"quality_ci {operation} " in line)
-        assert f"--count {len(indexes)} " in command
+    combine = jobs["stewardship-postgresql"]
+    command = next(
+        step["run"]
+        for step in combine["steps"]
+        if "quality_ci combine " in step.get("run", "")
+    )
+    count = int(command.split("--count ", 1)[1].split()[0])
+    assert 1 <= count <= 32
+    # The matrix is exactly the jobs PARTITIONS_PER_JOB implies, and together
+    # they run every partition the combiner requires, each once.
+    jobs_needed = ci.job_count(count)
+    assert shard["strategy"]["matrix"]["job"] == list(range(1, jobs_needed + 1)), (
+        f"PARTITIONS_PER_JOB={ci.PARTITIONS_PER_JOB} needs {jobs_needed} jobs"
+    )
+    assert workflow_partitions(shard, count) == list(range(1, count + 1))
+    run = next(
+        step["run"]
+        for step in shard["steps"]
+        if "quality_ci job " in step.get("run", "")
+    )
+    assert f"--count {count} " in run
+
+
+@pytest.mark.parametrize("count", [1, 2, 3, 4, 8, 14, 32])
+@pytest.mark.parametrize("per_job", [1, 2, 3, 4])
+def test_packed_jobs_cover_every_partition_once(count, per_job):
+    """Packing never drops or repeats a partition, and partition one, which
+    also runs the non-database baseline, shares a runner with the fewest."""
+    jobs = ci.job_count(count, per_job)
+    packed = [ci.job_partitions(job, count, per_job) for job in range(1, jobs + 1)]
+    assert [index for group in packed for index in group] == list(range(1, count + 1))
+    assert all(1 <= len(group) <= per_job for group in packed)
+    assert len(packed[0]) == min(len(group) for group in packed)
+    for job in (0, jobs + 1, "1", True):
+        with pytest.raises(ValueError):
+            ci.job_partitions(job, count, per_job)
+
+
+def test_slot_ports_are_distinct_and_skip_the_reserved_valkey_port():
+    """Slot one keeps the default ports; no slot may claim 56380, which the
+    unavailable-service tests require to stay closed."""
+    slots = [ci.slot_ports(slot) for slot in range(8)]
+    assert slots[0] == {
+        "PARISHKIT_TEST_POSTGRES_PORT": "55432",
+        "PARISHKIT_TEST_VALKEY_PORT": "56379",
+    }
+    for name in ("PARISHKIT_TEST_POSTGRES_PORT", "PARISHKIT_TEST_VALKEY_PORT"):
+        assert len({slot[name] for slot in slots}) == len(slots)
+    assert "56380" not in {slot["PARISHKIT_TEST_VALKEY_PORT"] for slot in slots}
+
+
+def test_workflow_services_match_the_packed_slots():
+    """One identical PostgreSQL/Valkey pair per packed slot, on its ports.
+
+    Changing PARTITIONS_PER_JOB fails here until the workflow declares the
+    matching pairs, so two partitions can never share a cluster.
+    """
+    import yaml
+
+    jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
+    services = jobs["stewardship-postgresql-shard"]["services"]
+    slots = range(1, ci.PARTITIONS_PER_JOB + 1)
+    assert set(services) == {
+        f"{kind}-{slot}" for kind in ("postgres", "valkey") for slot in slots
+    }, f"declare one postgres-N/valkey-N pair per slot 1..{ci.PARTITIONS_PER_JOB}"
+    for slot in slots:
+        ports = ci.slot_ports(slot - 1)
+        postgres, valkey = services[f"postgres-{slot}"], services[f"valkey-{slot}"]
+        assert postgres["ports"] == [f"{ports['PARISHKIT_TEST_POSTGRES_PORT']}:5432"]
+        assert valkey["ports"] == [f"{ports['PARISHKIT_TEST_VALKEY_PORT']}:6379"]
+        for kind, service in (("postgres", postgres), ("valkey", valkey)):
+            first = services[f"{kind}-1"]
+            assert {**service, "ports": None} == {**first, "ports": None}
 
 
 def test_fast_feedback_precedes_full_candidate_suites():
@@ -342,6 +416,121 @@ def test_hung_child_fails_without_receipt(repository, tmp_path, monkeypatch):
         == 2
     )
     assert not (output / "receipt.json").exists()
+
+
+class Child:
+    """Stand in for one shard child that prints a line and exits.
+
+    ``failing`` names the partition that exits with status 2; ``launched``
+    collects every child so a test can check each was waited for or stopped.
+    """
+
+    def __init__(self, command, launched, failing=None, **kwargs):
+        self.index = int(command[command.index("--index") + 1])
+        self.command, self.kwargs = command, kwargs
+        self.code = 2 if self.index == failing else 0
+        self.stdout = io.BytesIO(f"progress {self.index}\n".encode())
+        self.waited = self.terminated = False
+        launched.append(self)
+
+    def poll(self):
+        """A stand-in child is still running until waited for."""
+        return self.code if self.waited else None
+
+    def wait(self, timeout=None):
+        """Report this child's exit status."""
+        self.waited = True
+        return self.code
+
+    def terminate(self):
+        """Record that run_job stopped this child."""
+        self.terminated = True
+
+
+@pytest.mark.parametrize("failing", [None, 3, 4, 5])
+def test_packed_job_runs_isolated_partitions_and_fails_on_any(
+    repository, tmp_path, monkeypatch, capsys, failing
+):
+    """Each packed partition is an ordinary shard child on its own service
+    pair and temporary root; its output is relayed live, and one failure
+    fails the whole job only after every partition has finished."""
+    launched = []
+    monkeypatch.setattr(
+        ci.subprocess, "Popen", partial(Child, launched=launched, failing=failing)
+    )
+    output = tmp_path / "job"
+    assert ci.run_job(repository, output, 2, 14) == (1 if failing else 0)
+    assert output.is_dir()
+    assert [child.index for child in launched] == ci.job_partitions(2, 14)
+    for slot, child in enumerate(launched):
+        command, index = child.command, child.index
+        assert command[3] == "shard"
+        assert command[command.index("--count") + 1] == "14"
+        assert command[command.index("--output") + 1] == str(
+            output / f"partition-{index}"
+        )
+        assert command[command.index("--basetemp") + 1] == str(
+            tmp_path / "job-tmp" / f"partition-{index}"
+        )
+        assert child.kwargs["env"].items() >= ci.slot_ports(slot).items()
+        assert not any(name.startswith("PYTEST_") for name in child.kwargs["env"])
+        # Every partition finishes, even after an earlier one failed.
+        assert child.waited and not child.terminated
+    printed = capsys.readouterr().out
+    for child in launched:
+        assert f"[partition {child.index}] progress {child.index}" in printed
+        assert (f"CI partition {child.index}/14 failed (status 2)" in printed) is (
+            child.index == failing
+        )
+    assert ("partitions [3, 4, 5] passed" in printed) is (failing is None)
+
+
+def test_packed_job_stops_started_children_when_a_launch_fails(
+    repository, tmp_path, monkeypatch
+):
+    """A partition that cannot start must not leave its siblings orphaned."""
+    launched = []
+
+    def launch(command, **kwargs):
+        """Start the first child, then fail to start the second."""
+        if launched:
+            raise OSError("no more processes")
+        return Child(command, launched, **kwargs)
+
+    monkeypatch.setattr(ci.subprocess, "Popen", launch)
+    with pytest.raises(OSError):
+        ci.run_job(repository, tmp_path / "job", 2, 14)
+    assert [child.terminated for child in launched] == [True]
+
+
+def test_shard_passes_its_private_temporary_root(repository, tmp_path, monkeypatch):
+    """Both of a shard's pytest runs use the temporary root it was given."""
+    run = Mock(return_value=subprocess.CompletedProcess([], 1))
+    monkeypatch.setattr(ci.subprocess, "run", run)
+    ci.run_shard(repository, tmp_path / "shard", 1, 8, tmp_path / "temporary")
+    assert f"--basetemp={tmp_path / 'temporary'}" in run.call_args.args[0]
+
+
+def test_packed_job_refuses_output_inside_the_checkout(repository, monkeypatch):
+    """Packed evidence, like a single shard's, can never land in the tree."""
+    monkeypatch.setattr(ci.subprocess, "Popen", Mock())
+    assert (
+        ci.main(
+            [
+                "job",
+                "--root",
+                str(repository),
+                "--index",
+                "1",
+                "--count",
+                "14",
+                "--output",
+                str(repository / "evidence"),
+            ]
+        )
+        == 2
+    )
+    assert not ci.subprocess.Popen.called
 
 
 @pytest.mark.parametrize(
