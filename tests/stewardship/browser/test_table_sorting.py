@@ -12,7 +12,7 @@ import pytest
 
 from .conftest import no_script_context
 from .talent_components import PATH as TALENTS
-from .waits import eventually, has_attribute, has_text, visible
+from .waits import eventually, has_attribute, has_text, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -595,20 +595,35 @@ def test_error_answer_to_a_post_is_shown_without_resending(
 
 def test_repeated_filter_submission_sends_one_request(page, component_origin):
     """A double click on Apply filters, which the busy-state handler cannot
-    see for an in-place submission, sends one POST, not two."""
+    see for an in-place submission, sends one POST, not two.
+
+    The answer is held until both clicks have been dispatched. The guard only
+    ignores a repeat while the first request is in flight (admin-portal spec,
+    "While a request is in flight, repeating the same submission is
+    ignored"); answering at once let a slow Firefox deliver the second click
+    after the first answer had settled, which is a new submission (#595).
+    """
     page.goto(component_origin + "/information")
-    posts = []
-    page.on(
-        "request",
-        lambda request: posts.append(request.url) if request.method == "POST" else None,
+    held = []
+
+    def hold(route):
+        """Keep each filter POST unanswered until the test releases it."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        held.append(route)
+
+    page.route("**/information/", hold)
+    button = page.get_by_role("button", name="Apply filters")
+    button.dblclick()
+    recorded(page, held, 1)
+    has_attribute(button, "aria-disabled", "true")
+    first = held[0]
+    first.fulfill(
+        response=first.fetch(
+            url=component_origin + "/information-withdrawn", method="GET"
+        )
     )
-    fulfil_post_with(
-        page,
-        "**/information/",
-        component_origin,
-        lambda request: "/information-withdrawn",
-    )
-    page.get_by_role("button", name="Apply filters").dblclick()
     visible(page.locator("#table").get_by_text("Other Family"))
     # The button is released once the request settles.
     eventually(
@@ -616,7 +631,7 @@ def test_repeated_filter_submission_sends_one_request(page, component_origin):
         "!document.querySelector('#table-filters [type=submit]')"
         ".hasAttribute('aria-disabled')",
     )
-    assert len(posts) == 1
+    assert len(held) == 1
 
 
 def test_talents_filter_updates_both_tables_and_the_summary(page, component_origin):
