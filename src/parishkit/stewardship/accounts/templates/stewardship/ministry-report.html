@@ -3,7 +3,7 @@
 {% block content %}
 <h1>{% translate "Ministry requests" %}</h1>
 {% aboutpage "ministry-report" %}<p>{% translate "Families' requests to join or leave each Ministry, with contact details for the people you may follow up." %}</p>
-<p>{% translate "Ages are as of" %} {{ metadata.report_date|parish_date }} ({{ metadata.timezone }}). {% translate "Request date filters use the parish time zone. Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>
+<p>{% translate "Ages are as of" %} {{ metadata.report_date|parish_date }} ({{ metadata.timezone }}). {% translate "Times and the submitted-date filters use your computer's time zone: a date filter covers that whole day, from midnight to midnight." %}</p>
 <p>{% translate "Current counts leave out cancelled requests and requests a Family later replaced. Inactive Ministries keep their requests. Follow-up progress counts resolved or closed requests; it is not a record of contact attempts." %}</p>
 <p>{% translate "A Ministry marked Not in ParishSoft data no longer appears in the latest ParishSoft data, but its requests are kept." %}</p>
 <p>{% translate "A Ministry marked No longer in this campaign was removed from the campaign's Ministries after Families answered. Its requests are kept, and they show without that mark again if the Ministry is added back." %}</p>{% endaboutpage %}
@@ -12,18 +12,21 @@
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "ParishSoft data load" %}</dt><dd>{{ metadata.source_generation|number }}</dd></dl></details>
 <p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Follow up these requests: status, contact attempts, notes and outcomes" %}</a></p>
 {% if ministry_id %}<p><a href="{{ summary_url }}">{% translate "All authorized Ministries" %}</a></p>{% endif %}
-<form id="table-filters" data-table-sync method="post" action="{{ report_url }}">{% csrf_token %}
-{% if ministry_id %}<input type="hidden" name="ministry" value="{{ ministry_id }}">{% endif %}
+<form id="table-filters" data-table-sync method="post" action="{{ report_url }}"{% if ministry_id %} data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}"{% endif %}>{% csrf_token %}
+{% if ministry_id %}<input type="hidden" name="ministry" value="{{ ministry_id }}">
+{% comment %}The browser's time zone, filled by ui-v1.js (#558): the server places the submitted dates in it. Without a known zone the dates are marked invalid, so Apply waits while a date is entered.{% endcomment %}<input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear the dates, or check your computer's time zone setting." %}">{% endif %}
 <label for="ministry-search">{% if ministry_id %}{% translate "Search Member name or DUID" %}{% else %}{% translate "Search Ministry name or DUID" %}{% endif %}</label><input id="ministry-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="ministry-activity">{% translate "Ministry activity" %}</label><select id="ministry-activity" name="activity"><option value="any">{% translate "Any" %}</option><option value="active"{% if query.activity == 'active' %} selected{% endif %}>{% translate "Active" %}</option><option value="inactive"{% if query.activity == 'inactive' %} selected{% endif %}>{% translate "Inactive" %}</option><option value="unavailable"{% if query.activity == 'unavailable' %} selected{% endif %}>{% translate "Not in ParishSoft data" %}</option></select>
 {% if ministry_id %}
 <label for="ministry-history">{% translate "Request history" %}</label><select id="ministry-history" name="history"><option value="current">{% translate "Current effective requests" %}</option><option value="all"{% if query.history == 'all' %} selected{% endif %}>{% translate "All versions, including cancelled and replaced" %}</option></select>
 <label for="ministry-state">{% translate "Request state" %}</label><select id="ministry-state" name="state">{% for key,label in states.items %}<option value="{{ key }}"{% if query.state == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-<label for="ministry-start">{% translate "Submitted on or after (parish date)" %}</label><input type="date" id="ministry-start" name="start" value="{{ query.start }}">
-<label for="ministry-end">{% translate "Submitted on or before (parish date)" %}</label><input type="date" id="ministry-end" name="end" value="{{ query.end }}">
+<div data-missing-hint="{% translate 'Enter a whole date, or clear it.' %}"><label for="ministry-start">{% translate "Submitted on or after" %}</label><input type="date" id="ministry-start" name="start" value="{{ query.start }}" aria-describedby="ministry-zone-help" data-browser-zone-field></div>
+<div data-missing-hint="{% translate 'Enter a whole date, or clear it.' %}"><label for="ministry-end">{% translate "Submitted on or before" %}</label><input type="date" id="ministry-end" name="end" value="{{ query.end }}" aria-describedby="ministry-zone-help" data-browser-zone-field></div>
+<p class="help" id="ministry-zone-help" data-browser-zone-note hidden>{% translate "The dates are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
 {% endif %}
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-<button type="submit">{% translate "Apply filters" %}</button></form>
+<button type="submit"{% if ministry_id %} aria-describedby="ministry-filter-hint"{% endif %}>{% translate "Apply filters" %}</button>
+{% if ministry_id %}<p class="help" id="ministry-filter-hint" data-complete-hint hidden></p>{% endif %}</form>
 {% comment %}The summary is a paged, sortable shared table only in the campaign-wide
 view; one Ministry's view lists it plainly, so the wrapper is a region only then,
 and otherwise a summary that follows the filters (#484).{% endcomment %}

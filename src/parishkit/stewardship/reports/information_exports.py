@@ -49,8 +49,11 @@ def create_information_export(
         raise ValueError(
             "Information export requires typed filters and history choice."
         )
+    # retained() is parse() for current filters; it also keeps the zone-less
+    # filters of a capture from before migration 0017, whose retry must ask
+    # for exactly what it retained.
     parameters = {
-        "filters": InformationQuery.parse(query.form_values()).form_values(),
+        "filters": InformationQuery.retained(query.form_values()).form_values(),
         "history": history,
     }
     if type(format) is not str or format not in {"csv", "xlsx", "pdf"}:

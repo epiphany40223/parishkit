@@ -5,7 +5,7 @@
 {% aboutpage "information-followup" %}<p>{% translate "Requests for more information that Families wrote on their forms, with Staff follow-up." %}</p>
 <p>{% translate "The list includes requests from Families that are now inactive. Staff follow-up never changes what the Family wrote, or the history of a request the Family later replaced or withdrew." %}</p>
 <p>{% translate "Family names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time> ({% translate "data load" %} {{ metadata.source_generation|number }}).</p>
-<p>{% translate "Date filters use whole days in the campaign's time zone," %} {{ metadata.timezone }}. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>{% endaboutpage %}
+<p>{% translate "Times and the submitted-date filters use your computer's time zone: a date filter covers that whole day, from midnight to midnight." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
 <p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and campaign selection" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
@@ -42,7 +42,8 @@
 </div>
 <p><a href="{% url 'admin:information_queue' campaign_id %}">{% translate "Return to the queue" %}</a></p>
 {% else %}
-<form id="table-filters" data-table-sync method="post" action="{% url 'admin:information_queue' campaign_id %}">{% csrf_token %}
+<form id="table-filters" data-table-sync method="post" action="{% url 'admin:information_queue' campaign_id %}" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">{% csrf_token %}
+{% comment %}The browser's time zone, filled by ui-v1.js (#558): the server places the submitted dates in it. Without a known zone the dates are marked invalid, so Apply waits while a date is entered.{% endcomment %}<input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear the dates, or check your computer's time zone setting." %}">
 <label for="info-search">{% translate "Search Family name, DUID, submitted text or Staff notes" %}</label><input id="info-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="disposition">{% translate "Request history" %}</label><select id="disposition" name="disposition">
 <option value="current_actionable"{% if query.disposition == 'current_actionable' %} selected{% endif %}>{% translate "Current actionable requests" %}</option>
@@ -51,10 +52,12 @@
 <option value="withdrawn"{% if query.disposition == 'withdrawn' %} selected{% endif %}>{% translate "Withdrawn" %}</option></select>
 <label for="needed">{% translate "Follow-up needed" %}</label><select id="needed" name="needed"><option value="any">{% translate "Any" %}</option><option value="yes"{% if query.needed == 'yes' %} selected{% endif %}>{% translate "Yes" %}</option><option value="no"{% if query.needed == 'no' %} selected{% endif %}>{% translate "No" %}</option></select>
 <label for="completed">{% translate "Follow-up completed" %}</label><select id="completed" name="completed"><option value="any">{% translate "Any" %}</option><option value="yes"{% if query.completed == 'yes' %} selected{% endif %}>{% translate "Yes" %}</option><option value="no"{% if query.completed == 'no' %} selected{% endif %}>{% translate "No" %}</option></select>
-<label for="start">{% translate "Submitted on or after" %}</label><input id="start" type="date" name="start" value="{{ query.start }}">
-<label for="end">{% translate "Submitted on or before" %}</label><input id="end" type="date" name="end" value="{{ query.end }}">
+<div data-missing-hint="{% translate 'Enter a whole date, or clear it.' %}"><label for="start">{% translate "Submitted on or after" %}</label><input id="start" type="date" name="start" value="{{ query.start }}" aria-describedby="information-zone-help" data-browser-zone-field></div>
+<div data-missing-hint="{% translate 'Enter a whole date, or clear it.' %}"><label for="end">{% translate "Submitted on or before" %}</label><input id="end" type="date" name="end" value="{{ query.end }}" aria-describedby="information-zone-help" data-browser-zone-field></div>
+<p class="help" id="information-zone-help" data-browser-zone-note hidden>{% translate "The dates are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-<button type="submit">{% translate "Apply filters" %}</button></form>
+<button type="submit" aria-describedby="information-filter-hint">{% translate "Apply filters" %}</button>
+<p class="help" id="information-filter-hint" data-complete-hint hidden></p></form>
 <p id="information-matching" data-table-sync>{% translate "Matching requests:" %} {{ total|number }}.</p>
 <section aria-labelledby="information-export-heading">
 <h2 id="information-export-heading">{% translate "Export complete results" %}</h2>

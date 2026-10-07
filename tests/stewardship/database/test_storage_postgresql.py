@@ -488,11 +488,11 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
         ),
         "stewardship_ministry_export_snapshot": (
             "ministry_export_capture",
-            "stewardship_ministry_export_capture_v1",
+            "stewardship_ministry_export_capture_v2",
         ),
         "stewardship_information_export_snapshot": (
             "information_export_capture",
-            "stewardship_information_export_capture_v1",
+            "stewardship_information_export_capture_v2",
         ),
         "stewardship_financial_export_snapshot": (
             "financial_export_capture",
