@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Tag and publish a release from main's head, following the release
-# evidence rule in .github/workflows/release.yml: a release needs a
-# successful workflow_dispatch CI run on exactly the tagged commit. See
+# evidence rule that .github/workflows/release.yml enforces: a release needs
+# a successful full CI run ("CI (jobs: all)", a workflow_dispatch) on a
+# commit whose tree is identical to the tagged commit's or differs only in
+# docs-safe paths (release_evidence.py holds the rule and its allowlist). See
 # docs/guides/stewardship-operator-scripts.md.
 #
 # Steps, stopping at the first failure:
@@ -9,14 +11,20 @@
 #      from it, and check that its committed pyproject.toml version (read
 #      with tomllib, as release.yml does) is VERSION and that tag vVERSION
 #      exists neither locally nor on the remote. Land the version bump first.
-#   2. Use CI_RUN_ID, which must be the newest workflow_dispatch run of
-#      ci.yml on that exact commit (the one release.yml will check), or
-#      without it dispatch a new run on main and find it.
-#   3. Refuse a run that was not dispatched with every job (its run-name
-#      must be exactly "CI (jobs: all)"), watch it with ci-watch.sh, then
-#      verify its commit, event and conclusion again.
+#   2. Ask release_evidence.py which full run decides for that commit (the
+#      run release.yml will check). CI_RUN_ID must be that run. Without it,
+#      use that run when it passed or is still running, and otherwise
+#      dispatch a new full run on main and find it; an already tested tree
+#      (such as a train head merged in order) needs no second run.
+#   3. Watch the run with ci-watch.sh, then check that it is still the
+#      deciding run and that it completed successfully. Whether a run's
+#      commit is readable is decided by the remote (release_evidence.py
+#      fetches it into an empty repository), as for release.yml's fresh
+#      clone; keep a train branch until the release run has passed. When
+#      the evidence tree differs (docs only), run release.yml's
+#      documentation checks on main's head in a temporary worktree.
 #   4. Ask for the tag name to be typed (skipped with --yes), check once
-#      more that the run is still the newest such run, create the annotated
+#      more that the run still decides and passed, create the annotated
 #      tag vVERSION at that commit and push it; a failed push deletes the
 #      local tag again. Pushing a release tag needs a human's explicit
 #      authorization; running this is that act. git fetch, ls-remote and
@@ -34,7 +42,10 @@
 #   STEWARDSHIP_GIT_REMOTE     git remote for that repository (default origin)
 #   STEWARDSHIP_IMAGE_REPO     image repository whose digest is printed
 #                              (default ghcr.io/epiphany40223/parishkit/stewardship)
-#   STEWARDSHIP_PYTHON         Python 3.11 or newer (default python3)
+#   STEWARDSHIP_PYTHON         Python 3.11 or newer (default python3); with
+#                              pymarkdown, pytest and the project's
+#                              development requirements when the evidence
+#                              tree differs in documentation
 #   STEWARDSHIP_FIND_MINUTES   how long to wait for a dispatched or release
 #                              run to appear (default 5)
 #   STEWARDSHIP_WATCH_MINUTES  ci-watch.sh's limit per run (default 120)
@@ -118,7 +129,7 @@ ops_log "main is $sha (version $version)"
 # The ids of the newest workflow_dispatch CI runs on this commit, newest first.
 dispatch_runs() {
     ops_gh run list --repo "$repo" --workflow ci.yml --event workflow_dispatch \
-        --commit "$sha" --limit "${1:-20}" --json databaseId -q '.[].databaseId'
+        --commit "$sha" --limit 20 --json databaseId -q '.[].databaseId'
 }
 
 # The ids of release.yml runs for a push of the tag on this commit.
@@ -155,38 +166,131 @@ watch() {
     return "$status"
 }
 
-# 2. The CI run: the one named, or a freshly dispatched one.
-if [ -n "$run" ]; then
-    newest=$(dispatch_runs 1)
-    if [ "$newest" != "$run" ]; then
-        ops_refuse "Run $run is not the newest workflow_dispatch CI run on $sha (that is '${newest:-none}'), which is the run release.yml checks"
+# Set chosen, status, conclusion, head and docs from the deciding full run
+# for main's head, as release.yml will choose it (all empty when none
+# qualifies). A failed lookup ends the script.
+# The script limits each git and gh call itself (logging what, limit and
+# elapsed on stderr) and exits 3 past a limit, recorded here too.
+evidence() {
+    local line found=0 start=$SECONDS
+    line=$("$python" "$here/release_evidence.py" select --repo "$repo" \
+        --commit "$sha" --checkout "$checkout" --remote "$remote") || found=$?
+    if [ "$found" = "$OPS_TIMEOUT_STATUS" ]; then
+        ops_timeout "a git or gh call in the release evidence lookup (named above)" "its own limit" "$start"
     fi
+    if [ "$found" != 0 ]; then
+        ops_refuse "Cannot look up the release evidence for $sha"
+    fi
+    read -r chosen status conclusion head docs <<<"$line" || true
+}
+
+# Documentation is a test input. When the evidence tree differs from main's
+# head (docs-safe paths only), run the documentation checks release.yml will
+# run (Markdown lint and release_evidence.py's docs-tests) on main's head in
+# a temporary worktree, so that a failure refuses here, before the tag is
+# pushed. They need STEWARDSHIP_PYTHON to be a development environment.
+docs_checks() {
+    local checked=0
+    if [ "${docs:-0}" = 0 ]; then
+        return 0
+    fi
+    docs_tree=$(mktemp -d)/tree
+    # Remove the worktree however this ends: a refusal, a timeout (exit 3)
+    # or Ctrl-C (exit 130) all leave through EXIT.
+    trap remove_docs_tree EXIT
+    ops_limited 120 "git worktree add of $sha" "${git[@]}" worktree add -q --detach "$docs_tree" "$sha"
+    # Every step must pass: `|| checked=$?` turns off set -e inside the
+    # subshell, so each step exits on its own failure.
+    (
+        cd "$docs_tree" || exit 1
+        export PYTHONPATH=$docs_tree/src
+        IFS=$'\n' read -r -d '' -a md < <(git ls-files '*.md' && printf '\0') || exit 1
+        IFS=$'\n' read -r -d '' -a tests < <("$python" tools/stewardship-ops/release_evidence.py docs-tests && printf '\0') || exit 1
+        if [ "${#md[@]}" = 0 ] || [ "${#tests[@]}" = 0 ]; then
+            echo "No Markdown files or no documentation tests to run on $sha" >&2
+            exit 1
+        fi
+        ops_log "documentation checks on $sha: Markdown lint and ${tests[*]}"
+        ops_limited 600 "Markdown lint of $sha" "$python" -m pymarkdown --config .pymarkdown.json scan "${md[@]}" >&2 || exit $?
+        ops_limited 1200 "documentation tests of $sha" "$python" -m pytest "${tests[@]}" \
+            --ds=parishkit.stewardship.settings.test -p no:cacheprovider -q >&2 || exit $?
+    ) || checked=$?
+    remove_docs_tree
+    trap - EXIT
+    if [ "$checked" = "$OPS_TIMEOUT_STATUS" ]; then
+        exit "$OPS_TIMEOUT_STATUS"
+    fi
+    if [ "$checked" != 0 ]; then
+        ops_refuse "The documentation checks failed on $sha; not tagging"
+    fi
+}
+
+# Remove docs_checks' temporary worktree, or say where it was left.
+remove_docs_tree() {
+    if [ -n "${docs_tree:-}" ] && [ -d "$docs_tree" ]; then
+        if ! "${git[@]}" worktree remove --force "$docs_tree" 2>/dev/null; then
+            echo "Could not remove the temporary worktree $docs_tree; remove it with git worktree remove --force" >&2
+        fi
+    fi
+    if [ -n "${docs_tree:-}" ]; then
+        rmdir "$(dirname "$docs_tree")" 2>/dev/null || true
+    fi
+    docs_tree=""
+}
+
+# The documentation checks need a development environment; check for it
+# before waiting on a long CI run rather than after.
+require_docs_tools() {
+    if [ "${docs:-0}" != 0 ] &&
+        ! "$python" -c 'import django, pymarkdown, pytest, pytest_django' 2>/dev/null; then
+        ops_refuse "The evidence tree differs from $sha in documentation, so the documentation checks must run here, but $python cannot import django, pymarkdown, pytest and pytest_django; set STEWARDSHIP_PYTHON to a development environment (requirements.txt installed)"
+    fi
+}
+
+# 2. The CI run: the one named, an existing passing or pending one, or a
+# freshly dispatched one.
+evidence
+if [ -n "$run" ]; then
+    if [ "${chosen:-}" = "$run" ] && [ "$status" = unreadable ]; then
+        ops_refuse "The commit $head of CI run $run cannot be fetched from $remote, so release.yml could not verify it; keep (or restore) the branch that holds it, or dispatch a full run on main"
+    fi
+    if [ "${chosen:-}" != "$run" ]; then
+        ops_refuse "CI run $run is not the full CI run that release.yml will check for $sha (that is '${chosen:-none}'); see release_evidence.py"
+    fi
+elif [ -n "${chosen:-}" ] && [ "$status" != unreadable ] &&
+    { [ "$status" != completed ] || [ "$conclusion" = success ]; }; then
+    run=$chosen
+    ops_log "reusing full CI run $run on $head ($docs docs-safe paths differ)"
 else
+    if [ "${status:-}" = unreadable ]; then
+        ops_log "full CI run $chosen's commit $head cannot be read; a new full run on main will decide instead"
+    fi
     before=$(dispatch_runs)
     ops_log "dispatching CI on main"
     ops_gh workflow run ci.yml --repo "$repo" --ref main -f jobs=all
     run=$(await_new_run "the dispatched CI run on $sha to appear (if main moved, it ran on the new head)" dispatch_runs "$before")
 fi
 ops_log "CI run $run"
+require_docs_tools
 
-# 3. Only a run of every job is release evidence (#626): a jobs=affected
-# dispatch may have skipped job groups. Accept exactly the name ci.yml gives
-# an all-jobs dispatch, as release.yml does, and refuse before watching.
-title=$(ops_gh run view "$run" --repo "$repo" --json displayTitle -q .displayTitle)
-if [ "$title" != "CI (jobs: all)" ]; then
-    ops_refuse "CI run $run is named '$title', not 'CI (jobs: all)'; release evidence needs a dispatch of every job"
-fi
-
-# Watch it, then check what it ran on.
+# 3. Watch it, then check that it still decides and that it passed.
 if ! watch "$run"; then
     ops_refuse "CI run $run did not pass; not tagging"
 fi
-info=$(ops_gh run view "$run" --repo "$repo" --json headSha,event,conclusion \
-    -q '"\(.headSha)|\(.event)|\(.conclusion)"')
-IFS='|' read -r rsha event conclusion <<<"$info"
-if [ "$rsha" != "$sha" ] || [ "$event" != workflow_dispatch ] || [ "$conclusion" != success ]; then
-    ops_refuse "CI run $run is $rsha/$event/$conclusion, not $sha/workflow_dispatch/success"
-fi
+
+# The deciding run must be $run and must have passed; $1 says when.
+require_evidence() {
+    evidence
+    if [ "${chosen:-}" != "$run" ]; then
+        ops_refuse "$1, the full CI run release.yml will check for $sha is '${chosen:-none}', not $run; re-run with it once it passes"
+    fi
+    if [ "$status/$conclusion" != completed/success ]; then
+        ops_refuse "CI run $run is $status/$conclusion, not completed/success"
+    fi
+}
+require_evidence "After the watch"
+docs_checks
+ops_log "release evidence: CI run $run on $head ($docs docs-safe paths differ from $sha)"
 
 # 4. Confirm; then, immediately before tagging, check that no newer run
 # took its place as the one release.yml will check; tag and push.
@@ -198,10 +302,7 @@ if [ "$yes" != 1 ]; then
         ops_refuse "The tag was not confirmed"
     fi
 fi
-newest=$(dispatch_runs 1)
-if [ "$newest" != "$run" ]; then
-    ops_refuse "A newer CI run ($newest) started on $sha while $run ran, and release.yml checks the newest; re-run with it once it passes"
-fi
+require_evidence "Just before tagging"
 before=$(release_runs)
 "${git[@]}" tag -a "$tag" -m "ParishKit $version" "$sha"
 # In a subshell, so that a push past its limit (recorded) still reaches the

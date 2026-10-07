@@ -20,7 +20,8 @@ not currently require branches to be up to date. Pushes to `main` currently run
 only the light `validate` job (a temporary pre-launch measure tracked in
 [#158](https://github.com/epiphany40223/parishkit/issues/158)); the full suite
 runs on ready PRs and, by default, on a manual `workflow_dispatch`, which a
-release requires for its tagged commit. Until #158 is resolved nothing runs
+release requires for its tagged tree (see [release evidence](#release-evidence)).
+Until #158 is resolved nothing runs
 the full suite on the landed result automatically, so concurrent independent
 PRs can introduce an integration regression after their individual checks
 passed. Keep stewardship
@@ -119,6 +120,57 @@ has an empty diff and runs everything, but a run made before the commit
 reached `main` may have skipped groups. `release.yml` and `release.sh`
 therefore accept only a run named exactly `CI (jobs: all)` as release
 evidence, and `release.sh` dispatches with `-f jobs=all`.
+
+### Release evidence
+
+A release needs a successful `CI (jobs: all)` dispatch on a commit whose tree
+is identical to the tagged commit's, or differs only in docs-safe paths
+([#662](https://github.com/epiphany40223/parishkit/issues/662)). That commit
+need not be an ancestor of the tag: after a nightly train head passes one full
+run and its PRs merge into `main` in the same order, `main` has the same tree
+under a new SHA, and the release reuses the train's run instead of paying for
+the whole suite again. A documentation change merged after a fully tested
+commit is reused the same way.
+
+[`release_evidence.py`](../../tools/stewardship-ops/release_evidence.py) holds
+the rule and its closed allowlist: Markdown under `docs/` (except the
+send-report guide, whose SQL `send-report.sh` runs) and the root `AGENTS.md`
+and `CLAUDE.md`. `README.md` is not docs-safe, because the image and the
+package metadata include it, and neither is anything under `.github/`,
+`tools/`, `src/`, `tests/`, `deploy/` or `requirements/`. Only the newest full
+run on each commit counts, so a later failed or cancelled run withdraws an
+earlier success, and the newest run whose commit qualifies decides: it must
+have passed (a pending run is waited for). Whether a run's commit can be read
+is decided by the remote (the commit is fetched by SHA into an empty
+repository), never by a local checkout, so `release.sh` and `release.yml`'s
+fresh clone choose the same run. A newer full run whose commit cannot be
+fetched is refused rather than skipped, since it might be a newer failure.
+`release.yml` applies the rule on every tag push, independently of
+`release.sh`, and names the evidence run and commit in the GitHub release
+notes. `release.sh` reuses a qualifying run and dispatches a new full run only
+when none passed or is still running.
+
+Documentation is still a test input. When the evidence tree differs from the
+tagged one, `release.yml` runs Markdown lint over every tracked Markdown file
+and the documentation-reading tests (`release_evidence.py docs-tests` lists
+them: `test_traceability.py`, `test_build.py`, `test_ops_scripts.py` and
+`test_local_script.py`, no database) on the tagged
+tree before building, and the release notes name those checks. `release.sh`
+runs the same checks on `main`'s head in a temporary worktree before it tags,
+so a failure refuses before the tag is pushed. For that it needs
+`STEWARDSHIP_PYTHON` to be a development environment that can import
+`django`, `pymarkdown` (from `pymarkdownlnt`), `pytest` and `pytest_django`,
+such as a virtual environment with `requirements.txt` installed as CI installs
+it; it checks this before watching the CI run and refuses without them.
+
+For a nightly train:
+
+- Include the version-bump PR in the train. A bump merged after the train's
+  full run changes `pyproject.toml`, which is not docs-safe, so the release
+  would need another full run.
+- Keep the train branch until the release run has passed. `release.yml`
+  fetches the evidence commit by SHA, and a deleted branch's head may no
+  longer be served.
 
 ### Protected gates
 
