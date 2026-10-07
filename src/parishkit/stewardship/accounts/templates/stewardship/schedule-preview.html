@@ -13,5 +13,5 @@
 {% if blocking %}<p class="notice notice-error" role="alert">{% translate "Email from these schedules is being sent right now, or has an uncertain result. Wait for it to finish, or resolve it on the Outgoing mail page, then preview again. Sends blocking the change:" %} {{ blocking|number }}</p>{% else %}
 <p>{% translate "Confirming saves these schedules. It does not send any email." %}</p>
 <form method="post" action="{{ post_url }}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply all changes" %}</button></form>{% endif %}
-<p><a href="{% url 'admin:schedule_settings' campaign.pk %}">{% translate "Return to schedules" %}</a></p>
+<p><a href="{% url 'admin:schedule_settings' campaign.pk %}">{% translate "Return to Dates and mail schedules" %}</a></p>
 {% endblock %}

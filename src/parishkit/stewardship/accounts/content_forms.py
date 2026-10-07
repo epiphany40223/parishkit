@@ -544,12 +544,12 @@ def revision_patch(document, campaign, previous, values):
                     _("This email is used by a mail schedule, so it can't be removed."),
                     fix=_(
                         "Choose another email for that schedule, or remove the "
-                        "schedule, under Mail schedules first. Editing the text "
-                        "(for example, resetting it to the default) keeps the "
-                        "schedule."
+                        "schedule, under Dates and mail schedules first. Editing "
+                        "the text (for example, resetting it to the default) "
+                        "keeps the schedule."
                     ),
                     link=reverse("admin:schedule_settings", args=[campaign.pk]),
-                    link_label=_("Go to Mail schedules"),
+                    link_label=_("Go to Dates and mail schedules"),
                 )
             affected.append(schedule)
             patch.append(

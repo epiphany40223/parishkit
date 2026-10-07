@@ -8,5 +8,5 @@
 {% if affected %}<section class="panel"><h2>{% translate "Schedules using this template" %}</h2><p>{% translate "Applying this change switches all of these schedules to the new text and subject at once. If one of them is sending right now, the change waits until that finishes." %}</p><ul>{% for schedule in affected %}<li>{{ schedule.values.kind }} — {{ schedule.values.date|default:_("Recurring") }} {{ schedule.values.time }} — {{ schedule.values.subject }}</li>{% endfor %}</ul></section>{% endif %}
 <p>{% translate "Confirm to save this content." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply changes" %}</button></form>
-<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Return to content and templates" %}</a></p>
+<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Return to Pages and emails" %}</a></p>
 {% endblock %}

@@ -1,4 +1,4 @@
-"""Family email sends in a real browser (#432): accessible at every width."""
+"""Family email history in a real browser (#432): accessible at every width."""
 
 import pytest
 
@@ -24,7 +24,7 @@ def test_send_history_is_accessible_at_phone_and_desktop_widths(
     })).violations.map(({id,impact}) => ({id,impact}))""")
         == []
     )
-    table = page.get_by_role("table", name="Family email sends")
+    table = page.get_by_role("table", name="Family email history")
     assert table.get_by_role("row").count() == 4
     # Each count link says what it lists, not just a number.
     assert (

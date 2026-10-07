@@ -22,7 +22,8 @@ the form's JSON endpoints with a clean 503, so no Family answer is written.
 Keepalive and logout stay open (see OPEN_PATHS).
 Email delivery is not paused by this switch: new receipts cannot arise (no
 Family can submit), and scheduled invitations and reminders are paused, when
-needed, with the existing Delivery controls, which the Admin page links to.
+needed, with the existing Pause and resume mail page, which the Admin page
+links to.
 """
 
 import time

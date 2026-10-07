@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Final Production confirmation" %}{% endblock %}
+{% block title %}{% translate "Confirm Production" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Final Production confirmation" %}</h1>
+<h1>{% translate "Confirm Production" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="notice">{% translate "Testing data deleted by cleanup cannot be restored. The campaign stays in Testing mode until you confirm below, and the prepared Family links stay inactive until then." %}</p>
 <p>{% if state.target_state == 'active' %}{% translate "Confirmation will activate Family access immediately. Initial campaign mail will be prepared separately in the background." %}{% else %}{% translate "Confirmation will schedule the campaign for Production. Family access and ordinary scheduled mail remain closed until the campaign starts." %}{% endif %}</p>
@@ -30,5 +30,5 @@
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ confirmation_token }}">
 <label for="production-confirmation">{% translate "Type Production to confirm this exact transition" %}</label><input id="production-confirmation" name="typed" required pattern="Production" title="{% translate 'Enter Production exactly as shown.' %}" autocomplete="off" spellcheck="false">
 <button type="submit">{% translate "Confirm Production" %}</button></form></section>{% endif %}
-<p><a href="{% url 'admin:go_live_links' campaign.pk transition.pk %}">{% translate "Return to link preparation" %}</a></p>
+<p><a href="{% url 'admin:go_live_links' campaign.pk transition.pk %}">{% translate "Return to Prepare Family links" %}</a></p>
 {% endblock %}

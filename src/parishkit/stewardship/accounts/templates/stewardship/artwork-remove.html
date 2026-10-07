@@ -5,5 +5,5 @@
 <p>{% blocktranslate with slot=label %}Stop showing an image for: {{ slot }}. Families will see no image there until you upload a new one.{% endblocktranslate %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
 <button type="submit">{% translate "Remove the image" %}</button></form>
-<p><a href="{% url 'admin:artwork_settings' campaign.pk %}">{% translate "Back to campaign images" %}</a></p>
+<p><a href="{% url 'admin:artwork_settings' campaign.pk %}">{% translate "Return to Campaign images" %}</a></p>
 {% endblock %}

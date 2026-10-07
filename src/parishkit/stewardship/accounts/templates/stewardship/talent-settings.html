@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Talents Members can share" %}{% endblock %}
+{% block title %}{% translate "Member talents" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Talents Members can share" %}</h1>
+<h1>{% translate "Member talents" %}</h1>
 {% aboutpage "talent-settings" %}<p>{% translate "On each Member's ministry page, the Family form asks: “If you have a special talent that you would like to share with your parish family, please select it below.” These are the checkboxes it offers. Turn on the free-text response for an option such as “Other” so the Member can describe it." %}</p>
 <p>{% translate "Edit labels, set their order, or explicitly delete options. The blank last row adds an option. Up to 100 options are supported." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>

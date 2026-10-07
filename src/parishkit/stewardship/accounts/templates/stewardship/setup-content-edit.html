@@ -3,7 +3,7 @@
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
-<p><a href="{% url 'admin:setup_content' %}">{% translate "First-campaign content" %}</a></p>
+<p><a href="{% url 'admin:setup_content' %}">{% translate "Pages and emails" %}</a></p>
 <h1>{{ label }}</h1>
 {% aboutpage "setup-content-editor" %}<p>{% translate "Use a placeholder name inside double braces. Supported names:" %} {% for name in placeholders %}<code>{{ name }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
 {% include 'stewardship/placeholder-names.html' %}{% endaboutpage %}

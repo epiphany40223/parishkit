@@ -1,4 +1,4 @@
-"""Admin-only, read-only history of the Family email sends (#432).
+"""Admin-only, read-only Family email history page (#432).
 
 One row per send of the current campaign (``send_history``), newest first,
 counted with the live progress panel's rules. The page is read
@@ -23,7 +23,7 @@ from .send_reads import read_history
 
 @require_safe
 def family_email_sends(request):
-    """The Family email sends page: one audited view of a bounded page.
+    """The Family email history page: one audited view of a bounded page.
 
     As the progress panel, the session and the restore review are checked
     again after rendering, so an Admin signed out or demoted, or a restore

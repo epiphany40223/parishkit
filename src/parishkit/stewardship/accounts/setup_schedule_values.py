@@ -92,11 +92,11 @@ def reconcile_preparation(request, service, attempt_id, updates):
                 ),
                 fix=_(
                     "Change that schedule to another email, or remove it, under "
-                    "Mail schedules first. Replacing the text (for example, "
-                    "resetting it to the default) keeps the schedule."
+                    "Dates and mail schedules first. Replacing the text (for "
+                    "example, resetting it to the default) keeps the schedule."
                 ),
                 link=reverse("admin:setup_schedules"),
-                link_label=_("Go to “Mail schedules”"),
+                link_label=_("Go to “Dates and mail schedules”"),
             )
         for row in affected:
             row["values"].update(
@@ -121,9 +121,9 @@ def reconcile_preparation(request, service, attempt_id, updates):
     if any(row["values"]["template_version"] not in selected for row in records):
         raise UserFacingError(
             _("A mail schedule uses an email template that is not saved."),
-            fix=_("Choose an email saved under Pages and email templates."),
+            fix=_("Choose an email saved under Pages and emails."),
             link=reverse("admin:setup_content"),
-            link_label=_("Go to “Pages and email templates”"),
+            link_label=_("Go to “Pages and emails”"),
         )
     if records != combined.get("schedules", {"records": []})["records"]:
         updates = updates | {"schedules": {"records": records}}
