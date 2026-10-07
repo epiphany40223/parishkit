@@ -153,47 +153,214 @@ def recipient_changed(current):
     return changed
 
 
-def _backup(config):
-    """Run one backup set in the admitted backup profile and record it."""
+# The PostgreSQL session advisory lock every backup run holds while it makes
+# its set (ADM-13 PR 3), so a requested backup and a scheduled one never make
+# sets at the same time; the off-site upload afterwards is not covered.
+# Request mode only tries it; a scheduled run waits for it, for at most
+# SCHEDULED_LOCK_SECONDS. Any database login could take this key and stall
+# backups; a stalled scheduled run then records its timeout and exits 2, and
+# the overdue-backup alert fires (accepted on #530 over a new lock file,
+# which every host would need provisioned and mounted).
+BACKUP_LOCK = (736241, 1)
+SCHEDULED_LOCK_SECONDS = 1800
+
+
+class Quiet(Exception):
+    """Request mode found nothing it may do now; exit 0 with no output."""
+
+
+def _lock_backups(*, wait):
+    """Take the backup lock on this connection; return whether it was taken.
+
+    Without ``wait`` it only tries. With it, it waits at most
+    SCHEDULED_LOCK_SECONDS and records a timeout (#287: the limit, its
+    seconds and the time waited) before refusing.
+    """
+    import time
+
+    from django.db import OperationalError, connection
+
+    with connection.cursor() as cursor:
+        if not wait:
+            cursor.execute("SELECT pg_try_advisory_lock(%s,%s)", BACKUP_LOCK)
+            return cursor.fetchone()[0]
+        started = time.monotonic()
+        cursor.execute(f"SET lock_timeout='{SCHEDULED_LOCK_SECONDS}s'")
+        try:
+            cursor.execute("SELECT pg_advisory_lock(%s,%s)", BACKUP_LOCK)
+        except OperationalError as error:
+            if getattr(error.__cause__, "sqlstate", None) != "55P03":
+                raise
+            from .audit.timeouts import record_timeout
+
+            record_timeout(
+                Event.TASK_TIMED_OUT,
+                what="lock_timeout",
+                level="WARNING",
+                limit_seconds=SCHEDULED_LOCK_SECONDS,
+                elapsed_seconds=max(1, round(time.monotonic() - started)),
+                bind_task=False,
+            )
+            raise ConfigError("Another backup held the backup lock too long.") from None
+        finally:
+            cursor.execute("RESET lock_timeout")
+        return True
+
+
+def _run(configuration, *, wait, request_mode):
+    """Run one backup set under the backup lock and settle a request with it.
+
+    The caller holds the startup interlock and has admitted the backup
+    login. A scheduled run (``wait``) takes the lock however long another
+    backup holds it (up to its limit) and then completes any waiting
+    request too, even during a bulk send. Request mode (``request_mode``)
+    runs only for a waiting request, stamps it held during a bulk Family
+    send, and raises ``Quiet`` when the lock is taken or nothing is waiting.
+    """
+    from django.db import DatabaseError
+
     from .backup import configured_recipient, run_backup
+    from .backup_requests import claim, held, settle_lapsed, waiting
+    from .jobs.backup_models import BackupRun
+
+    if not _lock_backups(wait=wait):
+        raise Quiet
+    settle_lapsed()
+    request = waiting()
+    if request_mode:
+        if request is None:
+            raise Quiet
+        from .source.send_hold import family_send_active
+
+        if family_send_active():
+            try:
+                held(request)
+            except (DatabaseError, ConfigError) as error:
+                # The same race as the claim below: the request lapsed or
+                # moved on since it was read. Say so and stop quietly.
+                emit_failure(error, event=Event.TASK_FAILED, level=logging.WARNING)
+                _unlock_backups()
+            raise Quiet
+    if request is not None:
+        try:
+            claim(request)
+        except (DatabaseError, ConfigError) as error:
+            # The guard refused the claim (the request lapsed, or a restore
+            # review began, since it was read), or the row moved on so the
+            # guarded update matched nothing (ConfigError from _move). Say
+            # so; request mode then stops, while a scheduled run makes its
+            # set without it.
+            emit_failure(error, event=Event.TASK_FAILED, level=logging.WARNING)
+            if request_mode:
+                _unlock_backups()
+                raise Quiet from None
+            request = None
+    recorded = {}
+
+    def record(**facts):
+        """Persist the run and keep its digest for the operator's notes."""
+        recorded.update(
+            facts,
+            recipient_changed=recipient_changed(facts["recipient_fingerprint"]),
+        )
+        recorded["run_id"] = BackupRun.objects.create(**facts).pk
+
+    # Read before the run starts, so the recorded start time follows the
+    # configuration the key came from (see backup_health.key_changed).
+    configured = configured_recipient()
+    try:
+        manifest = run_backup(configuration, record=record, recipient=configured)
+    except Exception as error:
+        if request is not None:
+            from .backup_requests import fail
+
+            fail(request, error)
+        raise
+    if request is not None:
+        from .backup_requests import finish
+
+        finish(request, recorded["run_id"])
+    # The lock serializes making backup sets; the off-site upload that
+    # follows needs no lock, so another backup may start while it runs.
+    _unlock_backups()
+    return manifest, recorded, configured, request
+
+
+def _unlock_backups():
+    """Release the backup lock this connection holds."""
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_unlock(%s,%s)", BACKUP_LOCK)
+
+
+def _backup(config, *, request_mode=False):
+    """Run one backup set in the admitted backup profile and record it.
+
+    ``request_mode`` is the host cron's five-minute poll for Take a backup
+    now (ADM-13 PR 3): it reads for a waiting request before it takes any
+    lock, and returns None (exit 0, no output, no log line) when there is
+    none, the database cannot be read, another backup holds the lock,
+    offline work holds the startup interlock, or a bulk send holds it.
+    """
+    from django.db import DatabaseError, OperationalError
+
     from .backup_boundaries import admit_backup_service
     from .operator_commands import configure_operator_database
     from .runtime_paths import RuntimeLayout
-    from .startup_interlock import StartupLease
+    from .startup_interlock import StartupBusy, StartupLease
 
     if config is None:
         raise ConfigError("Explicit backup configuration is required.")
     configuration = load_deployment(config)
     admit_backup_service(configuration)
-    # Shared, like the online services: a backup never overlaps offline work,
-    # and offline work never starts under a running backup.
-    with StartupLease(RuntimeLayout(configuration).interlock, offline=False):
+    if request_mode:
         configure_operator_database(configuration)
-        from .jobs.backup_models import BackupRun
+        from .backup_requests import waiting
+
+        try:
+            if waiting() is None:
+                return None
+        except OperationalError:
+            # The database cannot be reached (offline work, a restart): the
+            # page's "not picked up" message is what shows a missed poll.
+            return None
+        except DatabaseError as error:
+            # Reached but refused (a missed database-grants step): say so
+            # once in the process log, so the cron output shows it.
+            emit_failure(error, event=Event.STARTUP_REJECTED, level=logging.WARNING)
+            return None
+        lease = StartupLease(RuntimeLayout(configuration).interlock, offline=False)
+        try:
+            lease.__enter__()
+        except StartupBusy:
+            return None
+    else:
+        # Shared, like the online services: a backup never overlaps offline
+        # work, and offline work never starts under a running backup.
+        lease = StartupLease(RuntimeLayout(configuration).interlock, offline=False)
+        lease.__enter__()
+    try:
+        if not request_mode:
+            configure_operator_database(configuration)
         from .runtime_database import require_current_schema
 
         _admit_backup_identity()
         require_current_schema()
-        recorded = {}
-
-        def record(**facts):
-            """Persist the run and keep its digest for the operator's notes."""
-            recorded.update(
-                facts,
-                recipient_changed=recipient_changed(facts["recipient_fingerprint"]),
+        try:
+            manifest, recorded, configured, request = _run(
+                configuration, wait=not request_mode, request_mode=request_mode
             )
-            BackupRun.objects.create(**facts)
-
-        # Read before the run starts, so the recorded start time follows the
-        # configuration the key came from (see backup_health.key_changed).
-        configured = configured_recipient()
-        manifest = run_backup(configuration, record=record, recipient=configured)
+        except Quiet:
+            return None
+    finally:
+        lease.__exit__(None, None, None)
     # The off-site copy runs after the lease: it reads only the finished set
     # and appends its outcome, so a slow upload never holds offline work back.
     offsite = _copy_offsite(configuration)
     # The manifest digest is what the operator records off the host and
     # compares at restore, since the sealed files alone prove no origin.
-    return {
+    result = {
         "backup_recorded": True,
         "database_bytes": manifest["database"]["plaintext_bytes"],
         "files_bytes": manifest["files"]["plaintext_bytes"],
@@ -205,6 +372,9 @@ def _backup(config):
         "manifest_digest": recorded["manifest_digest"],
         "offsite": offsite,
     }
+    if request is not None:
+        result["request_id"] = str(request.pk)
+    return result
 
 
 def _copy_offsite(configuration):
@@ -234,7 +404,13 @@ def execute_backup_command(args):
         elif args.command == "backup-prove":
             result = _prove(args.key, args.input)
         else:
-            result = _backup(args.config)
+            result = _backup(
+                args.config, request_mode=bool(getattr(args, "request", None))
+            )
+            if result is None:
+                # Request mode with nothing to do: silent, so the five-minute
+                # cron poll leaves no trace.
+                return 0
     except Exception as error:
         emit_failure(error, event=Event.STARTUP_REJECTED)
         print(

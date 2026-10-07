@@ -383,7 +383,14 @@ of 2026-10-04 are recorded in the specification.
 4. **PR 3, take a backup now.** The backup request (migration), the backup
    login's request grants, request mode with the backup lock and the hold
    during a bulk send, the host cron entry, and the backup runbook's schedule,
-   checking, restore and restore drill updates. Security-focused review.
+   checking, restore and restore drill updates. Security-focused review. It
+   lands in two parts (plan posted on #530): **3a** the request record and
+   its guard (frozen migration 0016), the grants (the web's insert and
+   reads, including the backups panel's size and version columns, and the
+   backup login's request updates), request mode and the backup lock, the
+   panel's size, version and request state, and the runbook steps; **3b**
+   the Take a backup now button with its preview, fresh sign-in, audit
+   event and command or pending exemption.
 5. **PR 4, clear a halted mail sender.** Halt identities, the clear signal
    and the mailbox check request with their guards (migration), the check
    in `mail-dispatch`, the consumers reading the signal, and the dispatch
