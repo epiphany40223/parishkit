@@ -26,6 +26,12 @@ from parishkit.stewardship.runtime_paths import RuntimeLayout, private_directory
 from parishkit.stewardship.runtime_topology import _service_config
 
 DUMP = b"PGDMP" + bytes(range(256)) * 40
+# The applied set the backup command reads in its session, as Django's
+# recorder returns it (keys are (app, name)).
+MIGRATIONS = {
+    ("stewardship_jobs", "0001_initial"): None,
+    ("auth", "0001_initial"): None,
+}
 
 
 @pytest.fixture
@@ -67,7 +73,7 @@ def test_a_set_is_written_sealed_recorded_and_openable(deployment, tmp_path):
     (branding / "logo.png").write_bytes(b"\x89PNG synthetic")
     records = []
     manifest = backup.run_backup(
-        deployment, record=lambda **facts: records.append(facts)
+        deployment, migrations=MIGRATIONS, record=lambda **facts: records.append(facts)
     )
     sets = list(deployment.paths["backups"].iterdir())
     assert len(sets) == 1 and backup.SET_NAME.match(sets[0].name)
@@ -106,6 +112,12 @@ def test_a_set_is_written_sealed_recorded_and_openable(deployment, tmp_path):
     written = json.loads((directory / backup.MANIFEST).read_text())
     assert written == manifest
     assert "password" not in json.dumps(manifest).lower()
+    # What a restore needs (#608): the recorded image and the sorted set.
+    assert manifest["image"] == "parishkit-stewardship:development"
+    assert manifest["migrations"] == [
+        ["auth", "0001_initial"],
+        ["stewardship_jobs", "0001_initial"],
+    ]
     assert records == [
         {
             "started_at": datetime.fromisoformat(manifest["started_at"]),
@@ -175,7 +187,7 @@ def test_an_authority_outside_the_archived_trees_refuses_the_run(deployment, tmp
         ),
     )
     with pytest.raises(ConfigError, match="authority store"):
-        backup.run_backup(moved, record=lambda **facts: None)
+        backup.run_backup(moved, migrations=MIGRATIONS, record=lambda **facts: None)
     assert not any(deployment.paths["backups"].iterdir())
 
 
@@ -185,6 +197,20 @@ def name(when):
 
 
 NOW = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
+
+
+def test_a_backup_needs_the_applied_set_and_the_recorded_image(deployment):
+    """No set is written without the migrations or the image it records."""
+    with pytest.raises(ConfigError, match="applied migrations"):
+        backup.run_backup(deployment, migrations={}, record=lambda **facts: None)
+    record = RuntimeLayout(deployment).provisioning_record
+    value = json.loads(record.read_text())
+    write_private(record, json.dumps({**value, "image": ""}).encode())
+    with pytest.raises(ConfigError, match="names no image"):
+        backup.run_backup(
+            deployment, migrations=MIGRATIONS, record=lambda **facts: None
+        )
+    assert not any(deployment.paths["backups"].iterdir())
 
 
 def test_retention_keeps_the_tiers_and_only_dated_directories(deployment, monkeypatch):
@@ -204,7 +230,7 @@ def test_retention_keeps_the_tiers_and_only_dated_directories(deployment, monkey
     failed.mkdir(mode=0o700)
     (failed / backup.DUMP).write_bytes(b"partial")
     monkeypatch.setattr(backup, "datetime", FrozenClock)
-    backup.run_backup(deployment, record=lambda **facts: None)
+    backup.run_backup(deployment, migrations=MIGRATIONS, record=lambda **facts: None)
     remaining = {p.name for p in backups.iterdir()}
     assert {"operator-notes", "20261399T000000Z", failed.name} <= remaining
     kept = sorted(n for n in remaining & set(sets))
@@ -349,7 +375,11 @@ def test_refusals_leave_no_record(deployment, tmp_path):
     link = deployment.paths["config"] / "stray"
     link.symlink_to(tmp_path / "private")
     with pytest.raises(ConfigError, match="non-regular"):
-        backup.run_backup(deployment, record=lambda **facts: records.append(facts))
+        backup.run_backup(
+            deployment,
+            migrations=MIGRATIONS,
+            record=lambda **facts: records.append(facts),
+        )
     link.unlink()
     # The failed set stays for inspection, without a manifest; a second run
     # in the same second would find its name taken, so clear it here.
@@ -360,7 +390,11 @@ def test_refusals_leave_no_record(deployment, tmp_path):
     kept = key.read_bytes()
     key.unlink()
     with pytest.raises(ConfigError):
-        backup.run_backup(deployment, record=lambda **facts: records.append(facts))
+        backup.run_backup(
+            deployment,
+            migrations=MIGRATIONS,
+            record=lambda **facts: records.append(facts),
+        )
     write_private(key, kept)
 
     def failing(configuration, sink, *, recipient):
@@ -369,7 +403,11 @@ def test_refusals_leave_no_record(deployment, tmp_path):
     backup.dump_database, original = failing, backup.dump_database
     try:
         with pytest.raises(ConfigError, match="did not complete"):
-            backup.run_backup(deployment, record=lambda **facts: records.append(facts))
+            backup.run_backup(
+                deployment,
+                migrations=MIGRATIONS,
+                record=lambda **facts: records.append(facts),
+            )
     finally:
         backup.dump_database = original
     assert records == []
@@ -711,7 +749,10 @@ def test_a_configured_key_replaces_the_installed_file(deployment, tmp_path):
     recipient = backup.recipient_from(document)
     assert backup.recipient_from({"sections": {}}) is None
     manifest = backup.run_backup(
-        deployment, record=lambda **facts: None, recipient=recipient
+        deployment,
+        migrations=MIGRATIONS,
+        record=lambda **facts: None,
+        recipient=recipient,
     )
     assert manifest["recipient_fingerprint"] == recipient.fingerprint
     (directory,) = deployment.paths["backups"].iterdir()

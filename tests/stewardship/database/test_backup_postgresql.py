@@ -280,9 +280,11 @@ def test_the_backup_command_says_when_the_key_changed(monkeypatch, capsys):
 
     fingerprint = ["b" * 16]
 
-    def run_backup(configuration, *, record, recipient):
+    def run_backup(configuration, *, record, migrations, recipient):
         """Record one run with the current key, as the real backup does."""
         assert recipient is None  # no key configured in the portal
+        # The applied set, read in the backup login's session (#608).
+        assert ("stewardship_jobs", "0003_backup_run") in set(migrations)
         with transaction.atomic():
             started = database_now()
         record(

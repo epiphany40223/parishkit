@@ -34,8 +34,11 @@ from .startup_interlock import StartupLease
 TOPOLOGIES = ("compose.json", "compose-initial.json", "compose-slack.json")
 
 
-def _recorded(path):
-    """The completed provisioning intent, admitted as an owner-only JSON file."""
+def read_provisioning_record(path):
+    """The completed provisioning intent, admitted as an owner-only JSON file.
+
+    The backup reads it too, to name the image a set was taken under.
+    """
     metadata = os.lstat(path)
     if (
         not stat.S_ISREG(metadata.st_mode)
@@ -100,7 +103,7 @@ def retarget_image(configuration, *, image):
     completed = root / PROVISIONING_RECORD
     if not completed.exists():
         raise ConfigError("Provisioning is unfinished; resume it before upgrading.")
-    recorded = _recorded(completed)
+    recorded = read_provisioning_record(completed)
     # The plan re-derives every document from the operator's current inputs
     # with the new image; only the image may differ from what was recorded.
     configuration, _, passwords, documents, acl, intent = _plan(

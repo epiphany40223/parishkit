@@ -5,7 +5,10 @@ PostgreSQL custom-format dump and a tar of the configuration and credentials
 trees, each sealed to the human-held recipient key (the one an Administrator
 configured in the portal, or else the installed ``backup_data`` file), and a
 plaintext manifest
-naming sizes, digests, durations and the key, never contents. Only a completed
+naming sizes, digests, durations and the key, never contents. The manifest
+also names the image the set was taken under and the migrations its
+database had applied, so ``restore-check`` can compare a set with a target
+image before anything is restored (#608). Only a completed
 run records a row; the scheduler reads the newest row to alert when a backup
 is overdue, and the offline upgrade commands read it as the verified-backup
 evidence a configured deployment requires. Copying the sets off the host is
@@ -370,7 +373,24 @@ def configured_recipient():
     return recipient_from(runtime.active_configuration.canonical_document)
 
 
-def run_backup(configuration, *, record, recipient=None):
+def recorded_image(configuration):
+    """The image reference the provisioning record names.
+
+    ``retarget-image`` rewrites the record whenever the deployment moves to
+    another image, so it names the image the backup runs under: the complete
+    ``…@sha256:`` reference in Production.
+    """
+    from .runtime_retarget import read_provisioning_record
+
+    image = read_provisioning_record(RuntimeLayout(configuration).provisioning_record)[
+        "image"
+    ]
+    if not isinstance(image, str) or not image:
+        raise ConfigError("The provisioning record names no image.")
+    return image
+
+
+def run_backup(configuration, *, record, migrations, recipient=None):
     """Write one sealed backup set and record it; return the manifest.
 
     `record` persists the completed run's facts (the caller owns the database
@@ -378,6 +398,9 @@ def run_backup(configuration, *, record, recipient=None):
     names a set that does not exist. Retention runs after the record.
     `recipient` is the Administrator-configured key, when there is one;
     otherwise the set is sealed to the installed ``backup_data`` file.
+    `migrations` is the database's applied ``(app, name)`` set, which the
+    caller reads in the backup's session; the shared startup lease keeps
+    ``migrate`` from changing it during the dump.
     """
     layout = RuntimeLayout(configuration)
     # An authority moved outside the archived trees would be silently left out
@@ -391,6 +414,10 @@ def run_backup(configuration, *, record, recipient=None):
         raise ConfigError("The authority store must live inside an archived tree.")
     if recipient is None:
         recipient = Recipient.load(layout.credential("backup_data"))
+    image = recorded_image(configuration)
+    applied = sorted([str(app), str(name)] for app, name in migrations)
+    if not applied:
+        raise ConfigError("A backup needs the database's applied migrations.")
     backups = private_directory(explicit_path(configuration.paths["backups"]))
     started = datetime.now(UTC)
     directory = private_directory(
@@ -418,6 +445,11 @@ def run_backup(configuration, *, record, recipient=None):
     manifest = {
         "version": 1,
         "application_version": __version__,
+        # What a restore needs (#608): the image this set was taken under and
+        # the migrations its database had applied. Sets from earlier
+        # releases lack both keys; restore-check then reads the dump.
+        "image": image,
+        "migrations": applied,
         "started_at": started.isoformat(),
         "completed_at": datetime.now(UTC).isoformat(),
         "recipient_fingerprint": recipient.fingerprint,
