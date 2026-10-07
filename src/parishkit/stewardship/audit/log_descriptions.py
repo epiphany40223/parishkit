@@ -108,6 +108,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to mail schedules "
         "or campaign dates, which became a configuration request."
     ),
+    "admin_cmd_refresh_start": _(
+        "An automation session asked for a full ParishSoft refresh, as the "
+        "Source refresh page's confirmation does."
+    ),
     "admin_cmd_task_retry": _(
         "An automation session retried a failed background task, as the "
         "task's Retry button does."

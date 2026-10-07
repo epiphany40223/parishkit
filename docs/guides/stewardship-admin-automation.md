@@ -207,7 +207,7 @@ your roles would not show on the page is `null`.
 | --- | --- |
 | `as_of`, `mode` | When it was read; `testing` or `production` |
 | `campaign` | The current campaign's `id`, `name`, `state`, `version`, `starts_at`, `ends_at` and `delivery_paused`, or `null` |
-| `source` | The last ParishSoft refresh: `refreshed_at` (when the current snapshot was promoted), the last full refresh's success, failure (with `full_failed_task_id`) and `full_running`, incremental success and failure, `frequency`, `next_full_at`, `delta_refresh`; the [data age and connection](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection): `full_started_at`, `data_as_of`, `connection` (`failing`, `not_checked`, `working` or `unknown`) with `connection_at`; `overdue_full_at`, the due time of the first scheduled full refresh since the last one started that has not yet run (`null` when none is due), `out_of_date` when it is more than `source_stale_seconds` late, and `held_for_send` when a bulk Family send is holding it within the send's allowance |
+| `source` | The last ParishSoft refresh: `refreshed_at` (when the current snapshot was promoted), the last full refresh's success, failure (with `full_failed_task_id`) and `full_running`, incremental success and failure, `frequency`, `next_full_at`, `delta_refresh`; the [data age and connection](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection): `full_started_at`, `data_as_of`, `connection` (`failing`, `not_checked`, `working` or `unknown`) with `connection_at`; `overdue_full_at`, the due time of the first scheduled full refresh since the last one started that has not yet run (`null` when none is due), `out_of_date` when it is more than `source_stale_seconds` late with `late_minutes`, and `held_for_send` when a bulk Family send is holding it within the send's allowance, with `resume_at` (when it runs at the latest) or `catching_up` (the send ended or the resume point passed) |
 | `next_mail` | The next Family mail's `kind` and `due_at` |
 | `families` | Counts: `active`, `eligible`, `responded`, `eligible_responded` |
 | `unreachable_families` | Families no mail can reach (a count) |
@@ -459,6 +459,42 @@ its subject. A schedule change creates no automation notice: notices are
 for approvals, refused use, access and key changes, fresh-gated and
 irreversible actions, and endings.
 
+## ParishSoft refresh
+
+`refresh start` asks for a full ParishSoft refresh now, as **Refresh now**
+on the Refresh from ParishSoft page does. It needs a full-scope session and
+asks for no confirmation, as the page asks for none. `refresh status` shows
+what the page shows; any session may run it.
+
+```sh
+pk-admin refresh status
+pk-admin refresh start --request-key "$(uuidgen | tr A-Z a-z)"
+pk-admin task show TASK_ROOT_ID --watch 10
+```
+
+Pass your own `--request-key` (a UUID), or the command makes one and writes
+it to standard error before it acts, as `task retry` does. Repeating it
+with the same key returns the same refresh and changes nothing; a key used
+on the page works here, and the other way round. A new request while a full
+refresh is already waiting joins that one, as on the page; while one is
+running, it queues one full refresh to run after it. The key must be a
+version 4 UUID (`uuidgen` makes one).
+
+| Field | What it holds |
+| --- | --- |
+| `created` | `refresh start`: false when this key was used before; the original refresh is returned |
+| `request_key` | `refresh start`: the key, yours or the one made for you |
+| `refresh` | `refresh start`: `command_id` (the key), `request_id` and `task_root_id` (follow it with `task show`) |
+| `running`, `waiting` | `refresh status`: whether a refresh is running, and whether a full refresh waits that a new request would join |
+| `lateness_minutes` | `refresh status`: how late a scheduled full refresh may be before it counts as overdue |
+| `source` | `refresh status`: the latest full and quick update facts, as in `status`'s `source` without `refreshed_at` |
+
+A key used for another refresh is exit 1 (`invalid`). If ParishSoft is not
+configured, or the configured organization changed, it is exit 3
+(`unavailable`), as the page reports. Exit 6 (`outcome_unknown`) names the
+key in `error.request_id`: repeat the command with it. System logs show
+each new request as `admin_cmd_refresh_start`.
+
 ## Task retries
 
 `task retry` is the **Retry** button of a failed task on Background work,
@@ -532,6 +568,9 @@ its subject; it creates no automation notice.
 - `pk-admin/1` (ADM-11 PR 9a): additive. `task retry`, the first command
   that takes `--request-key`, and `error.request_id` on its unknown
   outcome, holding the key.
+- `pk-admin/1` (ADM-11 PR 6a): additive. `refresh start` and
+  `refresh status`; `status` `source` gains `late_minutes`, `resume_at`
+  and `catching_up`.
 - `pk-admin/1` (#686): a deliberate change of meaning, kept on version 1.
   A `system health` problem names its processes in `subjects` (a list of
   `service`, `process` and `target`) instead of its own `service`,

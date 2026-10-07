@@ -136,6 +136,7 @@ class Action(StrEnum):
     # session (see the specification's "Audit attribution").
     ADMIN_CMD_SCHEDULE_CONFIRM = "admin_cmd_schedule_confirm"
     ADMIN_CMD_TASK_RETRY = "admin_cmd_task_retry"
+    ADMIN_CMD_REFRESH_START = "admin_cmd_refresh_start"
 
 
 # Closed field identifiers are operational metadata, never census values.

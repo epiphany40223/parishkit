@@ -1427,8 +1427,10 @@ signatures:
   under [fresh-gated actions](#fresh-gated-actions-from-the-command-line) and
   [secret replacement](#secret-replacement), including the post-cleanup check
   in `confirmation_commands`.
-- **PR 6:** the refresh request from `refresh_views._request`; sample and
-  chosen-Family tests (`campaign_mail`, `campaign_family_test`).
+- **PR 6a:** the refresh request and the page's read from `refresh_views`
+  (`request_manual_refresh`, `read_refresh_page`).
+- **PR 6b and 6c:** sample and chosen-Family tests (`campaign_mail`,
+  `campaign_family_test`).
 - **PR 7:** `delivery_control_commands` onto the caller; the maintenance
   switch from `family_maintenance_views`.
 - **PR 8:** report and export reads and export actions from the report and
@@ -1553,10 +1555,33 @@ that background work holds while mail is sent, is `stale_version`. Its
 
 | URL names | Command or exemption |
 | --- | --- |
-| `source_refresh` | `refresh start`, `refresh status` (PR 6) |
+| `source_refresh` | `refresh start`, `refresh status` (PR 6a) |
 | `background_task_page`, `background_task_status` for the run | `task show --watch` (PR 3a) |
 
 See [manual ParishSoft refresh](../admin-portal/spec.md#manual-parishsoft-refresh).
+
+`refresh start [--request-key UUID]` (PR 6a) is the page's confirmation,
+through the page's own `request_manual_refresh`. The page asks for no fresh
+sign-in and no typed value, so it does not prompt. It admits as the page's
+form post does (`CONFIGURE`, recording activity, so it needs a full-scope
+session) and runs in the delivery pages' command scope
+(`jobs.task_retries.command_scope`), whose work transaction the refresh
+domain's own joins, so the command and `admin_cmd_refresh_start` commit
+together; the event is recorded only for a new key. The key is the page's
+`request_key`, so a key crosses between the page and the command line and a
+repeat returns the original receipt (`command_id`, `request_id`,
+`task_root_id`; follow the run with `task show --watch`). A new key while a
+full refresh waits joins it, as on the page; while one runs, it queues one
+full refresh to follow it. The key must be a version 4 UUID, as the page's
+is. A key bound to another refresh
+is `invalid`; another organization or scope, or none configured, is
+`unavailable`, as the page answers 503. `refresh status` is the page's read
+(`read_refresh_page`): `running`, `waiting` (a full refresh a request would
+join), `lateness_minutes`, and `status`'s `source` facts without
+`refreshed_at`, from the same projection (which gives `status` the
+page's `late_minutes`, `resume_at` and `catching_up` too). It admits passively with
+`CONFIGURE`, for any session, and records no event, as the page records
+none.
 
 ### Schedules and configuration
 
@@ -2106,8 +2131,9 @@ Administrator's approval of that deploy.
   of `require_fresh` (including the secret replacement call sites) and the
   post-cleanup check; the confirmation prompt and `--yes`; the fresh-gated
   notices.
-- **PR 6, refresh and Testing sends:** `refresh start`, `refresh status`,
-  `test sample` and chosen-Family tests.
+- **PR 6, refresh and Testing sends,** in three parts. **PR 6a:**
+  `refresh start` and `refresh status`. **PR 6b:** `test sample`. **PR 6c:**
+  chosen-Family tests, after PR 5.
 - **PR 7, delivery controls:** pause, resume, closed-campaign resolution and
   Family portal maintenance.
 - **PR 8, reports and exports:** report reads, exports with streamed fetch
