@@ -58,3 +58,31 @@ def test_finished_key_changes_stop_showing_after_an_hour():
     old = SimpleNamespace(updated_at=now - timedelta(minutes=70))
     assert not credentials._settled_long_ago(recent)
     assert credentials._settled_long_ago(old)
+
+
+def test_a_rules_schedule_is_retained_exactly_whatever_the_form_sends():
+    """Saving other settings keeps a schedule saved with its rules (#632) as stored."""
+    from parishkit.stewardship.source.refresh_rules import stored_settings
+
+    schedule = stored_settings(
+        {
+            "rules": [{"kind": "full", "every": 60, "from": "00:00", "to": "12:00"}],
+            "skips": [],
+            "skip_around_family_emails": False,
+        }
+    )
+    before = {"organization_id": "1"} | schedule
+    posted = {
+        "organization_id": "2",
+        "full_refresh": "hourly",
+        "full_refresh_times": ["02:00"],
+        "delta_refresh": "quarter_hour",
+    }
+    assert (
+        _retain_unused_time("parishsoft", posted, before)
+        == {"organization_id": "2"} | schedule
+    )
+    # Without rules the old behavior holds: a daily schedule is the form's.
+    legacy = {"organization_id": "1", "full_refresh_times": ["03:00"]}
+    daily = {"organization_id": "1", "full_refresh_times": ["04:00"]}
+    assert _retain_unused_time("parishsoft", daily, legacy) == daily

@@ -34,6 +34,8 @@ NOT_KEY_SCOPE = frozenset(
         "full_refresh",
         "full_refresh_times",
         "delta_refresh",
+        "quick_refresh_times",
+        "refresh_rules",
         "sender_name",
     }
 )

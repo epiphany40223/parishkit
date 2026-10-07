@@ -76,6 +76,12 @@ category on a reviewed event, and never opens an incident or sends mail:
   [Family mail dispatch guide](stewardship-family-mail-dispatch.md#reminders-prepared-ahead-of-their-due-time)).
   A dedicated event is
   [#584](https://github.com/epiphany40223/parishkit/issues/584).
+- `refresh_catch_up_refused` (on `startup_validated`, #632): the database's
+  refresh-tick guard refused the schedule-change catch-up full refresh,
+  usually because the configuration changed between the scheduler's
+  decision and its insert. Only the catch-up was dropped; scheduled
+  refreshes still run. Logged once per scheduler process for each catch-up;
+  if it repeats, run **Run a full refresh now** and report it.
 
 ## Checkpoints
 
