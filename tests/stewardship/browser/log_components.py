@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.audit.log_rows import (
     LEVEL_LABELS,
@@ -212,7 +213,8 @@ def components(context, admin):
     def live(query, rows, **options):
         """``page`` with every form posting to LIVE."""
         html = page(query, rows, action=LIVE, **options)
-        return html.replace('action="/admin/logs#', f'action="{LIVE}#')
+        # Reverse the real address so this follows any move of System logs.
+        return html.replace(f'action="{reverse("admin:logs")}#', f'action="{LIVE}#')
 
     ticks = {key: "yes" for key in ("applied", "info", "warning", "error", "audit")}
     shown = LogQuery.parse(ticks)
