@@ -5,6 +5,7 @@ provider authority nor recipient access; dispatch has a separate owning boundary
 """
 
 from django.db import models
+from django.db.models import Exists, OuterRef
 from django.db.models.functions import Now
 
 from parishkit.stewardship.storage import (
@@ -186,3 +187,28 @@ class OperationalRecipient(ImmutableRecord):
                 fields=["cohort", "address"], name="ops_recipient_address"
             ),
         ]
+
+
+def unowned_notices(task_type):
+    """Notice ids no Task of ``task_type`` owns yet, oldest first.
+
+    The operational producers' intake (email preparation and Slack). A notice
+    is owned by its Task in every state, settled ones included, so it is never
+    allocated twice. Written as ``NOT EXISTS``, not ``NOT IN``
+    (``exclude(pk__in=...)``): PostgreSQL turns it into an anti-join that
+    probes ``task_type_request`` (#641), with no hashed sub-plan whose memory
+    limit would make it rescan the owned list per notice once a type owns
+    about 100,000 notices, and a Task with no domain request cannot hide
+    every notice, as it would under ``NOT IN`` (#685).
+    """
+    # Imported here: models.py imports this module at its end.
+    from .models import TaskRun
+
+    owned = TaskRun.objects.filter(
+        task_type=task_type, domain_request_id=OuterRef("pk")
+    )
+    return (
+        OperationalNotice.objects.filter(~Exists(owned))
+        .order_by("created_at", "pk")
+        .values_list("pk", flat=True)
+    )

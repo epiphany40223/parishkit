@@ -12,11 +12,11 @@ from parishkit.stewardship.campaigns.domain import SystemMode
 
 from .alert_owner import AlertOwner
 from .family_mail_dispatch import FamilyDeliveryHeld
-from .models import TaskRun
 from .operational_models import (
     OperationalCohort,
     OperationalNotice,
     OperationalRecipient,
+    unowned_notices,
 )
 from .operational_routing import current_mail, notice_alert
 
@@ -43,12 +43,7 @@ def _configured():
 
 def _pending(limit):
     """Notices not yet owned by a preparation Task, oldest first."""
-    owned = TaskRun.objects.filter(task_type=TASK_TYPE).values("domain_request_id")
-    return tuple(
-        OperationalNotice.objects.exclude(pk__in=owned)
-        .order_by("created_at", "pk")
-        .values_list("pk", flat=True)[:limit]
-    )
+    return tuple(unowned_notices(TASK_TYPE)[:limit])
 
 
 # The routing reader, the envelope compiler and the private submitter are
