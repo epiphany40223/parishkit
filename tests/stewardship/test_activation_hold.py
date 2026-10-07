@@ -111,17 +111,33 @@ def test_wait_retries_a_step_until_the_activation_commits(monkeypatch):
     assert len(attempts) == 3
 
 
-def test_worker_wait_gives_up_with_a_durable_timeout_entry(monkeypatch):
-    """Background work records the abandoned wait: what, limit and elapsed."""
+def own_entries(monkeypatch):
+    """Capture ``record_timeout`` calls; return the activation wait's own.
+
+    The patch is process-wide and production callers import the recorder
+    lazily, so a daemon thread an earlier test left behind (a lease renewal,
+    a liveness thread) could record its own timeout into it during the wait
+    (#542, #549). Only ``configuration_activation`` records are this test's.
+    """
     from parishkit.stewardship.audit import timeouts
 
-    monkeypatch.setattr(activation_hold, "POLL_SECONDS", 0.01)
-    entries, task = [], uuid4()
+    entries = []
     monkeypatch.setattr(
         timeouts,
         "record_timeout",
         lambda event, **facts: entries.append((event, facts)),
     )
+    return lambda: [
+        (event, facts)
+        for event, facts in entries
+        if facts.get("what") == "configuration_activation"
+    ]
+
+
+def test_worker_wait_gives_up_with_a_durable_timeout_entry(monkeypatch):
+    """Background work records the abandoned wait: what, limit and elapsed."""
+    monkeypatch.setattr(activation_hold, "POLL_SECONDS", 0.01)
+    entries, task = own_entries(monkeypatch), uuid4()
 
     def step():
         """The change never finishes activating."""
@@ -129,7 +145,7 @@ def test_worker_wait_gives_up_with_a_durable_timeout_entry(monkeypatch):
 
     with pytest.raises(AuthorityChanging):
         activation_hold.wait_out_activation(step, limit=0.05, task_id=task)
-    ((event, facts),) = entries
+    ((event, facts),) = entries()
     assert event is LogEvent.TASK_TIMED_OUT
     assert facts["what"] == "configuration_activation" and facts["level"] == "WARNING"
     assert facts["task_id"] == task and facts["limit_seconds"] == 0.05
@@ -138,12 +154,11 @@ def test_worker_wait_gives_up_with_a_durable_timeout_entry(monkeypatch):
 
 def test_web_wait_gives_up_in_the_process_log_only(monkeypatch, caplog):
     """An Admin poll's give-up is a WARNING line, never a durable entry."""
-    from parishkit.stewardship.audit import timeouts
-
     monkeypatch.setattr(activation_hold, "POLL_SECONDS", 0.01)
-    monkeypatch.setattr(
-        timeouts, "record_timeout", lambda *a, **k: pytest.fail("durable entry")
-    )
+    # Recorded, not failed inside the recorder: a stray thread's record
+    # would otherwise trip it, and a failure raised on another thread does
+    # not fail this test anyway.
+    entries = own_entries(monkeypatch)
 
     def step():
         """The change never finishes activating."""
@@ -154,6 +169,7 @@ def test_web_wait_gives_up_in_the_process_log_only(monkeypatch, caplog):
         pytest.raises(AuthorityChanging),
     ):
         activation_hold.wait_out_activation(step, limit=0.05, durable=False)
+    assert entries() == [], "no durable entry for a web wait"
     (record,) = [r for r in caplog.records if r.msg == LogEvent.TASK_TIMED_OUT]
     assert record.levelno == logging.WARNING
     context = getattr(record, STRUCTURED_EXTRA_FIELD)

@@ -335,11 +335,18 @@ def test_deadline_entry_keeps_the_readers_correlation(tmp_path, monkeypatch):
 
     identifier = family_campaign(tmp_path)
     recorded, aborted = [], Event()
-    monkeypatch.setattr(
-        timeouts,
-        "record_timeout",
-        lambda event, **values: recorded.append(current_correlation()),
-    )
+
+    def record(event, **values):
+        """Keep the read guard's own entries' correlation ids.
+
+        The patch is process-wide and production callers import the recorder
+        lazily, so another test's leftover daemon thread could record its own
+        timeout here during the wait (#542, #549).
+        """
+        if values.get("what") == "read_guard":
+            recorded.append(current_correlation())
+
+    monkeypatch.setattr(timeouts, "record_timeout", record)
     limits = ReadLimits(
         interactive_seconds=2,
         download_seconds=2,
