@@ -9,6 +9,7 @@ Duplicate transport hints remain harmless even across a connection-loss race.
 from contextlib import contextmanager
 from dataclasses import dataclass
 from threading import Event, get_ident, local
+from time import monotonic
 
 from django.db import connection
 
@@ -18,6 +19,11 @@ from .scanning import ScanCursor, collect_hints
 
 SCHEDULER_LOCK = (736229, 1)
 _scope = local()
+
+# How long one server-side ownership confirmation stands (#629). Every check
+# still verifies this thread, connection object and open state; only the
+# pg_locks query is skipped within this interval of the last one that passed.
+PROBE_SECONDS = 1.0
 
 
 class SchedulerBusy(RuntimeError):
@@ -42,10 +48,29 @@ class ScanResult:
 
 
 class SchedulerGuard:
-    """Check both local connection continuity and actual server-side ownership."""
+    """Check both local connection continuity and actual server-side ownership.
+
+    The local checks (same thread, same open connection object, guard still
+    in scope) run on every call. The server-side ``pg_locks`` query confirms
+    the lock itself, but reading ``pg_locks`` takes every lock-manager
+    partition, and the producers call ``check`` around each step, dozens of
+    times in every idle 2-second loop (#629). So a passed query stands for
+    ``PROBE_SECONDS``: it runs at most once a second, which still means at
+    the start of every loop, since loops are at least 2 seconds apart.
+
+    Within that second a session the server ended (pg_terminate_backend,
+    idle_session_timeout, a dropped network) still looks open until its
+    next statement fails, so one check can pass. That is safe: database work
+    on the dead session fails at its next statement, the SQL guards that
+    need scheduler ownership check lock 736229 in the caller's own session,
+    and the only exposure is a duplicate hint, which claim_hint() ignores
+    under the task's row lock. See the background-processing spec.
+    """
 
     def __init__(self, raw):
-        self.raw, self.thread = raw, get_ident()
+        self.raw, self.thread, self.clock = raw, get_ident(), monotonic
+        # When the server last confirmed ownership; None forces the query.
+        self.confirmed = None
 
     def check(self):
         """Every scan/publication boundary verifies the same live owning session."""
@@ -56,6 +81,9 @@ class SchedulerGuard:
             or getattr(_scope, "guard", None) is not self
         ):
             raise SchedulerOwnershipLost("The scheduler session is no longer owned.")
+        now = self.clock()
+        if self.confirmed is not None and now - self.confirmed < PROBE_SECONDS:
+            return
         try:
             with self.raw.cursor() as cursor:
                 cursor.execute(
@@ -72,6 +100,7 @@ class SchedulerGuard:
             raise SchedulerOwnershipLost(
                 "The scheduler session is no longer owned."
             ) from None
+        self.confirmed = now
 
 
 @contextmanager
