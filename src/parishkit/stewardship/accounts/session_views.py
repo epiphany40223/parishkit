@@ -33,6 +33,9 @@ def _deadlines(request, *, activity):
             store=service.store,
             activity=activity,
             read_only=not activity,
+            # A passive read of deadlines: a session whose roles changed is
+            # still signed in (the renewal POST rotates it instead).
+            stale_authority=not activity,
         )
     except (ConfigError, LimiterUnavailable):
         return JsonResponse({"state": "unavailable"}, status=503)

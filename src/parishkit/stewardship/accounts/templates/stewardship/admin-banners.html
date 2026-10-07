@@ -67,9 +67,9 @@
       </div>
       <div id="session-expired" hidden>
         <h2 id="session-expired-title">{% translate "You've been signed out" %}</h2>
-        <p data-session-ended="idle">{% translate "For security, you were signed out after a period of inactivity. Any change you had not saved was not kept." %}</p>
-        <p data-session-ended="limit" hidden>{% translate "Your sign-in reached its time limit, so you were signed out. Any change you had not saved was not kept." %}</p>
-        <p data-session-ended="other" hidden>{% translate "You are no longer signed in. You may have signed out in another tab, or your access to the Admin portal changed. Any change you had not saved was not kept." %}</p>
+        <p id="session-ended-idle" data-session-ended="idle">{% translate "For security, you were signed out after a period of inactivity. Any change you had not saved was not kept." %}</p>
+        <p id="session-ended-limit" data-session-ended="limit" hidden>{% translate "Your sign-in reached its time limit, so you were signed out. Any change you had not saved was not kept." %}</p>
+        <p id="session-ended-other" data-session-ended="other" hidden>{% translate "You are no longer signed in. You may have signed out in another tab, or your access to the Admin portal ended. Any change you had not saved was not kept." %}</p>
         <div class="session-dialog-actions">{% url 'admin:login' as button_href %}{% button variant="primary" href=button_href %}{% translate "Sign in again" %}{% endbutton %}</div>
       </div>
     </form>

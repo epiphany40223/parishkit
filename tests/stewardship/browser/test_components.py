@@ -626,7 +626,7 @@ def test_admin_activity_never_uses_family_keepalive(page, component_origin):
 def test_admin_dialog_treats_signed_out_status_as_ended(page, component_origin):
     """A 401 status read ends the session at once, without blaming inactivity.
 
-    Signing out in another tab (or a change of access) makes the passive
+    Signing out in another tab (or losing access) makes the passive
     status read answer 401 long before the countdown ends (#457 M4).
     """
     from playwright.sync_api import expect
@@ -645,6 +645,10 @@ def test_admin_dialog_treats_signed_out_status_as_ended(page, component_origin):
         "signed out in another tab"
     )
     expect(page.locator('[data-session-ended="idle"]')).to_be_hidden()
+    # The dialog is described by the cause it shows.
+    expect(page.locator("dialog.session-dialog")).to_have_attribute(
+        "aria-describedby", "session-ended-other"
+    )
     # The countdown stops: later ticks never reopen the warning.
     page.clock.fast_forward(60 * 60 * 1000)
     expect(page.locator("#session-warning")).to_be_hidden()
@@ -712,6 +716,64 @@ def test_admin_dialog_defers_to_activity_in_another_tab(page, component_origin):
     page.evaluate("() => true")  # one round trip after the clock jump
     expect(page.locator("dialog.session-dialog")).to_be_hidden()
     assert statuses and all(request.method == "GET" for request in statuses)
+
+
+@pytest.mark.parametrize("failure", ["http", "transport"])
+def test_admin_dialog_ignores_a_failed_status_read(page, component_origin, failure):
+    """A 5xx or a network failure is not a sign-out: no dialog opens (#755 L3)."""
+    from playwright.sync_api import expect
+
+    page.clock.install(time=NOW)
+    statuses = []
+
+    def status(route):
+        """The status endpoint is unavailable or unreachable."""
+        statuses.append(route.request)
+        if failure == "transport":
+            route.abort("failed")
+        else:
+            route.fulfill(status=503, json={"state": "unavailable"})
+
+    page.route("**/admin/session/status", status)
+    page.goto(component_origin + "/home")
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    page.clock.fast_forward(2000)
+    page.evaluate("() => true")  # one round trip after the clock jump
+    assert statuses
+    expect(page.locator("dialog.session-dialog")).to_be_hidden()
+
+
+def test_admin_dialog_names_the_time_limit_when_it_ends(page, component_origin):
+    """Past the absolute limit the ended dialog names the limit, not inactivity."""
+    from playwright.sync_api import expect
+
+    page.clock.install(time=NOW)
+    page.route(
+        "**/admin/session/status",
+        lambda route: route.fulfill(
+            json={
+                "state": "active",
+                "server_now": NOW.isoformat(),
+                "idle_deadline": (NOW + timedelta(minutes=4)).isoformat(),
+                "absolute_deadline": (NOW + timedelta(minutes=4)).isoformat(),
+            }
+        ),
+    )
+    page.goto(component_origin + "/home")
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    page.clock.fast_forward(2000)
+    expect(page.locator("#session-warning")).to_be_visible()
+    # Later reads find no answer (the component server has no status), so
+    # the countdown runs out on the deadlines already adopted.
+    page.unroute("**/admin/session/status")
+    page.clock.fast_forward(5 * 60 * 1000)
+    expect(page.locator("#session-expired")).to_be_visible()
+    expect(page.locator('[data-session-ended="limit"]')).to_be_visible()
+    expect(page.locator('[data-session-ended="idle"]')).to_be_hidden()
+    expect(page.locator('[data-session-ended="other"]')).to_be_hidden()
+    expect(page.locator("dialog.session-dialog")).to_have_attribute(
+        "aria-describedby", "session-ended-limit"
+    )
 
 
 def test_admin_dialog_near_absolute_limit_offers_sign_in_only(page, component_origin):

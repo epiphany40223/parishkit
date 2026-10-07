@@ -125,3 +125,41 @@ def test_renewal_keeps_the_setup_attempt_alive(setup_http, google):
         )
         assert saved.status_code == 302, saved.content
         assert SetupAttempt.objects.get().state == "collecting"
+
+
+def test_status_reads_deadlines_after_a_role_change(auth_service, google, monkeypatch):
+    """A changed role is not a signed-out session: status still answers (#755).
+
+    The passive read neither rotates nor revokes the session and records no
+    privilege change; the next ordinary request rotates it as usual.
+    """
+    from parishkit.stewardship.accounts import sessions
+    from parishkit.stewardship.audit.models import AuditEvent
+
+    browser, _ = signed_in()
+    row = PortalSession.objects.get(revoked_at__isnull=True)
+    monkeypatch.setattr(sessions, "_authority_fingerprint", lambda _: "changed")
+    status = browser.get(STATUS)
+    assert status.status_code == 200, status.content
+    assert set(status.json()) == {
+        "state",
+        "server_now",
+        "idle_deadline",
+        "absolute_deadline",
+    }
+    assert instant(status.json()["absolute_deadline"]) == row.expires_at
+    after = PortalSession.objects.get(pk=row.pk)
+    assert after.revoked_at is None and after.version == row.version
+    assert not AuditEvent.objects.filter(event_type="admin_privileges_changed")
+    # The renewal is ordinary activity, so it rotates the session as before.
+    assert post(browser, RENEW, {}).status_code == 200
+    assert PortalSession.objects.get(pk=row.pk).revoked_at is not None
+    assert AuditEvent.objects.filter(event_type="admin_privileges_changed").count() == 1
+
+
+def test_stale_authority_is_only_for_read_only_checks():
+    """Admitting stale authority while renewing activity is a programming error."""
+    from parishkit.stewardship.accounts.sessions import authenticated_admin
+
+    with pytest.raises(ValueError, match="read-only"):
+        authenticated_admin(None, store=None, stale_authority=True)

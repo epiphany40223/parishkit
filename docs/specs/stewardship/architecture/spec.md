@@ -380,8 +380,11 @@ is open, the page re-reads the deadlines from a passive status endpoint that
 renews nothing, so activity in another tab dismisses the warning. When the
 deadline passes the dialog reports that the Admin was signed out and links to
 sign-in. A status read that finds the session already ended (signed out in
-another tab, revoked, or the Admin's access changed) ends the countdown at once
-and shows the same dialog without blaming inactivity. Privileged operations such
+another tab, revoked, or the Admin's access removed) ends the countdown at once
+and shows the same dialog without blaming inactivity. A changed role is not an
+ended session: the status read still reports the deadlines, and the next page
+the Admin opens applies the new role. A failed status read (a server error or
+no connection) keeps the countdown going. Privileged operations such
 as Production transition, campaign reopening, ParishSoft publication, secret
 replacement, and purge require fresh Google re-authentication no older than
 five minutes, as do the code-only Family codes listing, Family-directory,

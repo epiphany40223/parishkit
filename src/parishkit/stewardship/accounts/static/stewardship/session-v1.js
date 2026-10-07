@@ -17,6 +17,9 @@
 
   const WARN_MS = 5 * 60 * 1000;
   const SYNC_MS = 30 * 1000;
+  // The clock offset trails the server by a request's latency, so a 401 this
+  // close to the deadline is still read as the deadline passing.
+  const GRACE_MS = 5 * 1000;
   const form = dialog.querySelector("[data-session-renew]");
   const warning = dialog.querySelector("#session-warning");
   const expired = dialog.querySelector("#session-expired");
@@ -93,14 +96,19 @@
   // ended some other way (signed out in another tab, or access changed).
   function showExpired() {
     signedOut = true;
-    const cause = deadline() > now() ? "other" : absolute <= idle ? "limit" : "idle";
+    const cause = deadline() - now() > GRACE_MS ? "other"
+      : absolute <= idle ? "limit" : "idle";
+    let shown = null;
     for (const reason of expired.querySelectorAll("[data-session-ended]")) {
       reason.hidden = reason.dataset.sessionEnded !== cause;
+      if (!reason.hidden) shown = reason;
     }
     warning.hidden = true;
     expired.hidden = false;
     dialog.setAttribute("aria-labelledby", "session-expired-title");
-    dialog.removeAttribute("aria-describedby");
+    // Describe the dialog by the one cause paragraph that is shown.
+    if (shown) dialog.setAttribute("aria-describedby", shown.id);
+    else dialog.removeAttribute("aria-describedby");
     if (!dialog.open) dialog.showModal();
     expired.querySelector("a")?.focus();
   }
