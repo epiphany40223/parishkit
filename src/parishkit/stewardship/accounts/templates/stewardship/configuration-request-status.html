@@ -1,0 +1,25 @@
+{% load i18n %}{% comment %}
+  A configuration change's live status: Change status draws it, and so does
+  an in-place settings page's review region (#532), which passes status_url
+  (Change status's passive read, naming that page with in_place) so the poll
+  never extends the sign-in. Read that way, the status carries follow_url
+  once the change is applied: a hidden follow-up that refreshes the settings
+  page in place, quietly, so its form starts from the applied settings. A
+  change that was not applied leaves the page alone, so its form keeps the
+  version it was reviewed at.
+{% endcomment %}<section class="panel" role="status" aria-live="polite" data-live-status="configuration"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-state="{{ receipt.state }}"{% if receipt.state != 'applied' and receipt.state != 'failed' and receipt.state != 'cancelled' %} data-live-pending{% endif %}>
+{% if receipt.state == 'applied' %}
+  <h2 class="live-done">{% translate "Applied: your change is saved" %}</h2><p>{% translate "The change has been applied and is now in effect." %}</p>
+{% elif receipt.state == 'failed' or receipt.state == 'cancelled' %}
+  <h2 class="live-failed">{% translate "Not applied" %}</h2>
+  {% if receipt.failure_code == 'invalid_candidate' %}<p>{% translate "This change could not be applied because it did not pass validation against the saved settings. Nothing was changed. Start the change again; if it keeps failing, check System logs." %}</p>
+  {% elif receipt.failure_code == 'stale_base' %}<p>{% translate "The settings changed after you reviewed this change, so it was not applied. Nothing was changed. Start the change again from the current settings." %}</p>
+  {% elif receipt.failure_code == 'actor_unauthorized' %}<p>{% translate "Your account is no longer allowed to make this change, so it was not applied. Nothing was changed." %}</p>
+  {% else %}<p>{% translate "Review the current configuration before starting a new change." %}</p>{% endif %}
+{% else %}
+  {% translate "Applying your change…" as running %}{% include 'stewardship/live-running.html' with message=running %}
+  <p>{% translate "This usually takes a few seconds. The change is not saved until this page says Applied." %}</p>
+{% endif %}
+  <p>{% translate "Request:" %} {{ receipt.request_id }}</p>
+{% if follow_url %}{% if receipt.state == 'applied' %}<a hidden data-live-follow data-in-place data-in-place-quiet href="{{ follow_url }}#settings-review">{% translate "Reload settings" %}</a>{% endif %}{% endif %}
+</section>

@@ -1363,6 +1363,50 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   status line: if it brings back a new key change in progress (another
   Administrator started one), the settings form and notes below it keep the
   state the page was loaded with until the next load.
+- **In-place review (#532).** Parish settings and Campaign settings review,
+  apply and follow a change on the page itself, not on separate Review and
+  Change status pages. The settings form is a `form[data-in-place]` marked
+  `data-table-sync`: its answer fills the review region under it, while the
+  form keeps the reader's typing and every script bound to it and takes only
+  its hidden fields (the version it edits) from the answer. The review shows
+  what the review page showed (each changed setting with its current and
+  proposed value, and the change's notes) and Apply, which posts the same
+  signed preview; its heading (`data-in-place-focus`) takes focus. Editing
+  the form after a review, or while its Review is in flight, withdraws the
+  review (`data-review-of`), so Apply never applies values other than those
+  shown: Apply is removed, the rest stays in place greyed out at no less
+  than its height (so nothing moves under the pointer), and its last line
+  says to review again. Confirmation answers with the
+  page again, naming the request (`?request=<id>#settings-review`), and the
+  region shows the change's live status, polled from Change status's passive
+  read (named with `in_place`, which only these two pages may be). Once the
+  change is applied, that read carries a hidden follow-up link marked
+  `data-in-place` and `data-in-place-quiet`, which the status script clicks,
+  so the page refreshes in place without moving focus and the form starts
+  from the applied version; reading a change's status this way never renews
+  idle time. A change that was not applied leaves the page alone. A Review
+  made while an earlier change is still being applied is checked against the
+  settings that change replaces, so once the earlier change applies, Apply
+  of the later one is refused when it runs (`stale_base`) and its status
+  says to start again from the current settings; nothing is changed. A
+  refused review (invalid values, nothing changed, a page changed elsewhere)
+  or a refused Apply (an out-of-date preview) is the page again with an
+  error summary in the review region, each field error linked to its field,
+  since the form itself is not replaced. A refusal keeps the form at the
+  version the reader's values came from (the one posted, or the one the
+  refused preview was reviewed at), never the current one, so a page whose
+  settings changed elsewhere is refused again until it is reloaded and can
+  never quietly propose undoing that change. For the same reason, Apply's
+  answer and the status refreshes after it draw the form at the version the
+  change was reviewed at until the change is applied, and then at the
+  version the change made; a full load of that address (a reload) draws the
+  current settings at the current version. A Review the server redirects to
+  another page (Campaign settings' dates-only change) loads it without this
+  page's region fragment. The step indicator is a region too, so it follows
+  Make changes, Review and Apply. The signed preview, optimistic
+  concurrency, capability and session rechecks, the durable request and its
+  audit are unchanged; a refusal that needs a fresh sign-in still shows its
+  page whole. Other editors keep their review and Change status pages.
 
 ### Page help
 
@@ -1646,6 +1690,8 @@ shows **Applying**, **Applied**, or a safe validation/error result; it never say
 Saved while only PostgreSQL or only YAML has changed. The dedicated installer
 and fail-closed mismatch recovery are defined by the
 [configuration architecture](../architecture/spec.md#configuration-and-secrets).
+Parish settings shows its review, Apply and that status
+[in place](#in-place-controls) under its form.
 
 Outgoing email settings (the setup mail step and the post-setup outgoing
 email integration) include an optional From name: a single line of at most 100
@@ -2242,6 +2288,9 @@ archive the current campaign, complete the guarded Return to Testing, optionally
 complete an exceptional purge and cleanup, and only then create its successor.
 The server checks all conditions in the draft-creation transaction; stale or
 direct requests cannot bypass them.
+
+Campaign settings reviews and applies its changes
+[in place](#in-place-controls) under its form, as Parish settings does.
 
 The campaign editor includes:
 

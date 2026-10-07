@@ -38,7 +38,6 @@ from parishkit.stewardship.source.catalog_names import (
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotFund, SnapshotMinistry
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 
 from . import admin_navigation, setup_help
@@ -48,6 +47,10 @@ from .admin_editing import (
     error_response,
     form_action,
     principal,
+    receipt_base,
+    requested_status,
+    review_region,
+    reviewed_base,
     sign_preview,
 )
 from .authentication import runtime
@@ -61,6 +64,12 @@ from .runtime_models import SystemConfiguration
 from .sessions import authenticated_admin
 
 SALT = "stewardship-campaign-structure-preview-v1"
+# The review's note when the change turns financial stewardship off.
+REMOVES_SHARE_OPTIONS = _(
+    "Disabling financial stewardship removes this draft's sharing options. "
+    "Re-enabling it starts with the default options, not your customized "
+    "labels. The previous configuration remains in retained history."
+)
 MULTIPLE_FIELDS = frozenset({"ministry_duids", "fund_duids", "comparison_fund_duids"})
 
 
@@ -209,12 +218,19 @@ def _target(configuration, campaigns, held, campaign_id):
     return campaign, editable
 
 
-def _page(request, configuration, campaign, form, *, editable, status=200):
-    """Keep locked structural values visible without rendering mutation controls."""
+def _page(request, configuration, campaign, form, *, editable, status=200, **region):
+    """Keep locked structural values visible without rendering mutation controls.
+
+    ``region`` is ``review_region``'s ``review``, ``receipt`` or ``refusal``
+    for the editor's in-place review region (#532).
+    """
     if editable:
-        # The first step of edit, review, apply (#196); a locked campaign's
+        # Edit, review, apply (#196), all on this page; a locked campaign's
         # read-only page is not part of any flow.
-        admin_navigation.place(request, flow="change", step="edit")
+        step = "review" if region.get("review") else "edit"
+        if region.get("receipt"):
+            step = "apply"
+        admin_navigation.place(request, flow="change", step=step)
     response = render(
         request,
         "stewardship/campaign-settings.html",
@@ -234,10 +250,11 @@ def _page(request, configuration, campaign, form, *, editable, status=200):
             and ProductionConfirmation.objects.filter(
                 request__campaign=campaign
             ).exists(),
+            **review_region("campaign_settings", form, **region),
         },
         status=status,
     )
-    if status == 400:
+    if status != 200:
         response.stewardship_safe_error = True
     return response
 
@@ -290,7 +307,7 @@ def _preview(request, service, actor, state, campaign, form):
     ]
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
-        raise StaleRecordError("The applied configuration changed.")
+        raise stale_page()
     try:
         build_candidate(base, patch, candidate_id=uuid4())
     except ConfigError:
@@ -302,28 +319,26 @@ def _preview(request, service, actor, state, campaign, form):
             ),
         )
         return _page(request, configuration, campaign, form, editable=True, status=400)
-    admin_navigation.place(request, flow="change", step="review")
-    return render(
-        request,
-        "stewardship/campaign-preview.html",
-        {
-            "removes_share_options": bool(previous.get("share_options"))
-            and "financial" not in values["modules"],
-            "changes": describe_changes(
-                previous,
-                values,
-                ministries=form.fields["ministry_duids"].choices,
-                funds=form.fields["fund_duids"].choices,
-            ),
-            "preview": sign_preview(
-                actor=actor,
-                configuration=configuration,
-                patch=patch,
-                salt=SALT,
-                snapshot=fingerprint,
-            ),
-        },
+    removes_share_options = (
+        bool(previous.get("share_options")) and "financial" not in values["modules"]
     )
+    review = {
+        "changes": describe_changes(
+            previous,
+            values,
+            ministries=form.fields["ministry_duids"].choices,
+            funds=form.fields["fund_duids"].choices,
+        ),
+        "notes": [REMOVES_SHARE_OPTIONS] if removes_share_options else [],
+        "preview": sign_preview(
+            actor=actor,
+            configuration=configuration,
+            patch=patch,
+            salt=SALT,
+            snapshot=fingerprint,
+        ),
+    }
+    return _page(request, configuration, campaign, form, editable=True, review=review)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -355,10 +370,22 @@ def retired_new(request):
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def campaign_settings(request, campaign_id):
-    """Read, preview and confirm a draft without direct runtime/configuration writes."""
+    """Read, preview and confirm a draft without direct runtime/configuration writes.
+
+    Review, apply and the change's status all happen on this page (#532). A
+    stale page or an out-of-date preview is refused in place: the page again
+    (status 409) with the explanation in its review region.
+    """
     try:
         service = runtime()
-        actor = principal(request, service)
+        # Reading a change's status (the page's own quiet refresh once it is
+        # applied) is passive, as Change status is: it never renews idle time.
+        actor = principal(
+            request,
+            service,
+            passive=request.method != "POST" and "request" in request.GET,
+        )
+        action, refusal, digest = None, None, None
         if request.method == "POST":
             action = form_action(
                 request.POST,
@@ -366,28 +393,52 @@ def campaign_settings(request, campaign_id):
                 multiple_fields=MULTIPLE_FIELDS,
             )
             if action == "confirm":
-                response = confirm(
-                    request, service, actor, salt=SALT, current_scope=_scope
-                )
-                response["Cache-Control"] = "no-store"
-                return response
-        else:
-            filters(request.GET, allowed=set())
+                try:
+                    response = confirm(
+                        request,
+                        service,
+                        actor,
+                        salt=SALT,
+                        current_scope=_scope,
+                        in_place=True,
+                    )
+                    response["Cache-Control"] = "no-store"
+                    return response
+                except UserFacingStale as error:
+                    # Drawn below with the current settings' form, kept at
+                    # the version the change was reviewed at, so a page
+                    # changed elsewhere needs a reload before the next
+                    # Review (admin_editing.reviewed_base).
+                    refusal = error.refusal
+                    digest = reviewed_base(request.POST, SALT)
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
             else work_transaction()
         ):
+            receipt = (
+                requested_status(request, service, actor, request.GET)
+                if request.method != "POST"
+                else None
+            )
+            if receipt is not None:
+                # In place, the form keeps the reader's values
+                # (admin_editing.receipt_base); a full load uses the current
+                # version, matching the current values it draws.
+                digest = receipt_base(request, receipt)
             state = _state(service)
             configuration, campaigns, source, held = state[:4]
             campaign, editable = _target(configuration, campaigns, held, campaign_id)
             previous = campaign.active_configuration.values
             ministries, funds = _catalog(configuration, source, previous)
             initial = initial_fields(
-                previous, digest=configuration.active_configuration.digest
+                previous,
+                digest=configuration.active_configuration.digest
+                if digest is None
+                else digest,
             )
             form = CampaignForm(
-                request.POST if request.method == "POST" else None,
+                request.POST if action == "preview" else None,
                 initial=initial,
                 previous=previous,
                 ministries=ministries,
@@ -395,7 +446,17 @@ def campaign_settings(request, campaign_id):
             )
             # Same plain-language field help as the setup wizard (setup_help.py).
             setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
-            if request.method == "POST":
+            if refusal is not None and editable:
+                response = _page(
+                    request,
+                    configuration,
+                    campaign,
+                    form,
+                    editable=True,
+                    status=409,
+                    refusal=refusal,
+                )
+            elif request.method == "POST":
                 if not editable:
                     raise UserFacingStale(
                         _("These campaign settings are locked."),
@@ -405,10 +466,26 @@ def campaign_settings(request, campaign_id):
                             "active, and while no background work is running."
                         ),
                     )
-                response = _preview(request, service, actor, state, campaign, form)
+                try:
+                    response = _preview(request, service, actor, state, campaign, form)
+                except UserFacingStale as error:
+                    response = _page(
+                        request,
+                        configuration,
+                        campaign,
+                        form,
+                        editable=True,
+                        status=409,
+                        refusal=error.refusal,
+                    )
             else:
                 response = _page(
-                    request, configuration, campaign, form, editable=editable
+                    request,
+                    configuration,
+                    campaign,
+                    form,
+                    editable=editable,
+                    receipt=receipt,
                 )
         # Recheck access after the observation ends, so a GET's read-only
         # snapshot cannot hide a revocation committed while it rendered.

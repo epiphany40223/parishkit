@@ -180,8 +180,12 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     confirmed = parish.post(
         browser, {"action": "confirm", "preview": parish.token(review)}
     )
-    assert confirmed.status_code == 302
-    status = browser.get(confirmed["Location"])
+    # Parish settings applies in place (#532): its own page shows step 3.
+    assert flow_steps(browser.get(confirmed["Location"]).content) == (STEPS, "Apply")
+    status_url = reverse(
+        "admin:configuration_request", args=[parish.requested(confirmed)]
+    )
+    status = browser.get(status_url)
     assert status.status_code == 200
     body = status.content
     assert flow_steps(body) == (STEPS, "Apply")
@@ -192,7 +196,7 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     assert f'<a href="{parish.URL}" aria-current="true">'.encode() in body
     # A different sign-in does not know the origin: the trail is just Home.
     other, _ = signed_in()
-    body = other.get(confirmed["Location"]).content
+    body = other.get(status_url).content
     assert b'<a href="/admin/">Return to Home</a>' in body
     trail = body[body.index(b'aria-label="Breadcrumb"') :]
     assert b"Parish settings" not in trail[: trail.index(b"</nav>")]

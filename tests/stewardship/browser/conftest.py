@@ -22,6 +22,7 @@ from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoForm
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
+from parishkit.stewardship.accounts.campaign_views import REMOVES_SHARE_OPTIONS
 from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.accounts.integration_credentials import (
     CredentialSummary,
@@ -31,7 +32,7 @@ from parishkit.stewardship.accounts.integration_forms import (
     IntegrationForm,
 )
 from parishkit.stewardship.accounts.ministry_views import CATALOG_SORTING
-from parishkit.stewardship.accounts.parish_views import ParishForm
+from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.accounts.schedule_changes import describe as _describe
 from parishkit.stewardship.accounts.schedule_forms import Schedules, ScheduleWindow
@@ -105,6 +106,8 @@ from .security_components import POSTS as SECURITY_POSTS
 from .security_components import components as security_components
 from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
+from .settings_components import POSTS as SETTINGS_POSTS
+from .settings_components import components as settings_components
 from .step_up_components import components as step_up_components
 from .system_health_components import components as system_health_components
 from .talent_components import components as talent_components
@@ -1699,18 +1702,44 @@ def component_origin():
                 ),
             },
         ),
+        # Campaign settings with its review shown in place (#532).
         (
             "/campaign-preview",
-            "campaign-preview",
+            "campaign-settings",
             {
-                "preview": "synthetic-signed-intent",
-                "changes": [
-                    {
-                        "label": "Campaign timezone",
-                        "before": None,
-                        "after": "America/New_York",
-                    }
-                ],
+                "campaign": {
+                    "pk": uuid4(),
+                    "state": "draft",
+                    "active_configuration": {"name": "Sample campaign"},
+                },
+                "editable": True,
+                "form": setup_help.apply(
+                    CampaignForm(
+                        initial={
+                            "name": "Sample campaign",
+                            "timezone": "America/New_York",
+                            "start_date": "2026-10-01",
+                            "end_date": "2026-10-31",
+                            "census": True,
+                            "base_digest": "a" * 64,
+                        },
+                        ministries=[("4", "Community outreach")],
+                        funds=[("9", "Offertory")],
+                    ),
+                    setup_help.ADMIN_CAMPAIGN,
+                    replace=True,
+                ),
+                "review": {
+                    "preview": "synthetic-signed-intent",
+                    "changes": [
+                        {
+                            "label": "Campaign timezone",
+                            "before": None,
+                            "after": "America/New_York",
+                        }
+                    ],
+                    "notes": [REMOVES_SHARE_OPTIONS],
+                },
             },
         ),
         (
@@ -1772,19 +1801,35 @@ def component_origin():
                 ),
             },
         ),
+        # Parish settings with its review shown in place (#532).
         (
             "/parish-preview",
-            "parish-preview",
+            "parish-settings",
             {
-                "changes": [
-                    {
-                        "label": "Parish timezone",
-                        "before": "America/New_York",
-                        "after": "America/Los_Angeles",
+                "configuration": {
+                    "mode": "testing",
+                    "testing_recipient": "testing@example.org",
+                },
+                "form": ParishForm(
+                    initial={
+                        "name": "Sample Parish",
+                        "website": "https://example.org",
+                        "timezone": "America/Los_Angeles",
+                        "phone": "+12125551234",
+                        "base_digest": "a" * 64,
                     }
-                ],
-                "timezone_changed": True,
-                "preview": "synthetic-signed-intent",
+                ),
+                "review": {
+                    "changes": [
+                        {
+                            "label": "Parish timezone",
+                            "before": "America/New_York",
+                            "after": "America/Los_Angeles",
+                        }
+                    ],
+                    "notes": [TIMEZONE_NOTE],
+                    "preview": "synthetic-signed-intent",
+                },
             },
         ),
         (
@@ -1931,6 +1976,7 @@ def component_origin():
     responses.update(workgroup_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
+    responses.update(settings_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(step_up_components(context, admin))
@@ -1947,6 +1993,7 @@ def component_origin():
         | FIND_FAMILY_POSTS
         | SECURITY_POSTS
         | LIVE_STATUS_POSTS
+        | SETTINGS_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),

@@ -31,6 +31,7 @@ from parishkit.stewardship.web import dates
 from .auth_builders import signed_in
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
+from .test_parish_views_postgresql import requested
 from .test_policy_postgresql import user
 from .test_response_http_postgresql import load_form
 from .test_response_revisit_postgresql import revisit
@@ -91,10 +92,7 @@ def test_parish_settings_choose_the_format_for_admin_pages(auth_service, google)
     assert "January 1, 2027" in body and "1 January 2027" in body
     proposal = unescape(re.search(r'name="preview" value="([^"]+)"', body).group(1))
     response = post(browser, {"action": "confirm", "preview": proposal})
-    assert response.status_code == 302
-    request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
-    )
+    request = ConfigurationChangeRequest.objects.get(pk=requested(response))
     assert install_request(store, request_id=request.pk, correlation_id=uuid4())
     values = store.active().document()["sections"]["parish"][0]["values"]
     assert values["date_format"] == "eu_long"
