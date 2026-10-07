@@ -2,7 +2,6 @@
 
 import pytest
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -24,7 +23,7 @@ PAGES = (
 def test_portal_users_mobile_keyboard_and_accessibility(
     page, component_origin, axe_source, width
 ):
-    """Wide tables stay reachable and readable at phone width without scripts."""
+    """Wide tables stay reachable, readable and accessible at phone width."""
     page.set_viewport_size({"width": width, "height": 900})
     for path in PAGES:
         page.goto(component_origin + path)
@@ -133,36 +132,53 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     )
 
 
-def test_rule_changes_post_natively_without_scripts(browser_engine, component_origin):
-    """A row's ticks and the add forms post to the rules route, never a URL."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/portal-users")
-        page.route("**/users/rules", lambda route: route.fulfill(body="Reviewed"))
-        leader = page.get_by_role("row", name="leader@workspace.example", exact=False)
-        leader.get_by_label("Ministry leader").uncheck()
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            leader.get_by_role("button", name="Review role change").click()
-        body = sent.value.post_data
-        assert "kind=address" in body and "identity=leader%40workspace.example" in body
-        assert "operation=set" in body and "roles=staff" in body
-        assert "roles=ministry_leader" not in body and "action=preview" in body
-        assert "base_digest=" in body and "?" not in sent.value.url
-        assert sent.value.url.endswith("/users/rules")
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Reviewed", exact=True))
+def _review_request(page, button):
+    """Click ``button`` (with the rules route answered) and return its POST."""
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        button.click()
+    # Let the routed answer finish loading before the next navigation,
+    # which it would otherwise interrupt (#623).
+    visible(page.get_by_text("Reviewed", exact=True))
+    assert "?" not in sent.value.url and sent.value.url.endswith("/users/rules")
+    return sent.value.post_data
 
-        page.goto(component_origin + "/portal-users")
-        page.get_by_label("Hosted domain").fill("Parish.Example")
-        page.get_by_role("group", name="Add a hosted-domain rule").get_by_label(
-            "Staff"
-        ).check()
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Review new domain rule").click()
-        body = sent.value.post_data
-        assert "kind=domain" in body and "identity=Parish.Example" in body
-        assert "roles=staff" in body and "roles=administrator" not in body
-    finally:
-        context.close()
+
+def test_rule_review_forms_post_to_the_rules_route(page, component_origin):
+    """Each row's review buttons and the add forms post their identifying
+    values in the body to the rules route, never a URL.
+
+    "Review removal" always posts natively. "Review role change" does too
+    when users-v1.js exits early in an older browser (no
+    crypto.randomUUID); otherwise row ticks autosave
+    (test_rule_autosave.py).
+    """
+    page.route("**/users/rules", lambda route: route.fulfill(body="Reviewed"))
+    page.goto(component_origin + "/portal-users")
+    leader = page.get_by_role("row", name="leader@workspace.example", exact=False)
+    body = _review_request(page, leader.get_by_role("button", name="Review removal"))
+    assert "kind=address" in body and "identity=leader%40workspace.example" in body
+    assert "operation=remove" in body and "roles=" in body
+    assert "action=preview" in body and "base_digest=" in body
+
+    page.add_init_script("delete Crypto.prototype.randomUUID")
+    page.goto(component_origin + "/portal-users")
+    leader = page.get_by_role("row", name="leader@workspace.example", exact=False)
+    leader.get_by_label("Ministry leader").uncheck()
+    body = _review_request(
+        page, leader.get_by_role("button", name="Review role change")
+    )
+    assert "kind=address" in body and "identity=leader%40workspace.example" in body
+    assert "operation=set" in body and "roles=staff" in body
+    assert "roles=ministry_leader" not in body and "action=preview" in body
+    assert "base_digest=" in body
+
+    page.goto(component_origin + "/portal-users")
+    page.get_by_label("Hosted domain").fill("Parish.Example")
+    page.get_by_role("group", name="Add a hosted-domain rule").get_by_label(
+        "Staff"
+    ).check()
+    body = _review_request(
+        page, page.get_by_role("button", name="Review new domain rule")
+    )
+    assert "kind=domain" in body and "identity=Parish.Example" in body
+    assert "roles=staff" in body and "roles=administrator" not in body

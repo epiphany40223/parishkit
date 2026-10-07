@@ -4,10 +4,10 @@
 {% if templates_url %}<p><a href="{{ templates_url }}">{% translate "Create the emails with the page and email templates first" %}</a></p>{% endif %}</div>{% endif %}
 <p>{% translate "The blank last row adds a schedule: choose its mail type first, then fill in the fields it uses. To remove a saved schedule, check its Delete box. A saved schedule's mail type cannot change; delete it and add a new one instead." %}</p>
 <div data-schedule-rows>{% for form in schedules %}{% include 'stewardship/schedule-row.html' with number=forloop.counter %}{% endfor %}</div>
-{% comment %}Progressive enhancement: ui-v1.js clones this empty row (its
-__prefix__ names become the next index) and reveals the button, so several new
-schedules can be saved in one submission. Without JavaScript the button stays
-hidden and each save offers one blank row, as before.{% endcomment %}
+{% comment %}ui-v1.js clones this empty row (its __prefix__ names become the
+next index) and reveals the button, so several new schedules can be saved in
+one submission. The button starts hidden so a page whose script failed to
+load never offers a button that does nothing.{% endcomment %}
 <template data-schedule-template>{% include 'stewardship/schedule-row.html' with form=schedules.empty_form number=0 %}</template>
 <p class="schedule-add" data-schedule-add-row hidden><button type="button" class="button-secondary" data-schedule-add>{% translate "Add another schedule" %}</button></p>
 <p class="visually-hidden" role="status" data-schedule-status></p>

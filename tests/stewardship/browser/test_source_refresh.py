@@ -1,8 +1,7 @@
-"""The manual refresh confirmation page: accessible, plain, posts natively."""
+"""The manual refresh confirmation page: accessible, plain, posts its key."""
 
 import pytest
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -66,20 +65,15 @@ def test_data_age_connection_and_lateness_use_browser_local_times(
     assert "UTC" not in main.inner_text()
 
 
-def test_the_request_posts_natively_with_its_key(browser_engine, component_origin):
-    """Without scripts the form posts the page's key to the refresh route."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/source-refresh")
-        page.route(
-            "**/admin/parish/parishsoft-refresh/",
-            lambda route: route.fulfill(body="Queued"),
-        )
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Refresh now").click()
-        body = sent.value.post_data
-        assert "request_key=" in body and "csrfmiddlewaretoken=" in body
-        assert sent.value.url.endswith("/admin/parish/parishsoft-refresh/")
-    finally:
-        context.close()
+def test_the_request_posts_its_key(page, component_origin):
+    """The form posts the page's key and CSRF token to the refresh route."""
+    page.goto(component_origin + "/source-refresh")
+    page.route(
+        "**/admin/parish/parishsoft-refresh/",
+        lambda route: route.fulfill(body="Queued"),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Refresh now").click()
+    body = sent.value.post_data
+    assert "request_key=" in body and "csrfmiddlewaretoken=" in body
+    assert sent.value.url.endswith("/admin/parish/parishsoft-refresh/")

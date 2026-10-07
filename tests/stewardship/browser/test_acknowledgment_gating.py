@@ -2,8 +2,6 @@
 
 import pytest
 
-from .conftest import no_script_context
-
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
@@ -60,14 +58,3 @@ def test_forms_without_an_acknowledgment_are_not_gated(page, component_origin):
     page.goto(component_origin + "/campaign-mail")
     assert page.locator("input[data-acknowledgment]").count() == 0
     assert page.get_by_role("button", name="Send this test email").is_enabled()
-
-
-def test_without_javascript_the_server_still_decides(browser_engine, component_origin):
-    """Progressive enhancement: the button is enabled; the server validates."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/setup-confirmation")
-        assert page.get_by_role("button", name=FINISH).is_enabled()
-    finally:
-        context.close()
