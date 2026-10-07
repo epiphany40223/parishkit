@@ -489,13 +489,70 @@ A task the page offers no retry for, or an unknown task, is exit 1
 (it was retried already, or it has not failed) is exit 1 (`stale_version`):
 read it again with `task show`, whose `latest_run_id` names the newest
 retry. A key belongs to a task's chain of retries: one another
-Administrator used in this chain is exit 1 (`invalid`), and one you used for
-another run of the chain is exit 1 (`stale_version`; `invalid` for an export
-cleanup). A key used only for another task is a new key here. Exit 6 (`outcome_unknown`) names the key in
+Administrator used for this task is exit 1 (`invalid`), and one used for
+another run of the chain, by anyone, is exit 1 (`stale_version`; `invalid`
+for an export cleanup). A key used only for another task is a new key here.
+Exit 6 (`outcome_unknown`) names the key in
 `error.request_id`: repeat the command with it, or look for the retry with
 `task show`. System logs show each retry as `admin_cmd_task_retry`,
 attributed to the approving Administrator with the automation session as
 its subject; it creates no automation notice.
+
+## Outgoing mail
+
+The delivery commands read Outgoing mail and Refused addresses as their
+pages do, and resolve a delivery as its page's form does. Each read records
+the pages' view event in System logs; any session may run them.
+`delivery resolve` needs a full-scope session. No document names a
+recipient: there is no email address, Family DUID or Family id, and a
+resolution note's text stays on the page. To see who a delivery was for,
+open it on the page.
+
+```sh
+pk-admin delivery list --state delivery_unknown
+pk-admin delivery list --search 1234
+pk-admin delivery show MESSAGE_ID
+pk-admin delivery resolve MESSAGE_ID --action accept --expected-version 3 --note - < note.txt
+pk-admin delivery refusals
+pk-admin delivery refusal-show REFUSAL_ID
+```
+
+`delivery list` takes the page's `--state`, `--send` (send history's `send`
+value), `--search` (an exact Family DUID or delivery id, as input only),
+`--page`, `--size` and `--sort`. `delivery refusals` takes `--duid`.
+
+| Field | What it holds |
+| --- | --- |
+| `deliveries`, `delivery` | Each message's `id`, `campaign_id`, `purpose`, `mode`, `state`, `version`, `attempt`, `task_id`, `created_at`, `updated_at`, `finished_at` |
+| `state`, `send`, `page`, `size`, `sort`, `has_next`, `matching`, `matching_capped` | `delivery list`: the filters and the page of rows |
+| `task` | `delivery show`: the latest task's `id`, `state`, `version` and `retry_sequence` |
+| `actions`, `retry_unavailable` | `delivery show`: the resolutions the page offers now, and whether a retry is refused by the campaign's resend rule |
+| `events` | `delivery show`: the history's `version`, `at`, `state`, `action`, `attempt` and `result` (a stored code) |
+| `notes` | `delivery show`: each resolution's `created_at` and `action` |
+| `refusals` | `delivery refusals`: each unresolved refusal's `id` and `created_at` |
+| `id`, `created_at`, `resolved`, `source`, `can_clear` | `delivery refusal-show`: the refusal, how and when it was resolved (`kind`, `at`), the source version to verify (`snapshot_id`, `generation`), and whether a clearance can be recorded now |
+
+`delivery resolve` takes `--action` (`note`, `accept`, `confirm_unsent`,
+`retry_failed` or `retry_unsent`, as offered in `actions`, which lists only
+what this command accepts), `--expected-version` (the delivery's
+`version`), `--note` (or `-`) and
+`--request-key`, made for you and written to standard error when left out.
+Give evidence that names people as `--note -` from a file or standard
+input: an inline `--note` is visible in shell history and the process
+list.
+Repeating it with the same key returns the same resolution (`created`
+false); the page's form with that key does too. A delivery that changed,
+or a change that collided with another, is exit 1 (`stale_version`); a key used for another resolution is exit 1
+(`invalid`). Retrying a Family email needs the page, which holds the Family
+keys: here it is exit 1 (`not_available`); receipts and report emails retry
+here. The result has `created`, `request_key` and `resolution` (`id`,
+`message_id`, `action`, `expected_version`, `previous_task_id`,
+`retry_task_id`, `created_at`). System logs show it as
+`admin_cmd_delivery_resolve`.
+
+The duplicate-risk **resend** and clearing a refused address ask you to
+tick an acknowledgement on the page, so they stay on the page until a
+follow-up (ADM-11 PR 9c) asks for it at the prompt PR 5b added.
 
 ## Output changelog
 
@@ -531,3 +588,6 @@ its subject; it creates no automation notice.
 - `pk-admin/1` (ADM-11 PR 9a): additive. `task retry`, the first command
   that takes `--request-key`, and `error.request_id` on its unknown
   outcome, holding the key.
+- `pk-admin/1` (ADM-11 PR 9b): additive. `delivery list`,
+  `delivery show`, `delivery resolve`, `delivery refusals` and
+  `delivery refusal-show`.

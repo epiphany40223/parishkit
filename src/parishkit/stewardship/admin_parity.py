@@ -225,12 +225,14 @@ LEDGER = {
     "retry_daily_digest": command("task retry"),
     "retry_weekly_digest": command("task retry"),
     "retry_export_cleanup": command("task retry"),
-    "deliveries": pending("PR 9", "delivery list"),
-    "delivery": pending("PR 9", "delivery show"),
-    "delivery_resolve": pending("PR 9", "delivery resolve"),
-    "delivery_refusals": pending("PR 9", "delivery refusals"),
-    "delivery_refusal": pending("PR 9", "delivery refusals"),
-    "delivery_refusal_clear": pending("PR 9", "delivery refusal-clear"),
+    "deliveries": command("delivery list"),
+    "delivery": command("delivery show"),
+    # The duplicate-risk resend needs its acknowledgement at the prompt.
+    "delivery_resolve": command("delivery resolve", owed="PR 9c"),
+    "delivery_refusals": command("delivery refusals"),
+    "delivery_refusal": command("delivery refusal-show"),
+    # The clearance needs its verification acknowledgement at the prompt.
+    "delivery_refusal_clear": pending("PR 9c", "delivery refusal-clear"),
     # Users and follow-up.
     "users": pending("PR 11", "users list"),
     "user_rules": pending("PR 11", "rules show"),

@@ -36,9 +36,10 @@ progress``, ``send history``, ``schedule show``, ``go-live readiness`` and
 ``admin_reads``. ``task show``, ``send progress`` and ``go-live progress``
 take ``--watch``. The schedule change commands (``schedule preview`` and
 ``schedule confirm``, in ``admin_changes``) and ``config request show``
-(with ``--watch``) follow (PR 4), then ``task retry`` (PR 9, in
-``admin_operations``). Other areas join the same subparser tree in later pull
-requests, each listed in the catalog with the pull request that added it.
+(with ``--watch``) follow (PR 4), then ``task retry`` and the delivery
+commands (PR 9, in ``admin_operations``). Other areas join the same
+subparser tree in later pull requests, each listed in the catalog with the
+pull request that added it.
 """
 
 import argparse
@@ -732,9 +733,23 @@ def task_retry(args, preamble, runtime, context):
     Without ``--request-key`` a new key is made and written to standard error
     before anything is done, so a run that crashes can be repeated with it.
     """
-    from uuid import uuid4
-
     from .admin_operations import retry_task
+
+    return retry_task(
+        context["caller"],
+        runtime,
+        args.task_id,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
+def _request_key(args, context):
+    """``--request-key``, or a new key written to standard error before acting.
+
+    The key is written first so a run that crashes can be repeated with it.
+    """
+    from uuid import uuid4
 
     key = args.request_key
     if key is None:
@@ -745,8 +760,64 @@ def task_retry(args, preamble, runtime, context):
             file=context["stderr"],
             flush=True,
         )
-    return retry_task(
-        context["caller"], runtime, args.task_id, request_key=key, context=context
+    return key
+
+
+def delivery_list(args, preamble, runtime, context):
+    """One page of Outgoing mail, filtered and sorted as the page (PR 9)."""
+    from .admin_operations import read_deliveries
+    from .admin_reads import query
+
+    parameters = query(
+        state=args.state,
+        send=args.send,
+        q=args.search,
+        page=args.page,
+        size=args.size,
+        sort=args.sort,
+    )
+    return read_deliveries(context["caller"], runtime, parameters)
+
+
+def delivery_show(args, preamble, runtime, context):
+    """One delivery, its history, notes and the resolutions offered (PR 9)."""
+    from .admin_operations import read_delivery
+    from .admin_reads import query
+
+    parameters = query(page=args.page, size=args.size)
+    return read_delivery(context["caller"], runtime, args.message_id, parameters)
+
+
+def delivery_refusals(args, preamble, runtime, context):
+    """One page of unresolved refused addresses (PR 9)."""
+    from .admin_operations import read_refusal_list
+    from .admin_reads import query
+
+    parameters = query(duid=args.duid, page=args.page, size=args.size, sort=args.sort)
+    return read_refusal_list(context["caller"], runtime, parameters)
+
+
+def delivery_refusal_show(args, preamble, runtime, context):
+    """One refused address's record and the source version to verify (PR 9)."""
+    from .admin_operations import read_refusal_detail
+
+    return read_refusal_detail(context["caller"], runtime, args.refusal_id)
+
+
+def delivery_resolve(args, preamble, runtime, context):
+    """Resolve one delivery as its page's form does (PR 9)."""
+    from .admin_operations import NOTE_LIMIT, resolve_delivery_command
+
+    key = _request_key(args, context)
+    return resolve_delivery_command(
+        context["caller"],
+        runtime,
+        args.message_id,
+        action=args.action,
+        expected_version=args.expected_version,
+        note=_input(args.note, context, NOTE_LIMIT * 4),
+        request_key=key,
+        context=context,
     )
 
 
@@ -872,12 +943,95 @@ def _config_request_options(parser):
 def _task_retry_options(parser):
     """Options of ``task retry``: the failed task, and the request key."""
     parser.add_argument("task_id", type=_uuid, metavar="TASK_ID")
+    _request_key_option(parser)
+
+
+# Outgoing mail's state filter. Spelled out because the parser is built
+# before Django is set up, when ``jobs.delivery_metadata`` cannot be
+# imported; a test keeps it equal to ``delivery_metadata.STATES``.
+DELIVERY_STATES = (
+    "all",
+    "delivery_unknown",
+    "permanent_failure",
+    "pending",
+    "retry_wait",
+    "submitting",
+    "delivered",
+    "cancelled",
+)
+# The resolutions ``delivery resolve`` offers (``admin_operations``); a test
+# keeps them equal.
+RESOLVE_ACTIONS = (
+    "note",
+    "accept",
+    "confirm_unsent",
+    "retry_failed",
+    "retry_unsent",
+)
+
+
+def _request_key_option(parser):
+    """``--request-key``: a UUID that makes a repeat safe."""
     parser.add_argument(
         "--request-key",
         type=_uuid,
         help="a UUID that makes a repeat safe (default: a new one, "
         "written to standard error)",
     )
+
+
+def _delivery_list_options(parser):
+    """Options of ``delivery list``: Outgoing mail's filters."""
+    parser.add_argument("--state", choices=DELIVERY_STATES, help="default all")
+    parser.add_argument(
+        "--send", help="one Family email send (send history's send value)"
+    )
+    parser.add_argument(
+        "--search", help="an exact Family DUID or delivery ID, as the page's search"
+    )
+    _page_options(parser)
+
+
+def _delivery_show_options(parser):
+    """Options of ``delivery show``: the delivery and its history window."""
+    parser.add_argument("message_id", type=_uuid, metavar="MESSAGE_ID")
+    _page_options(parser, sort=False)
+
+
+def _refusal_list_options(parser):
+    """Options of ``delivery refusals``: one Family's DUID, and the window."""
+    parser.add_argument("--duid", help="an exact Family DUID")
+    _page_options(parser)
+
+
+def _refusal_show_options(parser):
+    """Options of ``delivery refusal-show``: the refusal."""
+    parser.add_argument("refusal_id", type=_uuid, metavar="REFUSAL_ID")
+
+
+def _version(value):
+    """A record version (``delivery show``'s ``version``): a positive integer."""
+    if not value.isdecimal() or not 1 <= int(value) <= 2**63 - 1:
+        raise argparse.ArgumentTypeError("not a version")
+    return int(value)
+
+
+def _delivery_resolve_options(parser):
+    """Options of ``delivery resolve``: the page's resolution form."""
+    parser.add_argument("message_id", type=_uuid, metavar="MESSAGE_ID")
+    parser.add_argument("--action", required=True, choices=RESOLVE_ACTIONS)
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the delivery's version from delivery show",
+    )
+    parser.add_argument(
+        "--note",
+        required=True,
+        help="the evidence note, or - to read it from standard input",
+    )
+    _request_key_option(parser)
 
 
 def _go_live_progress_options(parser):
@@ -1161,8 +1315,15 @@ def _change_specs():
 
 
 def _operation_specs():
-    """The operations commands (PR 9): task retry."""
-    from .admin_operations import TaskRetry
+    """The operations commands (PR 9): task retry and the deliveries."""
+    from .admin_operations import (
+        DeliveryList,
+        DeliveryResolve,
+        DeliveryShow,
+        RefusalList,
+        RefusalShow,
+        TaskRetry,
+    )
 
     return (
         CommandSpec(
@@ -1175,6 +1336,62 @@ def _operation_specs():
             9,
             options=(_task_retry_options,),
             request_key=True,
+        ),
+        CommandSpec(
+            "delivery list",
+            "List Outgoing mail, without recipients.",
+            delivery_list,
+            "read_only",
+            False,
+            DeliveryList.field_names(),
+            9,
+            options=(_delivery_list_options,),
+            audit_event="delivery_viewed",
+        ),
+        CommandSpec(
+            "delivery show",
+            "Show one delivery, its history and the resolutions offered.",
+            delivery_show,
+            "read_only",
+            False,
+            DeliveryShow.field_names(),
+            9,
+            options=(_delivery_show_options,),
+            audit_event="delivery_viewed",
+        ),
+        CommandSpec(
+            "delivery resolve",
+            "Resolve one delivery, as its page's form does.",
+            delivery_resolve,
+            "full",
+            True,
+            DeliveryResolve.field_names(),
+            9,
+            options=(_delivery_resolve_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "delivery refusals",
+            "List unresolved refused addresses, without the addresses.",
+            delivery_refusals,
+            "read_only",
+            False,
+            RefusalList.field_names(),
+            9,
+            options=(_refusal_list_options,),
+            audit_event="delivery_viewed",
+        ),
+        CommandSpec(
+            "delivery refusal-show",
+            "Show one refused address's record and the source to verify.",
+            delivery_refusal_show,
+            "read_only",
+            False,
+            RefusalShow.field_names(),
+            9,
+            options=(_refusal_show_options,),
+            audit_event="delivery_viewed",
         ),
     )
 

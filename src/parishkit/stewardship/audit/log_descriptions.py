@@ -108,6 +108,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to mail schedules "
         "or campaign dates, which became a configuration request."
     ),
+    "admin_cmd_delivery_resolve": _(
+        "An automation session resolved an outgoing email, as the email's "
+        "page does: a note, external evidence or a retry."
+    ),
     "admin_cmd_task_retry": _(
         "An automation session retried a failed background task, as the "
         "task's Retry button does."
