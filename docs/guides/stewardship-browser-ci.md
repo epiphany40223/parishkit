@@ -29,6 +29,23 @@ the [test-efficiency policy](stewardship-test-efficiency.md) now reuses Chromium
 and Firefox processes with isolated contexts. WebKit retains fresh processes.
 The historical measurements below describe the original increment.
 
+Issue #627 later split the slowest engine across CI jobs.
+`quality_sharding.BROWSER_JOBS` lists the jobs, and the workflow matrix runs
+one job per entry: Firefox whole, and WebKit and Chromium each halved, one half
+of each per job. `test_browser_ci.py` requires the matrix to match and every
+engine's partitions to appear exactly once. An engine's partitions split its
+cases by whole test file, balanced by recorded per-file WebKit seconds
+(`BROWSER_FILE_SECONDS`, scheduling hints only), so module fixtures stay
+together. `quality_browser --runs` runs a job's partitions in turn under one
+38-minute deadline and fails the job if any partition fails. Every partition
+still uses `--require-no-skips` and must return a receipt naming its engine and
+partition that matches its exact selection, and `stewardship-browser` still
+requires every matrix job. Before the split, WebKit's test step took a median
+22.6 minutes (job 24.0), Firefox's 14.5 (job 15.6) and Chromium's 7.8 (job
+10.0); each job now runs about 15 minutes of tests. The same change runs all
+four operational provider modes on one runner (about 18 minutes), so a full run
+uses no more runner slots than before.
+
 1. Add pure engine partitioning and an explicit opt-in pytest CI selector with
    strict complete-collection validation; preserve ordinary local behavior.
 2. Run engine matrix jobs in parallel, install only their required browser,

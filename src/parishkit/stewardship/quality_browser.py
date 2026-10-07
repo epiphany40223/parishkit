@@ -5,21 +5,34 @@ import json
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from .quality_ci import environment
-from .quality_sharding import BROWSER_ENGINES
+from .quality_sharding import BROWSER_ENGINES, browser_label, parse_browser_runs
+
+# About 38 minutes for all of one job's partitions together: a job's tests
+# take about 15. Stay under the 60-minute job limit, even after a slow
+# 17-minute install, so this bounded timeout, not the job cancel, reports a
+# hang.
+JOB_SECONDS = 2280
 
 
-def validate_receipt(path, engine):
-    """A fresh receipt must bind the requested engine to all executed cases."""
+def validate_receipt(path, engine, index=1, count=1):
+    """A fresh receipt must bind the requested job to all executed cases."""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-        if type(value) is not dict or set(value) != {"engine", "selected", "executed"}:
+        if type(value) is not dict or set(value) != {
+            "engine",
+            "partition",
+            "selected",
+            "executed",
+        }:
             raise ValueError("Invalid receipt fields")
         selected = value["selected"]
         if (
             value["engine"] != engine
+            or value["partition"] != [index, count]
             or type(selected) is not list
             or not selected
             or not all(type(node) is str and node for node in selected)
@@ -34,8 +47,12 @@ def validate_receipt(path, engine):
     return len(selected)
 
 
-def run_engine(root, engine):
-    """Keep stdout live; reject early zero exits that never load pytest hooks."""
+def run_engine(root, engine, index=1, count=1, timeout=JOB_SECONDS):
+    """Keep stdout live; reject early zero exits that never load pytest hooks.
+
+    INDEX/COUNT names one partition of the engine's cases (see BROWSER_JOBS);
+    the default 1/1 runs the engine's whole share of the suite.
+    """
     if engine not in BROWSER_ENGINES:
         raise ValueError("Unsupported browser engine")
     # Each invocation owns a new private directory outside the checkout; no
@@ -50,6 +67,7 @@ def run_engine(root, engine):
                 "tests/stewardship/browser",
                 f"--ci-browser-engine={engine}",
                 f"--ci-browser-evidence={receipt}",
+                f"--ci-browser-partition={index}/{count}",
                 "--require-no-skips",
                 "--ci-progress",
                 "--collection-manifest",
@@ -60,25 +78,50 @@ def run_engine(root, engine):
             ],
             cwd=root,
             env=environment() | {"PARISHKIT_RUN_BROWSER_TESTS": "1"},
-            # About 38 minutes: WebKit's suite takes ~15-20. Stay under the
-            # 60-minute job limit, even after a slow 17-minute install, so
-            # this bounded timeout, not the job cancel, reports a hang.
-            timeout=2280,
+            timeout=timeout,
             check=True,
         )
-        count = validate_receipt(receipt, engine)
-        print(f"CI_BROWSER_COMPLETE {engine}: {count:,} executed cases", flush=True)
+        cases = validate_receipt(receipt, engine, index, count)
+        print(
+            f"CI_BROWSER_COMPLETE {browser_label(engine, index, count)}: "
+            f"{cases:,} executed cases",
+            flush=True,
+        )
+
+
+def run_job(root, runs):
+    """Run each partition in turn under one shared deadline; fail if any failed.
+
+    A failed partition does not stop the later ones, so one job's log shows
+    every engine's result. Return the labels of the partitions that failed.
+    """
+    deadline = time.monotonic() + JOB_SECONDS
+    failed = []
+    for engine, index, count in runs:
+        try:
+            run_engine(root, engine, index, count, max(1, deadline - time.monotonic()))
+        except (ValueError, subprocess.SubprocessError) as error:
+            label = browser_label(engine, index, count)
+            print(f"CI_BROWSER_FAILED {label}: {error}", flush=True)
+            failed.append(label)
+    return failed
 
 
 def main():
-    """Expose only the complete engine runner, with no arbitrary pytest options."""
+    """Expose only complete partition runners, with no arbitrary pytest options."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine", choices=BROWSER_ENGINES, required=True)
+    parser.add_argument(
+        "--runs",
+        required=True,
+        help='Partitions to run, such as "webkit:1/2 chromium:1/2"',
+    )
     args = parser.parse_args()
     try:
-        run_engine(Path.cwd(), args.engine)
-    except (ValueError, subprocess.SubprocessError) as error:
-        parser.exit(1, f"{error}\n")
+        runs = parse_browser_runs(args.runs)
+    except ValueError as error:
+        parser.exit(2, f"{error}\n")
+    if failed := run_job(Path.cwd(), runs):
+        parser.exit(1, f"Browser partitions failed: {', '.join(failed)}\n")
 
 
 if __name__ == "__main__":

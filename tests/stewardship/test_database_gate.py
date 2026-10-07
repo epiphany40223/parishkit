@@ -162,14 +162,14 @@ def test_ci_requires_every_operational_container_module():
 
 
 def test_compose_matrix_and_required_gate_cover_all_scenarios():
-    """Two shared-build runners retain all eight isolated runtime scenarios."""
+    """One shared-build runner retains all eight isolated runtime scenarios."""
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
     operational = jobs["stewardship-operational"]
     assert operational["strategy"] == {
         "fail-fast": False,
         "matrix": {
-            "providers": ["configured initial", "complete abort"],
+            "providers": ["configured initial complete abort"],
         },
     }
     (step,) = (
@@ -189,7 +189,7 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
         'python -m pytest "${cases[@]}" --require-no-skips --ci-progress',
     ):
         assert fragment in step["run"]
-    assert operational["timeout-minutes"] == 25
+    assert operational["timeout-minutes"] == 35
     assert (
         sum("docker build" in item.get("run", "") for item in operational["steps"]) == 1
     )
@@ -280,7 +280,7 @@ def test_ci_browser_and_isolation_cannot_pass_by_skipping(path, flag):
             # The runner's actual subprocess/skip tests own no-skips enforcement.
             assert (
                 command == "python -m parishkit.stewardship.quality_browser "
-                '--engine "$BROWSER_ENGINE"'
+                '--runs "$BROWSER_RUNS"'
             )
         else:
             assert "--require-no-skips" in command
