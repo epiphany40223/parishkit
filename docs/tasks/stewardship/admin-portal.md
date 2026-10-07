@@ -601,4 +601,14 @@ the backup runbook's request-mode cron entry, restore step and drill
 warning, checked by `tests/stewardship/test_system_health.py`,
 `tests/stewardship/test_runtime_grants.py` and
 `tests/stewardship/database/test_backup_request_postgresql.py`. The Take a
-backup now button (part 3b) remains.
+backup now button (part 3b) remains. Part 3b adds the button on System
+health: a preview (the last backup and its size, off-site copies,
+retention, and the wait during a bulk send), confirmation answered in place
+with a repeated confirmation returning the first request, the fresh
+sign-in step-up, the `backup_requested` audit event naming the request,
+the greyed button with its reason while a request is live (kept current
+by the page's poll), the steps posted to the System health page itself so
+they are answered in place, refusals and the step-up answered inside the
+section, and the commands owed by ADM-11 PR 5,
+checked by `tests/stewardship/database/test_backup_now_postgresql.py` and
+`tests/stewardship/browser/test_system_health.py`.

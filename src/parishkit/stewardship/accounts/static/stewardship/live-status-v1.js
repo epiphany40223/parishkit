@@ -220,6 +220,57 @@
     return caption ? `caption:${caption.textContent.trim()}` : `index:${index}`;
   }
 
+  // The copy each mirror target last took (see mirror()).
+  const mirrored = new WeakMap();
+
+  function mirror() {
+    // A region may carry copies of controls that live elsewhere on the page
+    // (template[data-live-mirror="name"]), such as a button whose state the
+    // status decides but which sits outside the region so a poll never
+    // discards what is open beside it. Each copy replaces the contents of
+    // the matching [data-live-mirror-target="name"], unless the reader is
+    // using a control in it. An empty CSRF field in the copy takes this
+    // page's own token (the polled markup carries none, so it stays the
+    // same from poll to poll).
+    //
+    // It runs after every successful poll, not only when the region
+    // changed: a copy skipped because the reader was using the target (or
+    // a target an in-place answer just put back) must catch up once they
+    // move on, even if the region stays the same from then on. Each target
+    // remembers the copy it last took (mirrored), so an unchanged copy is
+    // not put in again and the target's markup stays put between polls.
+    const token = document.querySelector('input[name="csrfmiddlewaretoken"][value]:not([value=""])');
+    region.querySelectorAll("template[data-live-mirror]").forEach((source) => {
+      const name = source.getAttribute("data-live-mirror");
+      const html = source.innerHTML;
+      document.querySelectorAll("[data-live-mirror-target]").forEach((target) => {
+        if (target.getAttribute("data-live-mirror-target") !== name) return;
+        if (region.contains(target) || target.contains(document.activeElement)) return;
+        if (mirrored.get(target) === html) return;
+        const copy = source.content.cloneNode(true);
+        copy.querySelectorAll('input[name="csrfmiddlewaretoken"]').forEach((input) => {
+          if (!input.value && token) input.value = token.value;
+        });
+        target.replaceChildren(copy);
+        mirrored.set(target, html);
+        localize(target);
+      });
+    });
+  }
+
+  // Each target was rendered with the page, from the same state as the copy
+  // the region carries now, so record that copy as already taken. Otherwise
+  // the first poll would replace an unchanged button, and a click landing
+  // just then (WebKit) could be lost with the old button.
+  region.querySelectorAll("template[data-live-mirror]").forEach((source) => {
+    const name = source.getAttribute("data-live-mirror");
+    document.querySelectorAll("[data-live-mirror-target]").forEach((target) => {
+      if (target.getAttribute("data-live-mirror-target") === name) {
+        mirrored.set(target, source.innerHTML);
+      }
+    });
+  });
+
   function adopt(fresh) {
     // Keep the region element (and its live announcement); replace what it says.
     const freshMarkup = markup(fresh);
@@ -314,6 +365,7 @@
         return;
       }
       adopt(fresh);
+      mirror();
       checked();
       if (region.hasAttribute("data-live-pending")) schedule();
       else finish();

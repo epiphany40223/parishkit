@@ -1,6 +1,8 @@
 """Render the real System health templates with sample states (ADM-13, #530)."""
 
 from datetime import timedelta
+from types import SimpleNamespace
+from uuid import UUID
 
 from django.template.loader import render_to_string
 
@@ -8,6 +10,7 @@ from parishkit.stewardship.accounts.system_health_views import POLL_MILLISECONDS
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
+    BackupPreview,
     BackupRequestStatus,
     DropCount,
     SystemHealth,
@@ -21,6 +24,17 @@ STATUS = "/system-health/status"
 # A healthy page whose polls bring the same state again.
 STEADY = "/system-health-steady"
 STEADY_STATUS = "/system-health-steady/status"
+# Take a backup now (ADM-13 PR 3b): the page, and the answers its preview and
+# confirmation POSTs get (the browser test routes the POSTs to them).
+# The page is served at its real address, so the answers (at the same
+# address in the real app) are swapped in place rather than shown as a
+# page from elsewhere.
+BACKUP_PAGE = "/admin/system/health/"
+BACKUP_STATUS = "/system-health-backup/status"
+BACKUP_PREVIEW = "/system-health-backup-preview"
+BACKUP_REQUESTED = "/system-health-backup-requested"
+BACKUP_STEP_UP = "/system-health-backup-step-up"
+BACKUP_BUSY = "/system-health-backup-busy"
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
 DATED_STATUS = "/system-health-dated/status"
@@ -43,7 +57,7 @@ def _row(now, service, process="main", *, age=0, **values):
     } | values
 
 
-def health(now, *, troubled, backup_at=None):
+def health(now, *, troubled, backup_at=None, waiting=False):
     """A deployment with several problems, or a healthy one."""
     rows = [
         _row(now, "web"),
@@ -122,7 +136,7 @@ def health(now, *, troubled, backup_at=None):
             finished_at=None,
             failure_kind=None,
         )
-        if troubled
+        if troubled or waiting
         else None,
         offsite=None,
     )
@@ -147,13 +161,15 @@ def components(context, admin):
         ],
     }
 
-    def values(troubled, backup_at=None, **extra):
+    def values(troubled, backup_at=None, waiting=False, **extra):
         """Template context the view would build."""
         return (
             context
             | {
                 "admin_chrome": chrome,
-                "health": health(now, troubled=troubled, backup_at=backup_at),
+                "health": health(
+                    now, troubled=troubled, backup_at=backup_at, waiting=waiting
+                ),
                 "campaign_id": None,
                 "pause": {"actor": "admin@example.org", "reason": "Checking a typo"}
                 if troubled
@@ -198,6 +214,72 @@ def components(context, admin):
             render_to_string(
                 "stewardship/system-health-status.html",
                 values(False, backup_at=now - timedelta(hours=1)),
+            ),
+        ),
+        BACKUP_PAGE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, status_url=BACKUP_STATUS),
+            ),
+        ),
+        # The next poll: another Administrator's request is now waiting.
+        BACKUP_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html", values(False, waiting=True)
+            ),
+        ),
+        BACKUP_STEP_UP: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    status_url=BACKUP_STATUS,
+                    backup_now={"refused": "reauthenticate"},
+                ),
+            ),
+        ),
+        BACKUP_BUSY: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, status_url=BACKUP_STATUS, backup_now={"refused": "busy"}),
+            ),
+        ),
+        BACKUP_PREVIEW: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    status_url=BACKUP_STATUS,
+                    backup_now={
+                        "preview": BackupPreview(
+                            key=UUID(int=706),
+                            backup_at=now - timedelta(hours=13),
+                            backup_bytes=48 * 1024 * 1024,
+                            offsite=False,
+                            held=True,
+                        )
+                    },
+                ),
+            ),
+        ),
+        BACKUP_REQUESTED: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    status_url=BACKUP_STATUS,
+                    waiting=True,
+                    backup_now={
+                        "requested": SimpleNamespace(created_at=now),
+                        "created": True,
+                    },
+                ),
             ),
         ),
         # What the troubled page's next poll reads: every problem has ended.
