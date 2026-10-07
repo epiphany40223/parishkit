@@ -382,7 +382,9 @@ deadline passes the dialog reports that the Admin was signed out and links to
 sign-in. Privileged operations such
 as Production transition, campaign reopening, ParishSoft publication, secret
 replacement, and purge require fresh Google re-authentication no older than
-five minutes. The one exception is a full-scope
+five minutes, as do the code-only Family codes listing, Family-directory,
+mail-merge and financial exports, integration setting changes and starting
+Testing cleanup ([#547](https://github.com/epiphany40223/parishkit/issues/547)). The one exception is a full-scope
 [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line),
 which an Administrator approved with a fresh sign-in and which stands in for it
 for the actions listed there.
@@ -390,7 +392,9 @@ for the actions listed there.
 Fresh authentication is a step-up of the current session, not a new login.
 When a privileged action finds the session's verified Google instant too old,
 the Admin page offers **Confirm with Google**, which posts to the ordinary
-sign-in with the current page as its return path. That return path is
+sign-in with the current page as its return path; a form whose address
+accepts only a submission (an export) returns to the page the form came from
+instead, so nothing is posted again. That return path is
 accepted only as a same-origin `/admin/` page path; anything else returns to
 the Admin home page. If the browser still holds a live, authorized session
 for the same Google account, the callback advances that session's verified

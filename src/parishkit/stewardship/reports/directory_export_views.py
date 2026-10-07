@@ -3,12 +3,19 @@
 from uuid import UUID
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from parishkit.stewardship.accounts import admin_navigation
+from parishkit.stewardship.accounts.admin_editing import step_up_response
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.accounts.family_authentication import (
     runtime as family_runtime,
+)
+from parishkit.stewardship.accounts.sessions import (
+    FreshAuthenticationRequired,
+    require_fresh,
 )
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -27,6 +34,11 @@ def create(request, campaign_id, *, postal=False):
     The page's hidden ``mailing`` field chooses the mail-merge export. The old
     postal export route (``postal``) serves forms rendered before the pages
     merged, which carry no ``mailing`` field and meant the mail merge.
+
+    The file holds every listed Family's live code, so creating it needs a
+    Google sign-in within the last five minutes (#547). A stale one gets the
+    step-up page, which returns to the directory (filters are private POST
+    state, so only the mailing-columns preset comes back) and creates nothing.
     """
     try:
         service = runtime()
@@ -34,6 +46,14 @@ def create(request, campaign_id, *, postal=False):
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
         postal = mailing_option(parameters, default=postal)
+        try:
+            require_fresh(request)
+        except FreshAuthenticationRequired:
+            page = reverse("admin:family_directory", args=(campaign_id,))
+            return step_up_response(
+                page + ("?mailing=yes" if postal else ""),
+                admin_navigation.PAGES["family_directory"].label,
+            )
         fields = {"format", "browser_timezone", "request_key"}
         query_fields = set(DirectoryQuery.__dataclass_fields__) - {"page"}
         if (

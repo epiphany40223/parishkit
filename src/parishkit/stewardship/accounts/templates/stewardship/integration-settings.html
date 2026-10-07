@@ -21,6 +21,7 @@
 {% else %}
 <form method="post" class="panel" autocomplete="off">{% csrf_token %}{% if target != 'backup' %}<input type="hidden" name="action" value="preview">{% endif %}
 {{ form.as_div }}
+<p class="help">{% if local_environment %}{% translate "For security, saving or removing settings here needs a sign-in from the last five minutes. If yours is older, you are asked to confirm your sign-in first, and what you entered is not kept: enter it again when you return." %}{% else %}{% translate "For security, saving or removing settings here needs a Google sign-in from the last five minutes. If yours is older, you are asked to confirm it's you with Google first, and what you entered is not kept: enter it again when you return." %}{% endif %}</p>
 {% if credential %}
 <p class="help">{% if local_environment %}{% translate "For security, saving a new key needs a sign-in from the last five minutes. If yours is older when you choose Save, you are asked to confirm your sign-in first, and the pasted key is not kept: paste it again when you come back to this page." %}{% else %}{% translate "For security, saving a new key needs a Google sign-in from the last five minutes. If yours is older when you choose Save, you are asked to confirm it's you with Google first, and the pasted key is not kept: paste it again when you come back to this page." %}{% endif %}</p>
 {{ credential.as_div }}

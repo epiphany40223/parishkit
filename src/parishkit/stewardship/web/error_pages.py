@@ -151,7 +151,16 @@ def error_page(request, response):
         "fix_link": refusal.link if refusal else None,
         "fix_label": refusal.link_label if refusal else None,
         "reauthenticate": reauthenticate,
-        "next": admin_return_path(request.get_full_path()),
+        # Where "Confirm with Google" returns: this page, unless the view named
+        # the page its form came from (a POST-only route would answer the
+        # returning GET with 405). Either way only a valid Admin path.
+        "next": admin_return_path(
+            getattr(response, "stewardship_return_path", None)
+            or request.get_full_path()
+        ),
+        # The return page's name, when it is not this page (a POST-only
+        # route's form page), so the step-up says where it returns.
+        "next_label": getattr(response, "stewardship_return_label", None),
         "submitted": request.method == "POST",
         # The view kept the Admin's choices (server-side) for after the step-up.
         "inputs_kept": getattr(response, "stewardship_inputs_kept", False),

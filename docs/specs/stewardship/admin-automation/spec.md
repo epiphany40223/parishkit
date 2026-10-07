@@ -1061,12 +1061,27 @@ sign-in, with no browser step:
   amends any of their SQL guards already installed to accept
   `stewardship_automation_fresh_v1`, and a guard installed later includes it
   from the start (see
-  [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions)).
+  [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions));
+- the code and financial reads and files
+  ([#547](https://github.com/epiphany40223/parishkit/issues/547)): the
+  code-only Family codes listing, creating or regenerating a Family-directory,
+  mail-merge or financial export, which PR 8's `export family-codes`,
+  `export directory`, `export postal`, `export financial` and
+  `export regenerate` run;
+- integration setting changes (PR 10's `integration set`, including removing
+  an integration) and starting Testing cleanup (PR 12's `go-live cleanup`)
+  ([#547](https://github.com/epiphany40223/parishkit/issues/547)).
 
-Testing cleanup is not fresh-gated on the page: it is irreversible and asks
-for an acknowledgement, and its guard requires only a live Admin session whose
-sign-in instant it records, which a command session provides. It prompts like
-the fresh-gated actions. The first design's per-action browser approval for
+The #547 actions have no SQL freshness check (only Python's `require_fresh`),
+except Testing cleanup, whose guard only requires the recorded instant to equal
+the live session's `authenticated_at`, which a command session's
+`require_fresh` returns; none needs an SQL change. Their commands stay
+functional with no extra hold, and keep the audit and notices below.
+
+Since [#547](https://github.com/epiphany40223/parishkit/issues/547) Testing
+cleanup is fresh-gated on the page, and records that fresh instant; it is also
+irreversible and asks for an acknowledgement, and prompts like the other
+fresh-gated actions. The first design's per-action browser approval for
 cleanup, confirmation and withdrawal is removed.
 
 In Python, `require_fresh` takes the caller. For a web caller it is unchanged.
@@ -1076,8 +1091,14 @@ it live and `full`, and returns the command session's `authenticated_at`,
 which the domain function writes into its record as the page writes the fresh
 instant. The call sites that accept automation are `campaign_family_test`,
 both in `delivery_control_commands`, both in `withdrawal_commands`, the Family
-portal maintenance switch, `confirmation_commands`, and the `require_fresh`
-call in `confirmation_views` (in `_fresh_after_cleanup`).
+portal maintenance switch, `confirmation_commands`, the `require_fresh`
+call in `confirmation_views` (in `_fresh_after_cleanup`), and the #547 sites:
+`code_reports.family_codes`, `directory_export_views.create`,
+`financial_export_views.create`, `export_ui.command` (regenerate of a
+directory or financial export), `integration_views.integration_settings`
+(previews, removals and confirmations of settings) and
+`go_live_commands.start_cleanup`. Each command reuses the service below its
+view, so it adapts the view's check rather than skipping it.
 
 The Production confirmation also requires, in Python, a sign-in after cleanup
 finished: `confirmation_commands` refuses when the fresh instant precedes the
