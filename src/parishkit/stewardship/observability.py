@@ -34,6 +34,11 @@ class Event(StrEnum):
     # next to startup_validated, fixed text only; the System health page's
     # debug logging panel is where an Administrator sees it (ADM-13).
     DEBUG_LOGGING_ENABLED = "debug_logging_enabled"
+    # A scheduled full ParishSoft refresh falls inside a Production
+    # reminder's lead window (#584; see FailureKind.REFRESH_IN_LEAD_WINDOW,
+    # which it carries). Configuration advice at WARNING, process log only;
+    # never an operational incident.
+    REFRESH_LEAD_WINDOW_CONFLICT = "refresh_lead_window_conflict"
     REQUEST_COMPLETED = "request_completed"
     REPORT_AUDIT_FAILED = "report_audit_failed"
     REPORT_SHAPING_FAILED = "report_shaping_failed"
@@ -124,8 +129,7 @@ class FailureKind(StrEnum):
     # which the bulk Family send prepares a Production reminder (BG-12,
     # #447): its promotion would pause that preparation until the Family
     # population is rebuilt. Warned once per scheduler process for each
-    # campaign and configuration, riding on the reviewed startup_validated
-    # event until it has its own (see the follow-up issue on #447).
+    # campaign and configuration on refresh_lead_window_conflict (#584).
     REFRESH_IN_LEAD_WINDOW = "full_refresh_in_lead_window"
     # The database's refresh-tick guard refused the schedule-change catch-up
     # full refresh (#632): only that request was rolled back, and the
