@@ -731,6 +731,29 @@ def component_origin():
                 "editable": True,
             },
         ),
+        # The campaign dates locked: one line of notice with a field tip (#227).
+        (
+            "/schedule-settings-locked",
+            "schedule-settings",
+            {
+                "campaign": {
+                    "pk": mail_campaign["id"],
+                    "active_configuration": mail_campaign["values"],
+                },
+                "window": ScheduleWindow(
+                    previous=mail_campaign["values"], editable=False, prefix="window"
+                ),
+                "schedules": Schedules(
+                    previous=[mail],
+                    templates=[],
+                    campaign_id=mail_campaign["id"],
+                    campaign=mail_campaign["values"],
+                    prefix="schedules",
+                ),
+                "base_digest": "a" * 64,
+                "editable": False,
+            },
+        ),
         (
             "/schedule-preview",
             "schedule-preview",
