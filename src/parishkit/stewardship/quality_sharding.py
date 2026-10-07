@@ -80,6 +80,26 @@ def browser_label(engine, index, count):
     return engine if count == 1 else f"{engine} {index}/{count}"
 
 
+def browser_files(nodes):
+    """Group browser node IDs by their test file path."""
+    files = {}
+    for node in nodes:
+        files.setdefault(node.split("::", 1)[0], []).append(node)
+    return files
+
+
+def browser_file_seconds(path, size):
+    """Recorded seconds for a known file, else SIZE cases at the default."""
+    name = path.rsplit("/", 1)[-1]
+    return BROWSER_FILE_SECONDS.get(name, size * BROWSER_CASE_SECONDS)
+
+
+def browser_estimate(nodes):
+    """Estimated WebKit-scale seconds for NODES, the sum the split balances."""
+    files = browser_files(nodes)
+    return sum(browser_file_seconds(path, len(group)) for path, group in files.items())
+
+
 def browser_partition(cases, engine, index=1, count=1):
     """Assign every browser case by its actual fixture parameter, not its name.
 
@@ -115,17 +135,13 @@ def browser_partition(cases, engine, index=1, count=1):
         raise ValueError("Browser collection must exercise every supported engine")
     if type(index) is not int or type(count) is not int or not 1 <= index <= count <= 8:
         raise ValueError("Invalid browser partition")
-    files = {}
-    for node, owner in cases:
-        if owner == engine:
-            files.setdefault(node.split("::", 1)[0], []).append(node)
+    files = browser_files(node for node, owner in cases if owner == engine)
     if len(files) < count:
         raise ValueError("Browser partition would select no tests")
 
     def weight(path):
-        """Recorded seconds for a known file, else a per-case estimate."""
-        name = path.rsplit("/", 1)[-1]
-        return BROWSER_FILE_SECONDS.get(name, len(files[path]) * BROWSER_CASE_SECONDS)
+        """This file's scheduling estimate."""
+        return browser_file_seconds(path, len(files[path]))
 
     loads = [0] * count
     mine = []

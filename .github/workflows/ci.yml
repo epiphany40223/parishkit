@@ -175,10 +175,6 @@ jobs:
     # under the PostgreSQL and browser jobs, and one fewer runner slot, so
     # two overlapping full runs fit within the 20-job plan limit.
     timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        providers: ["configured initial complete abort"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -194,7 +190,7 @@ jobs:
       - name: Validate isolated development and production scenarios
         env:
           PARISHKIT_RUN_RUNTIME_TESTS: "1"
-          PROVIDER_MODES: ${{ matrix.providers }}
+          PROVIDER_MODES: configured initial complete abort
         # Reuse installation/image bootstrap, never mutable runtime state.
         # Each test owns a fresh UUID Compose project, credentials and volume.
         run: |

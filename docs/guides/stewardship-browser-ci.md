@@ -59,6 +59,10 @@ requires every matrix job. Before the split, WebKit's test step took a median
 four operational provider modes on one runner (about 18 minutes), so a full run
 uses no more runner slots than before.
 
+Each partition logs its estimate on its `CI_BROWSER_PARTITION` line and
+`CI_BROWSER_TIMING <label>: estimated N s, actual M s` when it finishes, pass
+or fail (#666). Estimates use WebKit-scale hints, so other engines run faster
+than estimated; compare WebKit partitions with each other to see drift.
 To refresh `BROWSER_FILE_SECONDS`, sum each file's `CI_PROGRESS ... END
 ... elapsed=` seconds from a few recent WebKit job logs (`gh api
 repos/OWNER/REPO/actions/jobs/ID/logs`), take the median per file, and record

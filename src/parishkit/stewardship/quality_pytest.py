@@ -10,6 +10,7 @@ import pytest
 
 from .quality_sharding import (
     BROWSER_ENGINES,
+    browser_estimate,
     browser_label,
     browser_partition,
     parse_browser_partition,
@@ -94,6 +95,7 @@ class BrowserSelection:
         self.selected = []
         self.executed = []
         self.evidence = None
+        self.started = None
         if value := config.getoption("--ci-browser-evidence"):
             self.evidence = Path(value).resolve()
             if self.evidence.exists() or self.evidence.is_relative_to(
@@ -169,8 +171,11 @@ class BrowserSelection:
         reporter.write_line(
             f"CI_BROWSER_PARTITION {browser_label(self.engine, *self.partition)}: "
             f"{len(selected):,} out of "
-            f"{len(cases):,} ({len(selected) / len(cases):.1%}) cases"
+            f"{len(cases):,} ({len(selected) / len(cases):.1%}) cases, "
+            f"estimated {browser_estimate(self.selected):,.0f} s"
         )
+        # Timed from here, so the actual figure is execution, like the estimate.
+        self.started = time.monotonic()
 
     def pytest_runtest_logreport(self, report):
         """Count actual assertion-body execution, not collection or fixture setup."""
@@ -178,7 +183,17 @@ class BrowserSelection:
             self.executed.append(report.nodeid)
 
     def pytest_sessionfinish(self, session, exitstatus):
-        """A successful early exit must not turn incomplete execution green."""
+        """A successful early exit must not turn incomplete execution green.
+
+        Also log estimated against actual seconds, pass or fail, so drifting
+        BROWSER_FILE_SECONDS hints show up in ordinary job logs.
+        """
+        if self.started is not None:
+            self.config.pluginmanager.get_plugin("terminalreporter").write_line(
+                f"CI_BROWSER_TIMING {browser_label(self.engine, *self.partition)}: "
+                f"estimated {browser_estimate(self.selected):,.0f} s, "
+                f"actual {time.monotonic() - self.started:,.0f} s"
+            )
         if exitstatus != 0:
             return
         if not self.selected or sorted(self.executed) != self.selected:
