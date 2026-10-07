@@ -1233,8 +1233,10 @@ placeholder reference) sit in an "About this page" panel beside the heading: a
 native disclosure that starts closed, and that each browser remembers open,
 per page type, once an Admin opens it. Every page with a panel has exactly
 one, placed directly after its heading, so its control always sits on the
-heading's line, open or closed, and stays in place when it is toggled; opened,
-the help appears on its own full-width line below. Only that open choice is
+heading's line, open or closed, and stays in place when it is toggled, even
+when the open help makes the page scroll (the theme always reserves the
+scrollbar's space, so a centred page never moves sideways); opened, the help
+appears on its own full-width line below. Only that open choice is
 stored in the browser, and closing the panel removes it; with nothing stored
 the panel starts closed and opens with a click or the keyboard. Help under a field is a short hint; longer
 field explanations belong in the About panel or a click-to-open field tip,
