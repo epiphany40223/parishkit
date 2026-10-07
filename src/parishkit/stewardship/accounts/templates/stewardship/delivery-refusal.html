@@ -2,10 +2,10 @@
 {% block title %}{% translate "Refused address" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Refused address" %}</h1>
-{% aboutpage "delivery-refusal" %}<p>{% translate "The same address may have other refusals that still stop email to it; check the Refused addresses list afterward. Clearing does not send any email, and does not resend an invitation another member of the Family already received." %}</p>{% endaboutpage %}
+{% aboutpage "delivery-refusal" %}<p>{% translate "The same address may have other refusals that still stop email to it; check the Refused addresses list afterward. Clearing does not send any email." %}</p>{% endaboutpage %}
 <p>{{ refusal.address }} · {% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Refusal ID" %}</dt><dd>{{ refusal.id }}</dd></dl></details>
-<p class="notice">{% translate "Clearing removes only this refusal, not any other refusal for the same address." %}</p>
+<p class="notice">{% translate "Clearing removes only this refusal, not any other refusal for the same address." %} {% translate "It does not resend an invitation another member of the Family already received." %}</p>
 {% if resolved %}
 <section class="panel"><h2>{% translate "This refusal has been resolved" %}</h2>
 <p>{{ resolved.reason|delivery_label }}</p><p>{{ resolved.evidence_note }}</p>
