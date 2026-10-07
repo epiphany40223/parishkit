@@ -223,6 +223,10 @@ LEDGER = {
     # page's export form (PR 8g) and ``export family-timeline``.
     "family_timeline": command("export family-timeline"),
     "family_timeline_export": command("export family-timeline"),
+    "family_open_form": permanent(
+        "Open form signs this browser in to the Family form for a Family on "
+        "the phone; a browser hand-off by nature (#529)"
+    ),
     # The header's Find a Family box (#561) runs the directory's search.
     "find_family": permanent(NAME_SEARCH),
     # Creating a financial export is fresh-gated (#547): the command calls

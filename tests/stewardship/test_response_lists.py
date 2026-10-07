@@ -242,10 +242,12 @@ def test_csv_is_complete_neutralized_and_in_the_chosen_zone():
         "Family DUID",
         "Envelope number",
         "Submissions",
+        "Entered by Staff",
         "First submitted",
     ]
     first = ROWS[0].submitted_at.astimezone(NEW_YORK).isoformat(" ", "seconds")
-    assert table[1] == ["Adams, Ann", "1", "101", "2", first]
+    # None of these responses was entered by Staff through Open form (#529).
+    assert table[1] == ["Adams, Ann", "1", "101", "2", "0", first]
     assert first.endswith("-04:00")
     # A name starting with "=" can never run as a formula.
     assert table[2][0] == "'=Baker, Bob"
@@ -529,8 +531,9 @@ def test_xlsx_has_the_csv_rows_as_native_cells_and_the_details():
         first = ROWS[0].submitted_at.astimezone(NEW_YORK).replace(tzinfo=None)
         # A native date and time in the chosen zone; identifiers as text; the
         # count a number; a missing envelope number a truly empty cell.
-        assert table[1] == ["Adams, Ann", "1", "101", 2, first]
-        assert sheet.cell(2, 5).is_date
+        # Entered by Staff is a native count too (#529).
+        assert table[1] == ["Adams, Ann", "1", "101", 2, 0, first]
+        assert sheet.cell(2, 6).is_date
         # "=Baker, Bob" is literal text, never a formula.
         assert sheet.cell(3, 1).data_type == "s"
         assert table[2][0] == "=Baker, Bob"

@@ -5816,7 +5816,7 @@ BEGIN
                 'duid','-duid','envelope','-envelope','submitted','-submitted',
                 'submissions','-submissions','opened','-opened','progressed','-progressed',
                 'invited','-invited','link','-link','last','-last','mailing','-mailing',
-                'problem','-problem') THEN RETURN false; END IF;
+                'problem','-problem','staff_entered','-staff_entered') THEN RETURN false; END IF;
         ELSIF key LIKE '%\_id' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
         ELSIF key LIKE '%\_fingerprint' ESCAPE '\' THEN

@@ -37,7 +37,6 @@ RAW_ALLOWED = {
     # the tag cannot take as one argument yet.
     "hosted-files.html": 2,
     "logs.html": 3,
-    "family-timeline.html": 1,
 }
 
 COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}", re.S)

@@ -103,6 +103,9 @@ DESCRIPTIONS = {
         "minutes."
     ),
     "family_login": _("A Family signed in to the Family form."),
+    "family_assisted_login": _(
+        "Staff signed in to the Family form for a Family through Open form."
+    ),
     # Session endings the sign-in code records under its ending reason.
     "admin_logout": _(
         "A portal user (Administrator, Staff or Ministry leader) signed out."
@@ -681,6 +684,7 @@ DESCRIPTIONS = {
         "Someone downloaded the list of ParishSoft data to check."
     ),
     "family_timeline_viewed": _("Someone opened a Family's timeline."),
+    "family_form_opened": _("Opened the Family form for a Family through Open form."),
     "portal_users_viewed": _("An Administrator opened the Users page."),
     "user_change_requested": _(
         "An Administrator asked to add, change or delete Admin portal users."
@@ -761,6 +765,7 @@ DIRECT_AUDIT_TYPES = frozenset(
         "credential_key_activated",
         "credential_keys_retired",
         "family_link_population_extended",
+        "family_assisted_login",
         "family_link_rotated",
         "family_login",
         "family_logout",
@@ -1010,6 +1015,7 @@ _SORT_COLUMNS = {
     "last": _("Last submitted"),
     "mailing": _("Mailing name"),
     "problem": _("What to check"),
+    "staff_entered": _("Entered by Staff"),
 }
 # The directory's sort columns (#933), by the sort token's column part: "name"
 # is the Family column; the rest are the response lists' headings.

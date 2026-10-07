@@ -131,6 +131,11 @@ class Submission(ImmutableRecord):
     form_schema = models.CharField(max_length=48)
     answers = models.JSONField()
     annual_pledge = models.DecimalField(max_digits=14, decimal_places=2, null=True)
+    # The Admin (Staff or Administrator) who entered this response for the
+    # Family through Open form (#529), or None when the Family entered it.
+    # A soft reference like ``actor_id``: no foreign key, so history outlives
+    # the portal user. Added by frozen migration 0021.
+    entered_by_id = models.UUIDField(null=True)
 
     class Meta:
         db_table = "stewardship_submission"

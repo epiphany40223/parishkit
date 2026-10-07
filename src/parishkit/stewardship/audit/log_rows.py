@@ -360,6 +360,11 @@ UNGROUPED_REASONS = {
         "ministry_request_updated",
         "ministry_roster_entered",
     ),
+    "Staff opening a Family's form through Open form, and the Family sign-in "
+    "it starts (#529); not a portal sign-in": (
+        "family_assisted_login",
+        "family_form_opened",
+    ),
     "The campaign's lifecycle and going live; no group covers them yet": (
         *built_types(
             "campaign_",
