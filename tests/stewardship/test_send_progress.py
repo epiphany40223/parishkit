@@ -221,12 +221,14 @@ def test_a_running_send_polls_with_a_labelled_progress_bar():
         in (html)
     )
     assert 'id="send-progress-label">500 of 1,100 emails finished (45%)' in html
-    for text in ("Sent", "Remaining", "Failed", "Uncertain (delivery unknown)"):
+    for text in ("Sent", "Remaining", "Failed", "Not sure it arrived"):
         assert f"<dt>{text}</dt>" in html
     assert "100.0 emails per minute" in html
     assert "about 6 minutes" in html
     # Each kind links to its own filtered list.
-    assert 'href="/admin/deliveries?state=delivery_unknown">Review uncertain' in html
+    assert (
+        'href="/admin/deliveries?state=delivery_unknown">Review emails that may' in html
+    )
     assert 'href="/admin/deliveries?state=permanent_failure">Review failed' in html
     assert "failed before they were prepared" not in html
     assert "<script" not in html
@@ -249,7 +251,7 @@ def test_a_finished_send_is_one_line_with_no_bar_and_the_page_keeps_checking():
     )
     assert "No Family email send is in progress right now" in html
     assert "Last send: Invitation email, finished <time" in html
-    assert "1,090 sent, 4 failed, 1 uncertain, 10 not sent." in html
+    assert "1,090 sent, 4 failed, 1 not sure it arrived, 10 not sent." in html
     assert 'href="/admin/deliveries">Outgoing mail</a>' in html
     assert "<progress" not in html and "emails finished" not in html
     # Still checking, so the next send appears by itself.
@@ -279,7 +281,7 @@ def test_a_cancelled_send_is_not_in_progress():
     assert (sent.total, sent.active) == (65, False)
     html = render(sent)
     assert "No Family email send is in progress right now" in html
-    assert "65 sent, 0 failed, 0 uncertain, 110 not sent." in html
+    assert "65 sent, 0 failed, 0 not sure it arrived, 110 not sent." in html
     assert "<progress" not in html
 
 
@@ -301,7 +303,7 @@ def test_reminder_buckets_and_preparation_failures_are_named():
         )
     )
     assert "Reminder email" in html
-    assert "<dt>Held: invitation failed or uncertain</dt><dd>3</dd>" in html
+    assert "<dt>Held: invitation failed or not sure it arrived</dt><dd>3</dd>" in html
     assert "<dd>4</dd>" in html and "<dd>5</dd>" in html
     assert "Not needed (already responded or replaced)" in html
     # Held reminders point at the invitations that hold them.
