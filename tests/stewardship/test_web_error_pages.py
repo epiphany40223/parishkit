@@ -138,7 +138,7 @@ def test_refused_gated_post_says_nothing_was_done(kept):
     It says plainly that nothing happened, and says whether the view kept the
     Admin's choices for after the step-up or they must be entered again.
     """
-    request = RequestFactory().post("/admin/campaign/x/content/test/y/families", **PAGE)
+    request = RequestFactory().post("/admin/campaign/content/test/y/families/", **PAGE)
     response = error_response(FreshAuthenticationRequired())
     if kept:
         response.stewardship_inputs_kept = True
@@ -146,7 +146,7 @@ def test_refused_gated_post_says_nothing_was_done(kept):
     assert "Nothing was done or sent." in body
     assert ("will be shown again when you return" in body) is kept
     assert ("enter it again after you return" in body) is not kept
-    assert 'name="next" value="/admin/campaign/x/content/test/y/families"' in body
+    assert 'name="next" value="/admin/campaign/content/test/y/families/"' in body
 
 
 def test_fresh_authentication_for_scripts_stays_a_json_denial():

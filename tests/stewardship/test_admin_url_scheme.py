@@ -20,19 +20,6 @@ from parishkit.stewardship.admin_urls import campaign, legacy, mail, parish, sys
 # Menu groups whose URLs follow the scheme so far, by URL segment.
 MOVED = {"system", "parish", "mail", "campaign"}
 GROUPS = system.patterns + parish.patterns + mail.patterns + campaign.patterns
-# Campaign setup pages that move with part B (NAV-10).
-PART_B = {
-    "campaign_mail",
-    "campaign_mail_families",
-    "campaign_ministries",
-    "go_live",
-    "go_live_cleanup",
-    "go_live_families",
-    "go_live_links",
-    "production_confirmation",
-    "production_progress",
-    "production_withdrawal",
-}
 # Route segments that would be a GET target naming an action.
 VERBS = {
     "acknowledge",
@@ -77,11 +64,7 @@ def test_moved_routes_follow_the_scheme(pattern):
 
 @pytest.mark.parametrize(
     "name",
-    sorted(
-        name
-        for name, page in navigation.PAGES.items()
-        if page.section in MOVED and name not in PART_B
-    ),
+    sorted(name for name, page in navigation.PAGES.items() if page.section in MOVED),
 )
 def test_every_moved_page_reverses_under_its_group(name):
     """Each page's URL is /admin/<group>/…/ for its menu group."""
@@ -240,6 +223,24 @@ EXPECTED = {
     "/admin/campaign/schedules": "/admin/campaign/schedules/",
     "/admin/campaign/share-options": "/admin/campaign/share-options/",
     "/admin/campaign/talents": "/admin/campaign/talents/",
+    f"/admin/campaign/content/test/{T}": f"/admin/campaign/content/test/{T}/",
+    f"/admin/campaign/content/test/{T}/families": (
+        f"/admin/campaign/content/test/{T}/families/"
+    ),
+    "/admin/campaign/go-live": "/admin/campaign/go-live/",
+    "/admin/campaign/go-live/families": "/admin/campaign/go-live/families/",
+    f"/admin/campaign/go-live/cleanup/{T}": f"/admin/campaign/go-live/cleanup/{T}/",
+    f"/admin/campaign/go-live/cleanup/{T}/links": (
+        f"/admin/campaign/go-live/cleanup/{T}/links/"
+    ),
+    f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation": (
+        f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation/"
+    ),
+    "/admin/campaign/production": "/admin/campaign/production/",
+    "/admin/campaign/production/cancellation": (
+        "/admin/campaign/production/cancellation/"
+    ),
+    "/admin/parish/ministries/campaign": "/admin/parish/ministries/campaign/",
     "/admin/mail/controls": "/admin/mail/controls/",
     "/admin/mail/family-progress": "/admin/mail/family-progress/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
@@ -278,6 +279,19 @@ CAMPAIGN_EXPECTED = {
     f"{C}/schedules": "/admin/campaign/schedules/",
     f"{C}/share-options": "/admin/campaign/share-options/",
     f"{C}/talents": "/admin/campaign/talents/",
+    # Campaign setup, part B (NAV-10).
+    f"{C}/content/test/{T}": f"/admin/campaign/content/test/{T}/",
+    f"{C}/content/test/{T}/families": f"/admin/campaign/content/test/{T}/families/",
+    f"{C}/go-live": "/admin/campaign/go-live/",
+    f"{C}/go-live/families": "/admin/campaign/go-live/families/",
+    f"{C}/go-live/cleanup/{T}": f"/admin/campaign/go-live/cleanup/{T}/",
+    f"{C}/go-live/cleanup/{T}/links": f"/admin/campaign/go-live/cleanup/{T}/links/",
+    f"{C}/go-live/cleanup/{T}/links/{T}/confirm": (
+        f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation/"
+    ),
+    f"{C}/production": "/admin/campaign/production/",
+    f"{C}/production/withdraw": "/admin/campaign/production/cancellation/",
+    f"{C}/ministries": "/admin/parish/ministries/campaign/",
 }
 
 
@@ -347,8 +361,41 @@ def test_group_roots_open_their_group(section, name):
     assert slashless.func(RequestFactory().get(url.rstrip("/")))["Location"] == url
 
 
-def test_old_test_email_addresses_still_reach_their_pages():
-    """Until NAV-10 moves them, the test email pages beat the old editor route."""
-    old = f"/admin/campaign/{T}/content/test/{T}"
-    assert resolve(old).url_name == "campaign_mail"
-    assert resolve(old + "/families").url_name == "campaign_mail_families"
+def test_test_email_pages_come_before_the_content_editor():
+    """content/<kind>/<slot>/ would take content/test/<revision>/ as kind "test".
+
+    The editor route is listed after the test email routes, at every address
+    form: the page, its no-slash form and the old campaign address, so each
+    reaches (or redirects to) the test page, never the editor (NAV-10).
+    """
+    page = f"/admin/campaign/content/test/{T}/"
+    assert resolve(page).url_name == "campaign_mail"
+    assert resolve(page + "families/").url_name == "campaign_mail_families"
+    assert resolve(f"/admin/campaign/content/email/{T}/").url_name == "content_edit"
+    names = [pattern.name for pattern in campaign.patterns]
+    assert names.index("campaign_mail") < names.index("content_edit")
+    assert names.index("campaign_mail_families") < names.index("content_edit")
+    for old, name in (
+        (page.rstrip("/"), "campaign_mail_slashless"),
+        (page + "families", "campaign_mail_families_slashless"),
+        (f"/admin/campaign/{T}/content/test/{T}", "campaign_mail"),
+        (f"/admin/campaign/{T}/content/test/{T}/families", "campaign_mail_families"),
+    ):
+        match = resolve(old)
+        assert match.url_name == f"{legacy.PREFIX}{name}", old
+        assert match.func.legacy_target == name.removesuffix("_slashless")
+
+
+def test_the_go_live_chain_names_no_campaign():
+    """Each go-live step sits under the one before it, with no campaign id."""
+    cleanup = reverse("admin:go_live_cleanup", args=[TASK])
+    links = reverse("admin:go_live_links", args=[TASK])
+    confirmation = reverse("admin:production_confirmation", args=[TASK, TASK])
+    assert reverse("admin:go_live") == "/admin/campaign/go-live/"
+    assert cleanup.startswith("/admin/campaign/go-live/") and links.startswith(cleanup)
+    assert confirmation.startswith(links) and confirmation.endswith("/confirmation/")
+    withdrawal = reverse("admin:production_withdrawal")
+    assert withdrawal.startswith(reverse("admin:production_progress"))
+    # One home per concept: Campaign Ministries runs through Ministries.
+    assert reverse("admin:campaign_ministries").startswith(reverse("admin:ministries"))
+    assert navigation.PAGES["campaign_ministries"].parent == "ministries"

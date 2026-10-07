@@ -78,6 +78,10 @@ CAMPAIGN = (
     (f"{_C}/content", "content_catalog"),
     (f"{_C}/content/history", "content_history"),
     (f"{_C}/content/history/<uuid:revision_id>", "content_history_revision"),
+    # The test email pages (NAV-10) before the editor row, which would
+    # otherwise take content/test/<revision> as kind "test" (a test pins it).
+    (f"{_C}/content/test/<uuid:revision_id>", "campaign_mail"),
+    (f"{_C}/content/test/<uuid:revision_id>/families", "campaign_mail_families"),
     (f"{_C}/content/<str:kind>/<str:slot>", "content_edit"),
     (f"{_C}/content/<str:kind>/<str:slot>/<uuid:revision_id>", "content_revision"),
     (f"{_C}/images", "artwork_settings"),
@@ -87,6 +91,22 @@ CAMPAIGN = (
     (f"{_C}/schedules", "schedule_settings"),
     (f"{_C}/share-options", "share_settings"),
     (f"{_C}/talents", "talent_settings"),
+    # Campaign setup, part B (NAV-10): the go-live chain, Production
+    # activation and Cancel go-live. A form left open on an old address is
+    # re-posted (308) only for the current campaign, and its target page
+    # still checks the CSRF token, a fresh sign-in and the reviewed token.
+    (f"{_C}/go-live", "go_live"),
+    (f"{_C}/go-live/families", "go_live_families"),
+    (f"{_C}/go-live/cleanup/<uuid:request_id>", "go_live_cleanup"),
+    (f"{_C}/go-live/cleanup/<uuid:request_id>/links", "go_live_links"),
+    (
+        f"{_C}/go-live/cleanup/<uuid:request_id>/links/<uuid:preparation_id>/confirm",
+        "production_confirmation",
+    ),
+    (f"{_C}/production", "production_progress"),
+    (f"{_C}/production/withdraw", "production_withdrawal"),
+    # Campaign Ministries now sits under Parish data's Ministries.
+    (f"{_C}/ministries", "campaign_ministries"),
 )
 
 # Each page already in the scheme without its trailing slash (the one
@@ -120,6 +140,9 @@ SLASHLESS = (
     ("campaign/content", "content_catalog"),
     ("campaign/content/history", "content_history"),
     ("campaign/content/history/<uuid:revision_id>", "content_history_revision"),
+    # As in CAMPAIGN, the test email pages before the editor.
+    ("campaign/content/test/<uuid:revision_id>", "campaign_mail"),
+    ("campaign/content/test/<uuid:revision_id>/families", "campaign_mail_families"),
     ("campaign/content/<str:kind>/<str:slot>", "content_edit"),
     ("campaign/content/<str:kind>/<str:slot>/<uuid:revision_id>", "content_revision"),
     ("campaign/images", "artwork_settings"),
@@ -129,6 +152,18 @@ SLASHLESS = (
     ("campaign/schedules", "schedule_settings"),
     ("campaign/share-options", "share_settings"),
     ("campaign/talents", "talent_settings"),
+    ("campaign/go-live", "go_live"),
+    ("campaign/go-live/families", "go_live_families"),
+    ("campaign/go-live/cleanup/<uuid:request_id>", "go_live_cleanup"),
+    ("campaign/go-live/cleanup/<uuid:request_id>/links", "go_live_links"),
+    (
+        "campaign/go-live/cleanup/<uuid:request_id>/links/<uuid:preparation_id>"
+        "/confirmation",
+        "production_confirmation",
+    ),
+    ("campaign/production", "production_progress"),
+    ("campaign/production/cancellation", "production_withdrawal"),
+    ("parish/ministries/campaign", "campaign_ministries"),
     ("mail/controls", "delivery_control"),
     ("mail/family-progress", "family_email_progress"),
     ("mail/family-history", "family_email_sends"),

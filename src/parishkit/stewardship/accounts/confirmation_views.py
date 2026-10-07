@@ -13,6 +13,7 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from . import admin_navigation, confirmation_commands, confirmation_progress
 from .admin_caller import AdminCaller
+from .admin_editing import principal
 from .authentication import runtime
 from .confirmation_readiness import collect_readiness
 from .go_live_views import PROBLEMS
@@ -43,6 +44,12 @@ def confirmation(request, campaign_id, request_id, preparation_id):
     """GET/HEAD cannot verify DNS, enumerate impact or activate Production."""
     try:
         service = runtime()
+        if campaign_id is None:
+            # No current campaign (the campaign-free route passes None).
+            # Authorize first, as every page does before inspecting state,
+            # then refuse plainly before any lookup or campaign transaction.
+            principal(request, service, passive=True)
+            raise ObjectDoesNotExist("No current campaign.")
         arguments = request, service, campaign_id, request_id, preparation_id
         action = request.POST.get("action") if request.method == "POST" else None
         _closed(
@@ -58,9 +65,7 @@ def confirmation(request, campaign_id, request_id, preparation_id):
             return _checked(
                 request,
                 service,
-                HttpResponseRedirect(
-                    reverse("admin:production_progress", args=[campaign_id])
-                ),
+                HttpResponseRedirect(reverse("admin:production_progress")),
             )
         preview, verified, token = None, None, None
         if action == "verify":
@@ -122,9 +127,7 @@ def progress(request, campaign_id):
             confirmation_progress.retry(
                 request, service, campaign_id, token=request.POST.get("control", "")
             )
-            response = HttpResponseRedirect(
-                reverse("admin:production_progress", args=[campaign_id])
-            )
+            response = HttpResponseRedirect(reverse("admin:production_progress"))
         else:
             # The last step of going live: following activation (#196).
             admin_navigation.place(request, flow="go_live", step="activate")

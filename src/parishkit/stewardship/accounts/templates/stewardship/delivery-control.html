@@ -26,7 +26,7 @@
 <section class="panel"><h2>{% translate "Provider and sender check" %}</h2>
 {% if health.ready %}<p role="status">{% translate "The current provider and sender accepted a test after this pause." %} {% translate "Valid until" %}: <time data-local-instant datetime="{{ health.expires_at }}">{{ health.expires_at }}</time>.</p>
 {% else %}<p>{% translate "Before releasing held email, send a test email and wait until the mail service accepts it. The test must be sent after this pause, with the current settings, and less than five minutes before you resume. A later mail-service failure or an unresolved test means you need a new test." %}</p>{% endif %}
-{% if test_template %}<p><a href="{% url 'admin:campaign_mail' campaign.pk test_template %}">{% translate "Preview and send a test to the configured Testing recipient" %}</a></p>{% endif %}
+{% if test_template %}<p><a href="{% url 'admin:campaign_mail' test_template %}">{% translate "Preview and send a test to the configured Testing recipient" %}</a></p>{% endif %}
 <p>{% translate "A successful test does not itself resume or release any campaign message." %}</p></section>
 {% if family_recovery %}<section class="panel"><h2>{% translate "Overdue Family email" %}</h2>
 <p>{% translate "Invitations and reminders whose send time passed during the pause. Receipts and Admin digests are not counted here. These numbers are for planning; nothing is sent until you resume." %}</p>

@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.db.models import F
+from django.urls import resolve, reverse
 
 from parishkit.stewardship.accounts import campaign_family_test as intake
 from parishkit.stewardship.accounts.key_files import file_fingerprint
@@ -138,8 +139,9 @@ def family_test(request, monkeypatch, google):
     )
     browser, response = signed_in()
     assert response.status_code == 302
-    path = f"/admin/campaign/{harness.campaign.pk}/content/test/{template['id']}"
-    return harness, browser, path + "/families", path
+    path = reverse("admin:campaign_mail", args=[template["id"]])
+    families = reverse("admin:campaign_mail_families", args=[template["id"]])
+    return harness, browser, families, path
 
 
 def review(browser, path, duids):
@@ -324,8 +326,8 @@ def test_family_test_pages_show_their_email_trail_and_steps(family_test):
     moves through it.
     """
     harness, browser, path, sample = family_test
-    template = sample.rsplit("/", 1)[-1]
-    editor = f"/admin/campaign/content/email/initial/{template}/"
+    template = resolve(sample).kwargs["revision_id"]
+    editor = reverse("admin:content_revision", args=["email", "initial", template])
     with web_login():
         page = browser.get(sample)
     body = page.content.decode()

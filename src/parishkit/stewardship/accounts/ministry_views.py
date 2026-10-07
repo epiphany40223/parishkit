@@ -12,6 +12,8 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_safe
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.live_ministries import live_ministries_editable
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.source.catalog_names import ministry_display_name
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.version_models import SnapshotMinistry
@@ -57,13 +59,13 @@ class ActivityForm(forms.Form):
         ]
 
 
-def not_included(rows, active, campaign_url):
+def not_included(rows, active, campaign_link):
     """Selected Ministries that activation will not add to the campaign.
 
     Without a current campaign there is nothing to include them in, and
     inactivation never adds anything, so neither needs the explanation.
     """
-    if not (campaign_url and active):
+    if not (campaign_link and active):
         return []
     return [row for row in rows if not row["included"]]
 
@@ -137,16 +139,31 @@ def _state(service):
     return configuration, current, activity, catalog
 
 
-def campaign_ministries_url(configuration):
-    """Campaign settings' Ministry selections for the current campaign, or None.
+def campaign_ministries_link(configuration):
+    """Where the current campaign's Ministry selections change, or None.
 
     Activity (offered to parishioners at all) and inclusion in the current
     campaign are separate settings; this page changes only activity, so it
-    points Admins at the place that changes inclusion.
+    points Admins at the place that changes inclusion: Campaign Ministries
+    while the campaign is live (it sits under Ministries), else Campaign
+    settings' Ministry selections. Returns ``{"url", "label"}``.
     """
     if configuration.current_campaign_id is None:
         return None
-    return reverse("admin:campaign_settings") + "#ministry-selections"
+    campaign = (
+        Campaign.objects.select_related("active_configuration")
+        .filter(pk=configuration.current_campaign_id)
+        .first()
+    )
+    if live_ministries_editable(campaign, configuration.current_campaign_id):
+        return {
+            "url": reverse("admin:campaign_ministries"),
+            "label": _("Campaign Ministries"),
+        }
+    return {
+        "url": reverse("admin:campaign_settings") + "#ministry-selections",
+        "label": _("Campaign settings → Ministry selections"),
+    }
 
 
 def _preview(request, service, principal):
@@ -227,15 +244,15 @@ def _preview(request, service, principal):
         if patch
         else None
     )
-    campaign_url = campaign_ministries_url(configuration)
+    campaign_link = campaign_ministries_link(configuration)
     admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
         "stewardship/ministry-preview.html",
         {
             "changing": changing,
-            "not_included": not_included(rows, active, campaign_url),
-            "campaign_url": campaign_url,
+            "not_included": not_included(rows, active, campaign_link),
+            "campaign_link": campaign_link,
             "unchanged": [row for row in rows if row["active"] == active],
             "new_active": active,
             "preview": token,
@@ -290,7 +307,7 @@ def _listing(request, configuration, catalog, selected, *, notice=None, status=2
             "state": state,
             "notice": notice,
             "parish_name": configuration.active_configuration.parish.name,
-            "campaign_url": campaign_ministries_url(configuration),
+            "campaign_link": campaign_ministries_link(configuration),
         },
         status=status,
     )

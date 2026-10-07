@@ -8,6 +8,7 @@ import pytest
 from django.core import signing
 from django.db.models import F
 from django.test import Client
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import go_live_commands, go_live_views
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
@@ -31,8 +32,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test):
     service, browser, _, _ = campaign_test
-    campaign = Campaign.objects.get()
-    path = f"/admin/campaign/{campaign.pk}/go-live"
+    path = reverse("admin:go_live")
     before = PortalSession.objects.get().last_activity_at
     tasks = TaskRun.objects.count()
     with web_login():
@@ -51,20 +51,21 @@ def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test)
         assert PortalSession.objects.get().last_activity_at == before
         assert not ProductionTransitionRequest.objects.exists()
         assert TaskRun.objects.count() == tasks
-        families = browser.get(path + "/families")
+        families_path = reverse("admin:go_live_families")
+        families = browser.get(families_path)
         assert families.status_code == 200
         assert flow_steps(families.content) == (GO_LIVE, "Check readiness")
         assert b'class="table-nav"' in families.content
-        assert browser.get(path + "/families?size=25").status_code == 200
-        assert browser.get(path + "/families?page=0").status_code == 400
-        assert browser.get(path + "/families?size=500").status_code == 400
-        sorted_page = browser.get(path + "/families?sort=-name")
+        assert browser.get(families_path + "?size=25").status_code == 200
+        assert browser.get(families_path + "?page=0").status_code == 400
+        assert browser.get(families_path + "?size=500").status_code == 400
+        sorted_page = browser.get(families_path + "?sort=-name")
         assert sorted_page.status_code == 200
         assert b'aria-sort="descending"' in sorted_page.content
         assert b"Page 1 of 1" in sorted_page.content
         assert b"sort=name" in sorted_page.content
         for token in ("family_duid", "name;", "-id"):
-            assert browser.get(path + f"/families?sort={token}").status_code == 400
+            assert browser.get(families_path + f"?sort={token}").status_code == 400
         assert browser.get(path + "?actor=other").status_code == 400
         assert browser.post(path, {}).status_code == 403  # missing CSRF
 
@@ -85,11 +86,12 @@ def test_staff_and_ministry_leaders_cannot_read_readiness(campaign_test, google,
     google[0].update(email="other@example.org", sub="another-google-subject")
     browser, login = signed_in()
     assert login.status_code == 302
-    path = f"/admin/campaign/{Campaign.objects.get().pk}/go-live"
+    path = reverse("admin:go_live")
     with web_login():
         assert browser.get(path).status_code == 403
-        assert browser.get(path + "/families").status_code == 403
-        assert browser.get(path + f"/cleanup/{uuid4()}/links").status_code == 403
+        assert browser.get(reverse("admin:go_live_families")).status_code == 403
+        links = reverse("admin:go_live_links", args=[uuid4()])
+        assert browser.get(links).status_code == 403
         assert Client().get(path).status_code in {302, 403}
 
 
@@ -104,7 +106,7 @@ def test_revocation_during_render_prevents_private_response(campaign_test, monke
         return result
 
     monkeypatch.setattr(go_live_views, "render", revoke)
-    response = browser.get(f"/admin/campaign/{Campaign.objects.get().pk}/go-live")
+    response = browser.get(reverse("admin:go_live"))
     assert response.status_code == 403
     assert b"Testing cleanup inventory" not in response.content
 
@@ -113,7 +115,7 @@ def test_exact_close_is_a_readiness_blocker_not_active_target(campaign_test):
     _, browser, _, _ = campaign_test
     campaign = Campaign.objects.select_related("active_configuration").get()
     with campaign_clock(campaign.active_configuration.ends_at), web_login():
-        response = browser.get(f"/admin/campaign/{campaign.pk}/go-live")
+        response = browser.get(reverse("admin:go_live"))
     assert response.status_code == 200, response.content
     assert response.context["preview"].target_state == "closed"
     assert "campaign_closed" in response.context["preview"].problems
@@ -137,7 +139,7 @@ def test_explicit_origin_check_does_not_mistake_dns_for_complete_readiness(
         return True
 
     monkeypatch.setattr(go_live_commands, "check_public_origin", verified)
-    path = f"/admin/campaign/{Campaign.objects.get().pk}/go-live"
+    path = reverse("admin:go_live")
     with web_login():
         assert browser.get(path).status_code == 200
         assert not calls
@@ -164,7 +166,7 @@ def test_signature_alone_cannot_admit_cleanup_with_missing_current_proofs(
     settings.STEWARDSHIP_PUBLIC_ORIGIN = "http://localhost:8000"
     settings.STEWARDSHIP_DEPLOYMENT_PROFILE = "test"
     campaign = Campaign.objects.get()
-    response = browser.get(f"/admin/campaign/{campaign.pk}/go-live")
+    response = browser.get(reverse("admin:go_live"))
     token = signing.dumps(
         {
             "actor": str(PortalUser.objects.get().pk),

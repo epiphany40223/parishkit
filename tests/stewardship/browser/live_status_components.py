@@ -33,9 +33,7 @@ CREDENTIAL_RUNNING = reverse("admin:credential_status", args=[RUNNING])
 PROGRESS = reverse("admin:family_email_progress")
 # The passive status the progress page polls while a send runs.
 PROGRESS_STATUS = "/live-progress-status"
-FAMILY_TESTS = reverse(
-    "admin:campaign_mail_families", args=[UUID(int=701), UUID(int=702)]
-)
+FAMILY_TESTS = reverse("admin:campaign_mail_families", args=[UUID(int=702)])
 INTEGRATION = reverse("admin:integration_settings", args=["parishsoft"])
 DISMISS = reverse("admin:dismiss_credential_result", args=["parishsoft"])
 # The fixture server's answer to Dismiss (status, Location, body).

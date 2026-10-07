@@ -24,7 +24,7 @@ from parishkit.stewardship.campaigns.confirmation_models import ProductionConfir
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.domain import CampaignState
 from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
-from parishkit.stewardship.campaigns.live_ministries import live_change_admitted
+from parishkit.stewardship.campaigns.live_ministries import live_ministries_editable
 from parishkit.stewardship.campaigns.models import Campaign, CampaignWorkGate
 from parishkit.stewardship.campaigns.single_campaign import creation_refused
 from parishkit.stewardship.campaigns.work_locks import (
@@ -224,9 +224,9 @@ def _page(request, configuration, campaign, form, *, editable, status=200):
             "form": form,
             "editable": editable,
             # A live campaign's Ministries keep their own editor (#342).
-            "ministries_live": campaign.pk == configuration.current_campaign_id
-            and live_change_admitted(campaign.state, locked=campaign.structural_locked)
-            and "ministry" in campaign.active_configuration.values["modules"],
+            "ministries_live": live_ministries_editable(
+                campaign, configuration.current_campaign_id
+            ),
             "family_test_url": chosen_family_test_url(configuration, campaign),
             "production_progress_available": configuration.current_campaign_id
             == campaign.pk

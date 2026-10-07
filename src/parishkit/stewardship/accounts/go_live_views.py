@@ -112,10 +112,7 @@ def readiness(request, campaign_id):
                     request,
                     service,
                     HttpResponseRedirect(
-                        reverse(
-                            "admin:go_live_cleanup",
-                            args=[campaign_id, status.request_id],
-                        )
+                        reverse("admin:go_live_cleanup", args=[status.request_id])
                     ),
                 )
             if action != "verify":
@@ -171,7 +168,7 @@ def cleanup_status(request, campaign_id, request_id):
                 request,
                 service,
                 HttpResponseRedirect(
-                    reverse("admin:go_live_cleanup", args=[campaign_id, request_id])
+                    reverse("admin:go_live_cleanup", args=[request_id])
                 ),
             )
         context = progress(request, service, campaign_id, request_id)
@@ -213,7 +210,8 @@ def testing_families(request, campaign_id):
             configuration = editable_configuration(service)
             scope = _scope(campaign_id)
             if (
-                configuration.current_campaign_id != campaign_id
+                scope.campaign is None
+                or configuration.current_campaign_id != campaign_id
                 or configuration.mode != "testing"
                 or scope.campaign.state != "draft"
             ):

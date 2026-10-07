@@ -1,20 +1,23 @@
 """Parish data group URLs: settings, logos, Ministries, hosted files, refresh.
 
 Pages end in ``/``; their form actions and images sit under them as nouns
-(``uploads/``, ``deletion/``, ``name/``). Campaign Ministries moves here with
-the campaign URL slice (NAV-10), because its old address names a campaign.
+(``uploads/``, ``deletion/``, ``name/``). Campaign Ministries sits under
+Ministries (one home per concept); it changes the current campaign's
+selections, so its route hands the view the current campaign's id.
 """
 
 from django.urls import path
 
 from ..accounts import (
     branding_views,
+    campaign_ministry_views,
     hosted_file_views,
     ministry_views,
     parish_views,
     refresh_views,
 )
 from ..accounts.group_root_views import group_root
+from ..web.admin_routes import current_campaign
 
 patterns = [
     # The group root opens the first entry the viewer may open now.
@@ -33,6 +36,11 @@ patterns = [
         name="branding_asset",
     ),
     path("parish/ministries/", ministry_views.ministry_activity, name="ministries"),
+    path(
+        "parish/ministries/campaign/",
+        current_campaign(campaign_ministry_views.campaign_ministries),
+        name="campaign_ministries",
+    ),
     path("parish/files/", hosted_file_views.library, name="hosted_files"),
     path("parish/files/uploads/", hosted_file_views.upload, name="hosted_file_upload"),
     path("parish/files/deletion/", hosted_file_views.delete, name="hosted_file_delete"),

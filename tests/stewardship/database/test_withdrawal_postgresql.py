@@ -11,6 +11,7 @@ import pytest
 from django.core import signing
 from django.db import DatabaseError, connection
 from django.db.models import F
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import withdrawal_commands as commands
 from parishkit.stewardship.accounts.confirmation_commands import confirm
@@ -80,7 +81,7 @@ def scheduled(request, monkeypatch):
         campaign=campaign,
         confirmation=receipt,
         arguments=arguments[:3],
-        path=f"/admin/campaign/{campaign.pk}/production/withdraw",
+        path=reverse("admin:production_withdrawal"),
         activation_arguments=arguments,
         activation_token=token,
         ring=links[2],
@@ -93,7 +94,7 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
     campaign = item.campaign
     revision = campaign.readiness_revision
     with web_login():
-        progress = item.browser.get(f"/admin/campaign/{campaign.pk}/production")
+        progress = item.browser.get(reverse("admin:production_progress"))
         assert progress.status_code == 200
         assert progress.context["withdrawal_available"]
         page = item.browser.get(item.path)
@@ -138,6 +139,18 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
         assert receipt.confirmation_id == item.confirmation.pk
         assert post(item.browser, item.path, confirm_values).status_code == 302
         assert ProductionWithdrawal.objects.count() == 1
+        # A cancellation left open on the old address (NAV-10): one 308 to the
+        # page, which keeps its CSRF and reviewed-token checks and cancels
+        # nothing twice; another campaign's old address is gone (410).
+        old = f"/admin/campaign/{campaign.pk}/production/withdraw"
+        assert item.browser.post(old, confirm_values).status_code == 403
+        csrf = {"csrfmiddlewaretoken": item.browser.cookies["pk_admin_csrf"].value}
+        again = item.browser.post(old, confirm_values | csrf, follow=True)
+        assert again.redirect_chain[0] == (item.path, 308)
+        assert ProductionWithdrawal.objects.count() == 1
+        gone = post(item.browser, f"/admin/campaign/{uuid4()}/production/withdraw", {})
+        assert gone.status_code == 410 and "no-store" in gone["Cache-Control"]
+        assert ProductionWithdrawal.objects.count() == 1
         with monkeypatch.context() as patch:
             patch.setattr(signing, "time", SimpleNamespace(time=lambda: time() + 301))
             with pytest.raises(signing.SignatureExpired):
@@ -146,10 +159,7 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
         result = item.browser.get(item.path)
         assert b"Go-live cancelled" in result.content
         assert not result.context["available"]
-        assert (
-            item.browser.get(f"/admin/campaign/{campaign.pk}/production").status_code
-            == 403
-        )
+        assert item.browser.get(reverse("admin:production_progress")).status_code == 403
         # Old signed activation intent cannot reactivate the withdrawn campaign.
         replay = confirm(
             *item.activation_arguments, token=item.activation_token, typed="Production"
@@ -356,7 +366,7 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
         assert status.request_id != item.confirmation.request_id
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert run(status)
-    path = f"/admin/campaign/{campaign_id}/go-live/cleanup/{status.request_id}/links"
+    path = reverse("admin:go_live_links", args=[status.request_id])
     with web_login():
         page = item.browser.get(path)
         assert page.status_code == 200, page.content

@@ -158,7 +158,7 @@ def families_link(runtime, campaign, revision_id):
         or not _template_in_schedule(campaign.pk, revision_id)
     ):
         return None
-    return reverse("admin:campaign_mail_families", args=[campaign.pk, revision_id])
+    return reverse("admin:campaign_mail_families", args=[revision_id])
 
 
 def chosen_family_test_url(runtime, campaign):

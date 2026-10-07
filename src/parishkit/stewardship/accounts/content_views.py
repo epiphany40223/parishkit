@@ -126,9 +126,7 @@ def _catalog(request, configuration, campaign):
                     if note and slot == "confirmation"
                     else row
                 ),
-                "test_url": reverse(
-                    "admin:campaign_mail", args=[campaign.pk, row["id"]]
-                ),
+                "test_url": reverse("admin:campaign_mail", args=[row["id"]]),
                 "url": reverse(
                     "admin:content_revision",
                     args=["email", slot, row["id"]],

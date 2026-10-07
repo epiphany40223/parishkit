@@ -208,17 +208,13 @@ def _page(
             and len(preview.families) <= preview.available,
             "items": items,
             "refresh": refresh,
-            "refresh_url": reverse(
-                "admin:campaign_mail_families", args=[campaign_id, revision_id]
-            ),
+            "refresh_url": reverse("admin:campaign_mail_families", args=[revision_id]),
             "fresh": fresh,
             "signed_in_minutes": minutes,
             "restored": restored,
             "sent": sent,
             "next": request.path,
-            "sample_url": reverse(
-                "admin:campaign_mail", args=[campaign_id, revision_id]
-            ),
+            "sample_url": reverse("admin:campaign_mail", args=[revision_id]),
         },
         status=200 if form is None or form.is_valid() else 400,
     )
@@ -281,7 +277,7 @@ def campaign_mail_families(request, campaign_id, revision_id):
             request,
             service,
             HttpResponseRedirect(
-                reverse("admin:campaign_mail_families", args=[campaign_id, revision_id])
+                reverse("admin:campaign_mail_families", args=[revision_id])
             ),
         )
     except ObjectDoesNotExist:

@@ -416,7 +416,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [ ] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
 - [x] ADM-12.11 — NAV-8: move Mail and Family portal URLs.
 - [x] ADM-12.12 — NAV-9: move Campaign setup URLs, part A, and add the group root.
-- [ ] ADM-12.13 — NAV-10: move Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries).
+- [x] ADM-12.13 — NAV-10: move Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries).
 - [ ] ADM-12.14 — NAV-11: move report URLs, including response lists and the reports root.
 - [ ] ADM-12.15 — NAV-12: move export and digest URLs and fold the latest-data export into the shared export page.
 - [ ] ADM-12.16 — NAV-13 (optional): add trailing slashes to sign-in, setup and maintenance URLs.
@@ -596,6 +596,35 @@ setup rows, the group roots, the test email routes),
 `tests/stewardship/database/test_admin_url_scheme_postgresql.py` (old
 addresses for the current campaign and another, each group root per role)
 and the updated campaign, content, image, schedule, share and talent suites.
+
+ADM-12.13 (NAV-10) moves the rest of Campaign setup under
+`/admin/campaign/` with no campaign in the address: Preview and test email
+`content/test/<revision>/` with Send to chosen Families `families/`, the
+go-live chain (`go-live/`, `go-live/families/`, `go-live/cleanup/<request>/`,
+its `links/` and `links/<preparation>/confirmation/`), Production activation
+`production/` and Cancel go-live `production/cancellation/`. Campaign
+Ministries moves under Ministries (`/admin/parish/ministries/campaign/`):
+its trail and Return link run through Ministries, and Ministries links it
+while the campaign is live; Campaign settings keeps its link. Each old
+address names a campaign, so it redirects only for the current campaign
+(301, or 308 that keeps a form's method and body) and is gone (410, never
+cached) for any other, before any effect; the page a 308 reaches still checks
+the CSRF token, the fresh sign-in and the reviewed token, so a re-posted form
+never acts twice. The test email routes, their no-slash forms and their old
+addresses come before the content editor's, which would otherwise take
+`content/test/<revision>` as kind "test". Every moved page and its form
+posts (Confirm Production and Cancel go-live included) refuse plainly when
+there is no current campaign. It is proven
+by `tests/stewardship/test_admin_url_scheme.py` (the part B rows, the test
+email route order, the go-live chain),
+`tests/stewardship/database/test_admin_url_scheme_postgresql.py` (old
+addresses for the current campaign and another, an old readiness form that
+starts nothing, the pages without a current campaign),
+`tests/stewardship/database/test_confirmation_readiness_postgresql.py` and
+`tests/stewardship/database/test_withdrawal_postgresql.py` (a confirmation or
+cancellation re-posted through its old address keeps the CSRF, fresh sign-in
+and reviewed-token checks and acts once) and the updated go-live, test
+email, delivery control and live Ministries suites.
 
 ## ADM-13: System health page
 

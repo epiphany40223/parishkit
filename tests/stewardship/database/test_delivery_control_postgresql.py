@@ -253,9 +253,7 @@ def test_pause_is_atomic_exact_and_keeps_delivery_payload(
     assert item.campaign.state == "scheduled"
     assert SystemConfiguration.objects.get().mode == "production"
     assert DeliveryControlCommand.objects.count() == 1
-    test_path = reverse(
-        "admin:campaign_mail", args=[item.campaign.pk, status["test_template"]]
-    )
+    test_path = reverse("admin:campaign_mail", args=[status["test_template"]])
     resume_token = None
     for outcome, ready in (
         (DeliveryOutcome.NOT_SENT, False),
@@ -370,9 +368,7 @@ def assert_family_resume(item, monkeypatch, tmp_path):
             assert status["family_recovery"]["selected"] == 1
             assert status["family_recovery"]["coalesced"] == 3
             assert status["family_recovery"]["unmaterialized"] == 1
-            test_path = reverse(
-                "admin:campaign_mail", args=[item.campaign.pk, status["test_template"]]
-            )
+            test_path = reverse("admin:campaign_mail", args=[status["test_template"]])
             page = item.browser.get(test_path)
             assert page.status_code == 200
             token = page.context["form"]["preview_token"].value()
@@ -466,9 +462,7 @@ def accepted_sender_check(item, monkeypatch, tmp_path):
     """Exercise the real explicit-test owner; only the provider result is fake."""
     with web_login():
         status = commands.page(*item.arguments)
-        path = reverse(
-            "admin:campaign_mail", args=[item.campaign.pk, status["test_template"]]
-        )
+        path = reverse("admin:campaign_mail", args=[status["test_template"]])
         page = item.browser.get(path)
         assert page.status_code == 200
         token = page.context["form"]["preview_token"].value()

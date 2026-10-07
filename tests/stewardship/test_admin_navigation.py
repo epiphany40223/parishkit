@@ -251,12 +251,12 @@ def _match(name, **kwargs):
 
 def test_a_test_email_trail_names_its_email_editor():
     """Preview and test email sits under the revision it sends, by name."""
-    campaign, revision = uuid4(), uuid4()
+    revision = uuid4()
     placed = navigation.Placement(
         arguments={"kind": "email", "slot": "initial"},
         labels={"content_revision": "Initial invitation"},
     )
-    match = _match("campaign_mail_families", campaign_id=campaign, revision_id=revision)
+    match = _match("campaign_mail_families", revision_id=revision)
     _, trail = navigation.build(match, _items(), placed)
     assert [crumb["label"] for crumb in trail][2:] == [
         navigation.PAGES["content_catalog"].label,
@@ -267,7 +267,7 @@ def test_a_test_email_trail_names_its_email_editor():
     assert trail[3]["url"] == reverse(
         "admin:content_revision", args=["email", "initial", revision]
     )
-    assert trail[4]["url"] == reverse("admin:campaign_mail", args=[campaign, revision])
+    assert trail[4]["url"] == reverse("admin:campaign_mail", args=[revision])
     assert navigation.back(match, placed)["url"] == trail[4]["url"]
 
 
@@ -632,6 +632,8 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "schedule_settings",
         "share_settings",
         "talent_settings",
+        "go_live",
+        "production_progress",
         "delivery_control",
         "family_email_progress",
         "family_email_sends",
@@ -709,9 +711,7 @@ def test_available_campaign_entries_link_the_current_campaign():
         item.name: item.url for item in _menu("administrator", campaign, "production")
     }
     assert urls["delivery_control"] == reverse("admin:delivery_control")
-    assert urls["production_progress"] == reverse(
-        "admin:production_progress", args=[campaign.pk]
-    )
+    assert urls["production_progress"] == reverse("admin:production_progress")
     # The Response dashboard has its own entry (#522).
     assert urls["response_dashboard"] == reverse(
         "admin:response_dashboard", args=[campaign.pk]
@@ -876,3 +876,19 @@ def test_the_menu_state_script_runs_right_after_the_sidebar():
     # The group state lives only in the early script.
     menu = (static / "admin-menu-v1.js").read_text(encoding="utf-8")
     assert "pk-admin-menu-group:" not in menu
+
+
+def test_campaign_ministries_trail_runs_through_ministries():
+    """Home › Parish data › Ministries › Campaign Ministries (one home, NAV-10)."""
+    match = _match("campaign_ministries")
+    sections, trail = navigation.build(match, _items())
+    assert [crumb["label"] for crumb in trail] == [
+        "Home",
+        "Parish data",
+        "Ministries",
+        "Campaign Ministries",
+    ]
+    assert trail[2]["url"] == reverse("admin:ministries")
+    assert trail[-1]["url"] is None
+    assert [section["key"] for section in sections if section["current"]] == ["parish"]
+    assert navigation.back(match, None, _items())["url"] == reverse("admin:ministries")

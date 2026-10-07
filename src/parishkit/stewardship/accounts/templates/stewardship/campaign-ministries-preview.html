@@ -15,5 +15,5 @@
 <p>{% translate "Every open form lists every Ministry, so each of these Families is asked to review the updated form before submitting. No email is sent." %}</p></section>
 <p>{% translate "Confirm to save this change. It is recorded with your name and the Ministries added and removed." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply changes" %}</button>
-<a href="{% url 'admin:campaign_ministries' campaign.pk %}">{% translate "Cancel" %}</a></form>
+<a href="{% url 'admin:campaign_ministries' %}">{% translate "Cancel" %}</a></form>
 {% endblock %}

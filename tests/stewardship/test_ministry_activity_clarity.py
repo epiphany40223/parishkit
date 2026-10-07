@@ -6,11 +6,12 @@ from uuid import uuid4
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import ministry_views
-from parishkit.stewardship.accounts.ministry_views import campaign_ministries_url
+from parishkit.stewardship.accounts.ministry_views import campaign_ministries_link
 from parishkit.stewardship.web.tables import paginate
 
 CAMPAIGN = uuid4()
 URL = "/admin/campaign/settings/#ministry-selections"
+LINK = {"url": URL, "label": "Campaign settings → Ministry selections"}
 
 
 def ministry(name, duid, *, included):
@@ -18,10 +19,62 @@ def ministry(name, duid, *, included):
     return {"duid": duid, "name": name, "active": True, "included": included}
 
 
-def test_campaign_link_names_the_ministry_selections():
-    """The link opens the current campaign's settings at Ministry selections."""
-    assert campaign_ministries_url(SimpleNamespace(current_campaign_id=CAMPAIGN)) == URL
-    assert campaign_ministries_url(SimpleNamespace(current_campaign_id=None)) is None
+def _current(monkeypatch, campaign):
+    """Make ``campaign`` the row the link helper reads for the current campaign."""
+    query = SimpleNamespace(first=lambda: campaign)
+    objects = SimpleNamespace(
+        select_related=lambda *_: SimpleNamespace(filter=lambda **_: query)
+    )
+    monkeypatch.setattr(ministry_views, "Campaign", SimpleNamespace(objects=objects))
+
+
+def _campaign(state, *, locked):
+    """A current campaign in ``state`` that asks about Ministries."""
+    return SimpleNamespace(
+        pk=CAMPAIGN,
+        state=state,
+        structural_locked=locked,
+        active_configuration=SimpleNamespace(values={"modules": ["ministry"]}),
+    )
+
+
+def test_campaign_link_opens_where_the_selections_change(monkeypatch):
+    """A draft changes them on Campaign settings; a live campaign on its own page.
+
+    Campaign Ministries sits under Ministries (one home per concept), so
+    Ministries links it directly while the campaign is live (NAV-10).
+    """
+    current = SimpleNamespace(current_campaign_id=CAMPAIGN)
+    _current(monkeypatch, _campaign("draft", locked=False))
+    assert campaign_ministries_link(current) == LINK
+    _current(monkeypatch, _campaign("active", locked=True))
+    assert campaign_ministries_link(current) == {
+        "url": "/admin/parish/ministries/campaign/",
+        "label": "Campaign Ministries",
+    }
+    assert campaign_ministries_link(SimpleNamespace(current_campaign_id=None)) is None
+
+
+def test_listing_links_campaign_ministries_while_live():
+    """A live campaign's selections link straight to Campaign Ministries."""
+    link = {"url": "/admin/parish/ministries/campaign/", "label": "Campaign Ministries"}
+    html = render_to_string(
+        "stewardship/ministries.html",
+        {
+            "table": paginate(
+                [ministry("Choir", 1, included=True)],
+                {},
+                carry=(("state", "all"),),
+                sorting=ministry_views.CATALOG_SORTING,
+            ),
+            "query": "",
+            "state": "all",
+            "campaign_link": link,
+        },
+    )
+    link = '<a href="/admin/parish/ministries/campaign/">Campaign Ministries</a>'
+    assert link in html
+    assert "Ministry selections" not in html
 
 
 def test_preview_explains_that_activation_does_not_include():
@@ -33,7 +86,7 @@ def test_preview_explains_that_activation_does_not_include():
             "changing": [],
             "unchanged": rows,
             "not_included": [rows[1]],
-            "campaign_url": URL,
+            "campaign_link": LINK,
             "new_active": True,
         },
     )
@@ -52,7 +105,7 @@ def test_preview_without_excluded_selection_has_no_note():
             "changing": [],
             "unchanged": [ministry("Choir", 1, included=True)],
             "not_included": [],
-            "campaign_url": URL,
+            "campaign_link": LINK,
             "new_active": True,
         },
     )
@@ -73,7 +126,7 @@ def test_listing_links_campaign_column_and_intro():
             ),
             "query": "",
             "state": "all",
-            "campaign_url": URL,
+            "campaign_link": LINK,
         },
     )
     assert "In current campaign" in html
@@ -84,9 +137,8 @@ def test_listing_links_campaign_column_and_intro():
 def test_only_activation_of_excluded_ministries_needs_the_note():
     """Inactivation, or no current campaign, never shows the inclusion note."""
     rows = [{"duid": 1, "included": True}, {"duid": 2, "included": False}]
-    url = "/admin/campaigns/x/settings#ministry-selections"
-    assert ministry_views.not_included(rows, True, url) == [rows[1]]
-    assert ministry_views.not_included(rows, False, url) == []
+    assert ministry_views.not_included(rows, True, LINK) == [rows[1]]
+    assert ministry_views.not_included(rows, False, LINK) == []
     assert ministry_views.not_included(rows, True, None) == []
 
 

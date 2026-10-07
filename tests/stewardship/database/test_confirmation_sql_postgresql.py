@@ -14,6 +14,7 @@ from django.core import signing
 from django.db import DatabaseError, connection
 from django.db.models import F
 from django.test import RequestFactory
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.confirmation_commands import (
     SALT,
@@ -119,11 +120,14 @@ def test_waiting_confirmation_rechecks_changed_impact_and_busy_http_is_retryable
     """Prove an actual lock wait, then reject the newly committed eligibility change."""
     preparation, arguments = prepare(ready_links)
     login, service, campaign_id = arguments[:3]
-    browser, links_path = ready_links[:2]
+    browser = ready_links[0]
     with web_login():
         _, _, token = fresh(arguments)
         browser.cookies["pk_admin"] = login.session.session_key
-        path = f"{links_path}/{preparation.pk}/confirm"
+        path = reverse(
+            "admin:production_confirmation",
+            args=[preparation.transition.pk, preparation.pk],
+        )
         browser.get(path)
     started = Queue()
 

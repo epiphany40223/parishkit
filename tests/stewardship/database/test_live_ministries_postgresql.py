@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError
+from django.urls import reverse
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.configuration_installation import install_request
@@ -258,11 +259,18 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
     """The review counts what removal touches; confirming records who and what."""
     harness = setup(response_service)
     browser, _ = signed_in()
-    url = f"/admin/campaign/{harness.campaign.pk}/ministries"
-    settings = browser.get("/admin/campaign/settings/")
+    url = reverse("admin:campaign_ministries")
+    settings = browser.get(reverse("admin:campaign_settings"))
     assert url.encode() in settings.content
+    # Ministries, its home in the menu, links it while the campaign is live
+    # (NAV-10), and the page returns there.
+    ministries = browser.get(reverse("admin:ministries")).content.decode()
+    assert f'<a href="{url}">Campaign Ministries</a>' in ministries
+    assert "#ministry-selections" not in ministries
     form = browser.get(url)
     assert form.status_code == 200, form.content
+    back = f'<a href="{reverse("admin:ministries")}">Return to Ministries</a>'
+    assert back in form.content.decode()
     digest = re.search(r'name="base_digest" value="([0-9a-f]+)"', form.content.decode())
     review = post(
         browser,
@@ -528,7 +536,7 @@ def test_editor_never_offers_a_ministry_parishsoft_no_longer_lists(
 
     monkeypatch.setattr(SourceMinistry, "payload", property(payload))
     browser, _ = signed_in()
-    form = browser.get(f"/admin/campaign/{harness.campaign.pk}/ministries")
+    form = browser.get(reverse("admin:campaign_ministries"))
     assert form.status_code == 200, form.content
     assert 'value="4"' in form.content.decode()
     assert 'value="9"' not in form.content.decode()

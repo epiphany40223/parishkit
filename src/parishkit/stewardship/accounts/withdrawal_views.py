@@ -9,6 +9,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.stewardship.storage import StaleRecordError
 
 from . import withdrawal_commands
+from .admin_editing import principal
 from .authentication import runtime
 from .installation_lock import ConfigurationBusy
 from .integration_views import ERRORS, _checked
@@ -20,6 +21,12 @@ def withdrawal(request, campaign_id):
     """GET/HEAD only report status; signed confirmation owns the actual transition."""
     try:
         service = runtime()
+        if campaign_id is None:
+            # No current campaign (the campaign-free route passes None).
+            # Authorize first, as every page does before inspecting state,
+            # then refuse plainly before any lookup or campaign transaction.
+            principal(request, service, passive=True)
+            raise ObjectDoesNotExist("No current campaign.")
         action = request.POST.get("action") if request.method == "POST" else None
         fields = (
             {"action", "preview"}
@@ -34,9 +41,7 @@ def withdrawal(request, campaign_id):
             return _checked(
                 request,
                 service,
-                HttpResponseRedirect(
-                    reverse("admin:production_withdrawal", args=[campaign_id])
-                ),
+                HttpResponseRedirect(reverse("admin:production_withdrawal")),
             )
         context = withdrawal_commands.page(request, service, campaign_id)
         if action == "preview":
