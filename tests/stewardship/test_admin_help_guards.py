@@ -87,15 +87,13 @@ NOTICE_BLOCK = re.compile(r"<div\b[^>]*" + NOTICE_CLASS + r"[^>]*>.*?</div>", re
 LINK = re.compile(r"<a\b.*?</a>", re.S)
 # About one line of visible introductory help.
 INTRO_WORDS = 15
-# Pages whose introduction is not yet converted (#227 follow-up PRs: the error
-# pages, and the pages other work was changing when the rest were converted),
-# with the visible introductory words each may keep. Lower or remove an entry
-# when its page is converted; never raise one or add a page.
+# Pages whose introduction is not yet converted, with the visible
+# introductory words each may keep: pages other work was changing when the
+# rest were converted (#227 follow-ups), and the two pages both portals render
+# (error.html and denied.html), whose visible text is the error itself and
+# which follow the Family portal's own layout. Lower or remove an entry when
+# its page is converted; never raise one or add a page.
 INTRO_ALLOWED = {
-    "user-rule-error.html": 164,
-    "chair-review-error.html": 155,
-    "assignment-error.html": 142,
-    "chair-confirmation-error.html": 104,
     "logs-error.html": 73,
     "ministry-followup-error.html": 38,
     "setup-content.html": 60,
@@ -103,14 +101,12 @@ INTRO_ALLOWED = {
     "error.html": 61,
     "setup.html": 46,
     "ministries.html": 38,
-    "export-cleanup-error.html": 31,
     "denied.html": 31,
     "go-live-readiness.html": 24,
     "delivery-control.html": 24,
     "availability.html": 21,
     "go-live-links.html": 20,
     "talents-report-error.html": 16,
-    "delivery-error.html": 16,
 }
 
 # Labels for internal identifiers and worker bookkeeping. They may appear
