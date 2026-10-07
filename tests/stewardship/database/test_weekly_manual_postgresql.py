@@ -71,7 +71,7 @@ def test_manual_after_success_repeats_only_by_explicit_intent(live_response_serv
         assert snapshot.information == original.information
         assert recipient.covered_messages == []
         assert "Manual weekly" in recipient.subject
-        assert "Current actionable requests" in recipient.text
+        assert "1 current actionable request" in recipient.text
         accepted(recipient)
         assert history(original).watermark == before.watermark
         assert request(harness, principal, command).run_id == task.run_id

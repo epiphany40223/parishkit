@@ -1,5 +1,6 @@
 """Weekly compilation is deterministic, complete and inert without database I/O."""
 
+import re
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -14,6 +15,7 @@ from parishkit.stewardship.reports.weekly_digest import (
     WeeklyInformation,
     excerpt,
     render_weekly_digest,
+    shorten,
 )
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
@@ -56,16 +58,22 @@ def test_weekly_retains_identities_corrections_and_explicit_timezone():
             "Family DUID 1234",
             "Please call us.",
             "November 2, 2026 at 12:15 AM EST",
-            "America/New_York",
-            "EST",
             "Superseded:",
             "Withdrawn:",
-            "New actionable requests: 1. Corrections: 2.",
-            "staff login required",
         ):
             assert required in body
         for row in (*document().information, *document().corrections):
             assert document().report_path + f"items/{row.item_id}/" in body
+    for body in (result.html, result.text):
+        assert "1 new actionable request" in body
+        assert "2 corrections to previously reported requests" in body
+    assert "staff login required" in result.text
+    # Desktop layout (#720): each section's heading carries its count, each
+    # request is one wide row, and the sign-in note is small print last.
+    html = result.html
+    assert html.index("1 new actionable request") < html.index("Family DUID 1234")
+    assert html.index("Family DUID 1234") < html.index("Staff sign-in required.")
+    assert '<td width="64%"' in html
     assert "A &amp; B" in result.html and "A & B" in result.text
     assert not hasattr(document().corrections[0], "text")
     assert result == render()
@@ -95,10 +103,11 @@ def test_only_excerpt_is_trimmed_and_manual_label_is_explicit():
     text = "private " * 100
     item = replace(value.information[0], text=text)
     result = render(replace(value, information=(item,), manual=True))
-    assert len(excerpt(text)) == 240 and excerpt(text).endswith("…")
+    assert len(excerpt(text)) <= 240 and excerpt(text).endswith("private…")
     assert item.text == text
     assert result.subject.startswith("Manual weekly")
-    assert "full details" in result.text and excerpt(text) in result.text
+    assert "Manual report, captured" in result.text and excerpt(text) in result.text
+    assert "1 current actionable request" in result.text
     assert excerpt("short\n\ttext") == "short text"
 
 
@@ -150,8 +159,10 @@ def test_reference_family_volume_has_every_identity_and_usa_counts():
         for index in range(5000)
     )
     result = render(replace(value, information=rows, corrections=()))
-    assert "New actionable requests: 5,000." in result.text
-    assert result.html.count("/items/") == 5000
+    assert "5,000 new actionable requests" in result.text
+    assert "5000. Family 4999" in result.text
+    # Every row is shortened, so each has its name link and "Read the full request".
+    assert result.html.count("/items/") == 10000
     assert result.text.count("/items/") == 5000
     assert "Family DUID 5000" in result.text
     validate_weekly_body(result.html, result.text)
@@ -274,3 +285,78 @@ def test_date_format_must_be_text_or_unset():
     """A non-string style is rejected before anything is rendered."""
     with pytest.raises(ValueError, match="typed report identity"):
         replace(document(), date_format=5)
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<p style="display:none">Hidden</p>',
+        '<td style="color:red">x</td>',
+        '<table role="grid"><tbody><tr><td>x</td></tr></tbody></table>',
+        '<table><tbody><tr><td bgcolor="#ff0000">x</td></tr></tbody></table>',
+        '<table><tbody><tr><td width="120%">x</td></tr></tbody></table>',
+        '<img src="https://example.org/x.png" alt="x">',
+    ],
+)
+def test_weekly_layout_admits_only_the_closed_report_markup(markup):
+    """Styles, colours and table attributes outside the closed set are rejected."""
+    result = render()
+    with pytest.raises(ValueError, match="weekly"):
+        validate_weekly_body(result.html + markup, result.text)
+
+
+def test_requests_are_numbered_in_order_and_corrections_are_not():
+    """Readers can refer to "request 2"; the numbers follow the email's order."""
+    value = document()
+    rows = tuple(
+        WeeklyInformation(UUID(int=10 + index), 500 + index, name, INSTANT, "Hi.")
+        for index, name in enumerate(("Ames", "Brook", "Cole"))
+    )
+    result = render(replace(value, information=rows))
+    for body in (result.html, result.text):
+        positions = [body.index(name) for name in ("Ames", "Brook", "Cole")]
+        assert positions == sorted(positions)
+    assert "1. Ames" in result.text and "3. Cole" in result.text
+    numbers = re.findall(r'<td width="4%"[^>]*>([^<]*)</td>', result.html)
+    assert numbers == ["1.", "2.", "3.", "", ""]
+
+
+@pytest.mark.parametrize(
+    ("text", "shortened"),
+    [
+        ("Please call us.", False),
+        ("word " * 47 + "end", False),
+        ("Please call us about the choir rehearsal schedule. " * 10, True),
+        ("x" * 400, True),
+    ],
+)
+def test_ellipsis_and_full_request_link_only_when_shortened(text, shortened):
+    """A shortened excerpt ends with an ellipsis at a word boundary and a link."""
+    value = document()
+    item = replace(value.information[0], text=text)
+    result = render(replace(value, information=(item,), corrections=()))
+    shown, cut = shorten(text)
+    assert cut is shortened
+    assert shown.endswith("…") is shortened
+    assert ("Read the full request" in result.html) is shortened
+    assert ("Read the full request: " in result.text) is shortened
+    if shortened:
+        link = f'<a href="https://campaign.example.org{value.report_path}items/'
+        assert result.html.count(link) == 2  # the name and "Read the full request"
+        if " " in text.strip():
+            assert " ".join(text.split()).startswith(shown[:-1])
+            assert " ".join(text.split())[len(shown) - 1] == " "
+    else:
+        assert shown == " ".join(text.split())
+
+
+def test_each_header_fact_appears_once():
+    """Parish, campaign and zone once; the subject alone names the report."""
+    result = render()
+    visible = re.sub(r"<[^>]+>", " ", result.html)
+    for body in (visible, result.text):
+        assert body.count("Example Parish") == 1
+        assert body.count("Annual campaign") == 1
+        assert body.count("EST") == 1 and "America/New_York" not in body
+        assert "information digest" not in body
+    assert result.subject.startswith("Weekly information digest")

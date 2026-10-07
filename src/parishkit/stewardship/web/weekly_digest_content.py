@@ -3,6 +3,7 @@
 import nh3
 
 from .content import TAGS
+from .report_markup import LAYOUT_ATTRIBUTES, LAYOUT_TAGS, layout_attribute
 
 # A reference parish can submit thousands of distinct requests in one interval.
 # This bound is separate from the daily chart and ordinary authored prose limits.
@@ -22,8 +23,11 @@ def validate_weekly_body(html, text):
             raise ValueError
         clean = nh3.clean(
             html,
-            tags=TAGS,
-            attributes={"a": {"href", "title"}},
+            # The desktop report layout (#720): closed styles and table
+            # attributes only; still no images.
+            tags=TAGS | LAYOUT_TAGS,
+            attributes=LAYOUT_ATTRIBUTES,
+            attribute_filter=layout_attribute,
             url_schemes={"https", "http", "mailto", "tel"},
             link_rel="noopener noreferrer",
             strip_comments=True,

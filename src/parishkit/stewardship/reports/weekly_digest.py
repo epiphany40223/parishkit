@@ -14,11 +14,19 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.dates import format_date, format_local
+from parishkit.stewardship.web.report_markup import STYLES
 from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
 
 from .links import report_url
 
 EXCERPT_CHARACTERS = 240
+# A full-width presentational table, as the report layout builds them (#720).
+TABLE = ' role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"'
+
+
+def _style(name):
+    """One compiler-owned inline style attribute from the validator's closed set."""
+    return f' style="{STYLES[name]}"'
 
 
 def _instant(value):
@@ -153,14 +161,26 @@ class WeeklyDigestContent:
     text: str
 
 
-def excerpt(text):
-    """Collapse display whitespace and visibly shorten only the email quotation."""
+def shorten(text):
+    """Collapse display whitespace and shorten long text at a word boundary.
+
+    Returns the display text and whether it was shortened. Shortened text
+    ends with an ellipsis, so a reader can see it is not the whole request;
+    complete text never gets one.
+    """
     result = " ".join(text.split())
-    return (
-        result
-        if len(result) <= EXCERPT_CHARACTERS
-        else result[: EXCERPT_CHARACTERS - 1] + "…"
-    )
+    if len(result) <= EXCERPT_CHARACTERS:
+        return result, False
+    cut = result[: EXCERPT_CHARACTERS - 1]
+    # Break between words; one unbroken word longer than the limit is cut.
+    if " " in cut:
+        cut = cut[: cut.rindex(" ")]
+    return cut.rstrip(" ,;:.-–—") + "…", True
+
+
+def excerpt(text):
+    """The shortened display text alone (see ``shorten``)."""
+    return shorten(text)[0]
 
 
 def render_weekly_digest(document, *, public_origin):
@@ -182,66 +202,89 @@ def _render_weekly_digest(document, *, public_origin):
         "Manual weekly" if document.manual else "Weekly"
     ) + f" information digest — {format_date(observed.date())}"
     url = report_url(public_origin, document.report_path)
-    information_label = (
-        "Current actionable requests" if document.manual else "New actionable requests"
+    # Say each fact once (#720): the subject names the report, so the body
+    # opens with one line for the parish and campaign and one for the
+    # capture, the only place that names the time zone. Each section's
+    # heading carries its count; rows give submitted times without a zone.
+    eyebrow = " ".join(f"{document.parish_name} · {document.campaign_name}".split())
+    caption = ("Manual report, captured " if document.manual else "Captured ") + (
+        f"{format_local(observed)}."
     )
-    labels = (
-        document.parish_name,
-        document.campaign_name,
-        title,
-        f"Captured {format_local(observed)}; "
-        + f"campaign timezone {document.campaign_timezone}.",
-        f"{information_label}: {len(document.information):,}. "
-        + f"Corrections: {len(document.corrections):,}.",
-        "Text below is an excerpt. Open the protected report for full details "
-        + "and current request status; emailed content reflects capture time.",
+    footer = (
+        "Staff sign-in required. Emailed text reflects the capture time; the "
+        "protected report shows each request's current status."
     )
-    # Imported/authored names can contain NBSP or CR. Collapse display-only
-    # whitespace before escaping so the strict HTML serializer agrees; retain
-    # the original identities unchanged in the immutable document/snapshot.
-    labels = tuple(" ".join(label.split()) for label in labels)
-    # Quotes in text nodes are inert and the canonical serializer leaves them
-    # literal. Attribute values below still escape quotes separately.
-    html = "".join("<p>" + escape(label, quote=False) + "</p>" for label in labels)
-    text = "\n".join(labels)
-    for heading, rows in (
-        (information_label, document.information),
-        ("Corrections to previously reported requests", document.corrections),
-    ):
+    new = "current" if document.manual else "new"
+    sections = (
+        (
+            f"{len(document.information):,} {new} actionable request"
+            + ("" if len(document.information) == 1 else "s"),
+            document.information,
+        ),
+        (
+            f"{len(document.corrections):,} correction"
+            + ("" if len(document.corrections) == 1 else "s")
+            + " to previously reported requests",
+            document.corrections,
+        ),
+    )
+    text = eyebrow + "\n" + caption
+
+    def plain(value):
+        """Escape a text node; canonical HTML leaves quotes literal there."""
+        return escape(value, quote=False)
+
+    html = f"<p{_style('eyebrow')}>{plain(eyebrow)}</p>"
+    html += f"<p{_style('caption')}>{plain(caption)}</p>"
+    for heading, rows in sections:
         if not rows:
             continue
-        html += "<h2>" + heading + "</h2><ul>"
+        html += f"<h2{_style('heading')}>{heading}</h2>"
+        html += f"<table{TABLE}{_style('table')}><tbody>"
         text += "\n\n" + heading
-        for row in rows:
-            family_name = " ".join(row.family_name.split())
-            identity = (
-                f"{family_name} — Family DUID {row.family_duid}; submitted "
-                + format_local(row.submitted_at.astimezone(zone))
+        numbered = rows is document.information
+        for number, row in enumerate(rows, start=1):
+            # Imported names can contain NBSP or CR; collapse display-only
+            # whitespace so the strict HTML serializer agrees.
+            family = " ".join(
+                f"{row.family_name} — Family DUID {row.family_duid}".split()
             )
-            detail = (
-                excerpt(row.text)
-                if isinstance(row, WeeklyInformation)
-                else f"{row.disposition.title()}: the previously reported request "
-                + "is no longer actionable."
+            submitted = "Submitted " + format_local(
+                row.submitted_at.astimezone(zone), compact=True
             )
-            item_url = url + f"items/{row.item_id}/"
+            if isinstance(row, WeeklyInformation):
+                detail, shortened = shorten(row.text)
+            else:
+                detail = (
+                    f"{row.disposition.title()}: the previously reported request "
+                    "is no longer actionable."
+                )
+                shortened = False
+            item_url = escape(url + f"items/{row.item_id}/", quote=True)
+            link = f'<a href="{item_url}" rel="noopener noreferrer">'
+            # Numbers are table cells, not list markers, so every mail program
+            # shows the same stable 1, 2, 3 a reader can refer back to.
+            label = f"{number}." if numbered else ""
             html += (
-                '<li><p><a href="'
-                + escape(item_url, quote=True)
-                + '" rel="noopener noreferrer">'
-                + escape(identity, quote=False)
-                + "</a><br>"
-                + escape(detail, quote=False)
-                + "</p></li>"
+                f'<tr><td width="4%"{_style("number")}>{label}</td>'
+                f'<td width="32%"{_style("who")}>{link}{plain(family)}</a><br>'
+                f"{plain(submitted)}</td>"
+                f'<td width="64%"{_style("excerpt")}>{plain(detail)}'
+                + (f" {link}Read the full request</a>" if shortened else "")
+                + "</td></tr>"
             )
-            text += "\n\n" + identity + "\n" + detail + "\n" + item_url
-        html += "</ul>"
+            prefix = f"{number}. " if numbered else ""
+            text += f"\n\n{prefix}{family}; {submitted.lower()}\n{detail}"
+            link_label = "Read the full request: " if shortened else ""
+            text += "\n" + link_label + url + f"items/{row.item_id}/"
+        html += "</tbody></table>"
     html += (
-        '<p><a href="'
+        f'<p{_style("action")}><a href="'
         + escape(url, quote=True)
-        + '" rel="noopener noreferrer">Open protected report '
-        + "(staff login required)</a></p>"
+        + f'"{_style("button")} rel="noopener noreferrer">Open protected report</a></p>'
     )
+    html += f"<p{_style('footer')}>{plain(footer)}</p>"
     text += "\n\nOpen protected report (staff login required): " + url
+    text += "\n\n" + footer.removeprefix("Staff sign-in required. ")
     validate_weekly_body(html, text)
     return WeeklyDigestContent(title, html, text)

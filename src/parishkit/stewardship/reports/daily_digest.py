@@ -17,13 +17,8 @@ from parishkit.email.base import InlineImage
 from parishkit.stewardship.source.data_age import DataAge
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.dates import format_date
-from parishkit.stewardship.web.digest_content import (
-    BLUE,
-    CHART_ID,
-    EMAIL_CHART_WIDTH,
-    STYLES,
-    TRACK,
-)
+from parishkit.stewardship.web.digest_content import CHART_ID, EMAIL_CHART_WIDTH
+from parishkit.stewardship.web.report_markup import BLUE, STYLES, TRACK
 
 from .charts import render_participation
 from .links import report_url
@@ -142,16 +137,18 @@ class DailyDigestContent:
     chart: InlineImage = field(repr=False)
 
 
-def source_age_line(age, timezone):
+def source_age_line(age, timezone, *, zone=True):
     """State the data age and connection in one line, in the parish's zone.
 
     For example "ParishSoft data as of October 6, 2026 at 8:00 AM EDT.
     Connection: working (last answered October 6, 2026 at 10:15 AM EDT)."
+    With ``zone=False`` the instants are compact and name no zone, for the
+    email's small print: its as-of line already states the zone once (#720).
     """
 
     def at(value):
         """One instant in the digest's single format."""
-        return dates.format_instant(value, timezone)
+        return dates.format_instant(value, timezone, compact=not zone)
 
     if age.data_as_of is None:
         data = "ParishSoft data: not yet loaded."
@@ -223,6 +220,8 @@ def population_cards(active, *, financial_enabled, inactive=False):
 
 # One label for the card, the table column and the spec (#721).
 PLEDGE_HEADING = "Cumulative annual pledges (USD)"
+RESPONDED_LABEL = "Families that have responded"
+FIRST_LABEL = "First submissions that day"
 
 
 def report_day_cards(document):
@@ -236,11 +235,8 @@ def report_day_cards(document):
     chart = document.participation
     day = document.report_day
     row = participation_row(day, financial_enabled=chart.financial_enabled)
-    labels = (
-        "Families that have responded",
-        f"First submissions on {format_date(day.local_date)}",
-    )
-    cards = [(labels[0], row[2]), (labels[1], row[1])]
+    # The as-of line names the report day, so the label does not repeat it.
+    cards = [(RESPONDED_LABEL, row[2]), (FIRST_LABEL, row[1])]
     if chart.financial_enabled:
         cards.append((PLEDGE_HEADING, row[3]))
     return tuple(cards)
@@ -302,7 +298,10 @@ def bar(part, whole):
     """
     if not whole or part is None:
         return ""
-    filled = max(1, min(100, round(100 * part / whole))) if part else 0
+    # A non-zero share keeps a 1% sliver; an incomplete one never looks full.
+    filled = round(100 * part / whole)
+    if part:
+        filled = max(1, filled if part >= whole else min(99, filled))
     cells = _segment(filled, BLUE) if filled else ""
     cells += _segment(100 - filled, TRACK) if filled < 100 else ""
     return (
@@ -323,33 +322,34 @@ def report_day_bars(document):
     day = document.report_day
     available = [entry for entry in chart.days if entry.population_available]
     peak = max((entry.first_responses for entry in available), default=0)
+    # Bars follow each card's identity, not its position in the list.
+    measures = {
+        RESPONDED_LABEL: (day.cumulative_responses, day.cohort_denominator, ""),
+        FIRST_LABEL: (
+            day.first_responses,
+            peak,
+            f" (busiest day: {peak:,})" if peak else "",
+        ),
+    }
     bars = []
-    for index, (label, value) in enumerate(report_day_cards(document)):
-        if not day.population_available or index > 1:
-            bars.append((label, value, "", ""))
-        elif index == 0:
-            bars.append(
-                (
-                    label,
-                    value,
-                    bar(day.cumulative_responses, day.cohort_denominator),
-                    "",
-                )
-            )
-        else:
-            note = f" (busiest day: {peak:,})" if peak else ""
-            bars.append((label, value, bar(day.first_responses, peak), note))
+    for label, value in report_day_cards(document):
+        part, whole, note = measures.get(label, (None, None, ""))
+        if not day.population_available:
+            part, note = None, ""
+        bars.append((label, value, bar(part, whole), note))
     return tuple(bars)
 
 
 def chart_alt(document):
     """Alt text that carries the chart's key numbers, not a picture description."""
     chart = document.participation
-    cards = report_day_cards(document)
+    totals = " ".join(
+        f"{label}: {value}." for label, value in report_day_cards(document)
+    )
     return (
         f"Daily participation chart, {format_date(chart.first_date)} to "
-        f"{format_date(chart.last_date)}. {cards[0][0]}: {cards[0][1]}. "
-        f"{cards[1][0]}: {cards[1][1]}. Exact values follow in the table."
+        f"{format_date(chart.last_date)}. {totals} Exact values follow in the "
+        "table."
     )
 
 
@@ -384,38 +384,45 @@ def _render_daily_digest(document, *, public_origin):
         headings.append(PLEDGE_HEADING)
     totals = report_day_bars(document)
     rows = digest_rows(document)
-    footer = "Staff sign-in required."
+    footer = ""
     if document.source_age is not None:
         # The ParishSoft line is connection health at the send, not the time
         # the figures describe; say so, so it cannot read as a second "as of".
-        footer += " When this email was made: " + source_age_line(
-            document.source_age, chart.campaign_timezone
+        footer = "When this email was made: " + source_age_line(
+            document.source_age, chart.campaign_timezone, zone=False
         )
+    # Say each fact once (#720): the subject names the report, so the body
+    # has no title; the parish and campaign appear once; the as-of line is
+    # the only place that names the time zone. A recovery digest also says
+    # which days it covers.
+    first, last = document.covered_dates[0], document.covered_dates[-1]
+    as_of = document.as_of
+    if first != last:
+        as_of = f"Covers {format_date(first)} through {format_date(last)}. {as_of}"
     # Match weekly display normalization; retained observations remain exact.
     # The strict HTML compiler boundary rejects NBSP parser rewrites.
-    eyebrow, title, as_of, footer, alt = (
+    eyebrow, as_of, footer, alt = (
         " ".join(label.split())
         for label in (
             f"{chart.parish_name} · {chart.campaign_name}",
-            document.title,
-            document.as_of,
+            as_of,
             footer,
             chart_alt(document),
         )
     )
-    text = "\n".join((eyebrow, title, as_of))
+    text = "\n".join((eyebrow, as_of))
     text += "\n\n" + "\n".join(f"{label}: {value}" for label, value, _b, _n in totals)
     text += "\n\n" + " | ".join(headings)
     text += "\n" + "\n".join(" | ".join(row) for row in rows)
     text += "\n\nOpen this exact report (staff login required): " + url
-    text += "\n\n" + footer
+    if footer:
+        text += "\n\n" + footer
 
     def plain(value):
         """Escape a text node; canonical HTML leaves quotes literal there."""
         return escape(value, quote=False)
 
     html = f"<p{_style('eyebrow')}>{plain(eyebrow)}</p>"
-    html += f"<h2{_style('title')}>{plain(title)}</h2>"
     html += f"<p{_style('caption')}>{plain(as_of)}</p>"
     html += f"<h2{_style('heading')}>Campaign totals</h2>"
     html += (
@@ -464,7 +471,8 @@ def _render_daily_digest(document, *, public_origin):
         + f'"{_style("button")} rel="noopener noreferrer">Open this exact report'
         "</a></p>"
     )
-    html += f"<p{_style('footer')}>{plain(footer)}</p>"
+    small_print = " ".join(("Staff sign-in required.", footer)).strip()
+    html += f"<p{_style('footer')}>{plain(small_print)}</p>"
     stream = BytesIO()
     render_participation(chart, stream, format="png", email=True)
     return DailyDigestContent(

@@ -96,7 +96,10 @@ def _draw(figure, document, *, email=False):
         figure.text(0.5, 0.96, document.parish_name, ha="center", fontsize=14)
         figure.text(0.5, 0.915, document.campaign_name, ha="center", fontsize=12)
         axes.set_title(f"Family participation — {document.scope_label}", pad=38)
-    axes.set_xlabel(f"Campaign date ({document.campaign_timezone})")
+    # The email's as-of line names the zone once (#720); the page names it here.
+    axes.set_xlabel(
+        "Campaign date" if email else f"Campaign date ({document.campaign_timezone})"
+    )
     axes.set_ylabel("Families (count)")
     # Round 1/2/5 steps (10, 20, 50, ...) read more easily than 30 or 25.
     axes.yaxis.set_major_locator(

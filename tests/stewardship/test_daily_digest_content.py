@@ -4,6 +4,7 @@ import re
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal, localcontext
+from html.parser import HTMLParser
 from io import BytesIO
 from uuid import UUID
 
@@ -30,8 +31,10 @@ from parishkit.stewardship.reports.statistics import (
     CampaignStatistics,
     PopulationStatistics,
 )
+from parishkit.stewardship.source.data_age import Connection, DataAge
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.digest_content import validate_digest_body
+from parishkit.stewardship.web.report_markup import STYLES
 
 from .test_participation_rendering import document as participation
 
@@ -92,7 +95,7 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
     for required in (
         "All figures are as of the end of November 2, 2026 (EST).",
         "Families that have responded: 3 out of 1,234 (0.2%)",
-        "First submissions on November 2, 2026: 1",
+        "First submissions that day: 1",
         "Cumulative annual pledges (USD): $3,234.56",
         "Nov 2, 2026 | 1 | 3 out of 1,234 (0.2%) | $3,234.56",
         value.report_path,
@@ -206,6 +209,7 @@ def test_table_shows_the_last_week_and_every_recovered_day():
         (1, 1000, ["1%", "99%"]),
         (5, 10, ["50%", "50%"]),
         (10, 10, ["100%"]),
+        (999, 1000, ["99%", "1%"]),
     ],
 )
 def test_bars_never_hide_a_nonzero_share_or_draw_without_a_base(part, whole, cells):
@@ -268,7 +272,7 @@ def test_missing_observations_remain_unavailable_and_zero_remains_zero():
         )
     )
     assert "Families that have responded: Unavailable" in gap.text
-    assert "First submissions on November 2, 2026: Unavailable" in gap.text
+    assert "First submissions that day: Unavailable" in gap.text
     assert "Cumulative annual pledges (USD): Unavailable" in gap.text
 
 
@@ -400,7 +404,7 @@ def test_recovery_range_states_its_last_covered_day():
     for required in (
         "All figures are as of the end of November 2, 2026 (EST).",
         "Families that have responded: 3 out of 1,234 (0.2%)",
-        "First submissions on November 2, 2026: 1",
+        "First submissions that day: 1",
         "Cumulative annual pledges (USD): $3,234.56",
         "Oct 31, 2026 | 1 | 1 out of 1,234 (0.1%) | $1,234.56",
     ):
@@ -429,3 +433,54 @@ def test_saved_page_hit_tests_the_drawing_the_digest_retained():
     render_participation(document().participation, older, format="png")
     assert chart_layout(older.getvalue()) == PLOT_LAYOUT
     assert chart_layout(b"not a png") == PLOT_LAYOUT
+
+
+class _Visible(HTMLParser):
+    """Collect the text a reader sees: text nodes, not attribute values."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+
+def visible(html):
+    """Return an HTML body's visible text (alt text excluded)."""
+    parser = _Visible()
+    parser.feed(html)
+    return " ".join(parser.parts)
+
+
+def test_each_header_fact_appears_once():
+    """Parish, campaign and zone appear once; the subject alone names the report."""
+    instant = document().participation.requested_at
+    value = replace(
+        document(), source_age=DataAge(instant, instant, Connection("working", instant))
+    )
+    result = render(value)
+    for body in (visible(result.html), result.text):
+        assert body.count("Example Parish") == 1
+        assert body.count("Annual stewardship") == 1
+        assert body.count("EST") == 1 and "America/New_York" not in body
+        assert "Daily campaign digest" not in body
+        assert body.count("November 2, 2026") == 1
+    assert result.subject == "Daily campaign digest — November 2, 2026"
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<table><tbody><tr><td bgcolor="#ff0000">x</td></tr></tbody></table>',
+        '<table><tbody><tr><td width="40px">x</td></tr></tbody></table>',
+        '<table><tbody><tr><td align="center">x</td></tr></tbody></table>',
+        f'<ul><li style="{STYLES["footer"]}">x</li></ul>',
+        '<p style="color:red">x</p>',
+    ],
+)
+def test_validator_rejects_layout_markup_outside_the_closed_set(markup):
+    """Colours, widths, alignments and styles must be the compiler's own."""
+    result = render(document())
+    with pytest.raises(ValueError):
+        validate_digest_body(result.html + markup, result.text, result.chart.data)
