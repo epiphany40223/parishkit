@@ -12,7 +12,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 
 from . import admin_navigation, confirmation_commands, confirmation_progress
-from .admin_caller import AdminCaller
+from .admin_caller import AdminCaller, is_automation
 from .admin_editing import principal
 from .authentication import runtime
 from .confirmation_readiness import collect_readiness
@@ -24,19 +24,24 @@ from .setup_views import _closed, error_response
 
 
 def _fresh_after_cleanup(request, transition_id):
-    """Show reauthentication guidance without treating a browser flag as proof."""
+    """Show reauthentication guidance without treating a browser flag as proof.
+
+    A full-scope automation caller meets the after-cleanup rule once cleanup
+    is complete, as ``confirmation_commands`` and the SQL guard accept
+    (ADM-11 PR 5).
+    """
     try:
         instant = require_fresh(request)
     except PermissionError:
         return False
-    return (
-        instant
-        >= ProductionTransitionEvent.objects.filter(
+    completed = (
+        ProductionTransitionEvent.objects.filter(
             request_id=transition_id, action="complete"
         )
         .latest("created_at")
         .created_at
     )
+    return is_automation(request) or instant >= completed
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

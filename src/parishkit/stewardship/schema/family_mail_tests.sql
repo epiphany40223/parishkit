@@ -108,11 +108,13 @@ BEGIN
            OR NEW.actor_id IS DISTINCT FROM NEW.requested_by_id
            OR NEW.state<>'queued' OR NEW.version<>1
            OR NEW.family_id IS NULL OR NEW.outbox_id IS NOT NULL
-           -- The Admin signed in with Google again within the last five minutes.
+           -- The Admin signed in with Google again within the last five minutes,
+           -- or runs a command through a live full-scope automation session.
            OR NOT EXISTS (SELECT 1 FROM public.stewardship_portal_session
                 WHERE principal_id=NEW.requested_by_id AND revoked_at IS NULL
                     AND authenticated_at=NEW.reauthenticated_at AND expires_at>stamp
-                    AND authenticated_at BETWEEN stamp-interval '5 minutes' AND stamp
+                    AND (authenticated_at BETWEEN stamp-interval '5 minutes' AND stamp
+                         OR public.stewardship_automation_fresh_v1(id,NEW.requested_by_id))
                     AND last_activity_at>stamp-interval '60 minutes')
            OR NOT EXISTS (SELECT 1 FROM public.stewardship_task_run task
                 WHERE task.id=NEW.task_id AND task.root_id=task.id

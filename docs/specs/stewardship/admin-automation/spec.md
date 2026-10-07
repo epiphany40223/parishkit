@@ -1958,8 +1958,9 @@ time:
      the four incident kinds with their CRITICAL level in `IncidentKind` and
      the operational incident registry, and in the kinds list of the
      [operational alerts guide](../../../guides/stewardship-operational-alerts.md).
-2. **Fresh-gate acceptance (PR 5).** A second migration and frozen file (for
-   example `0005_automation_fresh_guards.sql`) that creates
+2. **Fresh-gate acceptance (PR 5a).** A second migration,
+   `stewardship_accounts.0005_automation_fresh_guards`, and frozen file
+   `0013_automation_fresh_guards.sql` that creates
    `stewardship_automation_fresh_principal_v1` (plain `CREATE`,
    migration-owned, `SECURITY DEFINER` with a fixed `search_path`, revoked from
    `PUBLIC`; `EXECUTE` for the web and the three installer logins comes from
@@ -1974,7 +1975,22 @@ time:
    in `functions.sql`), and ends with a `DO` block that raises unless the new
    function exists and each installed body contains the automation clause. The
    function-equality test checks each copy against the baseline, and the
-   upgrade-parity test checks the catalog.
+   upgrade-parity test checks the catalog. The Production confirmation's
+   post-cleanup clause still requires cleanup's `complete` event; an
+   automation session only replaces the sign-in after it. Admission
+   (`admit_admin_action`) refuses an automation caller for
+   `DESTRUCTIVE_CONFIRMATION`, which no workflow uses yet. As the
+   [secret replacement](#secret-replacement) rules accept, the two secret
+   request guards bind the principal and the recorded sign-in instant, not
+   a session row: any live full-scope session of that Administrator with
+   that instant admits the request. The secret guards call the function
+   only for the logins granted it (the web or the schema owner at intake;
+   the parishsoft, google_workspace and slack installers at testing), so
+   any other login keeps its plain refusal. `require_fresh` refuses an
+   automation caller outside a transaction, since the row lock must last
+   until the action commits. Telling an automation action apart in the
+   audit trail (its `admin_cmd_*` event and the fresh-gated notice) comes
+   with PR 5b and the commands.
 
 Audit adds event types only, which match the existing event-type constraint,
 with contexts limited to `outcome`, which `stewardship_safe_context_v1`
@@ -2146,10 +2162,10 @@ Administrator's approval of that deploy.
   PRs depend on PR 3a.
 - **PR 4, schedules:** `schedule preview`, `schedule confirm` and
   configuration request status.
-- **PR 5, fresh-gate acceptance:** the second migration; the automation branch
-  of `require_fresh` (including the secret replacement call sites) and the
-  post-cleanup check; the confirmation prompt and `--yes`; the fresh-gated
-  notices.
+- **PR 5, fresh-gate acceptance,** in two parts. **PR 5a:** the second
+  migration; the automation branch of `require_fresh` (including the secret
+  replacement call sites) and the post-cleanup check. **PR 5b:** the
+  confirmation prompt and `--yes`; the fresh-gated notices.
 - **PR 6, refresh and Testing sends,** in three parts. **PR 6a:**
   `refresh start` and `refresh status`. **PR 6b:** `test sample`. **PR 6c:**
   chosen-Family tests, after PR 5.

@@ -16,7 +16,7 @@ from parishkit.stewardship.accounts.setup_staging import cancel_setup
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.ownership import TaskClaim
-from parishkit.stewardship.runtime_grants import runtime_grants
+from parishkit.stewardship.runtime_grants import runtime_functions, runtime_grants
 from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.setup_exchange import (
     publish_recipient,
@@ -58,7 +58,13 @@ def target_login(target="parishsoft", *, reconnect=False):
             ServiceRole.CREDENTIAL_INSTALLER, target=target
         )
         with connection.cursor() as cursor:
-            grant_runtime(cursor, role, tables, columns)
+            grant_runtime(
+                cursor,
+                role,
+                tables,
+                columns,
+                runtime_functions(ServiceRole.CREDENTIAL_INSTALLER, target=target),
+            )
             cursor.execute(f'SET SESSION AUTHORIZATION "{role}"')
         if reconnect:
             connection_created.connect(restrict_connection, weak=False)
