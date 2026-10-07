@@ -14,17 +14,6 @@ from . import setup_help
 from .parish_views import ParishForm
 from .policy_schema import normalized_domain, normalized_email
 
-STEPS = {
-    "parish": _("Parish profile"),
-    "branding": _("Parish logo"),
-    "access": _("Administrative access"),
-    "mail": _("Outgoing email settings"),
-    "slack": _("Optional Slack notifications"),
-    "testing": _("Testing recipient"),
-    "campaign": _("First campaign"),
-    "schedules": _("First-campaign mail schedules"),
-}
-
 
 class SetupParishForm(ParishForm):
     """Reuse profile fields without accepting an active-configuration mutation."""

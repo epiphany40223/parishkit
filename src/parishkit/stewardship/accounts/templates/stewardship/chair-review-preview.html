@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Review Chairperson assignment decision" %}{% endblock %}
+{% block title %}{% translate "Review Chairperson decision" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Review Chairperson assignment decision" %}</h1>
+<h1>{% translate "Review Chairperson decision" %}</h1>
 <section class="panel">
   <h2>{% translate "Exact address" %}: {{ identity }}</h2>
   {% if decision == 'keep_role' %}<p>{% translate "The Ministry leader role keeps its Parish source Chairperson origin and gains an Administrator entry, so the parish source no longer suspends it. No Ministry assignment is created and no row scope is broadened." %}</p>

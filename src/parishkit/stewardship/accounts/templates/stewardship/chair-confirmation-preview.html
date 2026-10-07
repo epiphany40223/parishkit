@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Review Chairperson confirmation" %}{% endblock %}
+{% block title %}{% translate "Review Chairperson suggestion" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Review Chairperson confirmation" %}</h1>
+<h1>{% translate "Review Chairperson suggestion" %}</h1>
 {% for change in changes %}
 <section class="panel">
   <h2>{% translate "Exact address" %}: {{ change.email }}</h2>

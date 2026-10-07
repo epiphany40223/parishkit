@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Review Ministry activity change" %}{% endblock %}
+{% block title %}{% translate "Review Ministry changes" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Review Ministry activity change" %}</h1>
+<h1>{% translate "Review Ministry changes" %}</h1>
 <section class="panel">
   {% if changing %}
   <h2>{% if new_active %}{% blocktranslate count counter=changing|length %}Activate {{ counter }} Ministry{% plural %}Activate {{ counter }} Ministries{% endblocktranslate %}{% else %}{% blocktranslate count counter=changing|length %}Inactivate {{ counter }} Ministry{% plural %}Inactivate {{ counter }} Ministries{% endblocktranslate %}{% endif %}</h2>
@@ -21,5 +21,5 @@
   <input type="hidden" name="preview" value="{{ preview }}">
   <button type="submit">{% translate "Apply activity change" %}</button>
   <a href="{% url 'admin:ministries' %}">{% translate "Cancel" %}</a>
-</form>{% else %}<p><a href="{% url 'admin:ministries' %}">{% translate "Back to Ministry activity" %}</a></p>{% endif %}
+</form>{% else %}<p><a href="{% url 'admin:ministries' %}">{% translate "Return to Ministries" %}</a></p>{% endif %}
 {% endblock %}

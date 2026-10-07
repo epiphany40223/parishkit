@@ -3,8 +3,9 @@
 The menu entry, the breadcrumb, the page heading and the browser title use
 the registry label, and every "Return to" link names its target the same way.
 The placement table in the admin-portal spec is the source of the names, so
-the registry is checked against it too. NAV-4 covers Campaign setup and Mail
-and Family portal; NAV-5a and NAV-5b add the other groups to ``TEMPLATES``.
+the registry is checked against it too. NAV-4 covered Campaign setup and Mail
+and Family portal, and NAV-5a Home, Parish data, Users and access, System and
+the setup wizard; NAV-5b adds Responses and reports.
 """
 
 import ast
@@ -19,6 +20,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
+from parishkit.stewardship.accounts import setup_wizard
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "src/parishkit/stewardship"
@@ -26,7 +28,9 @@ TEMPLATE_DIR = PACKAGE / "accounts/templates/stewardship"
 SPEC = ROOT / "docs/specs/stewardship/admin-portal/spec.md"
 
 # The menu groups whose page names are settled so far.
-GROUPS = {"campaign", "mail"}
+GROUPS = {"campaign", "mail", "parish", "users", "system"}
+# Pages outside every menu group whose names are settled too.
+UNGROUPED = {"index", "configuration_request"}
 
 # Each page's template. Object-named pages (an email or page being edited)
 # take their heading from the object and are left out; so are pages whose
@@ -63,14 +67,64 @@ TEMPLATES = {
     "delivery_refusal": "delivery-refusal.html",
     "family_portal": "family-portal-maintenance.html",
     "presence": "presence.html",
+    "parish_settings": "parish-settings.html",
+    "branding_settings": "branding-settings.html",
+    "branding_preview": "branding-preview.html",
+    "ministries": "ministries.html",
+    "hosted_files": "hosted-files.html",
+    "hosted_file_delete": "hosted-file-delete.html",
+    "hosted_file_rename": "hosted-file-rename.html",
+    "source_refresh": "source-refresh.html",
+    "users": "users.html",
+    "user_rules": "user-rule-preview.html",
+    "assignments": "assignment-preview.html",
+    "chair_confirmations": "chair-confirmation-preview.html",
+    "chair_reviews": "chair-review-preview.html",
+    "automation_access": "automation-access.html",
+    "automation_approval": "automation-approval.html",
+    "system_health": "system-health.html",
+    "integrations": "integrations.html",
+    "credential_status": "credential-status.html",
+    "select_credential": "credential-selection.html",
+    "background": "background.html",
+    "background_task_page": "background-task.html",
+    "logs": "logs.html",
+    "index": "home.html",
+    "configuration_request": "configuration-request.html",
 }
-OBJECT_NAMED = {"content_edit", "content_revision"}
+# Each integration's page is named after the integration.
+OBJECT_NAMED = {"content_edit", "content_revision", "integration_settings"}
+# A sign-in rule change's status answers JSON only (the spec: not a page).
+NOT_PAGES = {"rule_request"}
+# Pages whose new name waits for a later slice, with that slice. Portal users
+# becomes Sign-in rules when NAV-15 splits it; renaming the combined page now
+# would mislabel its Ministry assignment and Chairperson tables.
+PENDING = {"users": "NAV-15"}
+
+# Each setup wizard step's template, by stepper key: its heading is the
+# stepper's label. The data-entry and connection steps share templates whose
+# heading is the view's ``step_label``, taken from the same stepper entry.
+SETUP = {
+    "branding": "setup-branding.html",
+    "campaign": "setup-campaign.html",
+    "content": "setup-content.html",
+    "shares": "setup-shares.html",
+    "schedules": "setup-schedules.html",
+    "source": "setup-source.html",
+    "preview": "setup-preview.html",
+    "mail_test": "setup-mail.html",
+    "slack_test": "setup-notification.html",
+    "finish": "setup-confirmation.html",
+}
+SETUP_SHARED = ("setup-step.html", "setup-credential.html")
 
 # The review steps of these pages' change flows render their own templates;
 # their "Return to" links are checked with the pages'.
 REVIEWS = (
     "campaign-preview.html",
     "campaign-ministries-preview.html",
+    "integration-preview.html",
+    "ministry-preview.html",
     "clone-preview.html",
     "content-preview.html",
     "content-settings.html",
@@ -115,18 +169,22 @@ def _spec_names():
 
 
 def _group_pages():
-    """Registered pages in the groups whose names are settled."""
+    """Registered pages in the groups whose names are settled, and Home's."""
     return sorted(
-        name for name, page in navigation.PAGES.items() if page.section in GROUPS
+        name
+        for name, page in navigation.PAGES.items()
+        if page.section in GROUPS or name in UNGROUPED
     )
 
 
 def test_every_group_page_is_checked_or_object_named():
     """A new page in a settled group must join the names check."""
-    assert set(_group_pages()) == set(TEMPLATES) | OBJECT_NAMED
+    assert set(_group_pages()) == set(TEMPLATES) | OBJECT_NAMED | NOT_PAGES
 
 
-@pytest.mark.parametrize("name", sorted(set(_group_pages()) - OBJECT_NAMED))
+@pytest.mark.parametrize(
+    "name", sorted(set(_group_pages()) - OBJECT_NAMED - NOT_PAGES - set(PENDING))
+)
 def test_registry_label_matches_the_spec(name):
     """The menu and trail use the name the placement table gives the page."""
     assert str(navigation.PAGES[name].label) == _spec_names()[name]
@@ -161,7 +219,7 @@ def test_return_links_name_a_page(template):
         assert target in labels, (template, target)
 
 
-# Names the pages had before NAV-4. Each is a page name nobody should see
+# Names the pages had before NAV-4 and NAV-5a. Each is a page name nobody should see
 # again: a new link or message that uses one would bring back a second name
 # for a renamed page. Matched case-sensitively, as a page name is written.
 RETIRED = (
@@ -174,6 +232,24 @@ RETIRED = (
     "Families with Testing submissions",
     "How Families will share",
     "Production activation progress",
+    # Retired by NAV-5a.
+    "Ministry activity",
+    "Chair suggestions",
+    "Chair reviews",
+    "Review Chairperson confirmation",
+    "Review Chairperson assignment decision",
+    "Review Ministry assignment change",
+    "Back to ",
+    "Campaign administration",
+    "Configuration change status",
+    "Background task details",
+    "Review login rule change",
+    "Logo preview",
+    "First-campaign setup preview",
+    "Setup email test",
+    "Setup Slack test",
+    "Finish initial setup",
+    "Setup credential",
 )
 
 # Legitimate uses, as (path relative to the package, retired name), each
@@ -182,6 +258,12 @@ ALLOWED = {
     # "Mail schedules keep sending the same kind of email": the schedules
     # themselves, not the page.
     ("accounts/templates/stewardship/setup-content.html", "Mail schedules"),
+    # "Ministry activity" filters Ministry requests by whether a Ministry is
+    # active; it names the Ministry's state, not the Ministries page.
+    ("accounts/templates/stewardship/ministry-report.html", "Ministry activity"),
+    # "Back to edit" steps back inside the Family form, outside the Admin
+    # portal and its page names.
+    ("accounts/static/stewardship/family-v1.js", "Back to "),
     # "Distinct Families with Testing submissions": a readiness count and
     # the Testing submissions table's caption, not the page's name.
     (
@@ -319,3 +401,38 @@ def test_cancel_go_live_blocking_message_links_the_pages_it_names():
     assert f'<a href="{outgoing}">Outgoing mail</a>' in html
     assert "<h1>Cancel go-live</h1>" in html
     assert "Confirm cancelling go-live" not in html
+
+
+@pytest.mark.parametrize("key", sorted(SETUP))
+def test_setup_step_heading_is_its_stepper_label(key):
+    """A wizard heading uses the stepper's label; its title adds "Initial setup"."""
+    title, heading = _title_and_heading(SETUP[key])
+    label = str(setup_wizard.BY_KEY[key].label)
+    assert heading == {label}
+    assert title == {label, "Initial setup"}
+
+
+@pytest.mark.parametrize("template", SETUP_SHARED)
+def test_shared_setup_templates_take_the_stepper_label(template):
+    """Shared step templates name the step only through ``step_label``."""
+    source = _source(template)
+    assert "<h1>{{ step_label }}</h1>" in source
+    assert '{% block title %}{{ step_label }} — {% translate "Initial setup" %}' in (
+        source
+    )
+
+
+def test_every_setup_step_is_checked():
+    """A new stepper entry must join the setup names check."""
+    shared = {
+        page.key
+        for page in setup_wizard.PAGES
+        if page.route in {"admin:setup_step", "admin:setup_credential"}
+    }
+    assert set(setup_wizard.BY_KEY) == set(SETUP) | shared
+
+
+def test_pending_names_match_the_spec_later():
+    """A pending page keeps its old name and the spec still names its new one."""
+    for name in PENDING:
+        assert str(navigation.PAGES[name].label) != _spec_names()[name]

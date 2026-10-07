@@ -11,6 +11,6 @@
 </form>
 {% else %}
 <ul class="hosted-file-results">{% for result in results %}<li>{% if result.slug %}<code>{{ result.slug }}</code>: {% endif %}{% if result.outcome == "deleted" %}{% translate "Deleted" %}{% elif result.outcome == "already_deleted" %}{% translate "Already deleted" %}{% elif result.outcome == "retry" %}<strong>{% translate "Not deleted — the library was busy; try again." %}</strong>{% else %}<strong>{% translate "Not deleted — in use:" %}</strong><ul>{% for use in result.uses %}<li>{{ use.description }}</li>{% endfor %}</ul>{% endif %}</li>{% endfor %}</ul>
-<p><a href="{% url 'admin:hosted_files' %}">{% translate "Back to Hosted files" %}</a></p>
+<p><a href="{% url 'admin:hosted_files' %}">{% translate "Return to Hosted files" %}</a></p>
 {% endif %}
 {% endblock %}

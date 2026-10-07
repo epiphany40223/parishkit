@@ -410,7 +410,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.04 — NAV-2: make menu groups collapsible, remembered per browser, and end the menu with Sign out.
 - [x] ADM-12.05 — NAV-3: grey out multi-campaign controls with the #145 tip, refuse their actions on the server, and remove New campaign.
 - [x] ADM-12.06 — NAV-4: give Campaign setup and Mail pages one name each, including Cancel go-live.
-- [ ] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages, and the remaining setup wizard steps, one name each.
+- [x] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages, and the remaining setup wizard steps, one name each.
 - [ ] ADM-12.08 — NAV-5b: give report pages one name each.
 - [ ] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
 - [ ] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
@@ -514,6 +514,17 @@ spec's table; title and heading match the label; every "Return to" names a
 page; no template, script or user-facing message uses a retired name outside
 a commented allowlist; Cancel go-live's trail and its blocking message's
 links) and the updated page, menu and browser suites.
+ADM-12.07 (NAV-5a) names Home ("Home"), the Parish data, Users and access
+and System pages (Ministries, Review parish logos, Refresh from ParishSoft,
+Change status, Background task and the sign-in rule, Ministry assignment and
+Chairperson reviews) and every setup wizard step after its stepper label; the
+data-entry and connection steps take their heading from the stepper entry
+itself. Portal users keeps its name until NAV-15 splits it. Parish settings
+loses its hand-written Administration link, and "Back to" links become
+"Return to" links naming their page. It is proven by the extended
+`tests/stewardship/test_admin_page_names.py` (the new groups, Home, Change
+status and every setup step; more retired names) and the updated page,
+setup and browser suites.
 
 ## ADM-13: System health page
 

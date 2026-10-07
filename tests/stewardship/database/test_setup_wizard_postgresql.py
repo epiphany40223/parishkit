@@ -33,7 +33,11 @@ def test_before_completion_admin_pages_route_to_the_wizard_only(setup_http, goog
             assert response["Location"] == "/admin/setup"
         body = browser.get("/admin/setup").content
         assert b"Initial setup" in body
-        for other in (b"Parish settings", b'href="/admin/users"', b"Ministry activity"):
+        for other in (
+            b"Parish settings",
+            b'href="/admin/users"',
+            b'href="/admin/configuration/ministries"',
+        ):
             assert other not in body
         assert b"Sign out" in body
 

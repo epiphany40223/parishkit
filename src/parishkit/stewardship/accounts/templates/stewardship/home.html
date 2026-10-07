@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Campaign administration" %}{% endblock %}
+{% block title %}{% translate "Home" %}{% endblock %}
 {% block content %}
-  <h1>{% translate "Campaign administration" %}</h1>
+  <h1>{% translate "Home" %}</h1>
   {% if dashboard.health_problems %}<section class="panel" aria-labelledby="home-health-heading" data-home-health>
     <h2 id="home-health-heading">{% blocktranslate count count=dashboard.health_problems|length trimmed %}{{ count }} system problem needs attention{% plural %}{{ count }} system problems need attention{% endblocktranslate %}</h2>
     <ul class="health-problems">{% for problem in dashboard.health_problems %}<li class="notice notice-error" data-problem="{{ problem.kind }}">{% include "stewardship/system-health-problem.html" %} <a href="{% url 'admin:system_health' %}">{% translate "System health" %}</a></li>{% endfor %}</ul>

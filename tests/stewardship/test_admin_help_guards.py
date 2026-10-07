@@ -114,7 +114,7 @@ INTRO_ALLOWED = {
     "production-confirmation.html": 35,
     "setup-campaign.html": 34,
     "setup-shares.html": 33,
-    "export-cleanup-error.html": 32,
+    "export-cleanup-error.html": 31,
     "denied.html": 31,
     "content-catalog.html": 30,
     "clone-preview.html": 30,

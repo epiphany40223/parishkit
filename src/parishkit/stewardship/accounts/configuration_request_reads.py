@@ -1,6 +1,6 @@
 """The configuration request status read, moved out of its page's view.
 
-Configuration change status (``ministry_views.configuration_request``) reads
+Change status (``ministry_views.configuration_request``) reads
 an Administrator's own request through ``receipt``, and so does the Admin
 automation command line (``config request show``, ADM-11), so both report
 the same checkpoint. It takes no request: ``caller`` is the page's request or

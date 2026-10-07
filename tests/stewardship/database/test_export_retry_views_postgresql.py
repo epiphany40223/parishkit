@@ -118,7 +118,7 @@ def test_admin_cleanup_retry_form_csrf_replay_and_restricted_sql(http_scenario):
         assert invalid.status_code == 400
         assert invalid["Content-Type"].startswith("text/html")
         assert invalid["Cache-Control"] == "no-store"
-        assert b"Return to task details" in invalid.content
+        assert b"Return to Background task" in invalid.content
         response = post(browser, path, {"request_key": key})
         assert response.status_code == 302
         assert (
@@ -128,7 +128,7 @@ def test_admin_cleanup_retry_form_csrf_replay_and_restricted_sql(http_scenario):
         conflict = post(browser, path, {"request_key": str(uuid4())})
         assert conflict.status_code == 409
         assert conflict["Content-Type"].startswith("text/html")
-        assert b"Return to task details" in conflict.content
+        assert b"Return to Background task" in conflict.content
         stale = browser.get(f"/admin/background/task/{task.run_id}")
         assert b'name="request_key"' not in stale.content
         assert b"View the latest retry" in stale.content

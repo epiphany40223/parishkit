@@ -123,7 +123,7 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
     # The POST-only review is named, never linked; Return goes to users.
     with web():
         status = browser.get(f"/admin/configuration/requests/{request.pk}").content
-    assert b"<li><span>Assignments</span></li>" in status
+    assert b"<li><span>Review Ministry assignment</span></li>" in status
     assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
     assignment = MinistryAssignment.objects.get(
         configuration_id=store.active().version_id, email="leader@example.org"

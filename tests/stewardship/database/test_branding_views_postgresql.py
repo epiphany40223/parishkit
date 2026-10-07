@@ -105,7 +105,7 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
     # The one-time logo review is named but not linked; Return goes to the
     # logos page (#196).
     status = browser.get(result["Location"]).content
-    assert b"<li><span>Logo preview</span></li>" in status
+    assert b"<li><span>Review parish logos</span></li>" in status
     assert f'<a href="{URL}">Return to Parish logos</a>'.encode() in status
     assert browser.get(preview).status_code != 200
     for asset in assets:

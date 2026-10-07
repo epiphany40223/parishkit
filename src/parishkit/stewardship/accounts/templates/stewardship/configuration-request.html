@@ -1,8 +1,8 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static %}
-{% block title %}{% translate "Configuration change status" %}{% endblock %}
+{% block title %}{% translate "Change status" %}{% endblock %}
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
-<h1>{% translate "Configuration change status" %}</h1>
+<h1>{% translate "Change status" %}</h1>
 <section class="panel" role="status" aria-live="polite" data-live-status="configuration" data-live-state="{{ receipt.state }}"{% if receipt.state != 'applied' and receipt.state != 'failed' and receipt.state != 'cancelled' %} data-live-pending{% endif %}>
 {% if receipt.state == 'applied' %}
   <h2 class="live-done">{% translate "Applied: your change is saved" %}</h2><p>{% translate "The change has been applied and is now in effect." %}</p>

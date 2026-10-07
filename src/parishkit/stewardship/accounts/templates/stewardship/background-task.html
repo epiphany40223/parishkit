@@ -1,8 +1,8 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
-{% block title %}{% translate "Background task details" %}{% endblock %}
+{% block title %}{% translate "Background task" %}{% endblock %}
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
-<h1>{% translate "Background task details" %}</h1>
+<h1>{% translate "Background task" %}</h1>
 {% if is_refresh %}{% aboutpage "refresh-task" %}<p>{% translate "Every refresh places every ParishSoft record into a complete new copy, so the progress counts records checked, not records changed. Unchanged records are reused, not stored again. When the refresh finishes, this page also says how many records changed." %}</p>
 <p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail." %}</p>{% endaboutpage %}{% endif %}
 <p>{{ task.name }}{% if refresh_label %}: <strong>{{ refresh_label }}</strong>{% endif %}</p>
