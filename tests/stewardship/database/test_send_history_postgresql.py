@@ -66,8 +66,8 @@ from .test_send_progress_postgresql import (
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-PAGE = "/admin/deliveries/family-sends"
-DELIVERIES = "/admin/deliveries"
+PAGE = "/admin/mail/family-history/"
+DELIVERIES = "/admin/mail/outgoing/"
 # The cloned reminder definition, copied from the invitation's row.
 REMINDER = UUID(hashlib.md5(b"pk432-reminder").hexdigest())
 
@@ -227,13 +227,13 @@ def test_the_web_login_lists_a_real_send_during_a_work_order_hold(
     body = page.content.decode()
     assert "Invitation" in body
     # In progress in the current mode, so the row links to the live panel.
-    assert 'href="/admin/deliveries/family-progress">In progress: watch it live' in body
+    assert 'href="/admin/mail/family-progress/">In progress: watch it live' in body
     assert "1 to send" in body
     # In the sidebar beside the progress panel, and in the breadcrumb trail.
     assert f'<a href="{PAGE}" aria-current="page">' in body
     assert '<span aria-current="page">Family email history</span>' in body
     listed_body = filtered.content.decode()
-    assert f'href="/admin/deliveries/{message.pk}"' in listed_body
+    assert f'href="/admin/mail/outgoing/{message.pk}/"' in listed_body
     assert "Showing only the emails of one Family email send" in listed_body
     assert f'name="send" value="{token}"' in listed_body
     # Two audited views; reading never renews the Admin's idle time.
@@ -567,5 +567,5 @@ def test_only_the_send_the_panel_shows_links_to_it(
         (live,) = [row for row in rows if row.live]
         assert live.send.counts == panel
         body = browser.get(PAGE).content.decode()
-        assert body.count('href="/admin/deliveries/family-progress">In progress') == 1
+        assert body.count('href="/admin/mail/family-progress/">In progress') == 1
         assert body.count("In progress") >= 2

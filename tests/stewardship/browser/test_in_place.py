@@ -107,7 +107,7 @@ def test_presence_refresh_updates_the_list_and_count_in_place(page, component_or
     page.evaluate(MARK)
     assert page.locator("#table tbody tr").count() == 1
     offset = scroll_below(page, "#table-refresh")
-    gets = count_requests(page, "GET", "/admin/presence?size")
+    gets = count_requests(page, "GET", "/admin/mail/presence/?size")
     page.get_by_role("link", name="Refresh list").click()
     has_text(
         page.locator("#presence-count"),

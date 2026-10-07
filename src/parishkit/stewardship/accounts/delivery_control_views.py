@@ -37,9 +37,7 @@ def control(request, campaign_id):
             return _checked(
                 request,
                 service,
-                HttpResponseRedirect(
-                    reverse("admin:delivery_control", args=[campaign_id])
-                ),
+                HttpResponseRedirect(reverse("admin:delivery_control")),
             )
         context = commands.page(request, service, campaign_id)
         if action in {"preview_pause", "preview_resume"}:

@@ -15,10 +15,11 @@ from django.test import RequestFactory
 from django.urls import resolve, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
-from parishkit.stewardship.admin_urls import legacy, parish, system
+from parishkit.stewardship.admin_urls import legacy, mail, parish, system
 
 # Menu groups whose URLs follow the scheme so far, by URL segment.
-MOVED = {"system", "parish"}
+MOVED = {"system", "parish", "mail"}
+GROUPS = system.patterns + parish.patterns + mail.patterns
 # Route segments that would be a GET target naming an action.
 VERBS = {
     "acknowledge",
@@ -47,9 +48,7 @@ def _example(route):
     )
 
 
-@pytest.mark.parametrize(
-    "pattern", system.patterns + parish.patterns, ids=lambda p: p.name
-)
+@pytest.mark.parametrize("pattern", GROUPS, ids=lambda p: p.name)
 def test_moved_routes_follow_the_scheme(pattern):
     """Under their group, trailing slash, no campaign, nouns only."""
     route = str(pattern.pattern)
@@ -87,6 +86,37 @@ def test_polled_reads_keep_their_addresses():
         == f"/admin/background/tasks/{TASK}"
     )
     assert not POLLED & set(legacy.TARGETS.values())
+    # The header's presence count; only the page moved (NAV-8).
+    assert reverse("admin:presence_count") == "/admin/presence"
+    assert reverse("admin:presence") == "/admin/mail/presence/"
+
+
+@pytest.mark.parametrize(
+    "query", ["format=count", "format=json", "format=json&format=count"]
+)
+def test_old_presence_address_still_answers_polled_reads(monkeypatch, query):
+    """A header loaded before the move keeps polling the old address."""
+    answered = []
+    monkeypatch.setattr(
+        mail.presence, "active_families", lambda request: answered.append(request)
+    )
+    request = RequestFactory().get("/admin/presence?" + query)
+    assert mail.presence_reads(request) is None
+    assert answered == [request]
+
+
+@pytest.mark.parametrize(
+    ("method", "status"), [("get", 301), ("head", 301), ("post", 308)]
+)
+def test_old_presence_address_redirects_its_page_reads(monkeypatch, method, status):
+    """Without a polled format, the old address is the page: it moved."""
+    monkeypatch.setattr(mail.presence, "active_families", pytest.fail)
+    request = getattr(RequestFactory(), method)("/admin/presence?size=25&page=2")
+    response = mail.presence_reads(request)
+    assert response.status_code == status
+    assert response["Location"] == "/admin/mail/presence/?size=25&page=2"
+    plain = mail.presence_reads(RequestFactory().get("/admin/presence"))
+    assert plain["Location"] == "/admin/mail/presence/"
 
 
 T = "00000000-0000-0000-0000-000000000007"
@@ -140,6 +170,17 @@ EXPECTED = {
     f"/admin/files/{T}/name": f"/admin/parish/files/{T}/name/",
     "/admin/source/refresh": "/admin/parish/parishsoft-refresh/",
     f"/admin/configuration/requests/{T}": f"/admin/changes/{T}/",
+    # Old Mail and Family portal addresses (NAV-8).
+    "/admin/deliveries": "/admin/mail/outgoing/",
+    f"/admin/deliveries/{T}": f"/admin/mail/outgoing/{T}/",
+    f"/admin/deliveries/{T}/resolve": f"/admin/mail/outgoing/{T}/resolution/",
+    "/admin/deliveries/refusals": "/admin/mail/refusals/",
+    f"/admin/deliveries/refusals/{T}": f"/admin/mail/refusals/{T}/",
+    f"/admin/deliveries/refusals/{T}/clear": (f"/admin/mail/refusals/{T}/clearance/"),
+    "/admin/deliveries/family-progress": "/admin/mail/family-progress/",
+    "/admin/deliveries/family-progress/status": ("/admin/mail/family-progress/status/"),
+    "/admin/deliveries/family-sends": "/admin/mail/family-history/",
+    "/admin/family-portal": "/admin/mail/family-portal/",
     # Pages already in the scheme, without their trailing slash.
     "/admin/system": "/admin/system/",
     "/admin/system/health": "/admin/system/health/",
@@ -161,8 +202,24 @@ EXPECTED = {
     f"/admin/parish/files/{T}/name": f"/admin/parish/files/{T}/name/",
     "/admin/parish/parishsoft-refresh": "/admin/parish/parishsoft-refresh/",
     f"/admin/changes/{T}": f"/admin/changes/{T}/",
+    "/admin/mail/controls": "/admin/mail/controls/",
+    "/admin/mail/family-progress": "/admin/mail/family-progress/",
+    "/admin/mail/family-history": "/admin/mail/family-history/",
+    "/admin/mail/outgoing": "/admin/mail/outgoing/",
+    f"/admin/mail/outgoing/{T}": f"/admin/mail/outgoing/{T}/",
+    "/admin/mail/refusals": "/admin/mail/refusals/",
+    f"/admin/mail/refusals/{T}": f"/admin/mail/refusals/{T}/",
+    "/admin/mail/family-portal": "/admin/mail/family-portal/",
+    "/admin/mail/presence": "/admin/mail/presence/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
+}
+
+
+# Old addresses that name a campaign: they redirect only for the current
+# campaign, which the PostgreSQL suite checks through the real session.
+CAMPAIGN_EXPECTED = {
+    f"/admin/campaign/{T}/delivery": "/admin/mail/controls/",
 }
 
 
@@ -170,7 +227,13 @@ def test_every_old_address_is_listed_once_and_expected():
     """One legacy row per old address, and each one is in the expected table."""
     olds = [old for old, _new, _campaign, _suffix in legacy.ROWS]
     assert len(olds) == len(set(olds))
-    assert {_example(old) for old in olds} == set(EXPECTED)
+    assert {_example(old) for old in olds} == set(EXPECTED) | set(CAMPAIGN_EXPECTED)
+    named = {_example(old) for old, _new, campaign, _ in legacy.ROWS if campaign}
+    assert named == set(CAMPAIGN_EXPECTED)
+    for old, new in CAMPAIGN_EXPECTED.items():
+        match = resolve(old)
+        assert match.func.legacy_campaign
+        assert reverse(f"admin:{match.func.legacy_target}") == new
     routes = navigation.route_parameters()
     for _old, new, _campaign, _suffix in legacy.ROWS:
         assert new in routes and not new.startswith(legacy.PREFIX)
@@ -180,7 +243,7 @@ def test_every_moved_page_has_its_slashless_form():
     """The one trailing-slash rule: each moved page's other form redirects."""
     pages = {
         str(pattern.pattern).rstrip("/")
-        for pattern in system.patterns + parish.patterns
+        for pattern in GROUPS
         if pattern.name in navigation.PAGES
     }
     slashless = {old for old, _new in legacy.SLASHLESS}

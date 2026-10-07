@@ -72,6 +72,7 @@ LEDGER = {
     # be both a command and an area. Default, pending Administrator
     # confirmation.
     "presence": command("status"),
+    "presence_count": command("status"),
     "login": permanent(SESSION_CHROME),
     "logout": permanent(SESSION_CHROME),
     "session_status": permanent(SESSION_CHROME),

@@ -1,8 +1,8 @@
 """The real URLconf plus one campaign-scoped legacy route, for tests only.
 
-No campaign-scoped old address exists until the later URL slices (NAV-7 to
-NAV-12) move campaign pages; this lets ``legacy(…, campaign=True)`` be
-exercised through the real middleware, sessions and access gate now.
+It exercises ``legacy(…, campaign=True)`` through the real middleware,
+sessions and access gate against a page that needs no campaign state, so the
+redirect and refusal rules are checked apart from any one moved page.
 """
 
 from django.urls import include, path

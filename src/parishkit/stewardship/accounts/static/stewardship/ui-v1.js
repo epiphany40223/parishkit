@@ -2734,6 +2734,8 @@
   }
 
   // Presence is observational: these requests never count as user activity.
+  // The indicators carry their poll URLs (data-*-url, rendered from the URL
+  // names), so moving an Admin route never leaves a stale path here.
   // Timers skip hidden tabs and never overlap requests or catch up missed ticks.
   const presenceIndicator = document.querySelector("[data-presence-indicator]");
   let presencePending = false;
@@ -2742,7 +2744,7 @@
     presencePending = true;
     const unavailable = document.querySelector("[data-presence-unavailable]");
     try {
-      const response = await fetch("/admin/presence?format=count", {
+      const response = await fetch(presenceIndicator.dataset.presenceUrl, {
         credentials: "same-origin", cache: "no-store"
       });
       if (signedOut(response)) { stopHeaderPolls(); throw new Error("Signed out"); }
@@ -2767,7 +2769,7 @@
     backgroundPending = true;
     const unavailable = document.querySelector("[data-background-unavailable]");
     try {
-      const response = await fetch("/admin/background/counts", {
+      const response = await fetch(backgroundIndicator.dataset.backgroundUrl, {
         credentials: "same-origin", cache: "no-store"
       });
       if (signedOut(response)) { stopHeaderPolls(); throw new Error("Signed out"); }

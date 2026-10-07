@@ -89,7 +89,11 @@ def test_uncertainty_warns_once_and_admin_metadata_never_discloses_payload(
     browser, _ = signed_in()
     activity = PortalSession.objects.get().last_activity_at
     with task_login(ServiceRole.WEB, exact=True):
-        for path in ("/admin/", "/admin/deliveries", f"/admin/deliveries/{message.pk}"):
+        for path in (
+            "/admin/",
+            "/admin/mail/outgoing/",
+            f"/admin/mail/outgoing/{message.pk}/",
+        ):
             response = browser.get(path)
             assert response.status_code == 200
             # The status bar, Outgoing mail and the Mail message page all
@@ -99,11 +103,11 @@ def test_uncertainty_warns_once_and_admin_metadata_never_discloses_payload(
             assert family_mail.code.encode() not in response.content
             assert message.sealed_substitutions.encode() not in response.content
             assert b"sealed_substitutions" not in response.content
-        listing = browser.get("/admin/deliveries?state=all&size=25")
+        listing = browser.get("/admin/mail/outgoing/?state=all&size=25")
         assert listing.status_code == 200
         assert b'class="table-nav"' in listing.content
         assert b'<input type="hidden" name="state" value="all">' in listing.content
-        refusals = browser.get("/admin/deliveries/refusals")
+        refusals = browser.get("/admin/mail/refusals/")
         assert refusals.status_code == 200
         assert b'class="table-nav"' in refusals.content
         result = browser.get("/admin/background/counts")
@@ -111,7 +115,7 @@ def test_uncertainty_warns_once_and_admin_metadata_never_discloses_payload(
     # Dashboard is activity; the status pages themselves must remain passive.
     assert activity < PortalSession.objects.get().last_activity_at
     before = PortalSession.objects.get().last_activity_at
-    for path in ("/admin/deliveries", f"/admin/deliveries/{message.pk}"):
+    for path in ("/admin/mail/outgoing/", f"/admin/mail/outgoing/{message.pk}/"):
         assert browser.get(path).status_code == 200
         assert PortalSession.objects.get().last_activity_at == before
 
@@ -136,9 +140,9 @@ def test_delivery_pages_and_warning_are_admin_only(family_mail, google, role):  
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
     for path in (
-        "/admin/deliveries",
-        f"/admin/deliveries/{message.pk}",
-        "/admin/deliveries/refusals",
+        "/admin/mail/outgoing/",
+        f"/admin/mail/outgoing/{message.pk}/",
+        "/admin/mail/refusals/",
     ):
         assert browser.get(path).status_code == 403
     assert b"data-delivery-warning" not in browser.get("/admin/").content
@@ -163,8 +167,8 @@ def test_delivery_filters_are_closed(auth_service, google, query):
     """Unknown/duplicate fields, raw column names as sorts and unbounded
     pagination fail before reads."""
     browser, _ = signed_in()
-    assert browser.get("/admin/deliveries?" + query).status_code == 400
-    assert browser.get("/admin/deliveries/refusals?" + query).status_code == 400
+    assert browser.get("/admin/mail/outgoing/?" + query).status_code == 400
+    assert browser.get("/admin/mail/refusals/?" + query).status_code == 400
 
 
 def test_delivery_lists_sort_on_the_server_and_count_pages(response_service, google):
@@ -174,7 +178,7 @@ def test_delivery_lists_sort_on_the_server_and_count_pages(response_service, goo
     for mailbox in ("b@example.org", "a@example.org", "c@example.org"):
         remember(refused(harness, address=mailbox), address=mailbox)
     browser, _ = signed_in()
-    path = "/admin/deliveries/refusals"
+    path = "/admin/mail/refusals/"
 
     def addresses(**query):
         """The refused addresses in the order one page lists them."""
@@ -203,7 +207,9 @@ def test_delivery_lists_sort_on_the_server_and_count_pages(response_service, goo
     assert 'aria-sort="descending"' in html and "Page 1 of 1" in html
     assert "Showing 1–3 of 3" in html
     assert '<input type="hidden" name="sort" value="-address">' in html
-    listing = browser.get("/admin/deliveries", {"sort": "-attempts", "state": "all"})
+    listing = browser.get(
+        "/admin/mail/outgoing/", {"sort": "-attempts", "state": "all"}
+    )
     assert listing.status_code == 200
     html = listing.content.decode()
     assert 'aria-sort="descending"' in html and "Page 1 of 1" in html
@@ -225,7 +231,7 @@ def test_authority_is_rechecked_after_render(family_mail, google, monkeypatch): 
         return result
 
     monkeypatch.setattr(delivery_views, "render", revoked)
-    response = browser.get(f"/admin/deliveries/{message.pk}")
+    response = browser.get(f"/admin/mail/outgoing/{message.pk}/")
     assert response.status_code == 403
     assert str(message.pk).encode() not in response.content
     assert not AuditEvent.objects.filter(event_type="delivery_viewed").exists()
@@ -256,7 +262,7 @@ def test_verified_clearance_form_is_audited_and_replay_safe(response_service, go
     harness = activate_response_service(response_service)
     refusal = remember(refused(harness))
     browser, _ = signed_in()
-    path = f"/admin/deliveries/refusals/{refusal.pk}"
+    path = f"/admin/mail/refusals/{refusal.pk}/"
     current = SourceCurrent.objects.get()
     values = dict(
         command_id=str(uuid4()),
@@ -270,10 +276,10 @@ def test_verified_clearance_form_is_audited_and_replay_safe(response_service, go
         page = browser.get(path)
         assert page.status_code == 200 and b"csrfmiddlewaretoken" in page.content
         assert PortalSession.objects.get().last_activity_at == activity
-        assert browser.post(path + "/clear", values).status_code == 403
+        assert browser.post(path + "clearance/", values).status_code == 403
         for _ in range(2):
             result = browser.post(
-                path + "/clear",
+                path + "clearance/",
                 values,
                 HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
             )
@@ -316,7 +322,7 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
         message = failed_delivery(family_mail, status)
         old_version, old_attempt = message.version, message.attempt
         browser, _ = signed_in()
-        path = f"/admin/deliveries/{message.pk}"
+        path = f"/admin/mail/outgoing/{message.pk}/"
         values = dict(
             command_id=str(uuid4()),
             expected_version=str(message.version),
@@ -327,10 +333,10 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             values["duplicate_acknowledged"] = "yes"
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             assert browser.get(path).status_code == 200
-            assert browser.post(path + "/resolve", values).status_code == 403
+            assert browser.post(path + "resolution/", values).status_code == 403
             for _ in range(2):
                 response = browser.post(
-                    path + "/resolve",
+                    path + "resolution/",
                     values,
                     HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 )
@@ -379,7 +385,7 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             stale = values | {"command_id": str(uuid4())}
             assert (
                 browser.post(
-                    path + "/resolve",
+                    path + "resolution/",
                     stale,
                     HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 ).status_code
@@ -392,11 +398,11 @@ def test_invalid_form_has_private_accessible_recovery(family_mail, google):  # n
     """Validation errors are navigable HTML, not JSON or an echo of private data."""
     message = uncertain(family_mail)
     browser, _ = signed_in()
-    path = f"/admin/deliveries/{message.pk}"
+    path = f"/admin/mail/outgoing/{message.pk}/"
     with task_login(ServiceRole.WEB, exact=True):
         assert browser.get(path).status_code == 200
         response = browser.post(
-            path + "/resolve",
+            path + "resolution/",
             dict(
                 command_id="invalid",
                 expected_version="1",
@@ -408,7 +414,7 @@ def test_invalid_form_has_private_accessible_recovery(family_mail, google):  # n
     assert response.status_code == 400
     assert response["Content-Type"].startswith("text/html")
     assert b'role="alert"' in response.content
-    assert b'"/admin/deliveries"' in response.content
+    assert b'"/admin/mail/outgoing/"' in response.content
     assert b"private-evidence-marker" not in response.content
     assert response["Cache-Control"] == "no-store"
 

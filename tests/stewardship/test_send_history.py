@@ -233,7 +233,7 @@ def test_a_finished_send_links_each_count_to_its_emails():
         ("permanent_failure", "4"),
         ("cancelled", "12"),
     ):
-        link = f'href="/admin/deliveries?send={token}&amp;state={state}"'
+        link = f'href="/admin/mail/outgoing/?send={token}&amp;state={state}"'
         assert re.search(re.escape(link) + f' aria-label="[^"]*">{count}</a>', html), (
             state
         )
@@ -263,7 +263,7 @@ def test_only_the_send_the_panel_shows_links_to_it():
     rows = send_history.mark_live([invitation, reminder], reminder.send.counts)
     assert [r.live for r in rows] == [False, True]
     html = render(*rows)
-    assert html.count('href="/admin/deliveries/family-progress"') == 1
+    assert html.count('href="/admin/mail/family-progress/"') == 1
     assert html.count("In progress") == 2
     assert "455 to send" in html and "7 to send" in html
 
@@ -304,5 +304,5 @@ def test_the_idle_progress_panel_links_to_past_sends():
     from .test_send_progress import render as panel
 
     finished = progress(counts(sent=3, last_settled_at=NOW))
-    assert 'href="/admin/deliveries/family-sends">See past sends' in panel(finished)
-    assert 'href="/admin/deliveries/family-sends">See past sends' in panel(None)
+    assert 'href="/admin/mail/family-history/">See past sends' in panel(finished)
+    assert 'href="/admin/mail/family-history/">See past sends' in panel(None)

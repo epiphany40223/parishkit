@@ -51,6 +51,26 @@ PARISH = (
     ("configuration/requests/<uuid:request_id>", "configuration_request"),
 )
 
+# (old route, new URL name), Mail and Family portal group (NAV-8). The old
+# presence page address is not here: its polled JSON reads stay there, so
+# ``mail.presence_reads`` redirects only its page reads.
+MAIL = (
+    ("deliveries", "deliveries"),
+    ("deliveries/<uuid:message_id>", "delivery"),
+    ("deliveries/<uuid:message_id>/resolve", "delivery_resolve"),
+    ("deliveries/refusals", "delivery_refusals"),
+    ("deliveries/refusals/<uuid:refusal_id>", "delivery_refusal"),
+    ("deliveries/refusals/<uuid:refusal_id>/clear", "delivery_refusal_clear"),
+    ("deliveries/family-progress", "family_email_progress"),
+    ("deliveries/family-progress/status", "family_email_progress_status"),
+    ("deliveries/family-sends", "family_email_sends"),
+    ("family-portal", "family_portal"),
+)
+
+# (old route naming a campaign, new URL name): these redirect only for the
+# current campaign and answer 410 for any other (``legacy(campaign=True)``).
+CAMPAIGN = (("campaign/<uuid:campaign_id>/delivery", "delivery_control"),)
+
 # Each page already in the scheme without its trailing slash (the one
 # trailing-slash rule: "the other form redirects"). Form actions and status
 # fragments are posted or polled at the reversed URL only, so they have none.
@@ -73,13 +93,24 @@ SLASHLESS = (
     ("parish/files/<uuid:file_id>/name", "hosted_file_rename"),
     ("parish/parishsoft-refresh", "source_refresh"),
     ("changes/<uuid:request_id>", "configuration_request"),
+    ("mail/controls", "delivery_control"),
+    ("mail/family-progress", "family_email_progress"),
+    ("mail/family-history", "family_email_sends"),
+    ("mail/outgoing", "deliveries"),
+    ("mail/outgoing/<uuid:message_id>", "delivery"),
+    ("mail/refusals", "delivery_refusals"),
+    ("mail/refusals/<uuid:refusal_id>", "delivery_refusal"),
+    ("mail/family-portal", "family_portal"),
+    ("mail/presence", "presence"),
     ("users/automation", "automation_access"),
     ("users/automation/approval", "automation_approval"),
 )
 
 # Every legacy route: (old route, new URL name, names a campaign, name suffix).
-ROWS = tuple((old, new, False, "") for old, new in SYSTEM + PARISH) + tuple(
-    (old, new, False, "_slashless") for old, new in SLASHLESS
+ROWS = (
+    tuple((old, new, False, "") for old, new in SYSTEM + PARISH + MAIL)
+    + tuple((old, new, True, "") for old, new in CAMPAIGN)
+    + tuple((old, new, False, "_slashless") for old, new in SLASHLESS)
 )
 
 PREFIX = "legacy_"

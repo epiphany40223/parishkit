@@ -15,7 +15,7 @@ from .test_security_events_postgresql import home
 from .test_user_rule_views_postgresql import web
 
 pytestmark = pytest.mark.django_db(transaction=True)
-ROUTE = "/admin/family-portal"
+ROUTE = "/admin/mail/family-portal/"
 BANNER = "The Family portal is closed for maintenance."
 
 

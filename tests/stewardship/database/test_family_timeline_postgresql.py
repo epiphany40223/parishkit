@@ -108,7 +108,7 @@ def test_timeline_for_administrators_and_staff(
     # The skipped invitation's cancelled email is not listed twice: its
     # "already responded" line stands for it, and it is never the last email.
     message = rehearsal[families[1]]
-    assert f"/admin/deliveries/{message.pk}".encode() not in body
+    assert f"/admin/mail/outgoing/{message.pk}/".encode() not in body
     assert b"Not sent (cancelled)" not in body
     # The last email sent is the submission's receipt, still on its way.
     assert re.search(rb"Submission receipt, <time[^>]*>[^<]*</time>: <strong>", body)
@@ -208,7 +208,7 @@ def test_timeline_for_administrators_and_staff(
     assert f"<code>{code}</code>".encode() in body and b"data-open-form" in body
     for absent in (
         b"Timeline</h2>",
-        b"/admin/deliveries/",
+        b"/admin/mail/outgoing/",
         b"data-in-place=",
         b"Signed in",
     ):

@@ -81,7 +81,7 @@ def portal_chrome(request):
                 "actor": PortalUser.objects.filter(pk=campaign.pause_actor_id)
                 .values_list("email", flat=True)
                 .first(),
-                "url": reverse("admin:delivery_control", args=[campaign.pk]),
+                "url": reverse("admin:delivery_control"),
             }
     # A view may place the page more precisely than its route can (#196).
     match = getattr(request, "resolver_match", None)

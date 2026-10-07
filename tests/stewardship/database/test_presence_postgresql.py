@@ -27,7 +27,9 @@ from .test_family_auth_postgresql import login
 from .test_source_families_postgresql import source_singletons  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
-ADMIN = "/admin/presence"
+ADMIN = "/admin/mail/presence/"
+# The header's count poll keeps the old address (decision 8, NAV-8).
+POLLED = "/admin/presence"
 FAMILY = "/family/presence"
 
 
@@ -338,7 +340,7 @@ def test_header_count_poll_never_fetches_family_names(family_service, google):
     beat(family)
     browser, _ = signed_in()
     with CaptureQueriesContext(connection) as queries:
-        response = browser.get(ADMIN + "?format=count")
+        response = browser.get(POLLED + "?format=count")
     assert response.status_code == 200 and response.json()["count"] == 1
     assert set(response.json()) == {"count", "as_of"}
     assert not any(

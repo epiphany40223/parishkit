@@ -192,7 +192,7 @@ def test_unknown_receipt_appears_in_admin_warning_and_private_metadata(
     deliver(harness, path, message)
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True):
-        response = browser.get(f"/admin/deliveries/{message.pk}")
+        response = browser.get(f"/admin/mail/outgoing/{message.pk}/")
         assert response.status_code == 200
         assert b"Not sure it arrived" in response.content
         assert harness.code.encode() not in response.content

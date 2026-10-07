@@ -106,8 +106,8 @@ from .test_taskrun_postgresql import act, expire
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-PAGE = "/admin/deliveries/family-progress"
-STATUS = PAGE + "/status"
+PAGE = "/admin/mail/family-progress/"
+STATUS = PAGE + "status/"
 SHADOWED = (
     "stewardship_schedule_definition",
     "stewardship_schedule_occurrence",
@@ -183,13 +183,11 @@ def test_the_web_login_follows_a_real_send_during_a_work_order_hold(
         body = page.content.decode()
         assert "Invitation email" in body
         assert "0 of 1 emails finished (0%)" in body
-        assert 'data-live-url="/admin/deliveries/family-progress/status"' in body
+        assert 'data-live-url="/admin/mail/family-progress/status/"' in body
         assert "data-live-pending" in body
         assert "live-status-v1.js" in body
         # The panel is in the sidebar and the breadcrumb trail.
-        assert (
-            '<a href="/admin/deliveries/family-progress" aria-current="page">' in body
-        )
+        assert '<a href="/admin/mail/family-progress/" aria-current="page">' in body
         assert '<span aria-current="page">Family email progress</span>' in body
         activity = PortalSession.objects.get().last_activity_at
         views = AuditEvent.objects.filter(event_type="delivery_viewed").count()
@@ -231,7 +229,7 @@ def test_a_finished_send_is_not_in_progress_and_is_summarised(
     assert "No Family email send is in progress right now" in body
     assert "Last send: Invitation email, finished <time" in body
     assert "0 sent, 0 failed, 1 not sure it arrived, 0 not sent." in body
-    assert 'href="/admin/deliveries">Outgoing mail</a>' in body
+    assert 'href="/admin/mail/outgoing/">Outgoing mail</a>' in body
     assert "<progress" not in body
     assert "data-live-pending" in body
 

@@ -631,6 +631,7 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
     """No campaign: the campaign's pages say so instead of disappearing."""
     items = _menu("administrator", None, "testing")
     needs = {entry.name for entry in navigation.MENU if entry.campaign} | {
+        "delivery_control",
         "family_email_progress",
         "family_email_sends",
     }
@@ -706,9 +707,7 @@ def test_available_campaign_entries_link_the_current_campaign():
     urls = {
         item.name: item.url for item in _menu("administrator", campaign, "production")
     }
-    assert urls["delivery_control"] == reverse(
-        "admin:delivery_control", args=[campaign.pk]
-    )
+    assert urls["delivery_control"] == reverse("admin:delivery_control")
     assert urls["production_progress"] == reverse(
         "admin:production_progress", args=[campaign.pk]
     )

@@ -462,7 +462,7 @@ def test_cancel_go_live_blocking_message_links_the_pages_it_names():
             },
         },
     )
-    controls = reverse("admin:delivery_control", args=[campaign.pk])
+    controls = reverse("admin:delivery_control")
     outgoing = reverse("admin:deliveries")
     assert f'<a href="{controls}">Pause and resume mail</a>' in html
     assert f'<a href="{outgoing}">Outgoing mail</a>' in html

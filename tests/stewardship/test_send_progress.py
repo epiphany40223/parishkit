@@ -227,9 +227,10 @@ def test_a_running_send_polls_with_a_labelled_progress_bar():
     assert "about 6 minutes" in html
     # Each kind links to its own filtered list.
     assert (
-        'href="/admin/deliveries?state=delivery_unknown">Review emails that may' in html
+        'href="/admin/mail/outgoing/?state=delivery_unknown">Review emails that may'
+        in html
     )
-    assert 'href="/admin/deliveries?state=permanent_failure">Review failed' in html
+    assert 'href="/admin/mail/outgoing/?state=permanent_failure">Review failed' in html
     assert "failed before they were prepared" not in html
     assert "<script" not in html
 
@@ -252,7 +253,7 @@ def test_a_finished_send_is_one_line_with_no_bar_and_the_page_keeps_checking():
     assert "No Family email send is in progress right now" in html
     assert "Last send: Invitation email, finished <time" in html
     assert "1,090 sent, 4 failed, 1 not sure it arrived, 10 not sent." in html
-    assert 'href="/admin/deliveries">Outgoing mail</a>' in html
+    assert 'href="/admin/mail/outgoing/">Outgoing mail</a>' in html
     assert "<progress" not in html and "emails finished" not in html
     # Still checking, so the next send appears by itself.
     assert "data-live-pending" in region(html)

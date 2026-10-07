@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.db import DatabaseError, connection
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import delivery_control_commands as commands
 from parishkit.stewardship.accounts.family_authentication import FamilyRuntime
@@ -704,7 +705,7 @@ def test_closed_resolution_releases_only_selected_mail_and_can_cancel_without_he
         close_campaign(item.campaign, uuid4())
     closed_at = item.campaign.active_configuration.ends_at + timedelta(hours=1)
     with campaign_clock(closed_at):
-        path = f"/admin/campaign/{item.campaign.pk}/delivery"
+        path = reverse("admin:delivery_control")
         with web_login():
             page = item.browser.get(path)
             assert page.status_code == 200 and page.context["resolve_available"]
@@ -886,7 +887,7 @@ def test_closed_resolution_cancels_a_family_message_with_no_task_left(
         inventory = commands.inventory(item.campaign.pk)
         assert inventory["stranded"] == 1 and inventory["unknown"] == 0
         with web_login():
-            page = item.browser.get(f"/admin/campaign/{item.campaign.pk}/delivery")
+            page = item.browser.get(reverse("admin:delivery_control"))
             assert page.status_code == 200
             assert "nothing will send any more" in page.content.decode()
             _, token = commands.preview_resolution(
