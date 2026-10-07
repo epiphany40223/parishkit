@@ -123,6 +123,24 @@ def _waiting(pid):
         return cursor.fetchone()[0]
 
 
+def _anyone_waiting():
+    """Whether another backend of this test database is blocked on a lock.
+
+    Filtered by database through pg_stat_activity, because a row-lock wait
+    is a transaction-id lock with no database of its own and CI may share
+    one server between partitions. Activity is cached for the rest of a
+    transaction once read, so each poll clears that snapshot first.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_stat_clear_snapshot()")
+        cursor.execute(
+            "SELECT EXISTS(SELECT 1 FROM pg_stat_activity "
+            "WHERE datname=current_database() AND pid<>pg_backend_pid() "
+            "AND wait_event_type='Lock')"
+        )
+        return cursor.fetchone()[0]
+
+
 def test_heartbeat_holding_its_task_row_never_deadlocks_cleanup(tmp_path):
     """The dangerous interleaving: the heartbeat has its task row, cleanup starts.
 
@@ -168,42 +186,58 @@ def test_heartbeat_waits_for_one_generation_not_the_batch(tmp_path, monkeypatch)
 
     On the validation deployment cleanup held the task row across a batch of
     generations; the heartbeat's 2 s lock wait failed and killed the refresh.
+
+    The proof is event ordering, not elapsed time (#690): the heartbeat
+    arrives while the first generation holds the task row, and the second
+    generation does not start until the heartbeat has finished. Cleanup that
+    kept the task row across the batch would leave the heartbeat waiting
+    until its lock timeout, however fast or slow the CPU.
     """
     inputs, owner = generations(tmp_path, 4)
     claim = claimed_task()
     original = retention._compact_candidate
-    finished = {}
     pool = ThreadPoolExecutor(max_workers=1)
-    futures = []
-
-    def beat():
-        """Renew with the heartbeat's real 2 s lock timeout."""
-        outcome = heartbeat_transaction(claim, inputs.campaign_id, lock_timeout="2s")
-        finished["heartbeat"] = time.monotonic()
-        return outcome
+    futures, renewed_before = [], []
 
     def slow(*args, **kwargs):
-        """Each generation takes a while; the heartbeat arrives in the first."""
+        """The heartbeat arrives in the first generation and waits on it."""
         result = original(*args, **kwargs)
         if not futures:
-            futures.append(pool.submit(beat))
-        time.sleep(0.6)
+            futures.append(
+                pool.submit(heartbeat_transaction, claim, inputs.campaign_id)
+            )
+            # Hold this generation open until the heartbeat is blocked on a
+            # lock, so it genuinely arrives mid-deletion.
+            deadline = time.monotonic() + 30
+            while not _anyone_waiting():
+                assert time.monotonic() < deadline, "the heartbeat never blocked"
+                time.sleep(0.02)
         return result
 
+    def proceed():
+        """Before each later generation, wait for the heartbeat to finish.
+
+        The 30 s wait is only a catastrophic guard: the heartbeat's own
+        5 s lock timeout ends it long before, with 55P03, if the batch
+        still holds its task row.
+        """
+        if futures:
+            futures[0].result(timeout=30)
+            renewed_before.append(True)
+        return True
+
     monkeypatch.setattr(retention, "_compact_candidate", slow)
-    started = time.monotonic()
     try:
         removed = retention.compact_facts(
-            inputs.campaign_id, claim, admit=permit, limit=5
+            inputs.campaign_id, claim, admit=permit, limit=5, proceed=proceed
         )
-        finished["batch"] = time.monotonic()
         outcome = futures[0].result(timeout=30)
     finally:
         pool.shutdown(wait=True)
     assert len(removed) == 3 and remaining(inputs) == 1
     assert outcome == "ok", outcome
-    assert finished["heartbeat"] < finished["batch"]
-    assert finished["heartbeat"] - started < 2
+    # The heartbeat renewed before the second and third generations began.
+    assert renewed_before == [True, True]
 
 
 def test_cleanup_refuses_to_run_inside_a_transaction(tmp_path):

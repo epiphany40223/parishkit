@@ -42,6 +42,7 @@ from ..configuration_factory import PARISH_TIMEZONE
 from .auth_builders import unguarded
 from .campaign_builders import campaign_clock, complete_empty_catchup
 from .credential_builders import populate
+from .plan_work import analyze_all, assert_linear_plan
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_family_auth_postgresql import family_service  # noqa: F401
@@ -256,8 +257,21 @@ def test_a_realistic_population_goes_idle_cheaply(family_service):  # noqa: F811
         # Only a catastrophic-regression guard: about 14 ms a check on a
         # laptop, but CI packs three PostgreSQL partitions onto each runner
         # (#651), so wall-clock time here is shared-CPU noise (#688). The
-        # statement count and lock assertions above are the real checks.
+        # statement count and lock assertions above, the plan's row count
+        # below and test_schedule_production's idle scaling ratio (the
+        # Python comparison) are the real checks (#690).
         assert elapsed < 60
+        # The per-Family read stays linear in the population: one hash or
+        # merge pass per input table, never a nested loop that rescans an
+        # input for every Family.
+        analyze_all()
+        visited = assert_linear_plan(
+            schedule_production.FAMILY_INPUTS,
+            {"campaign": campaign.pk},
+            REALISTIC,
+            per_row=60,
+        )
+        print(f"FAMILY_INPUTS rows visited at {REALISTIC} Families: {visited}")
         middle = REALISTIC // 2
         changed = FamilyStatus(middle, True, True, True, False)
         populate(

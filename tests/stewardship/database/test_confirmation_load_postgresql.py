@@ -38,6 +38,7 @@ from ..content_factory import content
 from . import test_go_live_cleanup_postgresql as cleanup_inputs
 from . import test_setup_preparation_postgresql as setup_inputs
 from . import test_setup_preview_postgresql as preview_inputs
+from .plan_work import analyze_all
 from .test_background_grants_postgresql import task_login
 from .test_confirmation_readiness_postgresql import (  # noqa: F401
     bootstrapped,
@@ -72,8 +73,26 @@ def relation_access():
         return {row[0]: row[1:] for row in cursor.fetchall()}
 
 
-def observe_final_transaction(monkeypatch, observed):
-    """Instrument the actual owner, not a mock confirmation or SQL function."""
+def rows_read():
+    """Rows this transaction has read from every user table so far.
+
+    Sequential-scan rows plus index heap fetches, counted by the server, so
+    reads inside private SQL functions and triggers are included.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT coalesce(sum(seq_tup_read + coalesce(idx_tup_fetch, 0)), 0) "
+            "FROM pg_stat_xact_user_tables"
+        )
+        return int(cursor.fetchone()[0])
+
+
+def observe_final_transaction(monkeypatch, observed, read=None):
+    """Instrument the actual owner, not a mock confirmation or SQL function.
+
+    ``observed`` receives the counters of RELATIONS; ``read``, if given, the
+    rows the transaction read from all user tables together.
+    """
     original = confirmation_commands.campaign_transaction
 
     @contextmanager
@@ -84,11 +103,13 @@ def observe_final_transaction(monkeypatch, observed):
             # deliberately requires heap-visible reads, including private SQL.
             with connection.cursor() as cursor:
                 cursor.execute("SET LOCAL enable_indexonlyscan = off")
-            before = relation_access()
+            before, before_rows = relation_access(), rows_read()
             yield scope
             with connection.cursor() as cursor:
                 cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
             after = relation_access()
+            if read is not None:
+                read.append(rows_read() - before_rows)
             observed.update(
                 {
                     name: tuple(
@@ -252,8 +273,10 @@ def test_reference_confirmation_and_family_submit_during_incomplete_catchup(
     _, service, campaign_id = arguments[:3]
     ring = links[2]
     assert FamilyCampaign.objects.filter(campaign_id=campaign_id).count() == 5000
-    observed = {}
-    observe_final_transaction(monkeypatch, observed)
+    observed, read = {}, []
+    observe_final_transaction(monkeypatch, observed, read)
+    # Measure against current planner statistics, as in a deployment.
+    analyze_all()
     with web_login():
         verify_nested_scan_detector()
         preview, verified, token = fresh(arguments)
@@ -264,7 +287,15 @@ def test_reference_confirmation_and_family_submit_during_incomplete_catchup(
             began = perf_counter()
             receipt = confirm(*arguments, token=token, typed="Production")
             elapsed = perf_counter() - began
-        assert elapsed < 2.0, elapsed
+        # The work, not the wall clock, is the budget (#690): CI packs three
+        # PostgreSQL partitions onto each runner, so elapsed time is shared
+        # CPU noise and only guards against catastrophe. Confirmation is one
+        # transaction; it reads only a bounded set of rows from all tables
+        # together (the bulk ones are pinned per relation below) and issues a
+        # bounded number of statements, never one per Family.
+        assert elapsed < 30, elapsed
+        assert read == [read[0]] and read[0] < 2000, read
+        assert len(queries) < 250, len(queries)
         assert not any(
             name in row["sql"].lower()
             for name in RELATIONS
@@ -278,6 +309,7 @@ def test_reference_confirmation_and_family_submit_during_incomplete_catchup(
     record_property("final_confirmation_seconds", elapsed)
     record_property("final_confirmation_queries", len(queries))
     record_property("final_confirmation_relation_activity", str(observed))
+    record_property("final_confirmation_rows_read", read[0])
     impact = ActivationImpactRevision.objects.get().version
     settings.STEWARDSHIP_FAMILY_RUNTIME = FamilyRuntime(
         service.store, service.limiter, ring.general, ring.mac, ring.public
@@ -339,8 +371,12 @@ def _exercise_catchup(demand, pool, submit_family, record_property):
             assert demand.completed_at is None and demand.groups_completed == 1
             # The maintained worker stays alive, but bounded effects release the
             # common lock so actual Family entry and submission can commit.
-            submission_seconds = pool.submit(submit_family).result(timeout=10)
-            assert submission_seconds < 2.0, submission_seconds
+            # The ordering is the check (#690): the submission commits while
+            # this worker waits between two effects, and a worker that kept
+            # the lock would leave it waiting until this catastrophic guard
+            # gives up. Its elapsed time is only recorded, not bounded:
+            # shared CI CPUs make it noise.
+            submission_seconds = pool.submit(submit_family).result(timeout=30)
             with execution.effect():
                 prepare_batch(demand, execution.claim)
     record_property("family_form_and_submit_seconds", submission_seconds)
