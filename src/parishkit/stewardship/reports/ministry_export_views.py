@@ -7,13 +7,14 @@ from django.views.decorators.http import require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
 
 from .export_services import ExportRequestBound
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
-from .ministries import MinistryQuery
+from .ministries import ZONE_MESSAGE, MinistryQuery
 from .ministry_exports import MAX_PACKET_MINISTRIES, create_ministry_export
 from .ministry_views import _principal
 
@@ -68,6 +69,8 @@ def create(request, campaign_id):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return report_unavailable()
+    except UnknownZone:
+        return private_response(ZONE_MESSAGE, status=400)
     except ValueError:
         return private_response("Invalid Ministry export selection.\n", status=400)
 

@@ -78,6 +78,9 @@ FROZEN = {
     "0016_backup_request.sql": (
         "48adee71fe33b14c2d478e3178fce3f82a062a97c2fcd060323597a9ed449564"
     ),
+    "0017_report_local_days.sql": (
+        "22392eef1cf8dfbd6629f6548dee5ddcd95e94fc835cbf26d8156cad4bd1f2b6"
+    ),
 }
 
 

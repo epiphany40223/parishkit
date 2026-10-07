@@ -7,6 +7,7 @@ from django.views.decorators.http import require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.dates import UnknownZone
 
 from .export_services import ExportRequestBound
 from .export_ui import _redirect
@@ -53,5 +54,7 @@ def create(request, campaign_id):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return _error(campaign_id, status=503)
+    except UnknownZone:
+        return _error(campaign_id, zone=True)
     except ValueError:
         return _error(campaign_id, status=400)

@@ -15,8 +15,10 @@ REPORTS = (
     "stewardship_directory_report_v1",
     "stewardship_financial_report_v1",
     "stewardship_information_report_v1",
+    "stewardship_information_report_v2",
     "stewardship_talent_report_v1",
     "stewardship_ministry_report_v1",
+    "stewardship_ministry_report_v2",
 )
 
 
