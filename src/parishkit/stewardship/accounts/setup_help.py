@@ -60,7 +60,7 @@ ACCESS = {
         "domain alone shows no Ministry information."
     ),
     "staff_addresses": _(
-        "Individual Google account addresses that get Staff access, one per "
+        "Individual email addresses that get Staff access, one per "
         "line, for example secretary@yourparish.org. Use this for people outside "
         "your domains or instead of granting a whole domain."
     ),

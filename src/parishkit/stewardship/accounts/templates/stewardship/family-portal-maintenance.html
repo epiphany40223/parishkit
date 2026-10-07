@@ -31,5 +31,5 @@
 </section>
 {% endif %}
 {% if delivery_url %}<p><a href="{{ delivery_url }}">{% translate "Pause or resume Family email delivery" %}</a></p>{% endif %}
-<p class="help">{% translate "Changing this requires you to confirm your sign-in with Google, and every change is recorded in the audit log." %}</p>
+<p class="help">{% if local_environment %}{% translate "Changing this requires you to confirm your sign-in, and every change is recorded in the audit log." %}{% else %}{% translate "Changing this requires you to confirm your sign-in with Google, and every change is recorded in the audit log." %}{% endif %}</p>
 {% endblock %}

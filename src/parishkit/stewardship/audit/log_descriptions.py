@@ -56,7 +56,7 @@ DESCRIPTIONS = {
     # Sign-in and sessions.
     # The portal session covers every portal role, not just Administrators.
     "admin_login": _(
-        "A portal user (Administrator, Staff or Ministry leader) signed in with Google."
+        "A portal user (Administrator, Staff or Ministry leader) signed in."
     ),
     "admin_step_up": _(
         "An Administrator confirmed their sign-in again for a protected action."

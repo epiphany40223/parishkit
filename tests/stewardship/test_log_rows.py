@@ -357,4 +357,7 @@ def test_every_row_explains_its_type_in_plain_words():
             "auditcontext__context": None,
         }
     )
-    assert "signed in with Google" in str(row["description"])
+    description = str(row["description"])
+    # Profile-neutral: LOCAL signs in without Google (#649).
+    assert description.endswith("Ministry leader) signed in.")
+    assert "Google" not in description
