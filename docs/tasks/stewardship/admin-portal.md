@@ -384,6 +384,18 @@ round trip through the installer, tokens crossing between the page and the
 command line, bad tokens, scopes, ended sessions and unknown outcomes) and
 the unchanged schedule, clone, campaign, content, parish, Ministry and
 configuration request suites.
+ADM-11.10 lands in two pull requests. 9a adds `task retry`
+(`parishkit.stewardship.admin_operations`), with the retry pages' bodies,
+the delivery views' admission and their command scope moved into
+`jobs.task_retries`; proven by `tests/stewardship/test_admin_operations.py`,
+`tests/stewardship/test_admin_cli.py` (catalog, the registered
+`admin_cmd_task_retry` event and the fresh-process case),
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_task_retry_cli_postgresql.py` (Family
+preparation, daily digest and export cleanup retries, keys crossing between
+the page and the command line, stale runs, scopes, ended sessions and
+unknown outcomes) and the unchanged delivery, command session, digest retry
+and export retry suites. 9b adds the delivery and refusal commands.
 
 ## ADM-12: Admin navigation overhaul
 

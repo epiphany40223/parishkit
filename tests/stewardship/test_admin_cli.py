@@ -65,12 +65,20 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "system health",
     }
     changes = {"schedule preview", "schedule confirm", "config request show"}
-    assert set(entries) == session | reads | changes
+    operations = {"task retry"}
+    assert set(entries) == session | reads | changes | operations
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
         assert {"--config", "--session-stdin"} <= names
+        name = entry["name"]
         assert entry["pr"] == (
-            2 if entry["name"] in session else 4 if entry["name"] in changes else 3
+            2
+            if name in session
+            else 4
+            if name in changes
+            else 9
+            if name in operations
+            else 3
         )
         assert not entry["fresh_gated"] and not entry["prompts"]
     for name in reads:
@@ -119,6 +127,16 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert request["scope"] == "read_only" and not request["changes_state"]
     assert request["arguments"] == ["REQUEST_ID"] and request["watch"]
     assert request["audit_event"] is None
+    # A task retry changes state with a full-scope session, keyed as the
+    # page's form is, and records its admin_cmd_* event.
+    retry = entries["task retry"]
+    assert retry["scope"] == "full" and retry["changes_state"]
+    assert retry["request_key"] and not retry["expected_version"]
+    assert retry["audit_event"] == "admin_cmd_task_retry"
+    assert retry["arguments"] == ["TASK_ID"] and not retry["watch"]
+    options = {option["name"]: option for option in retry["options"]}
+    assert not options["--request-key"]["required"]
+    assert retry["result_fields"] == ["created", "request_key", "task"]
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -131,7 +149,7 @@ def test_every_state_change_has_a_registered_described_event():
         for entry in admin_cli.catalog()
         if (entry["audit_event"] or "").startswith("admin_cmd_")
     ]
-    assert events == ["admin_cmd_schedule_confirm"]
+    assert events == ["admin_cmd_schedule_confirm", "admin_cmd_task_retry"]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event
 
@@ -739,6 +757,13 @@ def fresh_environment():
             ["config", "request", "show", str(uuid4()), "--watch", "2"],
             (2, "configuration"),
         ),
+        # The operations commands (PR 9).
+        (
+            "stub",
+            PREAMBLE,
+            ["task", "retry", str(uuid4()), "--request-key", str(uuid4())],
+            (2, "configuration"),
+        ),
     ],
     ids=[
         "commands",
@@ -754,6 +779,7 @@ def fresh_environment():
         "admitted-schedule-preview",
         "admitted-schedule-confirm",
         "admitted-config-request-show",
+        "admitted-task-retry",
     ],
 )
 def test_the_command_line_runs_before_django_is_set_up(

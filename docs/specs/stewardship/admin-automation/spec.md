@@ -1354,8 +1354,8 @@ deliberately:
 
 ### Idempotency and retries
 
-- Keyed commands (refresh, test sends, configuration requests, exports) accept
-  `--request-key <uuid4>`. Clients should pass their own key. Without one the
+- Keyed commands (refresh, test sends, configuration requests, exports,
+  task retries) accept `--request-key <uuid4>`. Clients should pass their own key. Without one the
   command generates a key and writes it to standard error before it acts, so
   it survives a crash, and also returns it in the result. Repeating a command
   with the same key returns the original durable receipt, as a repeated page
@@ -1433,9 +1433,11 @@ signatures:
   switch from `family_maintenance_views`.
 - **PR 8:** report and export reads and export actions from the report and
   export views; log reads and export from `log_views`.
-- **PR 9:** `delivery_views.preparation_retry`,
-  `export_views.retry_cleanup_command`, delivery detail and resolution, and
-  refusal clearing from `delivery_views`.
+- **PR 9a:** `delivery_views.preparation_retry` and
+  `export_views.retry_cleanup_command`, with the delivery views' admission and
+  command scope (`jobs.task_retries`).
+- **PR 9b:** delivery detail and resolution, and refusal clearing from
+  `delivery_views`.
 - **PR 10:** campaign, content, Ministry, parish, branding and integration
   settings (including the backup folder probe) from `campaign_views`,
   `content_views`, `campaign_ministry_views`, `share_views`, `talent_views`,
@@ -1692,9 +1694,9 @@ pause, and closing work is the closed-campaign resolution. See
 | URL names | Command or exemption |
 | --- | --- |
 | `background`, `background_tasks`, `background_task` | `task list`, `task show` (PR 3a) |
-| `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9) |
-| `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9) |
-| `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-clear` (PR 9) |
+| `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9a) |
+| `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b) |
+| `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-clear` (PR 9b) |
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
 | `system_backup_request` (ADM-13) | `system backup-now` (keyed), `system backup-status --watch` |
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
@@ -1709,6 +1711,34 @@ fresh-sign-in check. The ADM-13 action routes are
 POSTs to the [System health](../admin-portal/spec.md#health-actions) page,
 `system_health_status` is its passive status fragment, and `system`
 (`/admin/system/`) only redirects to it.
+
+`task retry TASK_ID [--request-key UUID]` (PR 9a) is the task page's
+**Retry**, through the page's own functions in `jobs.task_retries`; the
+task's stored type selects which of the four retries runs, and a task the
+page offers no retry for, or an unknown task, is `not_available`. No retry
+page asks for a fresh sign-in or a typed value, so it waits for no PR 5. It
+admits as the page's form post does (`BACKGROUND_WORK`, recording activity,
+so it needs a full-scope session) and runs in the page's command scope (the
+work transaction, the command session's row locked, the Administrator
+rechecked before and after the effect), where it records
+`admin_cmd_task_retry` only when it creates the retry. The request key is
+the page's `command_id` (an export cleanup's `request_key`), so a key
+crosses between the page and the command line, and a repeat returns the
+original retry. A run that is no longer the latest failed run of its chain
+is `stale_version` (the page's 409). Keys are bound within a task's retry
+chain, as for the page: a key another Administrator used in the chain is
+`invalid`, one used for another run of the chain is `stale_version`
+(`invalid` for an export cleanup), and a key used only in another chain is
+a new key. An `outcome_unknown` document carries the key
+as `error.request_id`. A retry is in no row of the
+[notifications](#notifications) table. The new run takes the retry
+services' own correlation ID, not the invocation's; the command event and
+the run's `retry_command_id` (the key) join them.
+
+The ADM-13 rows are pending exemptions until ADM-11 PR 3 (the read) and
+PR 5 (the actions) land. The ADM-13 action routes are POSTs to the
+[System health](../admin-portal/spec.md#health-actions) page, and
+`system_health_status` is its passive status fragment.
 
 ### Users and follow-up
 
@@ -2082,8 +2112,8 @@ Administrator's approval of that deploy.
   Family portal maintenance.
 - **PR 8, reports and exports:** report reads, exports with streamed fetch
   (including the wrapper's `export fetch` and its tests), digests and logs.
-- **PR 9, operations:** task retries, delivery detail and resolution, and
-  refusal clearing.
+- **PR 9, operations,** in two parts. **PR 9a:** task retries. **PR 9b:**
+  delivery detail and resolution, and refusal clearing.
 - **PR 10, other configuration:** campaign, content, Ministries, parish,
   hosted files, artwork, branding confirmation, integration settings with the
   backup folder probe, and secret replacement: integration key replacement,

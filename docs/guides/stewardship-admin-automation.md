@@ -458,6 +458,45 @@ its subject. A schedule change creates no automation notice: notices are
 for approvals, refused use, access and key changes, fresh-gated and
 irreversible actions, and endings.
 
+## Task retries
+
+`task retry` is the **Retry** button of a failed task on Background work,
+for the four kinds of work that page can retry: Family mail preparation,
+daily and weekly digest work, and export file cleanup. It needs a
+full-scope session, and asks for no fresh sign-in or confirmation, as the
+page asks for none. Fix the cause first, as the page says.
+
+```sh
+pk-admin task list --state failed
+pk-admin task retry TASK_ID --request-key "$(uuidgen | tr A-Z a-z)"
+pk-admin task show NEW_TASK_ID --watch 10
+```
+
+Pass your own `--request-key` (a UUID). Without one, the command makes one
+and writes it to standard error (`pk-admin: request key ...`) before it
+acts. Repeating the command with the same key returns the same retry and
+changes nothing, and a key used on the page works here, and the other way
+round.
+
+| `task retry` field | What it holds |
+| --- | --- |
+| `created` | False when this key retried the task before: the original retry is returned and nothing changes |
+| `request_key` | The key, yours or the one made for you |
+| `task` | The retry: `id` (follow it with `task show`), `root_id`, `parent_id` (the failed task), `retry_sequence`, `type` and `state` |
+
+A task the page offers no retry for, or an unknown task, is exit 1
+(`not_available`). A task that is not the latest failed run of its chain
+(it was retried already, or it has not failed) is exit 1 (`stale_version`):
+read it again with `task show`, whose `latest_run_id` names the newest
+retry. A key belongs to a task's chain of retries: one another
+Administrator used in this chain is exit 1 (`invalid`), and one you used for
+another run of the chain is exit 1 (`stale_version`; `invalid` for an export
+cleanup). A key used only for another task is a new key here. Exit 6 (`outcome_unknown`) names the key in
+`error.request_id`: repeat the command with it, or look for the retry with
+`task show`. System logs show each retry as `admin_cmd_task_retry`,
+attributed to the approving Administrator with the automation session as
+its subject; it creates no automation notice.
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -489,3 +528,6 @@ irreversible actions, and endings.
   `connection_at` instead.
 - `pk-admin/1` (ADM-13 PR 2b, #530): additive. `system health`, with
   `--watch`.
+- `pk-admin/1` (ADM-11 PR 9a): additive. `task retry`, the first command
+  that takes `--request-key`, and `error.request_id` on its unknown
+  outcome, holding the key.

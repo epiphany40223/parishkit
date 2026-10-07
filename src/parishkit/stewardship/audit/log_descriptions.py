@@ -108,6 +108,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to mail schedules "
         "or campaign dates, which became a configuration request."
     ),
+    "admin_cmd_task_retry": _(
+        "An automation session retried a failed background task, as the "
+        "task's Retry button does."
+    ),
     "admin_privileges_changed": _(
         "A portal user's roles changed, so their session was replaced with one "
         "carrying the new roles."

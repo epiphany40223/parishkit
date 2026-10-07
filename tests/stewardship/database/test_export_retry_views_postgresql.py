@@ -194,7 +194,7 @@ def test_internal_cleanup_invariant_is_not_presented_as_a_retry_conflict(
     monkeypatch,
 ):
     """Programming/storage faults never masquerade as a stale user-selected run."""
-    from parishkit.stewardship.reports import export_views
+    from parishkit.stewardship.reports import export_cleanup
     from parishkit.stewardship.storage import StorageInvariantError
 
     _, browser = http_scenario
@@ -204,7 +204,9 @@ def test_internal_cleanup_invariant_is_not_presented_as_a_retry_conflict(
         """Represent an unrelated internal failure without exposing its details."""
         raise StorageInvariantError("synthetic-private-invariant-detail")
 
-    monkeypatch.setattr(export_views, "retry_cleanup", unavailable)
+    # The page retries through jobs.task_retries, which looks the service up
+    # when it runs.
+    monkeypatch.setattr(export_cleanup, "retry_cleanup", unavailable)
     response = post(
         browser,
         f"/admin/background/tasks/{task.run_id}/retry-export-cleanup",
