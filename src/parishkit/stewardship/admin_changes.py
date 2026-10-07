@@ -1,7 +1,7 @@
 """Configuration change commands of the Admin automation command line (ADM-11 PR 4).
 
 ``schedule preview`` and ``schedule confirm`` change mail schedules and the
-draft campaign dates as the Mail schedules page does, through the same
+draft campaign dates as the Dates and mail schedules page does, through the same
 functions (``accounts.schedule_changes``, ``admin_editing.confirm_intent``):
 
 - ``schedule preview`` admits the caller as the page's form post does
@@ -382,7 +382,7 @@ def _ended_or_raise(caller, service, actor, error):
 
 
 def preview_schedule(caller, service, campaign_id, *, expected_version, changes):
-    """``schedule preview``: the Mail schedules page's review of a change.
+    """``schedule preview``: the Dates and mail schedules page's review of a change.
 
     Admits as the page's form post does (``principal``, recording activity),
     then, in the page's work transaction, finds the campaign as the page does

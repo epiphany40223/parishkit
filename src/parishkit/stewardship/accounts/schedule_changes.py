@@ -1,6 +1,6 @@
-"""The Mail schedules preview and its confirmation scope, moved out of the view.
+"""The schedule preview and its confirmation scope, moved out of the view.
 
-Mail schedules (``schedule_views``) builds its review of a schedule and
+Dates and mail schedules (``schedule_views``) builds its review of a schedule and
 campaign-date change through ``build_preview``, and so does the Admin
 automation command line (``schedule preview``, ADM-11), so both validate the
 same candidate and sign the same intent. ``confirm_scope`` is what the

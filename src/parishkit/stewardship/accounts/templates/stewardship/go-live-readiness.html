@@ -10,7 +10,7 @@
 <p>{% if preview.target_state == 'scheduled' %}{% translate "If confirmed before the start, the campaign would be scheduled for Production." %}{% elif preview.target_state == 'active' %}{% translate "If confirmed now, the campaign would become active immediately." %}{% else %}{% translate "The campaign has closed and cannot go live with these dates." %}{% endif %}</p>
 <section class="panel"><h2>{% translate "Configuration and data checks" %}</h2>
 {% if problems %}<ul>{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>{% else %}<p>{% translate "The settings and data checks passed. You still need to check the public web address and start Testing cleanup below." %}</p>{% endif %}
-<p><a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Review campaign settings" %}</a> · <a href="{% url 'admin:integrations' %}">{% translate "Review integrations" %}</a> · <a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Review content and mail templates" %}</a></p>
+<p><a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Review Campaign settings" %}</a> · <a href="{% url 'admin:integrations' %}">{% translate "Review Integrations" %}</a> · <a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Review Pages and emails" %}</a></p>
 {% if preview.configuration.family_templates %}<ul>{% for template in preview.configuration.family_templates %}<li><a href="{% url 'admin:campaign_mail' campaign.pk template %}">{% translate "Preview and send selected Family test email" %} {{ forloop.counter|number }}</a></li>{% endfor %}</ul>{% endif %}
 {% if preview.source.observed_at %}<p>{% translate "Last full ParishSoft refresh started" %}: <time data-local-instant datetime="{{ preview.source.observed_at|instant }}">{{ preview.source.observed_at|instant }}</time></p>{% endif %}
 </section>
@@ -38,7 +38,7 @@
 <dt>{% translate "Testing messages" %}</dt><dd>{{ preview.cleanup.messages|number }}</dd>
 <dt>{% translate "Unresolved Testing deliveries" %}</dt><dd>{{ preview.cleanup.unresolved|number }}</dd>
 <dt>{% translate "Total Testing records to delete" %}</dt><dd>{{ preview.cleanup.inventory.total|number }}</dd></dl>
-<p><a href="{% url 'admin:go_live_families' campaign.pk %}">{% translate "View Families with Testing submissions" %}</a></p>
+<p><a href="{% url 'admin:go_live_families' campaign.pk %}">{% translate "View Testing submissions" %}</a></p>
 <details><summary>{% translate "Testing records by type" %}</summary>{% if inventory %}<dl>{% for category,count in inventory %}<dt>{{ category }}</dt><dd>{{ count|number }}</dd>{% endfor %}</dl>{% else %}<p>{% translate "There are no Testing records to delete." %}</p>{% endif %}</details>
 </section>
 <section class="panel"><h2>{% translate "Public web address check" %}</h2>

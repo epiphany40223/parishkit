@@ -144,7 +144,7 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
                 signing.loads(token, salt=commands.SALT, max_age=300)
             assert post(item.browser, item.path, confirm_values).status_code == 302
         result = item.browser.get(item.path)
-        assert b"Withdrawal completed" in result.content
+        assert b"Go-live cancelled" in result.content
         assert not result.context["available"]
         assert (
             item.browser.get(f"/admin/campaign/{campaign.pk}/production").status_code

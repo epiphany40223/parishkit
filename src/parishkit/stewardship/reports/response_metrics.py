@@ -328,7 +328,7 @@ class SendMarker:
 
     ``key`` names the send (schedule, revision, mode and the Production
     cycle its occurrences belong to); ``name`` is its plain name as the
-    Family email sends page gives it (Invitation, Reminder N);
+    Family email history page gives it (Invitation, Reminder N);
     ``scheduled`` its revision's due time; ``delivered`` how many of its
     emails had been delivered by ``as_of``, with the first and last
     delivery instants in ``first_delivered_at`` and ``last_delivered_at``

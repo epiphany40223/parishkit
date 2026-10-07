@@ -230,7 +230,7 @@ def test_the_web_login_lists_a_real_send_during_a_work_order_hold(
     assert "1 to send" in body
     # In the sidebar beside the progress panel, and in the breadcrumb trail.
     assert f'<a href="{PAGE}" aria-current="page">' in body
-    assert '<span aria-current="page">Family email sends</span>' in body
+    assert '<span aria-current="page">Family email history</span>' in body
     listed_body = filtered.content.decode()
     assert f'href="/admin/deliveries/{message.pk}"' in listed_body
     assert "Showing only the emails of one Family email send" in listed_body
@@ -484,7 +484,7 @@ def test_send_history_is_for_administrators_only(auth_service, google, role):
     add_draft(store, store.active(), uuid4())
     admin, _ = signed_in()
     assert admin.get(PAGE).status_code == 200
-    assert b"Family email sends" in admin.get("/admin/").content
+    assert b"Family email history" in admin.get("/admin/").content
     change(
         store,
         store.active(),
@@ -509,7 +509,7 @@ def test_send_history_is_for_administrators_only(auth_service, google, role):
         DELIVERIES + "?send=nonsense",
     ):
         assert reader.get(path).status_code == 403, path
-    assert b"Family email sends" not in reader.get("/admin/").content
+    assert b"Family email history" not in reader.get("/admin/").content
 
 
 def test_only_the_send_the_panel_shows_links_to_it(

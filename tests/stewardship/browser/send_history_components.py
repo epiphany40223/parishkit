@@ -1,4 +1,4 @@
-"""Render the real Family email sends page with sample sends (#432)."""
+"""Render the real Family email history page with sample sends (#432)."""
 
 from datetime import timedelta
 from types import SimpleNamespace
@@ -81,14 +81,14 @@ def components(context, admin):
                 "label": "Mail and Family portal",
                 "current": True,
                 "items": [
-                    {"url": PAGE, "label": "Family email sends", "current": "page"}
+                    {"url": PAGE, "label": "Family email history", "current": "page"}
                 ],
             }
         ],
         "breadcrumbs": [
             {"label": "Home", "url": "/home"},
             {"label": "Mail and Family portal", "url": PAGE},
-            {"label": "Family email sends", "url": None},
+            {"label": "Family email history", "url": None},
         ],
     }
     return {

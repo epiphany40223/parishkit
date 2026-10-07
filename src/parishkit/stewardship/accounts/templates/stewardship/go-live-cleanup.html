@@ -1,8 +1,8 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
-{% block title %}{% translate "Testing cleanup progress" %}{% endblock %}
+{% block title %}{% translate "Testing cleanup" %}{% endblock %}
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
-<h1>{% translate "Testing cleanup progress" %}</h1>
+<h1>{% translate "Testing cleanup" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="notice">{% translate "The campaign stays in Testing mode. Deleted data cannot be restored, even if you cancel. Going live is a separate final confirmation, after Family links are prepared." %}</p>
 <section class="panel" role="status" aria-live="polite" data-live-status="cleanup" data-live-state="{{ status.state }}"{% if live_pending %} data-live-pending{% endif %}><h2>{% translate "Progress" %}</h2>
@@ -19,5 +19,5 @@
 {% if status.state == 'cleanup_complete' %}<p><a href="{% url 'admin:go_live_links' campaign.pk status.request_id %}">{% translate "Prepare inactive Family links" %}</a></p>{% endif %}
 </section>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Cleanup state" %}</dt><dd><code>{{ status.state }}</code></dd><dt>{% translate "Committed checkpoints" %}</dt><dd>{{ status.checkpoint_sequence|number }}</dd><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd></dl><p>{% translate "Values are as of when this page was opened; select Refresh cleanup progress to update them." %}</p></details>
-<p><a href="">{% translate "Refresh cleanup progress" %}</a> · <a href="{% url 'admin:go_live' campaign.pk %}">{% translate "Return to readiness" %}</a></p>
+<p><a href="">{% translate "Refresh cleanup progress" %}</a> · <a href="{% url 'admin:go_live' campaign.pk %}">{% translate "Return to Go-live readiness" %}</a></p>
 {% endblock %}

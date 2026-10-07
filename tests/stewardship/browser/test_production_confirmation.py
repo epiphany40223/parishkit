@@ -60,9 +60,9 @@ def test_confirmation_and_progress_are_accessible(
         })).violations.map(({id,impact}) => ({id,impact}))""")
             == []
         )
-    visible(page.get_by_role("link", name="Withdraw from Production"))
+    visible(page.get_by_role("link", name="Cancel go-live"))
     page.goto(component_origin + "/production-progress")
-    assert page.get_by_role("link", name="Withdraw from Production").count() == 0
+    assert page.get_by_role("link", name="Cancel go-live").count() == 0
     visible(page.get_by_role("heading", name="Campaign active", exact=True))
     visible(page.get_by_role("heading", name="Preparing initial campaign mail"))
     assert "5,678" in page.locator("main").inner_text()
@@ -90,11 +90,13 @@ def test_production_forms_do_not_require_javascript(browser_engine, component_or
         visible(page.get_by_role("link", name="Refresh Production progress"))
         assert page.locator('form input[name="control"]').get_attribute("value")
         page.goto(component_origin + "/production-withdrawal")
-        page.get_by_label("Reason for withdrawal").fill("Correct campaign settings")
+        page.get_by_label("Reason for cancelling go-live").fill(
+            "Correct campaign settings"
+        )
         page.get_by_label(
             "I understand that deleted Testing data cannot be restored."
         ).check()
-        visible(page.get_by_role("button", name="Preview withdrawal"))
-        visible(page.get_by_role("button", name="Confirm withdrawal from Production"))
+        visible(page.get_by_role("button", name="Preview cancellation"))
+        visible(page.get_by_role("button", name="Confirm cancelling go-live"))
     finally:
         context.close()

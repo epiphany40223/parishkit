@@ -1,4 +1,4 @@
-"""The history of the current campaign's Family email sends (#432).
+"""The current campaign's Family email history (#432).
 
 A *send* is what the live progress panel (``send_progress``) follows: one
 revision of one Family schedule definition (the invitation, or one reminder)
@@ -68,7 +68,7 @@ _SENDS = (
     "WHERE d.campaign_id=%(campaign)s AND d.kind IN ('initial','reminder')"
 )
 # The campaign's current reminder schedules, in order of their current due
-# time: Reminder 1, Reminder 2, … in every mode, as Mail schedules lists
+# time: Reminder 1, Reminder 2, … in every mode, as Dates and mail schedules lists
 # them. A removed reminder has no current due time and so no number.
 _REMINDERS = (
     "SELECT d.id FROM stewardship_schedule_definition d "

@@ -1,7 +1,6 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Refused addresses" %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a></p>
 <h1>{% translate "Refused addresses" %}</h1>
 {% aboutpage "refused-addresses" %}<p>{% translate "A refused address is one the mail service rejected permanently, so the system stops sending campaign email to it for that Family. Check that the mailbox works again before clearing a refusal. Clearing does not send any email." %}</p>{% endaboutpage %}
 <form id="table-filters" data-table-sync method="get" class="filter-bar">

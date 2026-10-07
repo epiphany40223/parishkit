@@ -1,8 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship delivery %}
-{% block title %}{% translate "Mail delivery" %}{% endblock %}
+{% block title %}{% translate "Mail message" %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a></p>
-<h1>{% translate "Mail delivery" %}</h1>
+<h1>{% translate "Mail message" %}</h1>
 <p>{% if delivery.family__family_duid %}{% translate "Family DUID:" %} {{ delivery.family__family_duid|duid }}{% else %}{% translate "Administrator report" %}{% endif %}</p>
 <p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Delivery ID" %}</dt><dd>{{ delivery.id }}</dd></dl></details>
