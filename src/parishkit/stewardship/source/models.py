@@ -11,6 +11,7 @@ from .refresh_models import (  # noqa: F401
     SourceRefreshFallback,
     SourceRefreshRequest,
     SourceRefreshTick,
+    SourceSlotDecision,
 )
 from .snapshot_models import (  # noqa: F401
     SourceCompactionBatch,

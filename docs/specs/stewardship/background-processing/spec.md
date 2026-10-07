@@ -748,6 +748,31 @@ settings page says so and the existing lead-window WARNING still fires (see
 windows are planning; the [bulk-send hold](#deltas-wait-for-a-bulk-family-send)
 still applies on top of them to any send that is actually running.
 
+A schedule-change catch-up (see
+[ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection))
+is never skipped: it replaces a slot that was already overdue, so it is
+only held, like a daytime full refresh. Only a schedule with the skip
+setting on records slot decisions; every other schedule creates its slots
+exactly as before, except that a slot already recorded as skipped never
+runs, even after the setting is turned off. With the setting on, the
+windows are read in every scheduler loop, before the scheduler takes the
+work-order lock (`source/send_windows.py`), and only while the current
+campaign is live in Production; if the mode, the current campaign or its
+pause has changed by the time the lock is held, that loop decides nothing. Slots due before the
+skip setting last took effect (the start of the latest unbroken run of
+configurations that skip) are never decided, so turning the setting on
+cannot turn an already overdue slot into a skip. If the database guard
+refuses a decision (inputs that moved since they were read, or a defect),
+only that decision is rolled back: the loop's other slots still run, a
+refused skip of a latest slot lets that refresh run, and the refusal is
+logged once per scheduler process as the `refresh_decision_refused`
+category (see the
+[operational alerts guide](../../../guides/stewardship-operational-alerts.md#process-log-warning-categories)).
+One edge is accepted: a full slot's identity includes its configured time,
+so if a daytime full time is skipped and the same day that time becomes the
+nightly time, the nightly slot has the skipped slot's identity and does not
+run that day; the next day's runs as usual.
+
 #### Slots, identities and daylight saving
 
 Every daily time, Full or Quick, is a parish-local wall time resolved for
@@ -810,15 +835,14 @@ unique lists, the nightly time as the earliest full time, no time in both
 lists, a closed set of rule fields and 15-minute spacing. Listed quick times
 and `delta_refresh: times` appear only beside `refresh_rules`, which in turn
 requires `full_refresh` `daily` (or absent) and `delta_refresh` `times` or
-`off`. Until the [slot decision record](#skipped-around-family-emails)
-exists (delivery step 2b of the
-[plan](../../../plans/stewardship/refresh-schedule.md#delivery-plan)), the
-schema refuses `skip_around_family_emails` turned on, since nothing could
-honor it. Whether a document has `refresh_rules` is part of its schedule
-for the [data-age rule](../operations/spec.md#parishsoft-data-age-and-connection),
-but their content is not: when step 2b accepts the skip setting, turning it
-on or off does not start a new schedule run, so the step 2b design must
-decide whether it should. Whether the lists
+`off`. Whether a document has `refresh_rules` is part of its schedule for
+the [data-age rule](../operations/spec.md#parishsoft-data-age-and-connection),
+but their content is not: turning `skip_around_family_emails` on or off
+does not start a new schedule run, and so never requests a
+schedule-change catch-up. Nothing needs it to: the alarm already ignores
+recorded skips, the skips recorded before the setting was turned off stay
+"not due", and turning it on skips only slots decided from then on.
+Whether the lists
 are what the rules produce, and the quarter-hour rule for new times, are
 checked by the settings form and the command line, which share one
 validator (`source/refresh_rules.py`); a stored document is never
@@ -942,9 +966,11 @@ migration. Reusing an existing event and schema needs no change to the
 operational log's event check; if the `schedule` schema's safe-context
 check cannot carry this entry, a new event (for example
 `source_refresh_send_held`) is added instead, with a forward migration of
-that check. Neither is CRITICAL, so neither opens an incident. Once the
-[slot decision record](#skipped-around-family-emails) exists, the scheduler
-also records the slot as held there.
+that check. Neither is CRITICAL, so neither opens an incident. For a
+schedule that [skips refreshes around Family emails](#skipped-around-family-emails),
+the scheduler also records the slot as held in the slot decision record;
+other schedules record no slot decisions, so they keep exactly the
+behavior described here.
 
 Holding is bounded, and the bound is measured from the
 [data-age alarm](../operations/spec.md#parishsoft-data-age-and-connection)'s
@@ -987,9 +1013,9 @@ late on its own account: with full refreshes at 08:00 and 08:15, an 08:00
 refresh requested on time that hangs is not excused by a send that then
 holds the 08:15 slot, and the alarm sounds at 08:30. No slot identity is
 derived or matched, so a change of schedule, source scope or time zone
-during the hold does not lose the evidence. Once the slot decision record
-exists, a `held` full or `catch_up` row with a due instant in that span
-counts as well. A task's own `source_refresh_held` entry (`task` schema) is
+during the hold does not lose the evidence. A `held` full or `catch_up`
+row of the slot decision record with a due instant in that span counts as
+well. A task's own `source_refresh_held` entry (`task` schema) is
 never evidence, and a quick slot's hold writes none. A full refresh with no
 evidence, such as an on-time refresh that hangs or one that waited for the
 source lease, gets no allowance. Unlike the allowance during the send, the

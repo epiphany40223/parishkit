@@ -69,6 +69,9 @@ FROZEN = {
     "0013_automation_fresh_guards.sql": (
         "08b82fa53698ba8ac6787cd2b8ca28ff5ef2f40825c71758198b44faadef97d6"
     ),
+    "0014_slot_decisions.sql": (
+        "3b97fdb22903dd045f1067661626bee9d2cb8be820f01fd34d5fd771113b895f"
+    ),
 }
 
 

@@ -616,6 +616,23 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
         "stewardship_occurrence_transition": "occurrence_events",
         "stewardship_schedule_fulfillment": "schedule_fulfillments",
     }
+    # Time-bounded retention: the slot decision record (#632) is append-only
+    # except that the specified temporary retention housekeeping deletes a
+    # decision eight days after its due time (operations spec, "Temporary
+    # retention and housekeeping"); nothing reads one further back. Its guard
+    # must refuse every UPDATE and any younger DELETE, so prove the exact
+    # single escape rather than exempting the table.
+    from parishkit.stewardship.source.refresh_models import (
+        SLOT_DECISION_RETENTION_DAYS,
+    )
+
+    time_retention_contracts = {
+        "stewardship_source_slot_decision": (
+            "BEGINIFTG_OP='DELETE'ANDOLD.due_at<statement_timestamp()"
+            f"-interval'{SLOT_DECISION_RETENTION_DAYS}days'THENRETURNOLD;ENDIF;"
+            "RAISEEXCEPTION'Historicalrecordsareappend-only'"
+        ),
+    }
     response_contracts = {
         "stewardship_submission": (
             "stewardship_submission_guard",
@@ -769,6 +786,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 assert "TG_OP='DELETE'" in compact
                 assert f"stewardship_cleanup_effect_v1('{category}',OLD.id)" in compact
                 assert "RETURNOLD" in compact and "RAISEEXCEPTION" in compact
+            elif table in time_retention_contracts:
+                compact = "".join(row[2].split())
+                assert time_retention_contracts[table] in compact, table
+                assert compact.count("RETURNOLD") == 1, table
             elif contract == "immutable":
                 assert "RETURN OLD" not in row[2]
             else:

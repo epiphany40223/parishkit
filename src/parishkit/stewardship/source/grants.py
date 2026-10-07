@@ -107,14 +107,24 @@ def add_refresh_scheduler_grants(tables, columns):
         "stewardship_source_refresh_attempt",
         "stewardship_source_refresh_fallback",
         "stewardship_source_refresh_tick",
+        # The slot decision record (#632): skipped and held slots, which
+        # the scheduler writes and the refresh-tick guard reads.
+        "stewardship_source_slot_decision",
     ):
         tables[table] = {"SELECT"}
     for table in (
         "stewardship_source_refresh_request",
         "stewardship_source_refresh_command",
         "stewardship_source_refresh_tick",
+        "stewardship_source_slot_decision",
     ):
         tables[table].add("INSERT")
+    # The windows around Family emails (#632, send_windows) estimate a send's
+    # length from when its last message reached a final state; the other
+    # message metadata the scheduler reads is granted with Family dispatch.
+    columns.setdefault("stewardship_outbox_message", {}).setdefault(
+        "SELECT", set()
+    ).add("updated_at")
     # A separate SQL trigger limits these columns to waiting-source cancellation;
     # knowing a worker UUID cannot let this login impersonate its live claim.
     columns["stewardship_task_run"] = {"UPDATE": set(SCHEDULER_CANCEL_COLUMNS)}
