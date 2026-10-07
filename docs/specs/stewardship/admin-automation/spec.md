@@ -969,10 +969,21 @@ inside the command session's 60-minute idle limit. A watch stops when:
   timeout-logging rule is the operations specification's
   [observability and health](../operations/spec.md#observability-and-health) section);
 - the process receives SIGINT (exit 7, `watch_interrupted`, with the last
-  state and no traceback); through the host wrapper, Ctrl-C ends only the
-  client, because `docker exec` forwards no signal, and the watch in the
-  container runs on until another stop
-  ([#598](https://github.com/epiphany40223/parishkit/issues/598));
+  state and no traceback). `docker exec` forwards no signal, so the host
+  wrapper starts a watch with a random token in its environment
+  (`PK_ADMIN_RUN`), and on INT, TERM or HUP sends SIGINT, through a second
+  `docker compose exec`, to the container process whose environment holds
+  that token. It starts that stop before anything else, reports its
+  failure (waiting at most 10 seconds), and, after INT only, waits at most
+  5 seconds for the final document (after HUP no terminal shows it, and
+  TERM to the process group has ended what relays it). The watch's docker
+  client and the stop command run in their own sessions (`setsid -w`, where
+  it works), so the terminal's SIGINT, on which `docker compose` exits at
+  once, cannot cut that document or a second Ctrl-C the stop off. It then
+  stops its own processes and exits 130, 143 or 129
+  ([#598](https://github.com/epiphany40223/parishkit/issues/598)). Only a
+  watch, a passive read, is signalled; any other interrupted command runs
+  to its end in the container, so a write never becomes an unknown outcome;
 - the automation session ends or expires (exit 5);
 - a database or Valkey outage interrupts a poll (exit 3, `unavailable`,
   with no last state; read again).
