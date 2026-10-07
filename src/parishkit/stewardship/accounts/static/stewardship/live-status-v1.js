@@ -10,9 +10,13 @@
 // aria-live announcement reaches screen readers. The page's manual refresh
 // link remains the no-JavaScript fallback.
 //
-// Never disrupt the Admin: while a control inside the region has focus or has
-// been edited, the swap waits for the next check. Only the region is swapped;
-// the page itself is never reloaded, so a POST response is never re-sent.
+// Never disrupt the Admin: while a form control inside the region has focus
+// or has been edited, the swap waits for the next check; while text in it
+// is selected, for at most a minute from when it was selected. A poll that
+// brings nothing new leaves the region alone. A swap puts focus back on the
+// matching link or disclosure and keeps each wide table's sideways scroll,
+// so a keyboard reader keeps their place. Only the region is swapped; the
+// page itself is never reloaded, so a POST response is never re-sent.
 //
 // When the work finishes while the page is watching, a terminal region may
 // ask for one follow-up: an a[data-live-follow] link is opened, or a
@@ -136,25 +140,103 @@
   region.addEventListener("input", () => { edited = true; });
   region.addEventListener("change", () => { edited = true; });
 
+  // When the Admin began selecting text in the region (0 when not), kept up
+  // to date as the selection changes, so the hold is measured from the
+  // moment the selection was made, not from the first poll that saw it.
+  let selectingSince = 0;
+  // A selection holds the swap for at most this long; then it is replaced.
+  const SELECTION_HOLD_MS = 60 * 1000;
+
+  function selecting() {
+    // Whether text inside the region is selected right now.
+    const selection = window.getSelection ? window.getSelection() : null;
+    return Boolean(selection && !selection.isCollapsed && selection.rangeCount
+      && region.contains(selection.getRangeAt(0).commonAncestorContainer));
+  }
+
+  document.addEventListener("selectionchange", () => {
+    if (!selecting()) selectingSince = 0;
+    else if (!selectingSince) selectingSince = Date.now();
+  });
+
   function busy() {
-    // A focused or edited control inside the region must not be replaced.
+    // A focused or edited form control inside the region must not be
+    // replaced: that would lose what the Admin is typing. Focused links and
+    // disclosures do not hold the swap (a mouse click focuses them too, and
+    // would freeze the region); adopt() puts focus back on them instead.
     const active = document.activeElement;
-    return edited || Boolean(active && active !== region && region.contains(active)
+    const holding = selecting() && selectingSince
+      && Date.now() - selectingSince < SELECTION_HOLD_MS;
+    return edited || Boolean(holding) || Boolean(active && active !== region
+      && region.contains(active)
       && active.matches("input, select, textarea, button, [contenteditable]"));
   }
 
+  function focusKey(node) {
+    // How to find the focused element again in the new markup: its id, else
+    // its tag, link target and text.
+    if (!node || node === region || !region.contains(node)) return null;
+    return node.id ? { id: node.id }
+      : { tag: node.tagName, href: node.getAttribute("href"), text: node.textContent };
+  }
+
+  function refocus(key) {
+    // Focus the new element matching ``key`` without scrolling, if any.
+    if (!key) return;
+    const match = key.id ? document.getElementById(key.id)
+      : [...region.querySelectorAll(key.tag)].find((node) =>
+        node.getAttribute("href") === key.href && node.textContent === key.text);
+    if (match && region.contains(match)) match.focus({ preventScroll: true });
+  }
+
+  function markup(node) {
+    // What the server said, without how this browser worded its times:
+    // ui-v1.js and this script rewrite <time> text in place (local dates,
+    // "2 minutes ago"), so comparing raw HTML would rebuild the region on
+    // the first poll even when nothing changed.
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll("time").forEach((time) => { time.textContent = ""; });
+    return copy.innerHTML;
+  }
+
   // The markup last adopted, so an unchanged poll leaves the live region
-  // alone: rebuilding it would make screen readers repeat the same status.
-  let lastMarkup = region.innerHTML;
+  // alone: rebuilding it would make screen readers repeat the same status
+  // and lose the reader's place.
+  let lastMarkup = markup(region);
+
+  function checked() {
+    // "Last checked" lines (time[data-live-checked], usually outside the
+    // region so they never count as a change) move to this successful check.
+    document.querySelectorAll("time[data-live-checked]").forEach((node) => {
+      node.dateTime = new Date(Date.now() + skew).toISOString();
+      node.textContent = node.dateTime;
+      localize(node.parentNode);
+    });
+  }
+
+  function scrollKey(node, index) {
+    // A wide table's identity across a swap: its caption, else its position.
+    const caption = node.querySelector("caption");
+    return caption ? `caption:${caption.textContent.trim()}` : `index:${index}`;
+  }
 
   function adopt(fresh) {
     // Keep the region element (and its live announcement); replace what it says.
-    if (fresh.innerHTML === lastMarkup
+    const freshMarkup = markup(fresh);
+    if (freshMarkup === lastMarkup
         && fresh.hasAttribute("data-live-pending") === region.hasAttribute("data-live-pending")) {
       return;
     }
-    lastMarkup = fresh.innerHTML;
+    lastMarkup = freshMarkup;
     if (renews) started = Date.now();
+    const key = focusKey(document.activeElement);
+    // Wide tables scroll sideways inside .table-scroll; keep each one's
+    // offset, matching tables by their caption (a table can come or go
+    // above another one), else by position. The page's own scroll is left
+    // to the browser's scroll anchoring, which keeps the reader's place when
+    // the region above them changes height.
+    const sideways = new Map([...region.querySelectorAll(".table-scroll")]
+      .map((node, index) => [scrollKey(node, index), node.scrollLeft]));
     region.replaceChildren(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
     // Mirror the fresh region's attributes (pending, state markers such as
     // data-export-state) so the page and its tests see the current state.
@@ -168,6 +250,11 @@
     });
     localize(region);
     elapsed();
+    refocus(key);
+    region.querySelectorAll(".table-scroll").forEach((node, index) => {
+      const offset = sideways.get(scrollKey(node, index));
+      if (offset) node.scrollLeft = offset;
+    });
     announce();
   }
 
@@ -220,11 +307,14 @@
       if (!fresh) throw new Error("status region missing");
       say("");
       if (busy()) {
-        // Wait for the Admin; check again later without replacing their input.
+        // Wait for the Admin; check again later without replacing their
+        // input. "Last checked" stays put: the region was not brought up
+        // to date.
         schedule();
         return;
       }
       adopt(fresh);
+      checked();
       if (region.hasAttribute("data-live-pending")) schedule();
       else finish();
     } catch {

@@ -230,6 +230,7 @@ PAGES = {
         "users", _("Approve an automation session"), "automation_access"
     ),
     # System
+    "system_health": Page("system", _("System health")),
     "integrations": Page("system", _("Integrations")),
     "integration_settings": Page("system", _("Integration"), "integrations"),
     # A key's status and its Finish switching page sit under the integration
@@ -408,8 +409,7 @@ class Entry:
 # The menu, in order within each group (admin-portal spec, "Menu groups").
 # Labels come from PAGES, so the menu, the trail and the page share a name.
 # Entries for pages that do not exist yet are added with those pages:
-# Emailed reports, Ministry assignments and Chairpersons (ADM-12), and System
-# health, the first System entry (ADM-13).
+# Emailed reports, Ministry assignments and Chairpersons (ADM-12).
 _ADMIN = Capability.CONFIGURE
 MENU = (
     # Campaign setup
@@ -464,7 +464,8 @@ MENU = (
     # Users and access
     Entry("users", Capability.MANAGE_USERS),
     Entry("automation_access", _ADMIN),
-    # System
+    # System. System health comes first, so /admin/system/ opens it (ADM-13).
+    Entry("system_health", Capability.SYSTEM_LOGS),
     Entry("integrations", _ADMIN),
     Entry("background", _ADMIN),
     Entry("logs", Capability.SYSTEM_LOGS),
@@ -585,6 +586,10 @@ NON_PAGES = frozenset(
         "setup_source",
         "setup_source_progress",
         "setup_step",
+        # /admin/system/ only redirects to System health; the page polls its
+        # status fragment.
+        "system",
+        "system_health_status",
     }
 )
 

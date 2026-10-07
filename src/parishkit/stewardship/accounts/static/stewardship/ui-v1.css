@@ -365,6 +365,9 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 .notice-error { background: var(--error-bg); border-color: var(--error-border); }
 .notice h2 { margin-top: 0; font-size: 1.1rem; }
 .notice ul { margin-bottom: 0; }
+/* System health's problems: one notice per problem, without list bullets. */
+.health-problems { list-style: none; padding: 0; }
+.health-problems > li { margin-block: .5rem; }
 /* The LOCAL deployment's standing banner (#476): the "LOCAL" label and
    hatched edge make it recognizable without relying on color alone. */
 .local-environment { padding: .5rem var(--gutter); background: var(--warning-bg); color: var(--warning-ink); border-bottom: .35rem solid; border-image: repeating-linear-gradient(135deg, var(--warning-border) 0 .75rem, var(--warning-bg) .75rem 1.5rem) 1; text-align: center; font-size: .95rem; }

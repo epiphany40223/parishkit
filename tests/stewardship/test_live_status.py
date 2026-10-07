@@ -171,7 +171,7 @@ def test_script_backs_off_pauses_and_stops_at_terminal_states():
     assert "if (busy()) {" in source
     # An unchanged poll must not rebuild the live region (no repeated
     # announcements), and the ticking elapsed time stays out of it.
-    assert "fresh.innerHTML === lastMarkup" in source
+    assert "freshMarkup === lastMarkup" in source
 
 
 def cleanup(state, *, cancelling=False):

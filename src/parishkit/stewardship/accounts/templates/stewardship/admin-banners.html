@@ -13,6 +13,7 @@
   <strong id="debug-in-production-title">{% translate "Debug logging is on in Production" %}</strong>
   <p>{% translate "The server is recording extra detail in its logs that can include Families' personal information. That is only acceptable while testing with disposable data, so debug logging must be off in Production." %}</p>
   <p>{% translate "To turn it off, ask the server operator to set PARISHKIT_DEBUG_LOGGING to 0 (or leave it unset) and recreate every application container, as the deployment runbook describes. This notice disappears once it is off." %}</p>
+  {% if admin_chrome.admin %}<p><a href="{% url 'admin:system_health' %}#health-debug-heading">{% translate "See debug logging in System health" %}</a></p>{% endif %}
 </aside>{% endif %}
 {% if admin_chrome.restored %}<aside class="notice notice-error">{% translate "Restore review is required. Normal campaign activity is unavailable." %}</aside>{% endif %}
 {% if admin_chrome.paused %}<aside class="notice">{% translate "Live campaign email delivery is paused." %}
@@ -29,6 +30,7 @@
     <form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="critical" value="yes">{% if admin_chrome.critical_since_day %}<input type="hidden" name="start" value="{{ admin_chrome.critical_since_day }}" data-zone-dependent><input type="hidden" name="zone" value="" data-browser-zone>{% endif %}<button type="submit" class="button-secondary">{% translate "View these events in System logs" %}</button></form>
     <form method="post" action="{% url 'admin:critical_events_acknowledge' %}">{% csrf_token %}<input type="hidden" name="shown" value="{{ admin_chrome.critical_shown }}"><button type="submit">{% translate "Acknowledge" %}</button></form>
   </div>
+  <p><a href="{% url 'admin:system_health' %}">{% translate "See what needs attention now in System health" %}</a></p>
   <p class="help">{% translate "Acknowledging hides the problems listed here for every Administrator; a critical problem recorded after this page was shown still appears. It is recorded in the audit log." %}{% if admin_chrome.critical_count > admin_chrome.critical_limit %} {% blocktranslate with limit=admin_chrome.critical_limit|number %}Only the oldest {{ limit }} are acknowledged at a time, so this notice stays for the rest; acknowledge again to clear them.{% endblocktranslate %}{% endif %}</p>
 </aside>{% endif %}
 {% if not suppress_admin_session_chrome %}

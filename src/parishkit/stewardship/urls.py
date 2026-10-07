@@ -53,6 +53,7 @@ from .accounts import (
     setup_share_views,
     setup_views,
     share_views,
+    system_health_views,
     talent_views,
     user_rule_views,
     user_views,
@@ -592,6 +593,15 @@ admin_patterns = [
         name="configuration_request",
     ),
     path("background", job_views.background_page, name="background"),
+    # System health (ADM-13): the System group's first entry, which
+    # /admin/system/ opens, and the status fragment the open page polls.
+    path("system/", system_health_views.system, name="system"),
+    path("system/health/", system_health_views.system_health, name="system_health"),
+    path(
+        "system/health/status",
+        system_health_views.system_health_status,
+        name="system_health_status",
+    ),
     path("logs", log_views.logs, name="logs"),
     path("logs/export", log_views.export_logs, name="logs_export"),
     path("deliveries", delivery_views.delivery_list, name="deliveries"),
