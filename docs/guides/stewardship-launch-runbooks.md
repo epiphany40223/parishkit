@@ -307,26 +307,26 @@ to `DATA`, for example), becomes
    stop. After an outage of unavailable results no restart is needed:
    sending resumes by itself within about 10 minutes of the provider
    recovering.
-6. If you paused in step 4, first settle every **Delivery unknown** message
+6. If you paused in step 4, first settle every **Not sure it arrived** message
    (described below; confirming, recording it not sent and the held resend
    all work while paused), then resume once the page's other resume
    conditions hold (see
    [Pausing and resuming delivery](#pausing-and-resuming-delivery)). On
-   the deliveries page (`/admin/deliveries`), choose the **Failed
-   delivery** state and look at the messages last changed during the outage.
+   the deliveries page (`/admin/deliveries`), choose the **Failed** state
+   and look at the messages last changed during the outage.
    Open each one that should still go and choose **Retry failed delivery** on
    its page (the button is offered only when delivery is not paused). Then
-   check the **Pending** and **Waiting to retry** states for messages last
-   changed during the outage whose page offers **Retry delivery not accepted
+   check the **Still sending (queued)** and **Still sending (waiting to
+   retry)** states for messages last changed during the outage whose page offers **Retry delivery not accepted
    by the provider**, and choose it for each that should still go. If you did
-   not pause, settle any **Delivery unknown** message as described below.
+   not pause, settle any **Not sure it arrived** message as described below.
    The [operator diagnostics ledger](stewardship-operator-diagnostics-reviews.md)
    records the last check of this step.
 
 **It is over when:** the incident has resolved, `mail-dispatch` has been
-restarted if the failure was systemic, and the **Pending** and **Waiting to
-retry** lists on the deliveries page are no longer growing and their
-messages move on as their due times pass. Do not resend by hand outside the
+restarted if the failure was systemic, and the **Still sending (queued)**
+and **Still sending (waiting to retry)** lists on the deliveries page are no
+longer growing and their messages move on as their due times pass. Do not resend by hand outside the
 portal, and do not resolve a `delivery_unknown` message without evidence. The
 [gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how
 this procedure was checked against the code.
