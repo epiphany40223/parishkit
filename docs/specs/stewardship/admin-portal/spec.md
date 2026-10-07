@@ -3825,6 +3825,15 @@ Neither stops the process. The halt identity and kind are added by
 [clear a halted mail sender](#clear-a-halted-mail-sender) (PR 4), which
 defines them.
 
+The page groups the rows by service, process and target. In each group the
+newest-started row that reported within three minutes stands for it, so the
+row a restart left behind never shows its process as not running; with no
+such row, the newest-started row does, shown as not running. Several web
+worker processes share one group, so the web line counts how many are
+running. A core service (web, worker, scheduler or mail dispatch) with no
+row at all "has not reported", which is a problem; the installers are shown
+only when they report.
+
 The record is for display: no sending, refresh or backup decision reads it,
 so a lost write can only make the page out of date. The one action check
 that reads it, "a consumer reports Halted" for **Clear the halt**, is safe

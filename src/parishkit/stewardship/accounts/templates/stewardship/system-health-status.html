@@ -1,0 +1,111 @@
+{% load i18n stewardship %}{% comment %}
+  The System health region (ADM-13, #530), shared by the page and the passive
+  status fragment that live-status-v1.js polls every 10 seconds. ``health``
+  is system_health.SystemHealth. Problems come first, then the six panels in
+  the specification's order. It is not itself a live region: screen readers
+  hear data-live-announce, copied into the page's announcer only when the
+  number of problems changes. Internal names stay out of it; the page's
+  Technical details disclosure, outside the region, lists them. Only the page
+  passes status_url. Every time is shown in the browser's time zone. Nothing
+  here changes from one poll to the next unless the state does, so an
+  unchanged poll leaves the region alone: "Last checked" sits outside it
+  (live-status-v1.js updates it), and how long ago the last backup finished
+  is counted in the browser (time[data-live-since]).
+{% endcomment %}<div data-live-status="system-health"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-interval="{{ poll_interval }}" data-live-refresh-label="{% translate 'Refresh System health' %}" data-live-announce="{{ health.announcement }}" data-live-pending>
+<section class="panel" aria-labelledby="health-problems-heading" data-health-problems>
+{% if health.problems %}<h2 id="health-problems-heading">{% blocktranslate count count=health.problems|length trimmed %}{{ count }} problem needs attention{% plural %}{{ count }} problems need attention{% endblocktranslate %}</h2>
+<ul class="health-problems">{% for problem in health.problems %}<li class="notice notice-error" data-problem="{{ problem.code }}">
+{% if problem.code == "sender_halted" %}{% blocktranslate with name=problem.label trimmed %}{{ name }} has stopped all Family email after a fault that waiting cannot fix{% endblocktranslate %}{% if problem.at %} ({% translate "since" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>){% endif %}. {% translate "Ask the server operator to follow the “Mail-provider outage” steps in the launch runbooks." %}
+{% elif problem.code == "sender_outage" %}{% blocktranslate with name=problem.label trimmed %}{{ name }} paused sending after a mail outage{% endblocktranslate %}{% if problem.at %}; {% translate "it tries again at" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>{% endif %}. {% translate "Nothing needs doing unless it keeps happening; then see the “Mail-provider outage” steps in the launch runbooks." %}
+{% elif problem.code == "mail_provider_unavailable" %}{% translate "The email provider has been unavailable since" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>. <a href="#health-mail-heading">{% translate "See Mail sender" %}</a>
+{% elif problem.code == "not_running" %}{% blocktranslate with name=problem.label trimmed %}{{ name }} has not reported since{% endblocktranslate %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>, {% translate "so it may not be running. Only the server operator can start it, as the deployment runbook describes." %}
+{% elif problem.code == "not_reported" %}{% blocktranslate with name=problem.label trimmed %}{{ name }} has not reported its status. It may not be running, or may not be upgraded yet; ask the server operator to check it.{% endblocktranslate %}
+{% elif problem.code == "source_failing" %}{% translate "ParishSoft has not answered since" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>. <a href="{% url 'admin:source_refresh' %}">{% translate "ParishSoft refresh" %}</a>
+{% elif problem.code == "source_failed" %}{% translate "The most recent full ParishSoft refresh, at" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>, {% translate "did not finish." %} <a href="{% url 'admin:source_refresh' %}">{% translate "ParishSoft refresh" %}</a>
+{% elif problem.code == "source_late" %}{% translate "The full ParishSoft refresh due at" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time> {% translate "is late." %} <a href="{% url 'admin:source_refresh' %}">{% translate "ParishSoft refresh" %}</a>
+{% elif problem.code == "source_destructive_change" %}{% translate "A ParishSoft refresh was refused because some counts fell too far" %} ({% translate "since" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>). {% translate "Every later refresh is refused too, until the drop is fixed in ParishSoft or accepted, as “Accepting a large ParishSoft change” in the launch runbooks describes." %} <a href="#health-source-heading">{% translate "See the counts" %}</a>
+{% elif problem.code == "source_tenant_mismatch" %}{% translate "The ParishSoft key reaches a different organization than before" %} ({% translate "since" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>). {% translate "Stop and check with the parish before changing anything, as “ParishSoft outage” in the launch runbooks describes." %}
+{% elif problem.code == "source_retention_failing" %}{% translate "Old ParishSoft copies are not being removed" %} ({% translate "since" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>). {% translate "Ask the server operator to follow “ParishSoft outage” in the launch runbooks." %}
+{% elif problem.code == "backup_rpo_breach" %}{% if problem.at %}{% translate "No backup has finished since" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>.{% else %}{% translate "No backup has finished yet." %}{% endif %} {% translate "Ask the server operator to check the backup schedule, as “Checking” in the backup runbook describes." %}
+{% elif problem.code == "backup_offsite_failed" %}{% translate "Copying backups off-site has failed since" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>. <a href="{% url 'admin:integration_settings' 'backup' %}">{% translate "Off-site backup settings" %}</a>
+{% elif problem.code == "backup_key_changed" %}{% translate "A recent backup was sealed to a different encryption key than the backup before it" %} ({% translate "since" %} <time datetime="{{ problem.at|instant }}" data-local-instant>{{ problem.at|instant }}</time>). {% translate "Unless that was on purpose, ask the server operator to check it, as the backup runbook describes." %}
+{% elif problem.code == "debug_logging" %}{% blocktranslate with name=problem.label trimmed %}Debug logging is on in Production in {{ name }}. Debug logs can hold Families' personal information; ask the server operator to turn it off, as the deployment runbook describes.{% endblocktranslate %}
+{% elif problem.code == "versions_differ" %}{% translate "The services run different versions; an upgrade may be unfinished. Ask the server operator to check the upgrade, as the deployment runbook describes." %} <a href="#health-version-heading">{% translate "See Version" %}</a>
+{% elif problem.code == "schema_mismatch" %}{% translate "The database does not match the version that is running; an upgrade may be unfinished. Ask the server operator to check the upgrade, as the deployment runbook describes." %}
+{% endif %}</li>{% endfor %}</ul>
+{% else %}<h2 id="health-problems-heading">{% translate "Everything is working" %}</h2>{% endif %}
+</section>
+
+<section class="panel" aria-labelledby="health-waiting-heading">
+<h2 id="health-waiting-heading">{% translate "Why sends are waiting" %}</h2>
+{% if health.waiting %}<ul>
+{% if health.delivery_paused %}<li><strong>{% translate "Mail is paused by an Administrator." %}</strong> {% if pause.actor %}{% blocktranslate with actor=pause.actor trimmed %}Paused by {{ actor }}{% endblocktranslate %}{% else %}{% translate "Paused" %}{% endif %}{% if health.paused_at %} {% translate "at" %} <time datetime="{{ health.paused_at|instant }}" data-local-instant>{{ health.paused_at|instant }}</time>{% endif %}.{% if pause.reason %} {% translate "Reason:" %} {{ pause.reason }}{% endif %}{% if campaign_id %} <a href="{% url 'admin:delivery_control' campaign_id %}">{% translate "Pause and resume mail" %}</a>{% endif %}</li>{% endif %}
+{% for line in health.senders %}{% if line.running and line.sender_state == "daily_limit" %}<li><strong>{% translate "Waiting for the daily limit." %}</strong> {% blocktranslate with name=line.label trimmed %}{{ name }} has reached this server's daily limit for Family email; sending resumes by itself as the last 24 hours' count falls.{% endblocktranslate %}</li>
+{% elif line.running and line.sender_state == "gmail_held" %}<li><strong>{% translate "Held at Gmail's sending limit" %}</strong>{% if line.sender_until %} {% translate "until" %} <time datetime="{{ line.sender_until|instant }}" data-local-instant>{{ line.sender_until|instant }}</time>{% endif %} ({{ line.label }}).</li>
+{% elif line.running and line.sender_state == "outage_paused" %}<li><strong>{% translate "Paused after a mail outage" %}</strong>{% if line.sender_until %} {% translate "until" %} <time datetime="{{ line.sender_until|instant }}" data-local-instant>{{ line.sender_until|instant }}</time>{% endif %} ({{ line.label }}).</li>
+{% elif line.running and line.sender_state == "halted" %}<li><strong>{% translate "The mail sender is halted." %}</strong> <a href="#health-mail-heading">{% translate "See Mail sender" %}</a></li>
+{% elif not line.running %}<li><strong>{% translate "The mail sender is not running." %}</strong> <a href="#health-mail-heading">{% translate "See Mail sender" %}</a></li>{% endif %}{% endfor %}
+{% if "mail-dispatch" in health.missing_services %}<li><strong>{% translate "The mail sender has not reported its status." %}</strong> <a href="#health-mail-heading">{% translate "See Mail sender" %}</a></li>{% endif %}
+{% if health.planning_held %}<li><strong>{% translate "Planning is held." %}</strong> {% translate "No new Family emails are being prepared right now, because the campaign is not open for sending (for example, a campaign change is being applied). Preparation continues by itself when the hold ends." %} <a href="{% url 'admin:family_email_progress' %}">{% translate "Family email progress" %}</a></li>{% endif %}
+{% if health.retry_waiting %}<li><strong>{% translate "Waiting to retry:" %}</strong> {% blocktranslate count count=health.retry_waiting trimmed %}{{ count }} Family email waits to retry after a temporary refusal{% plural %}{{ count }} Family emails wait to retry after a temporary refusal{% endblocktranslate %}{% if health.next_retry_at %}; {% translate "the next retry is due at" %} <time datetime="{{ health.next_retry_at|instant }}" data-local-instant>{{ health.next_retry_at|instant }}</time>{% endif %}. <a href="{% url 'admin:deliveries' %}?state=retry_wait">{% translate "Outgoing mail: waiting to retry" %}</a></li>{% endif %}
+</ul>{% else %}<p>{% translate "Nothing is holding Family email back." %}</p>{% endif %}
+{% if health.send_active %}<p>{% translate "A Family email send is in progress." %} <a href="{% url 'admin:family_email_progress' %}">{% translate "Family email progress" %}</a></p>{% endif %}
+</section>
+
+<section class="panel" aria-labelledby="health-mail-heading">
+<h2 id="health-mail-heading">{% translate "Mail sender" %}</h2>
+{% if health.senders %}<ul>{% for line in health.senders %}<li data-sender="{{ line.process }}"><strong>{{ line.label }}:</strong>
+{% if not line.running %}{% translate "Not running." %} {% translate "Last reported" %} <time datetime="{{ line.reported_at|instant }}" data-local-instant>{{ line.reported_at|instant }}</time>. {% translate "Only the server operator can start it:" %} <a href="{{ health.runbooks.deployment }}">{% translate "deployment runbook" %}</a>.
+{% elif line.sender_state == "running" %}{% translate "Running." %}
+{% elif line.sender_state == "outage_paused" %}{% translate "Paused after an outage" %}{% if line.sender_until %} {% translate "until" %} <time datetime="{{ line.sender_until|instant }}" data-local-instant>{{ line.sender_until|instant }}</time>{% endif %}.
+{% elif line.sender_state == "gmail_held" %}{% translate "Held at Gmail's limit" %}{% if line.sender_until %} {% translate "until" %} <time datetime="{{ line.sender_until|instant }}" data-local-instant>{{ line.sender_until|instant }}</time>{% endif %}.
+{% elif line.sender_state == "daily_limit" %}{% translate "Waiting for the daily limit." %}
+{% elif line.sender_state == "halted" %}{% translate "Halted" %}{% if line.sender_since %} {% translate "since" %} <time datetime="{{ line.sender_since|instant }}" data-local-instant>{{ line.sender_since|instant }}</time>{% endif %}. {% translate "A fault that waiting cannot fix stopped all sending." %}
+{% endif %}</li>{% endfor %}</ul>
+{% else %}<p>{% translate "No mail sender has reported its status." %}</p>{% endif %}
+{% if health.incidents.mail_provider_unavailable %}<p class="notice notice-error">{% translate "The email provider has been unavailable since" %} <time datetime="{{ health.incidents.mail_provider_unavailable|instant }}" data-local-instant>{{ health.incidents.mail_provider_unavailable|instant }}</time>.</p>{% endif %}
+</section>
+
+<section class="panel" aria-labelledby="health-source-heading">
+<h2 id="health-source-heading">{% translate "ParishSoft refresh" %}</h2>
+{% include "stewardship/full-refresh-status.html" with status=health.refresh can_view_task=True can_refresh=False %}
+{% if health.refused_counts %}<div class="notice notice-error" data-refused-change>
+<p>{% translate "A ParishSoft refresh was refused at" %} <time datetime="{{ health.refused_at|instant }}" data-local-instant>{{ health.refused_at|instant }}</time> {% translate "because some counts fell too far. The system keeps using the data it had." %}</p>
+<div class="table-scroll"><table><caption>{% translate "What the refused refresh counted" %}</caption>
+<thead><tr><th scope="col">{% translate "Count" %}</th><th scope="col" class="numeric">{% translate "Before" %}</th><th scope="col" class="numeric">{% translate "After" %}</th><th scope="col">{% translate "Result" %}</th></tr></thead>
+<tbody>{% for count in health.refused_counts %}<tr><th scope="row">{{ count.label }}</th><td class="numeric">{% if count.before is None %}{% translate "None" %}{% else %}{{ count.before|number }}{% endif %}</td><td class="numeric">{{ count.after|number }}</td><td>{% if count.failed %}<strong>{% blocktranslate with limit=count.limit_percent trimmed %}Fell too far (more than {{ limit }}%){% endblocktranslate %}</strong>{% else %}{% translate "Within the limit" %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+<p>{% translate "Check these numbers in ParishSoft first. Until the drop is fixed there or accepted on the server, as “Accepting a large ParishSoft change” in the launch runbooks describes, every later refresh is refused too." %}</p>
+</div>{% endif %}
+{% if health.incidents.source_tenant_mismatch %}<p class="notice notice-error">{% translate "The ParishSoft key reaches a different organization than before. Stop and check with the parish before changing anything, as “ParishSoft outage” in the launch runbooks describes." %}</p>{% endif %}
+{% if health.incidents.source_retention_failing %}<p class="notice notice-error">{% translate "Old ParishSoft copies are not being removed. Ask the server operator to follow “ParishSoft outage” in the launch runbooks." %}</p>{% endif %}
+<p><a href="{% url 'admin:source_refresh' %}">{% translate "Refresh from ParishSoft" %}</a></p>
+</section>
+
+<section class="panel" aria-labelledby="health-backups-heading">
+<h2 id="health-backups-heading">{% translate "Backups" %}</h2>
+<p>{% if health.backup_at %}{% translate "Last backup finished at" %} <time datetime="{{ health.backup_at|instant }}" data-local-instant>{{ health.backup_at|instant }}</time> (<time datetime="{{ health.backup_at|instant }}" data-live-since>{{ health.backup_at|instant }}</time>).{% if health.backup_key_matches is True %} {% translate "It was sealed to the backup encryption key now configured." %}{% elif health.backup_key_matches is False %} <strong>{% translate "It was sealed to a different key than the backup encryption key now configured." %}</strong>{% endif %}{% else %}{% translate "No backup has been recorded yet." %}{% endif %}</p>
+{% if health.offsite %}<p{% if health.offsite.kind == 'failed' %} class="notice notice-error"{% endif %}>{% translate "Off-site copy:" %} {{ health.offsite.message }}{% if health.offsite.last_copy_at %} {% translate "Last copied:" %} <time datetime="{{ health.offsite.last_copy_at|instant }}" data-local-instant>{{ health.offsite.last_copy_at|instant }}</time>.{% endif %} <a href="{% url 'admin:integration_settings' 'backup' %}">{% translate "Off-site backup settings" %}</a></p>
+{% else %}<p>{% translate "Off-site copies are not set up." %} <a href="{% url 'admin:integration_settings' 'backup' %}">{% translate "Set up off-site backups" %}</a></p>{% endif %}
+{% if health.incidents.backup_rpo_breach %}<p class="notice notice-error">{% translate "A required backup is overdue." %}</p>{% endif %}
+{% if health.incidents.backup_offsite_failed %}<p class="notice notice-error">{% translate "An off-site backup copy failed." %}</p>{% endif %}
+{% if health.incidents.backup_key_changed %}<p class="notice notice-error">{% translate "A recent backup used a different encryption key than the backup before it." %}</p>{% endif %}
+</section>
+
+<section class="panel" aria-labelledby="health-debug-heading">
+<h2 id="health-debug-heading">{% translate "Debug logging" %}</h2>
+{% if health.debug_lines %}<ul>{% for line in health.debug_lines %}<li>{% blocktranslate with name=line.label trimmed %}Debug logging is on in {{ name }}.{% endblocktranslate %}</li>{% endfor %}</ul>
+{% if health.mode == "production" %}<p class="notice notice-error">{% translate "Debug logging must be off in Production. Ask the server operator to turn it off, as the deployment runbook describes." %}</p>{% else %}<p>{% translate "That is expected in Testing, where the deployment tool can turn it on on purpose." %}</p>{% endif %}
+{% else %}<p>{% translate "Debug logging is off in every service that reports." %}</p>{% endif %}
+</section>
+
+<section class="panel" aria-labelledby="health-version-heading">
+<h2 id="health-version-heading">{% translate "Version" %}</h2>
+{% if health.versions|length == 1 %}<p>{% blocktranslate with version=health.versions.0 trimmed %}All services run version {{ version }}.{% endblocktranslate %}</p>
+{% elif health.versions %}<p class="notice notice-error">{% translate "The services run different versions; an upgrade may be unfinished." %}</p>{% else %}<p>{% translate "No service has reported its version." %}</p>{% endif %}
+{% if health.processes %}<div class="table-scroll"><table><caption>{% translate "Services" %}</caption>
+<thead><tr><th scope="col">{% translate "Service" %}</th><th scope="col">{% translate "State" %}</th><th scope="col">{% translate "Version" %}</th><th scope="col">{% translate "Started" %}</th></tr></thead>
+<tbody>{% for line in health.processes %}<tr><th scope="row">{{ line.label }}</th><td>{% if not line.running %}{% translate "Not running" %}{% elif line.service == "web" and line.live > 1 %}{% blocktranslate with count=line.live trimmed %}Running ({{ count }} processes){% endblocktranslate %}{% else %}{% translate "Running" %}{% endif %}</td><td>{{ line.version }}</td><td><time datetime="{{ line.started_at|instant }}" data-local-instant>{{ line.started_at|instant }}</time></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+<p>{% if health.schema_current %}{% translate "The database matches the version that is running." %}{% else %}<strong>{% translate "The database does not match the version that is running." %}</strong>{% endif %}</p>
+<p>{% translate "Mode:" %} {% if health.mode == "production" %}{% translate "Production" %}{% else %}{% translate "Testing" %}{% endif %}</p>
+</section>
+</div>

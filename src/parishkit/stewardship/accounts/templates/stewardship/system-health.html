@@ -1,0 +1,26 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block title %}{% translate "System health" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
+{% block content %}
+<h1>{% translate "System health" %}</h1>
+{% aboutpage "system-health" %}<p>{% translate "Is the system healthy, and what is running? Problems are listed first, each with what you can do about it. The page updates itself every 10 seconds while it is open, and stops after an hour; Refresh System health starts it again. Watching it does not extend your sign-in." %}</p>
+<dl>
+<dt>{% translate "Why sends are waiting" %}</dt><dd>{% translate "Every reason Family email is waiting right now: a pause an Administrator chose, this server's daily limit, Gmail's own sending limit, a pause after a mail outage, a stopped mail sender, preparation held while a campaign change is applied, and emails waiting to retry after a temporary refusal. This server sends at most 1,800 emails in any 24 hours and keeps 200 of them for receipts, reports and alerts, so Family invitations and reminders stop at 1,600 and continue by themselves as the 24-hour count falls. Gmail has its own limit; when Gmail refuses for that reason, sending waits until the time shown. After a mail outage, sending pauses for a while and then tries again by itself." %}</dd>
+<dt>{% translate "Mail sender" %}</dt><dd>{% translate "The server runs two mail senders by default. Running means sending, or ready to send with nothing due. Halted means a fault that waiting cannot fix (for example, a mail password that no longer works) stopped all sending; today only the server operator can clear it. Not running means the sender has not reported for more than three minutes." %}</dd>
+<dt>{% translate "ParishSoft refresh" %}</dt><dd>{% translate "A full refresh re-reads everything from ParishSoft; quick updates in between pick up recent changes. While Family emails are being sent, quick updates and daytime full refreshes wait, and run when the send ends. If a refresh would remove too much (too many Families, Members or email addresses at once), it is refused and the system keeps the data it had. Every later refresh is refused too, until the drop is fixed in ParishSoft or accepted on the server." %}</dd>
+<dt>{% translate "Backups" %}</dt><dd>{% translate "The page can only see backups that finished. A scheduled backup that fails leaves no record, so the page can only say that none has finished since a given time. Copies made outside this application leave no record either. The backup schedule is set on the server, which this page cannot read, so there is no “next backup” time; the backup runbook describes the nightly schedule." %}</dd>
+<dt>{% translate "Debug logging" %}</dt><dd>{% translate "Debug logs record extra detail that can include Families' personal information, so debug logging must be off in Production. In Testing it may be on on purpose. Only the server operator can turn it off, by changing the server's settings and restarting the services." %}</dd>
+<dt>{% translate "Version" %}</dt><dd>{% translate "The version each service runs and when it last started. Different versions usually mean an upgrade did not finish. A service that was removed from the server stays listed as not running for up to a day." %}</dd>
+</dl>{% endaboutpage %}
+{# Screen readers hear only this line, and only when the number of problems changes. #}
+<p class="visually-hidden" role="status" data-live-announcer="system-health"></p>
+{% include 'stewardship/system-health-status.html' %}
+{# Outside the polled region, so an unchanged poll leaves the region alone; live-status-v1.js moves it to each successful check. #}
+<p class="help">{% translate "Last checked" %} <time datetime="{{ health.checked_at|instant }}" data-local-instant data-live-checked>{{ health.checked_at|instant }}</time>.</p>
+<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
+<dl>{% for line in health.processes %}<dt><code>{{ line.service }}/{{ line.process }}{% if line.target %}/{{ line.target }}{% endif %}</code></dt><dd><code>{% if line.running %}running{% else %}not_running{% endif %}{% if line.sender_state %} {{ line.sender_state }}{% endif %} {{ line.version }}{% if line.debug_logging %} debug{% endif %}</code></dd>{% endfor %}
+{% for kind in health.incidents %}<dt>{% translate "Open incident" %}</dt><dd><code>{{ kind }}</code></dd>{% endfor %}
+<dt>{% translate "Mode" %}</dt><dd><code>{{ health.mode }}</code></dd></dl>
+<p>{% translate "These values are as of when this page was opened." %}</p></details>
+<p><a href="{% url 'admin:system_health' %}">{% translate "Refresh System health" %}</a> · <a href="{% url 'admin:logs' %}">{% translate "System logs" %}</a> · <a href="{% url 'admin:background' %}">{% translate "Background work" %}</a></p>
+{% endblock %}

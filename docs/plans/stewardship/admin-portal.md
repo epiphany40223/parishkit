@@ -371,7 +371,15 @@ of 2026-10-04 are recorded in the specification.
    the problems list, live updates, Home's problem lines and the debug
    banner's link, and the read command or its pending exemption. If #382
    has not added its item L9 daily-count index, PR 2 adds it in a forward
-   migration and then gets a security-focused review.
+   migration and then gets a security-focused review. It lands in parts
+   (defaults posted on #530): **2a** the read model, the page, its
+   fragment, the problems list and the six panels, the menu entry and the
+   debug and critical-problems banners' links, with no schema or grant
+   change; **2b** Home's problem lines and the `system health` command;
+   **2c** the 24-hour daily-limit count through
+   a definer function with the L9 index (migration, security-focused
+   review). The backups panel's size and version columns come with PR 3's
+   grant change, and the halt kind with PR 4.
 4. **PR 3, take a backup now.** The backup request (migration), the backup
    login's request grants, request mode with the backup lock and the hold
    during a bulk send, the host cron entry, and the backup runbook's schedule,
