@@ -48,16 +48,18 @@ EAST, WEST = "Pacific/Kiritimati", "Pacific/Pago_Pago"
         (date(2026, 7, 1), "Asia/Kathmandu"),  # +05:45
         (date(2026, 9, 27), "Pacific/Auckland"),  # east of UTC, 23-hour day
         (date(2026, 1, 1), "US/Eastern"),  # a catalog alias PostgreSQL lacks
+        (date(2026, 11, 1), "America/Havana"),  # 00:00 happens twice
+        (date(2026, 10, 31), "America/Havana"),  # ends at the first 00:00
+        (date(2026, 3, 8), "America/Havana"),  # no 00:00 that day
+        (date(2026, 4, 5), "Australia/Lord_Howe"),  # a 30-minute change
     ],
 )
 def test_sql_day_bounds_equal_the_python_rule(day, zone):
     """SQL and Python place a browser-local day at the same two instants."""
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT (%s::date::timestamp"
-            " AT TIME ZONE stewardship_timezone_name_v1(%s)),"
-            "((%s::date+1)::timestamp"
-            " AT TIME ZONE stewardship_timezone_name_v1(%s))",
+            "SELECT stewardship_browser_day_start_v1(%s,%s),"
+            "stewardship_browser_day_start_v1(%s::date+1,%s)",
             [day, zone, day, zone],
         )
         start, end = cursor.fetchone()
@@ -171,6 +173,24 @@ def test_sql_refuses_dates_without_a_known_zone(live_response_service, zone, mes
                 harness.campaign.pk,
                 json.dumps({"filters": filters | {"zone": zone}, "history": False}),
             ],
+        )
+
+
+@pytest.mark.parametrize("zone", [None, "", "Mars/Base"])
+def test_ministry_sql_refuses_dates_without_a_known_zone(response_service, zone):
+    """A dated Ministry v2 call without a known zone raises, never empties."""
+    harness = setup(response_service)
+    filters = MinistryQuery(start="2026-01-01").form_values()
+    filters.pop("zone")
+    if zone is not None:
+        filters["zone"] = zone
+    with (
+        pytest.raises(DatabaseError, match="(?i)report time zone"),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "SELECT stewardship_ministry_report_v2(%s,%s::jsonb,true,'{}',9)",
+            [harness.campaign.pk, json.dumps(filters)],
         )
 
 

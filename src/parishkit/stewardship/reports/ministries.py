@@ -58,9 +58,9 @@ STATE_LABELS = STATES | {"assigned": STATES["new"]}
 # Dates arrived without the browser's zone (a tab opened before #558, or a
 # zone the server's catalog lacks); they are never read in another zone.
 ZONE_MESSAGE = (
-    "The dates came without your computer's time zone. Return to the report "
-    "and apply the filters again; if this repeats, check your computer's time "
-    "zone setting.\n"
+    "The dates came without your computer's time zone. Go back, reload the "
+    "page and apply the filters again; if this repeats, check your computer's "
+    "time zone setting.\n"
 )
 # A Ministry an Administrator removed from a live campaign whose requests are
 # kept (#342); SQL marks it in_campaign false.

@@ -7,7 +7,7 @@ from django.views.decorators.http import require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.storage import StorageInvariantError
-from parishkit.stewardship.web.dates import UnknownZone
+from parishkit.stewardship.web.dates import UnknownZone, refuse_zoneless_dates
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
 
@@ -34,11 +34,14 @@ def create(request, campaign_id):
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
         fields = {"format", "browser_timezone", "request_key", "action", "ministry"}
-        if (
-            request.GET
-            or set(parameters)
-            != fields | (set(MinistryQuery.__dataclass_fields__) - {"page", "size"})
-            or any(len(parameters.getlist(key)) != 1 for key in parameters)
+        expected = fields | (set(MinistryQuery.__dataclass_fields__) - {"page", "size"})
+        # A query string is refused first: only the POSTed form's own
+        # fields may earn the reload-the-page zone refusal.
+        if request.GET:
+            raise ValueError("Invalid Ministry export fields.")
+        refuse_zoneless_dates(parameters, expected)
+        if set(parameters) != expected or any(
+            len(parameters.getlist(key)) != 1 for key in parameters
         ):
             raise ValueError("Invalid Ministry export fields.")
         values = {key: parameters.pop(key)[0] for key in fields}

@@ -686,13 +686,13 @@ and workflow state. Exports include complete text and workflow history option.
 
 The submitted-date filters (on or after, on or before) are whole days in the
 viewer's browser time zone, under the
-[global presentation rules](../spec.md#global-presentation-rules): a day runs
-from local midnight to the next local midnight, so a daylight-saving day is 23
-or 25 hours long. The form sends the browser's zone with the dates, and a date
-without a known zone is refused, never read in another zone. An export
-captures the filters with their zone, and its retry asks for exactly those
-filters; a capture made before schema migration 0017 has no zone, keeps its
-campaign-zone days and is retried unchanged.
+[global presentation rules](../spec.md#global-presentation-rules), and work as
+the [Logs screen's date filters](../admin-portal/spec.md#logs) do: the form
+sends the browser's zone with the dates, and a date without a known zone is
+refused, never read in another zone. An export captures the filters with their
+zone, and its retry asks for exactly those filters; a capture made before
+schema migration 0017 has no zone, keeps its campaign-zone days and is retried
+unchanged.
 
 Editing is audited and uses optimistic concurrency. This report is also the
 source for the weekly Admin digest.
