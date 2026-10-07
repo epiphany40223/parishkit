@@ -560,12 +560,14 @@ Each view and each download reads the list once under the report's
 recheck (a download also rechecks the purge gate), sends
 `Cache-Control: no-store`, and records one audit event whose type names the
 list and the action (such as `response_submitted_list_exported`), with its
-outcome and row count and no Family name, DUID or filter value; a download the
-purge gate refuses is recorded as failed. This is an exception to the export
-audit rule in [shared report behavior](#shared-report-behavior): the filter,
-mode and source snapshot are not recorded, because recording them needs new
-approved audit context fields (a schema change), tracked in
-[#556](https://github.com/epiphany40223/parishkit/issues/556).
+outcome and row count and no Family name or DUID; a download the purge gate
+refuses is recorded as failed. As the export audit rule in
+[shared report behavior](#shared-report-behavior) asks, the event also records
+the mode (`report_mode`), the Show choice's closed key (`report_filter`) and
+the ParishSoft snapshot the names were read from (`snapshot_id`; left out when
+nothing was read, as for Testing with no rehearsal)
+([#556](https://github.com/epiphany40223/parishkit/issues/556)). System logs
+shows the mode and choice in the page's own words.
 
 ### Family timeline
 
@@ -979,7 +981,14 @@ talent; a summary counts each. The filtered result downloads immediately as CSV
 timezone. A download is rendered in memory on the web connection under the
 interactive campaign read guard, not through the dedicated download pool, whose
 login cannot read the response and source data the report needs. Viewing and
-downloading are audited with a count only. These answers are never written to
+downloading are audited with the row count, the Show choice (`report_filter`:
+a closed word, or `option` with the chosen talent's settings id in
+`talent_option_id`), whether the search box was used (`search_used`) and the
+ParishSoft snapshot read (`snapshot_id`, recorded only when a refresh did not
+promote a new one while the report ran)
+([#556](https://github.com/epiphany40223/parishkit/issues/556)). The search
+text itself is never recorded, because it can name a Family. These answers are
+never written to
 ParishSoft. When the campaign offers no talents, the
 page says so plainly and lists only the limitations: no Talents column, talent
 counts or talent filters appear on the page or in the downloads, and Members

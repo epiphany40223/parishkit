@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -27,6 +28,7 @@ from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
+from .response_lists import current_snapshot
 from .talents import TalentQuery, talents_csv, talents_report, talents_xlsx
 
 # The page's two tables page and sort independently, so their table
@@ -142,8 +144,32 @@ def _error(campaign_id, *, status):
     return response
 
 
-def _audit(action, principal, campaign_id, outcome, count=0):
-    """Retain access evidence as a count only, never a name or filter."""
+# The Talents filter's own words; any other ``talent`` value is a configured
+# talent option's UUID (talents.OPTION).
+TALENT_WORDS = frozenset({"any", "cannot_serve", "cannot_attend"})
+
+
+def audit_choices(query, snapshot):
+    """The audit context naming what was read, without the search text (#556).
+
+    The talent choice is a closed word, or ``option`` with the configured
+    talent's UUID (a parish setting). The search text can name a Family, so
+    only whether one was used is kept. ``snapshot`` is the ParishSoft data the
+    names came from, or None when it is unknown.
+    """
+    context = {"search_used": bool(query.search)}
+    if query.talent in TALENT_WORDS:
+        context["report_filter"] = query.talent
+    else:
+        context["report_filter"] = "option"
+        context["talent_option_id"] = UUID(query.talent)
+    if snapshot is not None:
+        context["snapshot_id"] = snapshot
+    return context
+
+
+def _audit(action, principal, campaign_id, outcome, count, choices):
+    """Retain access evidence: a count and ``audit_choices``, never a name."""
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
@@ -155,7 +181,7 @@ def _audit(action, principal, campaign_id, outcome, count=0):
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome, "count": count},
+            context={"outcome": outcome, "count": count} | choices,
         )
 
 
@@ -200,7 +226,9 @@ def _respond(request, campaign_id, *, export, render):
             query = TalentQuery.parse(parameters)
         except ValueError:
             return _error(campaign_id, status=400)
-        finalized, count = False, 0
+        # What the audit records: the parsed choices until the report reads
+        # them as offered, and the snapshot once the read has named it.
+        finalized, count, audited, snapshot = False, 0, query, None
 
         def finish(completed):
             """Audit completion once, after releasing the read transaction."""
@@ -215,6 +243,7 @@ def _respond(request, campaign_id, *, export, render):
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     count,
+                    audit_choices(audited, snapshot),
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -230,17 +259,24 @@ def _respond(request, campaign_id, *, export, render):
 
         def content():
             """Only detached authorized data reaches the template or file writer."""
-            nonlocal count
+            nonlocal count, audited, snapshot
             campaign = Campaign.objects.select_related("active_configuration").get(
                 pk=campaign_id
             )
             configuration = campaign.active_configuration.values
             # A removed talent filter reads as "Everything" for the tables,
             # the re-posted sort/paging forms and the download alike.
-            shown = query.offered(configuration)
+            shown = audited = query.offered(configuration)
+            # The report's SQL reads the current snapshot itself, and this
+            # read-committed guard could see a refresh promote between
+            # statements, so the audit names the snapshot only when it was
+            # the same before and after the report.
+            before = current_snapshot()
             result = talents_report(
                 campaign_id, shown, principal, configuration=configuration
             )
+            if current_snapshot() == before:
+                snapshot = before
             count = len(result["members"]) + len(result["families"])
             return iter((render(result, shown, extra),))
 

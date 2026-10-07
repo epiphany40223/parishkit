@@ -207,6 +207,32 @@ def test_lists_and_downloads_for_admin_and_staff(
         event_type="response_submitted_list_exported",
         auditcontext__context__count=1,
     ).exists()
+    # Each records its mode, Show choice and the snapshot its names came
+    # from (#556), and nothing naming a Family.
+    assert events.filter(
+        event_type="response_submitted_list_viewed",
+        auditcontext__context__contains={
+            "report_mode": "testing",
+            "report_filter": "uninvited",
+            "snapshot_id": str(snapshot),
+            "count": 1,
+        },
+    ).exists()
+    assert events.get(
+        event_type="response_data_quality_list_exported"
+    ).auditcontext.context == {
+        "outcome": "succeeded",
+        "count": 2,
+        "report_mode": "production",
+        "report_filter": "all",
+        "snapshot_id": str(snapshot),
+    }
+    assert events.filter(
+        event_type="response_data_quality_list_viewed",
+        auditcontext__context__report_filter="envelope",
+    ).exists()
+    for context in events.values_list("auditcontext__context", flat=True):
+        assert name not in str(context)
     # Refused downloads are audited too, as failed.
     for event_type in (
         "response_submitted_list_exported",

@@ -89,6 +89,9 @@ FROZEN = {
     "0019_restore_review.sql": (
         "0d4fa7fc2692eb3148b6053c9a351bf6e5bfaa5784a1c49f346b921939cf70a5"
     ),
+    "0020_download_audit_context.sql": (
+        "52d5824c9b708b6a2b0412d0a1c3e86daf6b30eb418d07bbd3cf74b6e033fc3a"
+    ),
 }
 
 

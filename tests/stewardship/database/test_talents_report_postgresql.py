@@ -13,6 +13,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.talents import TalentQuery, talents_report
 from parishkit.stewardship.responses.service import DEFAULT_TALENTS
+from parishkit.stewardship.source.models import SourceCurrent
 
 from .auth_builders import signed_in
 from .response_builders import activate_response_service
@@ -171,8 +172,35 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert route.encode() in body
         # The campaign reports page links the response dashboard too (#477).
         assert route.replace("talents", "responses").encode() in body
+        # A search is audited as used, never as its text (#556).
+        assert search(browser, route, {"search": "Organ"})[0].status_code == 200
     assert AuditEvent.objects.filter(event_type="talents_report_viewed").exists()
     assert AuditEvent.objects.filter(event_type="talents_report_exported").exists()
+    # Each records its Show choice, whether the search box was used and the
+    # ParishSoft snapshot read (#556); a removed talent reads as "any".
+    snapshot = str(SourceCurrent.objects.get().snapshot_id)
+    contexts = [
+        (event.event_type, event.auditcontext.context)
+        for event in AuditEvent.objects.filter(
+            event_type__startswith="talents_report_"
+        ).select_related("auditcontext")
+    ]
+    assert all(context["snapshot_id"] == snapshot for _, context in contexts)
+    assert all("talent_option_id" not in context for _, context in contexts)
+    assert ("talents_report_viewed", "cannot_serve", False) in {
+        (kind, context["report_filter"], context["search_used"])
+        for kind, context in contexts
+    }
+    assert {
+        context["report_filter"]
+        for kind, context in contexts
+        if kind == "talents_report_exported"
+    } == {"any"}
+    assert ("talents_report_viewed", "any", True) in {
+        (kind, context["report_filter"], context["search_used"])
+        for kind, context in contexts
+    }
+    assert "Organ" not in str(contexts)
 
 
 def test_both_tables_sort_every_column_in_memory():

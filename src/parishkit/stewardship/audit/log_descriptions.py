@@ -558,6 +558,48 @@ def words(identifier):
     return identifier.replace("_", " ").capitalize()
 
 
+# Recorded fields whose plain name is not just their identifier in words: an
+# on-request report's choices (#556). Other fields use ``words``.
+FIELD_LABELS = {
+    "report_mode": _("Responses shown"),
+    "report_filter": _("Filter chosen"),
+    "talent_option_id": _("Talent chosen (its settings id)"),
+    "snapshot_id": _("ParishSoft data read (its snapshot id)"),
+    "search_used": _("Search box used"),
+}
+# Recorded closed values shown in words, by field (#556): each report's own
+# menu wording (reports.response_lists and the Talents report's Show menu).
+# "all" and "any" are each report's first, unfiltered choice.
+VALUE_LABELS = {
+    "report_mode": {"production": _("Production"), "testing": _("Testing")},
+    "report_filter": {
+        "all": _("Everything (no filter)"),
+        "any": _("Everything (no filter)"),
+        "invited": _("With a delivered invitation"),
+        "uninvited": _("Without a delivered invitation"),
+        "progressed": _("Got past the first step"),
+        "opened": _("Opened the form only"),
+        "followed": _("Link followed"),
+        "unfollowed": _("Link not followed"),
+        "mailing-name": _("Blank mailing name"),
+        "envelope": _("Envelope number 0"),
+        "cannot_serve": _("Cannot participate in ministries"),
+        "cannot_attend": _("Families that cannot attend Mass"),
+        "option": _("One talent"),
+    },
+}
+
+
+def field_label(key):
+    """The plain name of one recorded field, e.g. "Filter chosen"."""
+    return FIELD_LABELS.get(key) or words(key)
+
+
+def field_value(key, value):
+    """One recorded value as shown: a closed word in words, else unchanged."""
+    return VALUE_LABELS.get(key, {}).get(value, value)
+
+
 # Sentences for one type with a particular recorded outcome, where that
 # outcome means something the type's own sentence does not cover.
 OUTCOME_DESCRIPTIONS = {
