@@ -8,6 +8,7 @@ import pytest
 from django.core import signing
 from django.db.models import F
 from django.test import Client
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.activation_progress import SALT
 from parishkit.stewardship.accounts.authentication import AuthRuntime
@@ -76,7 +77,7 @@ def ready_links(request, monkeypatch, settings, real_limiter):
     )
     browser = Client(enforce_csrf_checks=True)
     browser.cookies["pk_admin"] = login.session.session_key
-    path = f"/admin/campaign/{campaign.pk}/go-live/cleanup/{status.request_id}/links"
+    path = reverse("admin:go_live_links", args=[status.request_id])
     return browser, path, rings[0], login
 
 

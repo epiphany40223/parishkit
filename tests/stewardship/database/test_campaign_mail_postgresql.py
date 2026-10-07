@@ -7,6 +7,7 @@ import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.models import F
 from django.test import Client
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.campaign_mail_delivery import recover_pending
 from parishkit.stewardship.accounts.campaign_mail_models import CampaignMailTest
@@ -94,7 +95,7 @@ def campaign_test(request, monkeypatch, tmp_path, google):
     )
     browser, response = signed_in()
     assert response.status_code == 302
-    path = f"/admin/campaign/{campaign.pk}/content/test/{template['id']}"
+    path = reverse("admin:campaign_mail", args=[template["id"]])
     credential = tmp_path / "installed-workspace"
     write_private(credential, KEY)
     return service, browser, path, credential
@@ -173,7 +174,7 @@ def test_confirmation_sample_includes_fixed_facts_and_selected_optional_block(
         ).state
         == "applied"
     )
-    path = f"/admin/campaign/{campaign.pk}/content/test/{template['id']}"
+    path = reverse("admin:campaign_mail", args=[template["id"]])
     row, _ = queue((service, browser, path, credential))
     for body in (row.mail["html"], row.mail["text"]):
         assert "Submitted:" in body and "Questions:" not in body

@@ -401,14 +401,16 @@ name until NAV-15 splits it into Sign-in rules, Ministry assignments and
 Chairpersons, and the Emailed reports, Ministry assignments and Chairpersons
 pages, which do not exist yet. The System pages already have their new
 addresses (NAV-6), and so do the Parish data pages and a change's status page
-(NAV-7), the Mail and Family portal pages (NAV-8) and the first Campaign
-setup pages (NAV-9: settings, Copy campaign, content and its history, images,
-schedules, Share options and Member talents), with every old address
-redirecting; the Campaign setup, Mail and Family portal and Parish data group
-roots open their first entry. Until the rest of the URL work
-lands, other pages keep their "Current URL", and so does every other section
-of this spec and the other stewardship specs that name an Admin URL; those
-follow-up issues update them with the code.
+(NAV-7), the Mail and Family portal pages (NAV-8) and the Campaign setup
+pages (NAV-9: settings, Copy campaign, content and its history, images,
+schedules, Share options and Member talents; NAV-10: the test email pages,
+the go-live chain, Production activation and Cancel go-live, and Campaign
+Ministries under Ministries), with every old address redirecting; the
+Campaign setup, Mail and Family portal and Parish data group roots open their
+first entry. Until the rest of the URL work lands, other pages keep their
+"Current URL", and so does every other section of this spec and the other
+stewardship specs that name an Admin URL; those follow-up issues update them
+with the code.
 
 The Admin portal serves one current campaign. The system moves to a single
 campaign after this campaign (#145), so navigation already assumes it: there
@@ -688,8 +690,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `content_catalog` | Pages and emails | Menu: Pages and emails | Administrator | Campaign content and templates | `/admin/campaign/content/` | (same; old address redirects) |  |
 | `content_edit` | _page or email name_ | Pages and emails | Administrator | Edit page or email | `/admin/campaign/content/<kind>/<slot>/` | (same; old address redirects) | Object-named (exception). |
 | `content_revision` | _email name_ | Pages and emails | Administrator | _email template name_; Content revision | `/admin/campaign/content/email/<slot>/<revision>/` | (same; old address redirects) | Object-named (exception); links its own test page. |
-| `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/<campaign>/content/test/<revision>` | `/admin/campaign/content/test/<revision>/` | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
-| `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/<campaign>/content/test/<revision>/families` | `/admin/campaign/content/test/<revision>/families/` |  |
+| `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/content/test/<revision>/` | (same; old address redirects) | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
+| `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/content/test/<revision>/families/` | (same; old address redirects) |  |
 | `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/images/` | (same; old address redirects) |  |
 | `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same; old address redirects) | POST-only error re-render of Campaign images; reclassify as a form action. |
 | `artwork_preview` | Review campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/<bundle>/` | (same; old address redirects) |  |
@@ -697,13 +699,13 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same; old address redirects) |  |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same; old address redirects) | Gains a Return link and About panel. |
 | `talent_settings` | Member talents | Menu: Member talents | Administrator | Talents Members can share | `/admin/campaign/talents/` | (same; old address redirects) | Gains a Return link and About panel. |
-| `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/<campaign>/go-live` | `/admin/campaign/go-live/` |  |
-| `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/<campaign>/go-live/families` | `/admin/campaign/go-live/families/` |  |
-| `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/<campaign>/go-live/cleanup/<request>` | `/admin/campaign/go-live/cleanup/<request>/` |  |
-| `go_live_links` | Prepare Family links | Testing cleanup | Administrator | Family links | `/admin/campaign/<campaign>/go-live/cleanup/<request>/links` | `/admin/campaign/go-live/cleanup/<request>/links/` |  |
-| `production_confirmation` | Confirm Production | Prepare Family links | Administrator | Final Production confirmation | `/admin/campaign/<campaign>/go-live/cleanup/<request>/links/<preparation>/confirm` | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` |  |
-| `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/<campaign>/production` | `/admin/campaign/production/` | Links its cleanup request and Outgoing mail. |
-| `production_withdrawal` | Cancel go-live | Production activation | Administrator | Withdraw from Production; Return to Testing | `/admin/campaign/<campaign>/production/withdraw` | `/admin/campaign/production/cancellation/` | Links Pause and resume mail and Outgoing mail where it names them. |
+| `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/go-live/` | (same; old address redirects) |  |
+| `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same; old address redirects) |  |
+| `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (same; old address redirects) |  |
+| `go_live_links` | Prepare Family links | Testing cleanup | Administrator | Family links | `/admin/campaign/go-live/cleanup/<request>/links/` | (same; old address redirects) |  |
+| `production_confirmation` | Confirm Production | Prepare Family links | Administrator | Final Production confirmation | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` | (same; old address redirects) |  |
+| `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/production/` | (same; old address redirects) | Links its cleanup request and Outgoing mail. |
+| `production_withdrawal` | Cancel go-live | Production activation | Administrator | Withdraw from Production; Return to Testing | `/admin/campaign/production/cancellation/` | (same; old address redirects) | Links Pause and resume mail and Outgoing mail where it names them. |
 | `delivery_control` | Pause and resume mail | Menu: Pause and resume mail | Administrator | Campaign delivery controls; Delivery controls | `/admin/mail/controls/` | (same; old address redirects) |  |
 | `family_email_progress` | Family email progress | Menu: Family email progress | Administrator | (same) | `/admin/mail/family-progress/` | (same; old address redirects) |  |
 | `family_email_sends` | Family email history | Menu: Family email history | Administrator | Family email sends | `/admin/mail/family-history/` | (same; old address redirects) |  |
@@ -740,7 +742,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same; old address redirects) |  |
 | `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/parish/logos/<bundle>/` | (same; old address redirects) |  |
 | `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same; old address redirects) |  |
-| `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/campaign/<campaign>/ministries` | `/admin/parish/ministries/campaign/` | Moves under Ministries; Campaign settings keeps a link. |
+| `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/parish/ministries/campaign/` | (same; old address redirects) | Moves under Ministries, which links it while the campaign is live; its Return link goes to Ministries. Campaign settings keeps a link. |
 | `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same; old address redirects) |  |
 | `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same; old address redirects) |  |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same; old address redirects) |  |
@@ -1920,9 +1922,13 @@ not presented as applied.
 
 Activity and campaign inclusion are separate settings, and this screen changes
 only activity. It says so in one sentence and links its "In current campaign"
-column to Campaign settings → Ministry selections. When a bulk preview includes
-Ministries that are not in the current campaign, the preview names them, says
-that activation does not add them to the campaign and links to the same place.
+column to where inclusion changes: Campaign Ministries while the current
+campaign is live (see
+[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries)),
+and Campaign settings → Ministry selections for a draft. When a bulk preview
+includes Ministries that are not in the current campaign, the preview names
+them, says that activation does not add them to the campaign and links to the
+same place.
 
 ParishSoft's Ministry catalog does not supply a reliable active/inactive flag.
 Catalog entries default to locally active unless an Admin has marked them

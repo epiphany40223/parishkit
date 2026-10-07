@@ -140,10 +140,6 @@ PAGES = {
         "campaign", _("Remove campaign image"), "artwork_settings", linkable=False
     ),
     "talent_settings": Page("campaign", _("Member talents")),
-    # A live campaign's one editable structural setting (#342).
-    "campaign_ministries": Page(
-        "campaign", _("Campaign Ministries"), "campaign_settings"
-    ),
     "go_live": Page("campaign", _("Go-live readiness")),
     "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
     "go_live_cleanup": Page("campaign", _("Testing cleanup"), "go_live"),
@@ -217,6 +213,9 @@ PAGES = {
     "hosted_file_delete": Page("parish", _("Delete hosted files"), "hosted_files"),
     "hosted_file_rename": Page("parish", _("Change placeholder name"), "hosted_files"),
     "ministries": Page("parish", _("Ministries")),
+    # A live campaign's one editable structural setting (#342). One home per
+    # concept: it runs through Ministries; Campaign settings keeps a link.
+    "campaign_ministries": Page("parish", _("Campaign Ministries"), "ministries"),
     # A sidebar entry of its own, so a manual refresh is found without Home.
     "source_refresh": Page("parish", _("Refresh from ParishSoft")),
     # A configuration change can come from any settings page, so its status
@@ -438,8 +437,8 @@ MENU = (
     Entry("schedule_settings", _ADMIN, _campaign),
     Entry("share_settings", _ADMIN, _structural(FINANCIAL)),
     Entry("talent_settings", _ADMIN, _structural(MINISTRY)),
-    Entry("go_live", _ADMIN, _draft, campaign=True),
-    Entry("production_progress", _ADMIN, _confirmed, campaign=True),
+    Entry("go_live", _ADMIN, _draft),
+    Entry("production_progress", _ADMIN, _confirmed),
     # Mail and Family portal
     Entry("delivery_control", _ADMIN, _production),
     Entry("family_email_progress", _ADMIN, _campaign),

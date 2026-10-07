@@ -47,7 +47,7 @@ def campaign_mail(request, campaign_id, revision_id):
                 request,
                 service,
                 HttpResponseRedirect(
-                    reverse("admin:campaign_mail", args=[campaign_id, revision_id])
+                    reverse("admin:campaign_mail", args=[revision_id])
                 ),
             )
         preview = prepare(request, service, campaign_id, revision_id)

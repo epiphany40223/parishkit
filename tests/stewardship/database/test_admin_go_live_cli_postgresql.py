@@ -20,6 +20,7 @@ from uuid import uuid4
 import pytest
 from django.db.models import F
 from django.test import Client
+from django.urls import reverse
 
 from parishkit.stewardship import admin_cli
 from parishkit.stewardship.accounts import automation_sessions as automation
@@ -37,7 +38,7 @@ from parishkit.stewardship.accounts.sessions import database_now, issue_admin
 from parishkit.stewardship.accounts.setup_completion import setup_is_complete
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.catchup_tasks import catchup_handler
-from parishkit.stewardship.campaigns.models import ActivationCatchUpDemand, Campaign
+from parishkit.stewardship.campaigns.models import ActivationCatchUpDemand
 from parishkit.stewardship.campaigns.production_models import (
     ProductionTransitionRequest,
 )
@@ -151,7 +152,7 @@ def confirmed(request, monkeypatch, *, days):
         service=arguments[1],
         campaign=campaign,
         receipt=receipt,
-        path=f"/admin/campaign/{campaign.pk}/production",
+        path=reverse("admin:production_progress"),
     )
 
 
@@ -178,7 +179,7 @@ def test_readiness_of_a_draft_matches_the_page(admin, google):
     assert command_session().version == 2
     # The page reads the same preview through the same function.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        page = browser.get(f"/admin/campaign/{row['id']}/go-live")
+        page = browser.get(reverse("admin:go_live"))
     assert page.status_code == 200, page.content
     preview = page.context["preview"]
     assert result["problems"] == list(preview.problems)
@@ -299,7 +300,7 @@ def test_readiness_of_a_draft_ready_to_go_live(
     assert result["families"]["active"] >= 1
     assert result["cleanup"]["total"] >= 1
     with web_login():
-        page = page_browser(login).get(f"/admin/campaign/{campaign.pk}/go-live")
+        page = page_browser(login).get(reverse("admin:go_live"))
     assert page.status_code == 200, page.content
     preview = page.context["preview"]
     assert result["version"] == preview.digest
@@ -319,7 +320,6 @@ def test_readiness_once_cleanup_has_started(ready_links, monkeypatch):
     service = runtime()
     command = runner(service, monkeypatch)
     secret = approved(service, login)
-    campaign = Campaign.objects.get()
     code, document = one(command, "go-live", "readiness", secret=secret)
     assert code == 0, document
     result = document["result"]
@@ -332,7 +332,7 @@ def test_readiness_once_cleanup_has_started(ready_links, monkeypatch):
         "created_at": cleanup.created_at.isoformat(),
     }
     with web_login():
-        page = page_browser(login).get(f"/admin/campaign/{campaign.pk}/go-live")
+        page = page_browser(login).get(reverse("admin:go_live"))
     assert [str(row.pk) for row in page.context["cleanup_requests"]] == [listed["id"]]
     assert result["problems"] == list(page.context["preview"].problems)
 

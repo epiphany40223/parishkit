@@ -33,6 +33,22 @@ def live_change_admitted(state, *, locked):
     return locked and state in OPEN_STATES
 
 
+def live_ministries_editable(campaign, current_campaign_id):
+    """Whether ``campaign`` is the current, live campaign whose Ministries may change.
+
+    The shared rule for offering Campaign Ministries (#342): Campaign
+    settings' button and the Ministries page's links both follow it. It does
+    not check the background-work hold, so the editor may still refuse for a
+    while (it says why) when background work is under way.
+    """
+    return (
+        campaign is not None
+        and campaign.pk == current_campaign_id
+        and live_change_admitted(campaign.state, locked=campaign.structural_locked)
+        and "ministry" in campaign.active_configuration.values["modules"]
+    )
+
+
 def addable_ministries(document):
     """DUIDs that may be added now: in the promoted catalog and locally active.
 

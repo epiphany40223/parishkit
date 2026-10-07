@@ -21,7 +21,7 @@ history panels below, so paging stays a full load that lands here.{% endcomment 
 <dt>{% translate "Prepared links" %}</dt><dd>{{ record.completion|out_of }}</dd>
 <dt>{% translate "Last update" %}</dt><dd><time data-local-instant datetime="{{ record.task.updated_at|instant }}">{{ record.task.updated_at|instant }}</time></dd></dl>
 {% if not record.current %}<p role="status">{% translate "These links were cancelled, or the data they were made from has changed since, so they cannot be used to go live. Prepare new links." %}</p>{% endif %}
-{% if record.generation.state == 'ready' and record.current %}<p role="status">{% translate "Inactive links are prepared. The campaign remains in Testing." %}</p>{% if record.task.state == 'succeeded' %}<p><a href="{% url 'admin:production_confirmation' campaign.pk transition.pk record.preparation.pk %}">{% translate "Continue to Confirm Production" %}</a></p>{% endif %}{% endif %}
+{% if record.generation.state == 'ready' and record.current %}<p role="status">{% translate "Inactive links are prepared. The campaign remains in Testing." %}</p>{% if record.task.state == 'succeeded' %}<p><a href="{% url 'admin:production_confirmation' transition.pk record.preparation.pk %}">{% translate "Continue to Confirm Production" %}</a></p>{% endif %}{% endif %}
 {% if record.cleanup %}<p>{% translate "Discarding these links:" %} {% include "stewardship/task-state.html" with state=record.cleanup.state %}</p>{% endif %}
 {% if record.controls.cancel %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.cancel }}"><button type="submit">{% translate "Cancel and discard these inactive links" %}</button></form>{% endif %}
 {% if record.controls.retry %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry }}"><button type="submit">{% translate "Retry failed preparation" %}</button></form>{% endif %}
@@ -31,5 +31,5 @@ history panels below, so paging stays a full load that lands here.{% endcomment 
 </div>
 {% translate "Preparation history pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-<p><a href="">{% translate "Refresh preparation progress" %}</a> · <a href="{% url 'admin:go_live_cleanup' campaign.pk transition.pk %}">{% translate "Return to Testing cleanup" %}</a></p>
+<p><a href="">{% translate "Refresh preparation progress" %}</a> · <a href="{% url 'admin:go_live_cleanup' transition.pk %}">{% translate "Return to Testing cleanup" %}</a></p>
 {% endblock %}

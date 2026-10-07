@@ -418,8 +418,7 @@ def test_retired_page_names_are_not_shown():
 
 def test_cancel_go_live_sits_under_production_activation():
     """The trail runs Home › Campaign setup › Production activation › Cancel go-live."""
-    campaign = uuid4()
-    progress = reverse("admin:production_progress", args=[campaign])
+    progress = reverse("admin:production_progress")
     items = [
         navigation.MenuItem(
             "campaign", "production_progress", "Production activation", progress
@@ -428,7 +427,7 @@ def test_cancel_go_live_sits_under_production_activation():
     match = SimpleNamespace(
         url_name="production_withdrawal",
         namespace=navigation.NAMESPACE,
-        kwargs={"campaign_id": campaign},
+        kwargs={},
     )
     _, trail = navigation.build(match, items)
     assert [(crumb["label"], crumb["url"]) for crumb in trail][1:] == [

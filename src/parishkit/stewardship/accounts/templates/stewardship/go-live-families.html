@@ -11,5 +11,5 @@
 </tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-<p><a href="{% url 'admin:go_live' campaign.pk %}">{% translate "Return to Go-live readiness" %}</a></p>
+<p><a href="{% url 'admin:go_live' %}">{% translate "Return to Go-live readiness" %}</a></p>
 {% endblock %}

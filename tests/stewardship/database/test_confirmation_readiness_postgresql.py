@@ -13,6 +13,7 @@ from django.db import connection
 from django.db.models import F
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.confirmation_commands import confirm, verify_preview
@@ -163,11 +164,18 @@ def test_fresh_confirmation_atomically_activates_and_replays(
     monkeypatch.setattr(setup_inputs, "first_campaign", dated_campaign)
     monkeypatch.setattr(setup_inputs, "schedule", dated_schedule)
     links = request.getfixturevalue("ready_links")
-    browser, links_path = links[:2]
+    browser = links[0]
     preparation, arguments = prepare(links)
     login, service = arguments[:2]
     campaign = preparation.transition.campaign
-    path = f"{links_path}/{preparation.pk}/confirm"
+    request_id = preparation.transition.pk
+    path = reverse("admin:production_confirmation", args=[request_id, preparation.pk])
+    # A form left open on the old address (NAV-10) is re-posted (308) to the
+    # page, which keeps every check; another campaign's old address is gone.
+    old = (
+        f"/admin/campaign/{campaign.pk}/go-live/cleanup/{request_id}/links/"
+        f"{preparation.pk}/confirm"
+    )
     with web_login():
         settings_path = "/admin/campaign/settings/"
         assert not browser.get(settings_path).context["production_progress_available"]
@@ -194,6 +202,14 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         assert verified and token and not preview.problems
         with pytest.raises(PermissionError, match="after cleanup"):
             confirm(*arguments, token=token, typed="Production")
+        stale = {"action": "confirm", "preview": token, "typed": "Production"}
+        assert browser.post(old, stale).status_code == 403  # missing CSRF
+        moved = post(browser, old, stale)
+        assert moved.status_code == 308 and moved["Location"] == path
+        assert "no-store" in moved["Cache-Control"]
+        # The re-post meets the fresh sign-in check: nothing is confirmed.
+        assert post(browser, moved["Location"], stale).status_code == 403
+        assert not ProductionConfirmation.objects.exists()
         issue_admin(
             login,
             login.portal_session.principal_id,
@@ -211,6 +227,18 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         assert response.status_code == 302, response.content
         assert post(browser, path, values).status_code == 302
         receipt = ProductionConfirmation.objects.get()
+        # The same reviewed form re-posted through the old address follows one
+        # 308 and confirms nothing twice; another campaign's address is gone.
+        token_cookie = browser.cookies["pk_admin_csrf"].value
+        again = browser.post(
+            old, values | {"csrfmiddlewaretoken": token_cookie}, follow=True
+        )
+        assert again.redirect_chain[0] == (path, 308)
+        assert ProductionConfirmation.objects.get().pk == receipt.pk
+        other = old.replace(str(campaign.pk), str(uuid4()))
+        gone = post(browser, other, values)
+        assert gone.status_code == 410 and "Location" not in gone
+        assert ProductionConfirmation.objects.count() == 1
         assert confirm(*arguments, token=token, typed="Production").pk == receipt.pk
         with monkeypatch.context() as patch:
             patch.setattr(signing, "time", SimpleNamespace(time=lambda: time() + 301))

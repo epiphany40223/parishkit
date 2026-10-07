@@ -6,6 +6,7 @@ import pytest
 from django.core import signing
 from django.db import DatabaseError, connection, transaction
 from django.db.models import F
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import (
     campaign_mail,
@@ -254,7 +255,7 @@ def test_http_acknowledgement_progress_and_cancel_are_private_and_passive(
     )
     browser = Client(enforce_csrf_checks=True)
     browser.cookies["pk_admin"] = request.session.session_key
-    path = f"/admin/campaign/{campaign.pk}/go-live"
+    path = reverse("admin:go_live")
     with web_login():
         assert browser.get(path).status_code == 200
         response = post(browser, path, {"action": "verify"})
@@ -453,7 +454,7 @@ def test_concurrent_same_confirmation_creates_one_cleanup_request(ready_cleanup)
 
         def confirm():
             """Each request gets its own session object and restricted connection."""
-            browser = RequestFactory().post("/admin/campaign/go-live")
+            browser = RequestFactory().post(reverse("admin:go_live"))
             browser.session = SessionStore(session_key=request.session.session_key)
             try:
                 barrier.wait(timeout=10)

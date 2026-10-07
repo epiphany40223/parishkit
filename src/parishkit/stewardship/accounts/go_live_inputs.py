@@ -81,8 +81,11 @@ def collect_inputs(caller, service, campaign_id):
         configuration = editable_configuration(service)
         scope = _scope(campaign_id)
         campaign = scope.campaign
+        # No current campaign (the campaign-free page passes None): refuse
+        # as for any campaign that is not the current Testing draft.
         if (
-            scope.runtime.current_campaign_id != campaign_id
+            campaign is None
+            or scope.runtime.current_campaign_id != campaign_id
             or scope.runtime.mode != "testing"
             or campaign.state != "draft"
             or scope.runtime.active_configuration_id

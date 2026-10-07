@@ -111,8 +111,8 @@ still the design record for preparation and disposal),
    SERVICE`) and check again before going on. After activation, every Admin page shows a "Debug
    logging is on in Production" notice if the web service still has it on.
 2. **Administrator: clear readiness.** From the campaign's settings page,
-   choose **Review go-live readiness and Testing cleanup impact**
-   (`/admin/campaign/<campaign id>/go-live`). The page lists what still needs
+   choose **Check Go-live readiness**
+   (`/admin/campaign/go-live/`). The page lists what still needs
    attention, each item with its remedy. Clear these beforehand: every
    provider credential must have a current check; a selected Family test
    email must have been previewed and sent successfully with the current
@@ -164,7 +164,7 @@ still the design record for preparation and disposal),
    within five minutes of the sign-in. A changed input means a new preview,
    not a failure.
 7. **Administrator: watch the result.** The **Production activation
-   progress** page (`/admin/campaign/<campaign id>/production`) shows the
+   progress** page (`/admin/campaign/production/`) shows the
    outcome. A campaign that became active prepares its initial mail in the
    background until **Initial campaign mail preparation complete**; a
    terminal failure offers **Retry failed mail preparation**, and nothing

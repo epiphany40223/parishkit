@@ -12,8 +12,13 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.test import Client, RequestFactory, override_settings
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.campaigns.production_models import (
+    ProductionTransitionRequest,
+)
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.web.admin_routes import current_campaign
 
 from ..policy_factory import address
@@ -277,3 +282,93 @@ def test_group_roots_without_an_open_entry_go_home(auth_service, google):
         response = browser.get(root)
         assert response.status_code == 302, root
         assert response["Location"] == "/admin/"
+
+
+def test_old_campaign_setup_part_b_addresses_redirect_only_the_current_campaign(
+    auth_service, google
+):
+    """The test email, go-live and Campaign Ministries old addresses (NAV-10)."""
+    current = _current(auth_service.store)
+    browser, _ = signed_in()
+    revision = uuid4()
+    for path, new in (
+        (f"content/test/{revision}", reverse("admin:campaign_mail", args=[revision])),
+        (
+            f"content/test/{revision}/families",
+            reverse("admin:campaign_mail_families", args=[revision]),
+        ),
+        ("go-live", reverse("admin:go_live")),
+        ("go-live/families", reverse("admin:go_live_families")),
+        ("production", reverse("admin:production_progress")),
+        ("production/withdraw", reverse("admin:production_withdrawal")),
+        ("ministries", reverse("admin:campaign_ministries")),
+    ):
+        moved = browser.get(f"/admin/campaign/{current}/{path}?size=25")
+        assert moved.status_code == 301, path
+        assert moved["Location"] == f"{new}?size=25"
+        assert "no-store" in moved["Cache-Control"]
+        gone = browser.get(f"/admin/campaign/{uuid4()}/{path}")
+        assert gone.status_code == 410, path
+        assert "no-store" in gone["Cache-Control"]
+
+
+def test_old_go_live_form_never_acts_before_its_page(auth_service, google):
+    """A readiness form left open on an old address starts nothing by itself.
+
+    Another campaign's address answers 410 before any effect; the current
+    one's answers a 308 to the page, which keeps its own checks.
+    """
+    current = _current(auth_service.store)
+    browser, _ = signed_in()
+    tasks = TaskRun.objects.count()
+    values = {"action": "cleanup", "preview_token": "x", "acknowledge": "yes"}
+    browser.get(reverse("admin:logs"))
+    values["csrfmiddlewaretoken"] = browser.cookies["pk_admin_csrf"].value
+    gone = browser.post(f"/admin/campaign/{uuid4()}/go-live", values)
+    assert gone.status_code == 410 and "Location" not in gone
+    moved = browser.post(f"/admin/campaign/{current}/go-live", values)
+    assert moved.status_code == 308
+    assert moved["Location"] == reverse("admin:go_live")
+    assert not ProductionTransitionRequest.objects.exists()
+    assert TaskRun.objects.count() == tasks
+
+
+def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, google):
+    """No current campaign: each moved page refuses plainly, never a server error."""
+    setup(auth_service.store)
+    browser, _ = signed_in()
+    for name, args in (
+        ("go_live", []),
+        ("go_live_families", []),
+        ("go_live_cleanup", [uuid4()]),
+        ("go_live_links", [uuid4()]),
+        ("production_confirmation", [uuid4(), uuid4()]),
+        ("production_progress", []),
+        ("production_withdrawal", []),
+        ("campaign_mail", [uuid4()]),
+        ("campaign_mail_families", [uuid4()]),
+        ("campaign_ministries", []),
+    ):
+        response = browser.get(reverse(f"admin:{name}", args=args))
+        assert 400 <= response.status_code < 500, (name, response.status_code)
+    # Nor does any form posted to them: confirming or cancelling go-live,
+    # retrying activation or sending a test (no campaign transaction runs).
+    browser.get(reverse("admin:logs"))
+    csrf = {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
+    for name, args, values in (
+        ("go_live", [], {"action": "cleanup", "preview_token": "x"}),
+        ("go_live_cleanup", [uuid4()], {"control": "x"}),
+        ("go_live_links", [uuid4()], {"control": "x"}),
+        (
+            "production_confirmation",
+            [uuid4(), uuid4()],
+            {"action": "confirm", "preview": "x", "typed": "Production"},
+        ),
+        ("production_progress", [], {"control": "x"}),
+        ("production_withdrawal", [], {"action": "confirm", "preview": "x"}),
+        ("campaign_mail", [uuid4()], {"preview_token": "x"}),
+        ("campaign_ministries", [], {"action": "preview"}),
+    ):
+        response = browser.post(reverse(f"admin:{name}", args=args), values | csrf)
+        assert 400 <= response.status_code < 500, (name, response.status_code)
+    assert not ProductionTransitionRequest.objects.exists()

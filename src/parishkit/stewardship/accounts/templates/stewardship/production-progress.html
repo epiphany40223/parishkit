@@ -26,5 +26,5 @@
 {% if control %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ control }}"><button type="submit">{% translate "Retry failed mail preparation" %}</button></form>{% endif %}
 </section>{% else %}<p>{% translate "This campaign was confirmed before its start date, so its mail follows the normal mail schedules. There is no initial mail to prepare here." %}</p>{% endif %}
 <p><a href="">{% translate "Refresh Production progress" %}</a> · <a href="{% url 'admin:campaign_settings' %}">{% translate "Review Campaign settings" %}</a></p>
-{% if withdrawal_available %}<p><a href="{% url 'admin:production_withdrawal' campaign.pk %}">{% translate "Cancel go-live" %}</a></p>{% endif %}
+{% if withdrawal_available %}<p><a href="{% url 'admin:production_withdrawal' %}">{% translate "Cancel go-live" %}</a></p>{% endif %}
 {% endblock %}

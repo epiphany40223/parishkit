@@ -5,23 +5,17 @@ from django.urls import include, path
 from . import views
 from .accounts import (
     access_gate,
-    activation_views,
     assignment_views,
     authentication,
     automation_views,
     branding_views,
-    campaign_family_test_views,
-    campaign_mail_views,
-    campaign_ministry_views,
     campaign_views,
     chair_review_views,
     chair_views,
     code_reports,
-    confirmation_views,
     content_views,
     critical_event_views,
     family_authentication,
-    go_live_views,
     hosted_file_serving,
     presence,
     rule_autosave_views,
@@ -43,7 +37,6 @@ from .accounts import (
     system_health_views,
     user_rule_views,
     user_views,
-    withdrawal_views,
 )
 from .admin_urls import campaign as admin_campaign
 from .admin_urls import legacy as admin_legacy
@@ -106,19 +99,6 @@ admin_patterns = [
     *admin_mail.patterns,
     *admin_mail.polled_patterns,
     *admin_campaign.patterns,
-    # The test email pages move with part B (NAV-10). Until then they stay
-    # ahead of the old addresses: "content/test/<revision>" would otherwise
-    # match the old content editor route ("content/<kind>/<slot>").
-    path(
-        "campaign/<uuid:campaign_id>/content/test/<uuid:revision_id>",
-        campaign_mail_views.campaign_mail,
-        name="campaign_mail",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/content/test/<uuid:revision_id>/families",
-        campaign_family_test_views.campaign_mail_families,
-        name="campaign_mail_families",
-    ),
     *admin_legacy.patterns,
     path("ministry-reports/", ministry_report_views.index, name="ministry_reports"),
     path(
@@ -367,46 +347,6 @@ admin_patterns = [
     ),
     # Retired (decision 11): redirects to the current campaign's settings.
     path("campaign/new", campaign_views.retired_new, name="campaign_new"),
-    path(
-        "campaign/<uuid:campaign_id>/go-live",
-        go_live_views.readiness,
-        name="go_live",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/go-live/families",
-        go_live_views.testing_families,
-        name="go_live_families",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/go-live/cleanup/<uuid:request_id>",
-        go_live_views.cleanup_status,
-        name="go_live_cleanup",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/go-live/cleanup/<uuid:request_id>/links",
-        activation_views.links,
-        name="go_live_links",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/go-live/cleanup/<uuid:request_id>/links/<uuid:preparation_id>/confirm",
-        confirmation_views.confirmation,
-        name="production_confirmation",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/production",
-        confirmation_views.progress,
-        name="production_progress",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/production/withdraw",
-        withdrawal_views.withdrawal,
-        name="production_withdrawal",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/ministries",
-        campaign_ministry_views.campaign_ministries,
-        name="campaign_ministries",
-    ),
     path("users", user_views.users, name="users"),
     path("users/rules", user_rule_views.user_rules, name="user_rules"),
     path("users/rules/apply", rule_autosave_views.rule_apply, name="rule_apply"),

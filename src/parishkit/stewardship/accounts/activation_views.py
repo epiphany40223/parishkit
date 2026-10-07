@@ -37,7 +37,7 @@ def links(request, campaign_id, request_id):
                 token=request.POST.get("control", ""),
             )
             response = HttpResponseRedirect(
-                reverse("admin:go_live_links", args=[campaign_id, request_id])
+                reverse("admin:go_live_links", args=[request_id])
             )
         else:
             context = progress(request, service, campaign_id, request_id, window=window)
