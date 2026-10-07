@@ -64,6 +64,10 @@ a:hover { text-decoration-thickness: .15em; }
 .site-header::before { content: ""; position: absolute; inset: 0 0 auto; height: .3rem; background: linear-gradient(90deg, var(--accent), var(--accent) 60%, var(--gold)); }
 .brand { flex: 1 1 auto; margin: 0; font-family: var(--serif); font-size: clamp(1.15rem, 2.5vw, 1.4rem); font-weight: 600; line-height: 1.3; letter-spacing: .005em; color: var(--ink); }
 .brand img { max-width: 12rem; max-height: 4rem; vertical-align: middle; margin-inline-end: .5rem; }
+/* Reserve the logo's largest drawn height before the image loads, so a late
+   logo cannot grow the header and push the page down (#638). The logo stays
+   at its own size, centred on the line; it is never stretched to fill it. */
+.brand:has(img) { display: flex; align-items: center; min-height: 4rem; }
 .branding-preview { max-width: 100%; height: auto; }
 /* The delivery warning's live region stays in the tree; it takes a full row
    only when its notice is shown, and adds no height while empty. */
