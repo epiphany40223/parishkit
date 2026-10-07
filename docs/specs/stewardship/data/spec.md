@@ -951,7 +951,10 @@ live format and links on the reserved `.invalid` domain). Every outgoing
 email's HTML alternative is wrapped, when the message is built, in one shared
 email-client-safe layout (a readable sans-serif font and a centered 600px
 column); test messages show one small notice line instead of a large TEST
-heading. Retained content and the plain-text alternative are unchanged.
+heading. The daily and weekly Admin report emails use a wider desktop column
+instead (see [daily campaign digest](../background-processing/spec.md#daily-campaign-digest)
+and [weekly additional-information digest](../background-processing/spec.md#weekly-additional-information-digest)).
+Retained content and the plain-text alternative are unchanged.
 Content text rules (the sanitizer's canonical form and the placeholder
 contracts) apply to content being authored or changed. Revisions already in
 an applied configuration version were validated under the rules in force when

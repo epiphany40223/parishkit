@@ -88,10 +88,18 @@ def notice_html(text):
     )
 
 
-def email_document(html, *, notice=None):
+# Family and operational mail keep the common 600px column. The Admin report
+# emails are read at a desk and lead with charts and bars, so they use this
+# desktop width instead (#720); a narrower window still shrinks them to fit.
+REPORT_WIDTH = 960
+
+
+def email_document(html, *, notice=None, width=600):
     """Return the complete HTML part for one already sanitized email body.
 
-    ``notice`` is plain text for a small test notice above the content. A
+    ``width`` is the column's largest width in CSS pixels, and Outlook for
+    Windows' fixed width. ``notice`` is plain text for a small test notice
+    above the content. A
     leading routed Testing banner (``<h2>TEST</h2><p>…</p>``) becomes that
     notice instead of a large heading. The plain-text alternative is built
     separately by each sender and is not affected.
@@ -111,11 +119,11 @@ def email_document(html, *, notice=None):
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'border="0" style="background-color:{PAGE};"><tr>'
         '<td align="center" style="padding:24px 12px;">'
-        # Outlook for Windows ignores max-width; fix its width at 600px.
-        '<!--[if mso]><table role="presentation" width="600" cellpadding="0" '
+        # Outlook for Windows ignores max-width; fix its width instead.
+        f'<!--[if mso]><table role="presentation" width="{width}" cellpadding="0" '
         'cellspacing="0" border="0"><tr><td><![endif]-->'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        'border="0" style="max-width:600px;background-color:#ffffff;'
+        f'border="0" style="max-width:{width}px;background-color:#ffffff;'
         'border:1px solid #e4e7ec;border-radius:8px;"><tr>'
         '<td class="pk-body pk-card" style="padding:28px 32px;text-align:left;'
         f"font-family:{FONT};font-size:16px;line-height:1.5;color:{TEXT};"

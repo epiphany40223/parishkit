@@ -272,18 +272,16 @@ EMAILS = {
     ),
     "confirmation": _confirmation(_GIVE_ONLINE),
     "daily_digest": DefaultEmail(
-        "{{ campaign_name }}: daily progress report",
-        "<p>Here is today’s progress report for {{ parish_name }}’s "
-        "{{ campaign_name }} ({{ campaign_start }} – {{ campaign_end }}). The "
-        "figures below count only submitted Family responses; Testing responses "
-        "are never included. Open the protected report for full details.</p>",
+        # The compiled report adds the report day and parish (#720):
+        # "Annual campaign — daily report, November 2, 2026 (Example Parish)".
+        "{{ campaign_name }} — daily report",
+        # The subject names the campaign, parish and day (#720), and the figures
+        # describe the end of the previous day (#723), so one short line.
+        "<p>Here is yesterday’s report. Testing responses are never included.</p>",
     ),
     "weekly_digest": DefaultEmail(
-        "{{ campaign_name }}: weekly summary",
-        "<p>Here is this week’s summary for {{ parish_name }}’s "
-        "{{ campaign_name }}. The figures below count only submitted Family "
-        "responses. Use the link to open the protected report with full "
-        "details.</p>",
+        "{{ campaign_name }} — weekly report",
+        "<p>Here are this week’s requests for follow-up.</p>",
     ),
     "critical_alert": DefaultEmail(
         "Action needed: {{ campaign_name }} stewardship system alert",
@@ -299,6 +297,22 @@ EMAILS = {
 # only changes content created or reset afterwards; a parish's saved content
 # keeps its text. matches_default() accepts these too, so a slot saved from an
 # earlier default still shows as the default rather than as customized.
+# The report intros before #720, which repeated the parish and campaign the
+# subject now names and called the previous day "today".
+_OLD_DAILY_HTML = (
+    "<p>Here is today’s progress report for {{ parish_name }}’s "
+    "{{ campaign_name }} ({{ campaign_start }} – {{ campaign_end }}). The "
+    "figures below count only submitted Family responses; Testing responses "
+    "are never included. Open the protected report for full details.</p>"
+)
+_OLD_WEEKLY_HTML = (
+    "<p>Here is this week’s summary for {{ parish_name }}’s "
+    "{{ campaign_name }}. The figures below count only submitted Family "
+    "responses. Use the link to open the protected report with full "
+    "details.</p>"
+)
+
+
 def _older_salutation(email):
     """The same email greeting the heads by the placeholder's older name (#471)."""
     return DefaultEmail(
@@ -311,6 +325,15 @@ RETIRED_EMAILS = {
     "initial": (_older_salutation(EMAILS["initial"]),),
     "reminder": (_older_salutation(EMAILS["reminder"]),),
     "confirmation": (_confirmation(_GIVE_ONLINE_PLEDGE),),
+    # The report defaults before #720 (subjects and intros).
+    "daily_digest": (
+        DefaultEmail("{{ campaign_name }}: daily progress report", _OLD_DAILY_HTML),
+        DefaultEmail("{{ campaign_name }} — daily report", _OLD_DAILY_HTML),
+    ),
+    "weekly_digest": (
+        DefaultEmail("{{ campaign_name }}: weekly summary", _OLD_WEEKLY_HTML),
+        DefaultEmail("{{ campaign_name }} — weekly report", _OLD_WEEKLY_HTML),
+    ),
 }
 
 
