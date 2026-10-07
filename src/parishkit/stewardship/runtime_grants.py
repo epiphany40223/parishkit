@@ -13,6 +13,9 @@ from .deployment import ServiceRole
 # Explicit snapshot/read vocabulary; no wildcard over future application tables.
 WEB_READ_TABLES = frozenset(
     [
+        # Recorded skips and holds of refresh slots (#632), which the pages'
+        # data age and send-hold wording read.
+        "stewardship_source_slot_decision",
         "stewardship_setup_completion",
         "stewardship_campaign_mail_test",
         "stewardship_setup_prepared",

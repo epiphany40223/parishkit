@@ -124,6 +124,82 @@ class SourceRefreshTick(ImmutableRecord):
         ]
 
 
+# The two decisions a scheduler can record for a due slot (#632): skipped
+# around a Family email (never due, never run) or held by a bulk Family send
+# (still due, and may run as the catch-up).
+SLOT_DECISIONS = ("skipped", "held")
+# What a skip was skipped around: the reminder's preparation (its lead
+# window) or the sending of a reminder or initial invitation.
+WINDOW_CAUSES = ("reminder_preparing", "reminder_sending", "initial_sending")
+# Slot decisions are removed this long after their due time; nothing reads
+# them further back (the seven-day preview and every lookback are shorter).
+SLOT_DECISION_RETENTION_DAYS = 8
+
+
+class SourceSlotDecision(ImmutableRecord):
+    """The scheduler's one decision for a due slot that got no refresh (#632).
+
+    Written only by the scheduler, in the transaction in which it would
+    otherwise have created the slot's refresh, with the same inputs the
+    slot's tick would carry (``cause``, ``due_at``, ``timezone``, the
+    recorded ``nightly_time``) so the guard can derive and check its
+    ``slot_key``. A slot has at most one decision, so a held slot can never
+    later be recorded as skipped, and the refresh-tick guard refuses a tick
+    for a skipped slot. The table and its guards are created by the frozen
+    file ``schema/migrations/0014_slot_decisions.sql``.
+    """
+
+    configuration = models.ForeignKey(
+        "stewardship_accounts.AppliedConfigurationVersion", on_delete=models.PROTECT
+    )
+    cause = models.CharField(max_length=16)
+    due_at = UTCDateTimeField()
+    timezone = models.CharField(max_length=128)
+    nightly_time = models.CharField(max_length=5)
+    slot_key = models.CharField(max_length=64, unique=True)
+    decision = models.CharField(max_length=8)
+    window_cause = models.CharField(max_length=24, null=True)
+
+    class Meta:
+        db_table = "stewardship_source_slot_decision"
+        indexes = [
+            models.Index(fields=["due_at"], name="source_slot_decision_due"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(slot_key__regex=r"^[0-9a-f]{64}$"),
+                name="source_slot_decision_key",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    nightly_time__regex=r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                ),
+                name="source_slot_decision_time",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cause__in=("nightly", "delta", "catch_up")),
+                name="source_slot_decision_cause",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(decision__in=SLOT_DECISIONS),
+                name="source_slot_decision_kind",
+            ),
+            # A skip names its window and is never a catch-up; a hold names
+            # no window.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        decision="skipped",
+                        window_cause__in=WINDOW_CAUSES,
+                    )
+                    & ~models.Q(cause="catch_up")
+                )
+                | models.Q(decision="held", window_cause__isnull=True),
+                name="source_slot_decision_window",
+            ),
+        ]
+
+
 class SourceRefreshAttempt(ImmutableRecord):
     """One concrete claim binds its manifest, applied config and loaded credential."""
 

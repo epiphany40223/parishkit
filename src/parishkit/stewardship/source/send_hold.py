@@ -186,12 +186,21 @@ def catch_up_held(overdue):
     slot's hold does not excuse it. No slot identity is derived, so a change
     of schedule, scope or time zone during the hold keeps the evidence.
     Filtering by level first uses the operational log's level/time index.
+
+    A full or catch-up slot recorded as held in the slot decision record
+    (#632) counts as well, by its due instant: due at or after the overdue
+    slot's, with no scheduled full refresh requested between the two.
     """
-    ran_before = SourceRefreshCommand.objects.filter(
-        cause__in=SCHEDULED_FULL_CAUSES,
-        created_at__gte=overdue,
-        created_at__lt=OuterRef("created_at"),
-    )
+    from .refresh_models import SourceSlotDecision
+
+    def ran_before(field):
+        """Scheduled full requests from ``overdue`` up to the outer ``field``."""
+        return SourceRefreshCommand.objects.filter(
+            cause__in=SCHEDULED_FULL_CAUSES,
+            created_at__gte=overdue,
+            created_at__lt=OuterRef(field),
+        )
+
     return (
         OperationalLog.objects.filter(
             level="INFO",
@@ -199,7 +208,14 @@ def catch_up_held(overdue):
             event=HELD_EVENT,
             schema=HELD_SCHEMA,
         )
-        .exclude(Exists(ran_before))
+        .exclude(Exists(ran_before("created_at")))
+        .exists()
+        or SourceSlotDecision.objects.filter(
+            decision="held",
+            cause__in=SCHEDULED_FULL_CAUSES,
+            due_at__gte=overdue,
+        )
+        .exclude(Exists(ran_before("due_at")))
         .exists()
     )
 

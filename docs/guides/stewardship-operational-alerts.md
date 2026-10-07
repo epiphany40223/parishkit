@@ -82,6 +82,13 @@ category on a reviewed event, and never opens an incident or sends mail:
   decision and its insert. Only the catch-up was dropped; scheduled
   refreshes still run. Logged once per scheduler process for each catch-up;
   if it repeats, run **Run a full refresh now** and report it.
+- `refresh_decision_refused` (on `startup_validated`, #632): the database
+  refused the scheduler's record that a refresh was skipped around a
+  Family email or held for a send. Only that record was dropped; the
+  scheduler's other refreshes still run, and the slot is decided again in
+  the next loop. When a refused skip was for the latest slot of its kind,
+  that refresh runs instead of being skipped. Logged once per scheduler process for each slot; if it
+  repeats, report it.
 
 ## Checkpoints
 

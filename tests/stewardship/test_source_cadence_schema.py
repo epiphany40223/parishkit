@@ -267,11 +267,6 @@ def test_a_schedule_saved_with_its_rules_is_public_cadence():
         # Listed quick times exist only beside their rules.
         {"delta_refresh": "times", "quick_refresh_times": ["06:00"]},
         {"quick_refresh_times": ["06:00"]},
-        # Until the scheduler can skip around Family emails, it is refused.
-        rules_schedule(
-            refresh_rules=rules_schedule()["refresh_rules"]
-            | {"skip_around_family_emails": True}
-        ),
         rules_schedule(refresh_rules={"rules": []}),
         rules_schedule(full_refresh="hourly"),
         rules_schedule(delta_refresh="quarter_hour"),
@@ -288,3 +283,15 @@ def test_malformed_rule_schedules_fail_before_persistence(settings):
     base = base_version()
     with pytest.raises(ConfigError):
         build_candidate(base, schedule_patch(base, **settings), candidate_id=uuid4())
+
+
+def test_skipping_refreshes_around_family_emails_is_stored():
+    """Since #632 step 2b the scheduler honors the skip setting, so it is stored."""
+    rules = rules_schedule()["refresh_rules"] | {"skip_around_family_emails": True}
+    settings = rules_schedule(refresh_rules=rules)
+    base = base_version()
+    candidate = build_candidate(
+        base, schedule_patch(base, **settings), candidate_id=uuid4()
+    ).candidate
+    stored = candidate.document()["sections"]["integrations"][0]["values"]["settings"]
+    assert stored["refresh_rules"]["skip_around_family_emails"] is True
