@@ -215,8 +215,10 @@ text. By Administrator decision
 ([#575](https://github.com/epiphany40223/parishkit/issues/575)) the file
 carries that provenance as metadata instead: the PNG's `Description` text
 chunk and the PDF's Info `Subject`, both holding the same "Source … as of …;
-submission cutoff …; Requested …" text. CSV and XLSX exports keep it as rows,
-and the daily digest email keeps it in its text. The same drawing is used on
+submission cutoff …; Requested …" text. CSV and XLSX exports keep it as rows.
+The daily digest email states a plain as-of line instead
+([daily campaign digest](../background-processing/spec.md#daily-campaign-digest)),
+and its chart PNG keeps the metadata. The same drawing is used on
 the Participation page, in PNG and PDF exports, and in the daily digest email.
 
 For **Historical as of day**, the source cutoff is the last promoted source

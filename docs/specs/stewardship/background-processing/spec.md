@@ -1634,19 +1634,26 @@ reconciliation before cancellation or settlement.
 After every active local campaign day, default 12:15 a.m. next day and
 Admin-configurable, send:
 
-- previous-day first submissions, cumulative active participation, and
-  percentages;
-- previous-day/current cumulative pledge values when financial stewardship is
-  enabled;
+- the report day's first submissions, cumulative participation and
+  percentage;
+- the report day's cumulative annual pledges (USD), the same label as the
+  table column, when financial stewardship is enabled; and
 - the same participation chart/data basis as the web report, rendered as an
-  inline accessible image plus textual summary; and
-- current active Families/Members, eligible-email Families, participation,
-  deliverable-email Families, campaign pledge, and configured prior comparison
-  pledge statistics.
+  inline accessible image plus textual summary.
 
-Metrics are snapshotted at digest generation with data-as-of/source snapshot
-metadata and the exact ready `CampaignDailyFactSet`. The digest's ParishSoft
-line states the data age and the connection as
+The report day is the schedule slot's local date: the campaign day before the
+scheduled send. A late, retried or recovery send never moves it. Every figure
+in the email, its table and its chart comes from the report day's end-of-day
+row of one exact ready `CampaignDailyFactSet`, so the text always matches the
+chart's last point. One plain line states this, for example "All figures are
+as of the end of October 6, 2026 (EDT)." The zone abbreviation is the one in
+force at the end of the report day (EST after daylight saving time ends). The
+email's day-by-day table is captioned "Day by day". Live population figures
+(Members, eligible or deliverable email, comparison pledges) are not in the
+digest, because they cannot be stated as of the end of a past day; the
+Statistics report shows them. The digest retains its send-time observation
+and source pin with the snapshot. The digest's ParishSoft line, labeled as
+the state when the email was made, states the data age and the connection as
 [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection)
 defines them ("ParishSoft data as of …", "Connection: working"). Digest execution waits and
 retries while that exact generation is building; a failed materialization makes
