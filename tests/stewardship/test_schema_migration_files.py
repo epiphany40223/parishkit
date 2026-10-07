@@ -20,6 +20,8 @@ import hashlib
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / "src/parishkit/stewardship/schema"
 MIGRATIONS = SCHEMA / "migrations"
@@ -92,6 +94,9 @@ FROZEN = {
     ),
     "0021_slim_directory_capture.sql": (
         "40e9df61f1c6c6b35b6781510a5eda34173dc570aae85951d1e59048c2945266"
+    ),
+    "0022_directory_member_search.sql": (
+        "e81f7e08b1daf3ff046da8f877040a1b2afe9758f55a827a1d8e03db5c026a66"
     ),
 }
 
@@ -169,6 +174,39 @@ def test_frozen_files_form_one_consecutive_sequence():
     assert [int(prefix) for prefix in prefixes] == list(range(2, 2 + len(prefixes))), (
         "frozen files form one consecutive repository-wide sequence from 0002"
     )
+
+
+# A temporary object in a frozen file: CREATE [GLOBAL|LOCAL] TEMP[ORARY]
+# across any whitespace, or anything qualified with pg_temp.
+TEMP_OBJECT = re.compile(r"\bCREATE\s+((GLOBAL|LOCAL)\s+)?TEMP|\bpg_temp\.", re.I)
+
+
+def test_no_frozen_file_needs_the_temp_privilege():
+    """The deployed migration login cannot create temporary tables.
+
+    PostgreSQL test databases run as a superuser, so only the compose jobs
+    would otherwise notice; keep checks in settings or the DO block itself.
+    TEMP_OBJECT has no bare INTO TEMP pattern: frozen files have INTO
+    template lines.
+    """
+    for path in MIGRATIONS.glob("*.sql"):
+        assert not TEMP_OBJECT.search(path.read_text(encoding="utf-8")), path.name
+
+
+@pytest.mark.parametrize(
+    "text, found",
+    [
+        ("CREATE TEMPORARY TABLE x AS SELECT 1;", True),
+        ("create\n  local\ttemp table x (a int);", True),
+        ("CREATE GLOBAL TEMPORARY TABLE x (a int);", True),
+        ("SELECT * FROM pg_temp.x;", True),
+        ("SELECT body INTO template FROM t;", False),
+        ("SET search_path TO pg_catalog,public,pg_temp AS $$", False),
+    ],
+)
+def test_the_temp_privilege_scan_finds_only_temporary_objects(text, found):
+    """The scan above catches spaced or qualified forms, not look-alikes."""
+    assert bool(TEMP_OBJECT.search(text)) is found
 
 
 def test_latest_migration_copy_of_each_replaced_function_equals_the_baseline():

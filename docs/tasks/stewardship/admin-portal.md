@@ -524,7 +524,11 @@ the directory's installed search by CSRF POST, rechecks directory and
 timeline access inside the campaign read guard, and audits the search as a
 directory view without its text; `find-family-v1.js` searches after a pause,
 for 2 or more characters, cancelling older searches. Member names and the
-envelope number are #664. It is proven by
+envelope number followed in #664 (frozen migration
+`0022_directory_member_search.sql`, proven by
+`tests/stewardship/database/test_directories_postgresql.py` and
+`tests/stewardship/database/test_directory_member_search_migration_postgresql.py`).
+It is proven by
 `tests/stewardship/test_find_family.py` (who gets the box, its markup and the
 results fragment), `tests/stewardship/database/test_directories_postgresql.py`
 (results, POST-only refusals, no codes, `no-store`, audit without the text,

@@ -922,3 +922,78 @@ def test_find_a_family_runs_the_directory_search_privately(
     assert contexts and "xamp" not in json.dumps(contexts).lower()
     assert "Example" not in json.dumps(contexts)
     assert any(context["matching_count"] == 1 for context in contexts)
+
+
+def test_search_finds_active_members_and_envelope_numbers(live_response_service):
+    """Any active Member's name and the envelope number find the Family (#664).
+
+    The match never changes the row: a Family found by a Member's name is
+    the same row it is when found by its head, and the stripped matching
+    column never reaches the page or an export capture.
+    """
+    harness = live_response_service
+    data = response_source()
+    data.families[7] = data.families[1] | {
+        "familyDUID": 7,
+        "familyID": 107,
+        "envelopeNumber": 4321,
+    }
+    for duid, first, extra in (
+        (700, "Zed", {"memberType": "Head"}),
+        (701, "Penelope", {"memberType": "Other", "nickName": "Nell"}),
+        (702, "Ghostly", {"memberType": "Other", "memberStatus": "Inactive"}),
+    ):
+        data.members[duid] = (
+            data.members[3]
+            | {
+                "memberDUID": duid,
+                "familyDUID": 7,
+                "firstName": first,
+                "emailAddress": "",
+            }
+            | extra
+        )
+    # A Family that is not portal-eligible (registered elsewhere), with an
+    # active Member, stays out of the directory however it is searched.
+    data.families[8] = data.families[1] | {
+        "familyDUID": 8,
+        "familyID": 108,
+        "registeredOrganizationID": 999,
+    }
+    data.members[800] = data.members[3] | {
+        "memberDUID": 800,
+        "familyDUID": 8,
+        "firstName": "Quillon",
+        "emailAddress": "",
+    }
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    for text, expected in (
+        # A child's first name, first and last name, and nickname.
+        ("penel", [7]),
+        ("Penelope Example", [7]),
+        ("nell example", [7]),
+        ("NELL", [7]),
+        # The envelope number, whole or in part, like the DUID.
+        ("4321", [7]),
+        ("432", [7]),
+        # An inactive Member does not find the Family.
+        ("Ghostly", []),
+        # A not-portal-eligible Family's active Member finds nothing.
+        ("Quillon", []),
+        # LIKE wildcards are plain characters: they match nothing.
+        ("%", []),
+        ("_", []),
+        # Unchanged: the head's name, the surname, nothing.
+        ("zed", [7]),
+        ("Nobody", []),
+    ):
+        report = page(harness, search=text)
+        assert [row["family_duid"] for row in report["rows"]] == expected, text
+    # A Member match returns exactly the row any other match returns.
+    row = page(harness, search="penelope")["rows"][0]
+    assert row == page(harness, search="zed")["rows"][0]
+    assert row["envelope"] == "4321" and "envelope_number" not in row
+    assert [head["name"] for head in row["heads"]] == ["Zed Example"]
+    # The empty search still lists every Family, matching nothing extra.
+    assert page(harness)["total"] == 2
