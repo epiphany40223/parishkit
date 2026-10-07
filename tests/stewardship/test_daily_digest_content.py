@@ -71,7 +71,7 @@ def render(value):
 
 @pytest.mark.parametrize("separator", ["\u00a0", "'", '"'])
 def test_imported_labels_compile_without_mutating_retained_names(separator):
-    """Both mail compilers must tolerate display whitespace and literal quotes."""
+    """Imported names compile unchanged; the subject, not the body, names them."""
     value = document()
     chart = replace(
         value.participation,
@@ -80,9 +80,8 @@ def test_imported_labels_compile_without_mutating_retained_names(separator):
     )
     result = render(replace(value, participation=chart))
     validate_digest_body(result.html, result.text, result.chart.data)
-    display = " " if separator == "\u00a0" else separator
-    assert f"Example{display}Parish" in result.html
-    assert f"Annual{display}Campaign" in result.html
+    for name in (f"Example{separator}Parish", "Example Parish", "Annual Campaign"):
+        assert name not in result.html and name not in result.text
     assert chart.parish_name == f"Example{separator}Parish"
 
 
@@ -362,10 +361,9 @@ def test_branding_is_escaped_and_render_is_reproducible():
     first = render(value)
     second = render_daily_digest(value, public_origin="https://campaign.example.org/")
     assert first == second
-    assert '<img src="evil">' not in first.html
-    assert '&lt;img src="evil"&gt;' in first.html
+    # The body no longer names the parish (#720); the subject does.
+    assert "evil" not in first.html and "evil" not in first.text
     validate_digest_body(first.html, first.text, first.chart.data)
-    assert '<img src="evil">' in first.text
     assert "evil" not in repr(first)
     with pytest.raises(TypeError):
         render_daily_digest(None, public_origin="https://campaign.example.org")
@@ -454,18 +452,24 @@ def visible(html):
 
 
 def test_each_header_fact_appears_once():
-    """Parish, campaign and zone appear once; the subject alone names the report."""
+    """The body opens on the as-of line; the subject names everything else.
+
+    The Administrator trimmed the header and small print (#720): the parish
+    and campaign are left to the subject, the as-of line is the only place
+    naming the report day's zone, and no ParishSoft or sign-in note remains.
+    """
     instant = document().participation.requested_at
     value = replace(
         document(), source_age=DataAge(instant, instant, Connection("working", instant))
     )
     result = render(value)
     for body in (visible(result.html), result.text):
-        assert body.count("Example Parish") == 1
-        assert body.count("Annual stewardship") == 1
+        assert "Example Parish" not in body and "Annual stewardship" not in body
         assert body.count("EST") == 1 and "America/New_York" not in body
         assert "Daily campaign digest" not in body
         assert body.count("November 2, 2026") == 1
+        assert "ParishSoft" not in body and "sign-in" not in body
+    assert visible(result.html).lstrip().startswith("All figures are as of")
     assert result.subject == "Daily campaign digest — November 2, 2026"
 
 
@@ -475,7 +479,7 @@ def test_each_header_fact_appears_once():
         '<table><tbody><tr><td bgcolor="#ff0000">x</td></tr></tbody></table>',
         '<table><tbody><tr><td width="40px">x</td></tr></tbody></table>',
         '<table><tbody><tr><td align="center">x</td></tr></tbody></table>',
-        f'<ul><li style="{STYLES["footer"]}">x</li></ul>',
+        f'<ul><li style="{STYLES["caption"]}">x</li></ul>',
         '<p style="color:red">x</p>',
     ],
 )

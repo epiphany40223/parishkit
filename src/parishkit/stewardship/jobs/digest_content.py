@@ -36,6 +36,32 @@ class DigestTemplate:
             raise ValueError("Admin digest template requires canonical safe content.")
 
 
+# Room for the "[TEST] " prefix within the 254-character subject limit.
+MAX_SUBJECT = 247
+
+
+def identified_subject(authored, report, *, campaign, parish):
+    """Make the subject name the report and its day, the campaign and parish.
+
+    The report emails open straight into their content (#720), so the subject
+    is the only place that names them. The Administrator's own subject comes
+    first; the compiled report title (for example "Weekly information digest
+    — October 5, 2026") and any of the campaign and parish names it does not
+    already contain follow, so nothing is said twice.
+    """
+    subject = " ".join(authored.split())
+    if report.casefold() not in subject.casefold():
+        subject = f"{subject} — {report}" if subject else report
+    names = [
+        name
+        for name in (campaign, parish)
+        if name and name.casefold() not in subject.casefold()
+    ]
+    if names:
+        subject += f" ({', '.join(names)})"
+    return subject if len(subject) <= MAX_SUBJECT else subject[: MAX_SUBJECT - 1] + "…"
+
+
 def render_digest_envelope(
     *,
     identity,
@@ -78,7 +104,12 @@ def render_digest_envelope(
         bounded_text(value)
     if normalized_email(recipient) != recipient:
         raise ValueError("Admin digest requires one canonical intended recipient.")
-    subject = render_template(template.subject, values, subject=True)
+    subject = identified_subject(
+        render_template(template.subject, values, subject=True),
+        content.subject,
+        campaign=" ".join(values.get("campaign_name", "").split()),
+        parish=" ".join(values.get("parish_name", "").split()),
+    )
     html = render_template(template.html, values, html=True)
     text = render_template(template.text, values)
     # Validate authored substitutions together before appending compiler-owned

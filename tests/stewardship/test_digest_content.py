@@ -10,6 +10,7 @@ from parishkit.email.base import InlineImage
 from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.jobs.digest_content import (
     DigestTemplate,
+    identified_subject,
     render_digest_envelope,
 )
 from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
@@ -190,3 +191,51 @@ def test_substitution_cannot_assemble_a_reserved_marker():
     )
     with pytest.raises(ValueError):
         render_digest_envelope(**values)
+
+
+@pytest.mark.parametrize(
+    ("authored", "expected"),
+    [
+        (
+            "{{ campaign_name }} — daily report",
+            "Annual campaign — daily report — Daily campaign digest — "
+            "November 2, 2026 (Example Parish)",
+        ),
+        (
+            "{{ parish_name }}: Daily campaign digest — November 2, 2026, "
+            "{{ campaign_name }}",
+            "Example Parish: Daily campaign digest — November 2, 2026, Annual campaign",
+        ),
+        (
+            "",
+            "Daily campaign digest — November 2, 2026 "
+            "(Annual campaign, Example Parish)",
+        ),
+    ],
+)
+def test_subject_names_report_day_campaign_and_parish_once(authored, expected):
+    """The body no longer names them (#720), so the subject must, without repeats."""
+    values = arguments()
+    values["template"] = DigestTemplate(authored or "x")
+    values["content"] = replace(
+        values["content"], subject="Daily campaign digest — November 2, 2026"
+    )
+    values["values"] = {
+        "campaign_name": "Annual campaign",
+        "parish_name": "Example Parish",
+    }
+    if not authored:
+        assert (
+            identified_subject(
+                "",
+                "Daily campaign digest — November 2, 2026",
+                campaign="Annual campaign",
+                parish="Example Parish",
+            )
+            == expected
+        )
+        return
+    subject = render_digest_envelope(**values).subject
+    assert subject == expected
+    for fact in ("Example Parish", "Annual campaign", "November 2, 2026"):
+        assert subject.count(fact) == 1

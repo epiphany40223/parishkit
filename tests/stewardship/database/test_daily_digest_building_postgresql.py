@@ -55,11 +55,11 @@ def test_ready_daily_content_pins_exact_facts_before_fanout(response_service):
         assert ready.fact_set_id == document.participation.fact_set_id
         assert bytes(ready.chart) == content.chart.data
         assert ready.html == content.html and ready.text == content.text
-        # The ParishSoft line states the data age and the connection as known
-        # at the observation, read by the exact worker login (#510).
+        # The data age and connection are read by the exact worker login
+        # (#510) and shown on the saved report page; the email no longer
+        # carries the ParishSoft line (#720).
         assert document.source_age is not None
-        assert "ParishSoft data as of " in ready.text
-        assert "Connection: " in ready.text and "Connection: " in ready.html
+        assert "ParishSoft" not in ready.text and "ParishSoft" not in ready.html
         assert ready.recipients == ["admin@example.org"]
         assert (
             DailyDigestPreparation.objects.get(task_id=claim.run_id).phase == "fanout"

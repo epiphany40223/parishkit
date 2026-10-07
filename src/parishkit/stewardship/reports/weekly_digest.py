@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.dates import format_date, format_local
-from parishkit.stewardship.web.report_markup import STYLES
+from parishkit.stewardship.web.report_markup import STYLES, button
 from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
 
 from .links import report_url
@@ -202,18 +202,11 @@ def _render_weekly_digest(document, *, public_origin):
         "Manual weekly" if document.manual else "Weekly"
     ) + f" information digest — {format_date(observed.date())}"
     url = report_url(public_origin, document.report_path)
-    # Say each fact once (#720): the subject names the report, so the body
-    # opens with one line for the parish and campaign and one for the
-    # capture, the only place that names the time zone. Each section's
-    # heading carries its count; rows give submitted times without a zone.
-    eyebrow = " ".join(f"{document.parish_name} · {document.campaign_name}".split())
-    caption = ("Manual report, captured " if document.manual else "Captured ") + (
-        f"{format_local(observed)}."
-    )
-    footer = (
-        "Staff sign-in required. Emailed text reflects the capture time; the "
-        "protected report shows each request's current status."
-    )
+    # The Administrator asked (#720) for the email to open straight into the
+    # numbered requests: the subject names the parish, campaign, report and
+    # capture date (see render_digest_envelope), so the body repeats none of
+    # them and has no explanatory small print. Each section's heading
+    # carries its count; rows give submitted times without a zone.
     new = "current" if document.manual else "new"
     sections = (
         (
@@ -228,20 +221,19 @@ def _render_weekly_digest(document, *, public_origin):
             document.corrections,
         ),
     )
-    text = eyebrow + "\n" + caption
+    text = ""
 
     def plain(value):
         """Escape a text node; canonical HTML leaves quotes literal there."""
         return escape(value, quote=False)
 
-    html = f"<p{_style('eyebrow')}>{plain(eyebrow)}</p>"
-    html += f"<p{_style('caption')}>{plain(caption)}</p>"
+    html = ""
     for heading, rows in sections:
         if not rows:
             continue
         html += f"<h2{_style('heading')}>{heading}</h2>"
         html += f"<table{TABLE}{_style('table')}><tbody>"
-        text += "\n\n" + heading
+        text += ("\n\n" if text else "") + heading
         numbered = rows is document.information
         for number, row in enumerate(rows, start=1):
             # Imported names can contain NBSP or CR; collapse display-only
@@ -261,7 +253,7 @@ def _render_weekly_digest(document, *, public_origin):
                 )
                 shortened = False
             item_url = escape(url + f"items/{row.item_id}/", quote=True)
-            link = f'<a href="{item_url}" rel="noopener noreferrer">'
+            link = f'<a href="{item_url}"{_style("link")} rel="noopener noreferrer">'
             # Numbers are table cells, not list markers, so every mail program
             # shows the same stable 1, 2, 3 a reader can refer back to.
             label = f"{number}." if numbered else ""
@@ -274,17 +266,11 @@ def _render_weekly_digest(document, *, public_origin):
                 + "</td></tr>"
             )
             prefix = f"{number}. " if numbered else ""
-            text += f"\n\n{prefix}{family}; {submitted.lower()}\n{detail}"
+            text += f"\n\n{prefix}{family}. {submitted}\n{detail}"
             link_label = "Read the full request: " if shortened else ""
             text += "\n" + link_label + url + f"items/{row.item_id}/"
         html += "</tbody></table>"
-    html += (
-        f'<p{_style("action")}><a href="'
-        + escape(url, quote=True)
-        + f'"{_style("button")} rel="noopener noreferrer">Open protected report</a></p>'
-    )
-    html += f"<p{_style('footer')}>{plain(footer)}</p>"
+    html += button(url, "Open protected report")
     text += "\n\nOpen protected report (staff login required): " + url
-    text += "\n\n" + footer.removeprefix("Staff sign-in required. ")
     validate_weekly_body(html, text)
     return WeeklyDigestContent(title, html, text)

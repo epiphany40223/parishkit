@@ -8,20 +8,33 @@ a tag list. Parish-authored content never gains these attributes.
 """
 
 import re
+from html import escape
 
-# The shared report palette (reports spec, "Chart palette and style").
+# The Admin portal's own values (accounts/static/stewardship/ui-v1.css:
+# --ink, --muted, --accent, --link, --radius-small and the primary button
+# rule), copied so the report emails look like the portal. Email cannot read
+# the portal's CSS custom properties; #732 lifts these into shared tokens
+# for every email and the portal.
+INK = "#1b2a31"  # --ink
+MUTED = "#4f5e66"  # --muted
+ACCENT = "#115e56"  # --accent: primary button background and border
+LINK = "#155a8a"  # --link
+BUTTON_RADIUS = "8px"  # --radius-small (.5rem)
+BUTTON_PADDING = "10px 20px"  # .6rem 1.25rem
+# The portal's weight is 650; mail programs only reliably draw bold (700).
+BUTTON_WEIGHT = "bold"
+
+# The report chart palette (reports spec, "Chart palette and style").
 BLUE = "#1f6fae"
 ORANGE = "#b8620a"
 TRACK = "#e4e7ec"
-INK = "#1f2933"
-MUTED = "#52606d"
 BAR_COLOURS = {BLUE, ORANGE, TRACK}
+# Cell background colours: the bars, and the primary button's cell.
+CELL_COLOURS = BAR_COLOURS | {ACCENT}
 
 # The only inline styles a compiled report may carry.
 STYLES = {
     "caption": f"margin:0 0 20px;font-size:14px;color:{MUTED};",
-    "eyebrow": f"margin:0 0 4px;font-size:14px;color:{MUTED};",
-    "title": f"margin:0 0 4px;font-size:24px;line-height:1.25;color:{INK};",
     "heading": f"margin:28px 0 12px;font-size:18px;line-height:1.3;color:{INK};",
     "rows": "border-collapse:collapse;margin:0 0 8px;",
     "label": f"padding:8px 16px 8px 0;font-size:16px;color:{INK};",
@@ -38,11 +51,19 @@ STYLES = {
     ),
     "td": f"padding:7px 12px 7px 0;font-size:15px;color:{INK};"
     f"border-bottom:1px solid {TRACK};",
+    # The portal's primary button as a "bulletproof" email button: the
+    # coloured table cell draws it even where a link's padding is ignored
+    # (Outlook for Windows), and the link fills the cell elsewhere. White on
+    # the dark accent stays legible when a mail program inverts dark mode.
+    "action": "border-collapse:separate;margin:24px 0 0;",
+    "button-cell": f"border-radius:{BUTTON_RADIUS};background-color:{ACCENT};",
     "button": (
-        f"display:inline-block;background-color:{BLUE};color:#ffffff;"
-        "text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:6px;"
+        f"display:inline-block;padding:{BUTTON_PADDING};"
+        f"border:2px solid {ACCENT};border-radius:{BUTTON_RADIUS};"
+        f"background-color:{ACCENT};color:#ffffff;font-size:16px;"
+        f"font-weight:{BUTTON_WEIGHT};line-height:1.3;text-decoration:none;"
     ),
-    "action": "margin:24px 0 0;",
+    "link": f"color:{LINK};text-decoration:underline;",
     # The weekly digests' numbered request rows.
     "who": (
         f"padding:12px 24px 12px 0;font-size:15px;color:{INK};"
@@ -56,7 +77,6 @@ STYLES = {
         f"padding:12px 12px 12px 0;font-size:15px;font-weight:bold;color:{MUTED};"
         f"vertical-align:top;text-align:right;border-bottom:1px solid {TRACK};"
     ),
-    "footer": f"margin:16px 0 0;font-size:13px;line-height:1.5;color:{MUTED};",
 }
 _STYLE_VALUES = frozenset(STYLES.values())
 # Closed values for the presentational table attributes the bars use.
@@ -88,9 +108,25 @@ def layout_attribute(tag, attribute, value):
     if attribute == "style":
         return value if value in _STYLE_VALUES else None
     if attribute == "bgcolor":
-        return value if value in BAR_COLOURS else None
+        return value if value in CELL_COLOURS else None
     if attribute == "width":
         return value if _PERCENT.fullmatch(value) else None
     if attribute in _FIXED:
         return value if value in _FIXED[attribute] else None
     return value
+
+
+def button(url, label):
+    """The portal's primary button, built from table cells for every mail program.
+
+    ``url`` and ``label`` are escaped here; the rest is this module's closed
+    markup, which the report validators admit.
+    """
+    return (
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
+        f' style="{STYLES["action"]}"><tbody><tr>'
+        f'<td bgcolor="{ACCENT}" style="{STYLES["button-cell"]}">'
+        f'<a href="{escape(url, quote=True)}" style="{STYLES["button"]}"'
+        f' rel="noopener noreferrer">{escape(label, quote=False)}</a>'
+        "</td></tr></tbody></table>"
+    )

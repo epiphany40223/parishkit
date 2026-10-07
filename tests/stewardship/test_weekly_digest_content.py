@@ -57,7 +57,7 @@ def test_weekly_retains_identities_corrections_and_explicit_timezone():
         for required in (
             "Family DUID 1234",
             "Please call us.",
-            "November 2, 2026 at 12:15 AM EST",
+            "Nov 2, 2026 12:15 AM",
             "Superseded:",
             "Withdrawn:",
         ):
@@ -72,7 +72,7 @@ def test_weekly_retains_identities_corrections_and_explicit_timezone():
     # request is one wide row, and the sign-in note is small print last.
     html = result.html
     assert html.index("1 new actionable request") < html.index("Family DUID 1234")
-    assert html.index("Family DUID 1234") < html.index("Staff sign-in required.")
+    assert html.index("Family DUID 1234") < html.index("Open protected report")
     assert '<td width="64%"' in html
     assert "A &amp; B" in result.html and "A & B" in result.text
     assert not hasattr(document().corrections[0], "text")
@@ -106,7 +106,7 @@ def test_only_excerpt_is_trimmed_and_manual_label_is_explicit():
     assert len(excerpt(text)) <= 240 and excerpt(text).endswith("private…")
     assert item.text == text
     assert result.subject.startswith("Manual weekly")
-    assert "Manual report, captured" in result.text and excerpt(text) in result.text
+    assert excerpt(text) in result.text
     assert "1 current actionable request" in result.text
     assert excerpt("short\n\ttext") == "short text"
 
@@ -129,8 +129,8 @@ def test_imported_label_whitespace_compiles_without_changing_retained_identity(
     )
     assert item.family_name == name
     assert "Example Family" in result.html
-    assert "Example Parish" in result.html
-    assert "Annual Campaign" in result.html
+    # The subject names the parish and campaign (#720); the body does not.
+    assert "Parish" not in result.html and "Campaign" not in result.html
     validate_weekly_body(result.html, result.text)
 
 
@@ -276,9 +276,11 @@ def test_pinned_date_format_overrides_the_ambient_style():
         pinned = render(replace(document(), date_format="eu_dot"))
         unset = render()
     assert pinned.subject.endswith(dates.format_date(local.date(), "eu_dot"))
-    assert dates.format_local(local, "eu_dot") in pinned.text
+    assert dates.format_local(local, "eu_dot", compact=True) in pinned.text
     assert unset.subject.endswith(dates.format_date(local.date(), "us_long"))
-    assert dates.format_local(local, "iso") not in pinned.text + unset.text
+    assert (
+        dates.format_local(local, "iso", compact=True) not in pinned.text + unset.text
+    )
 
 
 def test_date_format_must_be_text_or_unset():
@@ -351,12 +353,17 @@ def test_ellipsis_and_full_request_link_only_when_shortened(text, shortened):
 
 
 def test_each_header_fact_appears_once():
-    """Parish, campaign and zone once; the subject alone names the report."""
+    """The body opens straight into the numbered requests (#720).
+
+    Parish, campaign, report and capture date are left to the subject, so
+    the body names none of them, says nothing twice and has no small print.
+    """
     result = render()
     visible = re.sub(r"<[^>]+>", " ", result.html)
     for body in (visible, result.text):
-        assert body.count("Example Parish") == 1
-        assert body.count("Annual campaign") == 1
-        assert body.count("EST") == 1 and "America/New_York" not in body
-        assert "information digest" not in body
-    assert result.subject.startswith("Weekly information digest")
+        assert "Example Parish" not in body and "Annual campaign" not in body
+        assert "EST" not in body and "America/New_York" not in body
+        assert "information digest" not in body and "Captured" not in body
+        assert "sign-in" not in body and "capture time" not in body
+        assert body.lstrip().startswith("1 new actionable request")
+    assert result.subject == "Weekly information digest — November 2, 2026"

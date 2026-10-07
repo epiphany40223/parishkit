@@ -18,7 +18,7 @@ from parishkit.stewardship.source.data_age import DataAge
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.dates import format_date
 from parishkit.stewardship.web.digest_content import CHART_ID, EMAIL_CHART_WIDTH
-from parishkit.stewardship.web.report_markup import BLUE, STYLES, TRACK
+from parishkit.stewardship.web.report_markup import BLUE, STYLES, TRACK, button
 
 from .charts import render_participation
 from .links import report_url
@@ -371,11 +371,12 @@ def render_daily_digest(document, *, public_origin):
 def _render_daily_digest(document, *, public_origin):
     """Compile the report body; the caller has pinned the parish date format.
 
-    Visuals come first (#720): a short header and the as-of caption, then one
-    line per campaign total with its bar, the chart, and the day-by-day table.
-    The ParishSoft connection line and the sign-in note are small print at the
-    end. Every value is escaped; every attribute comes from this compiler and
-    the validator's closed set.
+    Visuals come first (#720): the as-of line, then one line per campaign
+    total with its bar, the chart, the day-by-day table and the report link.
+    The subject names the parish, campaign and report day (see
+    render_digest_envelope), so the body has no header or small print. Every
+    value is escaped; every attribute comes from this compiler and the
+    validator's closed set.
     """
     chart = document.participation
     url = _report_url(document, public_origin)
@@ -384,46 +385,28 @@ def _render_daily_digest(document, *, public_origin):
         headings.append(PLEDGE_HEADING)
     totals = report_day_bars(document)
     rows = digest_rows(document)
-    footer = ""
-    if document.source_age is not None:
-        # The ParishSoft line is connection health at the send, not the time
-        # the figures describe; say so, so it cannot read as a second "as of".
-        footer = "When this email was made: " + source_age_line(
-            document.source_age, chart.campaign_timezone, zone=False
-        )
-    # Say each fact once (#720): the subject names the report, so the body
-    # has no title; the parish and campaign appear once; the as-of line is
-    # the only place that names the time zone. A recovery digest also says
-    # which days it covers.
+    # Say each fact once (#720): the as-of line is the report-day definition
+    # (#721) and the only place that names the time zone. A recovery digest
+    # also says which days it covers. The ParishSoft connection line is on
+    # the saved report page, not in the email.
     first, last = document.covered_dates[0], document.covered_dates[-1]
     as_of = document.as_of
     if first != last:
         as_of = f"Covers {format_date(first)} through {format_date(last)}. {as_of}"
     # Match weekly display normalization; retained observations remain exact.
     # The strict HTML compiler boundary rejects NBSP parser rewrites.
-    eyebrow, as_of, footer, alt = (
-        " ".join(label.split())
-        for label in (
-            f"{chart.parish_name} · {chart.campaign_name}",
-            as_of,
-            footer,
-            chart_alt(document),
-        )
-    )
-    text = "\n".join((eyebrow, as_of))
+    as_of, alt = (" ".join(label.split()) for label in (as_of, chart_alt(document)))
+    text = as_of
     text += "\n\n" + "\n".join(f"{label}: {value}" for label, value, _b, _n in totals)
     text += "\n\n" + " | ".join(headings)
     text += "\n" + "\n".join(" | ".join(row) for row in rows)
     text += "\n\nOpen this exact report (staff login required): " + url
-    if footer:
-        text += "\n\n" + footer
 
     def plain(value):
         """Escape a text node; canonical HTML leaves quotes literal there."""
         return escape(value, quote=False)
 
-    html = f"<p{_style('eyebrow')}>{plain(eyebrow)}</p>"
-    html += f"<p{_style('caption')}>{plain(as_of)}</p>"
+    html = f"<p{_style('caption')}>{plain(as_of)}</p>"
     html += f"<h2{_style('heading')}>Campaign totals</h2>"
     html += (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
@@ -465,14 +448,7 @@ def _render_daily_digest(document, *, public_origin):
         for row in rows
     )
     html += "</tbody></table>"
-    html += (
-        f'<p{_style("action")}><a href="'
-        + escape(url, quote=True)
-        + f'"{_style("button")} rel="noopener noreferrer">Open this exact report'
-        "</a></p>"
-    )
-    small_print = " ".join(("Staff sign-in required.", footer)).strip()
-    html += f"<p{_style('footer')}>{plain(small_print)}</p>"
+    html += button(url, "Open this exact report")
     stream = BytesIO()
     render_participation(chart, stream, format="png", email=True)
     return DailyDigestContent(

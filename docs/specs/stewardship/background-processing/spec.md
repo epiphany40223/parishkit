@@ -1663,10 +1663,14 @@ facts. Later source/status changes do not rewrite the sent digest.
 The email is desktop-first and visual
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)): a 960px
 column (fixed at 960px in Outlook for Windows; a narrower window shrinks it),
-not the 600px column of Family mail. It says each fact once: the subject names
-the report, so the body has no title; one line names the parish and campaign;
-the as-of line is the only place that names the time zone (a recovery digest
-starts it with the dates it covers). **Campaign totals** follow, one line per
+not the 600px column of Family mail. It says each fact once and opens with its
+content. The subject names the report, its report day, the campaign and the
+parish: the Administrator's subject comes first, followed by the compiled
+report title ("Daily campaign digest — October 6, 2026") and whichever of the
+campaign and parish names it does not already contain. The body has no title
+or name line; it starts with the as-of line, the only place that names the
+time zone (a recovery digest starts it with the dates it covers). Any
+Administrator-written intro stays above the report. **Campaign totals** follow, one line per
 figure: its label, a bar drawn with table cells (so it shows in every mail
 program, with images off too), and the exact value, for example "Families
 that have responded — 10 out of 93 (10.8%)". Families that have responded are
@@ -1676,8 +1680,10 @@ bar is never drawn full unless the share is complete. Pledges have no bar,
 since their only comparison is a live figure. The chart follows (its date axis
 names no zone), with alt text carrying the same totals, then the day-by-day
 table of the last seven campaign days (every covered date of a recovery
-digest, however many), the link to the saved report, and the ParishSoft line
-as small print at the end, its times without a zone. The digest validator
+digest, however many), and the button to the saved report, drawn like the
+Admin portal's primary button (its accent colour, radius, padding and bold
+label, as a table cell so every mail program shows it). There is no small
+print: the ParishSoft connection is on the saved report page. The digest validator
 admits only the compiler's closed set of inline styles, bar colours and table
 attributes, so this markup cannot carry anything else.
 
@@ -1701,9 +1707,9 @@ so it does not reconsider the same interval.
 
 The weekly and manual emails use the daily digest's desktop layout and its
 closed set of report markup ([daily campaign digest](#daily-campaign-digest)),
-with no image, and likewise say each fact once: one line for the parish and
-campaign and one for the capture time, the only place that names the time
-zone ("Manual report, captured …" for a manual one). Each section's heading
+with no image, and likewise open straight into their content: the subject
+names the report and its capture date, the campaign and the parish, in the
+same way as the daily digest's, so the body has no header line. Each section's heading
 carries its count ("5 new actionable requests", "1 correction to previously
 reported requests"), then one table row per request: the Family, DUID, link
 and submitted time (no zone) on the left and the text on the right. The
@@ -1711,8 +1717,8 @@ actionable requests are numbered 1, 2, 3 in number cells, not list markers,
 so the numbers are the same in every mail program and a reader can refer back
 to them. A request's text longer than 240 characters is shortened at a word
 boundary and ends with "…" and a "Read the full request" link to its page;
-complete text has neither. The sign-in and capture-time note is small print
-at the end.
+complete text has neither. Links use the portal's link colour, and the
+report button is the portal's primary button. There is no small print.
 
 Changing Admin recipients does not resend past successful digests. An Admin may
 manually generate/send a new report occurrence, visibly labeled manual and
