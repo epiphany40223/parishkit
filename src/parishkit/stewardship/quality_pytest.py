@@ -8,7 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from .quality_sharding import BROWSER_ENGINES, browser_partition, partition
+from .quality_sharding import (
+    BROWSER_ENGINES,
+    browser_label,
+    browser_partition,
+    parse_browser_partition,
+    partition,
+)
 
 # Pin discovery semantics through pytest's public getini API. Changing these
 # defaults is an explicit suite-ownership change, not an implicit CI override.
@@ -45,6 +51,10 @@ def pytest_addoption(parser):
     parser.addoption(
         "--ci-browser-evidence", help="New external browser completion receipt"
     )
+    parser.addoption(
+        "--ci-browser-partition",
+        help="Run job INDEX/COUNT of the selected engine's cases (default 1/1)",
+    )
 
 
 def pytest_configure(config):
@@ -55,6 +65,10 @@ def pytest_configure(config):
         "--ci-browser-engine"
     ):
         raise pytest.UsageError("Browser evidence requires an engine partition")
+    if config.getoption("--ci-browser-partition") and not config.getoption(
+        "--ci-browser-engine"
+    ):
+        raise pytest.UsageError("A browser partition requires an engine")
     if config.getoption("--ci-shard") or config.getoption("--ci-progress"):
         config.pluginmanager.register(Progress(config), "stewardship-ci-progress")
     if config.getoption("--ci-browser-engine"):
@@ -70,6 +84,12 @@ class BrowserSelection:
         """Reject partial selectors and mixed profiles before collecting the suite."""
         self.config = config
         self.engine = config.getoption("--ci-browser-engine")
+        try:
+            self.partition = parse_browser_partition(
+                config.getoption("--ci-browser-partition") or "1/1"
+            )
+        except ValueError as error:
+            raise pytest.UsageError(str(error)) from error
         self.directory = config.rootpath.resolve() / "tests/stewardship/browser"
         self.selected = []
         self.executed = []
@@ -138,7 +158,7 @@ class BrowserSelection:
             for item in items
         ]
         try:
-            selected = set(browser_partition(cases, self.engine))
+            selected = set(browser_partition(cases, self.engine, *self.partition))
         except ValueError as error:
             raise pytest.UsageError(str(error)) from error
         self.selected = sorted(selected)
@@ -147,7 +167,8 @@ class BrowserSelection:
         self.config.hook.pytest_deselected(items=removed)
         reporter = self.config.pluginmanager.get_plugin("terminalreporter")
         reporter.write_line(
-            f"CI_BROWSER_PARTITION {self.engine}: {len(selected):,} out of "
+            f"CI_BROWSER_PARTITION {browser_label(self.engine, *self.partition)}: "
+            f"{len(selected):,} out of "
             f"{len(cases):,} ({len(selected) / len(cases):.1%}) cases"
         )
 
@@ -171,6 +192,7 @@ class BrowserSelection:
                 json.dump(
                     {
                         "engine": self.engine,
+                        "partition": list(self.partition),
                         "selected": self.selected,
                         "executed": sorted(self.executed),
                     },

@@ -5,13 +5,94 @@ from pathlib import Path
 
 BROWSER_ENGINES = ("chromium", "firefox", "webkit")
 
+# The browser CI jobs (#627), one workflow matrix entry each; every entry
+# runs its ENGINE:INDEX/COUNT partitions in turn. test_browser_ci.py requires
+# the matrix to equal this and every engine's partitions to appear exactly
+# once. Measured before the split (2026-10-06 full runs): one job per engine,
+# with test steps of a median 22.6 minutes (WebKit), 14.5 (Firefox) and 7.8
+# (Chromium), plus 1-2 minutes of setup. Halving WebKit and Chromium and
+# pairing the halves gives three jobs of about 15 minutes of tests each, so
+# the WebKit long pole is gone without adding a runner slot.
+BROWSER_JOBS = (
+    "firefox:1/1",
+    "webkit:1/2 chromium:1/2",
+    "webkit:2/2 chromium:2/2",
+)
 
-def browser_partition(cases, engine):
+# Scheduling hints only: median WebKit seconds per test file, from CI runs
+# 37532589327, 37539678473 and 37543609615. Other files weigh
+# BROWSER_CASE_SECONDS per case. Hints never select or exclude a test; they
+# only balance whole files (which keeps module-scoped fixtures together)
+# across an engine's jobs. Engines differ in speed but not much in shape.
+BROWSER_FILE_SECONDS = {
+    "test_components.py": 235,
+    "test_family_pages.py": 60,
+    "test_rule_autosave.py": 60,
+    "test_about_page.py": 48,
+    "test_automation.py": 48,
+    "test_family_financial.py": 46,
+    "test_family_service.py": 38,
+    "test_system_logs.py": 37,
+    "test_family_response.py": 36,
+    "test_in_place.py": 34,
+    "test_table_sorting.py": 32,
+    "test_family_acceptance.py": 31,
+    "test_send_progress.py": 31,
+    "test_followup_in_place.py": 27,
+    "test_member_census.py": 26,
+    "test_time_entry.py": 24,
+    "test_ministry_followup.py": 24,
+    "test_content_editor.py": 21,
+    "test_family_census.py": 21,
+    "test_member_requests.py": 20,
+}
+BROWSER_CASE_SECONDS = 1.5
+
+
+def parse_browser_partition(value):
+    """Parse a browser job's INDEX/COUNT, such as "2/2"."""
+    try:
+        index, count = (int(part) for part in value.split("/"))
+    except (AttributeError, ValueError):
+        raise ValueError("Invalid browser partition") from None
+    if not 1 <= index <= count <= 8:
+        raise ValueError("Invalid browser partition")
+    return (index, count)
+
+
+def parse_browser_runs(value):
+    """Parse one job's space-separated ENGINE:INDEX/COUNT partitions."""
+    if type(value) is not str:
+        raise ValueError("Invalid browser job")
+    runs = []
+    for part in value.split():
+        engine, _, partition = part.partition(":")
+        if engine not in BROWSER_ENGINES or engine in {run[0] for run in runs}:
+            raise ValueError("Invalid browser job")
+        runs.append((engine, *parse_browser_partition(partition)))
+    if not runs:
+        raise ValueError("Invalid browser job")
+    return runs
+
+
+def browser_label(engine, index, count):
+    """Name a browser job in logs: the engine alone when it is not split."""
+    return engine if count == 1 else f"{engine} {index}/{count}"
+
+
+def browser_partition(cases, engine, index=1, count=1):
     """Assign every browser case by its actual fixture parameter, not its name.
 
     Require one supported owner for each unique node and all three engines in
     the complete collection. A new unowned case must fail CI rather than vanish
     from every partition. Ordinary local runs do not call this selector.
+
+    With COUNT above one, the engine's cases are further split into COUNT
+    disjoint jobs by whole test file: heaviest file first (by the hints
+    above), each to the least-loaded job, ties broken by name and job number.
+    The split depends only on the collected node IDs, never their order, so
+    every job computes the same assignment and together they run every case
+    exactly once. A job that would receive no files fails instead.
     """
     if (
         engine not in BROWSER_ENGINES
@@ -32,7 +113,28 @@ def browser_partition(cases, engine):
         raise ValueError("Browser collection contains duplicate cases")
     if {owner for _, owner in cases} != set(BROWSER_ENGINES):
         raise ValueError("Browser collection must exercise every supported engine")
-    return sorted(node for node, owner in cases if owner == engine)
+    if type(index) is not int or type(count) is not int or not 1 <= index <= count <= 8:
+        raise ValueError("Invalid browser partition")
+    files = {}
+    for node, owner in cases:
+        if owner == engine:
+            files.setdefault(node.split("::", 1)[0], []).append(node)
+    if len(files) < count:
+        raise ValueError("Browser partition would select no tests")
+
+    def weight(path):
+        """Recorded seconds for a known file, else a per-case estimate."""
+        name = path.rsplit("/", 1)[-1]
+        return BROWSER_FILE_SECONDS.get(name, len(files[path]) * BROWSER_CASE_SECONDS)
+
+    loads = [0] * count
+    mine = []
+    for path in sorted(files, key=lambda path: (-weight(path), path)):
+        target = min(range(count), key=lambda job: (loads[job], job))
+        loads[target] += weight(path)
+        if target == index - 1:
+            mine.extend(files[path])
+    return sorted(mine)
 
 
 # Scheduling hints, updated from CI run 35438716036. These never select or

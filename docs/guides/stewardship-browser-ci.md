@@ -40,6 +40,31 @@ The historical measurements below describe the original increment.
    protected merge-group CI. Compare observed critical-path runtime without
    claiming a guaranteed speedup before measurement.
 
+## Engine partitions (#627)
+
+Issue #627 later split the slowest engine across CI jobs.
+`quality_sharding.BROWSER_JOBS` lists the jobs, and the workflow matrix runs
+one job per entry: Firefox whole, and WebKit and Chromium each halved, one half
+of each per job. `test_browser_ci.py` requires the matrix to match and every
+engine's partitions to appear exactly once. An engine's partitions split its
+cases by whole test file, balanced by recorded per-file WebKit seconds
+(`BROWSER_FILE_SECONDS`, scheduling hints only), so module fixtures stay
+together. `quality_browser --runs` runs a job's partitions in turn under one
+38-minute deadline and fails the job if any partition fails. Every partition
+still uses `--require-no-skips` and must return a receipt naming its engine and
+partition that matches its exact selection, and `stewardship-browser` still
+requires every matrix job. Before the split, WebKit's test step took a median
+22.6 minutes (job 24.0), Firefox's 14.5 (job 15.6) and Chromium's 7.8 (job
+10.0); each job now runs about 15 minutes of tests. The same change runs all
+four operational provider modes on one runner (about 18 minutes), so a full run
+uses no more runner slots than before.
+
+To refresh `BROWSER_FILE_SECONDS`, sum each file's `CI_PROGRESS ... END
+... elapsed=` seconds from a few recent WebKit job logs (`gh api
+repos/OWNER/REPO/actions/jobs/ID/logs`), take the median per file, and record
+files of 20 seconds or more along with the source run IDs; hints change only
+placement, never which tests run.
+
 ## Evidence
 
 The selector uses each collected item's actual `browser_engine` parameter.
@@ -55,8 +80,9 @@ inspection use the ordinary serial `--collect-only --collection-manifest`
 command without the CI selector; CI execution itself cannot be collection-only.
 
 The CI workflow invokes `python -m parishkit.stewardship.quality_browser --engine
-<engine>`. This bounded runner clears inherited pytest selectors, keeps output
-live, and requires a fresh private completion receipt outside the checkout.
+<engine>` (since #627: `--runs`, two engines per job; see
+[Engine partitions](#engine-partitions-627)). This bounded runner clears
+inherited pytest selectors, keeps output live, and requires a fresh private completion receipt outside the checkout.
 Only an exact selected/executed case match for the requested engine produces
 `CI_BROWSER_COMPLETE`; early `--help`/`--version` exits cannot satisfy the parent
 check. Receipts are invocation-local and removed when that runner exits, never
@@ -65,8 +91,9 @@ public `getini` API, not deprecated configuration internals.
 
 CI runs three independent engine jobs with 15-minute bounds, fresh per-case
 browser processes, timestamped start/end progress and 120-second diagnostic
-stack dumps. Only the selected engine is installed. The existing protected
-`stewardship-browser` aggregate always runs and requires matrix success.
+stack dumps. Only the selected engine is installed (since #627: `--runs`, two
+engines per job). The existing protected `stewardship-browser` aggregate always
+runs and requires matrix success.
 
 Initial local validation: 112 CI/sharding/gate regressions passed; the full
 default suite passed 5,082 tests (3,106 explicit opt-in skips); Ruff lint/format

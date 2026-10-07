@@ -171,13 +171,14 @@ jobs:
     needs: validate
     if: ${{ needs.validate.outputs.operational != 'false' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
     runs-on: ubuntu-latest
-    # Two runners with two provider modes each: the freed runner slots let
-    # the PostgreSQL partitions spread wider within the 20-job plan limit.
-    timeout-minutes: 25
+    # One runner for all four provider modes (#627): about 18 minutes, still
+    # under the PostgreSQL and browser jobs, and one fewer runner slot, so
+    # two overlapping full runs fit within the 20-job plan limit.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        providers: ["configured initial", "complete abort"]
+        providers: ["configured initial complete abort"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -256,12 +257,17 @@ jobs:
     # quality_browser.py bounds the test run itself at 38 minutes, which stays
     # inside this limit even after a 17-minute install.
     timeout-minutes: 60
+    # One job per quality_sharding.BROWSER_JOBS entry (#627): Firefox whole,
+    # and WebKit (the slowest engine) and Chromium each halved by test file,
+    # one half of each per job, so three jobs of similar length. Each job
+    # installs only its engines and must prove every partition ran all of
+    # its cases.
     strategy:
       fail-fast: false
       matrix:
-        engine: [chromium, firefox, webkit]
+        runs: ["firefox:1/1", "webkit:1/2 chromium:1/2", "webkit:2/2 chromium:2/2"]
     env:
-      BROWSER_ENGINE: ${{ matrix.engine }}
+      BROWSER_RUNS: ${{ matrix.runs }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -278,11 +284,12 @@ jobs:
           tools/ci-pip-install.sh -r requirements/stewardship-build.txt
           tools/ci-pip-install.sh --no-build-isolation -r requirements.txt -r requirements/stewardship-browser.txt
           npm ci --ignore-scripts --prefix tests/stewardship/browser
-          python -m playwright install --with-deps "$BROWSER_ENGINE"
+          read -ra runs <<<"$BROWSER_RUNS"
+          python -m playwright install --with-deps "${runs[@]%%:*}"
       - name: Responsive, keyboard, accessibility, and session component checks
         env:
           PARISHKIT_RUN_BROWSER_TESTS: "1"
-        run: python -m parishkit.stewardship.quality_browser --engine "$BROWSER_ENGINE"
+        run: python -m parishkit.stewardship.quality_browser --runs "$BROWSER_RUNS"
 
   # Preserve the protected check name, including failed/cancelled matrix work.
   stewardship-browser:

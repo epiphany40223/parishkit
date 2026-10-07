@@ -14,7 +14,14 @@ import yaml
 from parishkit.stewardship import quality_browser
 from parishkit.stewardship.quality_ci import environment
 from parishkit.stewardship.quality_pytest import BROWSER_DISCOVERY, BrowserSelection
-from parishkit.stewardship.quality_sharding import BROWSER_ENGINES, browser_partition
+from parishkit.stewardship.quality_sharding import (
+    BROWSER_ENGINES,
+    BROWSER_FILE_SECONDS,
+    BROWSER_JOBS,
+    browser_partition,
+    parse_browser_partition,
+    parse_browser_runs,
+)
 
 from .test_quality_paths import GATES, assert_gate_truth_table
 
@@ -63,6 +70,102 @@ def test_invalid_engine_rejected(engine):
     """Unsupported engine inputs cannot silently produce an empty partition."""
     with pytest.raises(ValueError):
         browser_partition(CASES, engine)
+
+
+def split_cases(files):
+    """Synthetic collection: FILES maps a test file to its WebKit case count."""
+    cases = [("tests/x/test_other.py::test[c]", "chromium")]
+    cases.append(("tests/x/test_other.py::test[f]", "firefox"))
+    for name, size in files.items():
+        cases.extend((f"tests/x/{name}::test[{n}]", "webkit") for n in range(size))
+    return cases
+
+
+@pytest.mark.parametrize("count", [1, 2, 3, 5])
+def test_engine_jobs_split_whole_files_disjointly_and_exhaustively(count):
+    """Every job of an engine computes one assignment, independent of order."""
+    files = {f"test_{n}.py": n % 4 + 1 for n in range(9)}
+    files |= {"test_components.py": 3}
+    cases = split_cases(files)
+    jobs = [browser_partition(cases, "webkit", n, count) for n in range(1, count + 1)]
+    assert all(jobs)
+    assert sorted(node for job in jobs for node in job) == browser_partition(
+        cases, "webkit"
+    )
+    assert jobs == [
+        browser_partition(cases[::-1], "webkit", n, count) for n in range(1, count + 1)
+    ]
+    owners = {}
+    for number, job in enumerate(jobs):
+        for node in job:
+            assert owners.setdefault(node.split("::")[0], number) == number
+
+
+def test_engine_jobs_balance_recorded_file_seconds():
+    """Recorded hints, not case counts, decide where a slow file goes."""
+    slow = max(BROWSER_FILE_SECONDS, key=BROWSER_FILE_SECONDS.get)
+    # Without hints the slow file's single case would weigh least; with them it
+    # outweighs everything else, so it takes job one alone.
+    cases = split_cases({slow: 1, "test_a.py": 20, "test_b.py": 20})
+    assert browser_partition(cases, "webkit", 1, 2) == [f"tests/x/{slow}::test[0]"]
+    assert len(browser_partition(cases, "webkit", 2, 2)) == 40
+
+
+@pytest.mark.parametrize(
+    "index,count", [(0, 2), (3, 2), (1, 0), (1, 9), ("1", 2), (1, 2.0), (3, 3)]
+)
+def test_invalid_or_empty_engine_job_rejected(index, count):
+    """No job number may be out of range or receive no files to run."""
+    with pytest.raises(ValueError):
+        browser_partition(
+            split_cases({"test_a.py": 2, "test_b.py": 2}), "webkit", index, count
+        )
+
+
+@pytest.mark.parametrize(
+    "value", ["", "1", "1/", "a/2", "1/2/3", "0/1", "3/2", "1/9", None]
+)
+def test_invalid_partition_text_rejected(value):
+    """The CLI/pytest INDEX/COUNT text is parsed strictly."""
+    with pytest.raises(ValueError, match="Invalid browser partition"):
+        parse_browser_partition(value)
+    assert parse_browser_partition("2/2") == (2, 2)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        "",
+        " ",
+        "webkit",
+        "webkit:",
+        "other:1/1",
+        "webkit:1/2 webkit:2/2",
+        "webkit:0/2",
+    ],
+)
+def test_invalid_browser_job_rejected(value):
+    """A job names each supported engine at most once, each with a valid partition."""
+    with pytest.raises(ValueError, match="Invalid browser"):
+        parse_browser_runs(value)
+    assert parse_browser_runs("webkit:1/2 chromium:1/1") == [
+        ("webkit", 1, 2),
+        ("chromium", 1, 1),
+    ]
+
+
+def test_browser_jobs_run_every_partition_exactly_once():
+    """Together the jobs run each engine's partitions 1..COUNT once, one COUNT each."""
+    runs = [run for job in BROWSER_JOBS for run in parse_browser_runs(job)]
+    assert len(runs) == len(set(runs))
+    counts = {engine: count for engine, _, count in runs}
+    assert set(counts) == set(BROWSER_ENGINES)
+    assert sorted(runs) == sorted(
+        (engine, index, count)
+        for engine, count in counts.items()
+        for index in range(1, count + 1)
+    )
 
 
 @pytest.fixture
@@ -148,6 +251,14 @@ def items_for(config):
         )
         for node, engine in CASES
     ]
+
+
+@pytest.mark.parametrize("value", ["2", "0/1", "2/1", "x/y"])
+def test_invalid_partition_option_rejected(selection_config, value):
+    """A malformed job selector fails before collection, never selects nothing."""
+    selection_config.options["--ci-browser-partition"] = value
+    with pytest.raises(pytest.UsageError, match="Invalid browser partition"):
+        BrowserSelection(selection_config)
 
 
 def test_collection_hook_keeps_exact_owner_and_reports(selection_config):
@@ -253,6 +364,30 @@ def test_real_partitions_equal_serial_suite(probe):
     assert sorted(groups) == sorted(manifest(serial))
 
 
+def test_real_engine_jobs_equal_the_engine_share(probe):
+    """Two actual pytest jobs of one engine run its share once, by whole file."""
+    (probe / BROWSER_DIRECTORY / "test_second.py").write_text(
+        (probe / BROWSER_DIRECTORY / "test_probe.py").read_text()
+    )
+    whole = run_probe(probe, "--ci-browser-engine=webkit")
+    assert whole.returncode == 0, whole.stdout + whole.stderr
+    jobs = []
+    for index in (1, 2):
+        result = run_probe(
+            probe, "--ci-browser-engine=webkit", f"--ci-browser-partition={index}/2"
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert f"CI_BROWSER_PARTITION webkit {index}/2: 2 out of 12" in result.stdout
+        assert len({node.split("::")[0] for node in manifest(result)}) == 1
+        jobs.extend(manifest(result))
+    assert sorted(jobs) == sorted(manifest(whole))
+    result = run_probe(
+        probe, "--ci-browser-engine=webkit", "--ci-browser-partition=1/3"
+    )
+    assert result.returncode == 4
+    assert "would select no tests" in result.stderr
+
+
 @pytest.mark.parametrize(
     "mode,code,marker",
     [
@@ -310,17 +445,19 @@ def test_browser_workflow_contract():
     """Parallel jobs preserve all engines and the always-running protected gate."""
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     job = jobs["stewardship-browser-engine"]
+    # Exactly BROWSER_JOBS, whose coverage the test above proves.
     assert job["strategy"] == {
         "fail-fast": False,
-        "matrix": {"engine": list(BROWSER_ENGINES)},
+        "matrix": {"runs": list(BROWSER_JOBS)},
     }
     assert job["timeout-minutes"] == 60
-    assert job["env"]["BROWSER_ENGINE"] == "${{ matrix.engine }}"
+    assert job["env"] == {"BROWSER_RUNS": "${{ matrix.runs }}"}
     install, run = job["steps"][-2:]
-    assert 'playwright install --with-deps "$BROWSER_ENGINE"' in install["run"]
+    assert 'read -ra runs <<<"$BROWSER_RUNS"' in install["run"]
+    assert 'playwright install --with-deps "${runs[@]%%:*}"' in install["run"]
     assert run["env"]["PARISHKIT_RUN_BROWSER_TESTS"] == "1"
     assert run["run"] == (
-        'python -m parishkit.stewardship.quality_browser --engine "$BROWSER_ENGINE"'
+        'python -m parishkit.stewardship.quality_browser --runs "$BROWSER_RUNS"'
     )
     gate = jobs["stewardship-browser"]
     assert gate["needs"] == ["validate", "stewardship-browser-engine"]
@@ -372,13 +509,35 @@ def test_ci_cancels_only_superseded_pr_heads():
     [
         None,
         {},
-        {"engine": "firefox", "selected": ["a"], "executed": ["a"]},
-        {"engine": "chromium", "selected": [], "executed": []},
-        {"engine": "chromium", "selected": ["a"], "executed": []},
-        {"engine": "chromium", "selected": ["a", "a"], "executed": ["a", "a"]},
-        {"engine": "chromium", "selected": [1], "executed": [1]},
-        {"engine": "chromium", "selected": [["a"]], "executed": [["a"]]},
-        {"engine": "chromium", "selected": [""], "executed": [""]},
+        {"engine": "chromium", "selected": ["a"], "executed": ["a"]},
+        {
+            "engine": "firefox",
+            "partition": [1, 1],
+            "selected": ["a"],
+            "executed": ["a"],
+        },
+        {
+            "engine": "chromium",
+            "partition": [1, 2],
+            "selected": ["a"],
+            "executed": ["a"],
+        },
+        {"engine": "chromium", "partition": [1, 1], "selected": [], "executed": []},
+        {"engine": "chromium", "partition": [1, 1], "selected": ["a"], "executed": []},
+        {
+            "engine": "chromium",
+            "partition": [1, 1],
+            "selected": ["a", "a"],
+            "executed": ["a", "a"],
+        },
+        {"engine": "chromium", "partition": [1, 1], "selected": [1], "executed": [1]},
+        {
+            "engine": "chromium",
+            "partition": [1, 1],
+            "selected": [["a"]],
+            "executed": [["a"]],
+        },
+        {"engine": "chromium", "partition": [1, 1], "selected": [""], "executed": [""]},
     ],
 )
 def test_invalid_completion_receipt_rejected(tmp_path, value):
@@ -398,9 +557,19 @@ def test_missing_malformed_and_valid_receipts(tmp_path):
     with pytest.raises(ValueError, match="valid completion evidence"):
         quality_browser.validate_receipt(receipt, "chromium")
     receipt.write_text(
-        json.dumps({"engine": "chromium", "selected": ["a"], "executed": ["a"]})
+        json.dumps(
+            {
+                "engine": "chromium",
+                "partition": [1, 1],
+                "selected": ["a"],
+                "executed": ["a"],
+            }
+        )
     )
     assert quality_browser.validate_receipt(receipt, "chromium") == 1
+    # A receipt from one job of a split engine cannot prove another job.
+    with pytest.raises(ValueError, match="valid completion evidence"):
+        quality_browser.validate_receipt(receipt, "chromium", 2, 2)
 
 
 @pytest.mark.parametrize("mode", ["pass", "fail", "skip", "exit"])
@@ -452,6 +621,7 @@ def test_runner_environment_and_timeout(probe, monkeypatch):
         quality_browser.run_engine(probe, "firefox")
     command = run.call_args.args[0]
     assert "--ci-browser-engine=firefox" in command
+    assert "--ci-browser-partition=1/1" in command
     assert "--require-no-skips" in command and "--ci-progress" in command
     receipt = Path(
         next(
@@ -488,6 +658,51 @@ def test_orphan_browser_receipt_option_is_rejected(probe):
     result = run_probe(probe, "--ci-browser-evidence=receipt.json")
     assert result.returncode == 4
     assert "Browser evidence requires an engine partition" in result.stderr
+    result = run_probe(probe, "--ci-browser-partition=1/2")
+    assert result.returncode == 4
+    assert "A browser partition requires an engine" in result.stderr
+
+
+def test_split_engine_runner_requires_its_own_job(probe, capfd):
+    """The runner passes INDEX/COUNT through and labels the job it proved."""
+    (probe / BROWSER_DIRECTORY / "test_second.py").write_text(
+        (probe / BROWSER_DIRECTORY / "test_probe.py").read_text()
+    )
+    quality_browser.run_engine(probe, "webkit", 2, 2)
+    assert "CI_BROWSER_COMPLETE webkit 2/2: 2 executed cases" in capfd.readouterr().out
+
+
+def test_job_runs_every_partition_under_one_deadline(monkeypatch, capfd):
+    """A failed partition is reported, later ones still run, time is shared."""
+    clock = iter([0, 100, 700])
+    monkeypatch.setattr(quality_browser.time, "monotonic", lambda: next(clock))
+    calls = []
+
+    def run_engine(root, engine, index, count, timeout):
+        """Record the call; the first partition fails."""
+        calls.append((engine, index, count, timeout))
+        if len(calls) == 1:
+            raise subprocess.CalledProcessError(1, "pytest")
+
+    monkeypatch.setattr(quality_browser, "run_engine", run_engine)
+    runs = [("webkit", 1, 2), ("chromium", 1, 2)]
+    assert quality_browser.run_job(ROOT, runs) == ["webkit 1/2"]
+    limit = quality_browser.JOB_SECONDS
+    assert calls == [
+        ("webkit", 1, 2, limit - 100),
+        ("chromium", 1, 2, limit - 700),
+    ]
+    assert "CI_BROWSER_FAILED webkit 1/2" in capfd.readouterr().out
+
+
+@pytest.mark.parametrize("runs,code", [("webkit", 2), ("firefox:1/1", 1)])
+def test_main_rejects_bad_jobs_and_failed_partitions(monkeypatch, runs, code):
+    """A malformed job is a usage error; any failed partition fails the job."""
+    monkeypatch.setattr(sys, "argv", ["quality_browser", "--runs", runs])
+    monkeypatch.setattr(quality_browser, "run_job", lambda root, runs: ["firefox"])
+    with pytest.raises(SystemExit) as caught:
+        quality_browser.main()
+    assert caught.value.code == code
 
 
 @pytest.mark.parametrize("name", list(BROWSER_DISCOVERY))
