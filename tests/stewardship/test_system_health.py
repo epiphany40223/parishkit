@@ -15,6 +15,7 @@ from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
     DropCount,
     Problem,
+    Subject,
     SystemHealth,
     find_problems,
     group_processes,
@@ -222,7 +223,9 @@ def health(**values):
 def test_the_document_holds_states_counts_and_instants_only():
     """No translated text, names or messages: the projection is plain values."""
     document = health(
-        problems=(Problem("sender_halted", "mail-dispatch", "main", at=NOW),),
+        problems=(
+            Problem("sender_halted", (Subject("mail-dispatch", "main"),), at=NOW),
+        ),
         refused_at=NOW,
         refused_counts=(DropCount("family", 1084, 612, 25, True),),
         offsite=SimpleNamespace(
@@ -232,9 +235,9 @@ def test_the_document_holds_states_counts_and_instants_only():
     assert document["problems"] == [
         {
             "kind": "sender_halted",
-            "service": "mail-dispatch",
-            "process": "main",
-            "target": None,
+            "subjects": [
+                {"service": "mail-dispatch", "process": "main", "target": None}
+            ],
             "at": NOW.isoformat(),
         }
     ]
@@ -272,7 +275,7 @@ def test_nothing_waiting_and_everything_working_read_plainly():
     swapped = health(
         problems=(
             Problem("schema_mismatch"),
-            Problem("sender_halted", "mail-dispatch", "mail"),
+            Problem("sender_halted", (Subject("mail-dispatch", "mail"),)),
         )
     )
     assert swapped.announcement == (
@@ -303,9 +306,11 @@ def test_the_status_region_states_problems_and_panels_in_words():
     )
     shown = health(
         problems=tuple(
-            Problem(code, "mail-dispatch", "main", at=NOW)
+            Problem(code, (Subject("mail-dispatch", "main"),), at=NOW)
             if code.startswith("sender") or code in {"not_running", "debug_logging"}
-            else Problem(code, "worker" if code == "not_reported" else None, at=NOW)
+            else Problem(
+                code, (Subject("worker"),) if code == "not_reported" else (), at=NOW
+            )
             for code in codes
         ),
         delivery_paused=True,
@@ -330,7 +335,7 @@ def test_the_status_region_states_problems_and_panels_in_words():
     assert body.count("data-problem=") == len(codes)
     assert "17 problems need attention" in body
     assert "Mail sender 1 has stopped all Family email" in body
-    assert "Background worker has not reported its status" in body
+    assert "The background worker has not reported its status" in body
     assert "Families with an email address" in body
     assert "Fell too far (more than 25%)" in body
     assert "Paused by admin@example.org" in body
@@ -395,3 +400,82 @@ def test_an_unreadable_configured_backup_key_is_unavailable(monkeypatch):
     )
     with pytest.raises(ConfigError):
         system_health._backup(object())
+
+
+def test_a_condition_in_several_services_is_one_problem():
+    """Debug logging, stopped and silent services and halts are listed once (#686).
+
+    Each name keeps its own spelling wherever it falls in the list: the
+    ParishSoft refresh worker is not first here.
+    """
+    rows = [
+        row("web", debug_logging=True),
+        row("worker", age=450),
+        row("worker", "source", age=400),
+        row("scheduler", debug_logging=True),
+        row("mail-dispatch", debug_logging=True, sender_state="halted"),
+        row("mail-dispatch", "mail", debug_logging=True, sender_state="halted"),
+        row("config-installer", age=500),
+    ]
+    found = find_problems(
+        mode="production",
+        processes=group_processes(rows, NOW),
+        missing=(),
+        schema_current=True,
+        incidents={},
+        refresh=None,
+        backup_at=None,
+    )
+    assert [problem.kind for problem in found] == [
+        "sender_halted",
+        "not_running",
+        "debug_logging",
+    ]
+    halted, stopped, debug = found
+    assert halted.names == "Both mail senders"
+    assert stopped.names == (
+        "The background worker, the ParishSoft refresh worker and the settings "
+        "installer"
+    )
+    # The most recent report among the stopped processes.
+    assert stopped.at == NOW - timedelta(seconds=400)
+    assert debug.names_inline == "the web portal, the scheduler and both mail senders"
+    body = render_to_string(
+        "stewardship/system-health-status.html",
+        {"health": health(problems=found), "pause": None, "poll_interval": 10000},
+    )
+    assert body.count('data-problem="debug_logging"') == 1
+    assert (
+        "Debug logging is on in Production in the web portal, the scheduler and "
+        "both mail senders."
+    ) in body
+    assert "Both mail senders have stopped all Family email" in body
+    assert (
+        "The background worker, the ParishSoft refresh worker and the settings "
+        "installer have not reported for more than three minutes"
+    ) in body
+    assert health(problems=found).announcement == (
+        "3 problems need attention: Both mail senders halted; The background "
+        "worker, the ParishSoft refresh worker and the settings installer not "
+        "running; debug logging on in the web portal, the scheduler and both "
+        "mail senders."
+    )
+
+
+def test_one_process_reads_as_its_own_phrase():
+    """A single mail sender with debug logging on reads "in mail sender 1"."""
+    (debug,) = find_problems(
+        mode="production",
+        processes=group_processes([row("mail-dispatch", debug_logging=True)], NOW),
+        missing=(),
+        schema_current=True,
+        incidents={},
+        refresh=None,
+        backup_at=None,
+    )
+    body = render_to_string(
+        "stewardship/system-health-status.html",
+        {"health": health(problems=(debug,)), "pause": None, "poll_interval": 10000},
+    )
+    assert "Debug logging is on in Production in mail sender 1." in body
+    assert "the mail sender 1" not in body

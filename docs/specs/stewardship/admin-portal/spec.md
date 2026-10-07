@@ -3149,7 +3149,13 @@ the way to do these things.
   server operator. For example: "No backup has finished since 2:00 AM
   yesterday. Take a backup now, or ask the server operator to check the
   backup schedule." When nothing needs attention, the page says "Everything
-  is working", with the time of the last check.
+  is working", with the time of the last check. A condition that affects
+  several services or processes at once (debug logging, a service that
+  stopped or never reported, a halted or outage-paused mail sender) is one
+  problem whose sentence names them all ("Debug logging is on in
+  Production in the web portal, background worker, scheduler and both mail
+  senders"), so Home and the page list it, and screen readers hear it, once
+  (#686).
 - **Panels.** Below the problems come the panels described under
   [health panels](#health-panels), in this order: why sends are waiting, mail
   sender, ParishSoft refresh, backups, debug logging and version. During a

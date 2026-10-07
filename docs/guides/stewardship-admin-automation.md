@@ -307,8 +307,9 @@ failed preparation stays on the page until PR 12.
 ### `system health`
 
 The [System health](../specs/stewardship/admin-portal/spec.md#system-health)
-page as a document: `problems` (each `kind`, with the `service`, `process`
-and `target` it is about and the time `at` its sentence states), the
+page as a document: `problems` (each `kind`, the `subjects` it is about,
+each a `service`, `process` and `target`, and the time `at` its sentence
+states; a condition in several processes is one problem), the
 `processes` with their state, version and mail sender state,
 `missing_services`, `versions`, `schema_current`, the reasons Family email
 waits (`delivery_paused`, `planning_held`, `retry_waiting`), the open
@@ -489,3 +490,10 @@ irreversible actions, and endings.
   `connection_at` instead.
 - `pk-admin/1` (ADM-13 PR 2b, #530): additive. `system health`, with
   `--watch`.
+- `pk-admin/1` (#686): a deliberate change of meaning, kept on version 1.
+  A `system health` problem names its processes in `subjects` (a list of
+  `service`, `process` and `target`) instead of its own `service`,
+  `process` and `target`, and a condition in several processes (debug
+  logging, a stopped or silent service, a halted or outage-paused mail
+  sender) is one problem. The command was days old, and its only readers
+  are Administrator-run assistants.

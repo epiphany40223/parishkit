@@ -26,6 +26,7 @@ from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
     DropCount,
     Problem,
+    Subject,
     SystemHealth,
     group_processes,
 )
@@ -459,7 +460,9 @@ def system_health():
     return SystemHealth(
         checked_at=NOW,
         mode="production",
-        problems=(Problem("sender_halted", "mail-dispatch", "main", at=NOW),),
+        problems=(
+            Problem("sender_halted", (Subject("mail-dispatch", "main"),), at=NOW),
+        ),
         processes=processes,
         missing_services=("scheduler",),
         versions=("1.4.2",),
@@ -599,9 +602,9 @@ GOLDEN = {
             "problems": [
                 {
                     "kind": "sender_halted",
-                    "service": "mail-dispatch",
-                    "process": "main",
-                    "target": None,
+                    "subjects": [
+                        {"service": "mail-dispatch", "process": "main", "target": None}
+                    ],
                     "at": iso(NOW),
                 }
             ],
@@ -883,6 +886,7 @@ ALLOWED = {
         "mode",
         "problems",
         "kind",
+        "subjects",
         "service",
         "process",
         "target",
