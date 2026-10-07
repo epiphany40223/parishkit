@@ -617,7 +617,38 @@ def test_admin_activity_never_uses_family_keepalive(page, component_origin):
     page.clock.fast_forward(5 * 60 * 1000)
     expect(page.locator("#session-expired")).to_be_visible()
     expect(page.locator("#session-warning")).to_be_hidden()
+    # The deadline passed, so the dialog names inactivity as the cause.
+    expect(page.locator('[data-session-ended="idle"]')).to_be_visible()
+    expect(page.locator('[data-session-ended="other"]')).to_be_hidden()
     assert attempts == [] and renewals == []
+
+
+def test_admin_dialog_treats_signed_out_status_as_ended(page, component_origin):
+    """A 401 status read ends the session at once, without blaming inactivity.
+
+    Signing out in another tab (or a change of access) makes the passive
+    status read answer 401 long before the countdown ends (#457 M4).
+    """
+    from playwright.sync_api import expect
+
+    page.clock.install(time=NOW)
+    page.route(
+        "**/admin/session/status",
+        lambda route: route.fulfill(status=401, json={"state": "signed_out"}),
+    )
+    page.goto(component_origin + "/home")
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    page.clock.fast_forward(2000)
+    expect(page.locator("#session-expired")).to_be_visible()
+    expect(page.locator("#session-warning")).to_be_hidden()
+    expect(page.locator('[data-session-ended="other"]')).to_contain_text(
+        "signed out in another tab"
+    )
+    expect(page.locator('[data-session-ended="idle"]')).to_be_hidden()
+    # The countdown stops: later ticks never reopen the warning.
+    page.clock.fast_forward(60 * 60 * 1000)
+    expect(page.locator("#session-warning")).to_be_hidden()
+    expect(page.locator("#session-expired")).to_be_visible()
 
 
 def test_admin_stay_signed_in_renews_and_closes_the_dialog(page, component_origin):

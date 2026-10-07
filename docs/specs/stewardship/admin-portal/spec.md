@@ -981,6 +981,10 @@ nothing left to do. A menu page is linked in a trail or "Return to" only while
 the viewer's menu entry for it is available, so a page whose entry is
 unavailable because it would now refuse (Share options once the campaign is
 locked, Campaign images for an archived campaign) is named without a link.
+The same holds for a role: a page the viewer's menu does not offer is named
+without a link, including a report root that only redirects to a menu entry,
+so a Ministry leader's export status page names Participation without linking
+it.
 
 Multi-step flows also show a step indicator under the trail: a numbered list
 with the current step marked `aria-current="step"` and each step's state in
