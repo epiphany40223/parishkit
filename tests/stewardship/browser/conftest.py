@@ -93,6 +93,7 @@ from .log_components import components as log_components
 from .menu_components import components as menu_components
 from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
+from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .response_list_components import components as response_list_components
@@ -1968,10 +1969,11 @@ def component_origin():
             A path not served exactly is tried with its query's pairs
             sorted (``automation_components.canonical``), so a page may send
             its state in any order. Automation access's race tests (#621)
-            get some answers after a pause.
+            and the participation report's zone race test (#519) get some
+            answers after a pause.
             """
             path = self.path if self.path in responses else canonical(self.path)
-            if path in AUTOMATION_SLOW_GETS:
+            if path in AUTOMATION_SLOW_GETS | REPORT_SLOW_GETS:
                 time.sleep(1.5)
             kind, body = responses.get(path, ("text/plain", ""))
             self.send_response(200 if path in responses else 404)

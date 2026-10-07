@@ -12,7 +12,7 @@ import pytest
 
 from .conftest import no_script_context
 from .in_place_components import BACKGROUND, FORM, PRESENCE
-from .waits import has_text, visible
+from .waits import eventually, has_text, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -319,6 +319,35 @@ def test_post_form_network_failure_says_so_without_resending(page, component_ori
     has_text(page.locator("#saved-count"), "Saved 1 times")
     visible(page.locator("#saved"))
     assert page.locator("[data-in-place-error]").count() == 0
+
+
+# Tells the page the reader is leaving it, as a navigation or a download
+# link does before the browser cuts its requests off.
+LEAVING = "window.dispatchEvent(new Event('beforeunload'))"
+
+
+def test_leaving_the_page_keeps_a_save_note_but_skips_a_read_fallback(
+    page, component_origin
+):
+    """While the page is being left, a read with no answer does not fall back
+    to its own load (that would hijack the reader's navigation), but a save
+    with no answer still says the server could not be reached: a download
+    link also fires beforeunload, and its page stays."""
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + BACKGROUND)
+    page.evaluate(MARK)
+    page.route("**/admin/background?*", lambda route: route.abort())
+    page.evaluate(LEAVING)
+    page.get_by_role("link", name="Refresh current work").click()
+    eventually(page, "() => !document.querySelector('[aria-busy=true]')")
+    assert page.evaluate(MARKED) == "kept"
+    page.goto(component_origin + FORM)
+    page.evaluate(MARK)
+    page.route("**/in-place-form/save", lambda route: route.abort())
+    page.evaluate(LEAVING)
+    page.locator("#save").click()
+    visible(page.get_by_role("alert").filter(has_text="could not be reached"))
+    assert page.evaluate(MARKED) == "kept"
 
 
 def test_post_form_redirect_to_another_page_navigates(page, component_origin):
