@@ -1051,3 +1051,36 @@ def read_go_live_progress(caller, service, campaign_id):
         return model
 
     return _held(step)
+
+
+# ------------------------------------------------------------ system health
+
+
+def read_system_health(caller, service, *, audit=True):
+    """``system health``: the System health page's read (ADM-13).
+
+    Administrators only, through the page's ``SYSTEM_LOGS`` capability.
+    Audited as the page (``system_health_viewed``, with the number of
+    problems), never on a watch's polls. A watch stops once everything is
+    working (``SystemHealth.terminal``).
+    """
+    from .accounts.policy import Capability
+    from .audit.schemas import Action
+    from .system_health import read_health
+
+    def step():
+        """Admit, read in the page's snapshot, recheck and audit."""
+        actor = _admit(caller, service.store, Capability.SYSTEM_LOGS)
+        found = read_health(service.store)
+        if found is None:
+            raise Unavailable("A restore is under review.")
+        model = found[0]
+        with transaction.atomic():
+            current = _recheck(caller, service.store, actor, Capability.SYSTEM_LOGS)
+            if _restore_review():
+                raise Unavailable("A restore is under review.")
+            if audit:
+                _audit(Action.SYSTEM_HEALTH_VIEWED, current, count=len(model.problems))
+        return model
+
+    return _held(step)

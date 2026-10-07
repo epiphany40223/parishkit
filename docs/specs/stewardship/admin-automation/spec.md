@@ -1701,12 +1701,11 @@ pause, and closing work is the closed-campaign resolution. See
 | `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
 | `system_debug_off`, `system_debug_allow` (ADM-13) | `system debug-off`; `system debug-allow` (Testing only) |
 
-The ADM-13 rows are pending exemptions until their commands land. ADM-13
-PR 2b, the next ADM-13 pull request, adds `system health`; the ledger
-records it against ADM-11 PR 8 (the log commands), so it must land no later
-than that. Each action's command lands with its own ADM-13 pull request
-(PR 3 to PR 6), once ADM-11 PR 5 lets automation pass the fresh-sign-in
-check. The ADM-13 action routes are
+`system health` covers the page, its fragment and `/admin/system/`
+(ADM-13 PR 2b). The other ADM-13 rows are pending exemptions until their
+commands land: each action's command lands with its own ADM-13 pull
+request (PR 3 to PR 6), once ADM-11 PR 5 lets automation pass the
+fresh-sign-in check. The ADM-13 action routes are
 POSTs to the [System health](../admin-portal/spec.md#health-actions) page,
 `system_health_status` is its passive status fragment, and `system`
 (`/admin/system/`) only redirects to it.
