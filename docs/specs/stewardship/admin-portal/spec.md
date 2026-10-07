@@ -1159,14 +1159,16 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   grain, the [response lists](../reports/spec.md#response-lists)' mode, the
   [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
   "Refresh current work" on "Background work", "Refresh list" on
-  "Families on the form now", and the page links of a mail delivery's
+  "Families on the form now", the page links of a mail delivery's
   evidence and attempt history, an information item's and a Ministry
-  follow-up request's history, and a weekly information report) or a form whose answer is the page again
+  follow-up request's history, and a weekly information report, and the
+  Refresh links of the key replacement status, Family email progress and
+  Family test pages) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](#follow-up-workflows); System logs'
   cross-links, whose answer is the filtered page; Acknowledge on a security
-  event; the
+  event; Dismiss on an integration's finished key change; the
   [participation report](../reports/spec.md#campaign-statistics)'s Apply
   report options, which refreshes its statistics, chart and export panels)
   names its region by its
@@ -1289,7 +1291,16 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   again as the page's own was (dates, selections, copy buttons, charts, and
   a form's conditional fields and its
   [complete-before-submit](#bootstrap-and-first-admin-wizard) gate), and a
-  `parishkit:swap` event on it lets any other script do the same.
+  `parishkit:swap` event on it lets any other script do the same. A page
+  that watches background work (`live-status-v1.js`) stops watching a
+  status region an in-place refresh replaced, and watches the fresh one
+  while it is still pending, so a Refresh or Dismiss that brings back work
+  in progress keeps updating by itself; there is always one watcher per
+  status region. A Refresh reads out the region's coarse status sentence
+  when it changed, as a poll does. Dismiss refreshes only an integration's
+  status line: if it brings back a new key change in progress (another
+  Administrator started one), the settings form and notes below it keep the
+  state the page was loaded with until the next load.
 
 ### Page help
 

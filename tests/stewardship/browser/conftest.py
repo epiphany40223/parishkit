@@ -89,6 +89,8 @@ from .in_place_components import SLOW as IN_PLACE_SLOW
 from .in_place_components import components as in_place_components
 from .information_components import POSTS as INFORMATION_POSTS
 from .information_components import components as information_components
+from .live_status_components import POSTS as LIVE_STATUS_POSTS
+from .live_status_components import components as live_status_components
 from .log_components import components as log_components
 from .menu_components import components as menu_components
 from .ministry_components import components as ministry_components
@@ -1876,6 +1878,7 @@ def component_origin():
     responses.update(hosted_file_components(context, admin))
     responses.update(talent_components(context, admin))
     responses.update(in_place_components(context, admin))
+    responses.update(live_status_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(step_up_components(context, admin))
@@ -1891,6 +1894,7 @@ def component_origin():
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS
         | SECURITY_POSTS
+        | LIVE_STATUS_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
