@@ -360,7 +360,9 @@ taken in each of its counted entries and every incident they opened has
 [resolved](../background-processing/spec.md#what-went-wrong-and-recovery)
 (#633). The banner costs the Admin page one query, shared with the delivery
 warning count. It is distinct from security-event acknowledgement, which is per
-recipient.
+recipient. Acknowledge acts [in place](#in-place-controls): the server still
+answers with Home, and the banner is taken from that answer on the page the
+Administrator is on, which keeps its address and everything else on it.
 
 ### JavaScript requirement
 
@@ -1162,7 +1164,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](#follow-up-workflows), and System logs'
-  cross-links, whose answer is the filtered page) names its region by its
+  cross-links, whose answer is the filtered page, and Acknowledge on a
+  security event) names its region by its
   URL's fragment. A POST form saves a change unless it is marked
   `data-in-place-read` (the System logs cross-links only read): a read may
   be cancelled by a newer choice and, with no answer at all, falls back to
@@ -1170,7 +1173,20 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   page's filters from outside its filter form, so after the swap the filter
   form's visible fields, and any disclosure in it, show what the fresh page
   applied, and the next Apply, sort or page keeps them; every other swap
-  leaves filters typed but not yet applied alone. A checkbox marked
+  leaves filters typed but not yet applied alone. A region a
+  control can empty (the security events, the critical-problems banner) is
+  drawn even when it has nothing to show, so the answer that empties it
+  still carries it. A form marked `data-in-place-anywhere` changes a region
+  every Admin page draws (the
+  [critical-problems banner](#navigation-and-home)'s Acknowledge, which the
+  server answers with Home from any page): any same-origin answer will do,
+  and only that region is taken from it, never the answer's other regions,
+  synced controls or address. A refused acknowledgement shows its error
+  page whole, with its own explanation: that page draws the banner too, but
+  its banner says nothing about the refusal. Because the banner's region is
+  on every Admin page, any other in-place control that refreshes every
+  region (a Save, a filter, a view switch) also refreshes the banner from
+  its answer, so the banner shows what that answer's page shows. A checkbox marked
   `data-submit-on-change` submits its own `form[data-in-place]` as soon as it
   changes, with no Apply button (the Admin portal requires script), and keeps
   focus. Each page records the state it shows on the box. The box submits
@@ -1207,7 +1223,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   focus returns to the control (or its fresh copy; when that is gone, the
   link its `data-in-place-fallback` key names, so Next page on the last page
   hands focus to Previous page; when that is gone too or disabled, the
-  region's first heading, else the region); the region
+  region's first heading, else the region, or the page's own heading when
+  the region is now empty); the region
   is marked busy while the request runs, and a polite live region says what
   happened ("By day", "List refreshed." and the rows now shown). A view
   choice replaces the address, and a followed redirect sets it to the
@@ -2925,7 +2942,9 @@ existing Admin acknowledges it; when another Admin existed at activation,
 acknowledgement by the granting actor alone does not clear the event for those
 other recipients. Delivery failure does not roll back or hide the expansion: it
 follows durable operational retry/escalation, while the dashboard event remains
-visible. Acknowledgements and notification outcomes are audited.
+visible. Acknowledgements and notification outcomes are audited. Each
+Acknowledge acts [in place](#in-place-controls) on Home: the event leaves the
+list without a reload.
 
 Domain rows expose Staff and Ministry-leader columns. Administrator is visibly
 disabled. Creating `gmail.com` fails client and server validation. Address rows

@@ -23,16 +23,17 @@
 <a href="{{ admin_chrome.delivery_pause.url }}">{% translate "Review held message types and delivery controls" %}</a>{% endif %}</aside>{% endif %}
 {% if admin_chrome.family_closed %}<aside class="notice notice-error">{% translate "The Family portal is closed for maintenance. Families see a “temporarily unavailable” page." %}{% if admin_chrome.admin %} <a href="{{ admin_chrome.family_portal_url }}">{% translate "Family portal availability" %}</a>{% endif %}</aside>{% endif %}
 {% if admin_chrome.go_live %}<aside class="notice">{% translate "Production preparation is in progress. Rehearsal access is unavailable while cleanup completes." %}</aside>{% endif %}
-{% if admin_chrome.admin and admin_chrome.critical_count %}<aside class="notice notice-error critical-events" aria-labelledby="critical-events-title">
+{% comment %}The critical-problems banner's region (#519) is drawn for every Administrator, empty when there is nothing to show, so whichever Admin page answers Acknowledge (the server returns Home) carries it: the banner is taken from that answer in place (data-in-place-anywhere) on the page the Administrator is on.{% endcomment %}
+{% if admin_chrome.admin %}<div id="critical-events" data-in-place-region>{% if admin_chrome.critical_count %}<aside class="notice notice-error critical-events" aria-labelledby="critical-events-title">
   <strong id="critical-events-title">{% if admin_chrome.critical_all_ended %}{% translate "Critical problems in the past 24 hours (all have ended)" %}{% else %}{% translate "Critical problems in the past 24 hours" %}{% endif %}</strong>
   <ul>{% for group in admin_chrome.critical_events %}<li>{{ group.label }}{% if group.count > 1 %} ({{ group.count|number }}×){% endif %}{% if group.ended_at %} <span class="critical-ended">{% blocktranslate with when=group.ended_at|instant %}— ended <time data-local-instant datetime="{{ when }}">{{ when }}</time>{% endblocktranslate %}</span>{% endif %}</li>{% endfor %}</ul>
   <div class="actions">
     <form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="critical" value="yes">{% if admin_chrome.critical_since_day %}<input type="hidden" name="start" value="{{ admin_chrome.critical_since_day }}" data-zone-dependent><input type="hidden" name="zone" value="" data-browser-zone>{% endif %}<button type="submit" class="button-secondary">{% translate "View these events in System logs" %}</button></form>
-    <form method="post" action="{% url 'admin:critical_events_acknowledge' %}">{% csrf_token %}<input type="hidden" name="shown" value="{{ admin_chrome.critical_shown }}"><button type="submit">{% translate "Acknowledge" %}</button></form>
+    <form method="post" action="{% url 'admin:critical_events_acknowledge' %}#critical-events" data-in-place="critical-acknowledge" data-in-place-anywhere data-in-place-message="{% translate 'Critical problems acknowledged.' %}">{% csrf_token %}<input type="hidden" name="shown" value="{{ admin_chrome.critical_shown }}"><button type="submit">{% translate "Acknowledge" %}</button></form>
   </div>
   <p><a href="{% url 'admin:system_health' %}">{% translate "See what needs attention now in System health" %}</a></p>
   <p class="help">{% translate "Acknowledging hides the problems listed here for every Administrator; a critical problem recorded after this page was shown still appears. It is recorded in the audit log." %}{% if admin_chrome.critical_count > admin_chrome.critical_limit %} {% blocktranslate with limit=admin_chrome.critical_limit|number %}Only the oldest {{ limit }} are acknowledged at a time, so this notice stays for the rest; acknowledge again to clear them.{% endblocktranslate %}{% endif %}</p>
-</aside>{% endif %}
+</aside>{% endif %}</div>{% endif %}
 {% if not suppress_admin_session_chrome %}
 {% comment %}
   One shared inactivity warning for every Admin page, setup wizard included.

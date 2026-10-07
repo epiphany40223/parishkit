@@ -247,3 +247,31 @@ def test_log_cross_links_filter_in_place():
     for kind in ("related", "actor", "campaign"):
         assert f'id="log-{{{{ row.icon }}}}-{{{{ row.id }}}}-{kind}"' in text
     assert '<details id="log-identifier-filters"' in text
+
+
+def test_acknowledgements_act_in_place():
+    """The critical-problems banner and Home's security events acknowledge in
+    place (#519 PR 4). Each region is drawn even when empty, so the answer
+    after the last acknowledgement still carries it. The banner's server
+    answers with Home from any page, so its form takes the banner from any
+    page's answer (data-in-place-anywhere)."""
+    banners = (TEMPLATES / "admin-banners.html").read_text()
+    assert re.search(
+        r'\{% if admin_chrome\.admin %\}<div id="critical-events" '
+        r"data-in-place-region>\{% if admin_chrome\.critical_count %\}",
+        banners,
+    )
+    form = re.search(r"<form [^>]*critical_events_acknowledge[^>]*>", banners).group(0)
+    assert '#critical-events" ' in form
+    assert 'data-in-place="critical-acknowledge"' in form
+    assert "data-in-place-anywhere" in form and "data-in-place-message=" in form
+    home = (TEMPLATES / "home.html").read_text()
+    assert re.search(
+        r'<div id="security-events" data-in-place-region>'
+        r"\{% if dashboard\.security_events %\}",
+        home,
+    )
+    form = re.search(r"<form [^>]*security_event_acknowledge[^>]*>", home).group(0)
+    assert '#security-events" ' in form
+    assert 'data-in-place="security-acknowledge-{{ event.id }}"' in form
+    assert "data-in-place-anywhere" not in form

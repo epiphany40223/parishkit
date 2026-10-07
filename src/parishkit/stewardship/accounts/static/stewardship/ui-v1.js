@@ -721,7 +721,11 @@
   // marked data-in-place-only: then only the region it names is swapped (a
   // history pager nested in a panel whose form holds unsaved typing). A
   // link whose key is gone from the fresh page (Older history on the last
-  // page) hands focus to the link its data-in-place-fallback key names.
+  // page) hands focus to the link its data-in-place-fallback key names. A
+  // form marked data-in-place-anywhere changes a region every Admin page
+  // draws (the critical-problems banner): whichever same-origin page
+  // answers it, only that region is taken from the answer, and the address
+  // stays.
   const REGIONS = "[data-in-place-region][id], [data-table-region][id]";
   const isRegion = (node) => Boolean(node && node.matches(REGIONS));
   // A checkbox that submits its own in-place form when it changes (#621).
@@ -1208,11 +1212,18 @@
     // to another page (the sign-in page) is that page, not this one.
     const otherOrigin = answered.origin !== window.location.origin;
     const foreign = otherOrigin || (response.redirected && answered.pathname !== window.location.pathname);
-    if (refused && (foreign || !isRegion(fresh))) {
+    // A form marked data-in-place-anywhere changes a region every Admin page
+    // draws (the critical-problems banner), so any same-origin page that
+    // answers it will do: its server may redirect to Home from any page. An
+    // error page draws that region too, but a refusal is not an answer
+    // about it, so the error page is shown whole, with its own explanation.
+    const anywhere = Boolean(owner?.hasAttribute("data-in-place-anywhere"));
+    if (refused && (foreign || anywhere || !isRegion(fresh))) {
       leave(() => showAsReturned(text));
       return;
     }
-    const elsewhere = otherOrigin || (owner && answered.pathname !== window.location.pathname);
+    const elsewhere = otherOrigin
+      || (owner && !anywhere && answered.pathname !== window.location.pathname);
     if (!refused && (elsewhere || !isRegion(fresh))) {
       if (response.redirected || init.method !== "POST") {
         leave(() => window.location.assign(withFragment(response.url, id)));
@@ -1225,32 +1236,38 @@
     // The server answered with this page: nothing is leaving any more.
     leaving = false;
     if (isBox(control)) failedState.delete(control);
-    const only = Boolean(owner?.hasAttribute("data-in-place-only"));
+    // An answer from anywhere is another page: only the named region is
+    // taken from it, never its other regions, sync nodes or address.
+    const only = anywhere || Boolean(owner?.hasAttribute("data-in-place-only"));
     document.querySelectorAll(REGIONS).forEach((other) => {
       if (only && other !== region) return;
       const copy = parsed.getElementById(other.id);
       if (isRegion(copy)) swapRegion(other, copy);
     });
-    syncControls(parsed);
+    if (!anywhere) syncControls(parsed);
     if (owner?.hasAttribute("data-in-place-filters")) syncFilters(parsed);
     // A GET choice belongs in the address bar, so reload, bookmarks and
     // returning to the page keep it; a POST table's private filters never
     // reach a URL. A server redirect chose the address itself (a saving
     // POST's Post/Redirect/Get answer, so a reload repeats only the GET).
-    if (response.redirected) {
+    // An answer from anywhere leaves the address this page's.
+    if (!anywhere && response.redirected) {
       window.history.replaceState(window.history.state, "", withFragment(response.url, id));
-    } else if (init.method !== "POST") {
+    } else if (!anywhere && init.method !== "POST") {
       window.history.replaceState(window.history.state, "", url);
     }
     // A refusal's summary (now in the region) takes focus, as it does on an
     // ordinary load; without one the control does, as after a success. A
     // control that is gone (a save that closed a follow-up request leaves no
     // form) or disabled cannot take focus, so the region's first heading
-    // does, which names what changed; failing that, the region itself.
+    // does, which names what changed; failing that, the region itself. A
+    // region left empty (an acknowledged banner, the last security event)
+    // has nothing to focus or say, so the page's own heading takes focus.
     const swapped = document.getElementById(id);
     let target = summary || focus(swapped);
     if (!target || target.disabled) {
-      target = swapped.querySelector("h1, h2, h3, h4, h5, h6") || swapped;
+      target = swapped.querySelector("h1, h2, h3, h4, h5, h6")
+        || (squeeze(swapped.textContent) ? swapped : document.querySelector("main h1") || swapped);
       target.setAttribute("tabindex", "-1");
     }
     target.focus({preventScroll: true});
