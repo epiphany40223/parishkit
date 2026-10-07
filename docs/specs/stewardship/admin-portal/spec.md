@@ -3157,7 +3157,12 @@ the way to do these things.
   linking this page. Other viewers see no such line. These lines join the
   problems list that ADM-12's Home work (#568, NAV-18, with its Today line)
   renders, so whichever of the two lands second adds its lines to the
-  other's list rather than making a second one. The
+  other's list rather than making a second one. ADM-13 landed first, so
+  until NAV-18 its lines are Home's problems list, a panel at the top of
+  Home, each with the page's own sentence. Until NAV-18 merges the lists,
+  a problem Home already reports elsewhere (a failed ParishSoft refresh, a
+  failed off-site copy) can appear twice on Home: once in its own notice
+  and once as a System health line. The
   [debug logging banner](#navigation-and-home) and the critical-problems
   banner link this page too.
 - **Live and in place.** The page needs JavaScript, as every Admin page
