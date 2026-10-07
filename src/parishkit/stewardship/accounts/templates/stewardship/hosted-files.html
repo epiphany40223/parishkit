@@ -21,11 +21,11 @@
 {% translate "Hosted file pages" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
-<form method="post" action="{% url 'admin:hosted_file_delete' %}" data-select-table>
+<form method="post" action="{% url 'admin:hosted_file_delete' %}" data-select-table data-missing-hint="{% translate 'Select at least one file to delete.' %}">
   {% csrf_token %}<input type="hidden" name="action" value="preview">
   <div class="bulk-bar">
-    {% include "stewardship/table-selection.html" %}
     {% button type="submit" variant="secondary" data-bulk-action %}{% translate "Delete selected" %}{% endbutton %}
+    {% include "stewardship/table-selection.html" %}
   </div>
   <div class="table-scroll" tabindex="0" role="region" aria-labelledby="hosted-file-caption">
   <table class="data-table hosted-files">
