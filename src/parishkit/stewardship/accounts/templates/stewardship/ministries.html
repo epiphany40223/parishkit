@@ -15,7 +15,7 @@
     <option value="inactive" {% if state == 'inactive' %}selected{% endif %}>{% translate "Inactive" %}</option>
   </select></div>
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-  <button type="submit">{% translate "Filter" %}</button>
+  {% button type="submit" %}{% translate "Filter" %}{% endbutton %}
 </form>
 {% translate "Ministry pages" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>
@@ -24,8 +24,8 @@
   {% csrf_token %}<input type="hidden" name="action" value="preview">
   <div class="bulk-bar">
     {% include "stewardship/table-selection.html" %}
-    <button type="submit" name="active" value="yes" data-bulk-action>{% translate "Review activation" %}</button>
-    <button type="submit" name="active" value="no" class="button-secondary" data-bulk-action>{% translate "Review inactivation" %}</button>
+    {% button type="submit" name="active" value="yes" data-bulk-action %}{% translate "Review activation" %}{% endbutton %}
+    {% button type="submit" name="active" value="no" variant="secondary" data-bulk-action %}{% translate "Review inactivation" %}{% endbutton %}
   </div>
   <div class="table-scroll" tabindex="0" role="region" aria-labelledby="ministry-table-caption">
   <table class="data-table">

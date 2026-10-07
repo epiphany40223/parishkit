@@ -1,4 +1,4 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n static %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
 {% comment %}
   The LOCAL test sign-in (#476). The operator command prints a link whose
   fragment carries a one-time token; the static script moves it into the
@@ -14,7 +14,7 @@
     {% csrf_token %}
     <input id="local-sign-in-token" name="token" type="hidden" value="">
     <input id="local-sign-in-next" name="next" type="hidden" value="">
-    <button id="local-sign-in-submit" type="submit" disabled>{% translate "Sign in" %}</button>
+    {% button id="local-sign-in-submit" type="submit" disabled %}{% translate "Sign in" %}{% endbutton %}
   </form>
   <p id="local-sign-in-missing">{% translate "Open this page through the printed link; its address carries the one-time token." %}</p>
 </section>{% endblock %}

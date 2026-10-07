@@ -18,7 +18,7 @@
 <form method="post" action="{% url 'admin:chair_confirmations' %}">
   {% csrf_token %}<input type="hidden" name="action" value="confirm">
   <input type="hidden" name="preview" value="{{ preview }}">
-  <button type="submit">{% translate "Confirm Chairperson suggestions" %}</button>
+  {% button type="submit" %}{% translate "Confirm Chairperson suggestions" %}{% endbutton %}
   <a href="{% url 'admin:users' %}">{% translate "Cancel" %}</a>
 </form>
 {% endblock %}

@@ -11,6 +11,6 @@
 <fieldset class="panel"><legend>{% translate "Campaign window" %}</legend>
 <p class="help">{% translate "If you change the campaign dates, change or delete every mailing that would fall outside the new dates." %}</p>{% if not editable %}<p>{% translate "The campaign dates and time zone can't be changed here right now: they lock once the campaign goes live, and while other campaign work is running. You can still change schedules that have not sent yet. Ending a live campaign early or extending it is a separate step, not done on this page." %}</p>{% endif %}{{ window.as_div }}</fieldset>
 {% include 'stewardship/schedule-fields.html' %}
-<button type="submit">{% translate "Preview changes and affected work" %}</button></form>
+{% button type="submit" %}{% translate "Preview changes and affected work" %}{% endbutton %}</form>
 <p><a href="{% url 'admin:campaign_settings' %}">{% translate "Return to Campaign settings" %}</a></p>
 {% endblock %}

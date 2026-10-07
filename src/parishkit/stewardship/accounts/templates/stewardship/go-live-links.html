@@ -6,7 +6,7 @@
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="notice">{% translate "Each Family gets a new link for the live campaign. The links stay inactive until you give the final go-live confirmation. Preparing them sends no email and does not change Family codes." %}</p>
 {% if inputs_unavailable %}<p role="status">{% translate "Links can't be prepared yet. Finish Testing cleanup and wait for any running ParishSoft refresh to finish, then try again." %}</p>{% endif %}
-{% if prepare %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}"><button type="submit">{% translate "Prepare inactive Family links" %}</button></form>{% endif %}
+{% if prepare %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}">{% button type="submit" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</form>{% endif %}
 {% comment %}Anchor id only, no data-table-region: live-status-v1.js owns the
 history panels below, so paging stays a full load that lands here.{% endcomment %}
 <div id="{{ table.anchor }}">
@@ -23,9 +23,9 @@ history panels below, so paging stays a full load that lands here.{% endcomment 
 {% if not record.current %}<p role="status">{% translate "These links were cancelled, or the data they were made from has changed since, so they cannot be used to go live. Prepare new links." %}</p>{% endif %}
 {% if record.generation.state == 'ready' and record.current %}<p role="status">{% translate "Inactive links are prepared. The campaign remains in Testing." %}</p>{% if record.task.state == 'succeeded' %}<p><a href="{% url 'admin:production_confirmation' transition.pk record.preparation.pk %}">{% translate "Continue to Confirm Production" %}</a></p>{% endif %}{% endif %}
 {% if record.cleanup %}<p>{% translate "Discarding these links:" %} {% include "stewardship/task-state.html" with state=record.cleanup.state %}</p>{% endif %}
-{% if record.controls.cancel %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.cancel }}"><button type="submit">{% translate "Cancel and discard these inactive links" %}</button></form>{% endif %}
-{% if record.controls.retry %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry }}"><button type="submit">{% translate "Retry failed preparation" %}</button></form>{% endif %}
-{% if record.controls.retry_cleanup %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry_cleanup }}"><button type="submit">{% translate "Retry failed disposal" %}</button></form>{% endif %}
+{% if record.controls.cancel %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.cancel }}">{% button type="submit" %}{% translate "Cancel and discard these inactive links" %}{% endbutton %}</form>{% endif %}
+{% if record.controls.retry %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry }}">{% button type="submit" %}{% translate "Retry failed preparation" %}{% endbutton %}</form>{% endif %}
+{% if record.controls.retry_cleanup %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry_cleanup }}">{% button type="submit" %}{% translate "Retry failed disposal" %}{% endbutton %}</form>{% endif %}
 </section>
 {% empty %}<p>{% translate "No links have been prepared yet. Select Prepare inactive Family links to start." %}</p>{% endfor %}
 </div>

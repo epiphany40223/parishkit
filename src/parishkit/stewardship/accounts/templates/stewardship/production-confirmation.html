@@ -12,7 +12,7 @@
 <section class="panel"><h2>{% translate "Verify current impact" %}</h2>
 <p>{% translate "Checks the site's public web address and DNS record, and counts the mail that would be sent right away. It does not take the campaign live or send any email." %}</p>
 {% if origin_verified is True %}<p role="status">{% translate "The public web address passed the URL and DNS checks. Still check separately that the site's HTTPS certificate works and that the site opens in a browser." %}</p>{% elif origin_verified is False %}<p role="alert">{% translate "The public web address check failed or timed out. Check the site's configured URL and its DNS record, then try again." %}</p>{% endif %}
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="verify"><button type="submit">{% translate "Verify final readiness and mail impact" %}</button></form></section>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="verify">{% button type="submit" %}{% translate "Verify final readiness and mail impact" %}{% endbutton %}</form></section>
 {% if preview %}<section class="panel"><h2>{% translate "What going live will do" %}</h2>
 <p>{% translate "As of" %} <time data-local-instant datetime="{{ state.observed_at|instant }}">{{ state.observed_at|instant }}</time></p>
 <dl><dt>{% translate "Active Families" %}</dt><dd>{{ counts.active|number }}</dd>
@@ -29,6 +29,6 @@
 {% if confirmation_token and fresh %}<section class="panel"><h2>{% translate "Confirm Production" %}</h2>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ confirmation_token }}">
 <label for="production-confirmation">{% translate "Type Production to confirm this exact transition" %}</label><input id="production-confirmation" name="typed" required pattern="Production" title="{% translate 'Enter Production exactly as shown.' %}" autocomplete="off" spellcheck="false">
-<button type="submit">{% translate "Confirm Production" %}</button></form></section>{% endif %}
+{% button type="submit" %}{% translate "Confirm Production" %}{% endbutton %}</form></section>{% endif %}
 <p><a href="{% url 'admin:go_live_links' transition.pk %}">{% translate "Return to Prepare Family links" %}</a></p>
 {% endblock %}

@@ -1,4 +1,4 @@
-{% load i18n static %}{% comment %}
+{% load i18n static stewardship %}{% comment %}
   Admin sidebar, built from accounts/admin_navigation.py (admin-portal spec,
   "Menu groups" and "Stable menu shape"). The outer disclosure is the narrow
   screens' Menu toggle; ui-v1.js closes it there and keeps it open on wide
@@ -44,7 +44,7 @@
       </li>
       {% endfor %}
       {% endif %}
-      <li class="admin-signout"><form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button type="submit">{% translate "Sign out" %}</button></form></li>
+      <li class="admin-signout"><form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form></li>
     </ul>
   </details>
 </nav>

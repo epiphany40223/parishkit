@@ -39,7 +39,7 @@
     <td><time datetime="{{ row.expires_at|instant }}" data-local-instant>{{ row.expires_at|instant }}</time></td>
     <td>{% if row.last_used_at %}<time datetime="{{ row.last_used_at|instant }}" data-local-instant>{{ row.last_used_at|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
     <td><code>{{ row.host }}</code></td>
-    <td><form method="post" action="{% url 'admin:automation_session' row.id %}{% if state_query %}?{{ state_query }}{% endif %}#live-table" class="inline-form" data-in-place="revoke-{{ row.id }}" data-in-place-message="{% translate 'Session revoked.' %}">{% csrf_token %}<button type="submit">{% translate "Revoke" %}</button></form></td>
+    <td><form method="post" action="{% url 'admin:automation_session' row.id %}{% if state_query %}?{{ state_query }}{% endif %}#live-table" class="inline-form" data-in-place="revoke-{{ row.id }}" data-in-place-message="{% translate 'Session revoked.' %}">{% csrf_token %}{% button type="submit" %}{% translate "Revoke" %}{% endbutton %}</form></td>
   </tr>{% endfor %}</tbody>
   </table>
   </div>
@@ -69,8 +69,8 @@
   {% else %}<p>{% translate "None of your sessions ended in the last 30 days." %}</p>{% endif %}
 </section>
 {% endif %}</div>
-{% if fresh %}<p><a class="button" href="{{ approval_url }}">{% translate "Approve a session" %}</a></p>
+{% if fresh %}<p>{% button variant="primary" href=approval_url %}{% translate "Approve a session" %}{% endbutton %}</p>
 {% else %}<div class="panel"><p>{% translate "Approving a session first asks you to confirm your sign-in, then takes you to the approval page." %}</p>
 {% translate "the approval page" as approval_label %}{% include 'stewardship/components/reauthenticate.html' with next=approval_url next_label=approval_label %}
-<p><button type="button" disabled>{% translate "Approve a session" %}</button></p></div>{% endif %}
+<p>{% button type="button" disabled %}{% translate "Approve a session" %}{% endbutton %}</p></div>{% endif %}
 {% endblock %}

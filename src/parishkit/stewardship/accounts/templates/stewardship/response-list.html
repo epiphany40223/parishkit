@@ -11,7 +11,7 @@
 {% if show_choices %}<form id="table-filters" data-table-sync method="get" action="{{ filter_action }}">
 <label for="list-show">{{ spec.choice_label }}</label> <select id="list-show" name="show">{% for choice in show_choices %}<option value="{{ choice.value }}"{% if choice.value == query.show %} selected{% endif %}>{{ choice.label }}</option>{% endfor %}</select>
 {% if testing %}<input type="hidden" name="mode" value="testing">{% endif %}{% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-<button type="submit">{% translate "Apply" %}</button></form>{% endif %}
+{% button type="submit" %}{% translate "Apply" %}{% endbutton %}</form>{% endif %}
 {# The region's id is the shared table's anchor ("table"). The mode links (a[data-in-place], #519; each href ends in #table so the guard test and a script-free load find the region), sort headings and navigators refresh it in place (ui-v1.js). #}
 <div id="table" data-table-region>
 <p>{{ campaign.active_configuration.name }} — {% if testing %}{% translate "Testing rehearsal" %}{% else %}{% translate "Production" %}{% endif %}</p>

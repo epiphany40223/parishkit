@@ -12,7 +12,7 @@
     {% for state in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{% include "stewardship/task-state.html" %}</option>{% endfor %}
   </select></div>
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-  <button type="submit">{% translate "Show tasks" %}</button>
+  {% button type="submit" %}{% translate "Show tasks" %}{% endbutton %}
 </form>
 {% translate "Background task pages" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>

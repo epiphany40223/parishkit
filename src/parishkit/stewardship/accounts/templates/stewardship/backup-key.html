@@ -46,7 +46,7 @@
 {% if code_error %}<p class="notice notice-error" role="alert">{{ code_error }}</p>{% endif %}
 <div><label for="backup-key-code">{% translate "Code from backup-prove" %}</label>
 <input type="text" id="backup-key-code" name="code" maxlength="40" autocomplete="off" spellcheck="false" required></div>
-<button type="submit">{% translate "Check code and review" %}</button></form>
+{% button type="submit" %}{% translate "Check code and review" %}{% endbutton %}</form>
 <p><a href="{% url 'admin:integration_settings' 'backup_key' %}">{% translate "Start over" %}</a></p>
 </section>
 {% else %}
@@ -57,6 +57,6 @@
 <div><label for="backup-key-public">{% translate "New public key" %}</label>
 <input type="text" id="backup-key-public" name="public_key" maxlength="200" autocomplete="off" spellcheck="false" required>
 <p class="help">{% translate "The public_key value from backup-keygen: one line of 44 characters ending in =. Never paste the private key." %}</p></div>
-<button type="submit">{% translate "Continue" %}</button></form>
+{% button type="submit" %}{% translate "Continue" %}{% endbutton %}</form>
 {% endif %}
 {% endblock %}

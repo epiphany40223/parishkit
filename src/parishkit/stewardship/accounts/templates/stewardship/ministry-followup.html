@@ -34,7 +34,7 @@
 <label for="contact-time">{% translate "Time" %}</label><input id="contact-time" type="time" name="contact_time" value="{{ form.contact_time }}"{% if 'contact_time' in field_error.fields %} aria-invalid="true" aria-describedby="contact-zone-help contact-error"{% else %} aria-describedby="contact-zone-help"{% endif %} data-browser-zone-field>{% if 'contact_date' in field_error.fields or 'contact_time' in field_error.fields %}<ul class="errorlist" id="contact-error" data-source="{{ field_error.code }}"><li>{{ field_error.message }}</li></ul>{% else %}<ul class="errorlist" id="contact-error" hidden><li></li></ul>{% endif %}
 <label for="contact-notes">{% translate "What happened" %}</label><textarea id="contact-notes" name="contact_notes" maxlength="2000" rows="3">{{ form.contact_notes }}</textarea></div>
 </fieldset>
-<button type="submit" aria-describedby="followup-save-hint"{% if not mutable %} disabled{% endif %}>{% translate "Save follow-up" %}</button>
+{% button type="submit" aria-describedby="followup-save-hint" enabled=mutable %}{% translate "Save follow-up" %}{% endbutton %}
 <p class="help" id="followup-save-hint" data-complete-hint hidden></p></form>
 {% else %}<p>{% translate "This request is closed. Closed outcomes are permanent." %}</p>{% if item.notes %}<div>{{ item.notes|linebreaksbr }}</div>{% endif %}{% endif %}
 {# The history pages in place by itself (data-in-place-only), so it never replaces the form above or what the reader has typed; a Save still refreshes the whole panel (#519). #}
@@ -59,7 +59,7 @@
 <label for="filter-outcome">{% translate "Outcome" %}</label><select id="filter-outcome" name="outcome"><option value="any">{% translate "Any outcome" %}</option>{% for key,label in outcomes.items %}<option value="{{ key }}"{% if query.outcome == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
 <label for="filter-history">{% translate "Request history" %}</label><select id="filter-history" name="history"><option value="current">{% translate "Current requests" %}</option><option value="all"{% if query.history == 'all' %} selected{% endif %}>{% translate "Include replaced and withdrawn requests" %}</option></select>
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-<button type="submit">{% translate "Apply filters" %}</button></form>
+{% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}</form>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Follow-up result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministry follow-up results' %}"><table>

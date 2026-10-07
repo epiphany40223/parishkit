@@ -1,4 +1,4 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
@@ -22,7 +22,7 @@
 <form method="post" class="panel">{% csrf_token %}
 <input type="hidden" name="action" value="cancel"><input type="hidden" name="attempt" value="{{ draft.status.attempt_id }}">
 <p>{% translate "Cancel permanently ends this attempt and clears its temporary settings. A new login is required to restart." %}</p>
-<button type="submit">{% translate "Cancel setup and clear temporary settings" %}</button>
+{% button type="submit" %}{% translate "Cancel setup and clear temporary settings" %}{% endbutton %}
 </form>
 {% endif %}
 {% else %}
@@ -36,9 +36,9 @@
 </ul>
 <p class="notice">{% if local_environment %}{% translate "Saving a credential needs a sign-in from the last five minutes. If yours is older, the page asks you to confirm your sign-in; your setup is kept." %}{% else %}{% translate "Saving a credential needs a Google sign-in from the last five minutes. If yours is older, the page asks you to confirm it's you with Google; your setup is kept." %}{% endif %}</p>
 <p>{% translate "Complete the Parish and first campaign setup using this login. Another login cannot resume your temporary settings. Closing the browser stops the data-load progress page from counting as activity; the inactivity and sign-in time limits still apply." %}</p>
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="start"><button type="submit">{% translate "Start setup" %}</button></form>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="start">{% button type="submit" %}{% translate "Start setup" %}{% endbutton %}</form>
 {% endif %}
 <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}
 {% if draft and not expired %}<p>{% translate "Signing out ends this setup attempt and clears its temporary settings." %}</p>{% endif %}
-<button type="submit">{% translate "Sign out" %}</button></form>
+{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form>
 {% endblock %}
