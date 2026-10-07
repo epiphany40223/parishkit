@@ -57,6 +57,9 @@ FROZEN = {
     "0009_unchanged_snapshots.sql": (
         "206f09701bc2f4b034ec5a180831d6bc3bafcc2ef3d6a4d0647c4c1e659e0e4d"
     ),
+    "0010_task_type_index.sql": (
+        "5326954fb557cff286c211caceb1e283c1b340fcbdbcfe4d5daa5037be6c66e1"
+    ),
 }
 
 
