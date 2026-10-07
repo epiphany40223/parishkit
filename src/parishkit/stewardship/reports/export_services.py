@@ -297,7 +297,7 @@ def regenerate_export(store, user_id, request_id, *, request_key):
                 store,
                 user_id,
                 campaign_id=original.campaign_id,
-                query=InformationQuery.parse(original.parameters["filters"]),
+                query=InformationQuery.retained(original.parameters["filters"]),
                 history=original.parameters["history"],
                 format=original.format,
                 browser_timezone=original.browser_timezone,

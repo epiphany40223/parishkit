@@ -23,6 +23,7 @@ from parishkit.stewardship.responses.models import AdditionalInformationItem
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import expected_version, filters
+from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 
@@ -51,10 +52,11 @@ def _principal(request, store, *, read_only=False):
     return principal
 
 
-def _error(campaign_id, *, item_id=None, status=400, bound=False):
+def _error(campaign_id, *, item_id=None, status=400, bound=False, zone=False):
     """No private form/exception values or database-dependent context processors.
 
-    ``bound`` marks a reused export form, whose 409 differs from an item edit's.
+    ``bound`` marks a reused export form, whose 409 differs from an item edit's;
+    ``zone`` marks dates sent without the browser's time zone (#558).
     """
     debug_swallowed("report request refused")
     response = HttpResponse(
@@ -65,6 +67,7 @@ def _error(campaign_id, *, item_id=None, status=400, bound=False):
                 "item_id": item_id,
                 "status": status,
                 "bound": bound,
+                "zone": zone,
             },
         ),
         status=status,
@@ -231,6 +234,8 @@ def _page_response(request, campaign_id, *, item_id=None):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return _error(campaign_id, item_id=item_id, status=503)
+    except UnknownZone:
+        return _error(campaign_id, item_id=item_id, zone=True)
     except ValueError:
         return _error(campaign_id, item_id=item_id)
     finally:
