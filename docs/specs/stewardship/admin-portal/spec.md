@@ -400,19 +400,6 @@ table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which keeps its
 name until NAV-15 splits it into Sign-in rules, Ministry assignments and
 Chairpersons, and the Emailed reports, Ministry assignments and Chairpersons
 pages, which do not exist yet. The System pages already have their new
-addresses (NAV-6), with every old address redirecting. Until the rest of the
-URL work lands, other pages keep their "Current URL", and so does every other
-section of this spec and the other stewardship specs that name an Admin URL
-(for example the hosted-files spec's `/admin/files/`); those follow-up issues
-update them with the code.
-flow with a way back) and #525 (one URL scheme). Every page already uses the
-table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which keeps its
-name until NAV-15 splits it into Sign-in rules, Ministry assignments and
-Chairpersons, and the Emailed reports, Ministry assignments and Chairpersons
-pages, which do not exist yet. Until the URL work lands, every page keeps its
-"Current URL", and so does every other section of this spec and the other
-stewardship specs that name an Admin URL (for example the hosted-files
-spec's `/admin/files/`); those follow-up issues update them with the code.
 addresses (NAV-6), and so do the Parish data pages and a change's status page
 (NAV-7), with every old address redirecting. Until the rest of the URL work
 lands, other pages keep their "Current URL", and so does every other section
