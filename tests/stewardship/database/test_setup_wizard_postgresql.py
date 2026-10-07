@@ -36,7 +36,7 @@ def test_before_completion_admin_pages_route_to_the_wizard_only(setup_http, goog
         for other in (
             b"Parish settings",
             b'href="/admin/users"',
-            b'href="/admin/configuration/ministries"',
+            b'href="/admin/parish/ministries/"',
         ):
             assert other not in body
         assert b"Sign out" in body

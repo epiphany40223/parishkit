@@ -37,7 +37,7 @@ from .test_response_revisit_postgresql import revisit
 from .test_weekly_observation_postgresql import respond
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/configuration/parish"
+URL = "/admin/parish/settings/"
 
 
 def choose(store, style):
@@ -93,7 +93,7 @@ def test_parish_settings_choose_the_format_for_admin_pages(auth_service, google)
     response = post(browser, {"action": "confirm", "preview": proposal})
     assert response.status_code == 302
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert install_request(store, request_id=request.pk, correlation_id=uuid4())
     values = store.active().document()["sections"]["parish"][0]["values"]

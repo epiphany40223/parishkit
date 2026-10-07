@@ -196,7 +196,7 @@ def own_cached(**changes):
         ("/files/token", {}, True),
         ("/branding/x.png", {"status": 304}, True),
         ("/branding/x.png", {"marked": False}, False),
-        ("/admin/configuration/branding/assets/x.png", {}, False),
+        ("/admin/parish/logos/assets/x.png", {}, False),
         ("/family/form", {}, False),
         ("/branding/x.png", {"status": 403}, False),
         ("/branding/x.png", {"status": 302}, False),

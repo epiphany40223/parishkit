@@ -75,7 +75,7 @@ def decided(store, browser, values):
         response = post(browser, {"action": "confirm", "preview": signed})
     assert response.status_code == 302, response.content
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     with as_config_installer():
         admit_configuration_database()
@@ -338,7 +338,7 @@ def test_keeping_the_role_independently_survives_the_source(
     request = decided(store, browser, decision(store, decision="keep_role"))
     # The POST-only review is named, never linked; Return goes to users (#196).
     with web():
-        status = browser.get(f"/admin/configuration/requests/{request.pk}").content
+        status = browser.get(f"/admin/changes/{request.pk}/").content
     assert b"<li><span>Review Chairperson decision</span></li>" in status
     assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
     principal = current_principal(store, account.pk)

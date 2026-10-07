@@ -77,7 +77,7 @@ def applied(store, browser, values):
         response = post(browser, {"action": "confirm", "preview": signed})
     assert response.status_code == 302
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     receipt = install_request(store, request_id=request.pk, correlation_id=uuid4())
     assert receipt.state == "applied"
@@ -188,7 +188,7 @@ def test_a_signed_review_confirmed_twice_is_one_request(auth_service, google):
     assert first["Location"] == again["Location"]
     assert ConfigurationChangeRequest.objects.count() == before + 1
     request = ConfigurationChangeRequest.objects.get(
-        pk=first["Location"].rsplit("/", 1)[-1]
+        pk=first["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     # The provenance the patch carries is the one request the installer checks.
     receipt = install_request(store, request_id=request.pk, correlation_id=uuid4())
@@ -220,7 +220,7 @@ def test_activation_requires_the_confirming_administrator_still_to_be_one(
         queued = post(browser, {"action": "confirm", "preview": signed})
     assert queued.status_code == 302
     request = ConfigurationChangeRequest.objects.get(
-        pk=queued["Location"].rsplit("/", 1)[-1]
+        pk=queued["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     # The digest is unchanged, but the actor's identity is disabled: the
     # installer refuses at activation, and the policy is untouched.
@@ -249,7 +249,7 @@ def test_activation_requires_the_confirming_administrator_still_to_be_one(
         queued = post(browser, {"action": "confirm", "preview": signed})
     assert queued.status_code == 302
     request = ConfigurationChangeRequest.objects.get(
-        pk=queued["Location"].rsplit("/", 1)[-1]
+        pk=queued["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     google[0].update(email="second@example.org", sub="second-subject")
     other, login = signed_in()
@@ -280,7 +280,7 @@ def test_activation_requires_the_confirming_administrator_still_to_be_one(
         queued = post(other, {"action": "confirm", "preview": signed})
     assert queued.status_code == 302
     request = ConfigurationChangeRequest.objects.get(
-        pk=queued["Location"].rsplit("/", 1)[-1]
+        pk=queued["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     base = store.active()
     original = installer.DatabaseMaterializer.activate
@@ -322,7 +322,7 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
             response = post(browser, {"action": "confirm", "preview": signed})
         assert response.status_code == 302
         return ConfigurationChangeRequest.objects.get(
-            pk=response["Location"].rsplit("/", 1)[-1]
+            pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
         )
 
     def install(request):

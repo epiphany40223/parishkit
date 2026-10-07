@@ -62,9 +62,7 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     body = response.content
     assert b"Testing mode" in body
     assert (b"test@example.org" in body) == (role == "administrator")
-    assert (b'href="/admin/configuration/ministries"' in body) == (
-        role == "administrator"
-    )
+    assert (b'href="/admin/parish/ministries/"' in body) == (role == "administrator")
     # Who else holds access is offered to Administrators only.
     assert (b'href="/admin/users"' in body) == (role == "administrator")
     assert (b"Parish settings" in body) == (role == "administrator")
@@ -83,7 +81,9 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     # The manual ParishSoft refresh has its own sidebar entry (#196).
     menu = body[body.index(b'aria-label="Administration"') :]
     menu = menu[: menu.index(b"</nav>")]
-    assert (b'href="/admin/source/refresh"' in menu) == (role == "administrator")
+    assert (b'href="/admin/parish/parishsoft-refresh/"' in menu) == (
+        role == "administrator"
+    )
     assert body.count(b'aria-label="Administration"') == 1
     # Home is the current page; the home trail is just "Home", so no trail.
     assert b'aria-label="Breadcrumb"' not in body
@@ -202,7 +202,7 @@ def test_anonymous_and_family_pages_do_not_gain_admin_chrome(auth_service, googl
     """Rendering public/login/error content never derives a menu from runtime alone."""
     for path in ("/", "/admin/login"):
         response = Client().get(path)
-        assert b'href="/admin/configuration/ministries"' not in response.content
+        assert b'href="/admin/parish/ministries/"' not in response.content
         assert b"test@example.org" not in response.content
 
 
@@ -347,7 +347,7 @@ def test_critical_event_warning_is_persistent_and_admin_only(auth_service, googl
     """The warning reports recent critical events without exposing their context."""
     operational(Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED))
     browser, _ = signed_in()
-    for path in ("/admin/", "/admin/system/background/", "/admin/configuration/parish"):
+    for path in ("/admin/", "/admin/system/background/", "/admin/parish/settings/"):
         response = browser.get(path)
         assert b"Critical problems in the past 24 hours" in response.content
     store = auth_service.store

@@ -15,10 +15,10 @@ from django.test import RequestFactory
 from django.urls import resolve, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
-from parishkit.stewardship.admin_urls import legacy, system
+from parishkit.stewardship.admin_urls import legacy, parish, system
 
 # Menu groups whose URLs follow the scheme so far, by URL segment.
-MOVED = {"system"}
+MOVED = {"system", "parish"}
 # Route segments that would be a GET target naming an action.
 VERBS = {
     "acknowledge",
@@ -47,12 +47,17 @@ def _example(route):
     )
 
 
-@pytest.mark.parametrize("pattern", system.patterns, ids=lambda p: p.name)
+@pytest.mark.parametrize(
+    "pattern", system.patterns + parish.patterns, ids=lambda p: p.name
+)
 def test_moved_routes_follow_the_scheme(pattern):
     """Under their group, trailing slash, no campaign, nouns only."""
     route = str(pattern.pattern)
     assert route.split("/")[0] in MOVED
-    assert route.endswith("/")
+    # Pages end in "/"; an image keeps its file extension.
+    assert route.endswith("/") or (
+        pattern.name not in navigation.PAGES and route.endswith(".png")
+    )
     assert "campaign_id" not in route
     segments = {segment for segment in route.split("/") if segment}
     assert not segments & VERBS, route
@@ -121,6 +126,20 @@ EXPECTED = {
     ),
     "/admin/logs": "/admin/system/logs/",
     "/admin/logs/export": "/admin/system/logs/export/",
+    # Old Parish data and change-status addresses (NAV-7).
+    "/admin/configuration/parish": "/admin/parish/settings/",
+    "/admin/configuration/branding": "/admin/parish/logos/",
+    f"/admin/configuration/branding/{T}": f"/admin/parish/logos/{T}/",
+    f"/admin/configuration/branding/assets/{T}.png": (
+        f"/admin/parish/logos/assets/{T}.png"
+    ),
+    "/admin/configuration/ministries": "/admin/parish/ministries/",
+    "/admin/files/": "/admin/parish/files/",
+    "/admin/files/upload": "/admin/parish/files/uploads/",
+    "/admin/files/delete": "/admin/parish/files/deletion/",
+    f"/admin/files/{T}/name": f"/admin/parish/files/{T}/name/",
+    "/admin/source/refresh": "/admin/parish/parishsoft-refresh/",
+    f"/admin/configuration/requests/{T}": f"/admin/changes/{T}/",
     # Pages already in the scheme, without their trailing slash.
     "/admin/system": "/admin/system/",
     "/admin/system/health": "/admin/system/health/",
@@ -133,6 +152,15 @@ EXPECTED = {
     "/admin/system/background": "/admin/system/background/",
     f"/admin/system/background/{T}": f"/admin/system/background/{T}/",
     "/admin/system/logs": "/admin/system/logs/",
+    "/admin/parish/settings": "/admin/parish/settings/",
+    "/admin/parish/logos": "/admin/parish/logos/",
+    f"/admin/parish/logos/{T}": f"/admin/parish/logos/{T}/",
+    "/admin/parish/ministries": "/admin/parish/ministries/",
+    "/admin/parish/files": "/admin/parish/files/",
+    "/admin/parish/files/deletion": "/admin/parish/files/deletion/",
+    f"/admin/parish/files/{T}/name": f"/admin/parish/files/{T}/name/",
+    "/admin/parish/parishsoft-refresh": "/admin/parish/parishsoft-refresh/",
+    f"/admin/changes/{T}": f"/admin/changes/{T}/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
 }
@@ -152,7 +180,7 @@ def test_every_moved_page_has_its_slashless_form():
     """The one trailing-slash rule: each moved page's other form redirects."""
     pages = {
         str(pattern.pattern).rstrip("/")
-        for pattern in system.patterns
+        for pattern in system.patterns + parish.patterns
         if pattern.name in navigation.PAGES
     }
     slashless = {old for old, _new in legacy.SLASHLESS}

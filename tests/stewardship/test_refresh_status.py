@@ -131,7 +131,7 @@ def test_healthy_deltas_are_reported_beside_a_failed_full_reload(monkeypatch):
     assert "15-minute updates are working" in html
     assert "Ministry rosters, ministries and giving" in html
     # The one-click action posts the refresh page's own request shape.
-    assert 'method="post" action="/admin/source/refresh"' in html
+    assert 'method="post" action="/admin/parish/parishsoft-refresh/"' in html
     assert f'name="request_key" value="{KEY}"' in html
 
 

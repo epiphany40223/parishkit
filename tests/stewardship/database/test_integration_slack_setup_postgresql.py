@@ -147,7 +147,10 @@ def remove_slack(slack):
     preview = hidden(preview_page, "preview")
     response = post(browser, URL, {"action": "confirm", "preview": preview})
     assert response.status_code == 302
-    assert apply(slack, response["Location"].rsplit("/", 1)[-1]).state == "applied"
+    assert (
+        apply(slack, response["Location"].rstrip("/").rsplit("/", 1)[-1]).state
+        == "applied"
+    )
     # The status names Slack and leads back to its page, which still opens.
     status = browser.get(response["Location"]).content
     assert f'<a href="{URL}">Return to Slack notifications</a>'.encode() in status
@@ -246,7 +249,7 @@ def test_a_failed_slack_add_can_finish_switching(slack):
     with identity("pk_stewardship_web"):
         response = post(browser, select, {"action": "confirm", "preview": preview})
     assert response.status_code == 302, response.content
-    finish = response["Location"].rsplit("/", 1)[-1]
+    finish = response["Location"].rstrip("/").rsplit("/", 1)[-1]
     assert apply(slack, finish).state == "applied"
     added = records(slack)["slack"]["values"]
     assert added["credential_fingerprint"] == file_fingerprint(TOKEN)

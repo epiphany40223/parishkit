@@ -72,11 +72,14 @@ def test_the_request_posts_natively_with_its_key(browser_engine, component_origi
     try:
         page = context.new_page()
         page.goto(component_origin + "/source-refresh")
-        page.route("**/source/refresh", lambda route: route.fulfill(body="Queued"))
+        page.route(
+            "**/admin/parish/parishsoft-refresh/",
+            lambda route: route.fulfill(body="Queued"),
+        )
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Refresh now").click()
         body = sent.value.post_data
         assert "request_key=" in body and "csrfmiddlewaretoken=" in body
-        assert sent.value.url.endswith("/source/refresh")
+        assert sent.value.url.endswith("/admin/parish/parishsoft-refresh/")
     finally:
         context.close()

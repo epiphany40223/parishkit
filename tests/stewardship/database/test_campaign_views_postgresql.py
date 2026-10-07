@@ -60,7 +60,7 @@ def apply(store, response):
     """Installation is a separate process boundary from accepting the web request."""
     assert response.status_code == 302, response.content
     row = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     receipt = install_request(store, request_id=row.pk, correlation_id=uuid4())
     assert receipt.state == "applied"
