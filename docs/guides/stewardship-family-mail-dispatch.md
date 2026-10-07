@@ -299,6 +299,18 @@ change needs the one-time step in the runbook's
 [mail dispatch connection limit](stewardship-deployment-runbook.md#mail-dispatch-connection-limit).
 A runtime budget whose mail limit is below six runs one process.
 
+Each mail consumer keeps its task connection open between messages (#365),
+so a message does not pay for new connections or plan the dispatch guards
+again. This adds no connection: the kept connection is the process's task
+connection, and the in-flight check during SMTP uses it. A connection is
+closed instead when anything could carry into the next message: an open
+transaction, a database error, or a failed message. It is also closed after
+5 minutes, so it passes the connect-time role check again. Before each
+message a consumer drops a kept connection that no longer answers, such as
+after a PostgreSQL restart, and reconnects. Every other service still
+closes its connection after each task. The code is
+`src/parishkit/stewardship/jobs/connection_reuse.py`.
+
 ### Falling back to one mail consumer
 
 The setting is `mail_consumers` (1 or 2, default 2). To run one process,

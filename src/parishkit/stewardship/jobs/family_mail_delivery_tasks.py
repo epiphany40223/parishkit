@@ -11,7 +11,7 @@ from threading import Event, Lock
 from time import monotonic
 from uuid import uuid4
 
-from django.db import connection, connections, transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from parishkit.config import ConfigError
@@ -38,6 +38,7 @@ from parishkit.stewardship.runtime_background import mail_authority
 from parishkit.stewardship.sender_name import configured_sender_name
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .connection_reuse import release
 from .dispatch import Handler, RecoveryPlan
 from .family_mail_dispatch import (
     CAPPED_RETRY_SECONDS,
@@ -634,7 +635,7 @@ def _check(execution):
     try:
         return execution.check_inflight()
     finally:
-        connections.close_all()
+        release()
 
 
 def _inflight_check(execution):
@@ -801,7 +802,7 @@ def _execute(
             "sender_name": sender_name,
         }
         remaining = _launch_budget(deadline)
-        connections.close_all()
+        release()
         # No helper has started yet, so an already elapsed launch budget is
         # definitive non-acceptance, unlike a lost acknowledgement after IO.
         result = FamilyDeliveryResult(

@@ -550,10 +550,12 @@ def plan_submission_guards():
 
     The settings are transaction-local (set_config's third argument), so
     they end at this submission's commit or rollback. Function plans built
-    under them stay cached for the rest of the database session; that is
-    harmless because the worker closes the connection right after the
-    message, and needs a second look if connections are ever reused. They
-    change how the guards are planned, never what they decide.
+    under them stay cached for the rest of the database session, and a mail
+    consumer keeps that session for later messages (jobs/connection_reuse,
+    #365), so later messages reuse those plans. That is the point of keeping
+    it, and it is harmless: the settings change how the guards are planned,
+    never what they decide, and the plans follow each guard's written
+    lookup order, which loses nothing (above).
     """
     with connection.cursor() as cursor:
         for name, value in SUBMISSION_PLANNER:

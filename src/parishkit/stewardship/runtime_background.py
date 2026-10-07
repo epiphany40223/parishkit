@@ -523,7 +523,11 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         from .jobs.outbox_dispatch import delivery_handler
 
         if role is ServiceRole.MAIL_DISPATCH:
+            from .jobs.connection_reuse import keep_connections
+
             log_family_mail_transport(configuration.family_mail_transport)
+            # Mail consumers keep a clean connection between messages (#365).
+            keep_connections()
 
         handlers[FAMILY_DISPATCH] = replace(
             delivery_handler(

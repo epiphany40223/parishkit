@@ -181,13 +181,19 @@ def build_broker(*, endpoint, password, service, handlers, stop=None, queues=Non
         )
         from parishkit.stewardship.web import dates
 
+        from . import connection_reuse
+
         # Work that renders dates without an explicit parish style (option
         # wording, export text) uses the active configuration's choice. The
         # lookup is cached for this one message: a digest formats a date per
         # row, and each uncached call would query the configuration again.
         with busy:
             token = dates.use(functools.cache(active_date_format))
+            # A failed hint closes every connection; a finished one may keep
+            # a mail consumer's clean connection for the next message (#365).
+            failed = True
             try:
+                connection_reuse.refresh()
                 consume_hint(
                     args,
                     kwargs,
@@ -196,6 +202,7 @@ def build_broker(*, endpoint, password, service, handlers, stop=None, queues=Non
                     stop=stop,
                     queues=consumed,
                 )
+                failed = False
             except AuthorityChanging as error:
                 # A configuration change still activating after the dispatcher
                 # waited for it (#429; its timeout line is already logged):
@@ -207,9 +214,12 @@ def build_broker(*, endpoint, password, service, handlers, stop=None, queues=Non
                 record_sql_timeout(error, args)
             finally:
                 dates.reset(token)
-                from django.db import connections
+                if failed:
+                    from django.db import connections
 
-                connections.close_all()
+                    connections.close_all()
+                else:
+                    connection_reuse.release()
         # No ORM objects, operational errors or business values enter a backend.
         return None
 
