@@ -602,7 +602,9 @@ both roles see:
   No email content is shown. Outgoing mail, its state filter and the Mail
   message page name each email's state in the same words, from one shared
   table, adding where a Still sending email is (queued, waiting to retry, or
-  being handed to the mail service) and Not sent (cancelled).
+  being handed to the mail service) and Not sent (cancelled). The Admin
+  status bar, the pause and resume pages, Family email progress and sends,
+  and the test-email results use the same words.
 - **Family code**, for roles that may see Family codes (`FAMILY_CODES`; the
   code is neither decrypted nor shown otherwise), as the directory shows it,
   with **Open form**, which opens the Family form in a new tab with the code

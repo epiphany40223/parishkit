@@ -860,7 +860,7 @@ def component_origin():
                     {
                         "id": "synthetic-delivery",
                         "state": "queued",
-                        "label": "Awaiting mail worker",
+                        "label": "Still sending (queued)",
                         "created_at": NOW.isoformat(),
                         "current": True,
                     }
@@ -888,7 +888,7 @@ def component_origin():
                     {
                         "id": "synthetic-delivery",
                         "state": "queued",
-                        "label": "Awaiting mail worker",
+                        "label": "Still sending (queued)",
                         "created_at": NOW.isoformat(),
                         "current": True,
                     }
@@ -916,7 +916,7 @@ def component_origin():
                     {
                         "id": "synthetic-delivery",
                         "state": "queued",
-                        "label": "Awaiting mail worker",
+                        "label": "Still sending (queued)",
                         "created_at": NOW.isoformat(),
                         "current": True,
                     }
@@ -945,7 +945,7 @@ def component_origin():
                 "items": [
                     {
                         "id": uuid4(),
-                        "label": "Provider accepted the test",
+                        "label": "Delivered",
                         "created_at": NOW,
                         "current": True,
                     }
@@ -974,7 +974,7 @@ def component_origin():
                 "items": [
                     {
                         "id": uuid4(),
-                        "label": "Delivery uncertain",
+                        "label": "Not sure it arrived",
                         "created_at": NOW,
                         "current": False,
                     }
@@ -1003,7 +1003,7 @@ def component_origin():
                 "items": [
                     {
                         "id": uuid4(),
-                        "label": "Awaiting mail worker",
+                        "label": "Still sending (queued)",
                         "created_at": NOW,
                         "current": True,
                     }

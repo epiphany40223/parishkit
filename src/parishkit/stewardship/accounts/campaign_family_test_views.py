@@ -9,6 +9,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.contracts import filters
 
@@ -38,15 +39,9 @@ TICKET_LABELS = {
     "cancelled": _("Cancelled before preparation"),
     "failed": _("Preparation failed"),
 }
-MESSAGE_LABELS = {
-    "pending": _("Waiting for the mail worker"),
-    "retry_wait": _("Waiting to retry"),
-    "submitting": _("Submitting to provider"),
-    "delivered": _("Provider accepted the test"),
-    "permanent_failure": _("Not sent"),
-    "delivery_unknown": _("Delivery uncertain — it may have arrived"),
-    "cancelled": _("Cancelled before submission"),
-}
+# A test email is an ordinary outbox message, listed on Outgoing mail too,
+# so it reads in the same plain words there and here (#678).
+MESSAGE_LABELS = STATE_LABELS
 REASON_LABELS = {
     "eligible": _("Eligible"),
     "unknown": _("Not a Family in this campaign"),

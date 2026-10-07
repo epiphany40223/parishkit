@@ -2540,7 +2540,8 @@ an earlier time that has already passed, stays on the page.
 **When no send is in progress,** the page says so ("No Family email send is
 in progress right now"), with no progress bar. It summarises the send whose
 occurrences fell due most recently in one line: its kind, when it finished,
-and how many emails were sent, failed, uncertain and not sent. It links to
+and how many emails were sent, failed or not sent, and how many are Not
+sure it arrived. It links to
 Outgoing mail.
 
 **Counts while a send is in progress.** Each Family's email is counted by
@@ -2556,15 +2557,18 @@ its outbox message state, or, before preparation, by its occurrence:
   failed ([#482](https://github.com/epiphany40223/parishkit/issues/482)).
   Once an Admin retries that preparation, the email counts as remaining
   until the retry fails again.
-- **Uncertain**: delivery unknown, linked to Outgoing mail.
+- **Not sure it arrived**: delivery unknown, linked to Outgoing mail. Counts
+  and links use the plain state words of
+  [the Family timeline](../reports/spec.md#family-timeline).
 - **Remaining**: pending, waiting to retry or submitting, or not yet
   prepared, including the Families planning still owes. The part not yet
   prepared is shown beside it, in brackets.
-- **Held: invitation failed or uncertain** (reminders only, shown when
-  non-zero): a reminder not yet prepared for a Family whose newest invitation
-  failed or is uncertain. Planning holds such a reminder until the invitation
-  is resolved (`initial_unfulfilled` or `delivery_unresolved`), so it is not
-  remaining and the send can still finish. A reminder whose own preparation
+- **Held: invitation failed or not sure it arrived** (reminders only, shown
+  when non-zero): a reminder not yet prepared for a Family whose newest
+  invitation failed or may not have arrived. Planning holds such a reminder
+  until the invitation is resolved (`initial_unfulfilled` or
+  `delivery_unresolved`), so it is not remaining and the send can still
+  finish. A reminder whose own preparation
   failed counts as Failed, not held. This is a narrower test than
   planning's own: a reminder held for rarer reasons (a newest invitation
   skipped or coalesced without delivery, an unreviewed restore hold, or
@@ -2688,8 +2692,9 @@ marked as such.
 **What each row shows.** The kind (Invitation or Reminder N), the mode,
 the scheduled time, when the first email was prepared, when the latest one
 got its result, and the time between them; then the total and the counts
-Sent, Failed, Uncertain, Not needed, Couldn't be emailed and Held. Each row
-is counted by the progress page's own code, so the two pages always agree;
+Sent, Failed, Not sure it arrived, Not needed, Couldn't be emailed and
+Held. Each row is counted by the progress page's own code, so the two pages
+always agree;
 see [Family email progress](#family-email-progress) for what each count and
 the total mean. A row also shows **Cancelled**: the send's emails that were
 prepared and then cancelled before sending (by a schedule edit, a response
@@ -2700,9 +2705,9 @@ progress says so. Only the send the progress page is showing links to it
 another send still in progress, such as an invitation still sending when a
 reminder falls due, says In progress without the link.
 
-**Links to Outgoing mail.** Sent, Failed, Uncertain and Cancelled link to
-Outgoing mail filtered to that send and the matching email state
-(delivered, failed delivery, delivery unknown and cancelled). The send
+**Links to Outgoing mail.** Sent, Failed, Not sure it arrived and Cancelled
+link to Outgoing mail filtered to that send and the matching email state
+(Delivered, Failed, Not sure it arrived and Not sent (cancelled)). The send
 filter is the query parameter `send=<schedule>:<revision>:<mode>:<cycle>`,
 combined with the existing state, search and paging parameters. It keeps
 each Family's newest email of the send, exactly the emails the counts

@@ -230,7 +230,7 @@ def test_a_finished_send_is_not_in_progress_and_is_summarised(
         body = browser.get(STATUS).content.decode()
     assert "No Family email send is in progress right now" in body
     assert "Last send: Invitation email, finished <time" in body
-    assert "0 sent, 0 failed, 1 uncertain, 0 not sent." in body
+    assert "0 sent, 0 failed, 1 not sure it arrived, 0 not sent." in body
     assert 'href="/admin/deliveries">Outgoing mail</a>' in body
     assert "<progress" not in body
     assert "data-live-pending" in body
@@ -1036,7 +1036,7 @@ def test_a_preparation_that_failed_for_good_counts_as_failed(
         with task_login(ServiceRole.WEB, exact=True):
             body = signed_in()[0].get(STATUS).content.decode()
         assert "No Family email send is in progress right now" in body
-        assert "0 sent, 1 failed, 0 uncertain, 0 not sent." in body
+        assert "0 sent, 1 failed, 0 not sure it arrived, 0 not sent." in body
 
         with web_login():
             retry = retry_preparation(

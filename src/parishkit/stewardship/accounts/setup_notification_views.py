@@ -20,7 +20,14 @@ from .setup_notifications import request_notification
 from .setup_preview import PREVIEW_SALT, prepare_preview
 from .setup_views import ERRORS, _checked, _closed, _context, error_response, page_error
 
-SLACK_LABELS = LABELS | {"queued": _("Awaiting Slack installer")}
+# A Slack test message is not email: keep the shared result words, but name
+# Slack where the email words would say "the mail service". "Awaiting Slack
+# installer" is a deliberate exception to the shared words: a queued Slack
+# test waits for the Slack installer, not for the mail worker.
+SLACK_LABELS = LABELS | {
+    "queued": _("Awaiting Slack installer"),
+    "submitting": _("Still sending (handing to Slack)"),
+}
 
 
 class SetupNotificationForm(forms.Form):

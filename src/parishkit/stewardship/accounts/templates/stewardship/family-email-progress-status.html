@@ -23,8 +23,8 @@
 <dt>{% translate "Sent" %}</dt><dd>{{ send.counts.sent|number }}</dd>
 <dt>{% translate "Remaining" %}</dt><dd>{{ send.counts.remaining|number }}{% if send.total is None %} {% translate "so far" %}{% endif %}{% if send.counts.unprepared %} ({% blocktranslate with count=send.counts.unprepared|number %}of these, {{ count }} not prepared yet{% endblocktranslate %}){% endif %}</dd>
 <dt>{% translate "Failed" %}</dt><dd>{{ send.counts.failed|number }}</dd>
-<dt>{% translate "Uncertain (delivery unknown)" %}</dt><dd>{{ send.counts.uncertain|number }}</dd>
-{% if send.counts.waiting %}<dt>{% translate "Held: invitation failed or uncertain" %}</dt><dd>{{ send.counts.waiting|number }}</dd>{% endif %}
+<dt>{% translate "Not sure it arrived" %}</dt><dd>{{ send.counts.uncertain|number }}</dd>
+{% if send.counts.waiting %}<dt>{% translate "Held: invitation failed or not sure it arrived" %}</dt><dd>{{ send.counts.waiting|number }}</dd>{% endif %}
 <dt>{% translate "Couldn't be emailed (no deliverable address or not eligible)" %}</dt><dd>{{ send.counts.unreachable|number }}</dd>
 {% if send.counts.not_needed %}<dt>{% translate "Not needed (already responded or replaced)" %}</dt><dd>{{ send.counts.not_needed|number }}</dd>{% endif %}
 <dt>{% translate "Current rate" %}</dt><dd>{% if send.stalled %}{% translate "No emails finished in the last 5 minutes" %}{% elif send.rate is not None %}{% blocktranslate with rate=send.rate|number %}{{ rate }} emails per minute{% endblocktranslate %}{% else %}{% translate "Not enough sent yet to measure" %}{% endif %}</dd>
@@ -32,14 +32,14 @@
 <dt>{% translate "Started" %}</dt><dd>{% if send.counts.started_at %}<time data-local-instant datetime="{{ send.counts.started_at|instant }}">{{ send.counts.started_at|instant }}</time>{% else %}{% translate "Not started yet" %}{% endif %}</dd>
 </dl>
 {% if send.counts.uncertain or send.counts.failed or send.counts.waiting %}<ul class="send-progress-review">
-{% if send.counts.uncertain or send.counts.waiting %}<li><a href="{% url 'admin:deliveries' %}?state=delivery_unknown">{% translate "Review uncertain emails" %}</a></li>{% endif %}
+{% if send.counts.uncertain or send.counts.waiting %}<li><a href="{% url 'admin:deliveries' %}?state=delivery_unknown">{% translate "Review emails that may not have arrived" %}</a></li>{% endif %}
 {% if send.counts.outbox_failed or send.counts.waiting %}<li><a href="{% url 'admin:deliveries' %}?state=permanent_failure">{% translate "Review failed emails" %}</a></li>{% endif %}
 {% if send.counts.prepare_failed %}<li><a href="{% url 'admin:background' %}?state=failed&amp;task_type=family_mail_prepare">{% translate "Review emails that failed before they were prepared" %}</a></li>{% endif %}
 </ul>{% endif %}
 {% else %}<h2 id="send-progress-heading">{% translate "No Family email send is in progress right now" %}</h2>
 {% if not campaign %}<p>{% translate "There is no current campaign." %}</p>
 {% else %}{% if upcoming %}{% translate "Waiting for the next emails to be scheduled…" as running %}{% include 'stewardship/live-running.html' with message=running %}<p>{% translate "If this lasts more than a few minutes, check" %} <a href="{% url 'admin:background' %}">{% translate "Background work" %}</a> {% translate "for a failed task." %}</p>{% endif %}
-{% if send %}<p class="send-progress-last">{% if send.counts.kind == 'initial' %}{% translate "Last send: Invitation email" %}{% else %}{% translate "Last send: Reminder email" %}{% endif %}{% if send.finished_at %}, {% translate "finished" %} <time data-local-instant datetime="{{ send.finished_at|instant }}">{{ send.finished_at|instant }}</time>{% endif %}: {% blocktranslate with sent=send.counts.sent|number failed=send.counts.failed|number uncertain=send.counts.uncertain|number not_sent=send.counts.not_sent|number %}{{ sent }} sent, {{ failed }} failed, {{ uncertain }} uncertain, {{ not_sent }} not sent{% endblocktranslate %}{% if send.counts.waiting %}, {% blocktranslate with waiting=send.counts.waiting|number %}{{ waiting }} held behind their invitation{% endblocktranslate %}{% endif %}.</p>{% endif %}
+{% if send %}<p class="send-progress-last">{% if send.counts.kind == 'initial' %}{% translate "Last send: Invitation email" %}{% else %}{% translate "Last send: Reminder email" %}{% endif %}{% if send.finished_at %}, {% translate "finished" %} <time data-local-instant datetime="{{ send.finished_at|instant }}">{{ send.finished_at|instant }}</time>{% endif %}: {% blocktranslate with sent=send.counts.sent|number failed=send.counts.failed|number uncertain=send.counts.uncertain|number not_sent=send.counts.not_sent|number %}{{ sent }} sent, {{ failed }} failed, {{ uncertain }} not sure it arrived, {{ not_sent }} not sent{% endblocktranslate %}{% if send.counts.waiting %}, {% blocktranslate with waiting=send.counts.waiting|number %}{{ waiting }} held behind their invitation{% endblocktranslate %}{% endif %}.</p>{% endif %}
 <p>{% translate "Every Family email and its state is listed on" %} <a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a>.</p>
 <p><a href="{% url 'admin:family_email_sends' %}">{% translate "See past sends" %}</a>: {% translate "every invitation and reminder, with how each one turned out." %}</p>
 <p>{% translate "This page checks by itself and shows the next invitation or reminder as soon as it starts." %}</p>{% endif %}
