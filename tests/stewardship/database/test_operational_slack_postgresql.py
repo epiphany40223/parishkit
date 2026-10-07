@@ -1,5 +1,6 @@
 """Actual independent Slack ownership and certainty, with a fake private provider."""
 
+from datetime import timedelta
 from threading import Event
 from uuid import uuid4
 
@@ -194,9 +195,17 @@ def test_sql_rejects_forged_slack_submission_and_results(slack_setup):
         ):
             with pytest.raises(DatabaseError), work_transaction():
                 OperationalSlackAttempt.objects.create(**(values | {field: wrong}))
+        # The provider window is 35 s from when the attempt row is written:
+        # bracketed by database clock readings taken just before and after,
+        # so a slow CPU between them widens the bracket instead of failing
+        # a fixed 2 s window (#697).
+        with work_transaction():
+            before = database_now()
         identifier, deadline, _ = begin(execution, slack_setup)
         with work_transaction():
-            assert 33 < (deadline - database_now()).total_seconds() <= 35
+            after = database_now()
+        window = timedelta(seconds=35)
+        assert before + window <= deadline <= after + window
         result = dict(
             attempt_id=identifier,
             outcome="accepted",

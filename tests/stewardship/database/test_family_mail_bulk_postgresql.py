@@ -630,12 +630,19 @@ def test_the_lease_margin_stops_a_late_helper_as_unknown(families, monkeypatch):
 
 
 def test_an_unrecorded_outcome_is_recovered_as_unknown(families, monkeypatch):
-    """An outcome the database refuses leaves its message for recovery only."""
+    """An outcome the database refuses leaves its message for recovery only.
+
+    The lease is short so recovery is due within the test, but long enough
+    (15 s against a batch of about a second) that a busy CI CPU cannot run
+    the batch past it. With the 5 s lease once used here, packed CI
+    partitions ran a batch long enough that a sent message's outcome was
+    not recorded either, and the delivered count fell short (#697).
+    """
     harness, path = families
     _one_batch(monkeypatch)
-    monkeypatch.setattr(family_mail_bulk, "SEND_LEASE_SECONDS", 5)
+    monkeypatch.setattr(family_mail_bulk, "SEND_LEASE_SECONDS", 15)
     monkeypatch.setattr(family_mail_bulk, "LEASE_MARGIN_SECONDS", 1)
-    monkeypatch.setattr(family_mail_bulk, "FIRST_DEADLINE_SECONDS", 4)
+    monkeypatch.setattr(family_mail_bulk, "FIRST_DEADLINE_SECONDS", 14)
     monkeypatch.setattr(family_mail_bulk, "DEADLINE_STEP_SECONDS", 0)
     monkeypatch.setattr(family_mail_bulk, "MIN_LAUNCH_SECONDS", 1)
     provider = Provider()
@@ -659,7 +666,7 @@ def test_an_unrecorded_outcome_is_recovered_as_unknown(families, monkeypatch):
         OutboxMessage.objects.filter(state="delivered").count()
         == len(provider.calls) - 1
     )
-    _wait_for_lease_expiry()
+    _wait_for_lease_expiry(limit=30)
     message = OutboxMessage.objects.get(pk=failed[0])
     with campaign_clock(due()):
         single(harness, path, message.task_id)
