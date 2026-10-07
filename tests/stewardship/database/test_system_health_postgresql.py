@@ -119,11 +119,12 @@ def test_problems_come_from_status_rows_incidents_and_retries(auth_service, goog
         found = system_health.read_health(auth_service.store)[0]
     codes = [problem.kind for problem in found.problems]
     assert codes == ["sender_halted", "not_running", "backup_offsite_failed"]
-    assert found.problems[1].service == "worker"
-    assert found.problems[1].process == "source"
+    assert [
+        (subject.service, subject.process) for subject in found.problems[1].subjects
+    ] == [("worker", "source")]
     assert "3 problems need attention" in body
     assert "Mail sender 1 has stopped all Family email" in body
-    assert "ParishSoft refresh worker has not reported since" in body
+    assert "The ParishSoft refresh worker has not reported since" in body
     assert "Copying backups off-site has failed since" in body
     assert "Running (2 processes)" in body
     # The polled fragment is never audited.
@@ -253,7 +254,7 @@ def test_home_lists_each_problem_with_the_pages_sentence(auth_service, google):
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         home = browser.get("/admin/").content.decode()
     assert "1 system problem needs attention" in home
-    assert "ParishSoft refresh worker has not reported since" in home
+    assert "The ParishSoft refresh worker has not reported since" in home
     assert 'data-problem="not_running"' in home
     assert 'href="/admin/system/health/"' in home
 
@@ -324,3 +325,26 @@ def test_home_problem_lines_cost_no_query_whatever_is_open(auth_service, google)
     assert "2 system problems need attention" in home
     assert "No backup has finished yet." in home
     assert troubled == healthy
+
+
+def test_several_stopped_services_are_one_line_on_home_and_the_page(
+    auth_service, google
+):
+    """One condition in several processes is listed once in both places (#686)."""
+    # Web and both mail senders run; the worker and scheduler stopped.
+    insert_row("web")
+    insert_row("mail-dispatch", sender="running")
+    insert_row("mail-dispatch", process="mail", sender="running")
+    insert_row("worker", age=timedelta(hours=1))
+    insert_row("scheduler", age=timedelta(hours=2))
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        home = browser.get("/admin/").content.decode()
+        page = browser.get(STATUS).content.decode()
+    for body in (home, page):
+        assert body.count('data-problem="not_running"') == 1, body
+        assert (
+            "The background worker and the scheduler have not reported for more "
+            "than "
+            "three minutes"
+        ) in body
