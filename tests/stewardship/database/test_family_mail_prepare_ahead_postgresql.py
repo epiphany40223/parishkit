@@ -410,6 +410,34 @@ def test_bulk_scheduler_plans_production_reminders_ahead(invited):
     )
 
 
+def test_a_settled_bulk_sweep_wakes_at_the_lead_window(invited, monkeypatch):
+    """One long-lived bulk sweep idles, then plans at the window's start (#640).
+
+    The scheduler keeps its producer across loops, so the lead-window start
+    must wake it even though no row changed since every Family was planned.
+    """
+    from parishkit.stewardship.campaigns import schedule_production
+
+    monkeypatch.setattr(schedule_production, "CHANGE_CHECK_SECONDS", 0)
+    harness, path, provider, due_at = invited
+    producer = FamilyScheduleProducer(uuid4(), bulk=True)
+    # Every Family is planned; the mailable ones get a reminder.
+    everyone = FamilyCampaign.objects.count()
+    login = task_login(ServiceRole.SCHEDULER, exact=True)
+    with campaign_clock(due_at - OUTSIDE), login, scheduler_session() as guard:
+        for _ in range(3):
+            producer(guard)
+        assert not producer.pending
+        assert producer.wake == due_at - PREPARE_AHEAD
+        assert producer(guard) == ()
+    assert not reminders().exists()
+    login = task_login(ServiceRole.SCHEDULER, exact=True)
+    with campaign_clock(due_at - INSIDE), login, scheduler_session() as guard:
+        assert len(producer(guard)) == everyone
+    assert reminders().count() == FAMILIES
+    assert producer.wake == due_at
+
+
 def test_testing_plans_reminders_only_at_their_due_time(
     families,  # noqa: F811
     monkeypatch,

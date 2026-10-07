@@ -717,7 +717,7 @@ admission check joins it. Admission then locks the runtime row
   until a consumer claims the row: about six holds per message during a
   launch-size backlog.
 - The scheduler's Family schedule sweep: 20 of its 43 holds per idle loop,
-  even when nothing is due.
+  even when nothing is due. Change 5 removed these holds.
 
 Because these holders all serialize with each other, a Family login waits too.
 A login takes the runtime row `FOR SHARE`, so it waits for every admission
@@ -811,6 +811,12 @@ because it was hinted recently must still count as recently admitted, not as
 unknown. #394 implemented this change before launch; the [durable
 scheduling](../background-processing/spec.md#durable-scheduling-and-task-execution)
 spec describes the behavior.
+
+**Change 5** plans a Family only when its inputs or the campaign clock can
+change its plan, with an hourly full sweep. #640 implemented it without a
+schema change. An idle loop takes no work-order lock; the [Family schedule
+sweep](../background-processing/spec.md#family-schedule-sweep) spec
+describes it.
 
 **Changes 6–9** need schema changes, which the v1 schema freeze defers. The
 SQL functions to change are:
