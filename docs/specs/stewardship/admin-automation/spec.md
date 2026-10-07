@@ -314,12 +314,14 @@ shell script because the host has Docker but not the ParishKit Python package.
 It supplies the Compose project and file arguments and the web configuration
 path, makes the session secret at pairing, chooses and reads the session file,
 sends the [preamble](#session-file), decides whether to forward standard
-input, and, from PR 8, fetches [export files](#personal-data-on-the-command-line).
+input, refuses to write a streamed file to a terminal (from PR 8a), and,
+from PR 8b, fetches [export files](#personal-data-on-the-command-line).
 It holds no other behavior: every rule stays in the package. The
 [operator guide](../../../guides/stewardship-admin-automation.md) also shows
 the same steps by hand. The wrapper has its own tests in CI, run against a
 fake `docker` on `PATH`, covering file creation and modes, session selection,
-the preamble and input forwarding, and export fetching once PR 8 adds it.
+the preamble and input forwarding, the terminal refusal for a streamed
+file, and export fetching once PR 8b adds it.
 
 ### HTTP JSON API (rejected for now)
 
@@ -887,18 +889,20 @@ machine-readable catalog: for each command its name, the scope it needs
 (`none` for the pairing commands, which run before a session exists,
 `read_only` for any session, `full` for a full-scope one), whether it changes
 state, whether it is fresh-gated, whether it prompts, whether it takes
-`--request-key` or `--expected-version`, whether it takes `--watch`, the
-audit event it records, its options and positional arguments, its result
-fields and the PR that added it. The catalog is generated
-from the subparser tree and the read-model projections, and a test keeps it
-complete. `commands` itself needs no database: it checks the preamble's form
-and prints the catalog.
+`--request-key` or `--expected-version`, whether it takes `--watch`,
+whether it streams a file to standard output, the audit event it records,
+its options and positional arguments, its result fields and the PR that
+added it. The catalog is generated from the subparser tree and the
+read-model projections, and a test keeps it complete. `commands` itself
+needs no database: it checks the preamble's form and prints the catalog.
 
 ### Output documents
 
 A command prints exactly one JSON document to standard output, unless it
 runs with `--watch`, is `login start` (whose document has `final` false) or
-streams an export:
+streams a file (`logs export`, and `export download --stream` from PR 8b),
+which writes the file's bytes alone to standard output and its one document,
+success or failure, to standard error:
 
 ```json
 {
@@ -1457,8 +1461,9 @@ signatures:
   chosen-Family tests (`campaign_mail`, `campaign_family_test`).
 - **PR 7:** `delivery_control_commands` onto the caller; the maintenance
   switch from `family_maintenance_views`.
-- **PR 8:** report and export reads and export actions from the report and
-  export views; log reads and export from `log_views`.
+- **PR 8a:** the log reads and export from `log_views` (`audit.log_reads`).
+- **PR 8b to 8e:** report and export reads and export actions from the
+  report and export views.
 - **PR 9a:** `delivery_views.preparation_retry` and
   `export_views.retry_cleanup_command`, with the delivery views' admission and
   command scope (`jobs.task_retries`).
@@ -1560,8 +1565,8 @@ exemptions.
 | `login`, `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
 | `maintenance` | Permanent: the status page the access gate shows |
 | `automation_access`, `automation_approval`, `automation_session` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
-| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8) |
-| `response_list`, `response_list_export` | Family-level rows, so export only: `export responses` (PR 8) |
+| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c) |
+| `response_list`, `response_list_export` | Family-level rows, so export only: `export responses` (PR 8e) |
 
 The inventory's `status presence` is folded into `status` as its
 `presence.count`, because a word cannot be both a command and an area in
@@ -1704,17 +1709,37 @@ pause, and closing work is the closed-campaign resolution. See
 
 | URL names | Command or exemption |
 | --- | --- |
-| `reports`, `report_campaigns` | `report list` (PR 8) |
-| `participation` | `report participation` (PR 8) |
+| `reports`, `report_campaigns` | `report list` (PR 8c) |
+| `participation` | `report participation` (PR 8c) |
 | `participation_chart`, `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
-| `financial_report`, `talents_report`, `information_queue`, `information_item` | Aggregate reads as `report …`; Family-level rows only as exports (PR 8) |
-| `ministry_reports`, `ministry_report_campaigns`, `ministry_report`, `ministry_joiners`, `ministry_leavers`, `ministry_packet` | `report ministry …`, counts; rows only as exports (PR 8) |
-| `family_directory`, `postal_directory`, `family_codes`, `find_family` | Export only: `export directory`, `export postal`, `export family-codes` (PR 8); Find a Family is the directory's search |
-| `financial_export`, `talents_export`, `ministry_export`, `information_export`, `family_directory_export`, `postal_directory_export` | `export …` (PR 8) |
-| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download`, `export_create`, `export_status`, `export_cancel`, `export_download`, `export_download_grant` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8) |
-| `report_exact_create`, `report_exact`, `report_exact_cancel`, `report_exact_retry`, `exact_export_create`, `exact_export_status`, `exact_export_cancel`, `exact_export_retry` | `export exact …` (PR 8) |
-| `daily_digest_snapshot`, `weekly_digest_snapshot`, `weekly_digest_item`, `weekly_digest_manual` | `digest show`, `digest weekly-request` (PR 8) |
-| `logs`, `logs_export` | `logs list`, `logs export` (PR 8) |
+| `financial_report`, `talents_report`, `information_queue`, `information_item` | Aggregate reads as `report …` (PR 8c); Family-level rows only as exports (PR 8e) |
+| `ministry_reports`, `ministry_report_campaigns`, `ministry_report`, `ministry_joiners`, `ministry_leavers`, `ministry_packet` | `report ministry …`, counts (PR 8c); rows only as exports (PR 8e) |
+| `family_directory`, `postal_directory`, `family_codes`, `find_family` | Export only: `export directory`, `export postal`, `export family-codes` (PR 8e); Find a Family is the directory's search |
+| `family_timeline` | One Family's timeline, so export only: `export family-timeline` (PR 8e) |
+| `financial_export`, `talents_export`, `ministry_export`, `information_export`, `family_directory_export`, `postal_directory_export` | `export …` (PR 8e) |
+| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download`, `export_create`, `export_status`, `export_cancel`, `export_download`, `export_download_grant` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b) |
+| `report_exact_create`, `report_exact`, `report_exact_cancel`, `report_exact_retry`, `exact_export_create`, `exact_export_status`, `exact_export_cancel`, `exact_export_retry` | `export exact …` (PR 8e) |
+| `daily_digest_snapshot`, `weekly_digest_snapshot`, `weekly_digest_item`, `weekly_digest_manual` | `digest show`, `digest weekly-request` (PR 8d) |
+| `logs`, `logs_export` | `logs list`, `logs export` (PR 8a) |
+
+`logs list` and `logs export` read through `audit.log_reads`, the functions
+the System logs page and its download use, with the page's own filters, so
+a filter the page refuses is `invalid`. `logs list` admits passively (any
+session) and records the page's `system_logs_viewed` with its count. Its
+entries carry identifiers and stored values, never the actor email address
+the page shows or a Family's or member's DUID from an entry's detail (see
+[personal data on the command line](#personal-data-on-the-command-line)).
+`logs export` needs a full-scope session, admits as the download's form
+post does, and records the page's `system_logs_exported` with its count;
+it streams the page's exact file. As on the page, the export event is
+recorded once the file is built, before its bytes are written, so a
+download that breaks off is still recorded. The page keeps no record of a
+download, so the command keeps none either, and `export fetch` does not
+apply. The document shapes, the leaving out of the actor email and DUIDs,
+and the stream without an export record are defaults, pending
+Administrator confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#system-logs)
+lists the fields.
 
 ### Operations
 
@@ -2178,8 +2203,10 @@ Administrator's approval of that deploy.
   `test sample` and chosen-Family tests.
 - **PR 7, delivery controls:** pause, resume, closed-campaign resolution and
   Family portal maintenance.
-- **PR 8, reports and exports:** report reads, exports with streamed fetch
-  (including the wrapper's `export fetch` and its tests), digests and logs.
+- **PR 8, reports and exports,** in five parts. **PR 8a:** the log commands.
+  **PR 8b:** the export lifecycle with streamed fetch (including the
+  wrapper's `export fetch` and its tests). **PR 8c:** the aggregate report
+  reads. **PR 8d:** digests. **PR 8e:** the Family-level exports.
 - **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.

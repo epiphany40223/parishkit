@@ -73,7 +73,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "delivery refusals",
         "delivery refusal-show",
     }
-    assert set(entries) == session | reads | changes | operations
+    reports = {"logs list", "logs export"}
+    assert set(entries) == session | reads | changes | operations | reports
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
         assert {"--config", "--session-stdin"} <= names
@@ -85,8 +86,12 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in changes
             else 9
             if name in operations
+            else 8
+            if name in reports
             else 3
         )
+        # Only logs export streams a file to standard output.
+        assert entry["streams"] == (name == "logs export"), name
         assert not entry["fresh_gated"] and not entry["prompts"]
     for name in reads:
         # Read-only status: any session, no state change, the page's event.
@@ -161,6 +166,16 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert resolve["audit_event"] == "admin_cmd_delivery_resolve"
     actions = {option["name"]: option for option in resolve["options"]}
     assert "resend" not in actions["--action"]["choices"]
+    # The System logs: any session reads the screen; its download, like
+    # every export, needs a full-scope session. Each records the page's event.
+    listing, export = entries["logs list"], entries["logs export"]
+    assert listing["scope"] == "read_only" and export["scope"] == "full"
+    assert not listing["changes_state"] and not export["changes_state"]
+    assert listing["audit_event"] == "system_logs_viewed"
+    assert export["audit_event"] == "system_logs_exported"
+    options = {option["name"]: option for option in export["options"]}
+    assert options["--format"]["choices"] == ["csv", "jsonl"]
+    assert "--through" not in options and "--page" not in options
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -814,6 +829,13 @@ def fresh_environment():
             ],
             (2, "configuration"),
         ),
+        # The System logs (PR 8a); logs export shares its module and options.
+        (
+            "stub",
+            PREAMBLE,
+            ["logs", "list", "--show", "error", "--sort", "oldest"],
+            (2, "configuration"),
+        ),
     ],
     ids=[
         "commands",
@@ -832,6 +854,7 @@ def fresh_environment():
         "admitted-task-retry",
         "admitted-delivery-list",
         "admitted-delivery-resolve",
+        "admitted-logs-list",
     ],
 )
 def test_the_command_line_runs_before_django_is_set_up(
@@ -983,6 +1006,7 @@ def pre_setup_imports():
         # The command specifications are built when the module is imported.
         "_read_specs",
         "_change_specs",
+        "_report_specs",
     ):
         # Only the function's own direct imports: nested blocks run later.
         found |= imports(
