@@ -60,6 +60,9 @@ FROZEN = {
     "0010_task_type_index.sql": (
         "5326954fb557cff286c211caceb1e283c1b340fcbdbcfe4d5daa5037be6c66e1"
     ),
+    "0011_refresh_schedule.sql": (
+        "5701c8cad983e9c1c1d7343f2e603f1a50fe4139cc35af0d4c04096ad9eb2b1b"
+    ),
 }
 
 

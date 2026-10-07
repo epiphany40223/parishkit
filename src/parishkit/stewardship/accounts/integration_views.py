@@ -49,6 +49,7 @@ from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
 from .sessions import authenticated_admin, require_fresh
+from .source_cadence_schema import CADENCE_SETTINGS
 
 SALT = "stewardship-integration-settings-v1"
 CREDENTIAL_SALT = "stewardship-integration-credential-v1"
@@ -113,10 +114,30 @@ def _unset(target):
     }
 
 
-def _form(target, *args, **kwargs):
-    """The settings form, with ParishSoft's organization ID fixed once loaded."""
+def _form(target, *args, stored=None, **kwargs):
+    """The settings form, with ParishSoft's organization ID fixed once loaded.
+
+    ``stored`` is the integration's stored settings record, if any; a
+    ParishSoft schedule saved with its rules (#632) leaves the form's
+    schedule fields out.
+    """
     loaded = loaded_organization() if target == "parishsoft" else None
-    return IntegrationForm(target, *args, loaded_organization=loaded, **kwargs)
+    return IntegrationForm(
+        target,
+        *args,
+        loaded_organization=loaded,
+        rules_schedule=_rules_schedule(target, stored),
+        **kwargs,
+    )
+
+
+def _rules_schedule(target, record):
+    """Whether ``record`` is a ParishSoft schedule saved with its rules (#632)."""
+    return (
+        target == "parishsoft"
+        and record is not None
+        and "refresh_rules" in record["values"]["settings"]
+    )
 
 
 def _checked(request, service, response):
@@ -154,7 +175,11 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
         # and once any backup folder has been saved since the test, the saved
         # folder shows instead.
         initial["target"] = probe.folder_url
-    form = form if form is not None else _form(target, initial=initial)
+    form = (
+        form
+        if form is not None
+        else _form(target, initial=initial, stored=record if configured else None)
+    )
     latest = summary(target, record) if target in ROTATING_TARGETS else None
     pending = latest is not None and latest.kind == "pending"
     unavailable = False
@@ -354,7 +379,15 @@ def _retain_unused_time(target, settings, before):
 
     The page hides (and the browser does not send) the time list for those
     frequencies, so an empty or stale value there is never a change to review.
+    A schedule saved with its rules (#632) is kept exactly as stored: this
+    page has no fields for it, and saving other settings never changes it.
     """
+    if target == "parishsoft" and "refresh_rules" in before:
+        return {
+            name: value
+            for name, value in settings.items()
+            if name not in CADENCE_SETTINGS
+        } | {name: before[name] for name in CADENCE_SETTINGS if name in before}
     if target == "parishsoft" and settings.get("full_refresh", "daily") != "daily":
         before = _with_defaults(before)
         settings = settings | {
@@ -371,7 +404,7 @@ def _save(request, service, configuration, actor, target):
     stale session gets the step-up page instead of a sealed request.
     """
     require_fresh(request)
-    form = _form(target, request.POST)
+    form = _form(target, request.POST, stored=_optional(configuration, target))
     credential = InlineCredentialForm(target, request.POST)
     if not (form.is_valid() and credential.is_valid()):
         credential = InlineCredentialForm(
@@ -447,7 +480,7 @@ def _preview(request, service, actor, target):
     if _optional(configuration, target) is None and target != "backup":
         raise ValueError("Paste the key to set up this integration.")
     record = _optional(configuration, target) or _unset(target)
-    form = _form(target, request.POST)
+    form = _form(target, request.POST, stored=_optional(configuration, target))
     if not form.is_valid():
         return _page(request, configuration, target, form=form, status=400)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:

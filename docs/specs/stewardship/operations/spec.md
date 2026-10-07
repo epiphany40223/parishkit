@@ -1158,7 +1158,14 @@ update's does. The tick guard admits at most one, at exactly that instant,
 which it finds in SQL by walking the configuration activations, as
 `initial_source_at` does. It is treated as a daytime full refresh: a send in
 progress holds it by its cause, recorded as held, and then it runs as the
-catch-up with the hold's allowance. Before this cause
+catch-up with the hold's allowance. If the guard refuses it (the
+activations moved between the scheduler's decision and its insert), only the
+catch-up is rolled back and logged once; the loop's other slots still run.
+Two edges are accepted rather than prevented: a catch-up requested while a
+full refresh that started before the change is still running, which then
+runs one extra full refresh; and a second schedule change before any full
+refresh promotes, which requests a second catch-up at the second instant.
+Both cost one extra full refresh and never hide a late one. Before this cause
 exists (delivery step 1), the settings page says when a full refresh is more
 than the lateness margin late and not running, and offers **Run a full
 refresh now** beside that notice.

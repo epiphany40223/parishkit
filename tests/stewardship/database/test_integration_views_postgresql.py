@@ -373,6 +373,128 @@ def test_older_document_shows_its_nightly_time_as_the_time_list(auth_service, go
     assert ConfigurationChangeRequest.objects.count() == requests
 
 
+def rules_schedule():
+    """A schedule saved with its rules (#632): 13 full times, a quick time."""
+    from parishkit.stewardship.source.refresh_rules import stored_settings
+
+    return stored_settings(
+        {
+            "rules": [
+                {"kind": "full", "every": 60, "from": "00:00", "to": "12:00"},
+                {"kind": "quick", "at": "18:00"},
+            ],
+            "skips": [{"at": "06:00"}],
+            "skip_around_family_emails": False,
+        }
+    )
+
+
+def apply_rules_schedule(store):
+    """Store ``rules_schedule`` beside the integration's other settings."""
+    base = store.active()
+    integration = base.document()["sections"]["integrations"][0]
+    change(
+        store,
+        base,
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "integrations",
+                "id": integration["id"],
+                "values": {
+                    "settings": integration["values"]["settings"] | rules_schedule()
+                },
+            }
+        ],
+    )
+
+
+def stored_schedule(store):
+    """The active document's schedule keys, serialized byte for byte."""
+    settings = store.active().document()["sections"]["integrations"][0]["values"][
+        "settings"
+    ]
+    return json.dumps(
+        {name: settings[name] for name in rules_schedule()}, sort_keys=True
+    )
+
+
+# Posted by a browser with the old page's schedule fields, which this page
+# no longer shows for a rules schedule; they must be ignored.
+STALE_FIELDS = {"full_refresh_times": "02:00", "delta_refresh": "quarter_hour"}
+
+
+def test_a_schedule_saved_with_its_rules_is_kept_by_this_page(auth_service, google):
+    """This page shows no fields for a rules schedule (#632) and never changes it.
+
+    Until the new schedule editor lands, saving other settings keeps the
+    stored schedule exactly, so an unchanged save is no change at all.
+    """
+    apply_rules_schedule(auth_service.store)
+    requests = ConfigurationChangeRequest.objects.count()
+    browser, _ = signed_in()
+    page = browser.get(URL).content.decode()
+    for name in ("full_refresh", "full_refresh_times", "delta_refresh"):
+        assert f'name="{name}"' not in page
+    unchanged = post(
+        browser,
+        URL,
+        edit(auth_service.store, organization_id="12345", **STALE_FIELDS),
+    )
+    assert unchanged.status_code == 400
+    assert b"No settings have changed." in unchanged.content
+    assert ConfigurationChangeRequest.objects.count() == requests
+
+
+def test_another_setting_saved_on_a_rules_schedule_keeps_it_exactly(
+    auth_service, google
+):
+    """A real change to another setting stores the schedule byte for byte (#632)."""
+    apply_rules_schedule(auth_service.store)
+    before = stored_schedule(auth_service.store)
+    assert json.loads(before)["delta_refresh"] == "times"
+    browser, _ = signed_in()
+    review = post(
+        browser,
+        URL,
+        edit(auth_service.store, organization_id="54321", **STALE_FIELDS),
+    )
+    response = post(
+        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
+    )
+    request = ConfigurationChangeRequest.objects.get(
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
+    )
+    assert (
+        install_request(
+            auth_service.store, request_id=request.pk, correlation_id=uuid4()
+        ).state
+        == "applied"
+    )
+    settings = auth_service.store.active().document()["sections"]["integrations"][0][
+        "values"
+    ]["settings"]
+    assert settings["organization_id"] == "54321"
+    assert stored_schedule(auth_service.store) == before
+
+
+def test_a_new_key_on_a_rules_schedule_leaves_the_schedule_alone(
+    auth_service, google, handoff
+):
+    """The key-rotation save path queues only the key, never a schedule change."""
+    apply_rules_schedule(auth_service.store)
+    requests = set(ConfigurationChangeRequest.objects.values_list("pk", flat=True))
+    browser, _ = signed_in()
+    with identity("pk_stewardship_web"):
+        page = browser.get(URL)
+        response = save_key(browser, SECRET, page, **STALE_FIELDS)
+        assert response.status_code == 302, response.content
+    (queued,) = ConfigurationChangeRequest.objects.exclude(pk__in=requests)
+    for item in queued.patch:
+        assert "settings" not in item["values"]
+
+
 @pytest.mark.parametrize("direct_insert", [False, True])
 def test_cadence_upgrade_does_not_bypass_manual_grant_provenance(
     auth_service, direct_insert

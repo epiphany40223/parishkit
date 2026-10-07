@@ -117,6 +117,12 @@ class FailureKind(StrEnum):
     # campaign and configuration, riding on the reviewed startup_validated
     # event until it has its own (see the follow-up issue on #447).
     REFRESH_IN_LEAD_WINDOW = "full_refresh_in_lead_window"
+    # The database's refresh-tick guard refused the schedule-change catch-up
+    # full refresh (#632): only that request was rolled back, and the
+    # scheduler's other refreshes still run. Logged once per scheduler
+    # process for each catch-up slot, riding on startup_validated like the
+    # lead-window advice; not a failed refresh.
+    REFRESH_CATCH_UP_REFUSED = "refresh_catch_up_refused"
     # ``pk-stewardship load-check`` stopped because something it measures
     # changed under it (#633): the ParishSoft data, the Testing Family
     # portal, or the campaign. Each says to run the check again.
