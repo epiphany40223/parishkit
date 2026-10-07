@@ -23,7 +23,8 @@ from .outbox_validation import DeliveryIdentity, RenderInput, WeeklyRenderInput
 class DigestTemplate:
     """Parish-authored introduction cannot replace the required compiled report."""
 
-    subject: str = "{{ campaign_name }} — daily report"
+    # The envelope appends the report kind, its date and the parish (#720).
+    subject: str = "{{ campaign_name }}"
     html: str = ""
     text: str = ""
 
@@ -40,25 +41,63 @@ class DigestTemplate:
 MAX_SUBJECT = 247
 
 
+# Words that show an authored subject already names the kind of report.
+REPORT_WORDS = ("report", "digest", "summary")
+
+
+def report_label(title):
+    """The short report name of a compiled title: "Daily campaign digest" →
+    "daily report", "Manual weekly information digest" → "manual weekly report".
+    """
+    words = title.split()
+    kind = [
+        word.lower()
+        for word in words
+        if word.lower() not in {"campaign", "information", "digest"}
+    ]
+    return " ".join(kind + ["report"])
+
+
 def identified_subject(authored, report, *, campaign, parish):
-    """Make the subject name the report and its day, the campaign and parish.
+    """Make the subject name the report and its day, the campaign and parish once.
 
     The report emails open straight into their content (#720), so the subject
-    is the only place that names them. The Administrator's own subject comes
-    first; the compiled report title (for example "Weekly information digest
-    — October 5, 2026") and any of the campaign and parish names it does not
-    already contain follow, so nothing is said twice.
+    is the only place that names them. ``report`` is the compiled title and
+    date, for example "Weekly information digest — October 5, 2026". The
+    Administrator's subject is kept and only what it lacks is appended:
+
+    - the report's kind ("daily report"), unless the subject already names a
+      report, digest or summary;
+    - the date;
+    - "manual" or "recovery", and the campaign and parish names, in
+      parentheses when missing.
+
+    For example "Annual campaign — daily report, November 2, 2026 (Example
+    Parish)".
     """
+    title, _, when = report.rpartition(" — ")
     subject = " ".join(authored.split())
-    if report.casefold() not in subject.casefold():
-        subject = f"{subject} — {report}" if subject else report
-    names = [
+    folded = subject.casefold()
+    names_report = any(word in folded for word in REPORT_WORDS)
+    label = report_label(title)
+    if not names_report:
+        subject = f"{subject} — {label}" if subject else label[:1].upper() + label[1:]
+    if when and when.casefold() not in subject.casefold():
+        subject += f", {when}"
+    notes = []
+    if names_report:
+        notes += [
+            word
+            for word in ("manual", "recovery")
+            if word in label.split() and word not in folded
+        ]
+    notes += [
         name
         for name in (campaign, parish)
         if name and name.casefold() not in subject.casefold()
     ]
-    if names:
-        subject += f" ({', '.join(names)})"
+    if notes:
+        subject += f" ({', '.join(notes)})"
     return subject if len(subject) <= MAX_SUBJECT else subject[: MAX_SUBJECT - 1] + "…"
 
 

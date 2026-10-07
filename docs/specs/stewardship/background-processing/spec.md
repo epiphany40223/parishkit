@@ -1665,9 +1665,12 @@ The email is desktop-first and visual
 column (fixed at 960px in Outlook for Windows; a narrower window shrinks it),
 not the 600px column of Family mail. It says each fact once and opens with its
 content. The subject names the report, its report day, the campaign and the
-parish: the Administrator's subject comes first, followed by the compiled
-report title ("Daily campaign digest — October 6, 2026") and whichever of the
-campaign and parish names it does not already contain. The body has no title
+parish, each once. The Administrator's subject is kept and only what it lacks
+is appended: the report's short name ("daily report") unless it already names
+a report, digest or summary; the date; and, in parentheses, "manual" or
+"recovery" and the campaign or parish name when missing. The default subject
+"{{ campaign_name }} — daily report" (weekly: "— weekly report") reads
+"Annual campaign — daily report, October 6, 2026 (Example Parish)". The body has no title
 or name line; it starts with the as-of line, the only place that names the
 time zone (a recovery digest starts it with the dates it covers). Any
 Administrator-written intro stays above the report. **Campaign totals** follow, one line per

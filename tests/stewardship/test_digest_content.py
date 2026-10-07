@@ -193,49 +193,100 @@ def test_substitution_cannot_assemble_a_reserved_marker():
         render_digest_envelope(**values)
 
 
+DAILY = "Daily campaign digest — November 2, 2026"
+WEEKLY = "Weekly information digest — October 5, 2026"
+MANUAL = "Manual weekly information digest — October 5, 2026"
+RECOVERY = "Recovery campaign digest — October 1, 2026 through October 3, 2026"
+
+
 @pytest.mark.parametrize(
-    ("authored", "expected"),
+    ("authored", "report", "expected"),
     [
+        # The built-in defaults (content_defaults.EMAILS).
         (
-            "{{ campaign_name }} — daily report",
-            "Annual campaign — daily report — Daily campaign digest — "
-            "November 2, 2026 (Example Parish)",
+            "Annual campaign — daily report",
+            DAILY,
+            "Annual campaign — daily report, November 2, 2026 (Example Parish)",
         ),
         (
-            "{{ parish_name }}: Daily campaign digest — November 2, 2026, "
-            "{{ campaign_name }}",
-            "Example Parish: Daily campaign digest — November 2, 2026, Annual campaign",
+            "Annual campaign — weekly report",
+            WEEKLY,
+            "Annual campaign — weekly report, October 5, 2026 (Example Parish)",
+        ),
+        (
+            "Annual campaign — weekly report",
+            MANUAL,
+            "Annual campaign — weekly report, October 5, 2026 (manual, Example Parish)",
+        ),
+        (
+            "Annual campaign — daily report",
+            RECOVERY,
+            "Annual campaign — daily report, October 1, 2026 through October 3, "
+            "2026 (recovery, Example Parish)",
+        ),
+        # Defaults saved before #720 are kept and completed.
+        (
+            "Annual campaign: daily progress report",
+            DAILY,
+            "Annual campaign: daily progress report, November 2, 2026 (Example Parish)",
+        ),
+        (
+            "Annual campaign: weekly summary",
+            WEEKLY,
+            "Annual campaign: weekly summary, October 5, 2026 (Example Parish)",
+        ),
+        # A custom subject that already names everything is kept unchanged.
+        (
+            "Example Parish: Annual campaign digest for November 2, 2026",
+            DAILY,
+            "Example Parish: Annual campaign digest for November 2, 2026",
+        ),
+        # A subject that names no report gets the report's short name.
+        (
+            "Stewardship update",
+            WEEKLY,
+            "Stewardship update — weekly report, October 5, 2026 "
+            "(Annual campaign, Example Parish)",
         ),
         (
             "",
-            "Daily campaign digest — November 2, 2026 "
-            "(Annual campaign, Example Parish)",
+            DAILY,
+            "Daily report, November 2, 2026 (Annual campaign, Example Parish)",
         ),
     ],
 )
-def test_subject_names_report_day_campaign_and_parish_once(authored, expected):
-    """The body no longer names them (#720), so the subject must, without repeats."""
-    values = arguments()
-    values["template"] = DigestTemplate(authored or "x")
-    values["content"] = replace(
-        values["content"], subject="Daily campaign digest — November 2, 2026"
+def test_subject_says_each_thing_once(authored, report, expected):
+    """The body names none of these (#720), so the subject must, once each."""
+    subject = identified_subject(
+        authored, report, campaign="Annual campaign", parish="Example Parish"
     )
+    assert subject == expected
+    # A recovery range names a month twice; every other word appears once.
+    when = report.rpartition(" — ")[2]
+    words = [
+        word.strip(",:()—").casefold() for word in subject.replace(when, "").split()
+    ]
+    words = [word for word in words if word and not word.isdigit()]
+    assert len(words) == len(set(words)), subject
+
+
+def test_envelope_uses_the_completed_subject():
+    """The routed message carries the completed subject, not the bare template."""
+    values = arguments()
+    values["template"] = DigestTemplate("{{ campaign_name }} — daily report")
+    values["content"] = replace(values["content"], subject=DAILY)
     values["values"] = {
         "campaign_name": "Annual campaign",
         "parish_name": "Example Parish",
     }
-    if not authored:
-        assert (
-            identified_subject(
-                "",
-                "Daily campaign digest — November 2, 2026",
-                campaign="Annual campaign",
-                parish="Example Parish",
-            )
-            == expected
-        )
-        return
     subject = render_digest_envelope(**values).subject
-    assert subject == expected
-    for fact in ("Example Parish", "Annual campaign", "November 2, 2026"):
-        assert subject.count(fact) == 1
+    assert subject == (
+        "Annual campaign — daily report, November 2, 2026 (Example Parish)"
+    )
+    # The built-in envelope default names no report kind of its own, so a
+    # weekly digest never reads "daily report".
+    values["template"] = DigestTemplate()
+    values["content"] = replace(values["content"], subject=WEEKLY)
+    assert render_digest_envelope(**values).subject == (
+        "Annual campaign — weekly report, October 5, 2026 (Example Parish)"
+    )

@@ -272,14 +272,16 @@ EMAILS = {
     ),
     "confirmation": _confirmation(_GIVE_ONLINE),
     "daily_digest": DefaultEmail(
-        "{{ campaign_name }}: daily progress report",
+        # The compiled report adds the report day and parish (#720):
+        # "Annual campaign — daily report, November 2, 2026 (Example Parish)".
+        "{{ campaign_name }} — daily report",
         "<p>Here is today’s progress report for {{ parish_name }}’s "
         "{{ campaign_name }} ({{ campaign_start }} – {{ campaign_end }}). The "
         "figures below count only submitted Family responses; Testing responses "
         "are never included. Open the protected report for full details.</p>",
     ),
     "weekly_digest": DefaultEmail(
-        "{{ campaign_name }}: weekly summary",
+        "{{ campaign_name }} — weekly report",
         "<p>Here is this week’s summary for {{ parish_name }}’s "
         "{{ campaign_name }}. The figures below count only submitted Family "
         "responses. Use the link to open the protected report with full "
@@ -311,6 +313,17 @@ RETIRED_EMAILS = {
     "initial": (_older_salutation(EMAILS["initial"]),),
     "reminder": (_older_salutation(EMAILS["reminder"]),),
     "confirmation": (_confirmation(_GIVE_ONLINE_PLEDGE),),
+    # The report subjects before #720 named the report differently.
+    "daily_digest": (
+        DefaultEmail(
+            "{{ campaign_name }}: daily progress report", EMAILS["daily_digest"].html
+        ),
+    ),
+    "weekly_digest": (
+        DefaultEmail(
+            "{{ campaign_name }}: weekly summary", EMAILS["weekly_digest"].html
+        ),
+    ),
 }
 
 
