@@ -37,10 +37,11 @@ progress``, ``send history``, ``schedule show``, ``go-live readiness`` and
 take ``--watch``. The schedule change commands (``schedule preview`` and
 ``schedule confirm``, in ``admin_changes``) and ``config request show``
 (with ``--watch``) follow (PR 4), then ``task retry`` and the delivery
-commands (PR 9, in ``admin_operations``) and ``logs list`` and ``logs
-export`` (PR 8a, in ``admin_reports``). A command that streams a file
-(``logs export``) writes the file's bytes, and nothing else, to standard
-output, and its document to standard error. Other areas join the same
+commands (PR 9, in ``admin_operations``), ``logs list`` and ``logs
+export`` (PR 8a, in ``admin_reports``) and the export lifecycle (PR 8b, in
+``admin_exports``). A command that streams a file (``logs export`` and
+``export download --stream``) writes the file's bytes, and nothing else, to
+standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it.
 """
@@ -215,6 +216,10 @@ class AdminRuntime:
     pairing: object
     public_origin: str
     setup_complete: object = None
+    # The read limits of ``export download``'s campaign read guard: the
+    # deployment's download lifetime (``read_guards.ReadLimits``); None
+    # uses the default lifetime.
+    read_limits: object = None
 
     def configured(self):
         """Whether first setup finished, by the web's own rule (``AuthRuntime``)."""
@@ -259,8 +264,10 @@ def configure_admin_process(configuration):
     The web's ``django_signing`` keyring (active key and verify-only
     fallbacks) signs the command session's data, so it is the web's, not a
     random key. The database is the web's login only; no HTTP server,
-    download pool, worker or provider client is assembled. Returns the
-    receipt of the signing keyring this process loaded.
+    download pool, worker or provider client is assembled. The reports
+    root is the web's, so ``export download`` reads the stored file the
+    page streams. Returns the receipt of the signing keyring this process
+    loaded.
     """
     from importlib import import_module
 
@@ -282,6 +289,7 @@ def configure_admin_process(configuration):
     values.update(ring.django_settings())
     values["DATABASES"] = {"default": database_settings(configuration)}
     values["STEWARDSHIP_OPERATIONAL_POLICY"] = configuration.operational_alerts
+    values["STEWARDSHIP_REPORTS_ROOT"] = configuration.paths["reports"]
     values.update(profile_settings(configuration))
     settings.configure(**values)
     django.setup()
@@ -333,11 +341,34 @@ def admitted(configuration):
                 pairing=PairingStore(client),
                 public_origin=configuration.public_origin,
                 setup_complete=setup_is_complete,
+                read_limits=download_limits(configuration.runtime_budget),
             )
         finally:
             connections.close_all()
             if client is not None:
                 client.connection_pool.disconnect()
+
+
+def download_limits(budget=None):
+    """The read limits of ``export download``: the web download's lifetime.
+
+    The page streams a file on the download pool with the deployment's
+    ``download_seconds``; the command has no download pool (it reads on its
+    own web connection, without claiming one of the web's download slots),
+    so its guard's lifetime is that same budget, within the guard's
+    600-second maximum for a read without a pool. ``budget`` is the
+    deployment's ``RuntimeBudget``; None uses the default one.
+    """
+    from .campaigns.read_guards import ReadLimits
+    from .runtime_budget import RuntimeBudget
+
+    budget = budget or RuntimeBudget()
+    return ReadLimits(
+        interactive_seconds=min(budget.download_seconds, 600),
+        download_seconds=budget.download_seconds,
+        download_idle_seconds=budget.download_idle_seconds,
+        drain_seconds=budget.drain_seconds,
+    )
 
 
 def session_block(row):
@@ -1041,6 +1072,95 @@ def logs_export(args, preamble, runtime, context):
     )
 
 
+def export_create(args, preamble, runtime, context):
+    """Request a participation export as the page's export form does (PR 8b)."""
+    from .admin_exports import create_export_command
+
+    return create_export_command(
+        context["caller"],
+        runtime,
+        fact_set_id=args.fact_set,
+        fmt=args.format,
+        zone=args.timezone,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
+def export_status(args, preamble, runtime, context):
+    """One export's state, as its status page shows it (PR 8b)."""
+    from .admin_exports import read_export
+
+    return read_export(context["caller"], runtime, args.export_id)
+
+
+def export_cancel(args, preamble, runtime, context):
+    """Cancel an export that is not published yet, as its page does (PR 8b)."""
+    from .admin_exports import cancel_export_command
+
+    return cancel_export_command(
+        context["caller"], runtime, args.export_id, context=context
+    )
+
+
+def export_retry(args, preamble, runtime, context):
+    """Retry an export whose latest run failed, as its page does (PR 8b)."""
+    from .admin_exports import retry_export_command
+
+    return retry_export_command(
+        context["caller"],
+        runtime,
+        args.export_id,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
+def export_regenerate(args, preamble, runtime, context):
+    """Request an expired export again, as its page's Regenerate does (PR 8b).
+
+    Regenerating a directory, mail-merge or financial export is fresh-gated
+    (#547), so for those, and only those, the command asks at the
+    confirmation prompt (or takes ``--yes``) before a request key is made or
+    any transaction opens.
+    """
+    from .admin_exports import regenerate_export_command, regeneration_prompts
+
+    if regeneration_prompts(context["caller"], runtime, args.export_id):
+        confirm(
+            context,
+            (
+                "Regenerate an export of Family codes or financial detail: "
+                "a new copy of its file.",
+            ),
+        )
+    return regenerate_export_command(
+        context["caller"],
+        runtime,
+        args.export_id,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
+def export_download(args, preamble, runtime, context):
+    """Stream an export's stored file to standard output (PR 8b).
+
+    The bytes are written as they are read, inside the page's campaign read
+    guard, so nothing is kept in memory or on disk on the way.
+    """
+    from .admin_exports import download_export
+
+    stdout = context["stdout"]
+    return download_export(
+        context["caller"],
+        runtime,
+        args.export_id,
+        write=lambda chunk: write_stream(stdout, chunk),
+        limits=runtime.read_limits or download_limits(),
+    )
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -1386,6 +1506,57 @@ def _logs_export_options(parser):
         "--timezone",
         default="UTC",
         help="the time zone of the file's times (default UTC)",
+    )
+
+
+# The participation export's formats (``export_services.create_export``).
+# Spelled out because the parser is built before Django is set up; a test
+# keeps it equal to the service's.
+EXPORT_FORMATS = ("csv", "png", "pdf", "xlsx")
+
+
+def _export_create_options(parser):
+    """Options of ``export create``: the generation, format, zone and key."""
+    parser.add_argument(
+        "--fact-set",
+        required=True,
+        type=_uuid,
+        help="the participation generation to export (its fact set id)",
+    )
+    parser.add_argument("--format", required=True, choices=EXPORT_FORMATS)
+    parser.add_argument(
+        "--timezone",
+        required=True,
+        help="the time zone of the file's dates, for example America/New_York",
+    )
+    _request_key_option(parser)
+
+
+def _export_id_option(parser):
+    """The export a lifecycle command acts on."""
+    parser.add_argument("export_id", type=_uuid, metavar="EXPORT_ID")
+
+
+def _export_status_options(parser):
+    """Options of ``export status``: the export, and --watch."""
+    _export_id_option(parser)
+    _watch_options(parser)
+
+
+def _export_keyed_options(parser):
+    """Options of ``export retry`` and ``export regenerate``: export and key."""
+    _export_id_option(parser)
+    _request_key_option(parser)
+
+
+def _export_download_options(parser):
+    """Options of ``export download``: the export, and the required --stream."""
+    _export_id_option(parser)
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        required=True,
+        help="write the file's bytes to standard output (redirect it to a file)",
     )
 
 
@@ -1852,7 +2023,11 @@ def _test_specs():
 
 
 def _report_specs():
-    """The report, export, digest and log commands (PR 8; 8a: the logs)."""
+    """The report, export, digest and log commands (PR 8; 8a: the logs).
+
+    PR 8b adds the export lifecycle (``admin_exports``).
+    """
+    from .admin_exports import ExportChange, ExportDownload, ExportStatus
     from .admin_reports import LogExport, LogList
 
     return (
@@ -1877,6 +2052,75 @@ def _report_specs():
             8,
             options=(_logs_export_options,),
             audit_event="system_logs_exported",
+            streams=True,
+        ),
+        CommandSpec(
+            "export create",
+            "Request a participation export, as the page's export form does.",
+            export_create,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_export_create_options,),
+            request_key=True,
+        ),
+        CommandSpec(
+            "export status",
+            "Show one export's state, as its status page does.",
+            export_status,
+            "read_only",
+            False,
+            ExportStatus.field_names(),
+            8,
+            options=(_export_status_options,),
+            watch=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "export cancel",
+            "Cancel an export that is not ready yet.",
+            export_cancel,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_export_id_option,),
+        ),
+        CommandSpec(
+            "export retry",
+            "Retry an export whose latest run failed.",
+            export_retry,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_export_keyed_options,),
+            request_key=True,
+        ),
+        CommandSpec(
+            "export regenerate",
+            "Request an expired export again from its retained inputs.",
+            export_regenerate,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_export_keyed_options,),
+            request_key=True,
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "export download",
+            "Write an export's file to standard output, as its download does.",
+            export_download,
+            "full",
+            False,
+            ExportDownload.field_names(),
+            8,
+            options=(_export_download_options,),
+            audit_event="export_downloaded",
             streams=True,
         ),
     )
@@ -2162,6 +2406,7 @@ def run(args, *, stdin, stdout, stderr):
             "final": True,
             "audit": True,
             "stdin": stdin,
+            "stdout": stdout,
             "stderr": stderr,
             "yes": bool(getattr(args, "yes", False)),
         }
@@ -2199,7 +2444,9 @@ def run(args, *, stdin, stdout, stderr):
                         )
 
                         close_command_session(caller.portal_session)
-            if spec.streams:
+            # ``logs export`` leaves its file's bytes for here; ``export
+            # download`` has already written them inside its read guard.
+            if spec.streams and "stream" in context:
                 write_stream(stdout, context["stream"])
             emit(result, final=context["final"])
             return 0
@@ -2238,8 +2485,9 @@ def write_stream(stdout, body):
     """Write a streamed file's bytes, exactly, to standard output.
 
     The bytes go to the binary buffer under a text stream, never through
-    its encoding; a text-only stream (a test's ``StringIO``) gets them
-    decoded as UTF-8, the only encoding a streamed file uses.
+    its encoding. A text-only stream (a test's ``StringIO``) gets them
+    decoded as UTF-8, so only a text file can be written to one; a binary
+    export (PNG, PDF, XLSX) needs a stream with a buffer.
     """
     target = getattr(stdout, "buffer", None)
     if target is None:

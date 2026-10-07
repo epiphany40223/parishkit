@@ -81,7 +81,16 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "delivery refusals",
         "delivery refusal-show",
     }
-    reports = {"logs list", "logs export"}
+    reports = {
+        "logs list",
+        "logs export",
+        "export create",
+        "export status",
+        "export cancel",
+        "export retry",
+        "export regenerate",
+        "export download",
+    }
     assert set(entries) == (
         session | reads | changes | refresh | tests | operations | reports
     )
@@ -102,13 +111,16 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in reports
             else 3
         )
-        # Only the chosen-Family send needs a recent sign-in on its page.
-        assert entry["fresh_gated"] == (name == "test families"), name
+        # Only the chosen-Family send and some regenerations need a recent
+        # sign-in on their pages.
+        assert entry["fresh_gated"] == (
+            name in {"test families", "export regenerate"}
+        ), name
         # A prompting command, and only one, takes --yes. Other branches add
         # their own prompting commands, so this is not a closed list.
         assert ("--yes" in names) == entry["prompts"], name
-        # Only logs export streams a file to standard output.
-        assert entry["streams"] == (name == "logs export"), name
+        # Only the two downloads stream a file to standard output.
+        assert entry["streams"] == (name in {"logs export", "export download"}), name
     # The sample test asks for the page's acknowledgement (PR 6b); its
     # preview changes nothing and asks nothing.
     preview, sample = entries["test sample-preview"], entries["test sample"]
@@ -232,6 +244,29 @@ def test_the_catalog_lists_every_command_with_its_flags():
     options = {option["name"]: option for option in export["options"]}
     assert options["--format"]["choices"] == ["csv", "jsonl"]
     assert "--through" not in options and "--page" not in options
+    # The export lifecycle: status is any session's passive read with
+    # --watch and no view event; every other command needs a full-scope
+    # session. The four changes are keyed (but cancel) and record their
+    # admin_cmd_* event; the download records the page's own event.
+    status = entries["export status"]
+    assert status["scope"] == "read_only" and not status["changes_state"]
+    assert status["watch"] and status["audit_event"] is None
+    assert status["arguments"] == ["EXPORT_ID"]
+    for verb in ("create", "cancel", "retry", "regenerate"):
+        entry = entries[f"export {verb}"]
+        assert entry["scope"] == "full" and entry["changes_state"], verb
+        assert entry["audit_event"] == f"admin_cmd_export_{verb}", verb
+        assert entry["request_key"] == (verb != "cancel"), verb
+        assert entry["result_fields"] == ["created", "request_key", "export"]
+    create = {option["name"]: option for option in entries["export create"]["options"]}
+    assert create["--format"]["choices"] == ["csv", "png", "pdf", "xlsx"]
+    assert create["--fact-set"]["required"] and create["--timezone"]["required"]
+    download = entries["export download"]
+    assert download["scope"] == "full" and not download["changes_state"]
+    assert download["audit_event"] == "export_downloaded"
+    assert download["arguments"] == ["EXPORT_ID"]
+    stream = {option["name"]: option for option in download["options"]}
+    assert stream["--stream"]["required"]
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -251,6 +286,10 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_test_families",
         "admin_cmd_task_retry",
         "admin_cmd_delivery_resolve",
+        "admin_cmd_export_create",
+        "admin_cmd_export_cancel",
+        "admin_cmd_export_retry",
+        "admin_cmd_export_regenerate",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

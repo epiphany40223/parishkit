@@ -132,6 +132,22 @@ DESCRIPTIONS = {
         "An automation session retried a failed background task, as the "
         "task's Retry button does."
     ),
+    "admin_cmd_export_create": _(
+        "An automation session requested a report export, as the report's "
+        "export form does."
+    ),
+    "admin_cmd_export_cancel": _(
+        "An automation session cancelled a report export, as the export's "
+        "Cancel button does."
+    ),
+    "admin_cmd_export_retry": _(
+        "An automation session retried a failed report export, as the "
+        "export's Retry button does."
+    ),
+    "admin_cmd_export_regenerate": _(
+        "An automation session requested an expired report export again, "
+        "as the export's Regenerate button does."
+    ),
     "admin_privileges_changed": _(
         "A portal user's roles changed, so their session was replaced with one "
         "carrying the new roles."
