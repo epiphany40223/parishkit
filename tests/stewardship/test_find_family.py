@@ -14,6 +14,7 @@ from uuid import UUID
 from django.template import engines
 from django.template.loader import render_to_string
 from django.test import RequestFactory
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import admin_context, admin_navigation
 from parishkit.stewardship.accounts.policy import Principal
@@ -41,7 +42,7 @@ def _chrome(roles, campaign=CAMPAIGN, ministries=frozenset()):
 
 def test_only_administrators_and_staff_with_a_campaign_get_the_box():
     """Ministry leaders get none, and nobody does without a current campaign."""
-    expected = {"url": f"/admin/reports/{CAMPAIGN.pk}/families/find"}
+    expected = {"url": reverse("admin:find_family")}
     assert _chrome({"administrator", "staff", "ministry_leader"}) == expected
     assert _chrome({"staff"}) == expected
     assert _chrome({"ministry_leader"}, ministries=frozenset({5})) is None
@@ -74,9 +75,10 @@ def _page(find_family):
 
 def test_the_header_box_is_a_labelled_post_search():
     """A CSRF POST form with a labelled field, a live status and its results."""
-    html = _page({"url": "/admin/reports/x/families/find"})
+    url = reverse("admin:find_family")
+    html = _page({"url": url})
     box = html[html.index("data-find-family>") : html.index("data-find-family-results")]
-    assert '<form method="post" action="/admin/reports/x/families/find"' in box
+    assert f'<form method="post" action="{url}"' in box
     assert 'role="search"' in box and 'name="csrfmiddlewaretoken"' in box
     assert '<label for="find-family-search"' in box
     assert 'id="find-family-search" name="search"' in box
@@ -121,7 +123,7 @@ def test_results_open_the_timeline_and_offer_the_rest_in_the_directory():
     ]
     html = _results(rows, 1234, search='"><b>x')
     assert "1,234 Families found" in html
-    timeline = f"/admin/reports/{CAMPAIGN.pk}/families/{FAMILY}/"
+    timeline = reverse("admin:family_timeline", args=[FAMILY])
     assert f'<a href="{timeline}" data-find-family-result>' in html
     assert "DUID 12 · Envelope 345" in html
     # A Family without a campaign record has no timeline to open.

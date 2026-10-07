@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import pytest
 from django.db.models import F
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.models import AuditEvent
@@ -49,7 +50,7 @@ def test_dashboard_for_admin_and_staff_in_both_modes(
     harness, epoch = funnel
     open_form(harness)
     respond(harness)
-    route = f"/admin/reports/{harness.campaign.pk}/responses/"
+    route = reverse("admin:response_dashboard")
     admin, login = signed_in()
     assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):

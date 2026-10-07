@@ -428,7 +428,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.11 — NAV-8: move Mail and Family portal URLs.
 - [x] ADM-12.12 — NAV-9: move Campaign setup URLs, part A, and add the group root.
 - [x] ADM-12.13 — NAV-10: move Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries).
-- [ ] ADM-12.14 — NAV-11: move report URLs, including response lists and the reports root.
+- [x] ADM-12.14 — NAV-11: move report URLs, including response lists and the reports root.
 - [ ] ADM-12.15 — NAV-12: move export and digest URLs and fold the latest-data export into the shared export page.
 - [ ] ADM-12.16 — NAV-13 (optional): add trailing slashes to sign-in, setup and maintenance URLs.
 - [ ] ADM-12.17 — NAV-14: add the Emailed reports page.
@@ -636,6 +636,38 @@ starts nothing, the pages without a current campaign),
 cancellation re-posted through its old address keeps the CSRF, fresh sign-in
 and reviewed-token checks and acts once) and the updated go-live, test
 email, delivery control and live Ministries suites.
+
+ADM-12.14 (NAV-11) moves every report page under `/admin/reports/` with no
+campaign in the address: the Response dashboard `responses/` and its lists
+`responses/<list>/` (CSV `csv/`), Participation `participation/`, Financial
+stewardship `financial/`, Talents and limitations `talents/`, Additional
+information `information/` and its requests, Ministry requests
+`ministries/` with Members joining `joining/` and leaving `leaving/`,
+Ministry follow-up `ministries/follow-up/` and its requests, the Family
+directory `families/`, the Family timeline `families/<family>/` and Family
+campaign codes `family-codes/`. Each report's form actions move with it as
+nouns: exports post to its `exports/` collection, a follow-up is saved to
+its request's `record/`, the follow-up packet to `ministries/packets/`, and
+the header's Find a Family box posts to `families/search/`. Each old address
+names a campaign, so it redirects only for the current campaign (301, or 308
+that keeps a form's method and body) and is gone (410, never cached) for any
+other, before any effect; the report a 308 reaches still checks the CSRF
+token, so a re-posted form never acts by itself. The two campaign choosers
+and the old Ministry reports root (`/admin/ministry-reports/`) are retired
+to permanent redirects to Participation and Ministry requests, and
+Ministry requests now shows the "no campaign" page that root showed when
+there is nothing for the viewer to report. `/admin/reports/` keeps its
+meaning: Participation, or Ministry requests for a viewer who may not open
+Participation. The export, latest-data export and emailed report pages are
+addressed by their own record and move with NAV-12, so sent digest emails
+still open their reports. It is proven by
+`tests/stewardship/test_admin_url_scheme.py` (the report rows, the reports
+root, the directory route order, the sent digest link shapes),
+`tests/stewardship/database/test_admin_url_scheme_postgresql.py` (old report
+addresses and forms for the current campaign and another, the retired
+addresses, the pages and forms without a current campaign, the Ministry
+leader at the reports root) and the updated report, export, follow-up,
+directory, timeline and single-campaign suites.
 
 ## ADM-13: System health page
 

@@ -5,6 +5,6 @@
 {% if status == 409 %}<p role="alert">{% translate "This request changed. Nothing was saved. Reload and review its latest status before trying again." %}</p>
 {% elif status == 503 %}<p role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
 {% else %}<p role="alert">{% translate "This form could not be read. Nothing was saved. Reload the request and try again." %}</p>{% endif %}
-{% if request_id %}<p><a href="{% url 'admin:ministry_followup_item' campaign_id request_id %}">{% translate "Reload this request" %}</a></p>{% endif %}
-<p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Return to Ministry follow-up" %}</a></p>
+{% if request_id %}<p><a href="{% url 'admin:ministry_followup_item' request_id %}">{% translate "Reload this request" %}</a></p>{% endif %}
+<p><a href="{% url 'admin:ministry_followup' %}">{% translate "Return to Ministry follow-up" %}</a></p>
 {% endblock %}

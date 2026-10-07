@@ -10,7 +10,7 @@
 <p>{% translate "Across all active Families, those without deliverable email:" %} {{ postal_proportion }}.</p>
 {% if testing_codes %}<p class="notice" data-testing-codes>{% translate "These are the live codes; they work only after go-live. Links to open each Family's form appear next to the codes once the campaign is live. To try the Family form now, send yourself a test invitation." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}</p>{% else %}<p class="notice" data-open-form-notice>{% translate "Opening a Family's form signs this browser in as that Family and replaces any other Family form open in it; your Admin session is unaffected." %}</p>{% endif %}
 <p>{% translate "Family codes are private: share a code only with its own Family." %}</p>
-<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Participation" %}</a></p>
+<p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
 <form id="table-filters" data-table-sync method="post" action="{{ report_url }}" class="filter-bar">{% csrf_token %}
 <div><label for="directory-search">{% translate "Search by name, head of household, DUID or address" %}</label><input id="directory-search" name="search" maxlength="200" value="{{ query.search }}"></div>
 <div class="short"><label for="exact-code">{% translate "Exact Family code" %}</label><input id="exact-code" name="exact_code" maxlength="128" value="{{ query.exact_code }}" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
@@ -28,7 +28,7 @@
 <p class="notice">{% translate "Sensitive parish information and Family codes: download only to a trusted device and share only with authorized recipients. The private email-link part of each Family's link is not included." %}</p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports are unavailable until it finishes or is cancelled; going live can take days. The directory itself can still be viewed." %}</p>{% endif %}
 <p id="directory-export-columns" data-table-sync>{% translate "The file has these columns:" %} {{ export_headings|join:", " }}.{% if mailing %} {% translate "Every listed Family is in the mail-merge file. Where a Family has no usable mailing address, its Addressee and address columns are blank; the file's report details say how many rows have no usable mailing address." %}{% endif %}</p>
-<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:family_directory_export' campaign_id %}">{% csrf_token %}
+<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:family_directory_export' %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
@@ -45,7 +45,7 @@
 <caption>{% if mailing %}{% translate "Family codes, email availability, current campaign response and mailing details" %}{% else %}{% translate "Family codes, email availability and current campaign response" %}{% endif %}</caption>
 <thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "ParishSoft DUID" as heading %}{% sort_heading table "duid" heading %}<th scope="col">{% translate "Family code" %}</th><th scope="col">{% translate "Campaign email deliverable" %}</th><th scope="col">{% translate "Responded" %}</th>{% if mailing %}<th scope="col">{% translate "Addressee" %}</th><th scope="col">{% translate "Mailing address" %}</th>{% endif %}<th scope="col">{% translate "Contact details" %}</th></tr></thead>
 <tbody>{% for row in table.rows %}<tr>
-<td>{% if row.family_id %}<a href="{% url 'admin:family_timeline' campaign_id row.family_id %}">{{ row.display_name }}</a>{% else %}{{ row.display_name }}{% endif %}</td>
+<td>{% if row.family_id %}<a href="{% url 'admin:family_timeline' row.family_id %}">{{ row.display_name }}</a>{% else %}{{ row.display_name }}{% endif %}</td>
 <td>{{ row.family_duid|duid }}</td>
 <td class="family-code">{% if row.code %}<code>{{ row.code }}</code>{% if not testing_codes %}<br><a href="{% url 'public:entry' %}#code={{ row.code|urlencode }}" target="_blank" rel="noopener" data-open-form>{% translate "Open form" %}<span class="visually-hidden"> {% translate "for" %} {{ row.display_name }}</span></a>{% endif %}{% else %}{% translate "Unavailable for this campaign" %}{% endif %}</td>
 <td>{% if row.reason == 'deliverable' %}{% translate "Yes" %}{% else %}<span title="{{ row.reason_label }}">{% translate "No" %}</span> <small>({{ row.reason_label }})</small>{% endif %}</td>

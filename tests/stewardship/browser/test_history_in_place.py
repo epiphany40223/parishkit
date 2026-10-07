@@ -15,6 +15,7 @@ from .followup_components import ITEM as FOLLOWUP_ITEM
 from .followup_components import NEWER as FOLLOWUP_NEWER
 from .followup_components import OLDER as FOLLOWUP_OLDER
 from .followup_components import SAVED as FOLLOWUP_SAVED
+from .followup_components import UPDATE as FOLLOWUP_UPDATE
 from .information_components import ITEM as INFORMATION_ITEM
 from .information_components import NEWER as INFORMATION_NEWER
 from .information_components import OLDER as INFORMATION_OLDER
@@ -125,14 +126,14 @@ def test_follow_up_save_after_paging_refreshes_the_history(page, component_origi
         "Newer history",
         FOLLOWUP_OLDER,
     )
-    posts = count_requests(page, "POST", "/update")
+    posts = count_requests(page, "POST", "/record/")
     page.locator("#followup-item form[data-in-place] button[type=submit]").click()
     visible(page.locator("#followup-history").get_by_text("Saved <note>", exact=True))
     assert page.evaluate(MARKED) == "kept"
     assert page.locator("#followup-history").get_by_text("Older <edit>").count() == 0
     assert page.locator("#followup-history").count() == 1
     assert page.url == component_origin + FOLLOWUP_SAVED + "#followup-item"
-    assert posts == [component_origin + FOLLOWUP_ITEM + "update"]
+    assert posts == [component_origin + FOLLOWUP_UPDATE]
 
 
 def test_delivery_history_pages_in_place(page, component_origin):

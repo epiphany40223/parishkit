@@ -15,6 +15,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import connection, transaction
+from django.urls import reverse
 
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
@@ -100,37 +101,55 @@ def test_lists_and_downloads_for_admin_and_staff(
     settings.STEWARDSHIP_DOWNLOAD_POOL = None
     open_form(harness)
     respond(harness)
-    base = f"/admin/reports/{harness.campaign.pk}/responses/"
+    base = reverse("admin:response_dashboard")
     snapshot = SourceCurrent.objects.get().snapshot_id
     name = snapshot_family_names(snapshot, [1], "Family")[1]
     admin, login = signed_in()
     assert login.status_code == 302
     with restricted_download_pool(settings):
         # Production has no responses yet: the Family responded in Testing.
-        response, body = get(admin, base + "submitted/")
+        response, body = get(admin, reverse("admin:response_list", args=["submitted"]))
         assert response.status_code == 200
         assert response["Cache-Control"] == "no-store"
         assert b"No Families on this list." in body
-        assert (base + "submitted/?mode=testing").encode() in body
+        assert (
+            reverse("admin:response_list", args=["submitted"]) + "?mode=testing"
+        ).encode() in body
         # The rehearsal's submission is listed in Testing, by name and DUID.
-        response, body = get(admin, base + "submitted/?mode=testing")
+        response, body = get(
+            admin, reverse("admin:response_list", args=["submitted"]) + "?mode=testing"
+        )
         assert response.status_code == 200
         assert listed_duids(body) == [1]
         assert f'">{name}</a></th>'.encode() in body
         assert b"never counted in Production" in body
         # Submitted without a delivered invitation: no invitation was sent.
-        _, body = get(admin, base + "submitted/?mode=testing&show=invited")
+        _, body = get(
+            admin,
+            reverse("admin:response_list", args=["submitted"])
+            + "?mode=testing&show=invited",
+        )
         assert listed_duids(body) == []
-        _, body = get(admin, base + "submitted/?mode=testing&show=uninvited")
+        _, body = get(
+            admin,
+            reverse("admin:response_list", args=["submitted"])
+            + "?mode=testing&show=uninvited",
+        )
         assert listed_duids(body) == [1]
         # A submission implies the form was opened, so it is not "started".
-        _, body = get(admin, base + "started/?mode=testing")
+        _, body = get(
+            admin, reverse("admin:response_list", args=["started"]) + "?mode=testing"
+        )
         assert listed_duids(body) == []
         # ParishSoft data to check lists the campaign's active Families.
-        _, body = get(admin, base + "data-quality/")
+        _, body = get(admin, reverse("admin:response_list", args=["data-quality"]))
         assert listed_duids(body) == [BLANK_MAILING, ENVELOPE_ZERO]
         assert b"Blank mailing name" in body and b"Envelope number 0" in body
-        _, body = get(admin, base + "data-quality/?show=envelope&sort=-duid")
+        _, body = get(
+            admin,
+            reverse("admin:response_list", args=["data-quality"])
+            + "?show=envelope&sort=-duid",
+        )
         assert listed_duids(body) == [ENVELOPE_ZERO]
         for invalid in (
             "submitted/?mode=live",
@@ -140,7 +159,10 @@ def test_lists_and_downloads_for_admin_and_staff(
             "submitted/?size=7",
         ):
             assert get(admin, base + invalid)[0].status_code == 400
-        assert get(admin, base + "everyone/")[0].status_code == 404
+        assert (
+            get(admin, reverse("admin:response_list", args=["everyone"]))[0].status_code
+            == 404
+        )
         # Until #145 any campaign but the current one is gone (410).
         assert (
             get(admin, f"/admin/reports/{uuid4()}/responses/submitted/")[0].status_code
@@ -149,7 +171,7 @@ def test_lists_and_downloads_for_admin_and_staff(
         # The download is the complete filtered list, in the page's order.
         response, body = search(
             admin,
-            base + "data-quality/csv/",
+            reverse("admin:response_list_export", args=["data-quality"]),
             {"sort": "-duid", "timezone": "America/New_York"},
         )
         assert response.status_code == 200
@@ -166,7 +188,9 @@ def test_lists_and_downloads_for_admin_and_staff(
         assert [row[1] for row in table[1:]] == [str(ENVELOPE_ZERO), str(BLANK_MAILING)]
         assert body.endswith(b"\r\n")
         response, body = search(
-            admin, base + "submitted/csv/", {"mode": "testing", "timezone": "UTC"}
+            admin,
+            reverse("admin:response_list_export", args=["submitted"]),
+            {"mode": "testing", "timezone": "UTC"},
         )
         assert response.status_code == 200
         table = list(csv.reader(io.StringIO(body.decode("utf-8"))))
@@ -178,7 +202,14 @@ def test_lists_and_downloads_for_admin_and_staff(
             {"size": "all"},
             {"show": "bad"},
         ):
-            assert search(admin, base + "submitted/csv/", invalid)[0].status_code == 400
+            assert (
+                search(
+                    admin,
+                    reverse("admin:response_list_export", args=["submitted"]),
+                    invalid,
+                )[0].status_code
+                == 400
+            )
         # A purge gate closing as a download starts (between the check before
         # the guard and the recheck inside it) is the same 409.
         checks = iter((False, True))
@@ -186,16 +217,24 @@ def test_lists_and_downloads_for_admin_and_staff(
         monkeypatch.setattr(
             response_list_views, "downloads_paused", lambda campaign: next(checks)
         )
-        response, body = search(admin, base + "started/csv/", {"timezone": "UTC"})
+        response, body = search(
+            admin,
+            reverse("admin:response_list_export", args=["started"]),
+            {"timezone": "UTC"},
+        )
         assert response.status_code == 409 and b"prepared for purge" in body
         monkeypatch.setattr(response_list_views, "downloads_paused", paused)
     # A closed purge gate refuses new downloads; the list stays readable.
     close_purge_gate(harness.campaign)
     with restricted_download_pool(settings):
-        response, body = search(admin, base + "submitted/csv/", {"timezone": "UTC"})
+        response, body = search(
+            admin,
+            reverse("admin:response_list_export", args=["submitted"]),
+            {"timezone": "UTC"},
+        )
         assert response.status_code == 409
         assert b"prepared for purge" in body
-        response, body = get(admin, base + "submitted/")
+        response, body = get(admin, reverse("admin:response_list", args=["submitted"]))
         assert response.status_code == 200
         assert b"Downloads are paused" in body
         assert b'<button type="submit" disabled>Download CSV</button>' in body
@@ -231,15 +270,27 @@ def test_lists_and_downloads_for_admin_and_staff(
     browser, login = signed_in()
     assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = get(browser, base + "data-quality/")
+        response, body = get(
+            browser, reverse("admin:response_list", args=["data-quality"])
+        )
         assert response.status_code == 200 and b"mode=testing" not in body
         assert listed_duids(body) == [BLANK_MAILING, ENVELOPE_ZERO]
-        assert get(browser, base + "submitted/?mode=testing")[0].status_code == 403
         assert (
-            search(browser, base + "submitted/csv/", {"mode": "testing"})[0].status_code
+            get(
+                browser,
+                reverse("admin:response_list", args=["submitted"]) + "?mode=testing",
+            )[0].status_code
+            == 403
+        )
+        assert (
+            search(
+                browser,
+                reverse("admin:response_list_export", args=["submitted"]),
+                {"mode": "testing"},
+            )[0].status_code
             == 403
         )
         # The dashboard links each list with its length.
         _, body = get(browser, base)
-        assert (base + "submitted/").encode() in body
+        assert (reverse("admin:response_list", args=["submitted"])).encode() in body
         assert b"Families that submitted</a>: 0" in body

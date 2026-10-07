@@ -33,6 +33,7 @@ from parishkit.stewardship.web.tables import (
 )
 
 from .admin_editing import step_up_response
+from .admin_navigation import PAGES
 from .authentication import denial, runtime
 from .cryptography import CryptographicError
 from .family_authentication import runtime as family_runtime
@@ -61,10 +62,21 @@ def family_codes(request, campaign_id):
     """
     finish, handed_off = None, False
     try:
-        service, cryptographic = runtime(), family_runtime()
+        service = runtime()
         principal = authenticated_admin(request, store=service.store, activity=True)
         if not allows(principal, Capability.FAMILY_CODES):
             return denial()
+        if campaign_id is None:
+            # Reports show the current campaign (rule 10); with none there is
+            # nothing to list, and the page says so (as the report roots do).
+            response = render(
+                request,
+                "stewardship/report-empty.html",
+                {"page_name": PAGES["family_codes"].label},
+            )
+            response["Cache-Control"] = "no-store"
+            return response
+        cryptographic = family_runtime()
         try:
             require_fresh(request)
         except FreshAuthenticationRequired:
@@ -80,7 +92,7 @@ def family_codes(request, campaign_id):
             response = render(
                 request,
                 "stewardship/invalid_report.html",
-                {"retry_path": reverse("admin:family_codes", args=[campaign_id])},
+                {"retry_path": reverse("admin:family_codes")},
                 status=400,
             )
             response.stewardship_safe_error = True

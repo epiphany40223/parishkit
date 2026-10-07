@@ -14,6 +14,7 @@ from uuid import UUID
 import pytest
 from django.http import QueryDict
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.reports.response_dashboard import (
     HOURLY_SPAN,
@@ -32,7 +33,7 @@ from .test_response_metrics import START
 CAMPAIGN = SimpleNamespace(
     pk=UUID(int=477), active_configuration=SimpleNamespace(name="Sample campaign")
 )
-PATH = f"/admin/reports/{CAMPAIGN.pk}/responses/"
+PATH = reverse("admin:response_dashboard")
 # The dashboard region its switches refresh in place and land on (#519).
 REGION = "response-dashboard"
 
@@ -51,9 +52,9 @@ def test_query_accepts_only_its_closed_vocabulary():
 def test_query_urls_leave_defaults_out_and_keep_the_other_choice():
     """Switching mode keeps the grain and switching grain keeps the mode."""
     query = DashboardQuery("testing", "day")
-    assert DashboardQuery().url(CAMPAIGN.pk) == PATH
-    assert query.url(CAMPAIGN.pk, mode="production") == PATH + "?grain=day"
-    assert query.url(CAMPAIGN.pk, grain="hour") == PATH + "?mode=testing&grain=hour"
+    assert DashboardQuery().url() == PATH
+    assert query.url(mode="production") == PATH + "?grain=day"
+    assert query.url(grain="hour") == PATH + "?mode=testing&grain=hour"
 
 
 def test_grain_is_hourly_for_a_short_span_and_daily_after():

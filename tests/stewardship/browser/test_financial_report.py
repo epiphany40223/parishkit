@@ -1,6 +1,7 @@
 """Native private financial stewardship detail report and its filters."""
 
 import pytest
+from django.urls import reverse
 
 from .conftest import no_script_context
 from .waits import visible
@@ -137,12 +138,17 @@ def test_financial_filters_and_pages_without_scripts(browser_engine, component_o
         # one-time key natively; without scripts the timezone stays UTC.
         page.goto(component_origin + "/financial-report")
         page.get_by_label("Export format").select_option("pdf")
-        page.route("**/financial/export", lambda route: route.fulfill(body="Queued"))
+        page.route(
+            "**" + reverse("admin:financial_export"),
+            lambda route: route.fulfill(body="Queued"),
+        )
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Queue complete export").click()
         body = sent.value.post_data
         assert "format=pdf" in body and "browser_timezone=UTC" in body
         assert "search=Example" in body and "request_key=" in body
-        assert "page=" not in body and sent.value.url.endswith("/financial/export")
+        assert "page=" not in body and sent.value.url.endswith(
+            reverse("admin:financial_export")
+        )
     finally:
         context.close()

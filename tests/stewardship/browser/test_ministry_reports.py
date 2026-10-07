@@ -1,6 +1,7 @@
 """Native private search and accessible scoped Ministry report controls."""
 
 import pytest
+from django.urls import reverse
 
 from .conftest import no_script_context
 from .waits import visible
@@ -50,7 +51,10 @@ def test_ministry_sort_heading_without_scripts(browser_engine, component_origin)
     try:
         page = context.new_page()
         page.goto(component_origin + "/ministry-detail")
-        page.route("**/ministries/join/", lambda route: route.fulfill(body="Sorted"))
+        page.route(
+            "**" + reverse("admin:ministry_joiners"),
+            lambda route: route.fulfill(body="Sorted"),
+        )
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("columnheader", name="Member").get_by_role(
                 "button"
@@ -73,7 +77,10 @@ def test_ministry_search_without_scripts(browser_engine, component_origin):
         page.goto(component_origin + "/ministry-detail")
         page.get_by_label("Search Member name or DUID").fill("Private name")
         page.get_by_label("Request history").select_option("all")
-        page.route("**/ministries/join/", lambda route: route.fulfill(body="Filtered"))
+        page.route(
+            "**" + reverse("admin:ministry_joiners"),
+            lambda route: route.fulfill(body="Filtered"),
+        )
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Apply filters").click()
         assert "search=Private+name" in sent.value.post_data
@@ -92,7 +99,10 @@ def test_ministry_complete_export_without_scripts(browser_engine, component_orig
         page.goto(component_origin + "/ministry-detail")
         page.get_by_label("Export format").select_option("xlsx")
         page.get_by_label("Export timezone").select_option("America/Detroit")
-        page.route("**/ministries/export/", lambda route: route.fulfill(body="Queued"))
+        page.route(
+            "**" + reverse("admin:ministry_export"),
+            lambda route: route.fulfill(body="Queued"),
+        )
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Queue complete export").click()
         assert "search=Example" in sent.value.post_data
@@ -124,7 +134,10 @@ def test_ministry_packet_request_without_scripts(browser_engine, component_origi
         packet = page.locator("form", has_text="Ministries in the packet")
         assert packet.locator("input[name=ministries]:checked").count() == 0
         assert packet.locator("input[type=radio]").count() == 0
-        page.route("**/ministries/packet/", lambda route: route.fulfill(body="Queued"))
+        page.route(
+            "**" + reverse("admin:ministry_packet"),
+            lambda route: route.fulfill(body="Queued"),
+        )
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Queue follow-up packet").click()
         assert "ministries=" not in sent.value.post_data
@@ -137,7 +150,10 @@ def test_ministry_packet_request_without_scripts(browser_engine, component_origi
         page.get_by_label("Also include resolved and withdrawn requests").check()
         page.get_by_label("Packet format").select_option("xlsx")
         page.get_by_label("Packet timezone").select_option("America/Detroit")
-        page.route("**/ministries/packet/", lambda route: route.fulfill(body="Queued"))
+        page.route(
+            "**" + reverse("admin:ministry_packet"),
+            lambda route: route.fulfill(body="Queued"),
+        )
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Queue follow-up packet").click()
         body = sent.value.post_data

@@ -459,7 +459,7 @@ one result.
 **Access:** Admin and Staff (`CAMPAIGN_REPORT`); the Testing view is Admin
 only.
 
-`reports/<campaign>/responses/` shows the funnel of one campaign at the
+`/admin/reports/responses/` shows the funnel of the current campaign at the
 database's current instant, labelled **Counted at**. Data comes first: a
 tile per [funnel stage](#funnel-stages) with its count and its share compared
 with Invited, the three figures reported beside the funnel, then the funnel
@@ -504,7 +504,7 @@ The charts' PNG and PDF downloads follow in a later increment.
 **Access:** Admin and Staff (`CAMPAIGN_REPORT`; the CSV download also
 `REPORT_EXPORT`); the Testing view is Admin only.
 
-`reports/<campaign>/responses/<list>/` lists the Families behind one count,
+`/admin/reports/responses/<list>/` lists the Families behind one count,
 at the database's current instant (labelled **Counted at**), from the same
 per-Family rows as the [funnel](#response-funnel):
 
@@ -580,12 +580,12 @@ approved audit context fields (a schema change), tracked in
 [#523](https://github.com/epiphany40223/parishkit/issues/523)). The
 Testing view is Administrator only.
 
-`reports/<campaign>/families/<family>/` (**Family timeline**) answers "what
+`/admin/reports/families/<family>/` (**Family timeline**) answers "what
 happened with this Family?" and "did you get my response?" for one Family of
-the campaign. `<family>` is the Family's campaign record id, an opaque random
-identifier like a Mail message's; the Family's name, DUID, envelope number and
-code never enter the URL, and the browser title leaves the name out so browser
-history does not keep it. The Family's name opens the page from each
+the current campaign. `<family>` is the Family's campaign record id, an
+opaque random identifier like a Mail message's; the Family's name, DUID,
+envelope number and code never enter the URL, and the browser title leaves the
+name out so browser history does not keep it. The Family's name opens the page from each
 [response list](#response-lists) row (in the list's mode) and each
 [Family directory](#family-directory) row, and from each match in the header's
 Find a Family box (see

@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.http import QueryDict
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.reports import response_lists
 from parishkit.stewardship.reports.response_list_views import page_context
@@ -43,7 +44,7 @@ from .test_response_metrics import ROWS, START
 CAMPAIGN = SimpleNamespace(
     pk=UUID(int=477), active_configuration=SimpleNamespace(name="Sample campaign")
 )
-BASE = f"/admin/reports/{CAMPAIGN.pk}/responses/"
+BASE = reverse("admin:response_dashboard")
 NEW_YORK = ZoneInfo("America/New_York")
 # Facts for every test row: Family 3's mailing name is blank and Family 4's
 # envelope number is 0; Family 6 is missing from the snapshot.
@@ -152,13 +153,11 @@ def test_query_accepts_only_closed_choices():
     ):
         with pytest.raises(ValueError):
             ListQuery.parse(spec, QueryDict(invalid))
-    assert ListQuery().url(CAMPAIGN.pk, "submitted") == BASE + "submitted/"
-    assert ListQuery("testing", "invited").url(CAMPAIGN.pk, "submitted") == (
+    assert ListQuery().url("submitted") == BASE + "submitted/"
+    assert ListQuery("testing", "invited").url("submitted") == (
         BASE + "submitted/?mode=testing&show=invited"
     )
-    assert ListQuery().url(CAMPAIGN.pk, "started", sort="", size="25") == (
-        BASE + "started/?size=25"
-    )
+    assert ListQuery().url("started", sort="", size="25") == (BASE + "started/?size=25")
 
 
 def test_csv_is_complete_neutralized_and_in_the_chosen_zone():
@@ -234,10 +233,8 @@ def test_page_shows_the_table_filter_and_download():
     # The Family cell is the row's heading and opens the Family's timeline
     # by its opaque campaign record id; identifiers are never grouped.
     adams = next(row for row in ROWS if row.family_duid == 1)
-    assert (
-        f'<th scope="row"><a href="/admin/reports/{CAMPAIGN.pk}/families/'
-        f'{adams.family_id}/">Adams, Ann</a></th>'
-    ) in page
+    timeline = reverse("admin:family_timeline", args=[adams.family_id])
+    assert f'<th scope="row"><a href="{timeline}">Adams, Ann</a></th>' in page
     assert '<td class="numeric">101</td>' in page
     assert re.search(r'<th scope="row"><a href="[^"?]+/">=Baker, Bob</a></th>', page)
     # Sort headings are links that keep the filter; the filter is a GET form.
@@ -334,7 +331,7 @@ def test_dashboard_links_each_list_with_its_count(monkeypatch):
 
     from .test_chart_specs import metrics
 
-    shown = family_lists(CAMPAIGN.pk, DashboardQuery("testing"), metrics())
+    shown = family_lists(DashboardQuery("testing"), metrics())
     assert [(item["url"], item["count"]) for item in shown] == [
         (BASE + "submitted/?mode=testing", 3),
         (BASE + "started/?mode=testing", 1),

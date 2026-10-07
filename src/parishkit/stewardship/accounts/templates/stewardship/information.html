@@ -7,18 +7,18 @@
 <p>{% translate "Family names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time> ({% translate "data load" %} {{ metadata.source_generation|number }}).</p>
 <p>{% translate "Date filters use whole days in the campaign's time zone," %} {{ metadata.timezone }}. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
-<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Participation" %}</a></p>
+<p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
 <div id="information-item" data-in-place-region>
 <h2>{{ item.family_name }} — {% translate "Family DUID" %} {{ item.family_duid|duid }}</h2>
 <p>{{ item.disposition_label }}; {% translate "submitted" %} <time datetime="{{ item.submitted_at|date:'c' }}" data-local-instant>{{ item.submitted_at|date:'c' }}</time></p>
 <div>{{ item.text|linebreaksbr }}</div>
-{% if item.replacement_id %}<p><a href="{% url 'admin:information_item' campaign_id item.replacement_id %}">{% translate "Open the replacement request" %}</a></p>{% endif %}
+{% if item.replacement_id %}<p><a href="{% url 'admin:information_item' item.replacement_id %}">{% translate "Open the replacement request" %}</a></p>{% endif %}
 {% if item.previously_reported %}<p>{% translate "Included in a previously delivered weekly digest." %}</p>
 {% if item.disposition != 'current_actionable' %}<p>{% if item.correction_resolved %}{% translate "This correction is resolved in the weekly digest workflow. Resolution does not necessarily mean an email was delivered." %}{% else %}{% translate "This change is visible to the weekly digest correction workflow; the old request is no longer actionable." %}{% endif %}</p>{% endif %}{% endif %}
 {% if item.followed_up_at %}<p>{% translate "Followed up by" %} {{ item.completed_by }} <time datetime="{{ item.followed_up_at|date:'c' }}" data-local-instant>{{ item.followed_up_at|date:'c' }}</time></p>{% endif %}
-<form method="post" action="{% url 'admin:information_update' campaign_id item.id %}#information-item" data-require-complete data-in-place="information-save" data-in-place-message="{% translate 'Follow-up saved.' %}">{% csrf_token %}
+<form method="post" action="{% url 'admin:information_update' item.id %}#information-item" data-require-complete data-in-place="information-save" data-in-place-message="{% translate 'Follow-up saved.' %}">{% csrf_token %}
 <input type="hidden" name="expected_version" value="{{ item.version }}"><input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Staff follow-up" %}</legend>
 <label><input type="checkbox" name="follow_up_needed" value="yes"{% if item.follow_up_needed %} checked{% endif %}> {% translate "Follow-up needed" %}</label>
@@ -40,9 +40,9 @@
 <nav aria-label="{% translate 'Staff history pages' %}">{% if previous_history %}<a href="?page={{ previous_history }}#information-history" data-in-place="history-newer" data-in-place-fallback="history-older" data-in-place-only data-in-place-message="{% translate 'Newer history shown.' %}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="?page={{ next_history }}#information-history" data-in-place="history-older" data-in-place-fallback="history-newer" data-in-place-only data-in-place-message="{% translate 'Older history shown.' %}">{% translate "Older history" %}</a>{% endif %}</nav>
 </div>
 </div>
-<p><a href="{% url 'admin:information_queue' campaign_id %}">{% translate "Return to Additional information" %}</a></p>
+<p><a href="{% url 'admin:information_queue' %}">{% translate "Return to Additional information" %}</a></p>
 {% else %}
-<form id="table-filters" data-table-sync method="post" action="{% url 'admin:information_queue' campaign_id %}">{% csrf_token %}
+<form id="table-filters" data-table-sync method="post" action="{% url 'admin:information_queue' %}">{% csrf_token %}
 <label for="info-search">{% translate "Search Family name, DUID, submitted text or Staff notes" %}</label><input id="info-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="disposition">{% translate "Request history" %}</label><select id="disposition" name="disposition">
 <option value="current_actionable"{% if query.disposition == 'current_actionable' %} selected{% endif %}>{% translate "Current actionable requests" %}</option>
@@ -60,7 +60,7 @@
 <h2 id="information-export-heading">{% translate "Export complete results" %}</h2>
 <p id="information-export-count" data-table-sync>{{ total|number }} {% translate "estimated matching items, using the applied filters and sort above—not just this page. The file uses the text as it is when you queue the export; later changes are not included." %}</p>
 <p class="notice">{% translate "Sensitive parish information: download only to a trusted device and share only with authorized recipients." %}</p>
-<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:information_export' campaign_id %}">{% csrf_token %}
+<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:information_export' %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
@@ -73,7 +73,7 @@
 {% translate "Information result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Additional-information results' %}"><table>
 <caption>{% translate "Family requests and current Staff workflow" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}<th scope="col">{% translate "Disposition" %}</th><th scope="col">{% translate "Text" %}</th><th scope="col">{% translate "Follow-up needed" %}</th><th scope="col">{% translate "Completed" %}</th></tr></thead><tbody>
-{% for row in table.rows %}<tr><td><a href="{% url 'admin:information_item' campaign_id row.id %}">{{ row.family_name }}</a><br>{% translate "DUID" %} {{ row.family_duid|duid }}</td>
+{% for row in table.rows %}<tr><td><a href="{% url 'admin:information_item' row.id %}">{{ row.family_name }}</a><br>{% translate "DUID" %} {{ row.family_duid|duid }}</td>
 <td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td><td>{{ row.disposition_label }}{% if row.previously_reported %}<br>{% translate "Previously emailed" %}{% endif %}</td><td>{{ row.text|truncatechars:240 }}</td>
 <td>{% if row.follow_up_needed %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td><td>{% if row.followed_up_at %}{{ row.completed_by }}<br><time datetime="{{ row.followed_up_at|date:'c' }}" data-local-instant>{{ row.followed_up_at|date:'c' }}</time>{% else %}{% translate "Not completed" %}{% endif %}</td></tr>
 {% empty %}<tr><td colspan="6">{% translate "No matching requests. Try All history in Request history, or clear the search and date filters." %}</td></tr>{% endfor %}</tbody></table></div>

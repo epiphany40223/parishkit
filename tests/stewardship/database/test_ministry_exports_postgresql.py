@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.audit.models import AuditContext
@@ -305,7 +306,6 @@ def test_native_leader_exports_worker_download_and_regeneration(
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
-    route = f"/admin/reports/{harness.campaign.pk}/ministries/"
     first = None
     for format in ("csv", "xlsx", "pdf"):
         fields = MinistryQuery().form_values() | dict(
@@ -316,9 +316,14 @@ def test_native_leader_exports_worker_download_and_regeneration(
             request_key=str(uuid4()),
         )
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            response, body = search(browser, route + "join/", {"ministry": "9"})
+            response, body = search(
+                browser, reverse("admin:ministry_joiners"), {"ministry": "9"}
+            )
             assert response.status_code == 200 and b"Queue complete export" in body
-            assert browser.post(route + "export/", fields).status_code == 403
+            assert (
+                browser.post(reverse("admin:ministry_export"), fields).status_code
+                == 403
+            )
             if format == "csv":
                 for invalid in (
                     {"scope": "all"},
@@ -327,15 +332,17 @@ def test_native_leader_exports_worker_download_and_regeneration(
                     {"format": ["csv", "pdf"]},
                 ):
                     assert (
-                        post(browser, route + "export/", fields | invalid).status_code
+                        post(
+                            browser, reverse("admin:ministry_export"), fields | invalid
+                        ).status_code
                         == 400
                     )
-            response = post(browser, route + "export/", fields)
+            response = post(browser, reverse("admin:ministry_export"), fields)
             assert response.status_code == 302
             result = ExportRequest.objects.get(request_key=fields["request_key"])
             first = first or result
             assert (
-                post(browser, route + "export/", fields)["Location"]
+                post(browser, reverse("admin:ministry_export"), fields)["Location"]
                 == response["Location"]
             )
             job_route = response["Location"]

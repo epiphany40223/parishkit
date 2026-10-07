@@ -133,7 +133,7 @@ def _legacy_postal_redirect(request, campaign_id):
     reach = reach[0] if len(reach) == 1 and reach[0] in REACH else "mail"
     presets = {"reach": reach}
     return HttpResponseRedirect(
-        reverse("admin:family_directory", args=(campaign_id,))
+        reverse("admin:family_directory")
         + "?"
         + urlencode(presets | {"mailing": "yes"})
     )
@@ -244,7 +244,7 @@ def directory(request, campaign_id, *, postal=False):
             except PermissionError:
                 mutable = False
             testing = testing_codes_context(campaign_id)
-            report_url = reverse("admin:family_directory", args=(campaign_id,))
+            report_url = reverse("admin:family_directory")
             context = (
                 report
                 | testing
@@ -276,9 +276,7 @@ def directory(request, campaign_id, *, postal=False):
                     "export_headings": export_headings(
                         postal=postal, reach=query.reach
                     ),
-                    "unreachable_url": reverse(
-                        "admin:family_directory", args=(campaign_id,)
-                    )
+                    "unreachable_url": reverse("admin:family_directory")
                     + "?reach=neither",
                     "mutable": mutable,
                     "request_key": uuid4(),
@@ -395,7 +393,7 @@ def find_family(request, campaign_id):
             count, total = len(found["rows"]), found["total"]
             context = found | {
                 "campaign_id": campaign_id,
-                "directory_url": reverse("admin:family_directory", args=[campaign_id]),
+                "directory_url": reverse("admin:family_directory"),
                 "search": query.search,
                 "more": total > count,
             }

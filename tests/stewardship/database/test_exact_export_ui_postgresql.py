@@ -5,6 +5,7 @@
 from uuid import UUID, uuid4
 
 import pytest
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.deployment import ServiceRole
@@ -38,7 +39,7 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
     """One prepared corpus covers the complete immutable-input requester flow."""
     setup, browser = http_scenario
     store, _, facts, _ = setup
-    path = f"/admin/reports/{facts.campaign_id}/participation/exact-export"
+    path = reverse("admin:report_exact_create")
     values = {
         "population_scope": "current",
         "format": "xlsx",
@@ -236,7 +237,7 @@ def test_native_exact_cancel_and_other_requester_denial(
     google[0]["email"] = "staff@example.org"
     google[0]["sub"] = "synthetic-staff-subject"
     browser, _ = signed_in()
-    path = f"/admin/reports/{facts.campaign_id}/participation/exact-export"
+    path = reverse("admin:report_exact_create")
     values = {
         "population_scope": "historical",
         "format": "csv",

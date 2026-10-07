@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from .followup_components import GATE_ITEM, RESOLVE_ITEM
+from .followup_components import GATE_ITEM, GATE_UPDATE, RESOLVE_ITEM, RESOLVE_UPDATE
 from .followup_components import ITEM as FOLLOWUP_ITEM
 from .followup_components import SAVED as FOLLOWUP_SAVED
 from .followup_components import UPDATE as FOLLOWUP_UPDATE
@@ -65,7 +65,7 @@ def test_followup_save_is_in_place(page, component_origin):
     page.goto(component_origin + FOLLOWUP_ITEM)
     page.evaluate(MARK)
     offset = scroll_below(page, FOLLOWUP_SAVE)
-    posts = count_requests(page, "POST", "/update")
+    posts = count_requests(page, "POST", "/record/")
     page.get_by_label("Status").select_option("in_progress")
     page.locator(FOLLOWUP_SAVE).dblclick()
     visible(page.locator("#followup-item").get_by_text("Saved <note>", exact=True))
@@ -111,7 +111,7 @@ def test_followup_save_without_a_usable_save_focuses_the_heading(
     page.goto(component_origin + start)
     page.evaluate(MARK)
     scroll_below(page, FOLLOWUP_SAVE)
-    posts = count_requests(page, "POST", "/update")
+    posts = count_requests(page, "POST", "/record/")
     page.get_by_label("Status").select_option("resolved")
     page.get_by_label("Outcome", exact=True).select_option("joined")
     page.locator(FOLLOWUP_SAVE).click()
@@ -131,7 +131,8 @@ def test_followup_save_without_a_usable_save_focuses_the_heading(
         heading,
     )
     assert page.locator(heading).get_attribute("tabindex") == "-1"
-    assert posts == [component_origin + start + "update"]
+    update = RESOLVE_UPDATE if start == RESOLVE_ITEM else GATE_UPDATE
+    assert posts == [component_origin + update]
 
 
 def test_followup_refusal_is_swapped_into_the_request(page, component_origin):
@@ -146,7 +147,7 @@ def test_followup_refusal_is_swapped_into_the_request(page, component_origin):
     page.evaluate(MARK)
     scroll_below(page, FOLLOWUP_SAVE)
     answer_with(page, component_origin, FOLLOWUP_UPDATE, 200, "/followup-item-refused")
-    posts = count_requests(page, "POST", "/update")
+    posts = count_requests(page, "POST", "/record/")
     page.get_by_label("Status").select_option("resolved")
     page.get_by_label("Outcome", exact=True).select_option("joined")
     page.locator(FOLLOWUP_SAVE).click()
@@ -526,7 +527,7 @@ def test_followup_conflict_is_shown_whole_and_sent_once(page, component_origin):
     and the POST is never sent again."""
     page.goto(component_origin + FOLLOWUP_ITEM)
     answer_with(page, component_origin, FOLLOWUP_UPDATE, 409, "/followup-error-409")
-    posts = count_requests(page, "POST", "/update")
+    posts = count_requests(page, "POST", "/record/")
     page.locator(FOLLOWUP_SAVE).click()
     has_text(page.locator("h1"), "Ministry follow-up unavailable")
     visible(page.get_by_text("This request changed. Nothing was saved.", exact=False))
@@ -542,7 +543,7 @@ def test_information_save_is_in_place(page, component_origin):
     page.goto(component_origin + INFORMATION_ITEM)
     page.evaluate(MARK)
     offset = scroll_below(page, INFORMATION_SAVE)
-    posts = count_requests(page, "POST", "/update")
+    posts = count_requests(page, "POST", "/record/")
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.locator(INFORMATION_SAVE).dblclick()
     # Completion stays ticked, so the reopen confirmation is not sent.

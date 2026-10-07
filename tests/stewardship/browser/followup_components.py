@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from uuid import UUID
 
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.reports.ministry_followup import (
     CHANNELS,
@@ -34,20 +35,22 @@ from parishkit.stewardship.workflows.followup import FollowupRefusal, outcomes_f
 from parishkit.stewardship.workflows.models import STAFF_STATES
 
 CAMPAIGN, REQUEST = UUID(int=92), UUID(int=93)
-ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{REQUEST}/"
-UPDATE = ITEM + "update"
+ITEM = reverse("admin:ministry_followup_item", args=[REQUEST])
+UPDATE = reverse("admin:ministry_followup_update", args=[REQUEST])
 SAVED = ITEM + "?saved=1"
 OLDER, NEWER = ITEM + "?page=2", ITEM + "?page=1"
 RESOLVE_REQUEST, GATE_REQUEST = UUID(int=94), UUID(int=96)
-RESOLVE_ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{RESOLVE_REQUEST}/"
+RESOLVE_ITEM = reverse("admin:ministry_followup_item", args=[RESOLVE_REQUEST])
+RESOLVE_UPDATE = reverse("admin:ministry_followup_update", args=[RESOLVE_REQUEST])
 RESOLVED = RESOLVE_ITEM + "?resolved=1"
-GATE_ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{GATE_REQUEST}/"
+GATE_ITEM = reverse("admin:ministry_followup_item", args=[GATE_REQUEST])
+GATE_UPDATE = reverse("admin:ministry_followup_update", args=[GATE_REQUEST])
 GATED = GATE_ITEM + "?gated=1"
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
-    RESOLVE_ITEM + "update": (303, RESOLVED, ""),
-    GATE_ITEM + "update": (303, GATED, ""),
+    RESOLVE_UPDATE: (303, RESOLVED, ""),
+    GATE_UPDATE: (303, GATED, ""),
 }
 
 
@@ -61,7 +64,7 @@ def _table(rows, query, total, campaign):
         carry=[(k, v) for k, v in query.form_values().items() if k != "sort"],
         sorting=SORTING,
         sort=query.sort,
-        action=f"/admin/reports/{campaign}/ministries/follow-up/",
+        action=reverse("admin:ministry_followup"),
     )
 
 

@@ -191,7 +191,7 @@ def report(request, campaign_id):
                     carry=carried_filters(query),
                     sorting=FINANCIAL_SORTING,
                     sort=query.sort,
-                    action=reverse("admin:financial_report", args=(campaign_id,)),
+                    action=reverse("admin:financial_report"),
                     sizes=PAGE_SIZES,
                 ),
                 "mutable": mutable,

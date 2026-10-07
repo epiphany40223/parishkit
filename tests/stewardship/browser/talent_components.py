@@ -18,7 +18,7 @@ from parishkit.stewardship.reports.talents import TalentQuery
 CAMPAIGN = UUID(int=90)
 # The report page's own path: what every heading, navigator and filter form
 # posts back to, and what the tests route.
-PATH = reverse("admin:talents_report", args=[CAMPAIGN])
+PATH = reverse("admin:talents_report")
 
 
 def components(context, admin):

@@ -7,6 +7,7 @@ import pytest
 from django.db import DatabaseError
 from django.http import QueryDict
 from django.test import RequestFactory
+from django.urls import reverse
 
 from parishkit.stewardship.reports import information_views
 from parishkit.stewardship.reports.information import InformationQuery
@@ -99,7 +100,8 @@ def test_information_outage_recovery_has_no_private_values(monkeypatch, action):
     assert response["Retry-After"] == "5"
     assert response.stewardship_safe_error
     assert b"private value" not in response.content
-    assert str(campaign).encode() in response.content
+    # The way back names no campaign: reports show the current one (NAV-11).
+    assert reverse("admin:information_queue").encode() in response.content
 
 
 def test_workflow_get_cannot_mutate():

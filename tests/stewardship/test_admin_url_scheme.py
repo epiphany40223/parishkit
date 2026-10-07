@@ -15,11 +15,26 @@ from django.test import RequestFactory
 from django.urls import resolve, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
-from parishkit.stewardship.admin_urls import campaign, legacy, mail, parish, system
+from parishkit.stewardship.admin_urls import (
+    campaign,
+    legacy,
+    mail,
+    parish,
+    reports,
+    system,
+)
+from parishkit.stewardship.reports.daily_digest import DailyDigestDocument
+from parishkit.stewardship.reports.weekly_digest import WeeklyDigestDocument
 
 # Menu groups whose URLs follow the scheme so far, by URL segment.
-MOVED = {"system", "parish", "mail", "campaign"}
-GROUPS = system.patterns + parish.patterns + mail.patterns + campaign.patterns
+MOVED = {"system", "parish", "mail", "campaign", "reports"}
+GROUPS = (
+    system.patterns
+    + parish.patterns
+    + mail.patterns
+    + campaign.patterns
+    + reports.patterns
+)
 # Route segments that would be a GET target naming an action.
 VERBS = {
     "acknowledge",
@@ -28,11 +43,15 @@ VERBS = {
     "delete",
     "dismiss",
     "edit",
+    "find",
+    "join",
+    "leave",
     "new",
     "remove",
     "resolve",
     "retry",
     "select",
+    "update",
     "withdraw",
 }
 # JSON reads that scripts poll; they keep their old addresses (decision 8).
@@ -252,6 +271,30 @@ EXPECTED = {
     "/admin/mail/presence": "/admin/mail/presence/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
+    # Responses and reports pages without their trailing slash (NAV-11).
+    "/admin/reports": "/admin/reports/",
+    "/admin/reports/responses": "/admin/reports/responses/",
+    "/admin/reports/responses/logo": "/admin/reports/responses/logo/",
+    "/admin/reports/participation": "/admin/reports/participation/",
+    "/admin/reports/financial": "/admin/reports/financial/",
+    "/admin/reports/talents": "/admin/reports/talents/",
+    "/admin/reports/information": "/admin/reports/information/",
+    f"/admin/reports/information/{T}": f"/admin/reports/information/{T}/",
+    "/admin/reports/ministries": "/admin/reports/ministries/",
+    "/admin/reports/ministries/joining": "/admin/reports/ministries/joining/",
+    "/admin/reports/ministries/leaving": "/admin/reports/ministries/leaving/",
+    "/admin/reports/ministries/follow-up": "/admin/reports/ministries/follow-up/",
+    f"/admin/reports/ministries/follow-up/{T}": (
+        f"/admin/reports/ministries/follow-up/{T}/"
+    ),
+    "/admin/reports/families": "/admin/reports/families/",
+    f"/admin/reports/families/{T}": f"/admin/reports/families/{T}/",
+    "/admin/reports/family-codes": "/admin/reports/family-codes/",
+    # Retired addresses that named no campaign (decisions 10 and 19): the
+    # two campaign choosers and the old Ministry reports root.
+    "/admin/reports/campaigns/": "/admin/reports/participation/",
+    "/admin/ministry-reports/": "/admin/reports/ministries/",
+    "/admin/ministry-reports/campaigns/": "/admin/reports/ministries/",
 }
 
 
@@ -292,6 +335,40 @@ CAMPAIGN_EXPECTED = {
     f"{C}/production": "/admin/campaign/production/",
     f"{C}/production/withdraw": "/admin/campaign/production/cancellation/",
     f"{C}/ministries": "/admin/parish/ministries/campaign/",
+    f"{C}/family-codes": "/admin/reports/family-codes/",
+}
+# Old report addresses named the campaign under /admin/reports/ (NAV-11).
+R = f"/admin/reports/{T}"
+CAMPAIGN_EXPECTED |= {
+    f"{R}/responses/": "/admin/reports/responses/",
+    f"{R}/responses/logo/": "/admin/reports/responses/logo/",
+    f"{R}/responses/logo/csv/": "/admin/reports/responses/logo/csv/",
+    f"{R}/participation/": "/admin/reports/participation/",
+    f"{R}/participation/{T}.png": f"/admin/reports/participation/{T}.png",
+    f"{R}/participation/export": "/admin/reports/participation/exports/",
+    f"{R}/participation/exact-export": "/admin/reports/participation/exact-exports/",
+    f"{R}/financial/": "/admin/reports/financial/",
+    f"{R}/financial/export": "/admin/reports/financial/exports/",
+    f"{R}/talents/": "/admin/reports/talents/",
+    f"{R}/talents/export": "/admin/reports/talents/exports/",
+    f"{R}/information/": "/admin/reports/information/",
+    f"{R}/information/export": "/admin/reports/information/exports/",
+    f"{R}/information/{T}/": f"/admin/reports/information/{T}/",
+    f"{R}/information/{T}/update": f"/admin/reports/information/{T}/record/",
+    f"{R}/ministries/": "/admin/reports/ministries/",
+    f"{R}/ministries/join/": "/admin/reports/ministries/joining/",
+    f"{R}/ministries/leave/": "/admin/reports/ministries/leaving/",
+    f"{R}/ministries/export/": "/admin/reports/ministries/exports/",
+    f"{R}/ministries/packet/": "/admin/reports/ministries/packets/",
+    f"{R}/ministries/follow-up/": "/admin/reports/ministries/follow-up/",
+    f"{R}/ministries/follow-up/{T}/": f"/admin/reports/ministries/follow-up/{T}/",
+    f"{R}/ministries/follow-up/{T}/update": (
+        f"/admin/reports/ministries/follow-up/{T}/record/"
+    ),
+    f"{R}/families/": "/admin/reports/families/",
+    f"{R}/families/export": "/admin/reports/families/exports/",
+    f"{R}/families/find": "/admin/reports/families/search/",
+    f"{R}/families/{T}/": f"/admin/reports/families/{T}/",
 }
 
 
@@ -399,3 +476,76 @@ def test_the_go_live_chain_names_no_campaign():
     # One home per concept: Campaign Ministries runs through Ministries.
     assert reverse("admin:campaign_ministries").startswith(reverse("admin:ministries"))
     assert navigation.PAGES["campaign_ministries"].parent == "ministries"
+
+
+def test_reports_root_keeps_its_old_meaning():
+    """/admin/reports/ opens Participation (or Ministry requests), not a group root.
+
+    It stays a page of its own (admin-portal spec, "Menu groups"); its form
+    without the slash redirects like every other page's (NAV-11).
+    """
+    url = reverse("admin:reports")
+    assert url == "/admin/reports/"
+    match = resolve(url)
+    assert match.url_name == "reports"
+    assert not hasattr(match.func, "group_root")
+    slashless = resolve("/admin/reports")
+    assert slashless.url_name == f"{legacy.PREFIX}reports_slashless"
+    assert slashless.func(RequestFactory().get("/admin/reports"))["Location"] == url
+
+
+def test_report_actions_and_records_resolve_to_their_own_routes():
+    """No report route takes another's address (NAV-11 route-order traps).
+
+    The directory's fixed actions are listed before its Family pages, and the
+    export and emailed report pages that stay in ``urls.py`` until NAV-12
+    are not shadowed by the moved report routes or the old report addresses.
+    """
+    for path, name in (
+        ("/admin/reports/families/exports/", "family_directory_export"),
+        ("/admin/reports/families/search/", "find_family"),
+        (f"/admin/reports/families/{T}/", "family_timeline"),
+        ("/admin/reports/information/exports/", "information_export"),
+        (f"/admin/reports/information/{T}/", "information_item"),
+        (f"/admin/reports/information/{T}/record/", "information_update"),
+        ("/admin/reports/ministries/follow-up/", "ministry_followup"),
+        (f"/admin/reports/ministries/follow-up/{T}/", "ministry_followup_item"),
+        ("/admin/reports/responses/submitted/", "response_list"),
+        ("/admin/reports/responses/submitted/csv/", "response_list_export"),
+        (f"/admin/reports/exports/{T}/", "report_export"),
+        (f"/admin/reports/exact-exports/{T}/", "report_exact"),
+        (f"/admin/reports/daily-digests/{T}/", "daily_digest_snapshot"),
+        (f"/admin/reports/weekly-digests/{T}/", "weekly_digest_snapshot"),
+        ("/admin/reports/campaigns/", f"{legacy.PREFIX}participation_chooser"),
+        (f"/admin/reports/{T}/families/", f"{legacy.PREFIX}family_directory"),
+        (f"/admin/reports/{T}/families/{T}/", f"{legacy.PREFIX}family_timeline"),
+    ):
+        assert resolve(path).url_name == name, path
+    names = [pattern.name for pattern in reports.patterns]
+    assert names.index("family_directory_export") < names.index("family_timeline")
+    assert names.index("find_family") < names.index("family_timeline")
+
+
+def test_sent_digest_email_links_still_open_their_reports():
+    """Daily and weekly report emails already sent link these exact addresses.
+
+    The emailed report pages move with NAV-12, which redirects these; until
+    then each still opens its page directly, never an old-report redirect or
+    a 410 (NAV-11 moves the report pages around them).
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.reports.links import report_url
+
+    sent = SimpleNamespace(snapshot_id=TASK)
+    for document, name in (
+        (DailyDigestDocument, "daily_digest_snapshot"),
+        (WeeklyDigestDocument, "weekly_digest_snapshot"),
+    ):
+        path = document.report_path.fget(sent)
+        assert resolve(path).url_name == name, path
+        assert path == reverse(f"admin:{name}", args=[TASK])
+        assert report_url("https://parish.example", path).endswith(path)
+    # A weekly report's item links, as its page renders them.
+    item = f"/admin/reports/weekly-digests/{T}/items/{T}/"
+    assert resolve(item).url_name == "weekly_digest_item"

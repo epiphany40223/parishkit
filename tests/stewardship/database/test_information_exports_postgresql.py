@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, connection
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -195,7 +196,7 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
-    route = f"/admin/reports/{harness.campaign.pk}/information/"
+    route = reverse("admin:information_queue")
     query = InformationQuery()
     first = None
     for format in ("csv", "xlsx", "pdf"):
@@ -208,24 +209,31 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, route)
             assert response.status_code == 200 and b"Queue complete export" in body
-            assert browser.post(route + "export", fields).status_code == 403
+            assert (
+                browser.post(reverse("admin:information_export"), fields).status_code
+                == 403
+            )
             if format == "csv":
-                assert browser.get(route + "export").status_code == 405
+                assert (
+                    browser.get(reverse("admin:information_export")).status_code == 405
+                )
                 for invalid in (
                     {"page": "2"},
                     {"history": "no"},
                     {"format": ["csv", "pdf"]},
                 ):
-                    rejected = post(browser, route + "export", fields | invalid)
+                    rejected = post(
+                        browser, reverse("admin:information_export"), fields | invalid
+                    )
                     assert rejected.status_code == 400
                     assert b"Complete exported Family request" not in rejected.content
                     assert rejected["Cache-Control"] == "no-store"
-            response = post(browser, route + "export", fields)
+            response = post(browser, reverse("admin:information_export"), fields)
             assert response.status_code == 302
             request = ExportRequest.objects.get(request_key=fields["request_key"])
             first = first or request
             assert (
-                post(browser, route + "export", fields)["Location"]
+                post(browser, reverse("admin:information_export"), fields)["Location"]
                 == response["Location"]
             )
             job_route = response["Location"]

@@ -7,6 +7,7 @@ import pytest
 from django.db import connection
 from django.db.models import F
 from django.test import Client
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.audit.models import AuditEvent
@@ -386,7 +387,7 @@ CHROME_QUERIES = {
 def test_building_the_menu_adds_no_query(
     auth_service, google, monkeypatch, role, draft
 ):
-    """The chrome's query count on a fresh report page is the same as NAV-1's.
+    """The chrome's query count on a fresh page is the same as NAV-1's.
 
     The real context processor is wrapped where the template engine keeps
     it, so the count is of the one call the page's own render makes, with
@@ -433,8 +434,8 @@ def test_building_the_menu_adds_no_query(
     monkeypatch.setitem(engine.__dict__, "template_context_processors", processors)
     browser, _ = signed_in()
     # A report page every role may open. The draft has no Ministry module,
-    # so it renders its "no reports" page rather than redirecting.
-    response = browser.get("/admin/ministry-reports/")
+    # so it renders its "no reports" page.
+    response = browser.get(reverse("admin:ministry_report"))
     assert response.status_code == 200
     assert b'aria-label="Administration"' in response.content
     before, now = CHROME_QUERIES[(role, draft)]

@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 from uuid import UUID
 
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.jobs.queue_wait import QueueWait
 from parishkit.stewardship.reports.daily_digest import statistics_cards
@@ -18,7 +19,7 @@ from ..test_daily_digest_content import document
 from .automation_components import canonical
 
 # The participation report's real address (its options' form posts there).
-REAL = f"/admin/reports/{document().participation.campaign_id}/participation/"
+REAL = reverse("admin:participation")
 
 
 # Answered after a pause (see the server in conftest.py): applying this

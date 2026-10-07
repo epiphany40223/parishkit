@@ -637,6 +637,14 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "delivery_control",
         "family_email_progress",
         "family_email_sends",
+        "response_dashboard",
+        "participation",
+        "financial_report",
+        "talents_report",
+        "information_queue",
+        "ministry_report",
+        "ministry_followup",
+        "family_directory",
     }
     for item in items:
         if item.name in needs:
@@ -713,9 +721,8 @@ def test_available_campaign_entries_link_the_current_campaign():
     assert urls["delivery_control"] == reverse("admin:delivery_control")
     assert urls["production_progress"] == reverse("admin:production_progress")
     # The Response dashboard has its own entry (#522).
-    assert urls["response_dashboard"] == reverse(
-        "admin:response_dashboard", args=[campaign.pk]
-    )
+    assert urls["response_dashboard"] == reverse("admin:response_dashboard")
+    assert urls["participation"] == reverse("admin:participation")
     assert urls["deliveries"] == reverse("admin:deliveries")
 
 

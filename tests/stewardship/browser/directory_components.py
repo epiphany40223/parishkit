@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.reports.directories import (
     DIRECTORY_SORTING,
@@ -35,7 +36,7 @@ def _table(rows, total, mailing):
         ],
         sorting=DIRECTORY_SORTING,
         sort=query.sort,
-        action=f"/admin/reports/{UUID(int=80)}/families/",
+        action=reverse("admin:family_directory"),
         sizes=(50,),
     )
 
@@ -89,7 +90,7 @@ def components(context, admin):
         "query_fields": query.form_values(),
         "reasons": REASONS,
         "reaches": REACH,
-        "report_url": f"/admin/reports/{campaign}/families/",
+        "report_url": reverse("admin:family_directory"),
         "total": 51,
         "postal_proportion": "51 out of 1,000 (5.1%)",
         "mutable": True,
@@ -108,7 +109,7 @@ def components(context, admin):
         "query_fields": query.form_values() | {"mailing": "yes"},
         "export_headings": export_headings(postal=True, reach="any"),
         "unreachable_total": 2,
-        "unreachable_url": f"/admin/reports/{campaign}/families/?reach=neither",
+        "unreachable_url": reverse("admin:family_directory") + "?reach=neither",
         "table": _table(values["table_rows"], 51, "yes"),
     }
     # Three heads (#604): Anna and Ben share an address (in different case),

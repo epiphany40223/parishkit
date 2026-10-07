@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import connection, transaction
+from django.urls import reverse
 
 from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from parishkit.stewardship.deployment import ServiceRole
@@ -46,8 +47,8 @@ def test_staff_capability_is_rechecked_and_gates_preserve_read_history(
     )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
-    route = f"/admin/reports/{harness.campaign.pk}/information/"
-    detail = route + f"{item.pk}/"
+    route = reverse("admin:information_queue")
+    detail = reverse("admin:information_item", args=[item.pk])
     values = {
         "expected_version": str(item.version),
         "request_key": str(uuid4()),
@@ -61,8 +62,13 @@ def test_staff_capability_is_rechecked_and_gates_preserve_read_history(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert read(browser, route)[0].status_code == 200
         assert read(browser, detail)[0].status_code == 200
-        assert post(browser, detail + "update", values).status_code == 302
-        exported = post(browser, route + "export", export_values)
+        assert (
+            post(
+                browser, reverse("admin:information_update", args=[item.pk]), values
+            ).status_code
+            == 302
+        )
+        exported = post(browser, reverse("admin:information_export"), export_values)
         assert exported.status_code == 302
         export_path = exported["Location"]
     # Install only the future purge owner's sentinel; no purge is initiated.
@@ -82,8 +88,18 @@ def test_staff_capability_is_rechecked_and_gates_preserve_read_history(
         response, body = read(browser, detail)
         assert response.status_code == 200 and b"Other campaign work" in body
         assert b"<fieldset disabled>" in body
-        assert post(browser, detail + "update", values).status_code == 403
-        assert post(browser, route + "export", export_values).status_code == 403
+        assert (
+            post(
+                browser, reverse("admin:information_update", args=[item.pk]), values
+            ).status_code
+            == 403
+        )
+        assert (
+            post(
+                browser, reverse("admin:information_export"), export_values
+            ).status_code
+            == 403
+        )
         assert read(browser, export_path)[0].status_code == 200
     change(
         store,
@@ -112,8 +128,18 @@ def test_staff_capability_is_rechecked_and_gates_preserve_read_history(
                 and b"Staff note" not in body
             )
         assert search(browser, route, {"search": "Restricted"})[0].status_code == 403
-        assert post(browser, detail + "update", values).status_code == 403
-        assert post(browser, route + "export", export_values).status_code == 403
+        assert (
+            post(
+                browser, reverse("admin:information_update", args=[item.pk]), values
+            ).status_code
+            == 403
+        )
+        assert (
+            post(
+                browser, reverse("admin:information_export"), export_values
+            ).status_code
+            == 403
+        )
 
 
 def test_current_source_absence_keeps_submitted_request(live_response_service):

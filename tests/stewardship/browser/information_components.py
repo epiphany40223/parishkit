@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from uuid import UUID
 
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.reports.information import (
     INFORMATION_SORTING,
@@ -22,8 +23,8 @@ from parishkit.stewardship.reports.information import (
 from parishkit.stewardship.web.tables import report_table
 
 CAMPAIGN, ITEM_ID = UUID(int=80), UUID(int=81)
-ITEM = f"/admin/reports/{CAMPAIGN}/information/{ITEM_ID}/"
-UPDATE = ITEM + "update"
+ITEM = reverse("admin:information_item", args=[ITEM_ID])
+UPDATE = reverse("admin:information_update", args=[ITEM_ID])
 SAVED = ITEM + "?saved=1"
 OLDER, NEWER = ITEM + "?page=2", ITEM + "?page=1"
 # The fixture server's answer to a Save (status, Location, body).
@@ -67,7 +68,7 @@ def components(context, admin):
             ],
             sorting=INFORMATION_SORTING,
             sort=query.sort,
-            action=f"/admin/reports/{campaign}/information/",
+            action=reverse("admin:information_queue"),
             sizes=PAGE_SIZES,
         )
 

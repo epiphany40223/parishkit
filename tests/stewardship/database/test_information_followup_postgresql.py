@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, connections
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.models import PortalUser
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
@@ -135,11 +136,13 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         page = information_page(harness.campaign.pk, InformationQuery(search="Called"))
         assert page["total"] == 1 and page["rows"][0]["id"] == str(item.pk)
         assert page["rows"][0]["notes"] == "Called the Family"
-        route = f"/admin/reports/{harness.campaign.pk}/information/"
+        route = reverse("admin:information_queue")
         response, body = read(browser, route)
         assert response.status_code == 200 and b"Please contact" in body
         assert response["Cache-Control"] == "no-store"
-        response, body = read(browser, route + f"{item.pk}/")
+        response, body = read(
+            browser, reverse("admin:information_item", args=[item.pk])
+        )
         assert response.status_code == 200 and b"Called the Family" in body
         assert b"Staff edit history" in body
         rows, more = information_history(item.pk, 1, version=first.expected_version + 1)
@@ -158,7 +161,7 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
                     "notes": "Wrong campaign",
                 },
             ).status_code
-            == 403
+            == 410
         )
         for values, found in (
             ({"search": "Called"}, True),
@@ -184,7 +187,7 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         assert b"search=" not in body
         for invalid in ({"sort": "submitted_at"}, {"size": "250"}, {"size": "5"}):
             assert search(browser, route, invalid)[0].status_code == 400
-        update_path = route + f"{item.pk}/update"
+        update_path = reverse("admin:information_update", args=[item.pk])
         values = {
             "expected_version": str(item.version),
             "request_key": str(uuid4()),
