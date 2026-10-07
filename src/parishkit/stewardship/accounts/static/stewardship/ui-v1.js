@@ -1920,7 +1920,10 @@
   };
   const requireOne = (form) => {
     form.querySelectorAll("[data-require-one]").forEach((group) => {
-      const boxes = [...group.querySelectorAll("input[type=checkbox]")];
+      // A box hidden by data-show-when is disabled and not sent, so its
+      // tick does not count (a type Cancel cannot take, #563).
+      const boxes = [...group.querySelectorAll("input[type=checkbox]")]
+        .filter((box) => !box.disabled);
       const none = !boxes.some((box) => box.checked);
       // The group's own data-missing-hint is the message (and the custom
       // validity a box needs to count as invalid); the page supplies it.
