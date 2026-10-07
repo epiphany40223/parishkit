@@ -580,8 +580,11 @@ shared clock that the operator script controls.
 A seeder gives the local environment a campaign in progress with realistic
 Family activity, so reports, progress pages and the planned response reporting
 ([#477](https://github.com/epiphany40223/parishkit/issues/477)) have a
-meaningful data set. It requires a completed setup wizard and reuses the
-wizard's first campaign, rather than creating a second one. The seed,
+meaningful data set. It requires a completed setup wizard and the one
+campaign, created by
+[Create the campaign](../admin-portal/spec.md#create-the-campaign) (before the
+setup split, #142, the wizard's first campaign), rather than creating a second
+one. The seed,
 `families`, `--response-scale` and `now` fully determine the timeline (see
 [determinism](#seed-determinism)).
 
