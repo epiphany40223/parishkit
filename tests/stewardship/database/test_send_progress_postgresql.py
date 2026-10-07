@@ -85,6 +85,7 @@ from .campaign_builders import (
     restored_runtime,
 )
 from .credential_builders import family_campaign, populate
+from .plan_work import rows_visited
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_catchup_preparation_postgresql import execution_arguments
@@ -135,6 +136,8 @@ INELIGIBLE = range(9101, 9106)
 # a launch's worth, then about several years' worth of outgoing mail.
 NOISE = 4000
 YEARS = 50000
+# Rows one panel statement may visit at launch scale (about 1,100 Families).
+PANEL_ROWS = 20000
 
 
 def prepared(harness):
@@ -687,7 +690,12 @@ def measure(values):
         assert not relations(plan_["Plan"], "Seq Scan") & set(PREPARATION_TABLES), (
             json.dumps(plan_)
         )
-        assert plan_["Execution Time"] < 100, json.dumps(plan_)
+        # Work, not wall-clock time, is the budget (#697): CI packs three
+        # PostgreSQL partitions onto each runner, so execution time is
+        # shared-CPU noise. Each statement visits a few rows per Family of
+        # the send (at most about 9,000 for these 1,100), never a pass per
+        # Family.
+        assert rows_visited(plan_["Plan"]) < PANEL_ROWS, json.dumps(plan_)
     return plans
 
 
@@ -777,6 +785,11 @@ def test_launch_scale_counts_every_state_cheaply_through_indexes(
             assert "stewardship_outbox_message" not in relations(
                 counted["Plan"], "Seq Scan"
             ), json.dumps(counted)
+        # Nor do they visit much more of anything: 50,000 more unrelated
+        # rows add a few dozen visits at most (a scan would add 50,000).
+        for before, after in zip(launch, years, strict=True):
+            added = rows_visited(after["Plan"]) - rows_visited(before["Plan"])
+            assert added < 1000, json.dumps(after)
         with capsys.disabled():
             for label, (choose, count, reminder, owed, due) in (
                 ("launch", launch),

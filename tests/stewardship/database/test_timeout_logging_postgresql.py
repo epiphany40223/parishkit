@@ -108,6 +108,8 @@ def test_sql_refuses_unreviewed_timeout_entries(event, context):
 
 def test_read_guard_deadline_is_recorded_before_the_abort(tmp_path, monkeypatch):
     """The guard writes what it stopped, then stops it (the export hard stop)."""
+    from time import monotonic
+
     from parishkit.stewardship.campaigns import read_guards
 
     # A generous wait here, so a loaded CI host still sees the write land
@@ -121,6 +123,7 @@ def test_read_guard_deadline_is_recorded_before_the_abort(tmp_path, monkeypatch)
     def abort():
         """Observe whether the entry was already committed when stopping."""
         seen.append(OperationalLog.objects.using("default").count())
+        stopped_after.append(monotonic() - started)
         aborted.set()
 
     guard = CampaignReadGuard(
@@ -130,15 +133,21 @@ def test_read_guard_deadline_is_recorded_before_the_abort(tmp_path, monkeypatch)
         limits=ReadLimits(interactive_seconds=2, lock_seconds=1),
         timeout_task=task,
     )
+    stopped_after, started = [], monotonic()
     with guard:
-        assert aborted.wait(timeout=6)
+        # Only a catastrophic guard; the deadline is 2 s.
+        assert aborted.wait(timeout=30)
     assert seen == [1]
     entry = OperationalLog.objects.get()
     assert entry.event == "task_timed_out" and entry.level == "ERROR"
     assert entry.context["what"] == "read_guard"
     assert entry.context["task_id"] == str(task)
     assert entry.context["limit_seconds"] == 2
-    assert 2 <= entry.context["elapsed_seconds"] <= 4
+    # The logged elapsed time is the guard's own, at the moment it stopped:
+    # at least the limit, and no more than this test saw pass before the
+    # abort (plus rounding to whole seconds). A busy CPU lengthens both
+    # alike, so this needs no fixed window (#697).
+    assert 2 <= entry.context["elapsed_seconds"] <= stopped_after[0] + 0.5
     with pytest.raises(TypeError):
         CampaignReadGuard(
             [identifier],

@@ -47,6 +47,7 @@ from parishkit.stewardship.web.contracts import PageWindow
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, campaign_clock, change
+from .plan_work import rows_visited
 from .test_background_grants_postgresql import task_login
 from .test_export_campaign_lock_postgresql import contender
 from .test_family_auth_postgresql import family_service  # noqa: F401
@@ -388,7 +389,9 @@ def test_sends_count_like_the_panel_and_link_to_exactly_their_emails(
 
         # With other schedules' occurrences and other mail around, listing
         # the sends and reading one send's emails go through the definition
-        # index, never a scan of every occurrence, and take milliseconds.
+        # index, never a scan of every occurrence, and visit only a few hundred
+        # rows: far fewer than the unrelated ones (work, not wall-clock time,
+        # is the budget, since CI's shared CPUs make time noise; #697).
         add_noise(1, NOISE)
         with read_transaction(), connection.cursor() as cursor:
             for statement, values in (
@@ -400,7 +403,7 @@ def test_sends_count_like_the_panel_and_link_to_exactly_their_emails(
                 assert "stewardship_schedule_occurrence" not in relations(
                     plan_["Plan"], "Seq Scan"
                 ), statement
-                assert plan_["Execution Time"] < 100, statement
+                assert rows_visited(plan_["Plan"]) < NOISE // 4, statement
 
         # The pages render the same reads for the Admin.
         body = browser.get(PAGE).content.decode()

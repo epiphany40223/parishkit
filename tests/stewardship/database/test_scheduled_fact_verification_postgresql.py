@@ -3,6 +3,7 @@
 import time
 from dataclasses import replace
 from datetime import UTC, timedelta
+from threading import Event
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
@@ -360,14 +361,29 @@ def test_a_verification_read_past_its_deadline_fails_visibly_and_is_logged(
     def stuck_load(*args, **kwargs):
         """Loading that outlasts the guard's deadline between statements.
 
-        (A single statement past the deadline is stopped by the guard's
-        statement timeout instead, which the broker records.)
+        It stays stuck until the guard has stopped it and closed its
+        connection, so the order, not a sleep, puts the deadline inside the
+        load (#697); 30 s is only a catastrophic guard. (A single statement
+        past the deadline is stopped by the guard's statement timeout
+        instead, which the broker records.)
         """
-        time.sleep(4)
+        assert stopped.wait(30), "the deadline never stopped the load"
+        deadline = time.monotonic() + 30
+        while not connection.connection.closed:
+            assert time.monotonic() < deadline, "the guard never closed the read"
+            time.sleep(0.02)
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
 
-    aborted = Mock()
+    stopped, stopped_after = Event(), []
+
+    def abort():
+        """Record when the guard stopped the read, as seen by this test."""
+        stopped_after.append(time.monotonic() - started)
+        stopped.set()
+
+    aborted = Mock(side_effect=abort)
+    started = time.monotonic()
     with (
         patch.object(verification_tasks, "load_verification", stuck_load),
         patch.object(verification_tasks, "BACKGROUND_LIMITS", SHORT_LIMITS),
@@ -383,7 +399,10 @@ def test_a_verification_read_past_its_deadline_fails_visibly_and_is_logged(
     assert entry.context["task_id"] == str(root)
     assert entry.context["task_type"] == TASK_TYPE
     assert entry.context["limit_seconds"] == 2
-    assert 2 <= entry.context["elapsed_seconds"] < 4
+    # At least the limit, and no more than this test saw pass before the
+    # abort (plus rounding to whole seconds): the entry records the
+    # deadline, not the end of the load, whatever the CPU speed.
+    assert 2 <= entry.context["elapsed_seconds"] <= stopped_after[0] + 0.5
 
 
 def test_failed_or_unavailable_calculation_is_never_a_clean_result(response_service):
