@@ -248,6 +248,8 @@ def detail(request, request_id):
                 "retry_key": uuid4(),
                 "report_title": title,
                 "report_url": report_url,
+                # "Return to" names the report by its page name.
+                "report_name": admin_navigation.PAGES[source].label,
                 "can_cancel": state["state"] in {"queued", "running", "retry_wait"},
                 # Why a still-queued export has not started (#340). Ministry
                 # leaders may open their own exports but not background work,

@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Ministry requests" %}{% endblock %}
+{% block title %}{% if action == 'join' %}{% translate "Members joining" %}{% elif action == 'leave' %}{% translate "Members leaving" %}{% else %}{% translate "Ministry requests" %}{% endif %}{% endblock %}
 {% block content %}
-<h1>{% translate "Ministry requests" %}</h1>
+<h1>{% if action == 'join' %}{% translate "Members joining" %}{% elif action == 'leave' %}{% translate "Members leaving" %}{% else %}{% translate "Ministry requests" %}{% endif %}</h1>
 {% aboutpage "ministry-report" %}<p>{% translate "Families' requests to join or leave each Ministry, with contact details for the people you may follow up." %}</p>
 <p>{% translate "Ages are as of" %} {{ metadata.report_date|parish_date }} ({{ metadata.timezone }}). {% translate "Request date filters use the parish time zone. Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>
 <p>{% translate "Current counts leave out cancelled requests and requests a Family later replaced. Inactive Ministries keep their requests. Follow-up progress counts resolved or closed requests; it is not a record of contact attempts." %}</p>
@@ -28,7 +28,7 @@
 view; one Ministry's view lists it plainly, so the wrapper is a region only then,
 and otherwise a summary that follows the filters (#484).{% endcomment %}
 <div{% if ministry_id %} id="ministry-summary" data-table-sync{% else %} id="{{ table.anchor }}" data-table-region{% endif %}>
-{% translate "Ministry report pages" as navigator_label %}{% if not ministry_id %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}{% endif %}
+{% translate "Ministry requests pages" as navigator_label %}{% if not ministry_id %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}{% endif %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministry summary' %}"><table><caption>{% translate "Current Ministry request summary" %}</caption>
 <thead><tr>{% translate "Ministry" as heading %}{% if ministry_id %}<th scope="col">{{ heading }}</th>{% else %}{% sort_heading table "ministry" heading %}{% endif %}<th scope="col">{% translate "Joining" %}</th><th scope="col">{% translate "Leaving" %}</th><th scope="col">{% translate "Unresolved" %}</th><th scope="col">{% translate "Follow-up progress" %}</th></tr></thead>
 <tbody>{% for ministry in summaries %}<tr><td>{{ ministry.name }} — {% translate "DUID" %} {{ ministry.duid|duid }}<br>{% if ministry.active is None %}{% translate "Not in ParishSoft data" %}{% elif ministry.active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}{% if ministry.in_campaign is False %}<br>{% translate "No longer in this campaign" %}{% endif %}</td>

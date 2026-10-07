@@ -4,5 +4,5 @@
 <h1>{% translate "Talents and limitations unavailable" %}</h1>
 {% if status == 503 %}<p role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
 {% else %}<p role="alert">{% translate "Check the search and filter, then try again." %}</p>{% endif %}
-<p><a href="{% url 'admin:talents_report' campaign_id %}">{% translate "Return to this campaign's talents and limitations" %}</a></p>
+<p><a href="{% url 'admin:talents_report' campaign_id %}">{% translate "Return to Talents and limitations" %}</a></p>
 {% endblock %}
