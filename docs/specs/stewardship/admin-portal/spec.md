@@ -1108,7 +1108,8 @@ link, heading and filter form keeps the page's filters and the others' choices.
 Reports whose filters are private (the Family directory, System logs and the
 campaign reports) keep them in POST state: their navigator and headings are
 small CSRF-protected forms that carry the filters as hidden fields, so no
-private value reaches a URL. A report whose rows an installed SQL selection
+private value reaches a URL. System logs also accept a link carrying only its
+non-private filters ([Logs](#logs)). A report whose rows an installed SQL selection
 orders offers that selection's sort orders on the columns they order and its
 page sizes; its other columns do not sort, since the schema owns those
 orders. In v1 that covers:
@@ -4371,8 +4372,37 @@ Only Admins access the combined log screen. It supports:
   The critical-events banner's link ticks Critical alone, without audit
   records, and "Same campaign" ticks Audit record alone;
 - action/type, campaign, entity, actor, task/request correlation, text,
-  date range, and the six Show (level and audit record) filters;
-- full-text search over approved indexed fields, never credentials;
+  Ministry, date range, and the six Show (level and audit record) filters.
+  The entity filter is the audit subject identifier (audit records only, like
+  campaign), under "Filter by identifier" with the other identifiers;
+- text search ([#536](https://github.com/epiphany40223/parishkit/issues/536)):
+  a case-insensitive phrase of at most 64 characters, never holding `@`,
+  matched against the stored type, the explanation the page shows for the
+  entry (for an operational type whose sentence depends on its outcome, the
+  sentence for that entry's outcome) and each recorded detail value the page
+  shows on its own (numbers, Booleans, lists of numbers and text of at most
+  128 characters, of reviewed fields only), never key names, actor
+  addresses, the "what went wrong" sentence or credentials. The search text
+  is a private filter: it travels only in POST bodies, like the
+  [Find a Family](#admin-navigation) search, never in a link. It has no
+  text index: it reads the entries in the date range, which the page says.
+  Every log read (page or export) runs under the 60-second interactive
+  statement limit; a read it stops is recorded as a timeout (what, limit,
+  time taken) and answered with the page's unavailable message. A trigram
+  index is a schema change left until the log needs one
+  ([#765](https://github.com/epiphany40223/parishkit/issues/765));
+- bookmarkable views (#536): a GET may carry only the filters that are not
+  private (the Show choices, type, Ministry, From and Through with their
+  zone, rows per page and sort). The search text, identifiers (actor,
+  correlation, campaign, subject) and the paging snapshot stay in POST
+  bodies, following the [Admin tables](#admin-tables) rule that private
+  filters keep POST state, because a web address is kept in the server's
+  access log and the browser's history; a GET carrying one is refused
+  without echoing it. The page draws "Link to these
+  filters" with only those filters, and after each in-place answer the
+  address bar shows it, so a bookmark or reload keeps them. A link's days
+  stay in the zone it was made in, and the page says so when that is not the
+  browser's zone; applying the filters again uses the browser's zone;
 - before/after detail for audit events;
 - a plain-language explanation beside each entry's stored type. Every type the
   application defines has one (a guard test enforces it for the audit and
@@ -4393,7 +4423,8 @@ Only Admins access the combined log screen. It supports:
   [what went wrong, and recovery](../background-processing/spec.md#what-went-wrong-and-recovery)).
   An older entry without that context lists its fields only;
 - cross-links from every entry: "Show related entries" (same correlation
-  identifier), "Same actor", "Same campaign" (audit records) and, for task
+  identifier), "Same actor", "Same subject" and "Same campaign" (audit
+  records) and, for task
   entries and views of one task's page, "Open task" to the background task
   page. Each filter travels in a POST body like the form's and applies
   [in place](#in-place-controls): the filter form above then shows the
@@ -4420,7 +4451,9 @@ Only Admins access the combined log screen. It supports:
   narrower date range or the other order; and
 - text or structured JSONL export of the filtered result.
 
-Ministry filtering includes both interactive event identifiers and the
+Ministry filtering takes a Ministry DUID and matches an entry whose detail
+names it as `ministry_duid` or in any sorted Ministry list, so it includes both
+interactive event identifiers and the
 [retained export result scope](../reports/spec.md#ministry-change-summary),
 including after campaign-detail purge. ADM-08/RPT-09 own this log-query
 integration; report owners supply the durable non-sensitive event metadata.

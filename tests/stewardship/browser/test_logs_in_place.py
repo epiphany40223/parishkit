@@ -69,29 +69,32 @@ def fixture_filters(page, origin, fixture):
 
 
 @pytest.mark.parametrize(
-    "name, fixture, sent, message",
+    "name, fixture, sent, message, address",
     [
         (
             "related",
             "/logs-related",
             {"correlation": [str(UUID(int=302))]},
             "Related entries shown.",
+            "",
         ),
         (
             "campaign",
             "/logs-campaign",
             {"applied": ["yes"], "audit": ["yes"], "campaign": [str(UUID(int=303))]},
             "Audit records for the same campaign shown.",
+            "?applied=yes&audit=yes",
         ),
     ],
 )
 def test_cross_link_filters_in_place(
-    page, component_origin, name, fixture, sent, message
+    page, component_origin, name, fixture, sent, message, address
 ):
     """A cross-link sends its filter once in a POST body and swaps the list
-    in place: no reload, the reader's place kept, the address unchanged (no
-    identifier in it), focus on the same entry's button in the filtered list,
-    the message and the new count announced. The list is shorter, so the
+    in place: no reload, the reader's place kept, the address showing only
+    the filters a link may carry (#536, never the identifier), focus on the
+    same entry's button in the filtered list, the message and the new count
+    announced. The list is shorter, so the
     page can scroll up a little, but never to the top. The filter form then shows the
     filters applied, "Filter by identifier" opened, so the next Apply keeps
     them."""
@@ -113,17 +116,22 @@ def test_cross_link_filters_in_place(
     assert page.evaluate(ON_SCREEN)
     assert page.evaluate("document.activeElement.id") == button[1:]
     has_text(page.get_by_role("status").filter(has_text=message), f"{message} {COUNT}")
-    assert page.url == component_origin + LIVE
+    assert page.url == component_origin + LIVE + address
     assert len(posts) == 1
     filters = page.evaluate(f"() => ({FILTERS})(document)")
     assert filters == fixture_filters(page, component_origin, fixture)
     assert filters["identifiers"] is True
     apply = page.get_by_role("button", name="Apply filters")
     assert apply.is_enabled()
-    # The next Apply sends the filter the cross-link applied.
-    with page.expect_request(lambda request: request.method == "POST") as request:
+    # The next Apply sends the filter the cross-link applied. Wait for its
+    # answer too: the route fetches the fixture and fulfils the POST, and a
+    # fulfil still in flight when the context closes fails a later test's
+    # setup or teardown with "Fetch response has been disposed".
+    with page.expect_response(
+        lambda response: response.request.method == "POST"
+    ) as answer:
         apply.click()
-    fields = posted(request.value)
+    fields = posted(answer.value.request)
     for key, value in sent.items():
         assert fields[key] == value
 
@@ -183,3 +191,48 @@ def test_cross_link_without_an_answer_falls_back_to_the_ordinary_post(
     eventually(page, "() => document.querySelector('h1')?.dataset.mark ?? null", None)
     visible(page.locator("#table").get_by_text(COUNT).first)
     assert len(sent) == 2 and sent[0] == sent[1]
+
+
+def test_the_address_follows_applied_filters_without_identifiers(
+    page, component_origin
+):
+    """After an in-place Apply the address bar shows the page's own link
+    (#536): the Ministry, never the search text or the correlation
+    identifier, so a bookmark or reload keeps what a link may carry. No
+    reload happens."""
+    page.goto(component_origin + LIVE)
+    page.evaluate(MARK)
+    answer_with(page, component_origin, "/logs-searched")
+    page.locator("#log-text").fill("lag")
+    with page.expect_request(lambda request: request.method == "POST") as request:
+        page.get_by_role("button", name="Apply filters").click()
+    assert posted(request.value)["text"] == ["lag"]
+    link = page.get_by_role("link", name="Link to these filters")
+    visible(
+        page.locator("#log-link").get_by_text("search and identifier filters are left")
+    )
+    assert page.evaluate(MARKED) == "kept"
+    expected = "?applied=yes&info=yes&warning=yes&error=yes&audit=yes&ministry=42"
+    eventually(page, "() => window.location.search", expected)
+    assert link.get_attribute("href") == LIVE + expected
+    assert str(UUID(int=302)) not in page.url and "lag" not in page.url
+
+
+@pytest.mark.parametrize(("zone", "shown"), [("Asia/Tokyo", False), ("UTC", True)])
+def test_a_followed_links_other_zone_is_noted(
+    browser_engine, component_origin, zone, shown
+):
+    """A link's days are in the zone it was made in (#536): the page says so
+    only when that is not this browser's zone."""
+    context = browser_engine.new_context(timezone_id=zone)
+    try:
+        page = context.new_page()
+        page.goto(component_origin + "/logs-linked-tokyo")
+        note = page.locator("[data-link-zone]")
+        assert note.count() == 1
+        if shown:
+            visible(note.get_by_text("days in Asia/Tokyo", exact=False))
+        else:
+            assert note.is_hidden()
+    finally:
+        context.close()

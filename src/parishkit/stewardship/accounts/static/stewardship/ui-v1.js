@@ -154,6 +154,12 @@
         }
       });
     });
+    // A followed link's days are in the zone of the computer it was made on
+    // (System logs, #536); its [data-link-zone] note shows only when that is
+    // not this browser's zone.
+    root.querySelectorAll("[data-link-zone]").forEach((note) => {
+      note.hidden = note.dataset.linkZone === zone;
+    });
     if (!zone || zone === "UTC") return;
     root.querySelectorAll("select[data-browser-timezone]").forEach((select) => {
       select.append(new Option(`${zone} (this browser)`, zone, true, true));
@@ -1263,6 +1269,9 @@
       return;
     }
     const summary = refused ? placeSummary(parsed, fresh) : null;
+    // The answer's own address (a[data-page-address], #536), read before the
+    // swaps below move its node out of the parsed answer.
+    const address = parsed.querySelector("a[data-page-address][href]")?.getAttribute("href");
     // The server answered with this page: nothing is leaving any more.
     leaving = false;
     if (isBox(control)) failedState.delete(control);
@@ -1280,11 +1289,19 @@
     // returning to the page keep it; a POST table's private filters never
     // reach a URL. A server redirect chose the address itself (a saving
     // POST's Post/Redirect/Get answer, so a reload repeats only the GET).
-    // An answer from anywhere leaves the address this page's.
+    // An answer from anywhere leaves the address this page's. A POST answer
+    // that draws its own address (a[data-page-address], System logs' link
+    // to its filters, #536) puts that in the address bar: the server built
+    // it from only the filters a link may carry, never an identifier.
     if (!anywhere && response.redirected) {
       window.history.replaceState(window.history.state, "", withFragment(response.url, id));
     } else if (!anywhere && init.method !== "POST") {
       window.history.replaceState(window.history.state, "", options.quiet ? keepHash(url) : url);
+    } else if (!anywhere && !refused && address) {
+      const href = new URL(address, window.location.href);
+      if (href.origin === window.location.origin && href.pathname === window.location.pathname) {
+        window.history.replaceState(window.history.state, "", keepHash(href.href));
+      }
     }
     if (options.quiet && !refused) return;
     // A refusal's summary (now in the region) takes focus, as it does on an

@@ -239,7 +239,7 @@ Scope and dependencies: [ADM-08 work package](../../plans/stewardship/admin-port
 - [x] ADM-08.01 — Build coalesced manual refresh controls.
 - [ ] ADM-08.02 — Build additional-information and manual-census queues.
 - [x] ADM-08.03 — Build scoped Ministry follow-up controls.
-- [ ] ADM-08.04 — Build searchable Admin logs and timezone-aware exports.
+- [x] ADM-08.04 — Build searchable Admin logs and timezone-aware exports.
 - [ ] ADM-08.05 — Test workflow history, scope, and concurrency.
 
 Partial evidence: the [Staff follow-up increment](../../guides/stewardship-additional-followup.md)

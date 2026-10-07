@@ -119,18 +119,21 @@ def components(context, admin):
     operational[0]["actor_id"] = UUID(int=900)
     operational[0]["actor_worker"] = True
 
-    def page(query, rows, *, number=1, total=None, action="/logs"):
+    def page(query, rows, *, number=1, total=None, action="/logs", linked=False):
         """Render the production context builder's output, as the view does.
 
         Navigator and heading forms post back to this fixture's own path, or
         to ``action`` (the fixture server's redirecting path, for #478).
+        ``linked`` draws the page as a followed link's answer (#536).
         """
         table = log_table(
             query, rows, through=moment, action=action, number=number, total=total
         )
         return render_to_string(
             "stewardship/logs.html",
-            context | {"admin_chrome": admin} | page_context(query, table),
+            context
+            | {"admin_chrome": admin}
+            | page_context(query, table, linked=linked),
         )
 
     everything = LogQuery.parse(
@@ -214,7 +217,11 @@ def components(context, admin):
         """``page`` with every form posting to LIVE."""
         html = page(query, rows, action=LIVE, **options)
         # Reverse the real address so this follows any move of System logs.
-        return html.replace(f'action="{reverse("admin:logs")}#', f'action="{LIVE}#')
+        # The filter form posts there too, without a fragment (#536).
+        real = reverse("admin:logs")
+        return html.replace(f'action="{real}#', f'action="{LIVE}#').replace(
+            f'action="{real}"', f'action="{LIVE}"'
+        )
 
     ticks = {key: "yes" for key in ("applied", "info", "warning", "error", "audit")}
     shown = LogQuery.parse(ticks)
@@ -228,8 +235,25 @@ def components(context, admin):
         ),
         ("/logs-actor", {"actor": str(UUID(int=900))}, [operational[1]]),
         ("/logs-live-oldest", ticks | {"sort": "oldest"}, rows[::-1]),
+        # An applied search with a Ministry and an identifier (#536): the
+        # address may carry the first two only.
+        (
+            "/logs-searched",
+            ticks
+            | {"text": "lag", "ministry": "42", "correlation": str(UUID(int=302))},
+            [audit[0]],
+        ),
     ):
         result[path] = ("text/html", live(LogQuery.parse(parameters), found))
+    # A followed link whose days were applied in Tokyo (#536).
+    result["/logs-linked-tokyo"] = (
+        "text/html",
+        live(
+            LogQuery.parse({"start": "2026-09-01", "zone": "Asia/Tokyo"}),
+            rows,
+            linked=True,
+        ),
+    )
     # The three error states: a refused filter value, a refused query string
     # and an outage, which is also what a denied reader sees.
     errors = {
