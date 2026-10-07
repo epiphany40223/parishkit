@@ -175,20 +175,28 @@ LEDGER = {
     # Reports and exports. PR 8 lands in parts: 8a the logs, 8b the export
     # lifecycle and its fetch, 8c the aggregate report reads, 8d the
     # digests and 8e the Family-level exports.
-    "reports": pending("PR 8c", "report list"),
-    "participation": pending("PR 8c", "report participation"),
+    # The aggregate report reads (PR 8c): counts and summaries only; the
+    # rows behind them are the Family-level exports (PR 8e).
+    "reports": command("report list"),
+    "participation": command("report participation"),
     "participation_chart": permanent(IMAGES),
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
-    "financial_report": pending("PR 8c", "report financial"),
-    "talents_report": pending("PR 8c", "report talents"),
-    "information_queue": pending("PR 8c", "report information"),
-    "information_item": pending("PR 8c", "report information"),
-    "ministry_report": pending("PR 8c", "report ministry"),
-    "ministry_joiners": pending("PR 8c", "report ministry"),
-    "ministry_leavers": pending("PR 8c", "report ministry"),
-    "ministry_packet": pending("PR 8c", "report ministry"),
-    "response_dashboard": pending("PR 8c", "report responses"),
+    "financial_report": command("report financial"),
+    "talents_report": command("report talents"),
+    "information_queue": command("report information"),
+    # One Family's submission and its follow-up history: read with the
+    # follow-up commands, as the Ministry follow-up items are, which print
+    # only the item's state and history; its content is Family-level and
+    # comes through ``export information`` (PR 8e).
+    "information_item": pending("PR 11", "followup"),
+    "ministry_report": command("report ministry"),
+    # The join and leave lists: ``report ministry --requests`` counts them.
+    "ministry_joiners": command("report ministry"),
+    "ministry_leavers": command("report ministry"),
+    # A packet of the chosen Ministries' Members and contacts: an export.
+    "ministry_packet": pending("PR 8e", "export ministry"),
+    "response_dashboard": command("report responses"),
     "response_list": pending("PR 8e", "export responses"),
     "response_list_export": pending("PR 8e", "export responses"),
     "family_directory": pending("PR 8e", "export directory"),

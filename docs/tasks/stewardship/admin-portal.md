@@ -485,8 +485,20 @@ allowlists, the stream), `tests/stewardship/test_admin_cli.py`,
 check, no overwrite, no copy, the interrupted fetch and `exports clean`),
 `tests/stewardship/database/test_admin_export_cli_postgresql.py` (the
 page's bytes in csv, png and pdf, the page's events and contexts, repeats
-by key and the refusals) and the unchanged export view suites. 8c (report
-reads), 8d (digests) and 8e (Family-level exports) follow.
+by key and the refusals) and the unchanged export view suites. 8c adds the
+aggregate report reads (`report list`, `report participation` with the
+`fact_set_id` that `export create --fact-set` takes, `report responses`,
+`report financial`, `report talents`, `report information` and
+`report ministry`), counts and summaries only, through the pages' own
+reads under their campaign read guard; proven by
+`tests/stewardship/test_admin_report_reads.py` (golden documents and the
+personal-data pattern), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_report_cli_postgresql.py` (each
+read against its page, the pages' events and context members, a
+read-only session, an ended session, no current campaign and the pages'
+filter refusals) and the unchanged report view suites. 8d (digests) and 8e
+(Family-level exports) follow.
 
 ## ADM-12: Admin navigation overhaul
 

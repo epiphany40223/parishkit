@@ -1864,8 +1864,10 @@ the page.
 | `reports` | `report list` (PR 8c) |
 | `participation` | `report participation` (PR 8c) |
 | `participation_chart`, `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
-| `financial_report`, `talents_report`, `information_queue`, `information_item` | Aggregate reads as `report …` (PR 8c); Family-level rows only as exports (PR 8e) |
-| `ministry_report`, `ministry_joiners`, `ministry_leavers`, `ministry_packet` | `report ministry …`, counts (PR 8c); rows only as exports (PR 8e) |
+| `financial_report`, `talents_report`, `information_queue` | `report financial`, `report talents`, `report information`: summaries and counts (PR 8c); Family-level rows only as exports (PR 8e) |
+| `information_item` | One Family's submission and its follow-up history: `followup …` (PR 11), with the Ministry follow-up items; it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
+| `ministry_report`, `ministry_joiners`, `ministry_leavers` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for a list's count (PR 8c); rows only as exports (PR 8e) |
+| `ministry_packet` | A packet of Members' contacts, so export only: `export ministry` (PR 8e) |
 | `family_directory`, `postal_directory`, `find_family` | Export only: `export directory`, `export postal` (PR 8e); Find a Family is the directory's search |
 | `family_timeline` | One Family's timeline, so export only: `export family-timeline` (PR 8e) |
 | `financial_export`, `talents_export`, `ministry_export`, `information_export`, `family_directory_export`, `postal_directory_export` | `export …` (PR 8e) |
@@ -1895,6 +1897,26 @@ and the stream without an export record are defaults, pending
 Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#system-logs)
 lists the fields.
+
+The `report` commands (PR 8c) read the current campaign's report pages
+through the functions the pages use (`guarded_participation` and the
+campaign statistics, `response_metrics`, `financial_page`,
+`talents_report`, `information_page`, `ministry_page`, and the Admin
+menu's entries for `report list`), inside the same campaign read guard,
+and print counts, summaries, stored keys and identifiers only (see
+[personal data on the command line](#personal-data-on-the-command-line)).
+Each admits passively with its page's own admission, so a session of any
+scope (read-only included) may run it, and records its page's own view
+events through the page's audit function; where the page's event counts
+the rows it displayed, the command's counts 0. A read the page answers
+with 503 (its database, guard or inputs failing, or a value it could not
+shape) is `unavailable` (exit 3, retry). `report participation` prints the `fact_set_id` that
+`export create --fact-set` takes. Reading the current campaign only (no
+`--campaign` until #145), the summaries without search or filtered rows,
+and the stored keys for share options and talents are defaults, pending
+Administrator confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#reports)
+lists the fields and options.
 
 The export lifecycle commands work on any report export the Administrator
 may see, through the functions the export pages use

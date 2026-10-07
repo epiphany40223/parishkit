@@ -133,6 +133,9 @@ def shape_result(result, *, configuration):
     for row in result["families"]:
         row["submitted_at"] = datetime.fromisoformat(row["submitted_at"])
     counts = result["summary"]["talents"]
+    # The raw counts by stored key, for the command line's ``report
+    # talents`` (ADM-11 PR 8c); the templates use the labeled pairs below.
+    result["summary"]["talent_counts"] = dict(counts)
     # Talents the parish has since removed are counted together, so the
     # summary includes every talent that any listed Member chose.
     retired = sum(count for key, count in counts.items() if key not in labels)
