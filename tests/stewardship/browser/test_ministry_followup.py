@@ -179,7 +179,7 @@ def test_followup_history_links_name_the_request(page, component_origin):
     href = page.get_by_role("link", name="Older history").get_attribute("href")
     assert href == (
         "/admin/reports/00000000-0000-0000-0000-00000000005c/ministries/"
-        "follow-up/00000000-0000-0000-0000-00000000005d/?page=2"
+        "follow-up/00000000-0000-0000-0000-00000000005d/?page=2#followup-history"
     )
 
 

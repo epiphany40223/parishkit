@@ -27,6 +27,8 @@
 <label for="staff-notes">{% translate "Staff notes" %}</label><textarea id="staff-notes" name="notes" maxlength="5000" rows="6">{{ item.notes }}</textarea>
 <button type="submit" aria-describedby="information-save-hint">{% translate "Save follow-up" %}</button>
 <p class="help" id="information-save-hint" data-complete-hint hidden></p></fieldset></form>
+{# The history pages in place by itself (data-in-place-only), so it never replaces the form above or what the reader has typed; a Save still refreshes the whole panel (#519). #}
+<div id="information-history" data-in-place-region>
 <h2>{% translate "Staff edit history" %}</h2>
 {% for revision in history %}<section aria-label="{% translate 'Staff edit' %} {{ revision.expected_version|add:1 }}">
 <h3>{% translate "Version" %} {{ revision.expected_version|add:1|number }}</h3>
@@ -35,7 +37,8 @@
 {% if revision.followed_up_at %}<p>{{ revision.completer_label }} — <time datetime="{{ revision.followed_up_at|date:'c' }}" data-local-instant>{{ revision.followed_up_at|date:'c' }}</time></p>{% endif %}
 <div>{{ revision.notes|linebreaksbr }}</div></section>
 {% empty %}<p>{% translate "No Staff edits yet." %}</p>{% endfor %}
-<nav aria-label="{% translate 'Staff history pages' %}">{% if previous_history %}<a href="?page={{ previous_history }}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="?page={{ next_history }}">{% translate "Older history" %}</a>{% endif %}</nav>
+<nav aria-label="{% translate 'Staff history pages' %}">{% if previous_history %}<a href="?page={{ previous_history }}#information-history" data-in-place="history-newer" data-in-place-fallback="history-older" data-in-place-only data-in-place-message="{% translate 'Newer history shown.' %}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="?page={{ next_history }}#information-history" data-in-place="history-older" data-in-place-fallback="history-newer" data-in-place-only data-in-place-message="{% translate 'Older history shown.' %}">{% translate "Older history" %}</a>{% endif %}</nav>
+</div>
 </div>
 <p><a href="{% url 'admin:information_queue' campaign_id %}">{% translate "Return to the queue" %}</a></p>
 {% else %}

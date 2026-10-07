@@ -710,6 +710,11 @@
   // A data-in-place link or form names the region it changes by its URL's
   // fragment, or else by the region it sits in. Its data-in-place-message
   // ("List refreshed.") is announced before the region's row count.
+  // Every answer refreshes every region on the page, unless the link is
+  // marked data-in-place-only: then only the region it names is swapped (a
+  // history pager nested in a panel whose form holds unsaved typing). A
+  // link whose key is gone from the fresh page (Older history on the last
+  // page) hands focus to the link its data-in-place-fallback key names.
   const REGIONS = "[data-in-place-region][id], [data-table-region][id]";
   const isRegion = (node) => Boolean(node && node.matches(REGIONS));
   // A checkbox that submits its own in-place form when it changes (#621).
@@ -792,21 +797,22 @@
   // region it changed, keeps focus while it is still in the document (a
   // filter button); one that was replaced (it sat in a region, or in a
   // data-table-sync node) is found again by its id, then by its owner's
-  // data-in-place key, a form's key standing for its first button. A table
-  // control returns to the same heading (by column) or the matching control
-  // of the same navigator. Previous and Next become plain text on the first
+  // data-in-place key (then its data-in-place-fallback key), a form's key
+  // standing for its first button. A table control returns to the same
+  // heading (by column) or the matching control of the same navigator. Previous and Next become plain text on the first
   // or last page, so each falls back to the other. Anything still missing,
   // or disabled, falls back to the region's first heading, else the region
   // itself (refreshRegions).
   const focusAfter = (region, control, owner) => {
     if (!region.contains(control) || owner) {
-      const key = owner?.dataset.inPlace;
+      const keys = [owner?.dataset.inPlace, owner?.dataset.inPlaceFallback].filter(Boolean);
       return () => {
         if (control.isConnected) return control;
         const again = control.id && document.getElementById(control.id);
         if (again) return again;
-        const owner = key && document.querySelector(`[data-in-place="${CSS.escape(key)}"]`);
-        return owner instanceof HTMLFormElement ? firstSubmit(owner) : owner;
+        const found = keys.map((key) => document.querySelector(`[data-in-place="${CSS.escape(key)}"]`))
+          .find(Boolean);
+        return found instanceof HTMLFormElement ? firstSubmit(found) : found;
       };
     }
     const heading = control.closest("th[data-sort-column]");
@@ -1187,7 +1193,9 @@
     // The server answered with this page: nothing is leaving any more.
     leaving = false;
     if (isBox(control)) failedState.delete(control);
+    const only = Boolean(owner?.hasAttribute("data-in-place-only"));
     document.querySelectorAll(REGIONS).forEach((other) => {
+      if (only && other !== region) return;
       const copy = parsed.getElementById(other.id);
       if (isRegion(copy)) swapRegion(other, copy);
     });

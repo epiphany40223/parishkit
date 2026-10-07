@@ -44,6 +44,20 @@ def components(context, admin):
         "next_page": 2,
         "report_url": "/weekly-digest",
     }
+    # The report's second (last) page, as Next page fetches it (#519 PR 6).
+    second = page | {
+        "rows": [
+            row
+            | {
+                "value": SimpleNamespace(
+                    **vars(row["value"]) | {"family_name": "Second Family"}
+                )
+            }
+        ],
+        "page": 2,
+        "previous_page": 1,
+        "next_page": None,
+    }
     pages = {
         path: (
             "text/html",
@@ -54,6 +68,17 @@ def components(context, admin):
         )
         for path, detail in (("/weekly-digest", False), ("/weekly-detail", True))
     }
+    for path, data in (
+        ("/weekly-digest?page=2", second),
+        ("/weekly-digest?page=1", page),
+    ):
+        pages[path] = (
+            "text/html",
+            render_to_string(
+                "stewardship/weekly-digest.html",
+                context | {"admin_chrome": admin} | data | {"detail": False},
+            ),
+        )
     pages["/weekly-manual"] = (
         "text/html",
         render_to_string(

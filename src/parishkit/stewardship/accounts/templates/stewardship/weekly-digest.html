@@ -14,6 +14,8 @@
 </dl>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Responses included up to number" %}</dt><dd>{{ snapshot.submission_watermark|number }}</dd></dl></details>
 {% if not total %}<p>{% translate "No new requests needing follow-up, and no corrections, arrived in the period this report covers. Whether the report email was delivered is shown under Outgoing mail." %}</p>{% endif %}
+{# The requests and their page links are one region; Previous and Next page refresh it in place (ui-v1.js, a[data-in-place], #519), and the "Page 2 of 5" line (.table-count) is announced. #}
+<div id="weekly-report-page" data-in-place-region>
 {% for row in rows %}
 <section class="panel">
 <h2>{{ row.value.family_name }} — {% translate "Family DUID" %} {{ row.value.family_duid|duid }}</h2>
@@ -29,9 +31,10 @@
 {% endfor %}
 {% if detail %}<p><a href="{{ report_url }}">{% translate "Return to this weekly report" %}</a></p>
 {% elif total %}<nav aria-label="{% translate 'Report pages' %}">
-<p>{% translate "Page" %} {{ page|number }} {% translate "of" %} {{ pages|number }}</p>
-{% if previous_page %}<a href="?page={{ previous_page }}">{% translate "Previous page" %}</a>{% endif %}
-{% if next_page %}<a href="?page={{ next_page }}">{% translate "Next page" %}</a>{% endif %}
+<p class="table-count">{% translate "Page" %} {{ page|number }} {% translate "of" %} {{ pages|number }}</p>
+{% if previous_page %}<a href="?page={{ previous_page }}#weekly-report-page" data-in-place="page-previous" data-in-place-fallback="page-next" data-in-place-message="{% translate 'Report page shown.' %}">{% translate "Previous page" %}</a>{% endif %}
+{% if next_page %}<a href="?page={{ next_page }}#weekly-report-page" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Report page shown.' %}">{% translate "Next page" %}</a>{% endif %}
 </nav>{% endif %}
+</div>
 <p><a href="{% url 'admin:index' %}">{% translate "Return to the administration portal" %}</a></p>
 {% endblock %}
