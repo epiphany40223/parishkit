@@ -199,6 +199,15 @@ DESCRIPTIONS = {
         "Production, turn it off: see the debug logging panel on System "
         "health."
     ),
+    # Process log only (#584); advice, never an operational incident.
+    "refresh_lead_window_conflict": _(
+        "A scheduled full ParishSoft refresh falls inside the two hours "
+        "before a Production reminder, when its emails are prepared. Nothing "
+        "is sent wrongly or twice, but preparation pauses while the refreshed "
+        "data is applied, which can delay the reminder. Move the full "
+        "refresh outside those hours in the ParishSoft refresh schedule "
+        "settings."
+    ),
     "startup_wait_ended": _(
         "The database answered a starting service that had been waiting for "
         "it; the detail says how many seconds the service waited. Nothing "
