@@ -3216,14 +3216,20 @@ reason ends (if known), and a link to act on it:
 - **Waiting for the daily limit:** the recipients sent in the last 24 hours,
   the limit, and when sending resumes. For example: "1,612 of 1,600 emails
   for Families sent in the last 24 hours. Sending resumes at about 3:10
-  PM." The count is the one the mail sender uses, read by the same query
+  PM." It is the same count the mail sender compares with the limit, read
+  by a definer function
   (see [bulk Family send](../background-processing/spec.md#bulk-family-send)
   and the
   [Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)).
   It is shown even when sending is not held, so the Administrator can see
-  the limit coming. This is the 24-hour count that #382 (item M3) asks to
-  show. The lasting record of each hold on Outgoing mail stays with that
-  issue, and both use the same words for each reason.
+  the limit coming. The web login reads it through the `SECURITY DEFINER`
+  function `stewardship_family_daily_sends_v1()` (frozen migration 0012,
+  with #382's `(previous_state, created_at)` index on the outbox events),
+  which returns one number and takes no argument: the count is made of the
+  routed recipient lists, which the web login never reads. This is the
+  24-hour count that #382 (item M3) asks to show. The lasting record of
+  each hold on Outgoing mail stays with that issue, and both use the same
+  words for each reason.
 - **Held at Gmail's sending limit**, until the time shown.
 - **Paused after a mail outage**, until the time shown, linking the
   [mail-provider outage runbook](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage).
