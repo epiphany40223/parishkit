@@ -241,6 +241,36 @@ RECOVERY = "Recovery campaign digest — October 1, 2026 through October 3, 2026
             DAILY,
             "Example Parish: Annual campaign digest for November 2, 2026",
         ),
+        # Custom subjects: whole words only, qualifiers in parentheses.
+        (
+            "Reporting on Annual campaign",
+            DAILY,
+            "Reporting on Annual campaign — daily report, November 2, 2026 "
+            "(Example Parish)",
+        ),
+        (
+            "Annual campaign weekly",
+            MANUAL,
+            "Annual campaign weekly — report, October 5, 2026 (manual, Example Parish)",
+        ),
+        (
+            "Manual weekly report for Annual campaign",
+            MANUAL,
+            "Manual weekly report for Annual campaign, October 5, 2026 "
+            "(Example Parish)",
+        ),
+        (
+            "Example Parish stewardship report",
+            RECOVERY,
+            "Example Parish stewardship report, October 1, 2026 through "
+            "October 3, 2026 (recovery, Annual campaign)",
+        ),
+        (
+            "Annual campaign daily",
+            RECOVERY,
+            "Annual campaign daily — report, October 1, 2026 through October 3, "
+            "2026 (recovery, Example Parish)",
+        ),
         # A subject that names no report gets the report's short name.
         (
             "Stewardship update",
@@ -290,3 +320,15 @@ def test_envelope_uses_the_completed_subject():
     assert render_digest_envelope(**values).subject == (
         "Annual campaign — weekly report, October 5, 2026 (Example Parish)"
     )
+
+
+def test_long_subject_keeps_the_date_and_names():
+    """Truncation shortens the Administrator's text, never what the report adds."""
+    subject = identified_subject(
+        "Weekly summary " + "very long words " * 30,
+        WEEKLY,
+        campaign="Annual campaign",
+        parish="Example Parish",
+    )
+    assert len(subject) <= 247
+    assert subject.endswith("…, October 5, 2026 (Annual campaign, Example Parish)")

@@ -1666,9 +1666,12 @@ column (fixed at 960px in Outlook for Windows; a narrower window shrinks it),
 not the 600px column of Family mail. It says each fact once and opens with its
 content. The subject names the report, its report day, the campaign and the
 parish, each once. The Administrator's subject is kept and only what it lacks
-is appended: the report's short name ("daily report") unless it already names
-a report, digest or summary; the date; and, in parentheses, "manual" or
-"recovery" and the campaign or parish name when missing. The default subject
+is appended: the report's short name ("daily report", or just "report" when
+it already says daily or weekly) unless it already names a report, digest or
+summary as a whole word; the date; and, in parentheses, "manual" or
+"recovery" and the campaign or parish name when missing. A subject too long
+for the limit loses the end of the Administrator's text, never what is
+appended. The default subject
 "{{ campaign_name }} — daily report" (weekly: "— weekly report") reads
 "Annual campaign — daily report, October 6, 2026 (Example Parish)". The body has no title
 or name line; it starts with the as-of line, the only place that names the

@@ -1,5 +1,6 @@
 """Individually routed Administrator digests with mandatory compiled facts."""
 
+import re
 from dataclasses import dataclass
 
 from parishkit.stewardship.accounts.policy_schema import normalized_email
@@ -41,21 +42,14 @@ class DigestTemplate:
 MAX_SUBJECT = 247
 
 
-# Words that show an authored subject already names the kind of report.
-REPORT_WORDS = ("report", "digest", "summary")
+# Whole words that show an authored subject already names the kind of report
+# ("Reporting on …" does not).
+REPORT_WORDS = re.compile(r"\b(?:reports?|digests?|summary|summaries)\b", re.I)
 
 
-def report_label(title):
-    """The short report name of a compiled title: "Daily campaign digest" →
-    "daily report", "Manual weekly information digest" → "manual weekly report".
-    """
-    words = title.split()
-    kind = [
-        word.lower()
-        for word in words
-        if word.lower() not in {"campaign", "information", "digest"}
-    ]
-    return " ".join(kind + ["report"])
+def _has_word(text, word):
+    """Whether ``text`` contains ``word`` as a whole word, ignoring case."""
+    return re.search(rf"\b{re.escape(word)}\b", text, re.I) is not None
 
 
 def identified_subject(authored, report, *, campaign, parish):
@@ -66,38 +60,41 @@ def identified_subject(authored, report, *, campaign, parish):
     date, for example "Weekly information digest — October 5, 2026". The
     Administrator's subject is kept and only what it lacks is appended:
 
-    - the report's kind ("daily report"), unless the subject already names a
-      report, digest or summary;
+    - the report's kind, "daily report" or "weekly report" (just "report"
+      when the subject already says daily or weekly), unless the subject
+      already names a report, digest or summary as a whole word;
     - the date;
-    - "manual" or "recovery", and the campaign and parish names, in
-      parentheses when missing.
+    - in parentheses, "manual" or "recovery" and the campaign and parish
+      names, each only when missing.
 
     For example "Annual campaign — daily report, November 2, 2026 (Example
-    Parish)".
+    Parish)". A subject too long for the limit loses the end of the
+    Administrator's text, never the appended date or names.
     """
     title, _, when = report.rpartition(" — ")
-    subject = " ".join(authored.split())
-    folded = subject.casefold()
-    names_report = any(word in folded for word in REPORT_WORDS)
-    label = report_label(title)
-    if not names_report:
-        subject = f"{subject} — {label}" if subject else label[:1].upper() + label[1:]
-    if when and when.casefold() not in subject.casefold():
-        subject += f", {when}"
-    notes = []
-    if names_report:
-        notes += [
-            word
-            for word in ("manual", "recovery")
-            if word in label.split() and word not in folded
-        ]
+    base = " ".join(authored.split())
+    kind = "weekly" if _has_word(title, "weekly") else "daily"
+    if not REPORT_WORDS.search(base):
+        label = "report" if _has_word(base, kind) else f"{kind} report"
+        base = f"{base} — {label}" if base else f"{kind.title()} report"
+    suffix = f", {when}" if when and when.casefold() not in base.casefold() else ""
+    notes = [
+        word
+        for word in ("manual", "recovery")
+        if _has_word(title, word) and not _has_word(base, word)
+    ]
     notes += [
         name
         for name in (campaign, parish)
-        if name and name.casefold() not in subject.casefold()
+        if name and name.casefold() not in (base + suffix).casefold()
     ]
     if notes:
-        subject += f" ({', '.join(notes)})"
+        suffix += f" ({', '.join(notes)})"
+    room = MAX_SUBJECT - len(suffix)
+    if len(base) > room:
+        # Keep what the report adds; shorten the Administrator's text.
+        base = base[: max(room - 1, 0)].rstrip() + "…"
+    subject = base + suffix
     return subject if len(subject) <= MAX_SUBJECT else subject[: MAX_SUBJECT - 1] + "…"
 
 

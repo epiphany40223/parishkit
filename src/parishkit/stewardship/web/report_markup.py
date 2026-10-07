@@ -54,9 +54,16 @@ STYLES = {
     # The portal's primary button as a "bulletproof" email button: the
     # coloured table cell draws it even where a link's padding is ignored
     # (Outlook for Windows), and the link fills the cell elsewhere. White on
-    # the dark accent stays legible when a mail program inverts dark mode.
+    # the dark accent is expected to stay legible when a mail program
+    # inverts dark mode; confirm with a Testing send.
     "action": "border-collapse:separate;margin:24px 0 0;",
-    "button-cell": f"border-radius:{BUTTON_RADIUS};background-color:{ACCENT};",
+    # Outlook for Windows ignores a link's padding, so the cell carries it
+    # there (mso-padding-alt); other programs pad the link, which fills the
+    # whole button area.
+    "button-cell": (
+        f"border-radius:{BUTTON_RADIUS};background-color:{ACCENT};"
+        f"mso-padding-alt:{BUTTON_PADDING};"
+    ),
     "button": (
         f"display:inline-block;padding:{BUTTON_PADDING};"
         f"border:2px solid {ACCENT};border-radius:{BUTTON_RADIUS};"

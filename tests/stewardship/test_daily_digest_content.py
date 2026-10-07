@@ -488,3 +488,11 @@ def test_validator_rejects_layout_markup_outside_the_closed_set(markup):
     result = render(document())
     with pytest.raises(ValueError):
         validate_digest_body(result.html + markup, result.text, result.chart.data)
+
+
+def test_report_button_is_padded_for_outlook():
+    """Outlook ignores a link's padding, so the button's cell carries it too."""
+    result = render(document())
+    assert 'bgcolor="#115e56"' in result.html
+    assert "mso-padding-alt:10px 20px;" in result.html
+    assert "Open this exact report</a>" in result.html

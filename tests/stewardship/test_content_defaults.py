@@ -120,6 +120,10 @@ def test_default_renders_every_placeholder_with_sample_values(kind, slot):
         "closing",
         # One instruction line; the page's Submit button names the parish.
         "review",
+        # The report emails' subjects name the parish (#720); their intros
+        # do not repeat it.
+        "daily_digest",
+        "weekly_digest",
     }
 
 
