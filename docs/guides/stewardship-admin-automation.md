@@ -257,7 +257,7 @@ value Outgoing mail's send filter takes), `number`, `mode`, `cycle`,
 another. An unknown campaign, or no current campaign, is exit 1
 (`not_available`). A campaign that is not the current one, or that
 background work holds while mail is being sent, is exit 1
-(`stale_version`), as on the Mail schedules page.
+(`stale_version`), as on the Dates and mail schedules page.
 
 ### `go-live readiness` and `go-live progress`
 
@@ -286,7 +286,7 @@ The Admin report recipients and the Testing Families are not shown; the
 Testing Families list is an export (PR 12). A campaign that is not the
 current Testing draft is exit 1 (`stale_version`), as on the page.
 
-`go-live progress` is the Production activation progress page:
+`go-live progress` is the Production activation page:
 
 | Field | What it holds |
 | --- | --- |
@@ -330,7 +330,7 @@ covers each Admin page, or why none does yet.
 
 `schedule preview` and `schedule confirm` change mail schedules and, while
 they may still change, the campaign dates, through the same review and
-confirmation as the Mail schedules page. Both need a full-scope session.
+confirmation as the Dates and mail schedules page. Both need a full-scope session.
 Neither asks for a fresh Google sign-in or a confirmation at the prompt,
 because the page asks for neither. `config request show` follows the
 resulting change; any session may run it.

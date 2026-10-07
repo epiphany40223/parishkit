@@ -356,7 +356,7 @@ def test_configured_content_editor_can_reset_to_the_default(auth_service, google
 
 
 def test_removing_a_scheduled_template_explains_the_fix_inline(auth_service, google):
-    """The refusal names the schedule problem and links Mail schedules on the form."""
+    """The refusal names the schedule problem and links its page on the form."""
     store = auth_service.store
     campaign, catalog, schedule = setup(store)
     row = content(str(campaign.pk), kind="email", slot="initial")

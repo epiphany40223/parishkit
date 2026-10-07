@@ -275,7 +275,7 @@ def test_http_acknowledgement_progress_and_cancel_are_private_and_passive(
         progress = browser.get(location)
         assert progress.status_code == 200, progress.content
         assert progress["Cache-Control"] == "no-store"
-        assert b"Testing cleanup progress" in progress.content
+        assert b"<h1>Testing cleanup</h1>" in progress.content
         assert flow_steps(progress.content) == (GO_LIVE, "Testing cleanup")
         assert (
             PortalSession.objects.get(pk=request.portal_session.pk).last_activity_at

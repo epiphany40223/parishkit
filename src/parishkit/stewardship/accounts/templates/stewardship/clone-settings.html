@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Clone archived campaign" %}{% endblock %}
+{% block title %}{% translate "Copy campaign" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Clone archived campaign" %}</h1><p>{{ source.active_configuration.name }}</p>
+<h1>{% translate "Copy campaign" %}</h1><p>{{ source.active_configuration.name }}</p>
 <p class="notice">{% translate "This copies content, share options and mail schedule structures into a new draft. It never copies Family codes, responses, deliveries or workflow state. Enter every new date and explicitly select current funds. The historical campaign is unchanged." %}</p>
 <p>{% translate "The new campaign starts in the Parish timezone. One-time mail dates are blank; enter new dates or explicitly delete those schedules. Digest times and weekdays are retained. All copied content is shown in the next preview." %}</p>
 <form method="post" data-campaign-form data-new-campaign>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="clone_seed" value="{{ clone_seed }}">

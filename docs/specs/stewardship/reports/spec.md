@@ -435,7 +435,7 @@ and the last busy one as zero, so a line never suggests activity across a
 silent hour or day; its exact-values table lists only the busy buckets. Send
 markers name each invitation and reminder send
 of the mode that had planned an email by the as-of instant (a *send* as the
-[Family email sends](../admin-portal/spec.md#family-email-sends) page defines
+[Family email history](../admin-portal/spec.md#family-email-sends) page defines
 and names it: one revision of one Family schedule in one mode and Production
 cycle, each keyed by its own occurrences' cycle) with its scheduled time and
 how many of its emails were delivered by then, with the first and last

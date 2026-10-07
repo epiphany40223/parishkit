@@ -206,7 +206,7 @@ readiness resolves boundaries and future schedule instants from it and locks it
 for the remainder of the campaign's life, including closed, archived, and
 historical reporting. Changing the Parish timezone later affects only general
 presentation and subsequently created drafts; it never rebuckets or reschedules
-an existing campaign. A `scheduled` campaign must use Withdraw from Production
+an existing campaign. A `scheduled` campaign must use Cancel go-live
 to return to `draft` before its timezone can change.
 
 Shortening a `scheduled` or `active` campaign cannot strand configured Family
@@ -219,7 +219,7 @@ resolved. If the campaign closes first, the ordinary editor loses the race and
 the guarded reopen workflow applies instead.
 
 Before the resolved start instant, a freshly authenticated Admin may use an
-explicit, confirmed **Withdraw from Production** workflow. It transactionally
+explicit, confirmed **Cancel go-live** workflow. It transactionally
 locks the campaign, verifies that it is still `scheduled`, cancels all safely
 cancellable future live work, changes global mode to Testing, invalidates the
 readiness result, moves the campaign to `draft`, unlocks its structural

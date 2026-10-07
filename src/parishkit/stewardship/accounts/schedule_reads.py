@@ -1,6 +1,6 @@
 """The current campaign's mail schedules, moved out of the page's view.
 
-Mail schedules (``schedule_views``) reads the campaign, whether its dates
+Dates and mail schedules (``schedule_views``) reads the campaign, whether its dates
 may still change and its schedule records through these functions, and so
 does the Admin automation command line (ADM-11), so both see the same
 applied configuration. Nothing here takes a request or checks authority; the caller

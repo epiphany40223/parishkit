@@ -397,8 +397,8 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.03 — NAV-2: keep a stable menu shape, with unavailable entries greyed out and their reasons shown on hover, focus and tap.
 - [x] ADM-12.04 — NAV-2: make menu groups collapsible, remembered per browser, and end the menu with Sign out.
 - [x] ADM-12.05 — NAV-3: grey out multi-campaign controls with the #145 tip, refuse their actions on the server, and remove New campaign.
-- [ ] ADM-12.06 — NAV-4: give Campaign setup and Mail pages one name each, including Cancel go-live.
-- [ ] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages one name each.
+- [x] ADM-12.06 — NAV-4: give Campaign setup and Mail pages one name each, including Cancel go-live.
+- [ ] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages, and the remaining setup wizard steps, one name each.
 - [ ] ADM-12.08 — NAV-5b: give report pages one name each.
 - [ ] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
 - [ ] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
@@ -487,6 +487,21 @@ Admin shell's query budget unchanged) and
 `tests/stewardship/browser/test_find_family.py` (one request after a pause,
 the keyboard path, refusals, WCAG checks at phone and desktop widths, on
 Chromium and WebKit).
+ADM-12.06 (NAV-4) gives every Campaign setup and Mail and Family portal page
+its placement-table name in the registry, the browser title and the heading
+(Dates and mail schedules, Pause and resume mail, Family email history, Cancel
+go-live and the rest); Cancel go-live sits under Production activation, the
+page that offers it, and its wording no longer says "withdraw" while its
+audit events keep their kinds. "Return to" links name their target page,
+links and messages that name a renamed page use the new name, and the
+hand-written crumb links on Mail message and the refused-address pages are
+removed. The setup wizard's Pages and emails, Share options and Dates and
+mail schedules steps take the same names. URLs are unchanged. It is proven by
+`tests/stewardship/test_admin_page_names.py` (registry labels match the
+spec's table; title and heading match the label; every "Return to" names a
+page; no template, script or user-facing message uses a retired name outside
+a commented allowlist; Cancel go-live's trail and its blocking message's
+links) and the updated page, menu and browser suites.
 
 ## ADM-13: System health page
 

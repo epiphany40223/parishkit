@@ -577,7 +577,7 @@ def read_send_progress(caller, service, *, audit=True):
 
 
 def read_send_history(caller, service, parameters, *, audit=True):
-    """``send history``: the Family email sends page (``send_reads.read_history``)."""
+    """``send history``: the Family email history page (``send_reads.read_history``)."""
     from .accounts.policy import Capability
     from .audit.schemas import Action
     from .jobs.send_reads import read_history
@@ -653,7 +653,7 @@ def schedule_entry(row, campaign):
 
 
 def read_schedule(caller, service, campaign_id):
-    """``schedule show``: the Mail schedules page's read, without its forms.
+    """``schedule show``: the Dates and mail schedules page's read, without its forms.
 
     The page records no view event, so neither does this. The current
     campaign is the default. As on the page, an unknown campaign, or none

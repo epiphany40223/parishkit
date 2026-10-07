@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship delivery %}
-{% block title %}{% translate "Family email sends" %}{% endblock %}
+{% block title %}{% translate "Family email history" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Family email sends" %}</h1>
+<h1>{% translate "Family email history" %}</h1>
 {% aboutpage "family-email-sends" %}<p>{% translate "Each invitation and reminder email this campaign has sent to Families, newest first, and how it turned out. Select a count to see those emails on the Outgoing mail page." %}</p>
 <p>{% translate "Each row is one scheduled send: the invitation, or one reminder, in Testing or in Production. If a schedule is changed, the new time is a new row; the earlier row keeps the emails it sent and shows the unsent ones the change cancelled. Each Family counts once, by its most recent email for that send. The counts follow the same rules as the Family email progress page, so the two always agree." %}</p>
 <dl><dt>{% translate "Scheduled" %}</dt><dd>{% translate "When the send was due. A send appears here once its first email is planned." %}</dd>
@@ -14,7 +14,7 @@
 <dt>{% translate "Not needed" %}</dt><dd>{% translate "The Family already responded, a later email replaced this one, the schedule changed, or the campaign closed." %}</dd>
 <dt>{% translate "Couldn't be emailed" %}</dt><dd>{% translate "The Family has no deliverable email address, or is no longer eligible." %}</dd>
 <dt>{% translate "Held" %}</dt><dd>{% translate "A reminder waiting because the Family's invitation failed or is uncertain." %}</dd></dl>
-<p>{% translate "Reminders are numbered by their current scheduled time, in every mode, so Reminder 1 is the earliest reminder on Mail schedules. A reminder that was removed has no number." %}</p>
+<p>{% translate "Reminders are numbered by their current scheduled time, in every mode, so Reminder 1 is the earliest reminder on Dates and mail schedules. A reminder that was removed has no number." %}</p>
 <p>{% translate "A send still in progress says so. The one the Family email progress page is showing links to it, and that page follows it live. This page does not update by itself, does not slow any send down, and does not extend your sign-in." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:family_email_progress' %}">{% translate "Watch Family email progress" %}</a> · <a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a></p>
 {% if not campaign %}<p>{% translate "There is no current campaign." %}</p>

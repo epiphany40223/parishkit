@@ -3,7 +3,7 @@
 Pure tests: the golden documents of ``schedule preview``, ``schedule
 confirm`` and ``config request show``, built through the projection functions
 the commands use, with an exact allowlist of member names; the shape checks
-of the change document; and how a document becomes the Mail schedules page's
+of the change document; and how a document becomes the Dates and mail schedules page's
 own posted form. The commands against a real database are in
 database/test_admin_schedule_cli_postgresql.py.
 """

@@ -1,8 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship delivery %}
-{% block title %}{% translate "Verify refused address" %}{% endblock %}
+{% block title %}{% translate "Refused address" %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'admin:delivery_refusals' %}">{% translate "Refused addresses" %}</a></p>
-<h1>{% translate "Verify refused address" %}</h1>
+<h1>{% translate "Refused address" %}</h1>
 <p>{{ refusal.address }} · {% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Refusal ID" %}</dt><dd>{{ refusal.id }}</dd></dl></details>
 <p>{% translate "Clearing removes only this refusal. The same address may have other refusals that still stop email to it; check the Refused addresses list afterward. Clearing does not send any email, and does not resend an invitation another member of the Family already received." %}</p>

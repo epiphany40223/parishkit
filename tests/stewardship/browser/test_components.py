@@ -982,7 +982,7 @@ def test_admin_sidebar_groups_are_labelled_disclosures_set_apart_from_links(
     ]
     assert sidebar.get_by_role("heading").count() == 0
     for name, links in (
-        ("Campaign setup", ["Campaign settings", "Mail schedules"]),
+        ("Campaign setup", ["Campaign settings", "Dates and mail schedules"]),
         ("Parish data", ["Parish settings", "Ministry activity"]),
         ("System", ["Background work"]),
     ):

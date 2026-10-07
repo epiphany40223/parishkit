@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n %}
-{% block title %}{% translate "Campaign email test" %}{% endblock %}
+{% block title %}{% translate "Preview and test email" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Campaign email test" %}</h1><p>{{ campaign.active_configuration.name }}</p>
+<h1>{% translate "Preview and test email" %}</h1><p>{{ campaign.active_configuration.name }}</p>
 <p class="notice">{% translate "TEST — a fictional sample, not a real Family's message. You can send it even before the campaign starts. It does not count as a scheduled email and does not let anyone sign in outside the campaign dates." %}</p>
 <p>{% translate "The message will have a prominent TEST banner and will be sent only to" %} {{ testing_recipient }}.</p>
 <p>{% translate "“Accepted” means the mail service took the message, not that it reached the inbox. Check the Testing mailbox to be sure." %}</p>
@@ -12,5 +12,5 @@
 <section class="panel"><h2>{% translate "Recent test results" %}</h2><ul>{% for item in items %}<li>{{ item.label }} — <time data-local-instant datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:'c' }}</time>{% if not item.current %} ({% translate "earlier configuration or template" %}){% endif %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Test reference" %}</dt><dd><code>{{ item.id }}</code></dd></dl></details></li>{% empty %}<li>{% translate "No tests have been requested. Select Send this test email to send one." %}</li>{% endfor %}</ul></section>
 {% if families_url %}<p><a href="{{ families_url }}">{% translate "Send this email to chosen real Families (Testing recipient only)" %}</a></p>{% endif %}
 <p><a href="">{% translate "Refresh test results" %}</a></p>
-<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Return to content and templates" %}</a></p>
+<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Return to Pages and emails" %}</a></p>
 {% endblock %}

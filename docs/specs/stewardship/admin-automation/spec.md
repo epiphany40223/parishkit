@@ -1541,7 +1541,7 @@ also carries the Administrator's count of unacknowledged automation
 notices, as the dashboard shows them.
 
 `schedule show` reads the current campaign, or the campaign `--campaign`
-names. As on the Mail schedules page, an unknown campaign, or no current
+names. As on the Dates and mail schedules page, an unknown campaign, or no current
 campaign, is `not_available`; a campaign that is not the current one, or
 that background work holds while mail is sent, is `stale_version`. Its
 `version` is the applied configuration's digest, the base a schedule change
@@ -1578,7 +1578,7 @@ the page's request status does. See
 [campaign configuration](../admin-portal/spec.md#campaign-configuration).
 
 `schedule preview` and `schedule confirm` take `--campaign` as
-`schedule show` does. The Mail schedules page asks for no fresh sign-in and
+`schedule show` does. The Dates and mail schedules page asks for no fresh sign-in and
 no typed value, so neither command is fresh-gated or prompts, and neither
 waits for PR 5. `schedule preview` admits as the page's form post does,
 recording activity, so it needs a full-scope session although it changes

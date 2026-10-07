@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Campaign delivery controls" %}{% endblock %}
+{% block title %}{% translate "Pause and resume mail" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Campaign delivery controls" %}</h1>
+<h1>{% translate "Pause and resume mail" %}</h1>
 {% aboutpage "delivery-control" %}<p>{% translate "Pausing does not close the campaign: Families can still respond, and their confirmation emails wait until you resume. Nothing is sent to the Testing recipient instead. Alerts to administrators and test emails you send yourself still go out." %}</p>
 <p>{% translate "An email whose result is uncertain is resolved on the Outgoing mail page, not here." %}</p>
 <p>{% translate "Every pause, resume or resolution asks for a reason and shows a preview first. Nothing changes until you confirm it." %}</p>{% endaboutpage %}
@@ -81,6 +81,6 @@
 <p>{% translate "Email may keep going out while you read this. Confirming holds every unsent live email at that moment and records the counts. If the campaign settings or your permissions change first, you need a new preview." %}</p>
 {% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm pause of live delivery" %}</button></form>{% endif %}</section>{% endif %}
 {% endif %}
-{% else %}<p role="alert">{% translate "Delivery controls are available only for the current live (Production) campaign." %}</p>{% endif %}
-<p><a href="{% url 'admin:deliveries' %}">{% translate "Review outgoing mail and uncertain deliveries" %}</a></p>
+{% else %}<p role="alert">{% translate "Pause and resume mail is available only for the current live (Production) campaign." %}</p>{% endif %}
+<p><a href="{% url 'admin:deliveries' %}">{% translate "Review Outgoing mail and uncertain deliveries" %}</a></p>
 {% endblock %}
