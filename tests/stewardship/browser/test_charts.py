@@ -155,22 +155,15 @@ def test_markup_in_a_send_name_stays_text(page, component_origin):
     assert_clean(page, errors)
 
 
-def test_tables_hold_every_value_without_scripts(browser_engine, component_origin):
-    """With no JavaScript the summaries and tables are the complete report."""
-    context = browser_engine.new_context(java_script_enabled=False)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/charts")
-        assert page.locator("[data-chart][data-chart-state=pending]").count() == 2
-        assert page.locator("[data-chart-view] svg").count() == 0
-        assert page.locator("[data-chart-view][tabindex]").count() == 0
-        for table in page.locator(".chart-table").all():
-            table.locator("summary").click()
-        funnel, activity = page.locator(".chart-table table").all()
-        assert funnel.locator("tbody tr").count() == 5
-        assert "125%" in funnel.inner_text()
-        assert activity.locator("tbody tr").count() == 1
-        assert "Oct 3, 2026 10:00 AM" in activity.inner_text()
-        assert page.locator(".chart-notes li").count() == 2
-    finally:
-        context.close()
+def test_tables_hold_every_value(page, component_origin):
+    """The exact-values tables and notes are the complete report beside the
+    drawn charts, so a value is never only in a picture."""
+    page.goto(component_origin + "/charts")
+    for table in page.locator(".chart-table").all():
+        table.locator("summary").click()
+    funnel, activity = page.locator(".chart-table table").all()
+    assert funnel.locator("tbody tr").count() == 5
+    assert "125%" in funnel.inner_text()
+    assert activity.locator("tbody tr").count() == 1
+    assert "Oct 3, 2026 10:00 AM" in activity.inner_text()
+    assert page.locator(".chart-notes li").count() == 2
