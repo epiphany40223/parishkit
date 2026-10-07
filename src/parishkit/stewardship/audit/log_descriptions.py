@@ -179,6 +179,19 @@ DESCRIPTIONS = {
         "example, a required backup was missing)."
     ),
     "startup_validated": _("A process started and passed its startup checks."),
+    # Process log only (#541).
+    "startup_waiting": _(
+        "A service is starting while the database is not yet answering, and "
+        "is waiting for it (up to the limit the detail gives). This is normal "
+        "just after a server restart. A wait-ended entry follows when the "
+        "database answers; if the limit runs out, a timeout entry follows and "
+        "the service restarts."
+    ),
+    "startup_wait_ended": _(
+        "The database answered a starting service that had been waiting for "
+        "it; the detail says how many seconds the service waited. Nothing "
+        "needs to be done."
+    ),
     "request_completed": _("A web request finished."),
     "report_audit_failed": _(
         "A report could not be shown because recording who viewed it failed."

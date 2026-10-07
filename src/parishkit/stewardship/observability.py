@@ -23,6 +23,12 @@ class Event(StrEnum):
     CONFIG_MISMATCH = "configuration_digest_mismatch"
     STARTUP_REJECTED = "startup_rejected"
     STARTUP_VALIDATED = "startup_validated"
+    # An online service began waiting at startup for its database (#541):
+    # logged once per process at INFO, with the limit and the seconds already
+    # spent, and the line that ends the wait says how long it took. Process
+    # log only. A wait that runs out is a task_timed_out line instead.
+    STARTUP_WAITING = "startup_waiting"
+    STARTUP_WAIT_ENDED = "startup_wait_ended"
     REQUEST_COMPLETED = "request_completed"
     REPORT_AUDIT_FAILED = "report_audit_failed"
     REPORT_SHAPING_FAILED = "report_shaping_failed"

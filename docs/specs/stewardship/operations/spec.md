@@ -258,7 +258,11 @@ only; disk full or out of memory refuse). libpq gives a failed
 connection no SQLSTATE, so the reply text decides, and any text not on the
 list (a wrong password, a missing role or database, or a reply in another
 language) is refused at once. A waiting service holds the online startup
-lease, so offline work still cannot start meanwhile. A wait that runs out
+lease, so offline work still cannot start meanwhile. The first pause logs
+one INFO `startup_waiting` line per process (`startup_database_wait`, its
+limit and the seconds already spent), never one per retry, so a slow start is
+visible without debug logging (#541). When the database then answers, an INFO
+`startup_wait_ended` line gives the seconds waited. A wait that runs out
 logs an ERROR `task_timed_out` (`startup_database_wait`, its limit and the
 elapsed seconds), then the refusal. A wrong password and a database that
 stays down therefore both end as `failure_kind` `database_unavailable`; the

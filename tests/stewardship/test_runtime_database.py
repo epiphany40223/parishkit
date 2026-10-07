@@ -33,6 +33,8 @@ def test_external_sql_rejected_before_reading_secrets_or_connecting(
 def _no_startup_budget(monkeypatch):
     """Each test starts outside any startup window, whatever earlier ones set."""
     monkeypatch.setattr(runtime_database, "_startup_started", None)
+    monkeypatch.setattr(runtime_database, "_wait_logged", False)
+    monkeypatch.setattr(runtime_database, "_waiting", False)
 
 
 SETTINGS = {
@@ -369,6 +371,99 @@ def _steps(outcomes):
         return outcome
 
     return step, calls
+
+
+def _info_lines(caplog):
+    """The reviewed stewardship lines, formatted as the process log writes them."""
+    import json
+
+    from parishkit.stewardship.observability import SafeJsonFormatter
+
+    return [
+        json.loads(SafeJsonFormatter().format(record))
+        for record in caplog.records
+        if record.name == "parishkit.stewardship"
+    ]
+
+
+def test_a_wait_logs_once_when_it_begins_and_when_it_ends(
+    tmp_path, monkeypatch, caplog
+):
+    """One INFO line when the first pause begins, one when the database answers.
+
+    Three retries still give a single startup_waiting line (#541), so a
+    reboot where every service waits is not noisy; each carries what waited,
+    its limit and the seconds spent.
+    """
+    clock = Clock(monkeypatch)
+    _connections(
+        monkeypatch,
+        [
+            _failure("Connection refused"),
+            _failure("FATAL:  the database system is starting up"),
+            _failure("FATAL:  sorry, too many clients already"),
+            _connected(),
+        ],
+    )
+    with caplog.at_level("INFO", logger="parishkit.stewardship"):
+        runtime_database.await_database(configuration_at(tmp_path))
+    lines = _info_lines(caplog)
+    assert [(line["message"], line["level"]) for line in lines] == [
+        ("startup_waiting", "INFO"),
+        ("startup_wait_ended", "INFO"),
+    ]
+    for line in lines:
+        assert line["extra"]["timeout"] == "startup_database_wait"
+        assert line["extra"]["limit_seconds"] == 60
+    assert lines[0]["extra"]["elapsed_seconds"] == 0
+    assert lines[1]["extra"]["elapsed_seconds"] == round(sum(clock.sleeps))
+
+
+def test_a_database_that_answers_at_once_logs_no_wait(tmp_path, monkeypatch, caplog):
+    """No pause, no waiting lines."""
+    Clock(monkeypatch)
+    _connections(monkeypatch, [_connected()])
+    with caplog.at_level("INFO", logger="parishkit.stewardship"):
+        runtime_database.await_database(configuration_at(tmp_path))
+    assert _info_lines(caplog) == []
+
+
+def test_admission_retries_after_a_wait_do_not_log_waiting_again(
+    tmp_path, monkeypatch, caplog
+):
+    """startup_waiting is once per process; each wait that ends still says so."""
+    clock = Clock(monkeypatch)
+    _connections(monkeypatch, [_failure("Connection refused"), _connected()])
+    monkeypatch.setattr("django.db.connection.close", lambda: None)
+    step, _ = _steps([_admission_failure("timeout expired"), "admitted"])
+    with caplog.at_level("INFO", logger="parishkit.stewardship"):
+        runtime_database.await_database(configuration_at(tmp_path))
+        assert runtime_database.during_startup(step) == "admitted"
+    assert [line["message"] for line in _info_lines(caplog)] == [
+        "startup_waiting",
+        "startup_wait_ended",
+        "startup_wait_ended",
+    ]
+    assert clock.sleeps == [0.5, 0.5]
+
+
+def test_a_wait_that_runs_out_logs_waiting_then_the_timeout(
+    tmp_path, monkeypatch, caplog
+):
+    """A database that never answers gives no wait-ended line."""
+    from django.db.utils import OperationalError
+
+    Clock(monkeypatch)
+    _connections(monkeypatch, [_failure("Connection refused") for _ in range(100)])
+    with (
+        caplog.at_level("INFO", logger="parishkit.stewardship"),
+        pytest.raises(OperationalError),
+    ):
+        runtime_database.await_database(configuration_at(tmp_path))
+    assert [line["message"] for line in _info_lines(caplog)] == [
+        "startup_waiting",
+        "task_timed_out",
+    ]
 
 
 def test_admission_is_not_retried_outside_a_startup_wait(monkeypatch):
