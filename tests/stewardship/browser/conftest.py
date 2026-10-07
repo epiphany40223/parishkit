@@ -130,6 +130,7 @@ from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .response_list_components import components as response_list_components
+from .restore_review_components import components as restore_review_components
 from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
 from .schedule_list_components import components as schedule_list_components
 from .security_components import POSTS as SECURITY_POSTS
@@ -2228,6 +2229,7 @@ def component_origin():
     responses.update(send_progress_components(context, admin))
     responses.update(send_history_components(context, admin))
     responses.update(system_health_components(context, admin))
+    responses.update(restore_review_components(context, admin))
     responses.update(hosted_file_components(context, admin))
     responses.update(artwork_components(context, admin))
     responses.update(branding_components(context, admin))
