@@ -407,7 +407,9 @@ def test_campaign_mail_preview_is_passive_and_shows_uncertainty(page, component_
         ),
     )
     page.goto(component_origin + "/campaign-mail-unknown")
-    assert "uncertain" in page.get_by_role("alert").inner_text()
+    assert (
+        "not sure the previous test arrived" in page.get_by_role("alert").inner_text()
+    )
     assert not page.get_by_role("checkbox").is_checked()
     assert "2026-09-10T12:00:00" not in page.locator("time").inner_text()
     page.reload()
