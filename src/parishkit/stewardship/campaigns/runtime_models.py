@@ -103,6 +103,10 @@ class RuntimeTransition(ImmutableRecord):
     restore_id = models.UUIDField(null=True)
     backup_at = UTCDateTimeField(null=True)
     reason = models.CharField(max_length=1024, default="")
+    # A restore release's Administrator session and its sign-in instant,
+    # which the guard checks is within five minutes (migration 0019, #537).
+    session_id = models.UUIDField(null=True)
+    authenticated_at = UTCDateTimeField(null=True)
 
     class Meta:
         db_table = "stewardship_runtime_transition"

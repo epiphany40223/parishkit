@@ -2290,93 +2290,92 @@ gate.
 
 ### Restore release
 
-Restore release is a distinct state-aware workflow, not a reuse of the
-`draft`-to-`scheduled` Production transition. While the restore gate is active,
-the UI can queue only the restricted maintenance work defined by the
-[restore specification](../operations/spec.md#restore). It shows each restored
-campaign state and resolved date interval, source and integration evidence,
-delivery-uncertainty inventory, proposed release state, and whether live Family
-access/mail will resume.
+Restore release is a distinct workflow, not a reuse of the `draft`-to-`scheduled`
+Production transition. The operator's `restore-begin` command starts the
+review after a restore, as the
+[restore specification](../operations/spec.md#restore) describes. While the
+restore gate is active, the UI can queue only the restricted maintenance work
+defined there.
 
-Readiness for a resulting `scheduled` or `active` campaign includes fresh
-email-link preparation for every currently eligible Family. Reuse the
-resumable public-key-only preparation service from the
-[reopen workflow](#reopen-and-archive), bound to this restore instance and its
-current source/configuration/key versions. The UI shows progress, retry, and
-the warning that every pre-restore email link will stop working; stable manual
-Family codes are unchanged. Preparation never clears maintenance admission.
+**No Family code or link changes (hard rule).** Families keep using the codes
+and links they were emailed before and after the backup. A restore never
+creates, replaces or cancels a Family code, link, token generation or
+credential epoch, and release activates nothing new. A link that was emailed
+after the backup was taken may be one the restored database does not hold;
+"send again" sends that Family the link the backup restored.
 
-Final release rechecks the preparation manifest and restore instance, and
-atomically selects the new generation with the state/mode/hold changes below.
-Stale or incomplete preparation leaves the gate closed. If the commit-time
-result is instead `closed`, no generation is activated and staged secrets are
-scrubbed; a later reopen prepares its own generation. Other non-live resulting
-states do not activate restored tokens. Replacement tokens alone create no
-mail or resend authorization and do not satisfy or release delivery holds.
-Queued credential-bearing mail follows the
-[restore dispatch rule](../background-processing/spec.md#reopen-token-preparation)
-so no restored sealed substitution can reintroduce an old link.
+**Held emails.** During the review, on the Administrator's request, the system
+holds the current campaign's Production invitations and reminders that were
+due when the site was restored and may have gone out after the backup. Nothing
+falls due during the review in this sense: the gate kept it from being sent,
+so it is sent normally after release. Work is read for the schedule's current
+revision and the campaign's current Production cycle, as the planner reads it.
+Held are:
 
-After readiness succeeds, a freshly authenticated Admin confirms the exact
-state-aware result. Under the current-campaign lock, the release transaction
-recomputes boundaries at its commit instant:
+- an email the restored data still has live work for (pending or running);
+- with no work yet, the email for every Family, whatever its restored
+  eligibility (the hold is inert for a Family that cannot be sent it);
+- an invitation whose latest attempt failed, or was skipped as undeliverable
+  or ineligible: a later deliverability change would retry it, and the lost
+  history may already have done so. "Send again" on such a hold only lets that
+  retry happen; it sends nothing until the Family's deliverability changes
+  again.
 
-- a `draft` campaign remains `draft` and the system remains Testing;
-- a `scheduled` or `active` campaign becomes/remains `scheduled` before its
-  start, becomes/remains `active` within its open interval, or becomes `closed`
-  at/after its closing instant;
-- a `closed` current campaign remains `closed` in Production so reporting,
-  reconciliation, publication, and operational/digest routing retain their
-  ordinary post-campaign semantics, but Family access and live Family mail stay
-  disabled;
-- an `archived` campaign that is still the current-campaign pointer remains
-  `archived` in Production with the pointer intact, preserving its guarded
-  unarchive eligibility and requiring the separate Return to Testing workflow
-  before successor creation;
-- historical `archived` and `purged` campaigns remain in those states and do
-  not resume Family access or live mail; and
-- `purging`, `purge_cleanup_failed`, an inconsistent request/Campaign pair, or
-  any overlapping-current-campaign invariant blocks release for explicit
-  operator recovery.
+These are left out:
 
-These are resulting states, not additional lifecycle edges. An overdue
-`scheduled` campaign reaches `closed` by applying its start and close boundaries
-in order within the release transaction, using the shared
-[boundary policy](../background-processing/spec.md#campaign-lifecycle-boundaries).
-Both transitions are audited; the maintenance gate remains closed throughout,
-so the intermediate active state admits no Family access or mail.
+- an email already decided: fulfilled, or kept back by an undecided or
+  assumed-sent hold of any restore;
+- one being handed to the provider at the backup (submitting, or delivery
+  unknown), whose outcome the ordinary
+  [delivery resolution](../background-processing/spec.md#family-invitations-and-reminders)
+  settles after release (the Admin-only delivery warning);
+- other work that ended before the backup without sending (a reminder that
+  failed or was skipped, any coalesced email), which nothing revives.
 
-Any sole current campaign resulting in `scheduled`, `active`, `closed`, or
-`archived` sets global mode to Production. A `draft` current campaign or no
-current campaign releases into Testing; historical archived/purged campaigns
-do not select mode. There is no supported current `closed`/`archived` Campaign
-in Testing. In the same transaction
-the system recomputes/materializes delivery holds, including holds for newly
-visible Families whose initial invitation became due during restore, removes
-segregated maintenance-test detail under the Testing cleanup policy, records
-the chosen state and counts, and clears the gate. Normal worker admission then
-resumes according to the resulting state/mode; partial release is prohibited.
-Readiness checks for live sender/templates/test delivery and catch-up impact are
-mandatory only when a campaign will resume `scheduled` or `active`. A `closed`
-Production release instead checks the integrations and permissions needed for
-its enabled reconciliation, publication, report, and digest work. Database,
-schema, credential-reference, tenant, integrity, and uncertainty-inventory
-checks apply to every release.
+Submission receipts and schedule revisions made after the backup are not held:
+a receipt belongs to a response the restore lost, and a lost revision is
+simply not in the restored schedule.
 
-The restore preview identifies an archived-current-pointer backup as a distinct
-case and explains that release does not perform Return to Testing. After
-release, the Admin may still unarchive to `closed` or invoke the separately
-reauthenticated Return workflow; restore never chooses between those lifecycle
-actions implicitly.
+A hold only suppresses that one email: planning, preparation, the claim guard,
+dispatch and the sender all skip it, and it never applies to operational
+notifications. An Administrator settles a hold in one of two ways:
 
-Restore readiness displays the backup snapshot/release uncertainty window and
-counts by campaign, schedule type, local due date, and hold state. Searchable
-Family-level detail never shows credentials. Admins may leave holds unreviewed,
-mark selected holds assumed delivered with an evidence note, or authorize a
-resend after a duplicate-risk confirmation. Bulk actions show exact affected
-counts and are audited. Assumed delivery suppresses that semantic occurrence
-without increasing provider-success statistics; resend authorization creates a
-new recovery attempt linked to the hold.
+- **Assumed sent**, with a short evidence note. It never counts as a provider
+  success, and an unsent copy prepared before the backup is cancelled.
+- **Send again**, after a duplicate-risk confirmation. The ordinary planner
+  sends it once the site is released, coalesced with any reminder then due.
+
+Each decision is final: an assumption may already have cancelled the unsent
+copy, so a later "send again" would send nothing. "Send again" is refused
+while another restore's hold still keeps the same email back. Each decision is
+versioned, append-only and audited.
+
+Decisions are taken only during the review: once the site is released, the
+guard refuses them, and settling the remaining holds is #757. An undecided
+hold stays in force after release. An undecided invitation also keeps back
+every reminder of that Family. Besides the listing, the web login may insert a
+hold row directly; the hold guard admits one only during a review and for its
+current restore, and a hold only keeps mail back.
+
+**Release.** A freshly authenticated Administrator confirms release. It is
+refused while any email still needs a hold (the list must be found first, and
+again after a source refresh adds Families), so every hold can still be
+decided during the review. The transaction then clears the gate and records
+the release; mode and the current campaign stay as restored. Start and
+close boundaries that came due during the review are then applied by the
+ordinary [boundary policy](../background-processing/spec.md#campaign-lifecycle-boundaries),
+and the holds keep every possibly-sent email from going out again. A current
+campaign that is `purging` or `purge_cleanup_failed`, or a campaign work gate
+that is preparing or running, blocks release for explicit operator recovery.
+
+Settling a hold and releasing both require an enabled Administrator whose
+session signed in with Google within the last five minutes, the same rule as
+other high-impact actions; the session and sign-in instant are recorded with
+the decision. Like the backup request guard, the SQL check proves a live,
+recent session row, not that a real Google round trip happened: a compromised
+web process could present one. Listing held emails needs no fresh sign-in,
+because a hold only keeps mail back. The page that shows what was restored, lists the held emails by
+send, and offers settlement and release is #537's second part.
 
 ### Live delivery pause
 

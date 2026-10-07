@@ -1,7 +1,8 @@
 """Runtime configuration and immutable activation evidence, separate from YAML.
 
 Campaign commands and configuration activations have independent version
-sequences. Restore metadata is reserved for its later guarded operational owner.
+sequences. Restore metadata moves only with the restore review's own runtime
+transitions (``campaigns.restore_review``).
 """
 
 from django.db import models
@@ -16,15 +17,10 @@ from parishkit.stewardship.storage import (
 class SystemConfiguration(MutableRecord):
     """One runtime row; immutable activation and transition ledgers own its pointers."""
 
-    # OPS-06 will replace this freeze with its journalled restore/release owner.
-    # Ordinary campaign/configuration writers must never change the safety gate.
-    immutable_fields = MutableRecord.immutable_fields + (
-        "restore_review_required",
-        "restore_id",
-        "restore_backup_at",
-        "restore_activated_at",
-        "restore_released_at",
-    )
+    # The restore fields (the safety gate) change only with a restore_begin or
+    # restore_release runtime transition: stewardship_runtime_guard_v1 refuses
+    # every other change to them (migration 0019, #537). Ordinary campaign and
+    # configuration writers never change them.
     mode = models.CharField(max_length=16, default="testing")
     testing_recipient = models.EmailField()
     restore_review_required = models.BooleanField(default=False)

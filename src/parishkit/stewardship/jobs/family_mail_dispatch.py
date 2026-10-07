@@ -477,6 +477,23 @@ def disposition(message, *, check_recipient=False):
         ).exists()
     ):
         raise FamilyDeliveryHeld("Family delivery awaits initial recovery review.")
+    # A restore hold on this message's own email (#537): the SQL dispatch
+    # guard refuses it, so check first rather than fail and retry. Assumed
+    # sent: the email went out before, so this unsent copy is cancelled.
+    # Not yet decided: wait for the Administrator's decision.
+    own_holds = set(
+        RestoreDeliveryHold.objects.filter(
+            definition_id=occurrence.definition_id,
+            mode=message.mode,
+            target=occurrence.target,
+            slot=occurrence.slot,
+            state__in=("unreviewed", "assumed_delivered"),
+        ).values_list("state", flat=True)
+    )
+    if "assumed_delivered" in own_holds:
+        return "restore_assumed_sent"
+    if own_holds:
+        raise FamilyDeliveryHeld("Family delivery awaits restore review.")
     if message.not_before > database_now():
         raise FamilyDeliveryHeld("Family delivery retry is not due.")
     return None

@@ -468,7 +468,16 @@ DESCRIPTIONS = {
     "catchup_failed": _("Scheduled work that was missed could not be caught up."),
     "schedule_selected": _("A mail schedule version was chosen."),
     "restore_hold_resolved": _(
-        "The review required after restoring a backup was completed."
+        "After a restore, an Administrator decided what to do with an email "
+        "that may already have gone out (assume it was sent, send it again, "
+        "or not needed)."
+    ),
+    "restore_review_started": _(
+        "The site was restored from a backup and closed for review: Families "
+        "cannot sign in and no Family email is sent until it is released."
+    ),
+    "restore_review_released": _(
+        "An Administrator reopened the site after reviewing a restore."
     ),
     "runtime_transition": _("The system changed mode (for example, Testing to live)."),
     "weekly_manual_requested": _("A weekly report was requested by hand."),
@@ -517,6 +526,8 @@ DIRECT_AUDIT_TYPES = frozenset(
         "rehearsal_gate_released",
         "rehearsal_invalidated",
         "restore_hold_resolved",
+        "restore_review_released",
+        "restore_review_started",
         "runtime_transition",
         "schedule_selected",
         "submission_receipt_skipped",

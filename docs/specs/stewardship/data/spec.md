@@ -583,13 +583,11 @@ digests remain unique across the entire Campaign. Initial population also uses
 this representation, so authentication has one generation-selection rule.
 
 Every token-generation admission and activation also checks the deployment's
-current Family-link credential epoch. Restore initializes a new epoch under
-the maintenance gate as specified by
-[operations](../operations/spec.md#restore); all restored active/prepared
-generations remain inadmissible even before asynchronous secret scrubbing
-finishes. Fresh restore preparation uses the new epoch. Population and later
-reactivation generate missing tokens only in a current-epoch generation, never
-reuse a restored token or reactivate an old pointer. Draft readiness likewise
+current Family-link credential epoch. A restore keeps the restored epoch,
+generations and tokens: it never creates, replaces or cancels a Family code
+or link (the Administrator's hard rule; see
+[operations](../operations/spec.md#restore)). Population and later
+reactivation generate missing tokens only in a current-epoch generation. Draft readiness likewise
 requires a current-epoch Production generation before going live. All
 credential-bearing OutboxMessages capture the generation/epoch used for their
 sealed substitutions so dispatch can reject stale material independently of
@@ -1502,9 +1500,9 @@ evaluation harmless.
 
 When `restore_review_required` is active, that request is durable deferred
 intent only: promotion does not materialize or dispatch an ordinary invitation.
-The restore-release transaction re-evaluates each affected Family and
-atomically creates the applicable occurrence and uncertainty hold before it
-opens normal work admission.
+The restore release is refused while any such Family's already-due invitation
+still needs a hold, so it is held, and can be decided, before normal work
+admission opens.
 
 If a reactivated Family already has a live submission, it remains a responder
 and does not receive a new initial invitation. Current metrics exclude inactive

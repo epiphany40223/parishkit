@@ -170,7 +170,7 @@ def resolve_restore_hold(
         or type(expected_version) is not int
         or expected_version < 1
         or type(state) is not str
-        or state not in {"assumed_delivered", "resend_authorized", "not_applicable"}
+        or state not in {"assumed_delivered", "resend_authorized"}
         or type(evidence) is not str
         or not evidence.strip()
         or len(evidence) > 1024

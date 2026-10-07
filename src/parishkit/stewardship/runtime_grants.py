@@ -194,6 +194,12 @@ WEB_INSERT_TABLES = frozenset(
         "stewardship_campaign_control",
         "stewardship_campaign_config_abort",
         "stewardship_activation_catchup",
+        # The restore review (#537): listing held emails (only during a
+        # review; holds only suppress mail, so no fresh sign-in is needed),
+        # and an Administrator's decision on each, which the guard admits
+        # only for a freshly signed-in Administrator.
+        "stewardship_restore_delivery_hold",
+        "stewardship_restore_hold_resolution",
     ]
 )
 
@@ -218,6 +224,9 @@ WEB_UPDATE_TABLES = frozenset(
         "stewardship_campaign_work_gate",
         "stewardship_campaign_control",
         "stewardship_activation_catchup",
+        # A settled held email's state (#537); its guard admits only the
+        # change its exact, append-only decision record names.
+        "stewardship_restore_delivery_hold",
     ]
 )
 

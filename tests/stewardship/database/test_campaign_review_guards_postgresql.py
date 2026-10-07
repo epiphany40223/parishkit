@@ -128,7 +128,7 @@ def test_restore_inventory_requires_exact_active_gate_and_backup(tmp_path):
                 )
 
 
-@pytest.mark.parametrize("outcome", ["not_applicable", "resend_authorized"])
+@pytest.mark.parametrize("outcome", ["assumed_delivered", "resend_authorized"])
 def test_restore_resend_requires_released_global_gate_and_exact_pending_slot(
     tmp_path, outcome
 ):
@@ -203,7 +203,9 @@ def test_restore_resend_requires_released_global_gate_and_exact_pending_slot(
         {"actor_id": None},
         {"evidence": " "},
         {"state": "unknown"},
-        {"state": "resend_authorized"},
+        # "Send again" may wait for the planner (migration 0019, #537), but a
+        # named recovery occurrence must still be the slot's pending one.
+        {"state": "resend_authorized", "recovery_occurrence_id": UUID(int=1)},
         {"recovery_occurrence_id": UUID(int=1)},
     ],
 )

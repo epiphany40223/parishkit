@@ -5384,14 +5384,32 @@ DECLARE h stewardship_restore_delivery_hold%ROWTYPE;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO h FROM stewardship_restore_delivery_hold WHERE id=NEW.hold_id FOR UPDATE;
+    -- Two decisions (migration 0019, #537): assume it was sent, or send it
+    -- again. Each is final: an assumption may already have cancelled the
+    -- unsent copy, so turning it into a resend later would send nothing.
+    -- (not_applicable is no longer decided: it would have released the
+    -- email like "send again" without saying so.)
     IF h.id IS NULL OR NEW.version<>h.version+1 OR NEW.actor_id IS NULL OR btrim(NEW.evidence)=''
-       OR NEW.state NOT IN ('assumed_delivered','resend_authorized','not_applicable')
-       OR h.state IN ('resend_authorized','not_applicable')
-       OR (NEW.state='resend_authorized' AND NOT EXISTS(
+       OR NEW.state NOT IN ('assumed_delivered','resend_authorized')
+       OR h.state<>'unreviewed'
+       OR (NEW.state='resend_authorized' AND NEW.recovery_occurrence_id IS NOT NULL AND NOT EXISTS(
            SELECT 1 FROM stewardship_schedule_occurrence o WHERE o.id=NEW.recovery_occurrence_id
            AND o.definition_id=h.definition_id AND o.mode=h.mode AND o.target=h.target AND o.slot=h.slot AND o.state='pending'
-       )) OR (NEW.state<>'resend_authorized' AND NEW.recovery_occurrence_id IS NOT NULL) THEN
+       )) OR (NEW.state<>'resend_authorized' AND NEW.recovery_occurrence_id IS NOT NULL)
+       -- Decisions belong to the review: once it is released (gate off with a
+       -- release stamped), nothing is decided until a later page (#757).
+       OR EXISTS(SELECT 1 FROM stewardship_system_configuration released
+           WHERE NOT released.restore_review_required AND released.restore_released_at IS NOT NULL)
+       -- Another (earlier restore's) hold still keeps this email back, so a
+       -- resend would silently do nothing: settle that one first.
+       OR (NEW.state='resend_authorized' AND EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold other
+           WHERE other.id<>h.id AND other.definition_id=h.definition_id AND other.mode=h.mode
+             AND other.target=h.target AND other.slot=h.slot AND other.state IN ('unreviewed','assumed_delivered'))) THEN
         RAISE EXCEPTION 'Invalid restore hold review or resend binding' USING ERRCODE='23514'; END IF;
+    -- Settling a held email is an Administrator's decision made within five
+    -- minutes of a Google sign-in (migration 0019, #537).
+    IF NOT public.stewardship_restore_decision_admitted_v1(NEW.actor_id,NEW.session_id,NEW.authenticated_at) THEN
+        RAISE EXCEPTION 'A restore decision requires fresh Administrator authentication' USING ERRCODE='42501'; END IF;
     RETURN NEW;
 END $$;
 
@@ -5432,6 +5450,9 @@ BEGIN
     IF NEW.active_configuration_id IS DISTINCT FROM OLD.active_configuration_id THEN
         IF NEW.configuration_sequence<>OLD.configuration_sequence+1
            OR NEW.mode<>OLD.mode OR NEW.restore_review_required<>OLD.restore_review_required
+           OR NEW.restore_id IS DISTINCT FROM OLD.restore_id OR NEW.restore_backup_at IS DISTINCT FROM OLD.restore_backup_at
+           OR NEW.restore_activated_at IS DISTINCT FROM OLD.restore_activated_at
+           OR NEW.restore_released_at IS DISTINCT FROM OLD.restore_released_at
            OR NOT EXISTS (SELECT 1 FROM stewardship_config_activation
                WHERE configuration_id=NEW.active_configuration_id AND predecessor_id IS NOT DISTINCT FROM OLD.active_configuration_id
                  AND sequence=OLD.configuration_sequence AND actor_id IS NOT DISTINCT FROM NEW.actor_id AND correlation_id=NEW.correlation_id) THEN
@@ -5444,6 +5465,23 @@ BEGIN
               AND t.before_campaign_id IS NOT DISTINCT FROM OLD.current_campaign_id
               AND t.after_campaign_id IS NOT DISTINCT FROM NEW.current_campaign_id
               AND t.actor_id IS NOT DISTINCT FROM NEW.actor_id AND t.correlation_id=NEW.correlation_id
+              -- The restore review fields move only with their own transition
+              -- (migration 0019, #537): a start sets every one from it, a
+              -- release clears only the gate and stamps the release.
+              AND CASE t.action
+                  WHEN 'restore_begin' THEN NEW.restore_review_required AND NEW.restore_id=t.restore_id
+                      AND NEW.restore_backup_at=t.backup_at AND NEW.restore_activated_at IS NOT NULL
+                      AND NEW.restore_released_at IS NULL
+                  WHEN 'restore_release' THEN OLD.restore_review_required AND NOT NEW.restore_review_required
+                      AND NEW.restore_id IS NOT DISTINCT FROM OLD.restore_id
+                      AND NEW.restore_backup_at IS NOT DISTINCT FROM OLD.restore_backup_at
+                      AND NEW.restore_activated_at IS NOT DISTINCT FROM OLD.restore_activated_at
+                      AND NEW.restore_released_at IS NOT NULL
+                  ELSE NEW.restore_review_required=OLD.restore_review_required
+                      AND NEW.restore_id IS NOT DISTINCT FROM OLD.restore_id
+                      AND NEW.restore_backup_at IS NOT DISTINCT FROM OLD.restore_backup_at
+                      AND NEW.restore_activated_at IS NOT DISTINCT FROM OLD.restore_activated_at
+                      AND NEW.restore_released_at IS NOT DISTINCT FROM OLD.restore_released_at END
         ) THEN RAISE EXCEPTION 'Runtime mutation requires transition evidence' USING ERRCODE='23514'; END IF;
     END IF;
     RETURN NEW;
@@ -5454,11 +5492,23 @@ CREATE FUNCTION public.stewardship_runtime_transition_effect_v1() RETURNS trigge
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
+-- A restore review's start and release have their own audit names.
+DECLARE kind text := CASE NEW.action WHEN 'restore_begin' THEN 'restore_review_started'
+    WHEN 'restore_release' THEN 'restore_review_released' ELSE 'runtime_transition' END;
 BEGIN
     UPDATE stewardship_system_configuration SET mode=NEW.after_mode, current_campaign_id=NEW.after_campaign_id,
+        -- A restore review's start and release (migration 0019, #537).
+        restore_review_required=CASE NEW.action WHEN 'restore_begin' THEN true
+            WHEN 'restore_release' THEN false ELSE restore_review_required END,
+        restore_id=CASE WHEN NEW.action='restore_begin' THEN NEW.restore_id ELSE restore_id END,
+        restore_backup_at=CASE WHEN NEW.action='restore_begin' THEN NEW.backup_at ELSE restore_backup_at END,
+        restore_activated_at=CASE WHEN NEW.action='restore_begin' THEN stewardship_campaign_now_v1()
+            ELSE restore_activated_at END,
+        restore_released_at=CASE NEW.action WHEN 'restore_begin' THEN NULL
+            WHEN 'restore_release' THEN stewardship_campaign_now_v1() ELSE restore_released_at END,
         version=version+1, actor_id=NEW.actor_id, correlation_id=NEW.correlation_id;
     INSERT INTO stewardship_audit_event(id,actor_id,correlation_id,event_type,subject_id,campaign_reference)
-    VALUES (gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'runtime_transition',NEW.id,NEW.before_campaign_id);
+    VALUES (gen_random_uuid(),NEW.actor_id,NEW.correlation_id,kind,NEW.id,NEW.before_campaign_id);
     RETURN NEW;
 END $$;
 
@@ -5483,6 +5533,9 @@ BEGIN
     SELECT * INTO r FROM stewardship_system_configuration FOR UPDATE;
     IF r.version<>NEW.expected_version OR r.mode<>NEW.before_mode OR r.current_campaign_id IS DISTINCT FROM NEW.before_campaign_id THEN
         RAISE EXCEPTION 'Runtime transition is stale' USING ERRCODE='23514'; END IF;
+    -- The recovery login only starts a restore review (migration 0019, #537).
+    IF current_user='pk_stewardship_admin_recovery' AND NEW.action<>'restore_begin' THEN
+        RAISE EXCEPTION 'The recovery login only starts a restore review' USING ERRCODE='23514'; END IF;
     IF NEW.action='return_testing' THEN
         IF NEW.actor_id IS NULL OR NEW.after_mode<>'testing' OR NEW.after_campaign_id IS NOT NULL
            OR r.restore_review_required OR NOT stewardship_campaign_quiet_v1(r.current_campaign_id)
@@ -5495,6 +5548,37 @@ BEGIN
             AND t.campaign_id=NEW.before_campaign_id AND NEW.after_campaign_id=NEW.before_campaign_id
             AND t.actor_id IS NOT DISTINCT FROM NEW.actor_id AND t.correlation_id=NEW.correlation_id) THEN
             RAISE EXCEPTION 'Mode transition requires campaign evidence' USING ERRCODE='23514'; END IF;
+    ELSIF NEW.action='restore_begin' THEN
+        -- The operator's restore command (admin-recovery login), run after a
+        -- restore and before web starts (migration 0019, #537). It changes
+        -- no mode, campaign or Family credential: it only closes the site
+        -- for review. A second restore starts a new review.
+        IF NOT (pg_has_role(current_user,(SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE')
+                OR current_user='pk_stewardship_admin_recovery')
+           OR r.active_configuration_id IS NULL
+           OR NEW.after_mode<>NEW.before_mode OR NEW.after_campaign_id IS DISTINCT FROM NEW.before_campaign_id
+           OR NEW.restore_id IS NULL OR NEW.restore_id IS NOT DISTINCT FROM r.restore_id
+           OR NEW.backup_at IS NULL OR NEW.backup_at>stewardship_campaign_now_v1() OR btrim(NEW.reason)=''
+           OR NEW.campaign_transition_id IS NOT NULL OR NEW.session_id IS NOT NULL OR NEW.authenticated_at IS NOT NULL THEN
+            RAISE EXCEPTION 'A restore review starts only from the operator restore command' USING ERRCODE='23514'; END IF;
+    ELSIF NEW.action='restore_release' THEN
+        -- A freshly signed-in Administrator releases the site after review.
+        -- Refused while any email still needs a hold: the list must be found
+        -- first, during the review, so every hold can still be decided (none
+        -- is decided after release). Mode and campaign stay as restored.
+        IF NOT r.restore_review_required OR NEW.restore_id IS DISTINCT FROM r.restore_id
+           OR NEW.backup_at IS DISTINCT FROM r.restore_backup_at
+           OR NEW.after_mode<>NEW.before_mode OR NEW.after_campaign_id IS DISTINCT FROM NEW.before_campaign_id
+           OR NEW.actor_id IS NULL OR NEW.campaign_transition_id IS NOT NULL
+           OR EXISTS (SELECT 1 FROM stewardship_campaign WHERE id=r.current_campaign_id
+               AND state IN ('purging','purge_cleanup_failed'))
+           OR EXISTS (SELECT 1 FROM stewardship_campaign_work_gate WHERE state IN ('preparing','running')) THEN
+            RAISE EXCEPTION 'This restore review cannot be released' USING ERRCODE='23514'; END IF;
+        IF NOT public.stewardship_restore_decision_admitted_v1(NEW.actor_id,NEW.session_id,NEW.authenticated_at) THEN
+            RAISE EXCEPTION 'A restore decision requires fresh Administrator authentication' USING ERRCODE='42501'; END IF;
+        IF EXISTS(SELECT 1 FROM public.stewardship_restore_hold_candidates_v1()) THEN
+            RAISE EXCEPTION 'The held-email list is stale: find the held emails again before release'
+                USING ERRCODE='23514'; END IF;
     ELSE RAISE EXCEPTION 'Unsupported runtime transition' USING ERRCODE='23514'; END IF;
     RETURN NEW;
 END $$;
@@ -9690,7 +9774,7 @@ CREATE FUNCTION public.stewardship_system_configuration_mutable_v1() RETURNS tri
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR false /* initial setup recipient has its own guard */ OR NEW."restore_review_required" IS DISTINCT FROM OLD."restore_review_required" OR NEW."restore_id" IS DISTINCT FROM OLD."restore_id" OR NEW."restore_backup_at" IS DISTINCT FROM OLD."restore_backup_at" OR NEW."restore_activated_at" IS DISTINCT FROM OLD."restore_activated_at" OR NEW."restore_released_at" IS DISTINCT FROM OLD."restore_released_at" THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR false /* initial setup recipient has its own guard */ THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;

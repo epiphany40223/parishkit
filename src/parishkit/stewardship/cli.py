@@ -66,6 +66,8 @@ _COMMAND_OPTIONS = {
     "preview-admin-recovery": {"config", "confirm_deployment", "target_email"},
     # Ends every live Admin automation session (ADM-11); run in every restore.
     "revoke-automation-sessions": {"config", "reason"},
+    # Closes the site for a restore review (#537); run in every real restore.
+    "restore-begin": {"config", "backup_at", "reason"},
     # The local environment's fake ParishSoft service (#476); LOCAL only.
     "fake-parishsoft": {"config", "profile", "fake_config", "port"},
     "local-sign-in": {"config", "email"},
@@ -174,6 +176,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "clock-dir",
         "seeded-now",
         "due-at",
+        "backup-at",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -228,6 +231,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "recover-admin",
         "preview-admin-recovery",
         "revoke-automation-sessions",
+        "restore-begin",
         "database-roles",
         "database-grants",
     }:

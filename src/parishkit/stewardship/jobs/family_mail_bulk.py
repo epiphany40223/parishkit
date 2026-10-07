@@ -1050,6 +1050,12 @@ SELECT CASE
         JOIN stewardship_schedule_definition i ON i.id=h.definition_id
         WHERE i.campaign_id=m.campaign_id AND i.kind='initial' AND h.mode=m.mode
           AND h.target=o.target AND h.slot='once' AND h.state='unreviewed'))
+    -- This message's own email is held after a restore (#537): undecided or
+    -- assumed sent. The single path then waits or cancels it.
+    OR EXISTS (SELECT 1 FROM stewardship_restore_delivery_hold own
+        WHERE own.definition_id=o.definition_id AND own.mode=m.mode
+          AND own.target=o.target AND own.slot=o.slot
+          AND own.state IN ('unreviewed','assumed_delivered'))
     THEN 'hold'
 END
 FROM (SELECT 1) AS one
