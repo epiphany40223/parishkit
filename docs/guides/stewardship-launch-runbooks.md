@@ -175,21 +175,21 @@ still the design record for preparation and disposal),
    settled, and again after each large send, so a restore loses as little as
    possible.
 
-**Withdrawal** returns a *scheduled* campaign to draft in Testing, and is
+**Cancel go-live** returns a *scheduled* campaign to draft in Testing, and is
 possible only before its start: once the start passes, the campaign is active
-and cannot be withdrawn. Open **Withdraw from Production** from the progress
+and stays live. Open **Cancel go-live** from the progress
 page, choose **Confirm with Google** (the sign-in brings you back to this
 page), give a reason, tick **I understand that deleted Testing data cannot be
-restored.**, choose **Preview withdrawal** and then **Confirm withdrawal from
-Production**. If the preview reports work in flight or uncertain, the confirm
+restored.**, choose **Preview cancellation** and then **Confirm cancelling
+go-live**. If the preview reports work in flight or uncertain, the confirm
 button is withheld: resolve that work, choose **Confirm with Google** again if
 more than five minutes have passed since the last sign-in, then preview again
 and confirm within five minutes and before the start.
-Withdrawal is refused while delivery is paused: the progress page then hides
-the withdrawal link, and the withdrawal page says the campaign is
-not eligible, as it does for an active campaign. Resume first, which needs
-the sender test described below, so do not pause a scheduled campaign you may
-want to withdraw while the provider is down. After a withdrawal, going live
+Cancel go-live is refused while delivery is paused: the progress page then
+hides the Cancel go-live link, and the Cancel go-live page says go-live can't
+be cancelled, as it does for an active campaign. Resume first, which needs
+the sender test described below, so do not pause a scheduled campaign whose
+go-live you may cancel while the provider is down. After a cancellation, going live
 again needs the whole cycle above, including a new cleanup.
 
 The [review ledger](stewardship-activation-runbook-reviews.md) records how
@@ -233,8 +233,8 @@ Members, ministries and giving arrive with the next full refresh, scheduled
 at the ParishSoft integration's listed times (02:00 alone by default) or
 started with **Refresh now**.
 
-**Afterwards.** **Campaign › Family email sends**
-([Family email sends](../specs/stewardship/admin-portal/spec.md#family-email-sends))
+**Afterwards.** **Mail and Family portal › Family email history**
+([Family email history](../specs/stewardship/admin-portal/spec.md#family-email-sends))
 keeps the send's final counts, its first and last times and its duration,
 and each count opens those emails on Outgoing mail. Once the progress page
 is settled, run the report again with `until` after the last outcome, and
@@ -482,7 +482,7 @@ It is the tool for a provider outage, a content mistake found after the
 schedule started, or any moment when mail must stop now. The controls exist
 only for the current Production campaign.
 
-1. Open the campaign's delivery control page
+1. Open the campaign's **Pause and resume mail** page
    (`/admin/campaign/<campaign id>/delivery`), signed in with Google within the
    last five minutes.
 2. Choose **Preview pause**, give the reason, and confirm with the fresh
@@ -499,7 +499,7 @@ only for the current Production campaign.
       Family group on the **Overdue Family email** panel must be
       resolved. The resume controls are hidden entirely while an activation
       catch-up is incomplete, including one whose preparation has failed: if
-      the **Production activation progress** page shows a failure, choose
+      the **Production activation** page shows a failure, choose
       **Retry failed mail preparation** there and wait for **Initial campaign
       mail preparation complete**. A report preparation that has *failed* never
       reaches its safe point by itself: find the failed daily or weekly
@@ -514,7 +514,7 @@ only for the current Production campaign.
       **Confirm with Google**, and the sign-in brings you back to this page.
       Then choose **Preview and send a test to the configured Testing
       recipient**, which opens the campaign mail page, send the test there,
-      go straight back to **Campaign delivery controls**, and reload until it
+      go straight back to **Pause and resume mail**, and reload until it
       says **The current provider and sender accepted a test after this
       pause.** That proof is also valid for five minutes, and the preview
       and the confirmation both check it again.

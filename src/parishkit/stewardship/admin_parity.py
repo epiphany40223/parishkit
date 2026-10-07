@@ -140,7 +140,7 @@ LEDGER = {
     "production_withdrawal": pending(
         "PR 12", "go-live withdraw-preview", "go-live withdraw"
     ),
-    # Family email sends and delivery controls.
+    # Family email history and Pause and resume mail.
     "family_email_progress": command("send progress"),
     "family_email_progress_status": command("send progress"),
     "family_email_sends": command("send history"),

@@ -8,5 +8,5 @@
 <p>{% translate "Confirm to save these options." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply changes" %}</button></form>
 {% endif %}
-<p><a href="{% url 'admin:share_settings' campaign.pk %}">{% translate "Return to share options" %}</a></p>
+<p><a href="{% url 'admin:share_settings' campaign.pk %}">{% translate "Return to Share options" %}</a></p>
 {% endblock %}

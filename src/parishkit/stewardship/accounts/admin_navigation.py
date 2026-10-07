@@ -116,17 +116,21 @@ PAGES = {
     # Retained content can belong to an earlier campaign, which the editing
     # catalog refuses, so its trail runs through Campaign settings instead.
     "content_history": Page("campaign", _("Content history"), "campaign_settings"),
-    "content_history_revision": Page("campaign", _("Revision"), "content_history"),
+    "content_history_revision": Page(
+        "campaign", _("Earlier version"), "content_history"
+    ),
     # A test page sends one email revision, so its trail runs through that
     # revision's editor; the view supplies the kind and slot the route lacks.
     "campaign_mail": Page("campaign", _("Preview and test email"), "content_revision"),
     "campaign_mail_families": Page(
         "campaign", _("Send to chosen Families"), "campaign_mail"
     ),
-    "schedule_settings": Page("campaign", _("Mail schedules")),
+    "schedule_settings": Page("campaign", _("Dates and mail schedules")),
     "share_settings": Page("campaign", _("Share options")),
     "artwork_settings": Page("campaign", _("Campaign images")),
-    "artwork_upload": Page("campaign", _("Campaign image upload"), "artwork_settings"),
+    # A POST-only re-render of Campaign images with the upload's error, so it
+    # shares that page's name.
+    "artwork_upload": Page("campaign", _("Campaign images"), "artwork_settings"),
     # Each reviews one staged or current image and refuses once confirmed.
     "artwork_preview": Page(
         "campaign", _("Review campaign image"), "artwork_settings", linkable=False
@@ -140,26 +144,29 @@ PAGES = {
         "campaign", _("Campaign Ministries"), "campaign_settings"
     ),
     "go_live": Page("campaign", _("Go-live readiness")),
-    "go_live_families": Page("campaign", _("Testing Families"), "go_live"),
+    "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
     "go_live_cleanup": Page("campaign", _("Testing cleanup"), "go_live"),
-    "go_live_links": Page("campaign", _("Family links"), "go_live_cleanup"),
+    "go_live_links": Page("campaign", _("Prepare Family links"), "go_live_cleanup"),
     "production_confirmation": Page(
         "campaign", _("Confirm Production"), "go_live_links"
     ),
     # A menu entry of its own, available once Production is confirmed.
     "production_progress": Page("campaign", _("Production activation")),
+    # Cancel go-live (formerly Withdraw from Production) is offered only on
+    # Production activation, so its trail runs through that page. The name
+    # avoids a clash with the after-archive Return to Testing (decision 9).
     "production_withdrawal": Page(
-        "campaign", _("Return to Testing"), "campaign_settings"
+        "campaign", _("Cancel go-live"), "production_progress"
     ),
     # Mail and Family portal
-    "delivery_control": Page("mail", _("Delivery controls")),
+    "delivery_control": Page("mail", _("Pause and resume mail")),
     # Watching a launch or reminder send (#413): a sidebar entry of its own,
-    # beside Delivery controls, so it is found without knowing where it is.
+    # beside Pause and resume mail, so it is found without knowing where it is.
     "family_email_progress": Page("mail", _("Family email progress")),
     # The permanent record of every send (#432), listed beside the live panel.
-    "family_email_sends": Page("mail", _("Family email sends")),
+    "family_email_sends": Page("mail", _("Family email history")),
     "deliveries": Page("mail", _("Outgoing mail")),
-    "delivery": Page("mail", _("Message"), "deliveries"),
+    "delivery": Page("mail", _("Mail message"), "deliveries"),
     "delivery_refusals": Page("mail", _("Refused addresses"), "deliveries"),
     "delivery_refusal": Page("mail", _("Refused address"), "delivery_refusals"),
     "family_portal": Page("mail", _("Family portal availability")),
@@ -380,7 +387,7 @@ def _confirmed(state):
 
 
 def _production(state):
-    """Delivery controls pause and resume real mail, so Production only."""
+    """Pause and resume mail acts on real mail, so Production only."""
     if not state.campaign:
         return NO_CAMPAIGN
     return None if state.mode == "production" else _("Available in Production mode")

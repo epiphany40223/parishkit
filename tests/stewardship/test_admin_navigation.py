@@ -700,7 +700,7 @@ def test_unavailable_entries_carry_their_plain_language_reason(
 
 
 def test_available_campaign_entries_link_the_current_campaign():
-    """Production with a live campaign opens Delivery controls and activation."""
+    """Production with a live campaign opens Pause and resume mail and activation."""
     campaign = CAMPAIGNS["active"]
     urls = {
         item.name: item.url for item in _menu("administrator", campaign, "production")

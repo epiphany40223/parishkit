@@ -305,7 +305,7 @@ placement table, the other specs that name those URLs, and the guides.
 | ADM-12.02–.04 | NAV-2 | Registry rewrite: seven groups, stable menu shape with greyed entries and reasons, collapsible groups and Sign out | Serial |
 | ADM-12.05 | NAV-3 | Grey out multi-campaign controls, server refusals, remove New campaign (rule 10) | A |
 | ADM-12.06 | NAV-4 | Names for Campaign setup and Mail, including Cancel go-live | A |
-| ADM-12.07 | NAV-5a | Names for Parish data, Users and access, System and Home | B |
+| ADM-12.07 | NAV-5a | Names for Parish data, Users and access, System and Home, and the setup wizard steps NAV-4 left (Review, Test email, Test Slack, Finish setup and the connection steps) | B |
 | ADM-12.08 | NAV-5b | Names for Responses and reports | C |
 | ADM-12.09 | NAV-6 | URL plumbing, per-group URL modules, System URLs | Serial |
 | ADM-12.10 | NAV-7 | Parish data and Users URLs; change status URL | B |

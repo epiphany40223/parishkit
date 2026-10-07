@@ -54,7 +54,7 @@ def test_archived_samples_keep_old_parish_content_and_logo(auth_service, google)
     assert b"contenteditable" not in response.content
     settings = browser.get(f"/admin/campaign/{campaign.pk}/settings")
     assert url.encode() in settings.content
-    assert b"Edit campaign pages" not in settings.content
+    assert b"Edit Pages and emails" not in settings.content
 
 
 def test_history_is_get_only_and_revision_is_campaign_scoped(auth_service, google):

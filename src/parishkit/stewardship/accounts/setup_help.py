@@ -260,8 +260,8 @@ ADMIN_CAMPAIGN = {
     ),
     "financial_enabled": _(
         "Ask Families for a pledge for the upcoming financial period. After "
-        "saving, use Edit how Families will share to set the choices Families "
-        "see for how they will give."
+        "saving, use Edit Share options to set the choices Families see for "
+        "how they will give."
     ),
 }
 

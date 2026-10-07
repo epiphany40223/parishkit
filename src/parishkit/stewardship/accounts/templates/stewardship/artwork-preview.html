@@ -7,5 +7,5 @@
 <p>{% translate "Uploads that are never confirmed are discarded after a day." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
 <button type="submit">{% translate "Use this image" %}</button></form>
-<p><a href="{% url 'admin:artwork_settings' campaign.pk %}">{% translate "Back to campaign images" %}</a></p>
+<p><a href="{% url 'admin:artwork_settings' campaign.pk %}">{% translate "Return to Campaign images" %}</a></p>
 {% endblock %}

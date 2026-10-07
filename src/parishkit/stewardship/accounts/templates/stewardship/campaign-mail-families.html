@@ -1,8 +1,8 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship static %}
-{% block title %}{% translate "Send this email to chosen Families" %}{% endblock %}
+{% block title %}{% translate "Send to chosen Families" %}{% endblock %}
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
-<h1>{% translate "Send this email to chosen Families" %}</h1><p>{{ campaign.active_configuration.name }} — {{ subject }}</p>
+<h1>{% translate "Send to chosen Families" %}</h1><p>{{ campaign.active_configuration.name }} — {{ subject }}</p>
 <p class="notice">{% translate "TEST — shows exactly what each chosen Family would receive, using that Family's own test code and link, with a prominent TEST banner. It is sent only to" %} {{ testing_recipient }}. {% translate "It does not count as a scheduled email and does not open the Family form outside the campaign dates." %}</p>
 {% if not epoch_ready %}<p role="alert">{% translate "Test codes for this campaign are not ready yet. They are created automatically once the campaign has started and the parish data from ParishSoft is up to date; until then no Family test can be sent." %}</p>{% endif %}
 {% if held %}<p role="status">{% translate "Campaign work is in progress (a restore review or a cleanup, purge or activation step). Family tests cannot be confirmed until it finishes; a review is still possible." %}</p>{% endif %}
@@ -19,5 +19,5 @@
 <section class="panel" aria-live="polite" data-live-status="family-tests"{% if refresh %} data-live-pending{% endif %}><h2>{% translate "Recent Family tests" %}</h2>{% if refresh %}{% translate "Sending Family tests…" as running %}{% include 'stewardship/live-running.html' with message=running %}{% endif %}<ul>{% for item in items %}<li>{% if item.duid %}{% translate "Family DUID" %} {{ item.duid|duid }} — {% endif %}{{ item.label }} — <time data-local-instant datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:'c' }}</time></li>{% empty %}<li>{% translate "No Family tests have been requested." %}</li>{% endfor %}</ul></section>
 {% if items %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl>{% for item in items %}<dt>{% translate "Test reference" %}{% if item.duid %} ({% translate "Family DUID" %} {{ item.duid|duid }}){% endif %}</dt><dd><code>{{ item.id }}</code></dd>{% endfor %}</dl><p>{% translate "As of when this page was opened; select Refresh status to update." %}</p></details>{% endif %}
 <p><a href="{{ refresh_url }}">{% translate "Refresh status" %}</a></p>
-<p><a href="{{ sample_url }}">{% translate "Return to the fictional sample test" %}</a></p>
+<p><a href="{{ sample_url }}">{% translate "Return to Preview and test email" %}</a></p>
 {% endblock %}

@@ -1,9 +1,9 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n %}
-{% block title %}{% translate "First-campaign content" %}{% endblock %}
+{% block title %}{% translate "Pages and emails" %} — {% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
-<h1>{% translate "First-campaign content" %}</h1><p>{{ campaign_name }}</p>
+<h1>{% translate "Pages and emails" %}</h1><p>{{ campaign_name }}</p>
 <p class="setup-intro">{% translate "These are the texts Families see on each campaign page and the emails the system sends. When you saved the campaign, every page and email was filled in automatically with default text, so you do not have to edit any of them. Review them and change whatever you like. Every email that a mail schedule uses needs a saved template." %}</p>
 <p class="notice">{% translate "These page blocks and email templates are temporary until final setup completes. Preview uses fictional sample data and sends no email." %}</p>
 {% if filled %}<p class="notice" role="status">{% if filled.action == 'reset' %}{% blocktranslate with pages=filled.pages emails=filled.emails %}Reset {{ pages }} page(s) and {{ emails }} email(s) to the default text.{% endblocktranslate %}{% else %}{% blocktranslate with pages=filled.pages emails=filled.emails %}Filled in the default text for {{ pages }} page(s) and {{ emails }} email(s). Review each one and edit it as needed.{% endblocktranslate %}{% if kept %} {% translate "Kept your saved text for:" %} {% for entry in kept %}<a href="{{ entry.url }}">{{ entry.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}. {% translate "Use “Reset to the default text” on those to replace them." %}{% endif %}{% endif %}</p>{% endif %}

@@ -393,13 +393,14 @@ through every Admin page (109 pages) and settled by the Administrator's
 [navigation decisions](#navigation-decisions) of 2026-10-04. The sidebar is
 moved to it, and the page names, links and URLs fixed against it, by the
 follow-up issues #520 (one name per page), #521 (every page reachable, every
-flow with a way back) and #525 (one URL scheme). Until those land, pages keep
-the names and URLs in the table's "Current" columns, and so does every other
-section of this spec and the other stewardship specs that name an Admin page
-or URL (for example "Portal users" in [Admin tables](#admin-tables), Delivery
-controls and Mail schedules in the delivery sections, Withdraw from Production
-in the [top-level spec](../spec.md), and the hosted-files spec's
-`/admin/files/`); those follow-up issues update them with the code.
+flow with a way back) and #525 (one URL scheme). The Campaign setup and Mail
+and Family portal pages already use the table's names (NAV-4), and so do the
+sections and specs that name them. Until the rest land, other pages keep the
+names in the table's "Current names" column, every page keeps its "Current
+URL", and so does every other section of this spec and the other stewardship
+specs that name an Admin page or URL (for example "Portal users" in
+[Admin tables](#admin-tables) and the hosted-files spec's `/admin/files/`);
+those follow-up issues update them with the code.
 
 The Admin portal serves one current campaign. The system moves to a single
 campaign after this campaign (#145), so navigation already assumes it: there
@@ -1956,7 +1957,7 @@ A live campaign's structural settings are locked (see
 [Campaign configuration](#campaign-configuration)), with one reviewed
 exemption: while the current campaign is scheduled or active, an
 Administrator may change its Ministry selections. Campaign settings links a
-live campaign to its own "Change campaign Ministries" page, which offers only
+live campaign to its own Campaign Ministries page, which offers only
 the Ministry list and goes through the usual edit, review, apply flow as an
 ordinary configuration request. A closed or archived campaign's selections
 never change.
@@ -2193,8 +2194,8 @@ Cleanup or final-transition failure leaves global mode Testing and never creates
 a partially live campaign. The UI states separately that completed cleanup is
 not rolled back. Retry resumes from durable cleanup checkpoints or reruns the
 short final transaction; cancelling releases the gate without restoring deleted
-Testing data. Only the pre-start `scheduled` result offers **Withdraw from
-Production**. That action
+Testing data. Only the pre-start `scheduled` result offers **Cancel go-live**
+(formerly Withdraw from Production). That action
 requires fresh Google authentication (or a full-scope
 [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)),
 an entered reason, and explicit
@@ -2414,7 +2415,7 @@ Sending the invitations, and later each reminder, to every Family is a long
 background operation (about 1,100 Families take 20 to 25 minutes). The
 read-only **Family email progress** page (Mail and Family portal
 [menu group](#menu-groups), linked from
-Delivery controls and Outgoing mail) follows it live
+Pause and resume mail and Outgoing mail) follows it live
 ([#413](https://github.com/epiphany40223/parishkit/issues/413)). It is for
 Administrators only, like Outgoing mail. It is a moment-in-time view: it
 shows progress only while a send is in progress. Outgoing mail remains the
@@ -2575,7 +2576,7 @@ during a live 1,100-Family Testing send.
 
 ### Family email sends
 
-The read-only **Family email sends** page (Mail and Family portal
+The read-only **Family email history** page (Mail and Family portal
 [menu group](#menu-groups), linked from
 Outgoing mail and from the [Family email progress](#family-email-progress)
 page) is the permanent record of every Family send of the current campaign
@@ -2594,7 +2595,8 @@ first by scheduled time (the revision's due time), then by when the send's
 newest email was planned. Reminders are numbered once per campaign, by
 their schedules' current due times (Reminder 1 is the earliest current
 reminder), so a reminder has the same number in Testing and in Production
-and across its edits, and the numbers match the order on Mail schedules. A
+and across its edits, and the numbers match the order on Dates and mail
+schedules. A
 removed reminder has no current due time and is shown without a number. A Production send from before the campaign returned to Testing is
 marked as such.
 

@@ -214,7 +214,7 @@ def test_only_a_plain_menu_link_activation_saves(page, component_origin):
         target.click(modifiers=[modifier])
         assert page.evaluate(saved) is None, modifier
     # Playwright treats aria-disabled as disabled, so the click is forced.
-    sidebar.get_by_role("link", name="Delivery controls").click(force=True)
+    sidebar.get_by_role("link", name="Pause and resume mail").click(force=True)
     assert page.evaluate(saved) is None
     sidebar.get_by_role("button", name="Sign out").click()
     assert page.evaluate(saved) is None

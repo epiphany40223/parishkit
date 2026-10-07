@@ -53,9 +53,9 @@ PAGES = {
         "stewardship/production-withdrawal.html",
         {"available": True},
         (
-            "Withdrawing needs a Google sign-in from the last five minutes. Confirm"
-            " it's you with Google; you will come back here, then preview the"
-            " withdrawal again.",
+            "Cancelling go-live needs a Google sign-in from the last five minutes."
+            " Confirm it's you with Google; you will come back here, then preview"
+            " the cancellation again.",
         ),
     ),
     "production-confirmation": (
@@ -144,8 +144,8 @@ LOCAL_WORDING = {
         " minutes.",
     ),
     "production-withdrawal": (
-        "Withdrawing needs a sign-in from the last five minutes. Confirm your"
-        " sign-in, then preview the withdrawal again.",
+        "Cancelling go-live needs a sign-in from the last five minutes. Confirm"
+        " your sign-in, then preview the cancellation again.",
     ),
     "production-confirmation": (
         "Confirm your sign-in",

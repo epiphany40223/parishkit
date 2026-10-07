@@ -9,5 +9,5 @@
 {% for item in content_previews %}<section class="panel"><h3>{{ item.label }}</h3>{% if item.rendered.subject %}<p>{{ item.rendered.subject }}</p>{% endif %}<div>{{ item.rendered.html|safe }}</div><h4>{% translate "Plain text" %}</h4><pre>{{ item.rendered.text }}</pre></section>{% empty %}<p>{% translate "No configured content to copy. Unresolved legacy references are not readiness evidence." %}</p>{% endfor %}
 <p>{% translate "Confirm to create the new campaign." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Create reviewed draft" %}</button></form>
-<p><a href="{% url 'admin:campaign_clone' source.pk %}">{% translate "Return to clone form" %}</a></p>
+<p><a href="{% url 'admin:campaign_clone' source.pk %}">{% translate "Return to Copy campaign" %}</a></p>
 {% endblock %}

@@ -665,7 +665,7 @@ layout; where the deployment YAML overrides a path, use that path instead.
    installers there would let the Google Workspace installer answer pending
    **Test access** checks, which write into the live Drive folder. Otherwise,
    start `web` and `caddy` only, and run the health command. An Administrator pauses delivery on the campaign's
-   delivery control page if it is not already paused, then compares the
+   **Pause and resume mail** page if it is not already paused, then compares the
    restored deliveries with the mail provider's own sent log for the period
    after the backup, and notes every message the provider sent that the
    restored state does not show as delivered (see the limitations below).

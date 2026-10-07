@@ -2,7 +2,7 @@
 
 The page is ``menu_components.py``: an Administrator's real menu for a Testing
 draft, on Pages and emails. Production activation (in the current Campaign
-setup group) and Delivery controls (in Mail and Family portal) are greyed out.
+setup group) and Pause and resume mail (in Mail and Family portal) are greyed out.
 An unavailable entry's reason shows on hover, keyboard focus and tap, and
 Escape or a tap elsewhere hides it (admin-portal spec, "Stable menu shape").
 Groups collapse, each browser remembers the collapsed ones, and the current
@@ -32,8 +32,8 @@ def _sidebar(page):
 
 
 def _greyed(page):
-    """Delivery controls, greyed out in Testing mode, and its tip."""
-    entry = _sidebar(page).get_by_role("link", name="Delivery controls")
+    """Pause and resume mail, greyed out in Testing mode, and its tip."""
+    entry = _sidebar(page).get_by_role("link", name="Pause and resume mail")
     return entry, page.locator("#" + entry.get_attribute("aria-describedby"))
 
 
@@ -107,7 +107,7 @@ def test_tip_shows_on_hover_beside_the_entry_after_a_short_delay(
     links = _sidebar(page).get_by_role("link")
     for index in range(links.count()):
         other = links.nth(index)
-        if other.is_visible() and other.inner_text() != "Delivery controls":
+        if other.is_visible() and other.inner_text() != "Pause and resume mail":
             assert not _overlaps(tip_box, _box(other)), other.inner_text()
     # The tip is hoverable: moving onto it keeps it.
     tip.hover()

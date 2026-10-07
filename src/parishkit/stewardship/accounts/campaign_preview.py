@@ -13,7 +13,7 @@ LABELS = {
     "modules": _("Enabled modules"),
     "ministry_duids": _("Included Ministries"),
     "financial": _("Financial periods and funds"),
-    "share_options": _("How Families will share"),
+    "share_options": _("Share options"),
     "content_versions": _("Included content blocks"),
     "additional_information": _("Collect additional information"),
 }

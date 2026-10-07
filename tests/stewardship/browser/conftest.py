@@ -1262,7 +1262,7 @@ def component_origin():
                                 },
                                 {
                                     "url": "/schedules",
-                                    "label": "Mail schedules",
+                                    "label": "Dates and mail schedules",
                                     "current": None,
                                 },
                             ],

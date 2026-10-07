@@ -638,7 +638,7 @@ def send_progress(args, preamble, runtime, context):
 
 
 def send_history(args, preamble, runtime, context):
-    """One page of the current campaign's Family email sends."""
+    """One page of the current campaign's Family email history."""
     from .admin_reads import query, read_send_history
 
     parameters = query(page=args.page, size=args.size)
@@ -1013,7 +1013,7 @@ def _read_specs():
         ),
         CommandSpec(
             "send history",
-            "List the current campaign's Family email sends.",
+            "List the current campaign's Family email history.",
             send_history,
             "read_only",
             False,
@@ -1047,7 +1047,7 @@ def _read_specs():
         ),
         CommandSpec(
             "go-live progress",
-            "Show the Production activation progress.",
+            "Show the Production activation page.",
             go_live_progress,
             "read_only",
             False,
