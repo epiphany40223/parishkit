@@ -977,7 +977,7 @@ still live, so it never revives one that ended or idled out.
 | --- | --- | --- |
 | 0 | Done | none |
 | 1 | Refused by the application; nothing changed | `denied`, `invalid`, `stale_version`, `not_available` |
-| 2 | Usage, configuration or admission error before any command ran | `usage`, `configuration`, `credential_mismatch` |
+| 2 | Usage, configuration or admission error before any command ran, or a keyring this process must load (the signing keyring at admission; the Family code keyring for `export directory` and `export postal`) that differs from the running web's | `usage`, `configuration`, `credential_mismatch` |
 | 3 | Temporarily unavailable before any change; retry | `unavailable`, `busy`, `internal` |
 | 4 | Confirmation not given; nothing changed | `confirmation_required` |
 | 5 | No usable automation session, or pairing not finished | `session_missing`, `session_ended`, `pairing_pending`, `pairing_expired` |
@@ -1500,7 +1500,7 @@ signatures:
 - **PR 8b:** the download's grant consumption and guarded read from
   `export_views.download_with_grant` (`prepare_download`), and the status
   read with its stored file's receipt (`export_services.export_state`).
-- **PR 8c to 8f:** report reads and the Family-level exports from the
+- **PR 8c to 8g:** report reads and the Family-level exports from the
   report and export views.
 - **PR 9a:** `delivery_views.preparation_retry` and
   `export_views.retry_cleanup_command`, with the delivery views' admission and
@@ -1626,7 +1626,7 @@ exemptions.
 | `maintenance` | Permanent: the status page the access gate shows |
 | `automation_access`, `automation_approval`, `automation_session` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
 | `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c) |
-| `response_list`, `response_list_export` | Family-level rows, so export only: `export responses` (PR 8f) |
+| `response_list`, `response_list_export` | Family-level rows, so export only: `export responses` (PR 8g) |
 
 The inventory's `status presence` is folded into `status` as its
 `presence.count`, because a word cannot be both a command and an area in
@@ -1864,16 +1864,18 @@ the page.
 | `reports` | `report list` (PR 8c) |
 | `participation` | `report participation` (PR 8c) |
 | `participation_chart`, `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
-| `financial_report`, `talents_report`, `information_queue` | `report financial`, `report talents`, `report information`: summaries and counts (PR 8c); Family-level rows only as exports (PR 8e, PR 8f for talents) |
+| `financial_report`, `talents_report`, `information_queue` | `report financial`, `report talents`, `report information`: summaries and counts (PR 8c); Family-level rows only as exports (PR 8e, PR 8g for talents) |
 | `information_item` | One Family's submission and its follow-up history: `followup …` (PR 11), with the Ministry follow-up items; it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report`, `ministry_joiners`, `ministry_leavers` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for a list's count (PR 8c); rows only as exports (PR 8e) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
 | `financial_export`, `information_export`, `ministry_export` | `export financial`, `export information`, `export ministry` (PR 8e); `export financial` is [fresh-gated](#fresh-gated-actions-from-the-command-line) |
-| `family_directory`, `postal_directory`, `find_family`, `family_directory_export`, `postal_directory_export` | Export only: `export directory`, `export postal` (PR 8f, which needs the Family keys in the command process); Find a Family is the directory's search |
-| `family_timeline` | One Family's timeline, so export only: `export family-timeline` (PR 8f) |
-| `talents_export` | `export talents` (PR 8f, with #752's audit fields) |
+| `family_directory`, `family_directory_export` | Export only: `export directory`, the Family-code directory, for the current campaign only until #145 (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
+| `postal_directory`, `postal_directory_export` | Export only: `export postal`, the mail merge (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
+| `find_family` | Permanent: a search by name; the command line takes no text that names a Family, and `export directory` is the file. This follows the pending "no search" default (PR 8e); if the Administrator allows searches, it becomes `--filter search=` on `export directory` |
+| `family_timeline` | One Family's timeline, so export only: `export family-timeline` (PR 8g; it needs a new export kind, a schema change, proposed on #463) |
+| `talents_export` | `export talents` (PR 8g, with #752's audit fields) |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download`, `export_create`, `export_status`, `export_cancel`, `export_download`, `export_download_grant` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b) |
-| `report_exact_create`, `report_exact`, `report_exact_cancel`, `report_exact_retry`, `exact_export_create`, `exact_export_status`, `exact_export_cancel`, `exact_export_retry` | `export exact …` (PR 8f) |
+| `report_exact_create`, `report_exact`, `report_exact_cancel`, `report_exact_retry`, `exact_export_create`, `exact_export_status`, `exact_export_cancel`, `exact_export_retry` | `export exact …` (PR 8g) |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
 | `weekly_digest_snapshot`, `weekly_digest_item` | `digest weekly SNAPSHOT_ID`: each item's identifier and states; an item's text stays on the page (PR 8d) |
 | `weekly_digest_manual` | `digest weekly-request` (PR 8d) |
@@ -1955,10 +1957,30 @@ prints the `export status` document. Filters are the page's, given as
 `--filter NAME=VALUE`, read once the reader is admitted, as on the page; a
 search (and a page or page size) is refused, since a search's text would name a
 Family in the shell's history and the process list (a default, pending
-Administrator confirmation). The exports that need the Family keys (the
-directory, the mail merge and the one-Family timeline),
-the in-memory downloads (talents and response lists, after #752's audit
-fields) and the exact daily exports follow in PR 8f.
+Administrator confirmation).
+
+`export directory` and `export postal` (PR 8f) are the Family directory's
+export form, for the Family-code directory and the mail merge, through
+its own service, `create_directory_export`. The service holds the code MAC
+keyring's inventory steady while it binds the selection, so this process
+loads that one keyring (`family_code_mac`), and only for these commands
+and only for a new request: a repeated request key runs the service's own
+admission (the Family codes capability and the campaign's gates) inside
+its export lock and is answered from the existing record, compared as the
+service compares it, without reading a key. The keyring's credential
+receipt must equal the one the running web published, as for the signing
+keyring, and the file must be readable, or the command is
+`credential_mismatch` (exit 2) before anything changes; an inventory that
+is not current, or a key rotation holding the key lock, is `unavailable`
+(exit 3). The codes are decrypted by the worker into
+the file, never in this process. `--filter` refuses a search and an exact
+Family code, which would put a name or a code in the shell's history. Both
+are [fresh-gated](#fresh-gated-actions-from-the-command-line), as
+`export financial` is: each asks at the prompt, then calls `require_fresh`
+inside its export lock, for a repeated key too, as the page does.
+The one-Family timeline (it needs a new export kind, a schema change), the
+in-memory downloads (talents and response lists, after #752's audit fields)
+and the exact daily exports follow in PR 8g.
 
 The export lifecycle commands work on any report export the Administrator
 may see, through the functions the export pages use
@@ -2458,7 +2480,8 @@ Administrator's approval of that deploy.
   `digest weekly-request`). **PR 8e:** the Family-level exports that
   create an export record without the Family keys (`export financial`,
   `export information`, `export ministry`, `export ministry-packet`).
-  **PR 8f:** the rest of the Family-level exports.
+  **PR 8f:** the Family directory's exports (`export directory`, `export
+  postal`). **PR 8g:** the rest of the Family-level exports.
 - **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.

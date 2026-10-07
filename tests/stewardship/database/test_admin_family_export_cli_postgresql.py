@@ -288,3 +288,171 @@ def test_ministry_and_information_exports(
     )
     assert code == 1 and document["error"]["code"] == "invalid"
     assert len(requested()) == 6
+
+
+@pytest.fixture
+def with_keyrings(monkeypatch):
+    """Give the admitted process a keyring loader: ``loads`` counts its calls.
+
+    ``use(loader)`` installs ``loader(names)`` as the process's
+    ``keyrings``, as ``admin_cli.admitted`` does with ``load_keyrings``.
+    """
+    import contextlib
+    import dataclasses
+
+    from parishkit.stewardship import admin_cli
+
+    loads = []
+
+    def use(loader):
+        """Wrap the test's admission so its runtime carries ``loader``."""
+        admitted = admin_cli.ADMISSION
+
+        @contextlib.contextmanager
+        def wrapped(configuration):
+            """The test's admission, with the keyring loader."""
+            with admitted(configuration) as runtime:
+                yield dataclasses.replace(
+                    runtime,
+                    keyrings=lambda names: (loads.append(tuple(names)), loader(names))[
+                        1
+                    ],
+                )
+
+        monkeypatch.setattr(admin_cli, "ADMISSION", wrapped)
+
+    use.loads = loads
+    return use
+
+
+def test_the_directory_and_mail_merge_exports(
+    live_response_service,
+    google,
+    cli,  # noqa: F811
+    reports_root,
+    settings,
+    with_keyrings,
+):
+    """The code MAC keyring loads only for a new request; the codes stay in the file."""
+    from parishkit.stewardship.admin_cli import CredentialMismatch
+
+    harness = live_response_service
+    browser, _ = signed_in()
+    run = cli()
+    with_keyrings(lambda names: (harness.rings.mac,))
+    # Both are fresh-gated, so they prompt: --yes answers.
+    base = ("--format", "csv", "--timezone", "UTC", "--yes")
+    key = uuid4()
+    argv = ("export", "directory", *base, "--request-key", str(key))
+    code, document = run(*argv)
+    assert code == 0, document
+    assert with_keyrings.loads == [("family_code_mac",)]
+    made = ExportRequest.objects.get(request_key=key)
+    assert made.report == "family_directory"
+    assert harness.code not in str(document) and "Example" not in str(document)
+    assert count("admin_cmd_export_directory") == 1 and len(requested()) == 1
+    # The session stood in for the page's recent sign-in (#547).
+    assert count("automation_fresh_gate") == 1
+    # A repeat returns the same export without loading any key.
+    code, document = run(*argv)
+    assert code == 0 and document["result"]["created"] is False
+    assert document["result"]["export"]["id"] == str(made.pk)
+    assert with_keyrings.loads == [("family_code_mac",)]
+    # The same key for the mail merge is the page's 409, also without a key.
+    code, document = run("export", "postal", *base, "--request-key", str(key))
+    assert code == 1 and document["error"]["code"] == "invalid"
+    assert with_keyrings.loads == [("family_code_mac",)]
+    # A search or a Family code is refused before anything, a key included.
+    for value in ("search=Example", f"exact_code={harness.code}"):
+        code, document = run("export", "directory", *base, "--filter", value)
+        assert code == 1 and document["error"]["code"] == "invalid", value
+    assert with_keyrings.loads == [("family_code_mac",)]
+    # The mail merge, with a page filter.
+    code, document = run("export", "postal", *base, "--filter", "phone=any")
+    assert code == 0, document
+    postal = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
+    assert postal.report == "postal_outreach"
+    assert count("admin_cmd_export_postal") == 1
+
+    # The codes reach only the file: the worker decrypts them, and the
+    # stream is the page's download of the same export, byte for byte.
+    request = ExportRequest.objects.get(pk=made.pk)
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        assert execute_hint(
+            request.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={
+                TASK_TYPE: export_handler(
+                    store=run.service.store,
+                    root=reports_root,
+                    general=harness.rings.general,
+                )
+            },
+        )
+    code, body, streamed = download(made.pk, run.secret)
+    assert code == 0, streamed
+    assert harness.code.encode() in body
+    assert harness.code not in str(streamed)
+    with restricted_download_pool(settings):
+        response, page_body = search(
+            browser, reverse("admin:report_export_download", args=[made.pk]), {}
+        )
+    assert response.status_code == 200 and page_body == body
+
+    # A keyring that differs from the running web's: exit 2, nothing made.
+    def differs(names):
+        """The web published another receipt (a rotation in progress)."""
+        raise CredentialMismatch("The web keyrings differ.")
+
+    with_keyrings(differs)
+    before = ExportRequest.objects.count()
+    code, document = run("export", "directory", *base)
+    assert code == 2 and document["error"]["code"] == "credential_mismatch"
+    assert ExportRequest.objects.count() == before
+    assert count("admin_cmd_export_directory") == 1
+
+
+def test_the_directory_export_refusals(
+    live_response_service,
+    google,
+    cli,  # noqa: F811
+    reports_root,
+    with_keyrings,
+):
+    """A read-only session is refused, and a busy key lock is exit 3."""
+    import psycopg
+    from django.db import connection
+
+    from parishkit.stewardship.campaigns.credential_keys import KEY_LOCK
+
+    harness = live_response_service
+    signed_in()
+    run = cli()
+    with_keyrings(lambda names: (harness.rings.mac,))
+    # Both are fresh-gated, so they prompt: --yes answers.
+    base = ("--format", "csv", "--timezone", "UTC", "--yes")
+    reader = read_only_session(run.service)
+    code, document = run("export", "directory", *base, secret=reader)
+    assert code == 1 and document["error"]["code"] == "denied"
+    assert with_keyrings.loads == []
+    # A key rotation holds the key-set lock exclusively: the export cannot
+    # bind its selection now, and nothing is made.
+    settings = connection.settings_dict
+    with psycopg.connect(
+        host=settings["HOST"],
+        port=settings["PORT"],
+        dbname=settings["NAME"],
+        user=settings["USER"],
+        password=settings["PASSWORD"],
+        autocommit=False,
+    ) as rotation:
+        rotation.execute("SELECT pg_advisory_xact_lock(%s, %s)", KEY_LOCK)
+        before = ExportRequest.objects.count()
+        code, document = run("export", "directory", *base)
+        assert code == 3 and document["error"]["code"] == "unavailable", document
+        assert ExportRequest.objects.count() == before
+        assert count("admin_cmd_export_directory") == 0
+        rotation.rollback()
+    code, document = run("export", "directory", *base)
+    assert code == 0, document

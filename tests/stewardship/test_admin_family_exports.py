@@ -18,6 +18,8 @@ FAMILY_EXPORTS = (
     "export information",
     "export ministry",
     "export ministry-packet",
+    "export directory",
+    "export postal",
 )
 
 
@@ -93,3 +95,30 @@ def test_each_family_export_is_a_keyed_change_fetched_as_a_file():
         assert entry["audit_event"] == "admin_cmd_" + name.replace(" ", "_").replace(
             "-", "_"
         )
+
+
+def test_a_keyring_loads_only_when_it_matches_the_running_web(tmp_path):
+    """The loader reads the named file once and compares the web's receipt."""
+    import os
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.cryptography import CodeMacKeyring, Key
+    from parishkit.stewardship.accounts.key_files import serialize_keyring
+    from parishkit.stewardship.accounts.metrics_credentials import (
+        credential_receipt,
+    )
+    from parishkit.stewardship.admin_cli import CredentialMismatch, load_keyrings
+
+    raw = serialize_keyring(CodeMacKeyring([Key("m1", "active", b"c" * 32)]))
+    path = tmp_path / "family_code_mac"
+    path.write_bytes(raw)
+    os.chmod(path, 0o600)
+    configuration = SimpleNamespace(secrets={"family_code_mac": path})
+    receipts = {"family_code_mac": credential_receipt(raw, "family_code_mac")}
+    (ring,) = load_keyrings(configuration, receipts, ("family_code_mac",))
+    assert isinstance(ring, CodeMacKeyring)
+    # Another receipt (a rotation in progress), or no such mount: exit 2.
+    with pytest.raises(CredentialMismatch):
+        load_keyrings(configuration, {"family_code_mac": "other"}, ("family_code_mac",))
+    with pytest.raises(CredentialMismatch):
+        load_keyrings(configuration, receipts, ("general_encryption",))
