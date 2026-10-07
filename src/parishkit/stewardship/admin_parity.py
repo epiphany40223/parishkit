@@ -19,6 +19,8 @@ or action lands with its command, or with an exemption here.
 
 from typing import NamedTuple
 
+from parishkit.stewardship.admin_urls.legacy import TARGETS as LEGACY_TARGETS
+
 
 class Parity(NamedTuple):
     """One route's command line counterpart, or why there is none yet."""
@@ -57,6 +59,10 @@ SETUP = (
 )
 IMAGES = "image bytes for the browser; the data is in the matching read"
 UPLOAD = "file uploads; a later pull request may accept --file"
+LEGACY = (
+    "an old address that only redirects to its new page (#525); the "
+    "new page's entry covers it"
+)
 
 LEDGER = {
     # Status and session routes.
@@ -280,4 +286,6 @@ LEDGER = {
             "setup_step",
         )
     },
+    # Old Admin addresses (the URL scheme, #525): redirects, not actions.
+    **{name: permanent(LEGACY) for name in LEGACY_TARGETS},
 }

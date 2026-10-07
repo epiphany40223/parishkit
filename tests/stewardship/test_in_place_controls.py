@@ -84,7 +84,7 @@ def test_background_refresh_keeps_the_view_and_refreshes_in_place():
     link = re.search(r'<a id="background-refresh"[^>]*>', page).group(0)
     assert "data-table-sync" in link and "data-in-place" in link
     assert 'data-in-place-message="List refreshed."' in link
-    assert 'href="/admin/background?state=all&amp;sort=-created' in link
+    assert 'href="/admin/system/background/?state=all&amp;sort=-created' in link
     assert "size=25&amp;page=2#table" in link
     assert '<p id="background-counts" data-table-sync>' in page
 

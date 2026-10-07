@@ -181,7 +181,7 @@ def test_dates_are_days_in_the_browser_zone():
     assert LogQuery().bounds == (None, None)
     # Paging, sorting and the export carry the zone with the other filters.
     assert query.form_values()["zone"] == "America/New_York"
-    table = log_table(query, [], through=NOW, action="/admin/logs")
+    table = log_table(query, [], through=NOW, action="/admin/system/logs/")
     assert ("zone", "America/New_York") in table.carried
 
 
@@ -312,9 +312,13 @@ def test_log_table_carries_filters_and_snapshot_but_no_url():
     )
     rows = [operational(NOW)] * 25
     table = log_table(
-        query, rows, through=NOW, action="/admin/logs", number=2, total=60
+        query, rows, through=NOW, action="/admin/system/logs/", number=2, total=60
     )
-    assert (table.pages, table.method, table.action) == (3, "post", "/admin/logs")
+    assert (table.pages, table.method, table.action) == (
+        3,
+        "post",
+        "/admin/system/logs/",
+    )
     fields = dict(table.next_fields)
     assert fields["actor"] == IDENTIFIER and fields["page"] == "3"
     assert fields["through"] == "2026-09-20T12:00:00.123456+00:00"
@@ -322,7 +326,12 @@ def test_log_table_carries_filters_and_snapshot_but_no_url():
     assert table.aria_sort("time") == "descending"
     assert table.sort_target("time") == "oldest"
     capped = log_table(
-        query, rows, through=NOW, action="/admin/logs", total=10_000, capped=True
+        query,
+        rows,
+        through=NOW,
+        action="/admin/system/logs/",
+        total=10_000,
+        capped=True,
     )
     assert capped.page_label == (1, None) and capped.next_fields
 

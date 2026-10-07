@@ -73,7 +73,9 @@ def form(family_mail, google, request):
                 act(_status(TaskRun.objects.get(pk=ticket.task_id)), "claim"),
                 "permanent_failure",
             )
-            path = f"/admin/background/tasks/{ticket.task_id}/retry-family-preparation"
+            path = (
+                f"/admin/system/background/{ticket.task_id}/family-preparation-retry/"
+            )
             owner, function = family_mail_tasks, "retry_preparation"
             receipts = TaskRun.objects.filter(retry_command_id=identifier)
         browser, _ = signed_in()

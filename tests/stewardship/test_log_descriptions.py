@@ -150,7 +150,10 @@ def test_page_shows_explanation_actor_kind_and_related_link():
         page_context(
             LogQuery(),
             log_table(
-                LogQuery(), [operational, audit], through=NOW, action="/admin/logs"
+                LogQuery(),
+                [operational, audit],
+                through=NOW,
+                action="/admin/system/logs/",
             ),
         ),
     )

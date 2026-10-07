@@ -49,8 +49,8 @@ def post(browser, key):
 def run_of(response):
     """The task root the confirmation leads to."""
     assert response.status_code == 302, response.content
-    assert response["Location"].startswith("/admin/background/task/")
-    return response["Location"].rsplit("/", 1)[-1]
+    assert response["Location"].startswith("/admin/system/background/")
+    return response["Location"].rstrip("/").rsplit("/", 1)[-1]
 
 
 @pytest.mark.usefixtures("source_singletons")
@@ -76,10 +76,13 @@ def test_a_manual_refresh_is_confirmed_keyed_and_coalesced(auth_service, google)
         assert "already waiting" in browser.get(URL).content.decode()
         # The run's page and the task list both say which kind of refresh
         # this is, and the refresh page explains full vs quick updates.
-        task_page = browser.get(f"/admin/background/task/{root}").content.decode()
+        task_page = browser.get(f"/admin/system/background/{root}/").content.decode()
         assert "Full refresh" in task_page
         assert "records checked, not records changed" in task_page
-        assert "(Full refresh)" in browser.get("/admin/background").content.decode()
+        assert (
+            "(Full refresh)"
+            in browser.get("/admin/system/background/").content.decode()
+        )
         assert "automatic quick updates" in browser.get(URL).content.decode()
     assert TaskRun.objects.filter(task_type=TASK_TYPE).count() == 1
     request = SourceRefreshRequest.objects.get()

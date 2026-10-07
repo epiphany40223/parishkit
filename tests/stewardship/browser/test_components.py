@@ -360,14 +360,14 @@ def test_export_cleanup_keyboard_form_posts_only_csrf_and_replay_identity(
 ):
     """Recovery is an accessible explicit form action, never a GET or auto-poll."""
     page.route(
-        "**/admin/background/tasks/*/retry-export-cleanup",
+        "**/admin/system/background/*/export-cleanup-retry/",
         lambda route: route.fulfill(content_type="text/html", body="Retry queued"),
     )
     page.goto(component_origin + "/export-cleanup-task")
     button = page.get_by_role("button", name="Retry export cleanup", exact=True)
     button.focus()
     with page.expect_request(
-        "**/admin/background/tasks/*/retry-export-cleanup"
+        "**/admin/system/background/*/export-cleanup-retry/"
     ) as submitted:
         button.press("Enter")
     assert submitted.value.method == "POST"

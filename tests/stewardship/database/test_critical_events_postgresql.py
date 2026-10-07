@@ -126,7 +126,7 @@ def test_banner_log_link_lists_the_critical_entries(auth_service, google):
     start = page.split('name="start" value="', 1)[1].split('"', 1)[0]
     # Critical operational entries only: no audit tick and no retired Source
     # (#601).
-    form = page[page.index('action="/admin/logs"') :]
+    form = page[page.index('action="/admin/system/logs/"') :]
     form = form[: form.index("</form>")]
     assert 'name="critical" value="yes"' in form
     assert 'name="audit"' not in form and 'name="source"' not in form
@@ -134,7 +134,7 @@ def test_banner_log_link_lists_the_critical_entries(auth_service, google):
     for zone in ("Pacific/Honolulu", "Pacific/Kiritimati"):
         with web():
             response = browser.post(
-                "/admin/logs",
+                "/admin/system/logs/",
                 {
                     "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
                     "applied": "yes",

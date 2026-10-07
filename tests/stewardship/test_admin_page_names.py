@@ -265,6 +265,8 @@ RETIRED = (
     "Families with Testing submissions",
     "How Families will share",
     "Production activation progress",
+    # Retired after NAV-5b review: the setup content editor's old wording.
+    "content list",
     # Retired by NAV-5b.
     "Campaign reports",
     "Financial stewardship detail",

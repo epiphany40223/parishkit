@@ -156,10 +156,10 @@ def test_a_failed_preparation_is_retried_once_per_key(admin, family_mail, google
         assert code == 0 and again["result"]["created"] is False
         assert again["result"]["task"] == result["task"]
         # The page's form with the same key is the same retry, too.
-        path = f"/admin/background/tasks/{task_id}/retry-family-preparation"
+        path = f"/admin/system/background/{task_id}/family-preparation-retry/"
         response = page_retry(browser, path, {"command_id": str(key)})
         assert response.status_code == 302
-        assert response["Location"].endswith(f"/background/task/{created.pk}")
+        assert response["Location"].endswith(f"/system/background/{created.pk}/")
         assert TaskRun.objects.filter(root_id=task_id).count() == 2
         assert len(events()) == 1
 
@@ -179,7 +179,7 @@ def test_a_page_key_repeated_from_the_command_line(admin, family_mail, google): 
         task_id = failed_preparation()
         browser, secret, _ = paired(admin.service)
         key = uuid4()
-        path = f"/admin/background/tasks/{task_id}/retry-family-preparation"
+        path = f"/admin/system/background/{task_id}/family-preparation-retry/"
         assert page_retry(browser, path, {"command_id": str(key)}).status_code == 302
         code, document, _ = retry(admin, secret, task_id, key)
         assert code == 0 and document["result"]["created"] is False, document
