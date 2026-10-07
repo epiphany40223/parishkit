@@ -33,6 +33,8 @@ def measurement(monkeypatch, durations, *, query_count=1):
             return len(self.captured_queries)
 
     monkeypatch.setattr(benchmark, "CaptureQueriesContext", Queries)
+    # The server-counted rows need a database; a fixed count stands in.
+    monkeypatch.setattr(benchmark, "rows_read_by", lambda operation: 7)
 
 
 def operation():
@@ -40,7 +42,7 @@ def operation():
 
 
 def test_timing_failure_reports_p95_and_outlier_without_private_sql(monkeypatch):
-    measurement(monkeypatch, [0.1] * 18 + [2.1, 4.0])
+    measurement(monkeypatch, [0.1] * 18 + [10.1, 12.0])
     with pytest.raises(AssertionError) as error:
         benchmark._measure(operation)
     message = str(error.value)
@@ -48,8 +50,8 @@ def test_timing_failure_reports_p95_and_outlier_without_private_sql(monkeypatch)
     evidence = json.loads(message.splitlines()[0])
     assert evidence["operation"] == "operation"
     assert evidence["sample_queries"] == [1] * 20
-    assert evidence["p95_sample_queries"] == [{"ordinal": 1, "seconds": 1.05}]
-    assert evidence["slowest_sample_queries"] == [{"ordinal": 1, "seconds": 2.0}]
+    assert evidence["p95_sample_queries"] == [{"ordinal": 1, "seconds": 5.05}]
+    assert evidence["slowest_sample_queries"] == [{"ordinal": 1, "seconds": 6.0}]
 
 
 def test_query_budget_failure_also_has_private_value_free_evidence(monkeypatch):
@@ -62,14 +64,15 @@ def test_query_budget_failure_also_has_private_value_free_evidence(monkeypatch):
 
 
 def test_success_retains_exact_percentile_and_query_count(monkeypatch):
-    measurement(monkeypatch, [0.1] * 18 + [1.999, 4.0], query_count=64)
+    measurement(monkeypatch, [0.1] * 18 + [9.999, 12.0], query_count=64)
     assert benchmark._measure(operation) == {
         "queries_max": 64,
-        "p95_seconds": 1.999,
+        "rows_read": 7,
+        "p95_seconds": 9.999,
     }
 
 
-def test_two_second_boundary_still_fails(monkeypatch):
-    measurement(monkeypatch, [0.1] * 18 + [2.0, 2.0])
+def test_ten_second_catastrophic_boundary_still_fails(monkeypatch):
+    measurement(monkeypatch, [0.1] * 18 + [10.0, 10.0])
     with pytest.raises(AssertionError):
         benchmark._measure(operation)

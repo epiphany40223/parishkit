@@ -9,10 +9,12 @@ from django.test.utils import CaptureQueriesContext
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.statistics import calculate_statistics
 from parishkit.stewardship.reports.statistics_selection import (
+    CAPTURE,
     capture_statistics,
     statistics_report,
 )
 
+from .plan_work import analyze_all, assert_linear_plan
 from .test_background_grants_postgresql import task_login
 from .test_financial_source_postgresql import financial_source
 from .test_policy_postgresql import user
@@ -424,8 +426,18 @@ def test_reference_population_capture_is_one_query_and_within_page_budget(
             assert (
                 result.active.eligible_email == result.active.deliverable_email == 5000
             )
+    # The page budget is the capture's work, not its wall clock (#690): CI
+    # packs three PostgreSQL partitions onto each runner, so elapsed time is
+    # shared-CPU noise and only guards against catastrophe. The one capture
+    # statement passes over the population a fixed number of times; a plan
+    # that rescanned an input per household would visit millions of rows.
     p95 = sorted(timings)[18]
-    assert p95 < 2.0, {"p95_seconds": p95, "sample_seconds": timings}
+    assert p95 < 10, {"p95_seconds": p95, "sample_seconds": timings}
+    analyze_all()
+    visited = assert_linear_plan(
+        CAPTURE, (response_service.campaign.pk,), 5000, per_row=80
+    )
+    print(f"Statistics capture rows visited at 5,000 households: {visited}")
 
 
 def test_nonparishioner_head_address_never_enters_private_projection(response_service):

@@ -580,3 +580,45 @@ def test_a_restart_plans_every_family_again(monkeypatch):
     planner.reset_mock()
     drain(module.FamilyScheduleProducer(uuid4()), guard)
     assert sorted(planned(planner)) == sorted(identifiers)
+
+
+def test_an_idle_check_costs_time_linear_in_the_families(monkeypatch):
+    """The idle comparison is linear in Families, however busy the CPU (#690).
+
+    The PostgreSQL idle-sweep test bounds statements and the read's plan, but
+    on packed CI runners its wall clock can only guard against catastrophe.
+    This times the Python side alone at two populations ten times apart,
+    interleaved so a busy machine slows both alike, and compares the best
+    sample of each: a linear comparison costs about ten times as much at ten
+    times the Families (less, with fixed per-loop work), a quadratic one
+    about a hundred times.
+    """
+    from time import perf_counter
+
+    guard = Mock(spec=SchedulerGuard)
+
+    def idle(count):
+        """A producer whose first pass is done, and its patched inputs."""
+        inputs = sweep(monkeypatch, [uuid4() for _ in range(count)], idle_planner())
+        producer = module.FamilyScheduleProducer(uuid4())
+        producer(guard)
+        # The first loop queued every Family; consider them all planned.
+        producer.pending.clear()
+        return producer, inputs
+
+    def sample(producer, inputs, samples):
+        """Time one idle loop of ``producer`` against its ``inputs``."""
+        monkeypatch.setattr(module, "_runtime", lambda: inputs.runtime)
+        monkeypatch.setattr(module, "_campaign_inputs", inputs.campaign_inputs)
+        monkeypatch.setattr(module, "_family_inputs", inputs.family_inputs)
+        started = perf_counter()
+        assert producer(guard) == ()
+        samples.append(perf_counter() - started)
+
+    small, large = idle(270), idle(2700)
+    small_samples, large_samples = [], []
+    for _ in range(15):
+        sample(*small, small_samples)
+        sample(*large, large_samples)
+    ratio = min(large_samples) / min(small_samples)
+    assert ratio < 30, (ratio, small_samples, large_samples)

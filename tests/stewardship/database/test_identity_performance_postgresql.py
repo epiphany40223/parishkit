@@ -20,13 +20,21 @@ from parishkit.stewardship.campaigns.models import Campaign
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, campaign_clock, command
 from .credential_builders import keys, populate
+from .plan_work import analyze_all, rows_read_by
 from .test_family_auth_postgresql import family_service, login  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def _measure(operation, *, samples=20, query_limit=64):
-    """Record safe aggregate evidence and enforce the ordinary-page p95 budget."""
+    """Record safe aggregate evidence and enforce the ordinary-page budget.
+
+    The budget is work, not wall-clock time (#690): CI packs three PostgreSQL
+    partitions onto each runner, so elapsed time is shared-CPU noise. The
+    statement count is bounded here and returned with the rows one call
+    reads (``rows_read``, counted by the server), so callers compare both
+    across populations. The p95 bound only guards against catastrophe.
+    """
     timings, counts, database_timings = [], [], []
     for _ in range(samples):
         with CaptureQueriesContext(connection) as queries:
@@ -54,8 +62,24 @@ def _measure(operation, *, samples=20, query_limit=64):
         "slowest_sample_queries": database_timings[ranked[-1]],
     }
     assert max(counts) <= query_limit, json.dumps(evidence, sort_keys=True)
-    assert p95 < 2.0, json.dumps(evidence, sort_keys=True)
-    return {"queries_max": max(counts), "p95_seconds": round(p95, 4)}
+    assert p95 < 10, json.dumps(evidence, sort_keys=True)
+    return {
+        "queries_max": max(counts),
+        # Another connection's late statistics flush can only add rows to
+        # one count, never remove them, so the fewest of three is this
+        # operation's own.
+        "rows_read": min(rows_read_by(operation) for _ in range(3)),
+        "p95_seconds": round(p95, 4),
+    }
+
+
+def assert_population_independent(small, large):
+    """An indexed lookup reads about as many rows at 5,000 Families as at one.
+
+    A scan of the Families (or their codes) would add thousands of rows; the
+    margin absorbs a few extra index entries in a deeper index.
+    """
+    assert large["rows_read"] < small["rows_read"] + 100, (small, large)
 
 
 def test_reference_family_population_does_not_expand_interactive_queries(
@@ -83,8 +107,10 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         generation=2,
     )
     assert FamilyCampaign.objects.count() == 5000
+    analyze_all()
     large = _measure(code_lookup)
     assert large["queries_max"] == small["queries_max"]
+    assert_population_independent(small, large)
     for _ in range(100):
         browser, response = login(family_service.code)
         assert response.status_code == 302
@@ -135,6 +161,8 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         "admin_shell": _measure(admin_page, query_limit=49),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))
+    # A Family page reads its own session and Family, never the population.
+    assert result["family_page_100_sessions"]["rows_read"] < 1000, result
 
 
 def test_production_lookup_and_sessions_at_reference_population(auth_service, settings):
@@ -169,8 +197,10 @@ def test_production_lookup_and_sessions_at_reference_population(auth_service, se
             generation=2,
         )
         promotion_seconds = perf_counter() - started
+        analyze_all()
         large = _measure(production_lookup)
         assert small["queries_max"] == large["queries_max"]
+        assert_population_independent(small, large)
         assert FamilyCampaign.objects.count() == 5000
         for _ in range(100):
             browser, response = login(code)
@@ -178,17 +208,20 @@ def test_production_lookup_and_sessions_at_reference_population(auth_service, se
         assert FamilySession.objects.filter(mode="production").count() == 100
 
         def production_page():
+            """A Family page under one of 100 Production sessions."""
             assert browser.get("/family/").status_code == 200
 
+        page = _measure(production_page)
         print(
             "Production identity baseline: "
             + json.dumps(
                 {
                     "lookup_1_family": small,
                     "lookup_5000_families": large,
-                    "family_page_100_sessions": _measure(production_page),
+                    "family_page_100_sessions": page,
                     "atomic_arrival_seconds": round(promotion_seconds, 4),
                 },
                 sort_keys=True,
             )
         )
+        assert page["rows_read"] < 1000, page

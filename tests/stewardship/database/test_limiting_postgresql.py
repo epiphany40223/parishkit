@@ -385,7 +385,11 @@ def test_authentication_observation_lock_wait_is_bounded(auth_service, key):
                 record_incident("limiter_unavailable", 2, 0, (0, 0, 0, 0))
             else:
                 auth_service.limiter.check_health(force=True)
-        assert monotonic() - start < 5
+        # The observer keeps the lock until this test ends, so returning at
+        # all proves the wait is bounded. The waits' lock timeouts are 1 s;
+        # the elapsed bound leaves room for CI's shared CPUs (#690) and still
+        # fails a wait lengthened toward the old indefinite pin.
+        assert monotonic() - start < 15
     finally:
         other.close()
 

@@ -302,6 +302,11 @@ def test_inflight_check_skips_while_the_work_order_lock_is_busy():
     While another transaction holds the deployment-wide work-order lock the
     check gives up after INFLIGHT_LOCK_SECONDS and skips the tick; once the
     lock is free it runs in full again and still enforces domain admission.
+
+    The proof is event ordering, not elapsed time (#690): the writer keeps
+    the lock until the check has returned, so a check that waited for the
+    lock could only return after the writer's catastrophic-guard timeout
+    gave up. A shared CI CPU can slow the check down but cannot reorder it.
     """
     import threading
     import time
@@ -314,13 +319,19 @@ def test_inflight_check_skips_while_the_work_order_lock_is_busy():
 
     task, effects, seen = queued(), [True], []
     held, release = threading.Event(), threading.Event()
+    gave_up = []
 
     def hold():
-        """Another session's writer, holding the work-order lock for a while."""
+        """Another session's writer, holding the work-order lock until told.
+
+        ``gave_up`` records a writer that stopped waiting on its own: only a
+        check that never skipped (an unbounded lock wait) leaves it waiting
+        that long.
+        """
         try:
             with work_transaction():
                 held.set()
-                release.wait(10)
+                gave_up.append(not release.wait(60))
         finally:
             connections.close_all()
 
@@ -328,14 +339,14 @@ def test_inflight_check_skips_while_the_work_order_lock_is_busy():
         thread = threading.Thread(target=hold)
         thread.start()
         try:
-            held.wait(5)
+            assert held.wait(30)
             effects[0] = False  # Would refuse, if the check got to run.
             started = time.monotonic()
             context.check_inflight()
             seen.append(time.monotonic() - started)
         finally:
             release.set()
-            thread.join(10)
+            thread.join(70)
         with pytest.raises(PermissionError):
             context.check_inflight()
         effects[0] = True
@@ -354,7 +365,12 @@ def test_inflight_check_skips_while_the_work_order_lock_is_busy():
         worker_id=uuid4(),
         handlers={"dispatch_probe": handler},
     )
-    assert INFLIGHT_LOCK_SECONDS <= seen[0] < INFLIGHT_LOCK_SECONDS + 2
+    # The check returned while the writer still held the lock: it skipped
+    # rather than waited. A slow CPU only lengthens the wait, so the lower
+    # bound (it did wait for the limit) is contention-proof as it stands.
+    # The upper bound is only a catastrophic guard.
+    assert gave_up == [False]
+    assert INFLIGHT_LOCK_SECONDS <= seen[0] < INFLIGHT_LOCK_SECONDS + 30
     assert TaskRun.objects.get(pk=task.run_id).state == "succeeded"
     # The one skipped tick left a durable entry: what stopped it, the limit
     # and how long the tick ran (#293's timeout log).

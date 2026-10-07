@@ -242,26 +242,29 @@ def test_whole_family_delivery_runs_beside_a_long_family_login(
     """No step of a Family delivery waits for a login's shared locks (#147).
 
     Another session holds a login's FOR SHARE locks on the runtime and
-    credential rows for up to 12 s while the whole delivery runs: claim,
-    effect, submission (with its schedule planning), in-flight checks,
-    outcome and completion. Any FOR UPDATE on those rows anywhere on that
+    credential rows until the whole delivery has run: claim, effect,
+    submission (with its schedule planning), in-flight checks, outcome and
+    completion. Any FOR UPDATE on those rows anywhere on that
     path, including a shared lock later upgraded, would wait for the
-    login, so the delivery must finish well before the share is released.
+    login, so the delivery must finish while the share is still held. The
+    proof is that ordering, not elapsed time (#690): a delivery that waited
+    could only finish once the login gave up after its 60 s catastrophic
+    guard, however fast or slow the CPU.
     """
     harness, path = dispatch_worker
     if production:
         harness = activate_response_service(harness)
         complete_empty_catchup(harness.campaign, uuid4())
     settings = dict(connection.settings_dict)
-    ready, release = Event(), Event()
+    ready, release, gave_up = Event(), Event(), []
 
     def login():
-        """Hold a login's shares until released, or 12 s at most."""
+        """Hold a login's shares until released, or 60 s at most."""
         with other_session(settings) as other, other.transaction():
             for table in LOGIN_ROWS:
                 other.execute(f"SELECT id FROM {table} FOR SHARE")
             ready.set()
-            release.wait(12)
+            gave_up.append(not release.wait(60))
 
     def provider(value, settings, mail, *, seconds, check, session):
         for _ in range(6):
@@ -283,7 +286,7 @@ def test_whole_family_delivery_runs_beside_a_long_family_login(
                 release.set()
             held.result()
     assert TaskRun.objects.get(pk=message.task_id).state == "succeeded"
-    assert took < 8, took
+    assert gave_up == [False], took
 
 
 def test_family_mail_admission_does_not_hold_up_family_logins(
