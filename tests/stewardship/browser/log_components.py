@@ -18,6 +18,9 @@ from parishkit.stewardship.audit.log_rows import (
 from parishkit.stewardship.audit.log_views import ZONE_MESSAGE
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 
+# Where the in-place cross-link tests serve System logs (#519 PR 3).
+LIVE = "/logs-live"
+
 # Entries whose context System logs explains in words (#633): a recovery,
 # late scheduled work and a ParishSoft call that will be retried.
 DETAILED = (
@@ -196,6 +199,35 @@ def components(context, admin):
             ),
         ),
     }
+
+    # The page as the in-place cross-links (#519 PR 3) need it: each answer
+    # must be this same page, so it is served at the address its forms post
+    # to. The menu tests already serve their own page at the real System
+    # logs address, so this one lives at LIVE and its cross-links post there
+    # (their action, the real address, is rewritten). Every kind of entry,
+    # no identifier filter yet. The cross-links' answers follow: the audit
+    # record's related entries and its campaign's audit records (each still
+    # listing that record), and a Same actor answer that no longer lists the
+    # entry it was chosen from.
+    def live(query, rows, **options):
+        """``page`` with every form posting to LIVE."""
+        html = page(query, rows, action=LIVE, **options)
+        return html.replace('action="/admin/logs#', f'action="{LIVE}#')
+
+    ticks = {key: "yes" for key in ("applied", "info", "warning", "error", "audit")}
+    shown = LogQuery.parse(ticks)
+    result[LIVE] = ("text/html", live(shown, rows, total=30))
+    for path, parameters, found in (
+        ("/logs-related", {"correlation": str(UUID(int=302))}, [audit[0]]),
+        (
+            "/logs-campaign",
+            {"applied": "yes", "audit": "yes", "campaign": str(UUID(int=303))},
+            [audit[0]],
+        ),
+        ("/logs-actor", {"actor": str(UUID(int=900))}, [operational[1]]),
+        ("/logs-live-oldest", ticks | {"sort": "oldest"}, rows[::-1]),
+    ):
+        result[path] = ("text/html", live(LogQuery.parse(parameters), found))
     # The three error states: a refused filter value, a refused query string
     # and an outage, which is also what a denied reader sees.
     errors = {

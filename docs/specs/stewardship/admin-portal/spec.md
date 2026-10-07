@@ -1161,8 +1161,16 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   follow-up request's history, and a weekly information report) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page: Save follow-up on an information item and on a
-  [Ministry follow-up request](#follow-up-workflows)) names its region by its
-  URL's fragment. A checkbox marked
+  [Ministry follow-up request](#follow-up-workflows), and System logs'
+  cross-links, whose answer is the filtered page) names its region by its
+  URL's fragment. A POST form saves a change unless it is marked
+  `data-in-place-read` (the System logs cross-links only read): a read may
+  be cancelled by a newer choice and, with no answer at all, falls back to
+  the ordinary submission. A form marked `data-in-place-filters` sets the
+  page's filters from outside its filter form, so after the swap the filter
+  form's visible fields, and any disclosure in it, show what the fresh page
+  applied, and the next Apply, sort or page keeps them; every other swap
+  leaves filters typed but not yet applied alone. A checkbox marked
   `data-submit-on-change` submits its own `form[data-in-place]` as soon as it
   changes, with no Apply button (the Admin portal requires script), and keeps
   focus. Each page records the state it shows on the box. The box submits
@@ -3982,7 +3990,11 @@ Only Admins access the combined log screen. It supports:
 - cross-links from every entry: "Show related entries" (same correlation
   identifier), "Same actor", "Same campaign" (audit records) and, for task
   entries and views of one task's page, "Open task" to the background task
-  page. Each filter travels in a POST body like the form's. The raw
+  page. Each filter travels in a POST body like the form's and applies
+  [in place](#in-place-controls): the filter form above then shows the
+  filters applied ("Filter by identifier" opened), and focus returns to the
+  same entry's button in the filtered list, or to the list when that entry
+  is no longer in it. The raw
   identifiers themselves (correlation, actor, campaign, subject) are under a
   per-row "Technical details" disclosure, closed by default; the table uses
   the shared Admin table styling;

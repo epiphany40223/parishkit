@@ -226,3 +226,24 @@ def test_delivery_resolution_forms_stay_outside_the_history():
     text = (TEMPLATES / "delivery.html").read_text()
     history = region_body(text, "delivery-history")
     assert "<form" not in history and "Attempt history" in history
+
+
+def test_log_cross_links_filter_in_place():
+    """System logs' Show related entries, Same actor and Same campaign (#519
+    PR 3) filter in place: each is a data-in-place POST that only reads
+    (never a save), sets the filter form's visible fields from the answer,
+    says what it showed, lands on the table, and has a button id unique to
+    its entry so focus can return to it."""
+    text = (TEMPLATES / "logs.html").read_text()
+    forms = re.findall(
+        r'<form method="post" action="\{% url \'admin:logs\' %\}#[^>]*>', text
+    )
+    assert len(forms) == 3
+    for form in forms:
+        assert '#{{ table.anchor }}"' in form
+        for mark in ("data-in-place ", "data-in-place-read", "data-in-place-filters"):
+            assert mark in form, (mark, form)
+        assert "data-in-place-message=" in form
+    for kind in ("related", "actor", "campaign"):
+        assert f'id="log-{{{{ row.icon }}}}-{{{{ row.id }}}}-{kind}"' in text
+    assert '<details id="log-identifier-filters"' in text
