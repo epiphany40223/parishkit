@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from django.db import connection, transaction
 from django.http import QueryDict
+from django.test import Client
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditContext
@@ -395,11 +396,16 @@ def test_staff_directories_survive_limiter_outage_but_not_revocation(
     # The directory without and with its mailing columns (once postal outreach).
     route = f"/admin/reports/{harness.campaign.pk}/families/"
     routes = [route, route + "?mailing=yes"]
+    find = f"/admin/reports/{harness.campaign.pk}/families/find"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         for route in routes:
             assert read(browser, route)[0].status_code == 200
         response, body = search(browser, routes[0], {"exact_code": harness.code})
         assert response.status_code == 200 and harness.code.encode() in body
+        # Staff get the header's Find a Family box and its results (#561).
+        assert f'action="{find}"'.encode() in read(browser, "/admin/")[1]
+        response, body = search(browser, find, {"search": "examp"})
+        assert response.status_code == 200 and b"1 Family found" in body
     # Future purge owner's sentinel only, in a disposable test DB. Preparation
     # must preserve these read-only views without granting campaign mutation.
     with transaction.atomic(), connection.cursor() as cursor:
@@ -436,6 +442,10 @@ def test_staff_directories_survive_limiter_outage_but_not_revocation(
         ],
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # A Ministry leader gets no box, and the route refuses them (#561).
+        assert b"data-find-family" not in read(browser, "/admin/")[1]
+        response, body = search(browser, find, {"search": "examp"})
+        assert response.status_code == 403 and body == b""
         for route in routes:
             response, body = read(browser, route)
             assert response.status_code == 403 and harness.code.encode() not in body
@@ -837,3 +847,66 @@ def test_head_emails_never_read_a_compacted_snapshot(monkeypatch):
         # Its own source, while still there, is preferred.
         _, chosen = _head_contacts(records[1].pk, keys, current=True)
         assert chosen[0] == records[1].pk
+
+
+def test_find_a_family_runs_the_directory_search_privately(
+    live_response_service, google
+):
+    """The header box's route (#561): directory matches, POST only, no codes.
+
+    Results come from the directory's own selection, open the Family
+    timeline, carry no Family code, and are never cached. The route accepts
+    only a CSRF POST of the search text, at least 2 characters, and the
+    audit records that a search was used, never its text.
+    """
+    harness = live_response_service
+    browser, _ = signed_in()
+    find = f"/admin/reports/{harness.campaign.pk}/families/find"
+    timeline = f"/admin/reports/{harness.campaign.pk}/families/"
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        home = read(browser, "/admin/")[1]
+        assert f'<form method="post" action="{find}" role="search"'.encode() in home
+        for text in ("examp", " MEMBER ", "example street"):
+            response, body = search(browser, find, {"search": text})
+            assert response.status_code == 200, text
+            assert response["Cache-Control"] == "no-store"
+            assert b"1 Family found" in body, text
+            assert re.search(
+                rf'<a href="{timeline}[0-9a-f-]{{36}}/" data-find-family-result>'
+                rf'<span class="find-family-name">Example, Member</span>'.encode(),
+                body,
+            )
+            assert harness.code.encode() not in body and b"See all" not in body
+        response, body = search(browser, find, {"search": "nobody here"})
+        assert response.status_code == 200 and b"No Family matches." in body
+        # Too short, another filter, a query string, or no CSRF token.
+        for values in (
+            {"search": "e"},
+            {"search": " e "},
+            {"search": "ex", "sort": "duid"},
+        ):
+            response, body = search(browser, find, values)
+            assert response.status_code == 400 and body == b"", values
+        assert (
+            search(browser, find + "?search=ex", {"search": "ex"})[0].status_code == 400
+        )
+        assert read(browser, find)[0].status_code == 405
+        assert browser.post(find, {"search": "examp"}).status_code == 403
+        # Another campaign's address (not the current one) and a signed-out
+        # browser both get the bare refusal the box's script words itself.
+        other = f"/admin/reports/{uuid4()}/families/find"
+        response, body = search(browser, other, {"search": "examp"})
+        assert response.status_code == 403 and body == b""
+        anonymous = Client()
+        response = anonymous.post(find, {"search": "examp"})
+        assert response.status_code == 403 and response.content == b""
+    contexts = [
+        context
+        for context in AuditContext.objects.filter(
+            event__event_type="family_directory_viewed"
+        ).values_list("context", flat=True)
+        if context["search_used"]
+    ]
+    assert contexts and "xamp" not in json.dumps(contexts).lower()
+    assert "Example" not in json.dumps(contexts)
+    assert any(context["matching_count"] == 1 for context in contexts)

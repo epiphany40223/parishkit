@@ -413,7 +413,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [ ] ADM-12.19 — NAV-16: add the ways back (#521), including the test-email origin kept in the session.
 - [ ] ADM-12.20 — NAV-17: add the reachability and no-UUID crawl test.
 - [ ] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
-- [ ] ADM-12.22 — NAV-19: add the Find a Family header search (#561).
+- [x] ADM-12.22 — NAV-19: add the Find a Family header search (#561).
 
 Evidence: In progress. ADM-12.00 merged in PR #568: the
 specification states the JavaScript requirement once and links it from the
@@ -470,6 +470,23 @@ report suites (a non-current campaign refused with 410, after access is
 checked with 403; choosers redirect) and
 `tests/stewardship/browser/test_single_campaign.py` (the Copy campaign tip on
 hover, focus and tap, on Chromium and WebKit).
+ADM-12.22 (NAV-19) adds the header's Find a Family box for Administrators and
+Staff: `admin_context.py` offers it only when the viewer's menu offers the
+Family directory (no extra query), and the non-page `find_family` route runs
+the directory's installed search by CSRF POST, rechecks directory and
+timeline access inside the campaign read guard, and audits the search as a
+directory view without its text; `find-family-v1.js` searches after a pause,
+for 2 or more characters, cancelling older searches. Member names and the
+envelope number are #664. It is proven by
+`tests/stewardship/test_find_family.py` (who gets the box, its markup and the
+results fragment), `tests/stewardship/database/test_directories_postgresql.py`
+(results, POST-only refusals, no codes, `no-store`, audit without the text,
+Staff allowed and a Ministry leader refused),
+`tests/stewardship/database/test_identity_performance_postgresql.py` (the
+Admin shell's query budget unchanged) and
+`tests/stewardship/browser/test_find_family.py` (one request after a pause,
+the keyboard path, refusals, WCAG checks at phone and desktop widths, on
+Chromium and WebKit).
 
 ## ADM-13: System health page
 

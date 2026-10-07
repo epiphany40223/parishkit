@@ -525,6 +525,8 @@ NON_PAGES = frozenset(
         "export_download_grant",
         "export_status",
         "family_directory_export",
+        # The header's Find a Family results (#561), a fragment for its box.
+        "find_family",
         "hosted_file_upload",
         "financial_export",
         "information_export",

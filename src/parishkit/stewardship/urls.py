@@ -209,6 +209,11 @@ admin_patterns = [
         name="family_directory",
     ),
     path(
+        "reports/<uuid:campaign_id>/families/find",
+        directory_views.find_family,
+        name="find_family",
+    ),
+    path(
         "reports/<uuid:campaign_id>/families/<uuid:family_id>/",
         family_timeline_views.family_timeline,
         name="family_timeline",
