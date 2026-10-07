@@ -2,7 +2,17 @@
 
 import pytest
 
-from .system_health_components import DATED, HEALTHY, PAGE, STEADY
+from .system_health_components import (
+    BACKUP_BUSY,
+    BACKUP_PAGE,
+    BACKUP_PREVIEW,
+    BACKUP_REQUESTED,
+    BACKUP_STEP_UP,
+    DATED,
+    HEALTHY,
+    PAGE,
+    STEADY,
+)
 from .waits import visible
 
 
@@ -185,3 +195,144 @@ def test_last_checked_does_not_advance_while_a_swap_is_held(page, component_orig
     # Once the selection ends, the next poll is adopted and "Last checked" moves.
     page.evaluate("window.getSelection().removeAllRanges()")
     expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
+
+
+def _routed(page, component_origin, answers):
+    """Answer the page's own POSTs as the view would, by the posted action.
+
+    ``answers`` maps an action to ``(status, component path)``; GETs of the
+    page go to the component server unchanged.
+    """
+    from urllib.request import urlopen
+
+    bodies = {}
+    for action, (status, path) in answers.items():
+        with urlopen(component_origin + path) as response:
+            bodies[action] = (status, response.read().decode())
+
+    def respond(route):
+        """Fulfil a POST from ``answers``; let anything else through."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        data = route.request.post_data or ""
+        action = next(name for name in bodies if f"action={name}" in data)
+        status, body = bodies[action]
+        route.fulfill(status=status, content_type="text/html", body=body)
+
+    page.route(f"{component_origin}{BACKUP_PAGE}", respond)
+
+
+def _not_reloaded(page):
+    """Mark the document, so a reload or a rewritten document loses the mark."""
+    page.evaluate("document.body.dataset.notReloaded = 'yes'")
+    return lambda: page.evaluate("document.body.dataset.notReloaded === 'yes'")
+
+
+def test_take_a_backup_now_previews_and_confirms_in_place(
+    page, component_origin, axe_source
+):
+    """Preview, then confirm, each swapped into the region; focus follows.
+
+    The page and its POST answers share the page's own address, as in the
+    app, so ui-v1.js swaps #backup-now in place.
+    """
+    _routed(
+        page,
+        component_origin,
+        {"preview": (200, BACKUP_PREVIEW), "confirm": (200, BACKUP_REQUESTED)},
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    page.locator("#backup-now").get_by_role("button", name="Take a backup now…").click()
+    confirm = page.get_by_role("button", name="Confirm: take a backup now")
+    expect(confirm).to_be_visible()
+    expect(confirm).to_be_focused()
+    visible(page.get_by_text("the backup will wait until the send finishes"))
+    page.evaluate(axe_source)
+    assert (
+        page.evaluate("""async () => (await axe.run(document, {
+        runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
+    })).violations.map(({id,impact}) => ({id,impact}))""")
+        == []
+    )
+    confirm.click()
+    expect(page.get_by_text("Backup requested at")).to_be_visible()
+    assert kept()
+    assert page.evaluate(
+        "document.getElementById('backup-now').contains(document.activeElement)"
+    )
+
+
+def test_refusals_answer_inside_the_region(page, component_origin):
+    """A stale sign-in offers the step-up, a race says so; never raw JSON."""
+    _routed(page, component_origin, {"preview": (403, BACKUP_STEP_UP)})
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    page.locator("#backup-now").get_by_role("button", name="Take a backup now…").click()
+    region = page.locator("#backup-now")
+    expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
+    assert kept()
+    assert '"errors"' not in page.content()
+    page.unroute(f"{component_origin}{BACKUP_PAGE}")
+    _routed(page, component_origin, {"preview": (409, BACKUP_BUSY)})
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    page.locator("#backup-now").get_by_role("button", name="Take a backup now…").click()
+    expect(region.get_by_text("A backup is already requested")).to_be_visible()
+    assert kept()
+
+
+def test_the_button_follows_a_request_made_elsewhere(page, component_origin):
+    """The poll greys the button when another request starts waiting."""
+    page.goto(component_origin + BACKUP_PAGE)
+    region = page.locator("#backup-now")
+    expect(region.get_by_role("button", name="Take a backup now…")).to_be_enabled()
+    expect(region.get_by_role("button", name="Take a backup now…")).to_be_disabled(
+        timeout=30000
+    )
+    visible(region.get_by_text("and is waiting."))
+
+
+def test_an_unchanged_poll_leaves_the_button_in_place(page, component_origin):
+    """The first poll bringing the same button keeps the page's own element.
+
+    Replacing an unchanged button could lose a click landing just then.
+    """
+    page.goto(component_origin + STEADY)
+    page.evaluate(
+        "document.querySelector('[data-live-mirror-target] form')"
+        ".dataset.original = 'yes'"
+    )
+    checked = page.locator("time[data-live-checked]")
+    expect(checked).not_to_have_attribute(
+        "datetime", checked.get_attribute("datetime"), timeout=30000
+    )
+    assert page.evaluate(
+        "document.querySelector('[data-live-mirror-target] form')"
+        ".dataset.original === 'yes'"
+    )
+
+
+def test_the_button_catches_up_once_the_reader_leaves_it(page, component_origin):
+    """A poll skipped while the button had focus is applied once focus moves.
+
+    The polled region then stays the same, so the copy must still be put in
+    on a later poll, not only when the region changes.
+    """
+    page.goto(component_origin + BACKUP_PAGE)
+    region = page.locator("#backup-now")
+    button = region.get_by_role("button", name="Take a backup now…")
+    button.focus()
+    # The first poll brings the waiting request; the focused button is left.
+    page.wait_for_function(
+        """() => document.querySelector(
+            '[data-live-status] template[data-live-mirror]'
+        ).innerHTML.includes('disabled')""",
+        timeout=30000,
+    )
+    expect(button).to_be_enabled()
+    expect(button).to_be_focused()
+    page.evaluate("document.activeElement.blur()")
+    expect(button).to_be_disabled(timeout=30000)
+    visible(region.get_by_text("and is waiting."))

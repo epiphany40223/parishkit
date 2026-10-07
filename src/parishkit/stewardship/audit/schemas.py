@@ -103,6 +103,8 @@ class Action(StrEnum):
     SYSTEM_LOGS_EXPORTED = "system_logs_exported"
     # Opening System health (ADM-13); its count is the problems it showed.
     SYSTEM_HEALTH_VIEWED = "system_health_viewed"
+    # Take a backup now (ADM-13 PR 3b); the subject is the request.
+    BACKUP_REQUESTED = "backup_requested"
     PRESENCE_VIEWED = "family_presence_viewed"
     # The operator's one-time engagement backfill (#477), with its counts.
     FAMILY_ENGAGEMENT_BACKFILLED = "family_engagement_backfilled"
