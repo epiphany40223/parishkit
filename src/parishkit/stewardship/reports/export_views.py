@@ -14,21 +14,20 @@ from django.shortcuts import redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts.admin_caller import AdminCaller
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, Outcome
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
-from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
+from parishkit.stewardship.jobs.task_retries import retry_export_cleanup_task
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
 
 from .artifacts import ArtifactChunks, ArtifactReceipt
-from .export_cleanup import TASK_TYPE as CLEANUP_TASK_TYPE
-from .export_cleanup import retry_cleanup
 from .export_models import ExportPublication
 from .export_services import (
     ExportConflict,
@@ -181,17 +180,15 @@ def retry_cleanup_command(request, task_id):
     """An Admin retries only the selected failed cleanup, with a replay-safe POST."""
     try:
         service = runtime()
-        principal = _principal(request, service.store)
+        principal = _principal(AdminCaller.from_request(request), service.store)
         if not allows(principal, Capability.BACKGROUND_WORK):
             raise PermissionError("Export cleanup requires an Administrator.")
         values = _body(request, {"request_key"})
-        task = TaskRun.objects.get(pk=task_id, task_type=CLEANUP_TASK_TYPE)
-        result = retry_cleanup(
+        result = retry_export_cleanup_task(
             service.store,
-            principal.identity,
-            task.domain_request_id,
+            principal,
+            task_id,
             request_key=UUID(values["request_key"]),
-            run_id=task_id,
         )
         response = redirect("admin:background_task_page", task_id=result.run_id)
         response["Cache-Control"] = "no-store"

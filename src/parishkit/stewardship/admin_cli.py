@@ -36,9 +36,9 @@ progress``, ``send history``, ``schedule show``, ``go-live readiness`` and
 ``admin_reads``. ``task show``, ``send progress`` and ``go-live progress``
 take ``--watch``. The schedule change commands (``schedule preview`` and
 ``schedule confirm``, in ``admin_changes``) and ``config request show``
-(with ``--watch``) follow (PR 4). Other areas join the same subparser tree in
-later pull requests, each listed in the catalog with the pull request that
-added it.
+(with ``--watch``) follow (PR 4), then ``task retry`` (PR 9, in
+``admin_operations``). Other areas join the same subparser tree in later pull
+requests, each listed in the catalog with the pull request that added it.
 """
 
 import argparse
@@ -726,6 +726,30 @@ def config_request_show(args, preamble, runtime, context):
     return read_config_request(context["caller"], runtime, args.request_id)
 
 
+def task_retry(args, preamble, runtime, context):
+    """Retry a failed background task as its page's Retry button does (PR 9).
+
+    Without ``--request-key`` a new key is made and written to standard error
+    before anything is done, so a run that crashes can be repeated with it.
+    """
+    from uuid import uuid4
+
+    from .admin_operations import retry_task
+
+    key = args.request_key
+    if key is None:
+        key = uuid4()
+        print(
+            f"pk-admin: request key {key}; repeat with --request-key {key} "
+            "to retry safely.",
+            file=context["stderr"],
+            flush=True,
+        )
+    return retry_task(
+        context["caller"], runtime, args.task_id, request_key=key, context=context
+    )
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -843,6 +867,17 @@ def _config_request_options(parser):
     """Options of ``config request show``: the request, and --watch."""
     parser.add_argument("request_id", type=_uuid, metavar="REQUEST_ID")
     _watch_options(parser)
+
+
+def _task_retry_options(parser):
+    """Options of ``task retry``: the failed task, and the request key."""
+    parser.add_argument("task_id", type=_uuid, metavar="TASK_ID")
+    parser.add_argument(
+        "--request-key",
+        type=_uuid,
+        help="a UUID that makes a repeat safe (default: a new one, "
+        "written to standard error)",
+    )
 
 
 def _go_live_progress_options(parser):
@@ -1125,7 +1160,26 @@ def _change_specs():
     )
 
 
-COMMANDS = COMMANDS + _read_specs() + _change_specs()
+def _operation_specs():
+    """The operations commands (PR 9): task retry."""
+    from .admin_operations import TaskRetry
+
+    return (
+        CommandSpec(
+            "task retry",
+            "Retry a failed background task, as its page's Retry does.",
+            task_retry,
+            "full",
+            True,
+            TaskRetry.field_names(),
+            9,
+            options=(_task_retry_options,),
+            request_key=True,
+        ),
+    )
+
+
+COMMANDS = COMMANDS + _read_specs() + _change_specs() + _operation_specs()
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 
 
@@ -1384,7 +1438,7 @@ def run(args, *, stdin, stdout, stderr):
             print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
 
         # "audit": only the first read of a --watch records the page's view.
-        context = {"final": True, "audit": True, "stdin": stdin}
+        context = {"final": True, "audit": True, "stdin": stdin, "stderr": stderr}
         admitted_process = False
         caller = None
         try:
@@ -1442,7 +1496,8 @@ def run(args, *, stdin, stdout, stderr):
                 output["error"]["fields"] = error.fields
             if code == "outcome_unknown" and context.get("request_id"):
                 # The request the command may have recorded, fixed before it
-                # acted, so the operator can read it (config request show).
+                # acted, so the operator can read it (config request show) or
+                # repeat with it (task retry --request-key).
                 output["error"]["request_id"] = context["request_id"]
             if isinstance(error, WatchTimeout) and error.model is not None:
                 # The last state read, as the specification asks.

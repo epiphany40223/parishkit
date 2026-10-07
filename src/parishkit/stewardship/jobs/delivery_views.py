@@ -14,17 +14,14 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_POST, require_safe
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts.admin_caller import AdminCaller
 from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
-from parishkit.stewardship.accounts.models import PortalSession
-from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import (
@@ -57,6 +54,14 @@ from .outbox_models import OutboxEvent, OutboxMessage
 from .recipient_models import RecipientRefusal, RecipientRefusalResolution
 from .send_history import SendKey, describe
 from .storage import TaskRetryConflict
+from .task_retries import (
+    DAILY_DIGEST,
+    FAMILY_PREPARATION,
+    WEEKLY_DIGEST,
+    background_principal,
+    command_scope,
+    retry_preparation_task,
+)
 
 UNAVAILABLE = (
     ConfigError,
@@ -118,43 +123,18 @@ def _error(code, status):
 
 def _principal(request, store, *, final=False, activity=False):
     """Polling/read views never extend idle expiry; forms require current Admin."""
-    actor = authenticated_admin(
-        request, store=store, activity=activity, read_only=final
-    )
-    if not allows(actor, Capability.BACKGROUND_WORK):
-        raise PermissionError("Delivery administration is unavailable.")
-    return actor
+    return background_principal(request, store, final=final, activity=activity)
 
 
 @contextmanager
 def _command_scope(request, service, actor):
-    """Lock the live session after the work boundary and retain it through commit.
+    """The shared command scope, repeating this module's own admission.
 
-    Initial form admission is not authority for a later effect. Logout or
-    revocation that wins this lock is observed before the command; expiry during
-    processing is checked again and rolls back every command-side effect.
+    ``_principal`` is looked up when the scope runs, so a test that replaces
+    it observes every admission the scope makes.
     """
-    try:
-        with work_transaction():
-            # Lock without rotating cookies or writing session maintenance in a
-            # transaction that the domain command may subsequently roll back.
-            PortalSession.objects.select_for_update().filter(
-                session_id=request.session.session_key
-            ).first()
-            current = _principal(request, service.store, final=True)
-            if current.identity != actor.identity:
-                raise PermissionError("Delivery command identity changed.")
-            yield
-            current = _principal(request, service.store, final=True)
-            if current.identity != actor.identity:
-                raise PermissionError("Delivery command identity changed.")
-    except PermissionError:
-        # Persist timeout/revocation audit or authority rotation only after the
-        # effect rollback. A replacement cookie must name a committed session.
-        # If maintenance itself is unavailable, deliberately report 503: no
-        # effect committed and current session authority could not be established.
-        _principal(request, service.store)
-        raise
+    with command_scope(request, service, actor, admit=_principal):
+        yield
 
 
 def _retry_inputs(purpose):
@@ -543,19 +523,11 @@ def resolution_command(request, message_id):
 @require_POST
 def preparation_retry(request, task_id, *, daily=False, weekly=False):
     """Retry one explicitly selected local preparation after its cause is fixed."""
-    from parishkit.stewardship.reports.digest_retry import TASK_TYPES, retry_digest
-
-    from .family_mail_tasks import TASK_TYPE, retry_preparation
-
-    digest = daily or weekly
-    digest_types = tuple(
-        kind
-        for kind in TASK_TYPES
-        if kind.startswith("weekly_" if weekly else "daily_")
-    )
+    kind = WEEKLY_DIGEST if weekly else DAILY_DIGEST if daily else FAMILY_PREPARATION
     try:
         service = runtime()
-        actor = _principal(request, service.store, activity=True)
+        caller = AdminCaller.from_request(request)
+        actor = _principal(caller, service.store, activity=True)
         supplied = set(request.POST) - {"csrfmiddlewaretoken"}
         if (
             request.GET
@@ -564,27 +536,9 @@ def preparation_retry(request, task_id, *, daily=False, weekly=False):
         ):
             raise ValueError("Invalid preparation retry fields.")
         command_id = UUID(request.POST["command_id"])
-        with _command_scope(request, service, actor):
-            task = TaskRun.objects.get(
-                pk=task_id, task_type__in=digest_types if digest else (TASK_TYPE,)
-            )
-            if not digest:
-                # The digest service binds the selected run, replay and Admin.
-                # Family's older service instead takes a preparation identity.
-                runs = TaskRun.objects.filter(root_id=task.root_id)
-                previous = runs.filter(retry_command_id=command_id).first()
-                if (previous and previous.parent_id != task_id) or (
-                    previous is None
-                    and runs.order_by("-retry_sequence").first().pk != task_id
-                ):
-                    raise StaleRecordError(
-                        "The selected preparation is no longer current."
-                    )
-            result = (retry_digest if digest else retry_preparation)(
-                service.store,
-                actor.identity,
-                task.pk if digest else task.domain_request_id,
-                command_id=command_id,
+        with _command_scope(caller, service, actor):
+            result = retry_preparation_task(
+                service.store, actor, task_id, command_id=command_id, kind=kind
             )
         response = redirect("admin:background_task_page", task_id=result.run_id)
         response["Cache-Control"] = "no-store"
