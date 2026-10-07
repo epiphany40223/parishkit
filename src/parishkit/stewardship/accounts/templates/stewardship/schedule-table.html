@@ -1,0 +1,34 @@
+{% load i18n stewardship %}{% comment %}
+The scheduled emails table (#448): one row per saved schedule, in the order
+they send (schedule_forms.schedule_order, the forms' own order), described by
+schedule_table.ScheduleRow. It is a short table shown whole, with no sortable
+headings, because its sending order is the point. Choosing an editable row
+opens that schedule's editor (schedule-row.html, id row.anchor) in place; a
+schedule that has already sent shows muted, with no control, and its editor
+stays closed, so its saved values post unchanged. ui-v1.js wires the rows.
+{% endcomment %}<section class="panel" aria-labelledby="schedule-table-title" data-schedule-table>
+<h2 id="schedule-table-title">{% translate "Scheduled emails" %}</h2>
+{% if schedule_rows %}<p>{% translate "Choose a schedule to open its editor below, where you can change it or check Delete. A schedule that has already run can't be changed or deleted." %}</p>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="schedule-table-caption">
+<table class="data-table schedule-table">
+  <caption id="schedule-table-caption">{% translate "Scheduled emails, in sending order" %}</caption>
+  <thead><tr>
+    <th scope="col">{% translate "Schedule" %}</th>
+    <th scope="col">{% translate "When (your time)" %}</th>
+    <th scope="col">{% translate "Email to send" %}</th>
+    <th scope="col">{% translate "Status" %}</th>
+    <th scope="col">{% translate "Last send" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for row in schedule_rows %}<tr data-schedule-state="{{ row.status }}"{% if row.read_only %} class="schedule-past"{% else %} data-schedule-choose{% endif %}>
+    <th scope="row">{% if row.read_only %}{{ row.label }}{% else %}{% button type="button" variant="link" aria-controls=row.anchor aria-expanded=row.open data-schedule-edit %}<span class="visually-hidden">{% translate "Change" %} </span>{{ row.label }}{% endbutton %}<span class="schedule-editing{% if not row.open %} schedule-editing-idle{% endif %}" data-schedule-editing> {% translate "(editing below)" %}</span>{% endif %}</th>
+    <td>{% if row.due %}<time datetime="{{ row.due|instant }}" data-local-instant>{{ row.due|instant }}</time>{% else %}{% if row.weekday %}{% blocktranslate trimmed with day=row.weekday %}Every {{ day }}{% endblocktranslate %}{% else %}{% translate "Every day" %}{% endif %}<br>{% if row.next_due %}{% translate "Next:" %} <time datetime="{{ row.next_due|instant }}" data-local-instant>{{ row.next_due|instant }}</time>{% else %}{% translate "No more this campaign" %}{% endif %}{% endif %}</td>
+    <td>{{ row.subject }}</td>
+    <td><span class="status-badge{% if row.status == 'upcoming' %} status-badge-on{% endif %}">{{ row.status_label }}</span></td>
+    <td>{% if row.last_send %}{% blocktranslate trimmed with shown=row.delivered|number count delivered=row.delivered %}{{ shown }} email delivered{% plural %}{{ shown }} emails delivered{% endblocktranslate %}{% if row.failed %}, {% blocktranslate trimmed with shown=row.failed|number count failed=row.failed %}{{ shown }} send failed{% plural %}{{ shown }} sends failed{% endblocktranslate %}{% endif %}<br><a href="{% url 'admin:family_email_sends' %}">{% translate "Family email history" %}</a>{% else %}{% translate "None yet" %}{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div>{% else %}<p>{% translate "No schedules are saved yet. Add one below." %}</p>{% endif %}
+<p class="help">{% translate "Every reminder sends after the Initial invitation, no two Family emails share a date and time, and there is at most one Daily and one Weekly Admin digest." %}</p>
+</section>

@@ -2,7 +2,7 @@
 {{ schedules.management_form }}{{ schedules.non_form_errors }}
 {% if not schedules.has_templates %}<div class="notice"><p><strong>{% translate "No invitation or reminder emails are saved yet." %}</strong> {% translate "Every schedule sends a saved email, so there is nothing to schedule until one exists." %}</p>
 {% if templates_url %}<p><a href="{{ templates_url }}">{% translate "Create the emails with the page and email templates first" %}</a></p>{% endif %}</div>{% endif %}
-<p>{% translate "The blank last row adds a schedule: choose its mail type first, then fill in the fields it uses. To remove a saved schedule, check its Delete box. A saved schedule's mail type cannot change; delete it and add a new one instead." %}</p>
+{% if schedule_rows is not None %}<p>{% translate "The blank last row adds a schedule: choose its mail type first, then the fields it uses. To remove a saved schedule, open it from the table and check Delete; one that has already run can't be changed or deleted." %}</p>{% else %}<p>{% translate "The blank last row adds a schedule: choose its mail type first, then fill in the fields it uses. To remove a saved schedule, check its Delete box. A saved schedule's mail type cannot change; delete it and add a new one instead." %}</p>{% endif %}
 <div data-schedule-rows>{% for form in schedules %}{% include 'stewardship/schedule-row.html' with number=forloop.counter %}{% endfor %}</div>
 {% comment %}ui-v1.js clones this empty row (its __prefix__ names become the
 next index) and reveals the button, so several new schedules can be saved in

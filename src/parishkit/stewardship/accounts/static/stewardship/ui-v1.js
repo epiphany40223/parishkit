@@ -2415,6 +2415,76 @@
     });
   });
 
+  // Scheduled emails table (#448, schedule-table.html): choosing an editable
+  // row (its name button, or anywhere else on the row) opens that schedule's
+  // editor in place, marks the row "(editing below)" and moves focus to the
+  // editor, without a page load. An editor stays open once opened, so a
+  // change never hides while it waits for Preview; closed editors still post
+  // their saved values. A schedule that has already sent has no control and
+  // its editor (data-schedule-past) never opens. An editor whose fields differ
+  // from what the server drew (a value the browser restored on Back) is
+  // opened again on pageshow, so a restored change is never posted unseen.
+  document.querySelectorAll("[data-schedule-table]").forEach((table) => {
+    const form = table.closest("form");
+    const editors = [];
+    table.querySelectorAll("tr[data-schedule-choose]").forEach((row) => {
+      const button = row.querySelector("[data-schedule-edit]");
+      const editor = button && document.getElementById(button.getAttribute("aria-controls"));
+      if (!editor || editor.hasAttribute("data-schedule-past")) return;
+      const open = (focus) => {
+        editor.hidden = false;
+        button.setAttribute("aria-expanded", "true");
+        // The note's space is always reserved; showing it moves nothing.
+        row.querySelector("[data-schedule-editing]").classList.remove("schedule-editing-idle");
+        gateComplete(form);
+        if (focus) editor.focus();
+      };
+      button.addEventListener("click", () => open(true));
+      row.addEventListener("click", (event) => {
+        if (!event.target.closest("a, button, input, select, textarea")) open(true);
+      });
+      editors.push({editor, open});
+    });
+    const changed = (editor) => [...editor.querySelectorAll("input, select, textarea")]
+      .some((control) => {
+        if (control.type === "hidden") return false;
+        if (control.type === "checkbox" || control.type === "radio") {
+          return control.checked !== control.defaultChecked;
+        }
+        if (control.tagName === "SELECT") {
+          // With no option marked selected, a list shows its first option.
+          const drawn = [...control.options].find((option) => option.defaultSelected)
+            || control.options[0];
+          return control.value !== (drawn ? drawn.value : "");
+        }
+        return control.value !== control.defaultValue;
+      });
+    // A schedule that has already run is read-only and its editor never
+    // opens, so a value the browser restored into it is put back to what the
+    // server drew rather than posted unseen.
+    const putBack = (editor) => editor.querySelectorAll("input, select, textarea")
+      .forEach((control) => {
+        if (control.type === "checkbox" || control.type === "radio") {
+          control.checked = control.defaultChecked;
+        } else if (control.tagName === "SELECT") {
+          [...control.options].forEach((option) => { option.selected = option.defaultSelected; });
+          if (![...control.options].some((option) => option.defaultSelected)) control.selectedIndex = 0;
+        } else {
+          control.value = control.defaultValue;
+        }
+      });
+    const reveal = () => {
+      editors.forEach(({editor, open}) => {
+        if (editor.hidden && changed(editor)) open(false);
+      });
+      form?.querySelectorAll("[data-schedule-past]").forEach((editor) => {
+        if (changed(editor)) putBack(editor);
+      });
+    };
+    reveal();
+    window.addEventListener("pageshow", reveal);
+  });
+
   // "Add another schedule" clones the formset's empty form (rendered in a
   // <template> with __prefix__ names) as the next index and raises
   // TOTAL_FORMS, so several new schedules save in one submission and the
@@ -2442,8 +2512,6 @@
             value.replace(/schedules-(?:\d+|__prefix__)-/g, `schedules-${index}-`));
         });
       });
-      row.querySelector("[data-schedule-number]").textContent =
-        (index + 1).toLocaleString("en-US");
     };
     const refresh = () => {
       added.forEach((row, offset) => renumber(row, first + offset));
@@ -2471,8 +2539,7 @@
       refresh();
       scheduleRow(row);
       wireTimeEntry(row);
-      status.textContent = `Schedule ${row.querySelector("[data-schedule-number]")
-        .textContent} added. Choose its mail type.`;
+      status.textContent = "New schedule added. Choose its mail type.";
       row.querySelector('[data-schedule-field="kind"] select')?.focus();
     });
     addRow.hidden = false;

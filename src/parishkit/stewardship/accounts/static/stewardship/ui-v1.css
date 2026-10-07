@@ -452,6 +452,15 @@ td > :last-child { margin-bottom: 0; }
 .data-table input[type=checkbox] { width: 1.2rem; height: 1.2rem; vertical-align: middle; }
 .data-table .numeric { text-align: end; }
 .data-table tbody tr:has(input[data-select-row]:checked) { background: var(--accent-soft); }
+/* Scheduled emails (#448): an editable row opens its editor when chosen; a
+   schedule that already sent is muted and has no control. */
+.schedule-table tr[data-schedule-choose] { cursor: pointer; }
+.schedule-table tr[data-schedule-choose]:hover { background: var(--accent-soft); }
+.schedule-table tr.schedule-past { color: var(--muted); }
+.schedule-editing { color: var(--muted); font-weight: 400; }
+/* The note keeps its space while idle, so showing it never re-wraps the cell
+   and moves the row's button under the pointer (#736). */
+.schedule-editing-idle { visibility: hidden; }
 .status-badge { display: inline-block; padding: .1rem .6rem; border-radius: 999px; background: var(--paper-soft); border: 1px solid var(--border); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
 .status-badge-on { background: var(--accent-soft); border-color: #b9d7d2; color: var(--accent-strong); }
 .bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 1rem .5rem; }
