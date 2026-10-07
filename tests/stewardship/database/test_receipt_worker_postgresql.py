@@ -194,7 +194,7 @@ def test_unknown_receipt_appears_in_admin_warning_and_private_metadata(
     with task_login(ServiceRole.WEB, exact=True):
         response = browser.get(f"/admin/deliveries/{message.pk}")
         assert response.status_code == 200
-        assert b"Delivery unknown" in response.content
+        assert b"Not sure it arrived" in response.content
         assert harness.code.encode() not in response.content
         assert b"Your submission has been received" not in response.content
         assert browser.get("/admin/background/counts").json()["delivery_unknown"] == 1

@@ -45,24 +45,13 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import RehearsalEpoch
 from parishkit.stewardship.campaigns.engagement_models import FamilyEngagement
 from parishkit.stewardship.campaigns.runtime_models import RuntimeTransition
+from parishkit.stewardship.jobs.delivery_metadata import OUTCOMES
 from parishkit.stewardship.jobs.send_history import reminder_numbers
 from parishkit.stewardship.responses.models import FamilyFormBaseline
 from parishkit.stewardship.web.tables import Sorting
 
 from .response_metrics import MODES
 
-# How each outbox state reads on this page, in the words a parish office
-# uses on the phone. "Delivered" means the mail service accepted the email;
-# the About panel says that does not prove it reached the inbox.
-OUTCOMES = {
-    "delivered": _("Delivered"),
-    "permanent_failure": _("Failed"),
-    "delivery_unknown": _("Not sure it arrived"),
-    "pending": _("Still sending"),
-    "retry_wait": _("Still sending"),
-    "submitting": _("Still sending"),
-    "cancelled": _("Not sent (cancelled)"),
-}
 # The Family form's steps (``PRESENCE_SECTIONS``), as a reader names them.
 STEPS = {
     "welcome": _("Welcome"),

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from django.db import connection
 from django.db.models import Q
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 
@@ -68,6 +69,26 @@ STATES = (
     "delivered",
     "cancelled",
 )
+# How each outbox state reads to an Administrator, in the plain words the
+# Family-question pages use (#523, #589). The Family timeline shows the
+# outcome; Outgoing mail and the Mail message page show the state, which
+# adds where a "Still sending" email is, so a delivery problem (waiting to
+# retry) stays visible. "Delivered" means the mail service accepted the
+# email; the pages' About panels say that does not prove it reached the inbox.
+OUTCOMES = {
+    "delivered": _("Delivered"),
+    "permanent_failure": _("Failed"),
+    "delivery_unknown": _("Not sure it arrived"),
+    "pending": _("Still sending"),
+    "retry_wait": _("Still sending"),
+    "submitting": _("Still sending"),
+    "cancelled": _("Not sent (cancelled)"),
+}
+STATE_LABELS = OUTCOMES | {
+    "pending": _("Still sending (queued)"),
+    "retry_wait": _("Still sending (waiting to retry)"),
+    "submitting": _("Still sending (handing to the mail service)"),
+}
 
 
 def messages():
