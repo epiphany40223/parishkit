@@ -8,7 +8,7 @@ the heading and a menu entry stay where they were.
 
 import pytest
 
-from .menu_components import LOGO, LOGO_PATH
+from .menu_components import FAMILY_LOGO_PATH, LOGO, LOGO_PATH
 from .waits import eventually
 
 pytestmark = pytest.mark.parametrize(
@@ -16,7 +16,8 @@ pytestmark = pytest.mark.parametrize(
 )
 
 # The page-relative positions of the header's bottom edge, the heading and,
-# on a wide window, one menu entry (the phone's menu is collapsed).
+# on a wide Admin window, one menu entry (the phone's menu is collapsed, and
+# the Family portal has none).
 POSITIONS = """() => {
   const top = (node) => node.getBoundingClientRect().top + window.scrollY;
   const entry = [...document.querySelectorAll("nav.admin-sidebar a")].find(
@@ -25,7 +26,7 @@ POSITIONS = """() => {
     header: document.querySelector(".site-header").getBoundingClientRect().bottom
       + window.scrollY,
     heading: top(document.querySelector("main h1")),
-    entry: entry.checkVisibility() ? top(entry) : null,
+    entry: entry && entry.checkVisibility() ? top(entry) : null,
   };
 }"""
 # The logo's drawn height.
@@ -34,13 +35,14 @@ LOGO_HEIGHT = (
 )
 
 
+@pytest.mark.parametrize("path", [LOGO_PATH, FAMILY_LOGO_PATH], ids=["admin", "family"])
 @pytest.mark.parametrize("width", [1280, 390], ids=["wide", "phone"])
-def test_a_late_logo_does_not_shift_the_page(page, component_origin, width):
+def test_a_late_logo_does_not_shift_the_page(page, component_origin, path, width):
     """The page lays out the same before and after a held logo arrives."""
     held = []
     page.route(f"**{LOGO}", lambda route: held.append(route))
     page.set_viewport_size({"width": width, "height": 800})
-    page.goto(component_origin + LOGO_PATH, wait_until="domcontentloaded")
+    page.goto(component_origin + path, wait_until="domcontentloaded")
     eventually(page, "() => document.fonts.status === 'loaded'")
     eventually(page, "() => !document.querySelector('.brand img').complete")
     assert len(held) == 1
@@ -49,7 +51,7 @@ def test_a_late_logo_does_not_shift_the_page(page, component_origin, width):
     eventually(page, "() => document.querySelector('.brand img').naturalWidth > 0")
     after = page.evaluate(POSITIONS)
     assert after == before, (before, after)
-    assert (after["entry"] is not None) == (width > 1000)
+    assert (after["entry"] is not None) == (path == LOGO_PATH and width > 1000)
     # The logo is drawn at its own size (the square menu variant fills the
     # reserved 4rem), not squeezed into a smaller strip.
     assert page.evaluate(LOGO_HEIGHT) == 64

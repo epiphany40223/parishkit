@@ -8,7 +8,8 @@ Two of them are served too, so the scroll-position tests (#620) can follow
 them: Pages and emails (near the menu's top) as the same page as ``PATH``,
 and System logs (near its end) as the menu on System logs. The other links
 are never followed. ``LOGO_PATH`` is the same page with a parish logo in the
-header, served at ``LOGO``, for the header-height test (#638).
+header, served at ``LOGO``, and ``FAMILY_LOGO_PATH`` the Family sign-in page
+with that logo, for the header-height test (#638).
 """
 
 from io import BytesIO
@@ -24,6 +25,8 @@ from parishkit.stewardship.accounts.policy import Principal
 PATH = "/admin-menu"
 LOGO_PATH = "/admin-menu-logo"
 LOGO = "/branding/admin-menu-logo.png"
+FAMILY_LOGO_PATH = "/family-login-logo"
+BRANDING = {"parish_branding": {"name": "Saint Example Parish", "menu": LOGO}}
 CAMPAIGN = SimpleNamespace(
     pk=UUID(int=522),
     state="draft",
@@ -64,7 +67,7 @@ def components(context, admin):
     _sections, branded = render(
         "content_catalog",
         {"campaign_id": CAMPAIGN.pk},
-        {"parish_branding": {"name": "Saint Example Parish", "menu": LOGO}},
+        BRANDING,
     )
     # A square logo, like the stored 128-pixel menu variant.
     logo = BytesIO()
@@ -78,4 +81,8 @@ def components(context, admin):
         url["logs"]: ("text/html", logs),
         LOGO_PATH: ("text/html", branded),
         LOGO: ("image/png", logo.getvalue()),
+        FAMILY_LOGO_PATH: (
+            "text/html",
+            render_to_string("stewardship/family-login.html", context | BRANDING),
+        ),
     }
