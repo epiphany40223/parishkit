@@ -165,6 +165,38 @@ def delivery_resolve():
     )
 
 
+def delivery_resend():
+    """A resend authorized for an uncertain Family email (PR 9c)."""
+    receipt = SimpleNamespace(
+        pk=KEY,
+        message_id=MESSAGE,
+        action="resend",
+        expected_version=5,
+        previous_task_id=RUN,
+        retry_task_id=ROOT,
+        created_at=NOW,
+        evidence_note="private-evidence-marker",
+        duplicate_acknowledged=True,
+    )
+    return admin_operations.delivery_resolve_model(
+        receipt, created=False, request_key=KEY
+    )
+
+
+def delivery_refusal_clear():
+    """A verified clearance of a refused address (PR 9c)."""
+    receipt = SimpleNamespace(
+        pk=KEY,
+        refusal_id=REFUSAL,
+        source_snapshot_id=SNAPSHOT,
+        source_generation=7,
+        created_at=NOW,
+        evidence_note="private-evidence-marker",
+        reason="verified_admin",
+    )
+    return admin_operations.refusal_clear_model(receipt, created=True, request_key=KEY)
+
+
 GOLDEN = {
     "task retry": (
         task_retry,
@@ -263,6 +295,36 @@ GOLDEN |= {
             },
         },
     ),
+    "delivery resend": (
+        delivery_resend,
+        {
+            "created": False,
+            "request_key": str(KEY),
+            "resolution": {
+                "id": str(KEY),
+                "message_id": str(MESSAGE),
+                "action": "resend",
+                "expected_version": 5,
+                "previous_task_id": str(RUN),
+                "retry_task_id": str(ROOT),
+                "created_at": NOW.isoformat(),
+            },
+        },
+    ),
+    "delivery refusal-clear": (
+        delivery_refusal_clear,
+        {
+            "created": True,
+            "request_key": str(KEY),
+            "resolution": {
+                "id": str(KEY),
+                "refusal_id": str(REFUSAL),
+                "source_snapshot_id": str(SNAPSHOT),
+                "source_generation": 7,
+                "created_at": NOW.isoformat(),
+            },
+        },
+    ),
 }
 DELIVERY_MEMBERS = {
     "id",
@@ -329,6 +391,17 @@ ALLOWED = {
         "retry_task_id",
         "created_at",
     },
+}
+ALLOWED["delivery resend"] = ALLOWED["delivery resolve"]
+ALLOWED["delivery refusal-clear"] = {
+    "created",
+    "request_key",
+    "resolution",
+    "id",
+    "refusal_id",
+    "source_snapshot_id",
+    "source_generation",
+    "created_at",
 }
 
 
@@ -443,22 +516,14 @@ def test_an_unknown_outcome_names_the_request_key(monkeypatch):
     assert f"--request-key {key}" in err.getvalue()
 
 
-@pytest.mark.parametrize(
-    "offered,listed",
-    [
-        # resend waits for the prompt (PR 9c).
-        (
-            ["note", "accept", "confirm_unsent", "resend"],
-            ["note", "accept", "confirm_unsent"],
-        ),
-        # Every retry is accepted, a Family email's too (#682).
-        (["note", "retry_failed"], ["note", "retry_failed"]),
-        (["note", "retry_unsent"], ["note", "retry_unsent"]),
-    ],
-)
-def test_delivery_show_lists_only_what_resolve_accepts(offered, listed):
-    """Every listed action can be given to delivery resolve as is."""
-    assert admin_operations.command_actions(offered) == listed
+def test_delivery_show_lists_every_action_the_page_offers():
+    """Each listed action has a command: resend is delivery resend (PR 9c)."""
+    document = delivery_show().to_document()
+    assert document["actions"] == ["note", "retry_failed"]
+    offered = admin_cli.RESOLVE_ACTIONS + ("resend",)
+    from parishkit.stewardship.jobs.delivery_resolution import ACTIONS
+
+    assert set(offered) == set(ACTIONS)
 
 
 class Cause(Exception):

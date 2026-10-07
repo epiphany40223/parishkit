@@ -605,7 +605,8 @@ its subject; it creates no automation notice.
 Every command for an action that needs a recent Google sign-in on its page,
 and every command whose page asks you to type a value or tick an
 acknowledgement, asks at a prompt before it acts, for example `test sample`
-while an earlier test's outcome is unknown; the catalog's `prompts` flag
+while an earlier test's outcome is unknown, `delivery resend` and
+`delivery refusal-clear`; the catalog's `prompts` flag
 names every one. The command writes what it is about to do to standard error and waits for `yes`, or for the page's typed
 value (`Production` for the Production confirmation). Anything else, or the
 end of input, changes nothing and exits 4 (`confirmation_required`). The
@@ -640,6 +641,9 @@ pk-admin delivery show MESSAGE_ID
 pk-admin delivery resolve MESSAGE_ID --action accept --expected-version 3 --note - < note.txt
 pk-admin delivery refusals
 pk-admin delivery refusal-show REFUSAL_ID
+pk-admin delivery resend MESSAGE_ID --expected-version 3 --note - --yes < note.txt
+pk-admin delivery refusal-clear REFUSAL_ID --source-snapshot-id SNAPSHOT_ID \
+    --source-generation 2 --note - --yes < note.txt
 ```
 
 `delivery list` takes the page's `--state`, `--send` (send history's `send`
@@ -658,8 +662,8 @@ value), `--search` (an exact Family DUID or delivery id, as input only),
 | `id`, `created_at`, `resolved`, `source`, `can_clear` | `delivery refusal-show`: the refusal, how and when it was resolved (`kind`, `at`), the source version to verify (`snapshot_id`, `generation`), and whether a clearance can be recorded now |
 
 `delivery resolve` takes `--action` (`note`, `accept`, `confirm_unsent`,
-`retry_failed` or `retry_unsent`, as offered in `actions`, which lists only
-what this command accepts), `--expected-version` (the delivery's
+`retry_failed` or `retry_unsent`, as offered in `actions`; an offered
+`resend` is `delivery resend`), `--expected-version` (the delivery's
 `version`), `--note` (or `-`) and
 `--request-key`, made for you and written to standard error when left out.
 Give evidence that names people as `--note -` from a file or standard
@@ -678,9 +682,27 @@ A retry never changes a Family's code or link. The result has `created`,
 `expected_version`, `previous_task_id`, `retry_task_id`, `created_at`).
 System logs show it as `admin_cmd_delivery_resolve`.
 
-The duplicate-risk **resend** and clearing a refused address ask you to
-tick an acknowledgement on the page, so they stay on the page until a
-follow-up (ADM-11 PR 9c) asks for it at the prompt PR 5b added.
+The duplicate-risk **Resend** and clearing a refused address ask you to
+tick an acknowledgement on the page, so their commands show the page's
+words and ask for `yes` (see [Confirmations](#confirmations)). Both need a
+full-scope session, a `--note` (or `-`, which needs `--yes`) and take
+`--request-key` as `delivery resolve` does; the page's form with the same
+key returns the same result.
+
+`delivery resend` takes `--expected-version` and resends a delivery whose
+outcome is unknown (`resend` in `delivery show`'s `actions`). The prior
+attempt may already have arrived, so the Family may get the email twice.
+Its result is `delivery resolve`'s, its errors are too (including the
+Family key exits 2 and 3), and System logs show it as
+`admin_cmd_delivery_resend`.
+
+`delivery refusal-clear` takes the `source` `snapshot_id` and `generation`
+from `delivery refusal-show`; clear an address only after you verified it
+with the Family. A refusal already cleared, or a source that moved on, is
+exit 1 (`stale_version`): read it again. The result has `created`,
+`request_key` and `resolution` (`id`, `refusal_id`, `source_snapshot_id`,
+`source_generation`, `created_at`), never the note. System logs show it as
+`admin_cmd_delivery_refusal_clear`.
 
 ## System logs
 
@@ -1123,3 +1145,7 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   `export information`, `export ministry` and `export ministry-packet`.
 - `pk-admin/1` (ADM-11 PR 8f): additive. `export directory` and
   `export postal`.
+- `pk-admin/1` (ADM-11 PR 9c): additive. `delivery resend` and
+  `delivery refusal-clear`, which prompt. `delivery show`'s `actions` may
+  now include `resend` (it listed only `delivery resolve` actions); an
+  offered `resend` is `delivery resend`.

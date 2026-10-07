@@ -112,6 +112,15 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to mail schedules "
         "or campaign dates, which became a configuration request."
     ),
+    "admin_cmd_delivery_refusal_clear": _(
+        "An automation session cleared a refused email address after the "
+        "Administrator confirmed verifying it, as the address's page does."
+    ),
+    "admin_cmd_delivery_resend": _(
+        "An automation session resent an email whose delivery was uncertain, "
+        "after the Administrator accepted the duplicate risk, as the email's "
+        "page does."
+    ),
     "admin_cmd_delivery_resolve": _(
         "An automation session resolved an outgoing email, as the email's "
         "page does: a note, external evidence or a retry."

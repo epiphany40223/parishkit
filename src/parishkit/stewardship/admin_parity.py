@@ -274,13 +274,14 @@ LEDGER = {
     "retry_export_cleanup": command("task retry"),
     "deliveries": command("delivery list"),
     "delivery": command("delivery show"),
-    # Every retry, a Family email's too (#682); the duplicate-risk resend
-    # needs its acknowledgement at the prompt.
-    "delivery_resolve": command("delivery resolve", owed="PR 9c"),
+    # Every retry, a Family email's too (#682). The duplicate-risk resend is
+    # its own command because it asks for the page's acknowledgement at the
+    # prompt (PR 9c); delivery resolve, which never prompts, does the rest.
+    "delivery_resolve": command("delivery resolve", "delivery resend"),
     "delivery_refusals": command("delivery refusals"),
     "delivery_refusal": command("delivery refusal-show"),
-    # The clearance needs its verification acknowledgement at the prompt.
-    "delivery_refusal_clear": pending("PR 9c", "delivery refusal-clear"),
+    # Asks for the page's verification acknowledgement at the prompt.
+    "delivery_refusal_clear": command("delivery refusal-clear"),
     # Users and follow-up.
     "users": pending("PR 11", "users list"),
     "user_rules": pending("PR 11", "rules show"),
