@@ -33,7 +33,7 @@ def setup(store):
     )
     assert result.state == "applied"
     row = Campaign.objects.get()
-    return row, previous, f"/admin/campaign/{row.pk}/share-options"
+    return row, previous, "/admin/campaign/share-options/"
 
 
 def test_share_option_apply_preserves_ids_and_produces_idempotent_receipt(
@@ -162,7 +162,7 @@ def test_share_noop_stale_base_and_wrong_route_cannot_apply(auth_service, google
             f"/admin/campaign/{uuid4()}/share-options",
             {"action": "confirm", "preview": proposal},
         ).status_code
-        == 400
+        == 410
     )
     assert browser.get(path + "?extra=1").status_code == 400
     assert post(browser, path, fields(store, row)).status_code == 400
@@ -172,6 +172,5 @@ def test_census_only_has_no_share_controls(auth_service, google):
     """Hidden Financial controls cannot create a selection in a census-only draft."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
-    row = Campaign.objects.get()
     browser, _ = signed_in()
-    assert browser.get(f"/admin/campaign/{row.pk}/share-options").status_code == 409
+    assert browser.get("/admin/campaign/share-options/").status_code == 409

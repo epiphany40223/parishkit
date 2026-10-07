@@ -6,7 +6,6 @@ from . import views
 from .accounts import (
     access_gate,
     activation_views,
-    artwork_views,
     assignment_views,
     authentication,
     automation_views,
@@ -17,10 +16,8 @@ from .accounts import (
     campaign_views,
     chair_review_views,
     chair_views,
-    clone_views,
     code_reports,
     confirmation_views,
-    content_history,
     content_views,
     critical_event_views,
     family_authentication,
@@ -28,7 +25,6 @@ from .accounts import (
     hosted_file_serving,
     presence,
     rule_autosave_views,
-    schedule_views,
     security_event_views,
     session_views,
     setup_branding_views,
@@ -44,13 +40,12 @@ from .accounts import (
     setup_schedule_views,
     setup_share_views,
     setup_views,
-    share_views,
     system_health_views,
-    talent_views,
     user_rule_views,
     user_views,
     withdrawal_views,
 )
+from .admin_urls import campaign as admin_campaign
 from .admin_urls import legacy as admin_legacy
 from .admin_urls import mail as admin_mail
 from .admin_urls import parish as admin_parish
@@ -110,6 +105,20 @@ admin_patterns = [
     *admin_parish.change_patterns,
     *admin_mail.patterns,
     *admin_mail.polled_patterns,
+    *admin_campaign.patterns,
+    # The test email pages move with part B (NAV-10). Until then they stay
+    # ahead of the old addresses: "content/test/<revision>" would otherwise
+    # match the old content editor route ("content/<kind>/<slot>").
+    path(
+        "campaign/<uuid:campaign_id>/content/test/<uuid:revision_id>",
+        campaign_mail_views.campaign_mail,
+        name="campaign_mail",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/content/test/<uuid:revision_id>/families",
+        campaign_family_test_views.campaign_mail_families,
+        name="campaign_mail_families",
+    ),
     *admin_legacy.patterns,
     path("ministry-reports/", ministry_report_views.index, name="ministry_reports"),
     path(
@@ -352,84 +361,9 @@ admin_patterns = [
         name="setup_notification_status",
     ),
     path(
-        "campaign/<uuid:campaign_id>/clone",
-        clone_views.campaign_clone,
-        name="campaign_clone",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/schedules",
-        schedule_views.schedule_settings,
-        name="schedule_settings",
-    ),
-    path(
         "content/plain-text",
         content_views.plain_text_preview,
         name="content_plain_text",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/content",
-        content_views.content_settings,
-        name="content_catalog",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/content/history",
-        content_history.content_history,
-        name="content_history",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/content/history/<uuid:revision_id>",
-        content_history.content_history,
-        name="content_history_revision",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/content/test/<uuid:revision_id>",
-        campaign_mail_views.campaign_mail,
-        name="campaign_mail",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/content/test/<uuid:revision_id>/families",
-        campaign_family_test_views.campaign_mail_families,
-        name="campaign_mail_families",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/content/<str:kind>/<str:slot>",
-        content_views.content_settings,
-        name="content_edit",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/content/<str:kind>/<str:slot>/<uuid:revision_id>",
-        content_views.content_settings,
-        name="content_revision",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/share-options",
-        share_views.share_settings,
-        name="share_settings",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/images",
-        artwork_views.artwork_settings,
-        name="artwork_settings",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/images/<slug:slot>",
-        artwork_views.artwork_upload,
-        name="artwork_upload",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/images/<slug:slot>/remove",
-        artwork_views.artwork_remove,
-        name="artwork_remove",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/images/<slug:slot>/<uuid:bundle_id>",
-        artwork_views.artwork_preview,
-        name="artwork_preview",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/talents",
-        talent_views.talent_settings,
-        name="talent_settings",
     ),
     # Retired (decision 11): redirects to the current campaign's settings.
     path("campaign/new", campaign_views.retired_new, name="campaign_new"),
@@ -467,11 +401,6 @@ admin_patterns = [
         "campaign/<uuid:campaign_id>/production/withdraw",
         withdrawal_views.withdrawal,
         name="production_withdrawal",
-    ),
-    path(
-        "campaign/<uuid:campaign_id>/settings",
-        campaign_views.campaign_settings,
-        name="campaign_settings",
     ),
     path(
         "campaign/<uuid:campaign_id>/ministries",

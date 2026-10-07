@@ -69,7 +69,25 @@ MAIL = (
 
 # (old route naming a campaign, new URL name): these redirect only for the
 # current campaign and answer 410 for any other (``legacy(campaign=True)``).
-CAMPAIGN = (("campaign/<uuid:campaign_id>/delivery", "delivery_control"),)
+_C = "campaign/<uuid:campaign_id>"
+CAMPAIGN = (
+    (f"{_C}/delivery", "delivery_control"),
+    # Campaign setup, part A (NAV-9).
+    (f"{_C}/settings", "campaign_settings"),
+    (f"{_C}/clone", "campaign_clone"),
+    (f"{_C}/content", "content_catalog"),
+    (f"{_C}/content/history", "content_history"),
+    (f"{_C}/content/history/<uuid:revision_id>", "content_history_revision"),
+    (f"{_C}/content/<str:kind>/<str:slot>", "content_edit"),
+    (f"{_C}/content/<str:kind>/<str:slot>/<uuid:revision_id>", "content_revision"),
+    (f"{_C}/images", "artwork_settings"),
+    (f"{_C}/images/<slug:slot>", "artwork_upload"),
+    (f"{_C}/images/<slug:slot>/remove", "artwork_remove"),
+    (f"{_C}/images/<slug:slot>/<uuid:bundle_id>", "artwork_preview"),
+    (f"{_C}/schedules", "schedule_settings"),
+    (f"{_C}/share-options", "share_settings"),
+    (f"{_C}/talents", "talent_settings"),
+)
 
 # Each page already in the scheme without its trailing slash (the one
 # trailing-slash rule: "the other form redirects"). Form actions and status
@@ -93,6 +111,24 @@ SLASHLESS = (
     ("parish/files/<uuid:file_id>/name", "hosted_file_rename"),
     ("parish/parishsoft-refresh", "source_refresh"),
     ("changes/<uuid:request_id>", "configuration_request"),
+    # The group roots, like /admin/system above.
+    ("campaign", "campaign_root"),
+    ("mail", "mail_root"),
+    ("parish", "parish_root"),
+    ("campaign/settings", "campaign_settings"),
+    ("campaign/copy", "campaign_clone"),
+    ("campaign/content", "content_catalog"),
+    ("campaign/content/history", "content_history"),
+    ("campaign/content/history/<uuid:revision_id>", "content_history_revision"),
+    ("campaign/content/<str:kind>/<str:slot>", "content_edit"),
+    ("campaign/content/<str:kind>/<str:slot>/<uuid:revision_id>", "content_revision"),
+    ("campaign/images", "artwork_settings"),
+    ("campaign/images/<slug:slot>", "artwork_upload"),
+    ("campaign/images/<slug:slot>/removal", "artwork_remove"),
+    ("campaign/images/<slug:slot>/<uuid:bundle_id>", "artwork_preview"),
+    ("campaign/schedules", "schedule_settings"),
+    ("campaign/share-options", "share_settings"),
+    ("campaign/talents", "talent_settings"),
     ("mail/controls", "delivery_control"),
     ("mail/family-progress", "family_email_progress"),
     ("mail/family-history", "family_email_sends"),

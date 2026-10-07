@@ -149,7 +149,7 @@ def test_current_item_and_section_follow_the_page_chain():
         navigation.PAGES["content_catalog"].label,
         navigation.PAGES["content_edit"].label,
     ]
-    assert trail[2]["url"] == reverse("admin:content_catalog", args=[campaign])
+    assert trail[2]["url"] == reverse("admin:content_catalog")
 
 
 def test_sections_without_visible_entries_are_omitted():
@@ -265,7 +265,7 @@ def test_a_test_email_trail_names_its_email_editor():
         navigation.PAGES["campaign_mail_families"].label,
     ]
     assert trail[3]["url"] == reverse(
-        "admin:content_revision", args=[campaign, "email", "initial", revision]
+        "admin:content_revision", args=["email", "initial", revision]
     )
     assert trail[4]["url"] == reverse("admin:campaign_mail", args=[campaign, revision])
     assert navigation.back(match, placed)["url"] == trail[4]["url"]
@@ -289,7 +289,7 @@ def test_a_placed_configuration_change_joins_its_origin_section():
         navigation.PAGES["content_edit"].label,
         navigation.PAGES["configuration_request"].label,
     ]
-    edit = reverse("admin:content_edit", args=[campaign, "email", "initial"])
+    edit = reverse("admin:content_edit", args=["email", "initial"])
     assert trail[3]["url"] == edit
     assert [section["key"] for section in sections if section["current"]] == [
         "campaign"
@@ -369,14 +369,13 @@ def test_flow_steps_are_absent_without_a_known_flow_and_step():
 
 def test_change_origins_are_remembered_per_request_and_bounded():
     """The session maps recent change requests to the editor they came from."""
-    campaign = uuid4()
-    editor = reverse("admin:content_edit", args=[campaign, "email", "initial"])
+    editor = reverse("admin:content_edit", args=["email", "initial"])
     request = SimpleNamespace(session={}, path=editor)
     first = uuid4()
     navigation.remember_origin(request, first)
     assert navigation.change_origin(request, first) == (
         "content_edit",
-        {"campaign_id": campaign, "kind": "email", "slot": "initial"},
+        {"kind": "email", "slot": "initial"},
     )
     assert navigation.change_origin(request, uuid4()) is None
     for _ in range(navigation.ORIGINS_KEPT):
@@ -434,7 +433,7 @@ def test_a_sidebar_page_is_linked_only_while_the_sidebar_offers_it(offered):
     then hides it; the trail and Return link follow the sidebar (#196).
     """
     campaign = uuid4()
-    share = reverse("admin:share_settings", args=[campaign])
+    share = reverse("admin:share_settings")
     items = [
         ("campaign", "campaign_settings", "Campaign settings", "/c"),
         *([("campaign", "share_settings", "Share options", share)] if offered else []),
@@ -451,11 +450,6 @@ def test_a_sidebar_page_is_linked_only_while_the_sidebar_offers_it(offered):
     assert navigation.back(match, placed, items)["url"] == (
         share if offered else reverse("admin:index")
     )
-    # Another campaign's page is not the one the sidebar offers.
-    other = navigation.Placement(
-        parent="share_settings", arguments={"campaign_id": uuid4()}
-    )
-    assert navigation.build(match, items, other)[1][-2]["url"] is None
 
 
 def test_an_error_page_shows_no_step_or_placed_trail():
@@ -631,6 +625,13 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
     """No campaign: the campaign's pages say so instead of disappearing."""
     items = _menu("administrator", None, "testing")
     needs = {entry.name for entry in navigation.MENU if entry.campaign} | {
+        # Campaign pages whose URLs name no campaign (#525) still need one.
+        "campaign_settings",
+        "content_catalog",
+        "artwork_settings",
+        "schedule_settings",
+        "share_settings",
+        "talent_settings",
         "delivery_control",
         "family_email_progress",
         "family_email_sends",

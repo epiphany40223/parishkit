@@ -431,13 +431,13 @@ class Entry:
 _ADMIN = Capability.CONFIGURE
 MENU = (
     # Campaign setup
-    Entry("campaign_settings", _ADMIN, _campaign, campaign=True),
-    Entry("content_catalog", _ADMIN, _unarchived, campaign=True),
+    Entry("campaign_settings", _ADMIN, _campaign),
+    Entry("content_catalog", _ADMIN, _unarchived),
     # Theme artwork (#248) stays editable while the campaign runs.
-    Entry("artwork_settings", _ADMIN, _unarchived, campaign=True),
-    Entry("schedule_settings", _ADMIN, _campaign, campaign=True),
-    Entry("share_settings", _ADMIN, _structural(FINANCIAL), campaign=True),
-    Entry("talent_settings", _ADMIN, _structural(MINISTRY), campaign=True),
+    Entry("artwork_settings", _ADMIN, _unarchived),
+    Entry("schedule_settings", _ADMIN, _campaign),
+    Entry("share_settings", _ADMIN, _structural(FINANCIAL)),
+    Entry("talent_settings", _ADMIN, _structural(MINISTRY)),
     Entry("go_live", _ADMIN, _draft, campaign=True),
     Entry("production_progress", _ADMIN, _confirmed, campaign=True),
     # Mail and Family portal
@@ -608,6 +608,10 @@ NON_PAGES = frozenset(
         "setup_source",
         "setup_source_progress",
         "setup_step",
+        # Menu group roots only redirect to the group's first open entry.
+        "campaign_root",
+        "mail_root",
+        "parish_root",
         # /admin/system/ only redirects to System health; the page polls its
         # status fragment.
         "system",

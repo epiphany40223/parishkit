@@ -18,5 +18,5 @@ spec, "ParishSoft Ministry catalog changes".
       {% if refresh.renamed %}<p>{% translate "Renamed:" %}</p>
       <ul>{% for row in refresh.renamed %}<li>{{ row.before }} → {{ row.name }} ({% translate "DUID" %} {{ row.duid|duid }}){% if row.retired %} — {% translate "possibly retired" %}{% endif %}{% if row.in_campaign %} — {% translate "in the current campaign" %}{% endif %}</li>{% endfor %}{% if refresh.more.renamed %}<li>{% blocktranslate count counter=refresh.more.renamed %}and {{ counter }} more{% plural %}and {{ counter }} more{% endblocktranslate %}</li>{% endif %}</ul>{% endif %}
     </div>{% endfor %}
-    <p>{% translate "Campaigns never change their Ministries on their own. To hide a Ministry from the Family form, mark it inactive." %} <a href="{% url 'admin:ministries' %}">{% translate "Ministries" %}</a>{% if notice.campaign_id %} · <a href="{% url 'admin:campaign_settings' notice.campaign_id %}#ministry-selections">{% translate "Campaign settings" %}</a>{% endif %}</p>
+    <p>{% translate "Campaigns never change their Ministries on their own. To hide a Ministry from the Family form, mark it inactive." %} <a href="{% url 'admin:ministries' %}">{% translate "Ministries" %}</a>{% if notice.campaign_id %} · <a href="{% url 'admin:campaign_settings' %}#ministry-selections">{% translate "Campaign settings" %}</a>{% endif %}</p>
   </section>

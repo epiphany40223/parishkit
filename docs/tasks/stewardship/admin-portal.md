@@ -415,7 +415,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
 - [ ] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
 - [x] ADM-12.11 — NAV-8: move Mail and Family portal URLs.
-- [ ] ADM-12.12 — NAV-9: move Campaign setup URLs, part A, and add the group root.
+- [x] ADM-12.12 — NAV-9: move Campaign setup URLs, part A, and add the group root.
 - [ ] ADM-12.13 — NAV-10: move Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries).
 - [ ] ADM-12.14 — NAV-11: move report URLs, including response lists and the reports root.
 - [ ] ADM-12.15 — NAV-12: move export and digest URLs and fold the latest-data export into the shared export page.
@@ -578,6 +578,24 @@ No Family route moves. It is proven by
 split), `tests/stewardship/database/test_admin_url_scheme_postgresql.py`
 (Pause and resume mail's old address: current campaign redirected, another
 refused with 410) and the updated mail, presence and browser suites.
+ADM-12.12 (NAV-9) moves the first Campaign setup pages under
+`/admin/campaign/` with no campaign in the address: Campaign settings, Copy
+campaign (`copy/`, still refused), Pages and emails with each page or email,
+its revisions and Content history, Campaign images with the upload, review
+and `removal/` pages, Dates and mail schedules, Share options and Member
+talents. Each old address names a campaign, so it redirects only for the
+current campaign and is gone (410) for any other; each new page's no-slash
+form redirects. The staged-image redirect is reversed instead of
+hard-coded. The Campaign setup, Mail and Family portal and Parish data group
+roots open the first entry the viewer may open now (else Home), from the
+same menu the sidebar shows. The test email pages stay ahead of the old
+editor route until part B moves them, and the content editor's plain-text
+preview keeps its address because the setup wizard's editor shares it. It
+is proven by `tests/stewardship/test_admin_url_scheme.py` (the Campaign
+setup rows, the group roots, the test email routes),
+`tests/stewardship/database/test_admin_url_scheme_postgresql.py` (old
+addresses for the current campaign and another, each group root per role)
+and the updated campaign, content, image, schedule, share and talent suites.
 
 ## ADM-13: System health page
 

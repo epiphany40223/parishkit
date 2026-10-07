@@ -169,7 +169,7 @@ def test_fresh_confirmation_atomically_activates_and_replays(
     campaign = preparation.transition.campaign
     path = f"{links_path}/{preparation.pk}/confirm"
     with web_login():
-        settings_path = f"/admin/campaign/{campaign.pk}/settings"
+        settings_path = "/admin/campaign/settings/"
         assert not browser.get(settings_path).context["production_progress_available"]
         activity = PortalSession.objects.get(
             pk=login.portal_session.pk

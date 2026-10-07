@@ -286,7 +286,7 @@ def test_manual_form_explains_a_missing_weekly_schedule(response_service, google
             page = browser.get(path)
         assert page.status_code == 409
         assert b"no Weekly Admin digest schedule" in page.content
-        schedules = f"/admin/campaign/{harness.campaign.pk}/schedules"
+        schedules = "/admin/campaign/schedules/"
         assert schedules.encode() in page.content
         assert b"Queue new manual report" not in page.content
         assert WeeklyManualRequest.objects.count() == 0

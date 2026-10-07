@@ -80,12 +80,12 @@ def draft(store):
     result, _, _ = add_draft(store, store.active(), uuid4())
     assert result.state == "applied"
     campaign = Campaign.objects.get()
-    return campaign, f"/admin/campaign/{campaign.pk}/content"
+    return campaign, "/admin/campaign/content/"
 
 
 def save_page(store, browser, catalog, html, slot="welcome"):
     """Preview and confirm page content through the editor; return the preview."""
-    path = f"{catalog}/page/{slot}"
+    path = f"{catalog}page/{slot}/"
     preview = post(browser, path, values(store, html=html))
     if preview.status_code != 200:
         return preview, None

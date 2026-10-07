@@ -28,5 +28,5 @@
 {% if withdrawal_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ withdrawal_token }}"><button type="submit">{% translate "Confirm cancelling go-live" %}</button></form>{% endif %}
 {% endif %}</section>{% endif %}
 {% elif not withdrawal %}<p role="alert">{% translate "Go-live can't be cancelled for this campaign: it can be cancelled only before the campaign starts. A live campaign stays live, even if this page was opened earlier." %}</p>{% endif %}
-<p><a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Review Campaign settings" %}</a></p>
+<p><a href="{% url 'admin:campaign_settings' %}">{% translate "Review Campaign settings" %}</a></p>
 {% endblock %}

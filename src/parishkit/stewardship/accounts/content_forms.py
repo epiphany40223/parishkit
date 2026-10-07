@@ -548,7 +548,7 @@ def revision_patch(document, campaign, previous, values):
                         "the text (for example, resetting it to the default) "
                         "keeps the schedule."
                     ),
-                    link=reverse("admin:schedule_settings", args=[campaign.pk]),
+                    link=reverse("admin:schedule_settings"),
                     link_label=_("Go to Dates and mail schedules"),
                 )
             affected.append(schedule)

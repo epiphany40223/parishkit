@@ -14,6 +14,7 @@ from uuid import uuid4
 from django import forms
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
@@ -222,7 +223,7 @@ def artwork_upload(request, campaign_id, slot):
                     request,
                     service,
                     HttpResponseRedirect(
-                        f"/admin/campaign/{campaign.pk}/images/{slot}/{identifier}"
+                        reverse("admin:artwork_preview", args=[slot, identifier])
                     ),
                 )
         return _page(

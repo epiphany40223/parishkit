@@ -39,7 +39,7 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
             "schedules": schedules,
             "base_digest": digest,
             "editable": editable,
-            "templates_url": reverse("admin:content_catalog", args=[campaign.pk]),
+            "templates_url": reverse("admin:content_catalog"),
             # Proposed dates arrive in the query string from campaign
             # settings, but POSTs with a query string are refused, so the
             # form posts to the clean path and carries the dates as fields.

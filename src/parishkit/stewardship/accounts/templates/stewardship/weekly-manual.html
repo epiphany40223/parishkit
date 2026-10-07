@@ -5,7 +5,7 @@
 {% if campaign %}<p>{{ campaign.active_configuration.name }}</p>{% endif %}
 {% if blocker == "no_schedule" %}
 <div class="notice" role="alert"><p>{% translate "This campaign has no Weekly Admin digest schedule. Send a weekly report now sends an extra Weekly Admin digest, so the weekly digest schedule must exist first." %}</p>
-<p><a href="{% url 'admin:schedule_settings' campaign.pk %}">{% translate "Add a Weekly Admin digest schedule under Dates and mail schedules" %}</a>, {% translate "then return here." %}</p></div>
+<p><a href="{% url 'admin:schedule_settings' %}">{% translate "Add a Weekly Admin digest schedule under Dates and mail schedules" %}</a>, {% translate "then return here." %}</p></div>
 {% elif blocker == "refused" %}
 <div class="notice" role="alert"><p>{% translate "A weekly report can't be sent now. Usually an earlier Weekly Admin digest is still being prepared or delivered, or it is waiting for review in Outgoing mail; otherwise the campaign settings changed after this form was opened." %}</p>
 <p>{% translate "Check Background work and Outgoing mail, then open this page again." %}</p></div>
