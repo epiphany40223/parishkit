@@ -540,11 +540,11 @@ REPORTS = [
     "ministry_report",
     "ministry_followup",
     "family_directory",
+    "emailed_reports",
 ]
 # The Administrator's menu in the spec's order (admin-portal spec, "Menu
 # groups"), written out so that reordering MENU fails here. Entries for pages
-# that do not exist yet are absent; Send a weekly report now holds the
-# place of Emailed reports until NAV-14.
+# that do not exist yet are absent.
 SPEC_ORDER = [
     # Campaign setup
     "campaign_settings",
@@ -573,7 +573,7 @@ SPEC_ORDER = [
     "ministry_report",
     "ministry_followup",
     "family_directory",
-    "weekly_digest_manual",
+    "emailed_reports",
     # Parish data
     "parish_settings",
     "branding_settings",
@@ -653,7 +653,6 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "ministry_report",
         "ministry_followup",
         "family_directory",
-        "weekly_digest_manual",
     }
     for item in items:
         if item.name in needs:

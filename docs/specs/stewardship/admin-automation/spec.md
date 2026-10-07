@@ -1986,6 +1986,7 @@ file is regenerated from the retained capture.
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
 | `weekly_digest_snapshot`, `weekly_digest_item` | `digest weekly SNAPSHOT_ID`: each item's identifier and states; an item's text stays on the page (PR 8d) |
 | `weekly_digest_manual` | `digest weekly-request` (PR 8d) |
+| `emailed_reports` | `digest list`: the Emailed reports page's lists (PR 8) |
 | `logs`, `logs_export` | `logs list`, `logs export` (PR 8a) |
 
 `logs list` and `logs export` read through `audit.log_reads`, the functions

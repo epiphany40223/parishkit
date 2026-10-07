@@ -254,6 +254,7 @@ SLASHLESS = (
     ("reports/families", "family_directory"),
     ("reports/families/<uuid:family_id>", "family_timeline"),
     ("reports/exports/<uuid:request_id>", "report_export"),
+    ("reports/emailed", "emailed_reports"),
     ("reports/emailed/weekly/new", "weekly_digest_manual"),
     ("reports/emailed/weekly/<uuid:snapshot_id>", "weekly_digest_snapshot"),
     (

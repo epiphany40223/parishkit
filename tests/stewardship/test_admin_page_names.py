@@ -108,6 +108,7 @@ TEMPLATES = {
     "ministry_followup": "ministry-followup.html",
     "ministry_followup_item": "ministry-followup.html",
     "family_directory": "directory.html",
+    "emailed_reports": "emailed-reports.html",
     "family_timeline": "family-timeline.html",
     "index": "home.html",
     "configuration_request": "configuration-request.html",

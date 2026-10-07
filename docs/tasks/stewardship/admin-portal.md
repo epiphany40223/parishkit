@@ -577,7 +577,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.14 — NAV-11: move report URLs, including response lists and the reports root.
 - [x] ADM-12.15 — NAV-12: move export and digest URLs and fold the latest-data export into the shared export page.
 - [ ] ADM-12.16 — NAV-13 (optional): add trailing slashes to sign-in, setup and maintenance URLs.
-- [ ] ADM-12.17 — NAV-14: add the Emailed reports page.
+- [x] ADM-12.17 — NAV-14: add the Emailed reports page.
 - [ ] ADM-12.18 — NAV-15: split Portal users into Sign-in rules, Ministry assignments and Chairpersons (#535).
 - [ ] ADM-12.19 — NAV-16: add the ways back (#521), including the test-email origin kept in the session.
 - [ ] ADM-12.20 — NAV-17: add the reachability and no-UUID crawl test.
@@ -841,6 +841,20 @@ rows, the sent digest link shapes, the shared export page, the route order),
 `tests/stewardship/database/test_admin_url_scheme_postgresql.py` (sent digest
 links through the real middleware, the old export addresses' 404) and the
 updated export, latest-data export, daily and weekly report suites.
+
+ADM-12.17 (NAV-14) adds Emailed reports at `/admin/reports/emailed/`, a
+Responses and reports menu entry for Administrators and Staff that is never
+greyed out: the current campaign's daily reports (and, for Administrators,
+its weekly reports, those sent on request marked so), newest first, each
+linking its page. Send a weekly report now leaves the menu for a button on
+the page, and after queuing it returns there with `?requested=<request>`,
+which links the report it produced or, until it is ready, its background
+task. The emailed report pages and Send a weekly report now sit under it in
+the trail. It is proven by `tests/stewardship/test_admin_navigation.py` (each
+role's menu), `tests/stewardship/test_admin_page_names.py`,
+`tests/stewardship/test_admin_url_scheme.py` and
+`tests/stewardship/database/test_emailed_reports_postgresql.py` (the list for
+each role, the request notice, the manual form returning to the page).
 
 ## ADM-13: System health page
 

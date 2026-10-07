@@ -1,0 +1,24 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Emailed reports" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Emailed reports" %}</h1>
+{% aboutpage "emailed-reports" %}<p>{% translate "The reports emailed to Administrators and Staff for the current campaign, newest first. Open one to see it as it was sent. Staff see the daily reports; Administrators also see the weekly reports and can send one now." %}</p>{% endaboutpage %}
+{% if requested %}<div class="notice" role="status" id="weekly-requested">{% if requested.report_id %}<p>{% translate "Your weekly report is ready." %} <a href="{% url 'admin:weekly_digest_snapshot' requested.report_id %}">{% translate "Open the weekly report" %}</a></p>{% else %}<p>{% translate "Your weekly report was requested. It is listed below once it is prepared." %} <a href="{% url 'admin:background_task_page' requested.task_id %}">{% translate "Follow its progress in Background work" %}</a></p>{% endif %}</div>{% endif %}
+{% if not campaign_id %}<p>{% translate "There is no current campaign, so there are no emailed reports to show." %}</p>{% else %}
+<section aria-labelledby="daily-reports">
+<h2 id="daily-reports">{% translate "Daily reports" %}</h2>
+{% if daily %}<div class="table-wrap"><table><thead><tr><th scope="col">{% translate "Report" %}</th><th scope="col">{% translate "Figures as of" %}</th></tr></thead><tbody>
+{% for row in daily %}<tr><th scope="row"><a href="{% url 'admin:daily_digest_snapshot' row.pk %}">{% blocktranslate with day=row.through_date|parish_date %}Daily report for {{ day }}{% endblocktranslate %}</a>{% if row.covered_dates|length > 1 %} <span class="help">{% blocktranslate count days=row.covered_dates|length %}(covers {{ days }} day){% plural %}(covers {{ days }} days){% endblocktranslate %}</span>{% endif %}</th><td><time datetime="{{ row.observed_at|date:'c' }}" data-local-instant>{{ row.observed_at|date:'c' }}</time></td></tr>{% endfor %}
+</tbody></table></div>{% if daily|length >= shown %}<p class="help">{% blocktranslate %}Showing the {{ shown }} newest daily reports.{% endblocktranslate %}</p>{% endif %}
+{% else %}<p>{% translate "No daily reports yet. One is sent each day a Daily Admin digest is scheduled." %}</p>{% endif %}
+</section>
+{% if administrator %}<section aria-labelledby="weekly-reports">
+<h2 id="weekly-reports">{% translate "Weekly reports" %}</h2>
+<p>{% url 'admin:weekly_digest_manual' as button_href %}{% button href=button_href variant="primary" %}{% translate "Send a weekly report now" %}{% endbutton %}</p>
+{% if weekly %}<div class="table-wrap"><table><thead><tr><th scope="col">{% translate "Report" %}</th><th scope="col">{% translate "Sent" %}</th></tr></thead><tbody>
+{% for row in weekly %}<tr><th scope="row"><a href="{% url 'admin:weekly_digest_snapshot' row.pk %}">{% translate "Weekly report" %}</a>{% if row.manual %} <span class="help">{% translate "(sent on request)" %}</span>{% endif %}</th><td><time datetime="{{ row.observed_at|date:'c' }}" data-local-instant>{{ row.observed_at|date:'c' }}</time></td></tr>{% endfor %}
+</tbody></table></div>{% if weekly|length >= shown %}<p class="help">{% blocktranslate %}Showing the {{ shown }} newest weekly reports.{% endblocktranslate %}</p>{% endif %}
+{% else %}<p>{% translate "No weekly reports yet." %}</p>{% endif %}
+</section>{% endif %}
+{% endif %}
+{% endblock %}

@@ -347,6 +347,7 @@ EXPECTED = {
     f"/admin/reports/weekly-digests/{T}/items/{T}/": (
         f"/admin/reports/emailed/weekly/{T}/items/{T}/"
     ),
+    "/admin/reports/emailed": "/admin/reports/emailed/",
     "/admin/reports/emailed/weekly/new": "/admin/reports/emailed/weekly/new/",
     f"/admin/reports/emailed/weekly/{T}": f"/admin/reports/emailed/weekly/{T}/",
     f"/admin/reports/emailed/weekly/{T}/items/{T}": (

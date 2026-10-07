@@ -528,8 +528,8 @@ follow-up issues #520 (one name per page), #521 (every page reachable, every
 flow with a way back) and #525 (one URL scheme). Every page already uses the
 table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which keeps its
 name until NAV-15 splits it into Sign-in rules, Ministry assignments and
-Chairpersons, and the Emailed reports, Ministry assignments and Chairpersons
-pages, which do not exist yet. The System pages already have their new
+Chairpersons, and the Ministry assignments and Chairpersons pages, which do
+not exist yet (Emailed reports exists since NAV-14). The System pages already have their new
 addresses (NAV-6), and so do the Parish data pages and a change's status page
 (NAV-7), the Mail and Family portal pages (NAV-8) and the Campaign setup
 pages (NAV-9: settings, Copy campaign, content and its history, images,
@@ -930,10 +930,11 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same; old address redirects) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same; old address redirects) |  |
 | `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same; old address redirects) | Opened from each directory row and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
-| `weekly_digest_manual` | Send a weekly report now | Emailed reports (new page) | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; ends on Emailed reports, which links the report it produced. Its address named the campaign until #865; that old address is gone, with no redirect (#864). |
-| `weekly_digest_snapshot` | Weekly report | Emailed reports (new page) | Administrator | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same; old address redirects) | Sent weekly report emails link the old address, which redirects permanently. |
+| `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
+| `weekly_digest_manual` | Send a weekly report now | Emailed reports | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; now a button on Emailed reports, where it ends, linking the report it produced (or its background task until it is ready). Its address named the campaign until #865; that old address is gone, with no redirect (#864). |
+| `weekly_digest_snapshot` | Weekly report | Emailed reports | Administrator | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same; old address redirects) | Sent weekly report emails link the old address, which redirects permanently. |
 | `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | (same; old address redirects) | Links the live Additional information request. |
-| `daily_digest_snapshot` | Daily report | Emailed reports (new page) | Administrator, Staff | (report document title) daily report | `/admin/reports/emailed/daily/<snapshot>/` | (same; old address redirects) | Sent daily report emails link the old address, which redirects permanently. |
+| `daily_digest_snapshot` | Daily report | Emailed reports | Administrator, Staff | (report document title) daily report | `/admin/reports/emailed/daily/<snapshot>/` | (same; old address redirects) | Sent daily report emails link the old address, which redirects permanently. |
 | `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same; old address redirects) | Hand-written Administration link removed. |
 | `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same; old address redirects) |  |
 | `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/parish/logos/<bundle>/` | (same; old address redirects) |  |

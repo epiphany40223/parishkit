@@ -23,6 +23,7 @@ from ..reports import (
     digest_views,
     directory_export_views,
     directory_views,
+    emailed_views,
     exact_ui,
     export_pages,
     export_ui,
@@ -189,7 +190,9 @@ patterns = [
         {"action": "regenerate"},
         name="report_export_regenerate",
     ),
-    # The reports sent by email. Send a weekly report now comes before the
+    # The reports sent by email: their list (ADM-12.17), then each report.
+    path("reports/emailed/", emailed_views.emailed_reports, name="emailed_reports"),
+    # Send a weekly report now comes before the
     # weekly reports; a report is a UUID, so "new" can never be taken for one
     # (a unit test pins the resolved names).
     _page(
