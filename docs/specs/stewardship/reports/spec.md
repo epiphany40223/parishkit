@@ -995,3 +995,246 @@ those inputs and fact generation even when current eligibility later changes.
 Separate implementations that can drift are prohibited. The email simplifies
 interaction into an image/text table but its values must be reproducible from
 those recorded inputs.
+
+## Visual report design
+
+**Status:** proposed for
+[#720](https://github.com/epiphany40223/parishkit/issues/720); the reports
+below keep their current behavior until each slice lands. This section
+governs how the Admin report emails and the portal's campaign statistics
+*look*; what they count stays with the sections it links to. A
+[prototype of the daily report](../../../plans/stewardship/visual-reports/daily-digest.html)
+with [desktop](../../../plans/stewardship/visual-reports/daily-digest-desktop.png),
+[phone](../../../plans/stewardship/visual-reports/daily-digest-phone.png) and
+[images-off](../../../plans/stewardship/visual-reports/daily-digest-images-off.png)
+screenshots, rendered from fictional fixture data by
+`docs/plans/stewardship/visual-reports/build_prototype.py`, shows the email
+layout below.
+
+The readers are parish staff who are not technical and who read visually.
+Each report therefore leads with pictures (progress bars, bar charts and
+trend lines) and keeps every exact number one glance or one tap away. The
+design follows published practice:
+
+- **One screen, at a glance.** A dashboard puts what is monitored where it can
+  be read at once, with enough context and no more precision or decoration
+  than the reader needs ([Few, *Common pitfalls of dashboard design*](https://www.perceptualedge.com/articles/Whitepapers/Common_Pitfalls.pdf)).
+  The most important figure has the most contrast and the most space
+  ([Carbon, dashboards](https://carbondesignsystem.com/data-visualization/dashboards/)).
+- **Bars, not gauges or pies.** Progress against a total or a comparison is a
+  bullet graph or a plain bar: a bar on a linear scale from zero, an optional
+  comparison marker, and ranges in shades of one hue
+  ([Few, *Bullet graph design specification*](https://www.perceptualedge.com/articles/misc/Bullet_Graph_Design_Spec.pdf);
+  [Few, *Save the pies for dessert*](https://www.perceptualedge.com/articles/visual_business_intelligence/save_the_pies_for_dessert.pdf)).
+  Parts of a whole are bars, since a few points' difference is invisible in a
+  pie ([Datawrapper, chart types](https://www.datawrapper.de/blog/chart-types-guide)).
+  Change over time is columns or a line.
+- **Data ink.** No 3D, shadows, frames or gradients; few, light gridlines;
+  the latest value marked and labelled
+  ([Tufte, sparklines](https://www.edwardtufte.com/notebook/sparkline-theory-and-practice-edward-tufte/);
+  [Tufte, *The visual display of quantitative information*](https://www.edwardtufte.com/book/the-visual-display-of-quantitative-information/)).
+- **One measure per axis.** Never two y-axes; a count and a dollar series are
+  two panels on one shared date axis
+  ([GOV.UK Analysis Function, charts](https://analysisfunction.civilservice.gov.uk/policy-store/data-visualisation-charts/)).
+  This supersedes the dual axis of the
+  [participation graph](#participation-graph) wherever that graph is redrawn
+  in the new style.
+- **Say the point in the title.** A chart's title is plain words for what it
+  shows ("New responses each day"); labels sit on the marks rather than in a
+  legend wherever there is room ([GOV.UK](https://analysisfunction.civilservice.gov.uk/policy-store/data-visualisation-charts/);
+  [Carbon, chart anatomy](https://carbondesignsystem.com/data-visualization/chart-anatomy/)).
+
+### Report email layout
+
+Both Admin report emails (the [daily email report](#daily-email-report-parity)
+and the weekly and manual Additional-information digests, see
+[Additional information](#additional-information)) use a desktop-first
+layout instead of the
+[shared 600px email layout](../data/spec.md#content-and-email-templates)
+that Family email keeps:
+
+- **Width.** One white card at most 960px wide on a light grey page, with
+  40px side padding, so the content is 880px wide. Typical desktop mail
+  panes are 900–1,200px wide. Outlook for Windows (the Word engine) ignores
+  `max-width`, so a conditional (`<!--[if mso]>`) table fixes its width at
+  960px ([Litmus, Outlook rendering](https://www.litmus.com/blog/a-guide-to-rendering-differences-in-microsoft-outlook-clients)).
+  Common advice for marketing mail is 600–640px
+  ([Litmus, email myths](https://www.litmus.com/blog/7-myths-of-email-development));
+  the Administrator chose desktop instead, since these reports are read at a
+  desk.
+- **Phones.** The layout is fluid ("hybrid"): the card is `width:100%` up to
+  its maximum, headline tiles are inline blocks that wrap to one column when
+  the pane is narrow, and every bar is a percentage of its row. This works
+  without media queries, which Gmail supports only in part and Outlook for
+  Windows not at all
+  ([caniemail, `@media`](https://www.caniemail.com/features/css-at-media/)).
+  A small `<style>` block only tightens padding where it is honored. The
+  chart image scales down with the card: legible enough to see the shape, and
+  the exact numbers stay in the text beside it.
+- **Construction.** Tables for layout, every style inline, no flexbox, grid,
+  gradients, background images, SVG or `data:` images, none of which Gmail or
+  Outlook for Windows renders reliably
+  ([caniemail: flex](https://www.caniemail.com/features/css-display-flex/),
+  [grid](https://www.caniemail.com/features/css-display-grid/),
+  [linear-gradient](https://www.caniemail.com/features/css-linear-gradient/),
+  [inline SVG](https://www.caniemail.com/features/html-svg/),
+  [base64 images](https://www.caniemail.com/features/image-base64/)).
+  The HTML stays far below Gmail's 102KB clipping limit
+  ([Litmus, Gmail clipping](https://www.litmus.com/blog/how-to-keep-gmail-from-clipping-your-emails)).
+  The digest's compiler-owned markup, not parish-authored content, carries
+  these styles, so the [content sanitizer](../data/spec.md#content-and-email-templates)
+  for Family templates is unchanged; the digest validator allows exactly the
+  compiled elements, attributes and images.
+- **Order.** Title and data-as-of line; three headline tiles; then sections,
+  each a heading, its visual, and its exact numbers; then the button that
+  opens the full report and the small-print provenance (data load and
+  submission cutoff, today in Technical details). The ParishSoft connection
+  is one plain line, shown as a notice only when it is not working.
+
+**Daily campaign report.** Questions it answers, in order:
+
+1. *How far along are we?* Tile: Families who have responded, as a large
+   number, a progress bar against active Families, and "of 1,240 active
+   Families (37%)".
+2. *Is it still moving?* Tile: new responses on the report's date, with two
+   small labelled bars comparing the last 7 days with the 7 days before.
+3. *How are pledges doing?* (financial module only) Tile: annual pledges so
+   far, as a bullet bar with a dark marker at the configured comparison
+   pledges, and "46% of last year's $1,420,000".
+4. *How many Families can we reach, and how many have answered?* Two
+   labelled bars, each against active Families: responded, and reachable by
+   email (deliverable email), with one sentence giving the number reached
+   only by post. These are the [campaign statistics](#campaign-statistics),
+   unchanged.
+5. *Where do Families stop?* The [response funnel](#funnel-stages) as
+   horizontal bars (Emailed, Opened their link, Started the form, Submitted),
+   each against Emailed. This is new to the email; see the open questions.
+6. *What happened day by day?* One chart image of up to three panels on one
+   date axis: new responses each day (columns, the latest one labelled, the
+   invitation and reminder sends as labelled dashed rules); Families who have
+   responded so far (line); and, with the financial module, annual pledges so
+   far (line, the comparison as a dashed rule). Below it, the exact values for
+   the last 7 campaign days (the latest in bold), with the covered dates of a
+   recovery digest always included.
+
+Every visual has its numbers printed beside or under it, since an email
+cannot show tooltips. Percentages are whole numbers next to the exact counts;
+money in tiles is whole dollars and the table keeps cents. Dates use the
+parish date format and the campaign's time zone, as today.
+
+**Weekly and manual Additional-information digests.** Their job is a to-do
+list, so the list stays the main content, laid out wider: each request is a
+row with the Family and submission time on the left and the excerpt on the
+right. Above it, headline tiles give the count of new (or, for the manual
+digest, current) actionable requests and of corrections, each a large
+number. No chart is added: one week's counts do not need one.
+
+**Privacy.** The emails carry only what they carry today: aggregates for the
+daily report, and the weekly digests' existing Family names, DUIDs and
+excerpts. The funnel adds aggregate counts only. Images are rendered from the
+same aggregates and carry no Family data.
+
+### Charts in email
+
+The daily report uses **both** email-safe methods, each where it is
+strongest:
+
+- **Table-based HTML bars** for every progress bar, bullet bar, comparison
+  and funnel bar: a row of table cells whose `bgcolor` and percentage widths
+  draw the bar, with the numbers as text beside it. They render in every mail
+  program including Outlook for Windows, survive image blocking (Outlook
+  desktop blocks images by default:
+  [Litmus, image blocking](https://www.litmus.com/blog/the-ultimate-guide-to-email-image-blocking)),
+  and cost no attachment. A non-zero share narrower than 1% still draws a
+  1% sliver, so it never looks like zero.
+- **One server-rendered PNG, attached inline by `cid:`**, for the
+  day-by-day panels, which HTML cannot draw well. The daily digest already
+  sends its chart this way, and `cid:` is the path Outlook desktop supports
+  (`data:` images are dropped by Gmail). The PNG is a Vega-Lite specification
+  from `reports/chart_specs.py`, rendered by the [chart engine](#chart-engine)
+  at twice its 880px CSS width, so the email and the portal draw the same
+  JSON. It replaces the Matplotlib drawing in the email; the Participation
+  page moves to the same specification in its own slice. Hosted images are
+  rejected: they would need a public, unauthenticated image URL for staff
+  reports.
+
+**Alt text** on the chart carries the key numbers, not a description of the
+picture ([W3C WAI, complex images](https://www.w3.org/WAI/tutorials/images/complex/);
+[Datawrapper, alt text](https://www.datawrapper.de/academy/how-to-write-good-alternative-descriptions-for-your-data-visualization)):
+the chart's kind and date range, the latest day's new responses, the
+responded count out of active Families, the busiest day and its count, and
+pledges so far when shown. It is built from the same values as the table,
+styled (font, size, colour) so it reads as text when images are off, and
+followed by the exact-values table. HTML bars need no alt text: their
+numbers are text.
+
+The first slice that renders a chart on the server registers the render
+helper's timeout name, as the [chart engine](#chart-engine) requires, through
+a frozen schema migration.
+
+### Chart palette and style
+
+One palette and one style for every Admin chart, in the portal and in email:
+
+| Role | Colour | Used for |
+| --- | --- | --- |
+| Primary | `#1f6fae` (blue) | Families, responses, the main bar of a progress or funnel bar |
+| Money | `#b8620a` (orange) | pledges and other dollar series |
+| Third | `#1a9a8a` (teal) | a third series, such as email reach |
+| Earlier period | `#8fb3d6` (light blue) | the comparison bar beside a primary bar |
+| Track | `#e4e7ec` (grey) | the unfilled remainder of a bar |
+| Marker | `#1f2933` (ink) | comparison markers and the latest-value label |
+| Send marker | `#7b8794` (grey, dashed) | invitation and reminder rules |
+
+The three series colours pass colour-blind checks as a set (every pair,
+in protanopia, deuteranopia and tritanopia) and each has at least 3:1
+contrast on white, as WCAG 1.4.11 asks of graphics
+([non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html)).
+They keep the hues of today's participation chart, made a little more
+saturated, and lead with blue and orange, the safest pairing for colour-blind
+readers ([Datawrapper, colour blindness](https://www.datawrapper.de/blog/colorblindness-part2);
+compare the [GOV.UK palette](https://analysisfunction.civilservice.gov.uk/policy-store/data-visualisation-colours-in-charts/)).
+Colour is never the only cue: every bar and line is labelled, and lines that
+share a panel differ by dash pattern as today (WCAG 1.4.1). Charts use at
+most three series; more is a table. The light earlier-period bar is below 3:1,
+so it is always labelled with its number. Status colours (red, amber, green) stay
+reserved for status notices and are never series colours.
+
+Style: Arial or Helvetica; titles 14px bold in ink, left-aligned; axis labels
+12px grey; light grey gridlines; no chart border; columns with 2px rounded
+tops and a gap between them; 2px lines; the y-axis starts at zero.
+
+### Statistics in the portal
+
+The portal's campaign statistics follow the same design, page by page in
+later slices: the [response dashboard](#response-dashboard),
+[participation graph](#participation-graph) and
+[campaign statistics](#campaign-statistics), the
+[Financial stewardship](#financial-stewardship-detail) summary, the
+[Additional information](#additional-information) queue's counts, the
+[Ministry change summary](#ministry-change-summary), and Home's campaign
+panels ([Home page](../admin-portal/spec.md#home-page)).
+
+- **Visual first.** The headline counts become tiles with progress bars like
+  the email's; distributions (pledge frequencies, share methods, Ministry
+  joins and leaves) become horizontal bar charts; explanatory sentences move
+  to [page help](../admin-portal/spec.md#page-help) or toggletips, leaving at
+  most one line under a chart.
+- **Exact numbers in tooltips, the Participation way.** Every chart and bar
+  shows its exact values in a tooltip that opens on pointer hover, on
+  keyboard focus and on tap, never on hover alone. Tooltips follow WCAG 1.4.13
+  ([content on hover or focus](https://www.w3.org/WAI/WCAG22/Understanding/content-on-hover-or-focus.html)):
+  Escape dismisses one without moving focus, the pointer can move onto it,
+  and it stays until focus or hover leaves. A tooltip is `role="tooltip"`,
+  referenced by its trigger's `aria-describedby`
+  ([WAI-ARIA tooltip pattern](https://www.w3.org/WAI/ARIA/apg/patterns/tooltip/)).
+  A chart with many points is one keyboard stop with a slider or arrow keys
+  that move between points and announce each point's values through a polite
+  live region, as the participation chart's date slider does. Tap targets
+  are at least 24px ([target size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html)).
+- **A table behind every chart.** The collapsed exact-values table of the
+  [chart engine](#chart-engine) stays; a bar's tooltip and its table row use
+  the same formatted value.
+- **Plain words.** Labels name what a person did ("Opened their link",
+  "Have responded"), not system states. Numbers read "463 of 1,240 (37%)".
+  Dates and times are browser-local as elsewhere in the portal.

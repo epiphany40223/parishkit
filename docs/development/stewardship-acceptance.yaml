@@ -193,6 +193,11 @@ sections:
     "Talents and limitations": [RPT-04]
     "System logs": [RPT-09]
     "Daily email report parity": [RPT-09]
+    "Visual report design": [RPT-01, RPT-09]
+    "Report email layout": [RPT-09]
+    "Charts in email": [RPT-01, RPT-09]
+    "Chart palette and style": [RPT-01]
+    "Statistics in the portal": [RPT-03]
   operations/spec.md:
     "Compose files and images": [OPS-01]
     "Runtime storage": [OPS-02]

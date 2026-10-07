@@ -1,0 +1,530 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {
+    "date": "2026-09-14",
+    "new": 41,
+    "total": 41,
+    "pledged": 58360.25
+   },
+   {
+    "date": "2026-09-15",
+    "new": 64,
+    "total": 105,
+    "pledged": 149449.5
+   },
+   {
+    "date": "2026-09-16",
+    "new": 37,
+    "total": 142,
+    "pledged": 202117.75
+   },
+   {
+    "date": "2026-09-17",
+    "new": 22,
+    "total": 164,
+    "pledged": 233441.0
+   },
+   {
+    "date": "2026-09-18",
+    "new": 15,
+    "total": 179,
+    "pledged": 254803.25
+   },
+   {
+    "date": "2026-09-19",
+    "new": 11,
+    "total": 190,
+    "pledged": 270473.5
+   },
+   {
+    "date": "2026-09-20",
+    "new": 9,
+    "total": 199,
+    "pledged": 283297.75
+   },
+   {
+    "date": "2026-09-21",
+    "new": 7,
+    "total": 206,
+    "pledged": 293276.0
+   },
+   {
+    "date": "2026-09-22",
+    "new": 12,
+    "total": 218,
+    "pledged": 310369.25
+   },
+   {
+    "date": "2026-09-23",
+    "new": 8,
+    "total": 226,
+    "pledged": 321770.5
+   },
+   {
+    "date": "2026-09-24",
+    "new": 6,
+    "total": 232,
+    "pledged": 330325.75
+   },
+   {
+    "date": "2026-09-25",
+    "new": 49,
+    "total": 281,
+    "pledged": 400070.0
+   },
+   {
+    "date": "2026-09-26",
+    "new": 30,
+    "total": 311,
+    "pledged": 442777.25
+   },
+   {
+    "date": "2026-09-27",
+    "new": 17,
+    "total": 328,
+    "pledged": 466985.5
+   },
+   {
+    "date": "2026-09-28",
+    "new": 10,
+    "total": 338,
+    "pledged": 481232.75
+   },
+   {
+    "date": "2026-09-29",
+    "new": 8,
+    "total": 346,
+    "pledged": 492634.0
+   },
+   {
+    "date": "2026-09-30",
+    "new": 6,
+    "total": 352,
+    "pledged": 501189.25
+   },
+   {
+    "date": "2026-10-01",
+    "new": 5,
+    "total": 357,
+    "pledged": 508321.5
+   },
+   {
+    "date": "2026-10-02",
+    "new": 38,
+    "total": 395,
+    "pledged": 562412.75
+   },
+   {
+    "date": "2026-10-03",
+    "new": 24,
+    "total": 419,
+    "pledged": 596582.0
+   },
+   {
+    "date": "2026-10-04",
+    "new": 15,
+    "total": 434,
+    "pledged": 617944.25
+   },
+   {
+    "date": "2026-10-05",
+    "new": 11,
+    "total": 445,
+    "pledged": 633614.5
+   },
+   {
+    "date": "2026-10-06",
+    "new": 18,
+    "total": 463,
+    "pledged": 659245.75,
+    "latest": true
+   }
+  ]
+ },
+ "config": {
+  "font": "Helvetica",
+  "view": {
+   "stroke": null
+  },
+  "axis": {
+   "labelColor": "#52606d",
+   "titleColor": "#52606d",
+   "domainColor": "#d0d5dd",
+   "tickColor": "#d0d5dd",
+   "gridColor": "#eef0f3",
+   "labelFontSize": 12
+  },
+  "axisY": {
+   "minExtent": 52
+  },
+  "title": {
+   "anchor": "start",
+   "fontSize": 14,
+   "fontWeight": "bold",
+   "color": "#1f2933",
+   "offset": 20
+  }
+ },
+ "spacing": 30,
+ "resolve": {
+  "scale": {
+   "x": "shared"
+  }
+ },
+ "vconcat": [
+  {
+   "title": "New responses each day",
+   "width": 790,
+   "height": 150,
+   "layer": [
+    {
+     "data": {
+      "values": [
+       {
+        "date": "2026-09-14",
+        "send": "Invitation"
+       },
+       {
+        "date": "2026-09-25",
+        "send": "Reminder 1"
+       },
+       {
+        "date": "2026-10-02",
+        "send": "Reminder 2"
+       }
+      ]
+     },
+     "mark": {
+      "type": "rule",
+      "color": "#7b8794",
+      "strokeDash": [
+       4,
+       3
+      ]
+     },
+     "encoding": {
+      "x": {
+       "field": "date",
+       "type": "temporal",
+       "timeUnit": "yearmonthdate",
+       "title": null,
+       "axis": {
+        "format": "%b %-d",
+        "labelAngle": 0,
+        "tickCount": 8
+       }
+      }
+     }
+    },
+    {
+     "data": {
+      "values": [
+       {
+        "date": "2026-09-14",
+        "send": "Invitation"
+       },
+       {
+        "date": "2026-09-25",
+        "send": "Reminder 1"
+       },
+       {
+        "date": "2026-10-02",
+        "send": "Reminder 2"
+       }
+      ]
+     },
+     "mark": {
+      "type": "text",
+      "align": "left",
+      "dx": 4,
+      "y": -4,
+      "baseline": "bottom",
+      "color": "#52606d",
+      "fontSize": 11
+     },
+     "encoding": {
+      "x": {
+       "field": "date",
+       "type": "temporal",
+       "timeUnit": "yearmonthdate",
+       "title": null,
+       "axis": {
+        "format": "%b %-d",
+        "labelAngle": 0,
+        "tickCount": 8
+       }
+      },
+      "text": {
+       "field": "send"
+      }
+     }
+    },
+    {
+     "mark": {
+      "type": "bar",
+      "color": "#1f6fae",
+      "cornerRadiusEnd": 2,
+      "width": {
+       "band": 0.75
+      }
+     },
+     "encoding": {
+      "x": {
+       "field": "date",
+       "type": "temporal",
+       "timeUnit": "yearmonthdate",
+       "title": null,
+       "axis": {
+        "format": "%b %-d",
+        "labelAngle": 0,
+        "tickCount": 8
+       }
+      },
+      "y": {
+       "field": "new",
+       "type": "quantitative",
+       "title": null,
+       "axis": {
+        "tickCount": 4
+       }
+      }
+     }
+    },
+    {
+     "transform": [
+      {
+       "filter": "datum.latest"
+      }
+     ],
+     "mark": {
+      "type": "text",
+      "dy": -8,
+      "color": "#1f2933",
+      "fontWeight": "bold"
+     },
+     "encoding": {
+      "x": {
+       "field": "date",
+       "type": "temporal",
+       "timeUnit": "yearmonthdate",
+       "title": null,
+       "axis": {
+        "format": "%b %-d",
+        "labelAngle": 0,
+        "tickCount": 8
+       },
+       "bandPosition": 0.5
+      },
+      "y": {
+       "field": "new",
+       "type": "quantitative"
+      },
+      "text": {
+       "field": "new"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "title": "Families who have responded so far",
+   "width": 790,
+   "height": 120,
+   "layer": [
+    {
+     "data": {
+      "values": [
+       {
+        "date": "2026-09-14",
+        "send": "Invitation"
+       },
+       {
+        "date": "2026-09-25",
+        "send": "Reminder 1"
+       },
+       {
+        "date": "2026-10-02",
+        "send": "Reminder 2"
+       }
+      ]
+     },
+     "mark": {
+      "type": "rule",
+      "color": "#7b8794",
+      "strokeDash": [
+       4,
+       3
+      ]
+     },
+     "encoding": {
+      "x": {
+       "field": "date",
+       "type": "temporal",
+       "timeUnit": "yearmonthdate",
+       "title": null,
+       "axis": {
+        "format": "%b %-d",
+        "labelAngle": 0,
+        "tickCount": 8
+       }
+      }
+     }
+    },
+    {
+     "mark": {
+      "type": "line",
+      "color": "#1f6fae",
+      "strokeWidth": 2
+     },
+     "encoding": {
+      "x": {
+       "field": "date",
+       "type": "temporal",
+       "timeUnit": "yearmonthdate",
+       "title": null,
+       "axis": {
+        "format": "%b %-d",
+        "labelAngle": 0,
+        "tickCount": 8
+       },
+       "bandPosition": 0.5
+      },
+      "y": {
+       "field": "total",
+       "type": "quantitative",
+       "title": null,
+       "axis": {
+        "tickCount": 4
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "title": "Annual pledges so far",
+   "width": 790,
+   "height": 110,
+   "layer": [
+    {
+     "data": {
+      "values": [
+       {
+        "date": "2026-09-14",
+        "send": "Invitation"
+       },
+       {
+        "date": "2026-09-25",
+        "send": "Reminder 1"
+       },
+       {
+        "date": "2026-10-02",
+        "send": "Reminder 2"
+       }
+      ]
+     },
+     "mark": {
+      "type": "rule",
+      "color": "#7b8794",
+      "strokeDash": [
+       4,
+       3
+      ]
+     },
+     "encoding": {
+      "x": {
+       "field": "date",
+       "type": "temporal",
+       "timeUnit": "yearmonthdate",
+       "title": null,
+       "axis": {
+        "format": "%b %-d",
+        "labelAngle": 0,
+        "tickCount": 8
+       }
+      }
+     }
+    },
+    {
+     "data": {
+      "values": [
+       {
+        "goal": 1420000.0
+       }
+      ]
+     },
+     "mark": {
+      "type": "rule",
+      "color": "#b8620a",
+      "strokeDash": [
+       6,
+       4
+      ]
+     },
+     "encoding": {
+      "y": {
+       "field": "goal",
+       "type": "quantitative"
+      }
+     }
+    },
+    {
+     "data": {
+      "values": [
+       {
+        "goal": 1420000.0
+       }
+      ]
+     },
+     "mark": {
+      "type": "text",
+      "align": "left",
+      "x": 4,
+      "dy": -8,
+      "color": "#52606d",
+      "fontSize": 11,
+      "text": "Last year's pledges"
+     },
+     "encoding": {
+      "y": {
+       "field": "goal",
+       "type": "quantitative"
+      }
+     }
+    },
+    {
+     "mark": {
+      "type": "line",
+      "color": "#b8620a",
+      "strokeWidth": 2
+     },
+     "encoding": {
+      "x": {
+       "field": "date",
+       "type": "temporal",
+       "timeUnit": "yearmonthdate",
+       "title": null,
+       "axis": {
+        "format": "%b %-d",
+        "labelAngle": 0,
+        "tickCount": 8
+       },
+       "bandPosition": 0.5
+      },
+      "y": {
+       "field": "pledged",
+       "type": "quantitative",
+       "title": null,
+       "axis": {
+        "format": "$,.2~s",
+        "tickCount": 4
+       }
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
