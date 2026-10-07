@@ -29,9 +29,9 @@ from .cadence import (
     refresh_settings,
 )
 from .data_age import (
+    FACTS_COLUMNS,
     FACTS_SQL,
     Connection,
-    SourceFacts,
     connection_state,
     connection_threshold,
     facts_from_row,
@@ -158,9 +158,35 @@ def refresh_schedule(configuration):
     return {"timezone": timezone, **settings}
 
 
+# The latest full and incremental refresh outcomes: the first half of the
+# combined status row, ahead of the ``FACTS_COLUMNS`` data-age facts.
+OUTCOMES_SQL = (
+    "WITH runs AS (SELECT t.id, t.state, t.updated_at, r.kind "
+    "FROM stewardship_task_run t "
+    "JOIN stewardship_source_refresh_request r ON r.task_root_id=t.root_id), "
+    "failures AS (SELECT id, updated_at FROM runs "
+    "WHERE kind='full' AND state IN ('failed','cancelled') "
+    "ORDER BY updated_at DESC LIMIT 1) "
+    "SELECT (SELECT max(promoted_at) FROM stewardship_source_snapshot "
+    "WHERE kind='full' AND state='promoted'), "
+    "(SELECT updated_at FROM failures), "
+    "EXISTS(SELECT 1 FROM runs WHERE kind='full' AND state='running'), "
+    "(SELECT id FROM failures), "
+    "(SELECT max(promoted_at) FROM stewardship_source_snapshot "
+    "WHERE kind='delta' AND state='promoted'), "
+    # Only a failed delta counts: deltas superseded by a newer or full
+    # refresh are cancelled routinely and are not a health problem.
+    "(SELECT max(updated_at) FROM runs WHERE kind='delta' AND state='failed')"
+)
+
+
 def _facts(row):
-    """The data-age facts after the six outcome columns, when present."""
-    return facts_from_row(row[6:13]) if len(row) >= 13 else SourceFacts()
+    """The data-age facts: the last ``FACTS_COLUMNS`` columns of the row.
+
+    Reading from the end keeps the facts right if the outcome half gains a
+    column; a unit test checks both halves' column counts (#659).
+    """
+    return facts_from_row(row[-FACTS_COLUMNS:])
 
 
 def full_refresh_status(schedule=None, now=None):
@@ -174,25 +200,9 @@ def full_refresh_status(schedule=None, now=None):
     """
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT * FROM (WITH runs AS (SELECT t.id, t.state, t.updated_at, r.kind "
-            "FROM stewardship_task_run t "
-            "JOIN stewardship_source_refresh_request r ON r.task_root_id=t.root_id), "
-            "failures AS (SELECT id, updated_at FROM runs "
-            "WHERE kind='full' AND state IN ('failed','cancelled') "
-            "ORDER BY updated_at DESC LIMIT 1) "
-            "SELECT (SELECT max(promoted_at) FROM stewardship_source_snapshot "
-            "WHERE kind='full' AND state='promoted'), "
-            "(SELECT updated_at FROM failures), "
-            "EXISTS(SELECT 1 FROM runs WHERE kind='full' AND state='running'), "
-            "(SELECT id FROM failures), "
-            "(SELECT max(promoted_at) FROM stewardship_source_snapshot "
-            "WHERE kind='delta' AND state='promoted'), "
-            # Only a failed delta counts: deltas superseded by a newer or full
-            # refresh are cancelled routinely and are not a health problem.
-            "(SELECT max(updated_at) FROM runs WHERE kind='delta' AND state='failed')"
             # The data-age facts as a second derived row, so the page pays
             # for one statement, not two (#510).
-            ") outcomes CROSS JOIN (" + FACTS_SQL + ") facts",
+            f"SELECT * FROM ({OUTCOMES_SQL}) outcomes CROSS JOIN ({FACTS_SQL}) facts",
             facts_params(),
         )
         row = cursor.fetchone()

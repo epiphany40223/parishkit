@@ -1,6 +1,8 @@
 """Full-refresh status: a later success clears the failure banner and its link."""
 
+import re
 from contextlib import contextmanager
+from dataclasses import fields
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -8,8 +10,19 @@ import pytest
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.source import refresh_status, send_hold
-from parishkit.stewardship.source.data_age import Connection, SourceFacts
-from parishkit.stewardship.source.refresh_status import FullRefreshStatus
+from parishkit.stewardship.source.data_age import (
+    FACTS_COLUMNS,
+    FACTS_SQL,
+    Connection,
+    SourceFacts,
+)
+from parishkit.stewardship.source.refresh_status import (
+    OUTCOMES_SQL,
+    FullRefreshStatus,
+)
+
+# The real reader, kept before the autouse fixture below replaces it.
+real_facts = refresh_status._facts
 
 EARLY = datetime(2026, 9, 28, 6, 3, tzinfo=UTC)
 LATE = datetime(2026, 9, 28, 11, 15, tzinfo=UTC)
@@ -429,3 +442,43 @@ def test_a_held_refresh_after_the_send_or_resume_point_reads_catching_up(
     assert "is catching up after a Family send." in html
     assert "at the latest" not in html and "being sent" not in html
     assert "notice-error" not in html and "Run a full refresh now" not in html
+
+
+def select_columns(sql):
+    """Count the columns the statement's final top-level SELECT lists.
+
+    Tracks parenthesis depth so commas inside sub-selects, function calls
+    and the WITH clause's CTEs are not counted; the statements hold no
+    commas or parentheses inside string literals.
+    """
+    depth, select, columns = 0, None, 0
+    for match in re.finditer(r"[(),]|\bSELECT\b", sql):
+        token = match.group()
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+        elif depth == 0 and token == "SELECT":
+            select, columns = match.start(), 1
+        elif depth == 0 and token == "," and select is not None:
+            columns += 1
+    return columns
+
+
+def test_the_status_row_halves_keep_their_column_counts():
+    """The facts are read from the row's end, so both halves must agree (#659).
+
+    ``full_refresh_status`` reads six outcome columns from the front and
+    ``_facts`` the last ``FACTS_COLUMNS``; a column added to either statement
+    without updating its reader fails here instead of showing wrong data.
+    """
+    assert select_columns(OUTCOMES_SQL) == 6
+    assert select_columns(FACTS_SQL) == FACTS_COLUMNS
+    assert len(fields(SourceFacts)) == FACTS_COLUMNS
+
+
+def test_facts_come_from_the_end_of_the_combined_row():
+    """The data-age facts are the last columns, after the outcome half."""
+    outcomes = (LATE, None, False, None, DELTA_OK, None)
+    facts = (EARLY, DELTA_OK, LATE, LATE, True, EARLY, NOW)
+    assert real_facts(outcomes + facts) == SourceFacts(*facts)
