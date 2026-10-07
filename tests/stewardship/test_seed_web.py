@@ -13,6 +13,7 @@ from parishkit.stewardship.responses.comparison import ValueKind
 from parishkit.stewardship.responses.financial import ShareOption
 from parishkit.stewardship.responses.inputs import FieldInput
 from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
+from parishkit.stewardship.responses.member_requests import local_member_id
 from parishkit.stewardship.responses.merge import KnownValue
 from parishkit.stewardship.responses.ministry import MinistryInputs, MinistryOption
 
@@ -62,6 +63,7 @@ def form(*, modules=("census", "ministry", "financial")):
         ShareOption("share-b", "Other", True),
     )
     inputs = SimpleNamespace(
+        family_duid=100001,
         modules=tuple(modules),
         member_duids=MEMBERS,
         fields=tuple(fields),
@@ -153,6 +155,47 @@ def test_disabled_modules_get_empty_sections():
     assert payload["family"] == {} and payload["members"] == {"501": {}, "502": {}}
 
 
+def test_a_proposed_member_is_a_complete_new_household_member():
+    """A census edit may propose one new Member, who joins a Ministry (#498)."""
+    from datetime import date
+
+    answers = ANSWERS | {"census_edit": "proposed_member"}
+    payload = build_answers(form(), answers)
+    ((identity, member),) = payload["proposed_members"].items()
+    assert local_member_id(identity)
+    assert set(member) == {field.name for field in MEMBER_FIELDS}
+    assert member["last_name"] == "Household" and member["first_name"]
+    # Existing Members are untouched: no changed email this time.
+    assert payload["members"]["501"]["email"] == "member501@example.test"
+    assert payload["ministries"]["proposed_members"] == {
+        identity: {"join": [MINISTRIES[0]]}
+    }
+    # The same Family proposes the same person on a resubmission.
+    assert build_answers(form(), answers)["proposed_members"] == {identity: member}
+    normalized = validate_answers(
+        payload,
+        _census_inputs(form()),
+        additional_enabled=True,
+        today=date(2026, 10, 1),
+    )
+    assert set(normalized["proposed_members"]) == {identity}
+    assert normalized["ministries"]["proposed_members"][identity]["join"] == [
+        MINISTRIES[0]
+    ]
+    # Without Ministries the new Member is still proposed, with no Ministry entry.
+    census_only = build_answers(form(modules=("census",)), answers)
+    assert set(census_only["proposed_members"]) == {identity}
+    assert census_only["ministries"] == {}
+    validate_answers(
+        census_only,
+        _census_inputs(form(modules=("census",))),
+        additional_enabled=True,
+        today=date(2026, 10, 1),
+    )
+    # Without the census module nobody can be proposed.
+    assert build_answers(form(modules=()), answers)["proposed_members"] == {}
+
+
 def test_seeder_address_is_loopback():
     assert SEEDER_ADDRESS == "127.0.0.1"
 
@@ -167,7 +210,7 @@ def _census_inputs(projection):
 
     inputs = projection.inputs
     return CensusInputs(
-        family_duid=100001,
+        family_duid=inputs.family_duid,
         member_duids=inputs.member_duids,
         fields=inputs.fields,
         definition_digest="d" * 64,
