@@ -1,5 +1,38 @@
--- One source-coherent selection owns interactive pages and complete captures.
-CREATE FUNCTION public.stewardship_directory_report_v1(
+-- Frozen forward migration file 0015 (the repository-wide file sequence;
+-- Django's stewardship_reports.0002): the Family directory search also finds a
+-- Family by any active Member's name and by its envelope number (#664). This
+-- file is installed by reports/migrations/0002_directory_member_search.py and
+-- must never change once released; tests/stewardship/test_schema_migration_files.py
+-- pins its digest and checks that its copy of the replaced function still
+-- equals the fresh-install baseline's (schema/directory_reports.sql). A fresh
+-- install runs the baseline, 0002 to 0014 and then this; the baseline already
+-- carries the replaced body, so the install ends in the same catalog as an
+-- upgraded database.
+--
+-- stewardship_directory_report_v1 is the one selection behind the Family
+-- directory page, its exports and the header's Find a Family box (#561), so
+-- all three gain the new matches together. Its search now also matches:
+-- an active Member's first and last name (or nickname and last name), from
+-- one set-based pass over the snapshot's Members (member_matches), and the
+-- envelope number as a substring, like the DUID. The output is unchanged:
+-- the new envelope_number column is stripped like search_name, and a matched
+-- Member is never returned, so results show only what the directory already
+-- shows. The signature, STABLE, jit=off and the trusted search_path are
+-- kept; the function is not SECURITY DEFINER, before or after. CREATE OR
+-- REPLACE keeps the owner and grants; the DO block below checks the ACL is
+-- the one recorded before the replacement.
+SET LOCAL check_function_bodies = false;
+SET LOCAL search_path = public;
+
+-- The function's grants before the replacement (with how many definitions
+-- there are), compared in the DO block. A transaction-local setting holds
+-- them, not a temporary table: the migration login has no TEMP privilege.
+SELECT set_config('stewardship.migration_0015_acl', (
+    SELECT count(*)||':'||coalesce(string_agg(coalesce(p.proacl::text,'default'),';'),'')
+    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname='public' AND p.proname='stewardship_directory_report_v1'), true);
+
+CREATE OR REPLACE FUNCTION public.stewardship_directory_report_v1(
     campaign_uuid uuid, parameters jsonb, page_number integer DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql STABLE
 -- JIT compilation cost about 2.3 s per call at 2,500 Families and saved
@@ -245,61 +278,30 @@ SELECT jsonb_build_object('metadata',to_jsonb(s),
     RETURN answer;
 END $$;
 
-CREATE TABLE stewardship_directory_export_snapshot (
-    id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT statement_timestamp(),
-    actor_id uuid NOT NULL, correlation_id uuid NOT NULL,
-    campaign_id uuid NOT NULL REFERENCES stewardship_campaign(id) DEFERRABLE INITIALLY DEFERRED,
-    source_id uuid NOT NULL REFERENCES stewardship_source_snapshot(id) DEFERRABLE INITIALLY DEFERRED,
-    configuration_id uuid NOT NULL REFERENCES stewardship_configuration_version(id) DEFERRABLE INITIALLY DEFERRED,
-    parameters jsonb NOT NULL, document jsonb NOT NULL,
-    row_count integer NOT NULL CHECK(row_count>=0)
-);
-CREATE INDEX directory_export_correlation ON stewardship_directory_export_snapshot(correlation_id);
-CREATE INDEX directory_export_campaign ON stewardship_directory_export_snapshot(campaign_id);
-CREATE INDEX directory_export_source ON stewardship_directory_export_snapshot(source_id);
-CREATE INDEX directory_export_config ON stewardship_directory_export_snapshot(configuration_id);
-
-CREATE FUNCTION stewardship_directory_export_capture_v1() RETURNS trigger
-LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DO $check$
 BEGIN
-    IF TG_OP<>'INSERT' THEN
-        RAISE EXCEPTION 'Directory export snapshots are immutable' USING ERRCODE='23514';
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname='stewardship_directory_report_v1'
+          AND pg_get_function_identity_arguments(p.oid)
+              ='campaign_uuid uuid, parameters jsonb, page_number integer'
+          AND p.prorettype='jsonb'::regtype AND p.provolatile='s'
+          AND NOT p.prosecdef
+          AND p.proconfig @> ARRAY['jit=off','search_path=pg_catalog, public, pg_temp']
+          AND p.prosrc LIKE '%member_matches AS MATERIALIZED%'
+          AND p.prosrc LIKE '%position(o.f->>''search'' IN envelope_number)>0%'
+          AND p.prosrc LIKE '%''search_name'',''envelope_number'',%') THEN
+        RAISE EXCEPTION 'stewardship_directory_report_v1 was not replaced with the #664 search';
     END IF;
-    PERFORM stewardship_export_campaign_lock_v1(NEW.campaign_id,false);
-    IF NOT stewardship_export_authorized_v1(NEW.actor_id)
-       OR NOT stewardship_export_admitted_v1(NEW.campaign_id,true)
-       OR current_user='pk_stewardship_worker'
-       OR NOT EXISTS(SELECT 1 FROM stewardship_system_configuration
-           WHERE active_configuration_id=NEW.configuration_id)
-    THEN RAISE EXCEPTION 'Directory export capture is unavailable' USING ERRCODE='23514'; END IF;
-    NEW.created_at:=statement_timestamp();
-    NEW.document:=stewardship_directory_report_v1(NEW.campaign_id,NEW.parameters);
-    IF NEW.document IS NULL THEN
-        RAISE EXCEPTION 'Directory export inputs are unavailable' USING ERRCODE='23514';
+    IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname='stewardship_directory_report_v1')<>1 THEN
+        RAISE EXCEPTION 'stewardship_directory_report_v1 must have exactly one definition';
     END IF;
-    NEW.source_id:=(NEW.document->'metadata'->>'source_id')::uuid;
-    NEW.row_count:=(NEW.document->>'total')::integer;
-    RETURN NEW;
-END $$;
-
-CREATE TRIGGER directory_export_capture BEFORE INSERT OR UPDATE OR DELETE
-    ON stewardship_directory_export_snapshot FOR EACH ROW
-    EXECUTE FUNCTION stewardship_directory_export_capture_v1();
-
-CREATE FUNCTION stewardship_directory_export_binding_v1() RETURNS trigger
-LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
-BEGIN
-    IF NOT EXISTS(SELECT 1 FROM stewardship_export_request r
-        WHERE r.directory_snapshot_id=NEW.id AND r.requester_id=NEW.actor_id
-          AND r.campaign_id=NEW.campaign_id AND r.configuration_id=NEW.configuration_id)
-    THEN RAISE EXCEPTION 'Directory export capture requires its request' USING ERRCODE='23514'; END IF;
-    RETURN NULL;
-END $$;
-CREATE CONSTRAINT TRIGGER directory_export_binding AFTER INSERT
-    ON stewardship_directory_export_snapshot DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW EXECUTE FUNCTION stewardship_directory_export_binding_v1();
-
-ALTER TABLE stewardship_export_request ADD CONSTRAINT export_directory_snapshot_fk
-    FOREIGN KEY(directory_snapshot_id) REFERENCES stewardship_directory_export_snapshot(id)
-    DEFERRABLE INITIALLY DEFERRED;
-CREATE INDEX export_directory_snapshot ON stewardship_export_request(directory_snapshot_id);
+    IF current_setting('stewardship.migration_0015_acl', true) IS DISTINCT FROM (
+           SELECT '1:'||coalesce(p.proacl::text,'default')
+           FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+           WHERE n.nspname='public' AND p.proname='stewardship_directory_report_v1') THEN
+        RAISE EXCEPTION 'stewardship_directory_report_v1 lost or changed its grants';
+    END IF;
+END
+$check$;

@@ -5,7 +5,7 @@
   puts it under the header's Find a Family box and reads the summary
   (data-find-family-summary) aloud. A Family without a campaign record has
   no timeline, so it is listed without a link, as in the directory.
-{% endcomment %}<p class="find-family-summary" data-find-family-summary>{% if total %}{% blocktranslate count counter=total with shown=total|number %}{{ shown }} Family found{% plural %}{{ shown }} Families found{% endblocktranslate %}{% else %}{% translate "No Family matches. Try part of the surname, a head's first name, the DUID or the street." %}{% endif %}</p>
+{% endcomment %}<p class="find-family-summary" data-find-family-summary>{% if total %}{% blocktranslate count counter=total with shown=total|number %}{{ shown }} Family found{% plural %}{{ shown }} Families found{% endblocktranslate %}{% else %}{% translate "No Family matches. Try part of the Family name or any member's name, the DUID, the envelope number or the street." %}{% endif %}</p>
 {% if rows %}<ul class="find-family-list">
   {% for row in rows %}<li>{% if row.family_id %}<a href="{% url 'admin:family_timeline' campaign_id row.family_id %}" data-find-family-result><span class="find-family-name">{{ row.display_name }}</span> <span class="find-family-detail">{% translate "DUID" %} {{ row.family_duid }}{% if row.envelope %} · {% translate "Envelope" %} {{ row.envelope }}{% endif %}</span></a>{% else %}<span class="find-family-name">{{ row.display_name }}</span> <span class="find-family-detail">{% translate "DUID" %} {{ row.family_duid }} · {% translate "No campaign record yet" %}</span>{% endif %}</li>{% endfor %}
 </ul>{% endif %}

@@ -14,7 +14,7 @@
   <form method="post" action="{{ admin_chrome.find_family.url }}" role="search" aria-label="{% translate 'Find a Family' %}" data-find-family-form>{% csrf_token %}
     <label for="find-family-search" class="visually-hidden">{% translate "Find a Family" %}</label>
     <input type="search" id="find-family-search" name="search" maxlength="200" autocomplete="off" spellcheck="false" placeholder="{% translate 'Find a Family' %}" aria-describedby="find-family-help" aria-controls="find-family-results" data-find-family-input>
-    <span id="find-family-help" class="visually-hidden">{% translate "Search by name, DUID or address. Type at least 2 characters; matches appear below as you type. Press Down arrow to move to them." %}</span>
+    <span id="find-family-help" class="visually-hidden">{% translate "Search by Family name, any member's name, DUID, envelope number or address. Type at least 2 characters; matches appear below as you type. Press Down arrow to move to them." %}</span>
   </form>
   <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true" data-find-family-status></p>
   <div id="find-family-results" class="find-family-results" data-find-family-results hidden></div>

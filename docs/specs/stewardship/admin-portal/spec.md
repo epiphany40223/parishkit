@@ -540,10 +540,10 @@ script cancels because a newer one started still runs to its end on the
 server, so it is audited too: a few audit records per lookup is the accepted
 cost of keeping one audit path with the directory. Down arrow moves
 from the box to the results, Up and Down move between them, and Escape closes
-them and returns to the box. Matching every member's name and the envelope
-number needs a change to the directory's installed selection, so it is
-deferred to [#664](https://github.com/epiphany40223/parishkit/issues/664). Its
-route (`find_family`) is a non-page action.
+them and returns to the box. Because it is the directory's search, it also
+finds a Family by any active Member's name and by its envelope number
+([#664](https://github.com/epiphany40223/parishkit/issues/664)). Its route
+(`find_family`) is a non-page action.
 
 Entries use the same capability checks as the pages they open, and a group
 with no entry for the viewer's role is omitted; the menu is not the security
@@ -1017,8 +1017,8 @@ follows them.
 21. **Who gets Find a Family, and how does it search?** Administrators and
     Staff only, results scoped to what the role may see (Administrator); by
     CSRF POST (coordinator) (#561). It matches what the directory search
-    matches; member names and the envelope number follow in #664
-    (coordinator, NAV-19).
+    matches, including any active Member's name and the envelope number
+    (coordinator, #664).
 22. **What are the #477 response lists?** (Coordinator.) One registry row,
     each named after its list, at `/admin/reports/responses/<key>/`; its CSV
     is a non-page.
