@@ -57,10 +57,10 @@ def portal_chrome(request):
     now = getattr(request, "_stewardship_display_now", None) or database_now()
     counts = _background_counts(actor, now)
     parish = getattr(configuration.active_configuration, "parish", None)
-    critical, critical_ids, delivery_unknown = (
+    critical, critical_ids, delivery_unknown, critical_ended = (
         alert_counts(now - CRITICAL_WINDOW, limit=ACKNOWLEDGE_LIMIT)
         if admin
-        else ({}, [], None)
+        else ({}, [], None, {})
     )
     go_live = bool(
         campaign
@@ -110,7 +110,11 @@ def portal_chrome(request):
             "family_closed": family_maintenance.current_state().closed,
             "family_portal_url": reverse("admin:family_portal"),
             "critical_count": sum(critical.values()),
-            "critical_events": critical_summary(critical),
+            "critical_events": critical_summary(critical, critical_ended),
+            # Every listed problem has ended (#633): the banner says so
+            # instead of reading as an outage still going on.
+            "critical_all_ended": bool(critical)
+            and critical.keys() <= critical_ended.keys(),
             # The exact rows Acknowledge may record, signed (critical_events).
             "critical_shown": critical_sign(critical_ids) if critical_ids else "",
             # More pending than one form signs: the rest stay after Acknowledge.

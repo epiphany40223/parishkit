@@ -72,10 +72,18 @@ BEGIN
         critical:=unavailable=3;
     END IF;
     IF critical THEN
+        -- What failed (#633): one systemic provider answer, or three
+        -- unavailable answers in a row, with this message, its task and
+        -- its closed provider reason.
         INSERT INTO public.stewardship_operational_log
             (id,actor_id,correlation_id,level,event,schema,context)
         VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'CRITICAL',
-            'mail_provider_failed','task',jsonb_build_object('task_id',message.task_id));
+            'mail_provider_failed','failure',jsonb_strip_nulls(jsonb_build_object(
+                'failure',CASE WHEN result->>'health'='systemic'
+                    THEN 'smtp_systemic' ELSE 'smtp_unavailable' END,
+                'count',CASE WHEN result->>'health'='systemic' THEN 1 ELSE unavailable END,
+                'task_id',message.task_id,'message_id',NEW.message_id,
+                'reason',CASE WHEN NEW.reason<>'smtp_accepted' THEN NEW.reason END)));
     END IF;
     RETURN NULL;
 END $$;

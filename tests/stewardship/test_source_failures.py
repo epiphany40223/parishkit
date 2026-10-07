@@ -1,5 +1,8 @@
 """Read failure classification never needs private exception messages or bodies."""
 
+from types import SimpleNamespace
+from uuid import uuid4
+
 import pytest
 
 from parishkit.config import ConfigError
@@ -17,6 +20,7 @@ from parishkit.parishsoft_transport import (
 )
 from parishkit.retry import RetryError, TransientRetryError
 from parishkit.stewardship.accounts.cryptography import CryptographicError
+from parishkit.stewardship.audit.schemas import FAILURES, Outcome
 from parishkit.stewardship.jobs.lifetime import ExecutionInterrupted
 from parishkit.stewardship.observability import Event
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
@@ -25,10 +29,14 @@ from parishkit.stewardship.source.errors import (
     SourceScopeChanged,
     local_read_admission,
 )
-from parishkit.stewardship.source.failures import classify_read_failure
+from parishkit.stewardship.source.failures import classify_read_failure, failure_context
 from parishkit.stewardship.source.leases import SourceFenceLost, SourceLeaseUnavailable
 from parishkit.stewardship.source.loading import CountCheck, DestructiveSourceChange
-from parishkit.stewardship.source.outcomes import failure_action, retry_delay
+from parishkit.stewardship.source.outcomes import (
+    MAX_AUTOMATIC_ATTEMPTS,
+    failure_action,
+    retry_delay,
+)
 from parishkit.stewardship.storage import StorageInvariantError
 
 
@@ -234,3 +242,57 @@ def test_unknown_ownership_drain_and_fallback_cases_cannot_use_failure_settlemen
         classify_read_failure(RetryError("PRIVATE", error), has_source_claim=True)
         is None
     )
+
+
+@pytest.mark.parametrize(
+    "error,failure,status",
+    [
+        (SourceOrganizationMismatch("PRIVATE"), "organization_mismatch", None),
+        (ShiftedSourceScan("PRIVATE"), "shifted_scan", None),
+        (InvalidSourcePayload("PRIVATE"), "invalid_payload", None),
+        (InvalidSourceResponse("PRIVATE"), "invalid_response", None),
+        (IncompleteSourceCollection("PRIVATE"), "incomplete_collection", None),
+        (SourceLeaseUnavailable("PRIVATE"), "lease_unavailable", None),
+        (SourceScopeChanged("PRIVATE"), "scope_changed", None),
+        (CryptographicError("PRIVATE"), "credential_unreadable", None),
+        (SourceCredentialChanged("PRIVATE"), "credential_changed", None),
+        (ParishSoftAPIError(503, "PRIVATE", "PRIVATE"), "provider_status", 503),
+        (TimeoutError("PRIVATE"), "provider_timeout", None),
+        (SourceTransportError("PRIVATE"), "provider_unreachable", None),
+        (ConnectionError("PRIVATE"), "provider_unreachable", None),
+    ],
+)
+def test_each_classification_names_what_failed(error, failure, status):
+    """The durable entry says which call failed and why (#633), as closed words."""
+    decision = classify_read_failure(
+        RetryError("PRIVATE", error), has_source_claim=True
+    )
+    assert decision.failure == failure and decision.status == status
+    assert failure in FAILURES
+
+
+def test_failure_context_says_what_happens_next():
+    """A retry names its wait and attempt; a give-up names the last attempt."""
+    result = SimpleNamespace(run_id=uuid4(), version=4)
+    decision = classify_read_failure(
+        ParishSoftAPIError(502, "PRIVATE", "PRIVATE"), has_source_claim=True
+    )
+    retry = failure_context(decision, result, attempt=2, action="retryable_failure")
+    assert retry == {
+        "failure": "provider_status",
+        "task_id": result.run_id,
+        "version": 4,
+        "attempt": 2,
+        "outcome": Outcome.RETRY,
+        "retry_seconds": retry_delay(2),
+        "attempt_limit": MAX_AUTOMATIC_ATTEMPTS,
+        "status": 502,
+    }
+    final = failure_context(decision, result, attempt=5, action="permanent_failure")
+    assert final["outcome"] is Outcome.FAILED and "retry_seconds" not in final
+    held = classify_read_failure(
+        SourceLeaseUnavailable("PRIVATE"), has_source_claim=True
+    )
+    waiting = failure_context(held, result, attempt=9, action="retryable_failure")
+    # Contention waits without using the provider-failure allowance.
+    assert "attempt_limit" not in waiting and waiting["retry_seconds"] == retry_delay(9)

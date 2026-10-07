@@ -70,9 +70,14 @@ def test_lag_warning_threshold_and_restart_deduplication(scheduled, offset, expe
     if expected:
         warning = warnings.get()
         assert warning.level == "WARNING"
+        # Which boundary, its task and how late against the limit (#633).
+        assert warning.schema == "due_work"
         assert warning.context == {
+            "task_type": "campaign_boundary",
             "task_id": str(start.task_root_id),
-            "count": MAX_AGE_SECONDS + offset,
+            "occurrence_id": str(start.occurrence_id),
+            "lag_seconds": MAX_AGE_SECONDS + offset,
+            "limit_seconds": MAX_AGE_SECONDS,
         }
         assert warning.correlation_id == start.occurrence_id
 

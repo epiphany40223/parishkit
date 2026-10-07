@@ -79,15 +79,18 @@ BEGIN
         -- Intake can be unavailable together with the general worker. Retain
         -- immutable negative evidence here before any later scan can recover.
         -- The scheduler's scan says what was late (#634) in a setting local
-        -- to this transaction. A context the log would refuse is dropped,
-        -- never allowed to block the failure record itself.
+        -- to this transaction. A missing, empty or refused context is never
+        -- allowed to block the failure record itself; the entry then says
+        -- at least the per-task limit it broke (#633, mirroring
+        -- jobs.due_work_health.FALLBACK_CONTEXT).
         BEGIN
-            detail:=COALESCE(NULLIF(current_setting('parishkit.due_work_context',true),'')::jsonb,'{}');
+            detail:=NULLIF(current_setting('parishkit.due_work_context',true),'')::jsonb;
         EXCEPTION WHEN invalid_text_representation THEN
-            detail:='{}';
+            detail:=NULL;
         END;
-        IF NOT public.stewardship_safe_context_v1('due_work',detail) THEN
-            detail:='{}';
+        IF detail IS NULL OR detail=jsonb_build_object()
+           OR NOT public.stewardship_safe_context_v1('due_work',detail) THEN
+            detail:=jsonb_build_object('limit_seconds',90);
         END IF;
         INSERT INTO public.stewardship_operational_log
             (id,correlation_id,level,event,schema,context)

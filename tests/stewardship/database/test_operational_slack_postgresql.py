@@ -310,9 +310,16 @@ def test_slack_preparation_exhaustion_logs_without_recursive_alerts(
     assert not OperationalSlackAttempt.objects.exists()
     assert not OperationalSlackResult.objects.exists()
     assert OperationalNotice.objects.count() == 1
-    assert (
-        OperationalLog.objects.filter(event="task_failed", level="ERROR").count() == 1
-    )
+    (failed,) = OperationalLog.objects.filter(event="task_failed", level="ERROR")
+    # It names the Slack task, its type and its last attempt (#633).
+    assert failed.schema == "failure"
+    assert failed.context == {
+        "failure": "slack_alert",
+        "task_id": str(identifier),
+        "task_type": "operational_slack",
+        "attempt": 5,
+        "outcome": "failed",
+    }
     assert not OperationalLog.objects.filter(level="CRITICAL").exists()
 
 

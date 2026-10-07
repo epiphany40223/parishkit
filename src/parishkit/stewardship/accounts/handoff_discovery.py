@@ -5,7 +5,7 @@ import logging
 from django.db import transaction
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.observability import Event, emit
+from parishkit.stewardship.observability import Event, FailureKind, emit
 
 from .credential_database import admit_installer_database
 from .credential_handoff import PrivateHandoff, PublicHandoff
@@ -31,7 +31,13 @@ def publish_handoff(private):
             defaults={"key_id": public.key.id, "public_key": public.key.material},
         )
         if (row.key_id, bytes(row.public_key)) != (public.key.id, public.key.material):
-            emit(Event.HANDOFF_KEY_MISMATCH, level=logging.ERROR)
+            # The event names the mismatch; the category says it needs a
+            # configuration repair, not a retry (#633).
+            emit(
+                Event.HANDOFF_KEY_MISMATCH,
+                level=logging.ERROR,
+                failure_kind=FailureKind.CONFIGURATION,
+            )
             raise ConfigError(
                 "Published credential handoff differs from this installer."
             )

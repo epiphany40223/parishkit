@@ -301,7 +301,11 @@ def test_reporting_failure_never_refuses_the_family(
         assert form.baseline.state == "open"
     assert calls and row().version == before.version
     event = events.get()
-    assert event.level == "ERROR" and event.context == {"outcome": "failed"}
+    assert event.level == "ERROR" and event.schema == "failure"
+    # What failed and its category (#633), never the exception's text.
+    assert event.context.keys() == {"failure", "failure_kind", "outcome"}
+    assert event.context["failure"] == "family_engagement"
+    assert event.context["outcome"] == "failed"
 
 
 def test_first_insert_and_form_issuance_do_not_deadlock(response_service):

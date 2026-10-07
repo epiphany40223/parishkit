@@ -39,6 +39,7 @@ PAGES = (
     "/logs-error-503",
     "/logs-dated",
     "/logs-error-zone",
+    "/logs-detail",
 )
 # The hint Apply shows while a browser without a known zone has a date.
 ZONE_HINT = (
@@ -621,3 +622,29 @@ def test_show_choices_filter_in_place(page, component_origin, ticks, fixture, ce
     # The kept form still shows what was applied.
     for label in ticks:
         assert page.get_by_label(label, exact=True).is_checked()
+
+
+def test_serious_entries_and_recoveries_say_what_happened(page, component_origin):
+    """Each entry's recorded detail starts with a sentence (#633).
+
+    The banner above says its one problem has ended, at a browser-local time.
+    """
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + "/logs-detail")
+    summaries = page.locator("#table .log-summary")
+    assert summaries.count() == 3
+    texts = summaries.all_inner_texts()
+    assert texts[0].startswith("Recovered: “Scheduled work is overdue” has ended")
+    assert "after 30 min (seen 2 times)" in texts[0]
+    assert texts[1].startswith("ParishSoft answered with an error. Details: HTTP")
+    assert "tried again in 60 s (attempt 2 of 5 failed)" in texts[1]
+    assert texts[2].startswith("977 outbox delivery tasks started late")
+    assert "the longest waited 17 min (the limit is 90 s)" in texts[2]
+    banner = page.locator(".critical-events")
+    assert "(all have ended)" in banner.locator("strong").inner_text()
+    ended = banner.locator(".critical-ended time")
+    assert ended.get_attribute("datetime").endswith("+00:00")
+    # The page script shows the end time in the browser's zone.
+    expect(ended).to_contain_text("PDT")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

@@ -128,6 +128,7 @@ OPERATIONAL_FIELDS = (
     "event",
     "actor_id",
     "correlation_id",
+    "schema",
     "context",
 )
 AUDIT_FIELDS = (

@@ -136,8 +136,14 @@ def _after_transition(action, status):
     operational(
         Event.TASK_FAILED,
         level="CRITICAL",
-        schema=ContextKind.TASK,
-        context={"task_id": status.run_id, "outcome": Outcome.FAILED},
+        schema=ContextKind.FAILURE,
+        context={
+            "failure": "export_cleanup",
+            "task_id": status.run_id,
+            "attempt": status.attempt,
+            "attempt_limit": MAX_CLEANUP_ATTEMPTS,
+            "outcome": Outcome.FAILED,
+        },
     )
 
 

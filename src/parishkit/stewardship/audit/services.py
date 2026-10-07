@@ -5,6 +5,7 @@ from django.db import connection, transaction
 from parishkit.stewardship.observability import Event
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .log_contract import enforce
 from .models import AuditContext, AuditEvent, OperationalLog
 from .schemas import Action, ActorKind, ContextKind, sanitize
 
@@ -78,7 +79,14 @@ def audited_effect(action, *, authorize, operation, **evidence):
 
 
 def operational(event, *, level="INFO", schema=ContextKind.EXCEPTION, context=None):
-    """Retain searchable safe diagnostics without exception or provider payloads."""
+    """Retain searchable safe diagnostics without exception or provider payloads.
+
+    A WARNING-or-above entry must carry the context ``log_contract.REQUIRED``
+    names for its event (#633), so System logs can say what went wrong.
+    ``log_contract.enforce`` makes a miss fail under the test settings; in
+    production the entry is written anyway and the miss is logged, since a
+    failure record must never become a failure itself.
+    """
     if not isinstance(event, Event) or level not in {
         "DEBUG",
         "INFO",
@@ -87,6 +95,7 @@ def operational(event, *, level="INFO", schema=ContextKind.EXCEPTION, context=No
         "CRITICAL",
     }:
         raise ValueError("Operational event and level must be approved values.")
+    enforce(event, level, context)
     safe = sanitize(schema, {} if context is None else context)
     return OperationalLog.objects.create(
         event=event.value,

@@ -112,13 +112,15 @@ def observe_source_health():
         # collector rather than a second incident-writing path: its next page
         # consumes this durable, value-free failure. Its timestamp also prevents
         # old success from clearing the alert immediately after a config repair.
+        changed = isinstance(error, SourceOrganizationChanged)
         operational(
-            Event.SOURCE_TENANT_MISMATCH
-            if isinstance(error, SourceOrganizationChanged)
-            else Event.SOURCE_INVALID,
+            Event.SOURCE_TENANT_MISMATCH if changed else Event.SOURCE_INVALID,
             level="CRITICAL",
-            schema=ContextKind.ACTION,
+            schema=ContextKind.FAILURE,
             context={
+                "failure": "organization_changed"
+                if changed
+                else "source_configuration",
                 "version": scope.runtime.configuration_sequence,
                 "outcome": Outcome.DENIED,
             },

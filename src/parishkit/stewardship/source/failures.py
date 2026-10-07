@@ -47,6 +47,7 @@ from .leases import SourceLeaseUnavailable, release_source, verify_source
 from .loading import DestructiveSourceChange
 from .models import SourceMutationLease
 from .outcomes import (
+    MAX_AUTOMATIC_ATTEMPTS,
     _request,
     completed_snapshot,
     failure_action,
@@ -64,6 +65,11 @@ class ReadFailure:
     retry: bool
     contention: bool
     event: Event
+    # What failed, a closed word (audit.schemas.FAILURES), and for a
+    # ParishSoft error answer its HTTP status, so System logs can say which
+    # call failed and why (#633).
+    failure: str
+    status: int | None = None
     # For a destructive change: the closed measure name and its before/after
     # counts, logged so the operator can see what dropped (see loading.py).
     loss: tuple | None = None
@@ -86,12 +92,15 @@ def classify_read_failure(error, *, has_source_claim):
         seen.add(id(error))
         error = error.last_exception
     if isinstance(error, SourceOrganizationMismatch):
-        return ReadFailure(False, False, Event.SOURCE_TENANT_MISMATCH)
+        return ReadFailure(
+            False, False, Event.SOURCE_TENANT_MISMATCH, "organization_mismatch"
+        )
     if isinstance(error, DestructiveSourceChange):
         return ReadFailure(
             False,
             False,
             Event.SOURCE_DESTRUCTIVE_CHANGE,
+            "destructive_change",
             loss=error.loss,
             checks=error.checks,
         )
@@ -99,30 +108,48 @@ def classify_read_failure(error, *, has_source_claim):
         # The provider's paging moved mid-scan (validated 2026-09-28: the same
         # full load failed once and passed on five immediate re-runs). Retry
         # the whole read within the bounded provider-failure allowance.
-        return ReadFailure(True, False, Event.SOURCE_PROVIDER_FAILED)
-    if isinstance(
-        error, (InvalidSourcePayload, IncompleteSourceCollection, InvalidSourceResponse)
+        return ReadFailure(True, False, Event.SOURCE_PROVIDER_FAILED, "shifted_scan")
+    for kind, failure in (
+        (InvalidSourcePayload, "invalid_payload"),
+        (IncompleteSourceCollection, "incomplete_collection"),
+        (InvalidSourceResponse, "invalid_response"),
     ):
-        return ReadFailure(False, False, Event.SOURCE_INVALID)
+        if isinstance(error, kind):
+            return ReadFailure(False, False, Event.SOURCE_INVALID, failure)
     if isinstance(error, SourceLeaseUnavailable):
-        return ReadFailure(True, True, Event.SOURCE_HELD)
+        return ReadFailure(True, True, Event.SOURCE_HELD, "lease_unavailable")
     if isinstance(error, (AuthorityChanging, SourceAuthorityChanging)):
         # A configuration change that did not finish activating while this
         # read waited for it (#429). It is held like a scope change, but as
         # contention: an unfinished change is the installer's to complete,
         # and it must not use up the bounded provider-failure allowance.
-        return ReadFailure(True, True, Event.SOURCE_HELD)
+        return ReadFailure(True, True, Event.SOURCE_HELD, "configuration_activating")
     if isinstance(error, SourceScopeChanged):
-        return ReadFailure(True, False, Event.SOURCE_HELD)
+        return ReadFailure(True, False, Event.SOURCE_HELD, "scope_changed")
     if isinstance(error, (CryptographicError, SourceCredentialChanged)):
         # Pre-claim credential intake cannot succeed without an operator repair.
         # A post-load key-inventory rotation may instead require a bounded retry.
-        return ReadFailure(has_source_claim, False, Event.SOURCE_CREDENTIAL_FAILED)
-    if isinstance(error, ParishSoftAPIError):
         return ReadFailure(
-            error.status_code in {429, 500, 502, 503, 504},
+            has_source_claim,
+            False,
+            Event.SOURCE_CREDENTIAL_FAILED,
+            "credential_changed"
+            if isinstance(error, SourceCredentialChanged)
+            else "credential_unreadable",
+        )
+    if isinstance(error, ParishSoftAPIError):
+        status = error.status_code
+        return ReadFailure(
+            status in {429, 500, 502, 503, 504},
             False,
             Event.SOURCE_PROVIDER_FAILED,
+            "provider_status",
+            # Only a real HTTP status is recorded; the log refuses others.
+            status=status if type(status) is int and 100 <= status <= 599 else None,
+        )
+    if isinstance(error, (requests.Timeout, TimeoutError)):
+        return ReadFailure(
+            True, False, Event.SOURCE_PROVIDER_FAILED, "provider_timeout"
         )
     if isinstance(
         error,
@@ -135,8 +162,40 @@ def classify_read_failure(error, *, has_source_claim):
             ConnectionError,
         ),
     ):
-        return ReadFailure(True, False, Event.SOURCE_PROVIDER_FAILED)
+        return ReadFailure(
+            True, False, Event.SOURCE_PROVIDER_FAILED, "provider_unreachable"
+        )
     return None
+
+
+def failure_context(decision, result, *, attempt, action):
+    """The ``failure`` context a settled source read failure records (#633).
+
+    ``result`` is the task's new status after ``action`` (``change_run``);
+    ``attempt`` is the attempt that failed. A retry says when it runs again
+    and how many automatic attempts a provider failure gets; a held read
+    (contention) waits without using them. Closed words, numbers and ids
+    only: no provider text.
+    """
+    retry = action == "retryable_failure"
+    context = {
+        "failure": decision.failure,
+        "task_id": result.run_id,
+        "version": result.version,
+        "attempt": attempt,
+        "outcome": Outcome.RETRY
+        if retry
+        else Outcome.FAILED
+        if action == "permanent_failure"
+        else Outcome.CANCELLED,
+    }
+    if retry:
+        context["retry_seconds"] = retry_delay(attempt)
+        if not decision.contention:
+            context["attempt_limit"] = MAX_AUTOMATIC_ATTEMPTS
+    if decision.status is not None:
+        context["status"] = decision.status
+    return context
 
 
 def settle_failed_read(execution, error, *, source_claim=None):
@@ -243,12 +302,10 @@ def settle_failed_read(execution, error, *, source_claim=None):
                 level=("INFO" if decision.event is Event.SOURCE_HELD else "WARNING")
                 if retry
                 else "CRITICAL",
-                schema=ContextKind.TASK,
-                context={
-                    "task_id": result.run_id,
-                    "version": result.version,
-                    "outcome": Outcome.RETRY if retry else Outcome.FAILED,
-                },
+                schema=ContextKind.FAILURE,
+                context=failure_context(
+                    decision, result, attempt=status.attempt, action=action
+                ),
             )
             if decision.checks and attempt is not None:
                 # Every count the refused load was checked on, with the

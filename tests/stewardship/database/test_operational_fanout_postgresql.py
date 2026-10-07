@@ -40,6 +40,7 @@ from parishkit.stewardship.jobs.outbox_models import OutboxMessage, OutboxRender
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 
+from ..log_samples import sample as log_sample
 from ..policy_factory import address
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
@@ -284,7 +285,7 @@ def test_held_fanout_does_not_block_safe_collection_hints(routing, monkeypatch):
 
     store, _, _, _ = routing
     (preparation,) = schedule()
-    operational(Event.TASK_FAILED, level="CRITICAL")
+    operational(Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED))
     monkeypatch.setattr(store, "manifest_reference", lambda: (uuid4(), "f" * 64))
     hints = []
     with task_login(ServiceRole.SCHEDULER, exact=True), scheduler_session() as guard:

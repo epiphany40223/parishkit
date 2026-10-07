@@ -55,8 +55,12 @@ def diagnostics(levels=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")):
         operational(
             Event.TASK_FAILED,
             level=level,
-            schema=ContextKind.TASK,
-            context={"outcome": Outcome.FAILED, "count": len(level)},
+            schema=ContextKind.FAILURE,
+            context={
+                "failure": "alert_mail",
+                "outcome": Outcome.FAILED,
+                "count": len(level),
+            },
         )
 
 
@@ -603,7 +607,11 @@ def test_export_downloads_filtered_entries_as_csv_or_json_lines(auth_service, go
     )
     records = [json.loads(line) for line in jsonl.content.decode().splitlines()]
     assert [record["level"] for record in records] == ["CRITICAL"]
-    assert records[0]["details"] == {"count": "8", "outcome": "failed"}
+    assert records[0]["details"] == {
+        "count": "8",
+        "failure": "alert_mail",
+        "outcome": "failed",
+    }
     assert list(
         AuditContext.objects.filter(
             event__event_type="system_logs_exported"

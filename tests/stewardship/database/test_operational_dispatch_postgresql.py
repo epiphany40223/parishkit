@@ -109,8 +109,15 @@ def test_failed_partial_fanout_cancels_children_without_provider_work(
     assert message.state == "cancelled" and message.reason == "preparation_failed"
     assert message.attempt == 0 and OperationalRecipient.objects.count() == 1
     assert TaskRun.objects.get(pk=message.task_id).state == "cancelled"
-    assert (
-        OperationalLog.objects.filter(level="ERROR", event="task_failed").count() == 2
+    logs = OperationalLog.objects.filter(level="ERROR", event="task_failed")
+    assert logs.count() == 2
+    # What failed (#633): the message that could not be prepared, and the task.
+    assert {log.schema for log in logs} == {"failure"}
+    assert {log.context["failure"] for log in logs} == {"alert_mail"}
+    assert any(
+        log.context.get("message_id") == str(message.pk)
+        and log.context.get("reason") == "preparation_failed"
+        for log in logs
     )
 
 

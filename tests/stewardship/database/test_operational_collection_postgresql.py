@@ -32,6 +32,7 @@ from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.observability import Event
 
+from ..log_samples import sample as log_sample
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -66,7 +67,7 @@ def test_python_and_sql_critical_logs_are_consumed_once_with_current_policy(
     with transaction.atomic():
         instant = database_now()
     monkeypatch.setattr(operational_collection, "database_now", lambda: instant)
-    operational(Event.TASK_FAILED, level="CRITICAL")
+    operational(Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED))
     with transaction.atomic():
         earlier = database_now() - timedelta(days=1)
     # This uses the same immutable log entry point as SQL-owned domain triggers.
@@ -77,8 +78,8 @@ def test_python_and_sql_critical_logs_are_consumed_once_with_current_policy(
         context={},
         created_at=earlier,
     )
-    operational(Event.TASK_FAILED, level="CRITICAL")
-    operational(Event.TASK_FAILED, level="WARNING")
+    operational(Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED))
+    operational(Event.TASK_FAILED, level="WARNING", **log_sample(Event.TASK_FAILED))
     identifiers = schedule()
     assert len(identifiers) == 1
     assert schedule() == identifiers
@@ -119,7 +120,7 @@ def test_collection_is_bounded_without_skipping_unconsumed_rows():
 
 def test_intake_failure_keeps_source_log_and_rolls_back_receipt_and_notice(monkeypatch):
     """A later retry can safely consume the original signal; no partial ACK survives."""
-    operational(Event.TASK_FAILED, level="CRITICAL")
+    operational(Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED))
     (identifier,) = schedule()
     original = OperationalLogReceipt.objects.create
 
@@ -140,7 +141,9 @@ def test_intake_failure_keeps_source_log_and_rolls_back_receipt_and_notice(monke
 
 def test_receipt_requires_fenced_collector_and_cannot_be_forged():
     """The append-only handoff independently rejects an unrelated/unclaimed task."""
-    log = operational(Event.TASK_FAILED, level="CRITICAL")
+    log = operational(
+        Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED)
+    )
     (identifier,) = schedule()
     with task_login(ServiceRole.WORKER, exact=True):
         incident = critical_log(Event.TASK_FAILED)
@@ -170,7 +173,7 @@ def test_receipt_requires_fenced_collector_and_cannot_be_forged():
 
 def test_scheduler_cannot_consume_or_claim_the_collection():
     """Metadata permission does not grant execution, incident writes or raw context."""
-    operational(Event.TASK_FAILED, level="CRITICAL")
+    operational(Event.TASK_FAILED, level="CRITICAL", **log_sample(Event.TASK_FAILED))
     (identifier,) = schedule()
     with task_login(ServiceRole.SCHEDULER, exact=True):
         with pytest.raises(DatabaseError):

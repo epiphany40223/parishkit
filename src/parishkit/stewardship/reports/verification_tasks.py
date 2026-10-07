@@ -133,8 +133,13 @@ def _after_transition(action, status):
         operational(
             Event.TASK_FAILED,
             level="CRITICAL",
-            schema=ContextKind.TASK,
-            context={"task_id": status.run_id, "outcome": Outcome.FAILED},
+            schema=ContextKind.FAILURE,
+            context={
+                "failure": "fact_verification",
+                "task_id": status.run_id,
+                "attempt": status.attempt,
+                "outcome": Outcome.FAILED,
+            },
         )
 
 

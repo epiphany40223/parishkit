@@ -352,9 +352,14 @@ entries' ids (at most 500, oldest first; any beyond stay counted and remain
 after the acknowledgement), and an altered list is refused, so Acknowledge
 never hides an entry the Administrator was not shown. Any other CRITICAL
 entry, including one recorded after the page was shown or one a long-running
-transaction commits after the acknowledgement, brings the banner back. The
-banner costs the Admin page one query, shared with the delivery warning
-count. It is distinct from security-event acknowledgement, which is per
+transaction commits after the acknowledgement, brings the banner back. A
+problem that has ended reads "ended" with its browser-local end time, and the
+title says when every listed problem has ended, so a past outage does not read
+as a current one: a kind of problem has ended once the operational intake has
+taken in each of its counted entries and every incident they opened has
+[resolved](../background-processing/spec.md#what-went-wrong-and-recovery)
+(#633). The banner costs the Admin page one query, shared with the delivery
+warning count. It is distinct from security-event acknowledgement, which is per
 recipient.
 
 ### JavaScript requirement
@@ -3922,7 +3927,14 @@ Only Admins access the combined log screen. It supports:
   kind their entry recorded (a Family, the system itself or the server
   operator), and any remaining identity as a service or former user;
 - recorded detail shown with each field named in words, such as "Lag
-  microseconds", while exports keep the stored field names;
+  microseconds", while exports keep the stored field names. An entry at
+  WARNING or above, and a recovery entry, also says in a sentence what
+  happened this time, read from its closed context: what failed or was late,
+  by how much against which limit, and what happens next (retried after how
+  long and on which attempt, or given up), or which problem ended and after
+  how long (#633; see
+  [what went wrong, and recovery](../background-processing/spec.md#what-went-wrong-and-recovery)).
+  An older entry without that context lists its fields only;
 - cross-links from every entry: "Show related entries" (same correlation
   identifier), "Same actor", "Same campaign" (audit records) and, for task
   entries and views of one task's page, "Open task" to the background task

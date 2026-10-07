@@ -83,15 +83,21 @@ def unknown_count():
 def alert_counts(since, *, limit):
     """Read independent indexed warning totals in one Admin-shell round trip.
 
-    Returns ``({event: count}, [log id], delivery_unknown)``. CRITICAL
-    operational events count when they are newer than ``since`` and have no
-    shared acknowledgement. The ids, oldest first and at most ``limit``, are
-    the counted rows the banner's Acknowledge form may acknowledge; reading
-    them in the same statement keeps them consistent with the counts.
-    Matching exact rows rather than a time watermark means a CRITICAL row
-    committed after an acknowledgement by a long transaction still appears.
-    Scalar subqueries avoid multiplying log and outbox rows in a join. The
-    immediate server-rendered warning must also work without browser polling.
+    Returns ``({event: count}, [log id], delivery_unknown, {event: ended})``.
+    CRITICAL operational events count when they are newer than ``since`` and
+    have no shared acknowledgement. The ids, oldest first and at most
+    ``limit``, are the counted rows the banner's Acknowledge form may
+    acknowledge; reading them in the same statement keeps them consistent
+    with the counts. Matching exact rows rather than a time watermark means a
+    CRITICAL row committed after an acknowledgement by a long transaction
+    still appears. Scalar subqueries avoid multiplying log and outbox rows in
+    a join. The immediate server-rendered warning must also work without
+    browser polling.
+
+    ``ended`` names, for each event whose problem has ended, when it ended
+    (#633): every counted row was taken in by an operational incident (its
+    receipt) and every such incident has resolved. A row not yet taken in,
+    or an incident still open, means the problem may be going on.
     """
     with connection.cursor() as cursor:
         cursor.execute(
@@ -99,22 +105,33 @@ def alert_counts(since, *, limit):
             "FROM stewardship_operational_log AS log "
             "WHERE log.level='CRITICAL' AND log.created_at>=%s AND NOT EXISTS "
             "(SELECT 1 FROM stewardship_critical_event_ack AS ack "
-            "WHERE ack.log_id=log.id)) "
+            "WHERE ack.log_id=log.id)), "
+            "grouped AS (SELECT pending.event, count(*) AS total, "
+            "bool_and(incident.resolved_at IS NOT NULL) AS ended, "
+            "max(incident.resolved_at) AS ended_at FROM pending "
+            "LEFT JOIN stewardship_ops_log_receipt AS receipt "
+            "ON receipt.log_id=pending.id "
+            "LEFT JOIN stewardship_ops_incident AS incident "
+            "ON incident.id=receipt.incident_id GROUP BY pending.event) "
             "SELECT (SELECT coalesce(jsonb_object_agg(event, total), '{}'::jsonb) "
-            "FROM (SELECT event, count(*) AS total FROM pending "
-            "GROUP BY event) AS grouped), "
+            "FROM grouped), "
             "(SELECT coalesce(array_agg(id ORDER BY created_at, id), '{}') "
             "FROM (SELECT id, created_at FROM pending "
             "ORDER BY created_at, id LIMIT %s) AS oldest), "
             "(SELECT count(*) FROM stewardship_outbox_message "
-            "WHERE state='delivery_unknown' AND purpose=ANY(%s))",
+            "WHERE state='delivery_unknown' AND purpose=ANY(%s)), "
+            "(SELECT coalesce(array_agg(event ORDER BY event), '{}') "
+            "FROM grouped WHERE ended), "
+            "(SELECT coalesce(array_agg(ended_at ORDER BY event), '{}') "
+            "FROM grouped WHERE ended)",
             (since, limit, list(PURPOSES)),
         )
-        events, ids, unknown = cursor.fetchone()
+        events, ids, unknown, ended_events, ended_times = cursor.fetchone()
     if isinstance(events, str):
         events = json.loads(events)
     counts = {str(key): int(value) for key, value in events.items()}
-    return counts, [UUID(str(value)) for value in ids], unknown
+    ended = dict(zip(ended_events, ended_times, strict=True))
+    return counts, [UUID(str(value)) for value in ids], unknown, ended
 
 
 def listing(window, *, state, query, sort=DELIVERY_SORTING.default, send=None):

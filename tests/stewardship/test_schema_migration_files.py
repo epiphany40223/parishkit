@@ -51,6 +51,9 @@ FROZEN = {
     "0007_system_health_records.sql": (
         "cbea01108beda94c69f14b5d76c0817ab3a6a50df3bc552c6b1cf1fcc74a0943"
     ),
+    "0008_log_detail.sql": (
+        "14fc3b72cfaf129d5a8799bd66abaaefcae1f4a5b1a1be49abc0aa657edb1dd8"
+    ),
 }
 
 

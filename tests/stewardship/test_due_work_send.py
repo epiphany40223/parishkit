@@ -102,7 +102,8 @@ def test_a_progressing_bulk_send_of_a_thousand_raises_nothing(send):
     scan = DueWorkScan()
     rows = [task(timedelta(minutes=17) - timedelta(seconds=i)) for i in range(1000)]
     sweep(scan, rows)
-    assert not scan.late and scan.details() == {}
+    # Not late, so the trigger logs nothing; details() is never empty (#633).
+    assert not scan.late and scan.details() == {"limit_seconds": 90}
     # The send is read once for the whole sweep, not once per page.
     assert send.reads == 1
     # Later in the send, 25 minutes in, and close to the two-hour bound.
@@ -234,11 +235,11 @@ def test_a_stalled_send_beside_a_late_task_keeps_the_send_and_adds_the_count(sen
     assert details["stall_seconds"] == 720 and "lag_seconds" not in details
 
 
-def test_a_context_that_fails_validation_is_reported_empty():
-    """details() never raises into the checkpoint; the entry is kept, unexplained."""
+def test_a_context_that_fails_validation_still_names_the_limit():
+    """details() never raises into the checkpoint; the entry keeps the limit (#633)."""
     scan = DueWorkScan()
     scan.admitted(task(timedelta(minutes=2), task_type="Not A Type"), NOW)
-    assert scan.late and scan.details() == {}
+    assert scan.late and scan.details() == {"limit_seconds": 90}
 
 
 def test_a_failed_progress_read_leaves_only_the_send_unknown(send, monkeypatch):
@@ -270,4 +271,4 @@ def test_a_failed_progress_read_leaves_only_the_send_unknown(send, monkeypatch):
     monkeypatch.setattr(due_work_health, "family_sends", broken)
     scan = DueWorkScan()
     sweep(scan, rows)
-    assert scan.uncertain and not scan.late and scan.details() == {}
+    assert scan.uncertain and not scan.late and scan.details() == {"limit_seconds": 90}

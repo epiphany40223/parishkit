@@ -27,6 +27,7 @@ from parishkit.stewardship.jobs.scheduler import (
 )
 from parishkit.stewardship.observability import Event as LogEvent
 
+from ..log_samples import sample as log_sample
 from .test_background_grants_postgresql import task_login
 from .test_operational_collection_postgresql import consume, schedule
 
@@ -228,8 +229,12 @@ def test_collector_escalation_suppression_and_fresh_recovery(monkeypatch):
     """
     old_task()
     scan()
-    operational(LogEvent.DUE_WORK_LAG, level="CRITICAL")
-    operational(LogEvent.DUE_WORK_LAG, level="CRITICAL")
+    operational(
+        LogEvent.DUE_WORK_LAG, level="CRITICAL", **log_sample(LogEvent.DUE_WORK_LAG)
+    )
+    operational(
+        LogEvent.DUE_WORK_LAG, level="CRITICAL", **log_sample(LogEvent.DUE_WORK_LAG)
+    )
     (identifier,) = schedule()
     consume(identifier)
     sample = DueWorkHealth.objects.get()
@@ -363,7 +368,9 @@ def test_pending_failure_receipt_blocks_recovery(monkeypatch):
         critical_log(LogEvent.DUE_WORK_LAG)
     # A second real immutable input remains unconsumed; neither its receipt nor
     # the current incident is fabricated.
-    operational(LogEvent.DUE_WORK_LAG, level="CRITICAL")
+    operational(
+        LogEvent.DUE_WORK_LAG, level="CRITICAL", **log_sample(LogEvent.DUE_WORK_LAG)
+    )
     monkeypatch.setattr(DueWorkHealth.objects, "first", lambda: sample)
     with task_login(ServiceRole.WORKER, exact=True), work_transaction():
         due_work_health.observe_due_work_health()
@@ -491,7 +498,9 @@ def test_inconclusive_prefix_and_interruption_preserve_unrenewed_negative_eviden
         sample.refresh_from_db()
         assert sample.late_since == prior.late_since
         assert sample.observed_at > prior.observed_at
-    assert OperationalLog.objects.filter(event=LogEvent.DUE_WORK_LAG).count() == 1
+    (failure,) = OperationalLog.objects.filter(event=LogEvent.DUE_WORK_LAG)
+    # Nothing late was named, so the entry keeps the per-task limit (#633).
+    assert failure.context == {"limit_seconds": 90}
 
 
 def test_scheduler_checkpoint_waits_for_actual_worker_observation_transaction():
@@ -584,10 +593,13 @@ def test_sql_due_work_context_mirrors_its_python_schema():
 
 
 @pytest.mark.parametrize(
-    "setting", ['{"message": "private"}', "not json", '{"count": -1}', ""]
+    "setting", ['{"message": "private"}', "not json", '{"count": -1}', "", "{}"]
 )
 def test_trigger_drops_a_context_the_log_would_refuse(setting):
-    """A bad or missing context never blocks the CRITICAL record itself."""
+    """A bad, empty or missing context never blocks the CRITICAL record itself.
+
+    The entry then still names the per-task limit it broke (#633).
+    """
     from parishkit.stewardship.audit.models import OperationalLog
 
     aged_checkpoint()
@@ -602,4 +614,4 @@ def test_trigger_drops_a_context_the_log_would_refuse(setting):
         )
         cursor.execute("UPDATE stewardship_due_work_health SET signal='late'")
     failure = OperationalLog.objects.get(event=LogEvent.DUE_WORK_LAG)
-    assert (failure.schema, failure.context) == ("due_work", {})
+    assert (failure.schema, failure.context) == ("due_work", {"limit_seconds": 90})

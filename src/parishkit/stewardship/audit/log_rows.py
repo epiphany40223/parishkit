@@ -19,7 +19,9 @@ from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import UnknownZone, browser_day_start
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting, TablePage
 
+from .log_contract import SERIOUS
 from .log_descriptions import ACTOR_KINDS, describe, words
+from .log_details import explain
 from .schemas import FIELDS, Action
 
 PAGE_SIZE = 50
@@ -370,6 +372,19 @@ def page_context(query, table, *, depth_limited=False):
     }
 
 
+def _summary(record, details):
+    """The entry's sentence (#633), or a plain note when a serious entry has none.
+
+    A WARNING-or-above entry whose context neither explains itself nor lists
+    any field (one written before #633, or whose detail was refused) says so
+    rather than leaving its detail blank.
+    """
+    text = explain(record.get("schema"), record["context"])
+    if text is None and not details and record["level"] in SERIOUS:
+        return _("This entry was recorded without detail.")
+    return text
+
+
 def operational_row(record):
     """One diagnostic entry from its stored closed event, level and context."""
     symbol, label = LEVEL_LABELS[record["level"]]
@@ -383,6 +398,8 @@ def operational_row(record):
         "icon": record["level"].lower(),
         "event": record["event"],
         "description": describe(record["event"], record["context"]),
+        # What happened this time, in words, from the stored context (#633).
+        "summary": _summary(record, _details(record["context"])),
         "actor_id": record["actor_id"],
         "correlation_id": record["correlation_id"],
         "campaign_id": None,
@@ -405,6 +422,7 @@ def audit_row(record):
         "icon": "audit",
         "event": record["event_type"],
         "description": describe(record["event_type"]),
+        "summary": None,
         "actor_id": record["actor_id"],
         "correlation_id": record["correlation_id"],
         "campaign_id": record["campaign_reference"],
