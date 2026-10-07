@@ -311,6 +311,7 @@ def emit(
     error_class: str | None = None,
     watched_command: str | None = None,
     subject_id: UUID | None = None,
+    confirmation: str | None = None,
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text.
 
@@ -330,7 +331,8 @@ def emit(
     only with a ``failure_kind``. ``watched_command`` (a watchable Admin CLI
     command's catalog name) and ``subject_id`` (the UUID of the record it
     followed) say what an ``automation_watch`` timeout was waiting for
-    (#807), only with that timeout.
+    (#807), only with that timeout. ``confirmation`` is how an Admin automation
+    command was confirmed (``prompt`` or ``yes``), only with ``TASK_STARTED``.
     """
     if not isinstance(event, Event) or level not in {
         logging.DEBUG,
@@ -386,6 +388,10 @@ def emit(
         raise ValueError("A watched command must be a watchable catalog name.")
     if subject_id is not None and not isinstance(subject_id, UUID):
         raise ValueError("A watched record is named by its UUID.")
+    if confirmation is not None and (
+        event is not Event.TASK_STARTED or confirmation not in {"prompt", "yes"}
+    ):
+        raise ValueError("A confirmation is prompt or yes, as a command starts.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
@@ -406,6 +412,7 @@ def emit(
                 "error_class": error_class,
                 "watched_command": watched_command,
                 "subject_id": subject_id,
+                "confirmation": confirmation,
             }
         ),
     )
@@ -737,6 +744,11 @@ class SafeJsonFormatter(JsonLogFormatter):
                         safe.extra["watched_command"] = context["watched_command"]
                     if isinstance(context.get("subject_id"), UUID):
                         safe.extra["subject_id"] = str(context["subject_id"])
+            if record.msg is Event.TASK_STARTED and context.get("confirmation") in {
+                "prompt",
+                "yes",
+            }:
+                safe.extra["confirmation"] = context["confirmation"]
             for key in ("limit_seconds", "elapsed_seconds"):
                 if _seconds(context.get(key)):
                     safe.extra[key] = context[key]

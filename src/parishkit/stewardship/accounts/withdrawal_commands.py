@@ -63,7 +63,7 @@ def page(request, service, campaign_id):
         _, runtime, confirmation = _current(request, service, campaign_id, passive=True)
         campaign = confirmation.request.campaign
         try:
-            require_fresh(request)
+            require_fresh(request, record=False)
             fresh = True
         except PermissionError:
             fresh = False
@@ -201,6 +201,6 @@ def withdraw(request, service, campaign_id, *, token):
             **values,
             transition_id=uuid4(),
             session_id=request.portal_session.pk,
-            authenticated_at=require_fresh(request),
+            authenticated_at=require_fresh(request, irreversible=True),
             correlation_id=current_correlation(),
         )

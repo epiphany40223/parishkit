@@ -99,6 +99,12 @@ class WatchInterrupted(WatchTimeout):
     code = "watch_interrupted"
 
 
+class ConfirmationRequired(Exception):
+    """The confirmation was not given at the prompt; nothing changed (exit 4)."""
+
+    code = "confirmation_required"
+
+
 class PairingNotFinished(Exception):
     """``login wait`` stopped before a usable session existed (exit 5)."""
 
@@ -677,6 +683,48 @@ def go_live_progress(args, preamble, runtime, context):
     from .admin_reads import read_go_live_progress
 
     return read_go_live_progress(context["caller"], runtime, args.campaign)
+
+
+# The answer read at a prompt: one line of at most this many bytes.
+ANSWER_LIMIT = 256
+
+
+def confirm(context, summary, *, typed="yes"):
+    """Ask for the confirmation the page asks for, or take ``--yes``.
+
+    ``summary`` is the preview's lines (campaign, counts, what cannot be
+    undone), written to standard error with the question; never secrets or
+    Family data. The answer is one line read from standard input after the
+    preamble; anything but ``typed`` (``yes``, or the page's typed value such
+    as ``Production``), or end of input, raises ``ConfirmationRequired``
+    (exit 4) and nothing changes. ``--yes`` answers it, as a person typing
+    the value would. The structured log records which (``confirmation``:
+    ``prompt`` or ``yes``); the audit trail does not. Call it before the
+    action's transaction opens: no lock may be held while a person reads
+    the summary and types. Through the host
+    wrapper, a command's answer comes from a terminal only: without one its
+    input ends after the preamble and the prompt fails at once.
+    """
+    from .observability import Event, emit
+
+    stderr = context["stderr"]
+    if context["yes"]:
+        emit(Event.TASK_STARTED, confirmation="yes")
+        return
+    for line in summary:
+        print(line, file=stderr)
+    print(f"Type {typed} to continue: ", end="", file=stderr, flush=True)
+    raw = context["stdin"].readline(ANSWER_LIMIT + 1)
+    try:
+        # Only the line ending and surrounding ASCII spaces are trimmed; the
+        # value is then compared exactly.
+        answer = raw.decode("utf-8").rstrip("\r\n").strip(" ")
+    except UnicodeDecodeError:
+        answer = None
+    if len(raw) > ANSWER_LIMIT or answer != typed:
+        print("", file=stderr)
+        raise ConfirmationRequired("The confirmation was not given.")
+    emit(Event.TASK_STARTED, confirmation="prompt")
 
 
 def _input(value, context, limit):
@@ -1316,6 +1364,12 @@ def build_parser():
         )
         for add in spec.options:
             add(command)
+        if spec.prompts:
+            command.add_argument(
+                "--yes",
+                action="store_true",
+                help="answer the confirmation prompt (required with a - input)",
+            )
     return parser
 
 
@@ -1415,7 +1469,7 @@ def classify(error, *, admitted_process, changed, committed=False):
 
     if committed and not isinstance(error, (SessionUnusable, PairingNotFinished)):
         return "outcome_unknown"
-    if isinstance(error, WatchTimeout):
+    if isinstance(error, (WatchTimeout, ConfirmationRequired)):
         return error.code
     if isinstance(error, StartupBusy):
         return "busy"
@@ -1522,7 +1576,13 @@ def run(args, *, stdin, stdout, stderr):
             print(json.dumps(output, sort_keys=True), file=stdout, flush=True)
 
         # "audit": only the first read of a --watch records the page's view.
-        context = {"final": True, "audit": True, "stdin": stdin, "stderr": stderr}
+        context = {
+            "final": True,
+            "audit": True,
+            "stdin": stdin,
+            "stderr": stderr,
+            "yes": bool(getattr(args, "yes", False)),
+        }
         admitted_process = False
         caller = None
         try:
@@ -1662,6 +1722,9 @@ def admit_session(spec, preamble, runtime, stderr):
 
         close_command_session(caller.portal_session)
         raise PermissionError("This command needs a full-scope session.")
+    if spec.changes_state:
+        # A fresh gate this command passes names it in the dashboard notice.
+        caller.command_type = command_event_type(spec.name)
     warn_if_expiring(caller.automation_session, database_now(), stderr)
     return caller
 
@@ -1708,6 +1771,17 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
                     and 1 <= args.timeout <= WATCH_TIMEOUT
                 ):
                     raise UsageError("The watch interval or timeout is out of range.")
+        spec = BY_NAME[args.command_name]
+        if (
+            spec.prompts
+            and not args.yes
+            and any(
+                value == "-" or (isinstance(value, list) and "-" in value)
+                for value in vars(args).values()
+            )
+        ):
+            # Standard input cannot carry both the input and the answer.
+            raise UsageError("A prompting command reading - needs --yes.")
     except UsageError:
         output = {
             "schema": SCHEMA,

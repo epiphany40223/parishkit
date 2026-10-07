@@ -217,7 +217,7 @@ def page(request, service, campaign_id):
     with work_transaction():
         _, runtime, campaign = _current(request, service, campaign_id, passive=True)
         try:
-            require_fresh(request)
+            require_fresh(request, record=False)
             fresh = True
         except PermissionError:
             fresh = False
