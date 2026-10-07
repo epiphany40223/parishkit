@@ -360,7 +360,9 @@ taken in each of its counted entries and every incident they opened has
 [resolved](../background-processing/spec.md#what-went-wrong-and-recovery)
 (#633). The banner costs the Admin page one query, shared with the delivery
 warning count. It is distinct from security-event acknowledgement, which is per
-recipient.
+recipient. Acknowledge acts [in place](#in-place-controls): the server still
+answers with Home, and the banner is taken from that answer on the page the
+Administrator is on, which keeps its address and everything else on it.
 
 ### JavaScript requirement
 
@@ -1117,7 +1119,8 @@ server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
 ignored. The participation report's options reshape its statistics, chart and
-exports rather than one table, so they always load the page in full. When
+exports rather than one table, so its options form is an
+[in-place control](#in-place-controls) of all three panels instead. When
 the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at
 the top. Portal users, whose domain and address tables carry role forms bound
 once at load, and the link preparation history keep only the fragment and
@@ -1156,13 +1159,51 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   grain, the [response lists](../reports/spec.md#response-lists)' mode, the
   [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
   "Refresh current work" on "Background work", "Refresh list" on
-  "Families on the form now", and the page links of a mail delivery's
+  "Families on the form now", the page links of a mail delivery's
   evidence and attempt history, an information item's and a Ministry
-  follow-up request's history, and a weekly information report) or a form whose answer is the page again
+  follow-up request's history, and a weekly information report, and the
+  Refresh links of the key replacement status, Family email progress and
+  Family test pages) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page: Save follow-up on an information item and on a
-  [Ministry follow-up request](#follow-up-workflows)) names its region by its
-  URL's fragment. A checkbox marked
+  [Ministry follow-up request](#follow-up-workflows); System logs'
+  cross-links, whose answer is the filtered page; Acknowledge on a security
+  event; Dismiss on an integration's finished key change; the
+  [participation report](../reports/spec.md#campaign-statistics)'s Apply
+  report options, which refreshes its statistics, chart and export panels)
+  names its region by its
+  URL's fragment. A POST form saves a change unless it is marked
+  `data-in-place-read` (the System logs cross-links only read): a read may
+  be cancelled by a newer choice and, with no answer at all, falls back to
+  the ordinary submission. A form marked `data-in-place-filters` sets the
+  page's filters from outside its filter form, so after the swap the filter
+  form's visible fields, and any disclosure in it, show what the fresh page
+  applied, and the next Apply, sort or page keeps them; every other swap
+  leaves filters typed but not yet applied alone. A region a
+  control can empty (the security events, the critical-problems banner) is
+  drawn even when it has nothing to show, so the answer that empties it
+  still carries it. A form marked `data-in-place-anywhere` changes a region
+  every Admin page draws (the
+  [critical-problems banner](#navigation-and-home)'s Acknowledge, which the
+  server answers with Home from any page): any same-origin answer will do,
+  and only that region is taken from it, never the answer's other regions,
+  synced controls or address. A refused acknowledgement shows its error
+  page whole, with its own explanation: that page draws the banner too, but
+  its banner says nothing about the refusal. Because the banner's region is
+  on every Admin page, any other in-place control that refreshes every
+  region (a Save, a filter, a view switch) also refreshes the banner from
+  its answer, so the banner shows what that answer's page shows. A report whose address has no
+  time zone loads the same address with this browser's zone added in place,
+  as it loads and again after any in-place refresh that brought a page
+  without one (a daily-table link followed before the zone was applied):
+  every other parameter and the address's own fragment are kept, focus
+  stays where it is and nothing is announced (the request is a link marked
+  `data-in-place-quiet`), and if it gets no answer the same address is
+  loaded the ordinary way, without a jump to a panel. Because the chart,
+  statistics and export panels are all regions, paging or sorting the daily
+  table refreshes all three from the same answer: an export format chosen
+  but not yet used, an open "Technical details" and the chart's inspected
+  date return to their defaults, as an ordinary load would leave them. A checkbox marked
   `data-submit-on-change` submits its own `form[data-in-place]` as soon as it
   changes, with no Apply button (the Admin portal requires script), and keeps
   focus. Each page records the state it shows on the box. The box submits
@@ -1199,7 +1240,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   focus returns to the control (or its fresh copy; when that is gone, the
   link its `data-in-place-fallback` key names, so Next page on the last page
   hands focus to Previous page; when that is gone too or disabled, the
-  region's first heading, else the region); the region
+  region's first heading, else the region, or the page's own heading when
+  the region is now empty); the region
   is marked busy while the request runs, and a polite live region says what
   happened ("By day", "List refreshed." and the rows now shown). A view
   choice replaces the address, and a followed redirect sets it to the
@@ -1232,7 +1274,10 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   alert at the top of its form says the server could not be reached and to
   reload the page to check. A redirect to another page (elsewhere, or the
   sign-in page) is followed by loading that page's address. A read (a GET)
-  that fails falls back to the ordinary load.
+  that fails falls back to the ordinary load, except when the browser cut
+  it off because the reader is leaving the page: their own navigation goes
+  ahead. A save with no answer still shows its note then, since a download
+  link also starts leaving the page and the page stays.
 - **Real targets.** Every control is a real link or form with its `href`
   or `action` and fragment, which the script requests; when an ordinary load
   happens instead (a fallback above), the fragment, kept across a
@@ -1246,7 +1291,16 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   again as the page's own was (dates, selections, copy buttons, charts, and
   a form's conditional fields and its
   [complete-before-submit](#bootstrap-and-first-admin-wizard) gate), and a
-  `parishkit:swap` event on it lets any other script do the same.
+  `parishkit:swap` event on it lets any other script do the same. A page
+  that watches background work (`live-status-v1.js`) stops watching a
+  status region an in-place refresh replaced, and watches the fresh one
+  while it is still pending, so a Refresh or Dismiss that brings back work
+  in progress keeps updating by itself; there is always one watcher per
+  status region. A Refresh reads out the region's coarse status sentence
+  when it changed, as a poll does. Dismiss refreshes only an integration's
+  status line: if it brings back a new key change in progress (another
+  Administrator started one), the settings form and notes below it keep the
+  state the page was loaded with until the next load.
 
 ### Page help
 
@@ -2917,7 +2971,9 @@ existing Admin acknowledges it; when another Admin existed at activation,
 acknowledgement by the granting actor alone does not clear the event for those
 other recipients. Delivery failure does not roll back or hide the expansion: it
 follows durable operational retry/escalation, while the dashboard event remains
-visible. Acknowledgements and notification outcomes are audited.
+visible. Acknowledgements and notification outcomes are audited. Each
+Acknowledge acts [in place](#in-place-controls) on Home: the event leaves the
+list without a reload.
 
 Domain rows expose Staff and Ministry-leader columns. Administrator is visibly
 disabled. Creating `gmail.com` fails client and server validation. Address rows
@@ -3988,7 +4044,11 @@ Only Admins access the combined log screen. It supports:
 - cross-links from every entry: "Show related entries" (same correlation
   identifier), "Same actor", "Same campaign" (audit records) and, for task
   entries and views of one task's page, "Open task" to the background task
-  page. Each filter travels in a POST body like the form's. The raw
+  page. Each filter travels in a POST body like the form's and applies
+  [in place](#in-place-controls): the filter form above then shows the
+  filters applied ("Filter by identifier" opened), and focus returns to the
+  same entry's button in the filtered list, or to the list when that entry
+  is no longer in it. The raw
   identifiers themselves (correlation, actor, campaign, subject) are under a
   per-row "Technical details" disclosure, closed by default; the table uses
   the shared Admin table styling;

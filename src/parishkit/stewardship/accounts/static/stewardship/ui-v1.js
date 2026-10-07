@@ -699,22 +699,45 @@
   // special response path exists. The controls are:
   // - a shared table's sort headings, navigator links and forms, and the
   //   page's filter form (form#table-filters, #484), unless that form is
-  //   marked data-filter-reload because its options reshape far more of the
-  //   page than the table (the participation chart);
+  //   itself a form[data-in-place] because its options reshape far more of
+  //   the page than a table (the participation report's options, which
+  //   refresh its statistics, chart and export panels, #519);
   // - a[data-in-place]: a link that shows another view of this page (the
   //   response dashboard's mode and grain, a list's Refresh). Its value, if
   //   any, is a stable key that finds the link again in the fresh page, for
   //   focus and to announce the view now shown ("By day");
   // - form[data-in-place]: a form whose answer is this page again, such as a
-  //   POST whose server redirects back here (Post/Redirect/Get).
+  //   POST whose server redirects back here (Post/Redirect/Get). A POST
+  //   saves a change unless the form is marked data-in-place-read (System
+  //   logs' Show related entries, which filters the list in a POST body):
+  //   a read may be cancelled by a newer choice and, with no answer at all,
+  //   falls back to the ordinary submission, as a table's POST does. A form
+  //   marked data-in-place-filters sets the page's filters from outside
+  //   form#table-filters, so the filter form then shows the filters the
+  //   fresh page applied (syncFilters).
   // A data-in-place link or form names the region it changes by its URL's
   // fragment, or else by the region it sits in. Its data-in-place-message
   // ("List refreshed.") is announced before the region's row count.
+  // A page script can follow an a[data-in-place] link on the reader's behalf
+  // (the participation report applying this browser's time zone as it
+  // loads, report-v1.js) by marking the link data-in-place-quiet. The regions
+  // are swapped, but focus is not moved and nothing is announced, since the
+  // reader did not act, and the address (or, should the fetch fail, the
+  // ordinary load) keeps the page's own fragment, not the region's.
+  const keepHash = (url) => {
+    const address = new URL(url, document.baseURI);
+    address.hash = window.location.hash;
+    return address.href;
+  };
   // Every answer refreshes every region on the page, unless the link is
   // marked data-in-place-only: then only the region it names is swapped (a
   // history pager nested in a panel whose form holds unsaved typing). A
   // link whose key is gone from the fresh page (Older history on the last
-  // page) hands focus to the link its data-in-place-fallback key names.
+  // page) hands focus to the link its data-in-place-fallback key names. A
+  // form marked data-in-place-anywhere changes a region every Admin page
+  // draws (the critical-problems banner): whichever same-origin page
+  // answers it, only that region is taken from the answer, and the address
+  // stays.
   const REGIONS = "[data-in-place-region][id], [data-table-region][id]";
   const isRegion = (node) => Boolean(node && node.matches(REGIONS));
   // A checkbox that submits its own in-place form when it changes (#621).
@@ -934,6 +957,31 @@
     });
     form.prepend(...[...wanted.values()].flat().map((field) => document.importNode(field)));
   };
+  // After a control that sets the filters from outside the filter form
+  // (data-in-place-filters), the filter form must show what the fresh page
+  // applied, or the next Apply, sort or page would quietly undo it. Its
+  // visible fields take the fresh page's values (syncHidden already took the
+  // hidden ones), a details[id] in it opens or closes as the fresh page
+  // draws it ("Filter by identifier" opens when one is set), and the Apply
+  // gate checks again. Only then: any other swap keeps filters the reader
+  // has typed but not applied. The browser-zone field holds this browser's
+  // zone and is left alone (see syncHidden).
+  const syncFilters = (parsed) => {
+    const form = document.getElementById("table-filters");
+    const fresh = parsed.getElementById("table-filters");
+    if (!(form instanceof HTMLFormElement) || !(fresh instanceof HTMLFormElement)) return;
+    const copies = [...fresh.elements];
+    [...form.elements].forEach((field) => {
+      if (!field.name || field.type === "hidden" || field.matches("[data-browser-zone]")) return;
+      const copy = copies.find((node) => node.name === field.name);
+      if (field.type === "checkbox") field.checked = Boolean(copy?.checked);
+      else if (copy && "value" in field) field.value = copy.value;
+    });
+    form.querySelectorAll("details[id]").forEach((node) => {
+      node.open = Boolean(fresh.querySelector(`#${CSS.escape(node.id)}`)?.open);
+    });
+    form.dispatchEvent(new Event("change"));
+  };
   const syncControls = (parsed) => {
     document.querySelectorAll("[data-table-sync][id]").forEach((node) => {
       const fresh = parsed.getElementById(node.id);
@@ -1115,6 +1163,18 @@
       box.form.requestSubmit();
     });
   };
+  // Set while the reader is leaving the page (see refreshRegions). A
+  // navigation that never leaves (a download, a cancelled prompt) clears it
+  // again after a moment, since this page then keeps running.
+  let unloading = false;
+  window.addEventListener("beforeunload", () => {
+    unloading = true;
+    window.setTimeout(() => { unloading = false; }, 2000);
+  });
+  // A page brought back from the back/forward cache is running again.
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) unloading = false;
+  });
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
     const owner = options.owner || null;
     // Every way out below that hands the page to the browser (a full load,
@@ -1151,6 +1211,12 @@
         if (isBox(control)) heldBoxes.add(control);
         return;
       }
+      // A read the browser cut off because the reader is leaving the page
+      // (some engines report that as a network error, not an abort) must not
+      // fall back: the fallback's own navigation would hijack theirs. A
+      // saving POST's note is still shown: beforeunload also fires for a
+      // download link, and that page stays.
+      if (unloading && !form) return;
       if (form) showUnreachable(form);
       else leave(fallback);
       return;
@@ -1176,11 +1242,18 @@
     // to another page (the sign-in page) is that page, not this one.
     const otherOrigin = answered.origin !== window.location.origin;
     const foreign = otherOrigin || (response.redirected && answered.pathname !== window.location.pathname);
-    if (refused && (foreign || !isRegion(fresh))) {
+    // A form marked data-in-place-anywhere changes a region every Admin page
+    // draws (the critical-problems banner), so any same-origin page that
+    // answers it will do: its server may redirect to Home from any page. An
+    // error page draws that region too, but a refusal is not an answer
+    // about it, so the error page is shown whole, with its own explanation.
+    const anywhere = Boolean(owner?.hasAttribute("data-in-place-anywhere"));
+    if (refused && (foreign || anywhere || !isRegion(fresh))) {
       leave(() => showAsReturned(text));
       return;
     }
-    const elsewhere = otherOrigin || (owner && answered.pathname !== window.location.pathname);
+    const elsewhere = otherOrigin
+      || (owner && !anywhere && answered.pathname !== window.location.pathname);
     if (!refused && (elsewhere || !isRegion(fresh))) {
       if (response.redirected || init.method !== "POST") {
         leave(() => window.location.assign(withFragment(response.url, id)));
@@ -1193,31 +1266,39 @@
     // The server answered with this page: nothing is leaving any more.
     leaving = false;
     if (isBox(control)) failedState.delete(control);
-    const only = Boolean(owner?.hasAttribute("data-in-place-only"));
+    // An answer from anywhere is another page: only the named region is
+    // taken from it, never its other regions, sync nodes or address.
+    const only = anywhere || Boolean(owner?.hasAttribute("data-in-place-only"));
     document.querySelectorAll(REGIONS).forEach((other) => {
       if (only && other !== region) return;
       const copy = parsed.getElementById(other.id);
       if (isRegion(copy)) swapRegion(other, copy);
     });
-    syncControls(parsed);
+    if (!anywhere) syncControls(parsed);
+    if (owner?.hasAttribute("data-in-place-filters")) syncFilters(parsed);
     // A GET choice belongs in the address bar, so reload, bookmarks and
     // returning to the page keep it; a POST table's private filters never
     // reach a URL. A server redirect chose the address itself (a saving
     // POST's Post/Redirect/Get answer, so a reload repeats only the GET).
-    if (response.redirected) {
+    // An answer from anywhere leaves the address this page's.
+    if (!anywhere && response.redirected) {
       window.history.replaceState(window.history.state, "", withFragment(response.url, id));
-    } else if (init.method !== "POST") {
-      window.history.replaceState(window.history.state, "", url);
+    } else if (!anywhere && init.method !== "POST") {
+      window.history.replaceState(window.history.state, "", options.quiet ? keepHash(url) : url);
     }
+    if (options.quiet && !refused) return;
     // A refusal's summary (now in the region) takes focus, as it does on an
     // ordinary load; without one the control does, as after a success. A
     // control that is gone (a save that closed a follow-up request leaves no
     // form) or disabled cannot take focus, so the region's first heading
-    // does, which names what changed; failing that, the region itself.
+    // does, which names what changed; failing that, the region itself. A
+    // region left empty (an acknowledged banner, the last security event)
+    // has nothing to focus or say, so the page's own heading takes focus.
     const swapped = document.getElementById(id);
     let target = summary || focus(swapped);
     if (!target || target.disabled) {
-      target = swapped.querySelector("h1, h2, h3, h4, h5, h6") || swapped;
+      target = swapped.querySelector("h1, h2, h3, h4, h5, h6")
+        || (squeeze(swapped.textContent) ? swapped : document.querySelector("main h1") || swapped);
       target.setAttribute("tabindex", "-1");
     }
     target.focus({preventScroll: true});
@@ -1245,8 +1326,10 @@
     const region = owner ? targetRegion(link, link.getAttribute("href")) : tableRegion(link);
     if (!region) return;
     event.preventDefault();
-    refreshTable(region, link, link.href, {method: "GET"}, () => window.location.assign(link.href),
-      {owner});
+    const quiet = Boolean(owner?.hasAttribute("data-in-place-quiet"));
+    const target = quiet ? keepHash(link.href) : link.href;
+    refreshTable(region, link, link.href, {method: "GET"}, () => window.location.assign(target),
+      {owner, quiet});
   });
   // Forms: a POST table's headings, Previous and Next, every table's
   // page-number form, the page's filter form (#484), whose new filters
@@ -1279,7 +1362,7 @@
       // submitter; wirePageSize noted the select. Failing both, the Go button.
       control = event.submitter || pendingControls.get(form) || form;
       pendingControls.delete(form);
-    } else if (form.matches("form#table-filters[data-table-sync]:not([data-filter-reload])")) {
+    } else if (form.matches("form#table-filters[data-table-sync]:not([data-in-place])")) {
       // The first table on the page stands for them all: every region in
       // the response is swapped, and focus stays on the filter button.
       region = document.querySelector("[data-table-region][id]");
@@ -1305,7 +1388,7 @@
     // can fail between the two and leave the form locked.
     const action = new URL(written || "", document.baseURI);
     const fields = new FormData(form, event.submitter || undefined);
-    const save = Boolean(owner) && method === "post";
+    const save = Boolean(owner) && method === "post" && !owner.hasAttribute("data-in-place-read");
     let init, load;
     if (method === "post") {
       // The same body the browser would send, submitter included: multipart

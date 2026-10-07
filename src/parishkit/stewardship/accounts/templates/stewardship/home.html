@@ -18,7 +18,8 @@
     {% for key in dashboard.unfinished_keys %}<p class="notice notice-error" role="alert">{% blocktranslate with name=key.label stopped=key.stopped %}{{ name }}: a new key is installed, but switching to it did not finish, so {{ stopped }}.{% endblocktranslate %} <a class="button" href="{% url 'admin:integration_settings' key.target %}">{% translate "Finish switching" %}</a></p>{% endfor %}
     {% if dashboard.next_mail %}<p>{% translate "Next planned Family mailing:" %} <time datetime="{{ dashboard.next_mail.due_at|instant }}" data-local-instant>{{ dashboard.next_mail.due_at|instant }}</time></p>{% endif %}
   </section>
-  {% if dashboard.security_events %}<section class="panel" id="security-events" aria-labelledby="security-events-heading">
+  {# Each Acknowledge acts in place (#519): the region is always drawn, empty once nothing awaits, so the answer after the last one still carries it. #}
+  <div id="security-events" data-in-place-region>{% if dashboard.security_events %}<section class="panel" aria-labelledby="security-events-heading">
     <h2 id="security-events-heading">{% translate "Security events awaiting acknowledgement" %}</h2>
     <p>{% translate "Each of these widened who may sign in, or changed which key can open the backups, the moment it was activated. It stays here until an Administrator acknowledges it." %}</p>
     <ul>{% for event in dashboard.security_events %}<li>
@@ -26,11 +27,11 @@
       {% if event.key_ids %}<p>{% translate "If this was not planned with the parish's key holder, replace the key again and ask the server operator to check the newest backup." %}</p>
       <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Key before" %}</dt><dd><code>{{ event.key_ids.0|default:_("not known") }}</code></dd><dt>{% translate "Key after" %}</dt><dd><code>{{ event.key_ids.1 }}</code></dd></dl></details>
       {% else %}<p>{% translate "Roles before:" %} {% if event.before %}{{ event.before|join:", " }}{% else %}{% translate "none" %}{% endif %}. {% translate "Roles after:" %} {% if event.after %}{{ event.after|join:", " }}{% else %}{% translate "none" %}{% endif %}.</p>{% endif %}
-      <form method="post" action="{% url 'admin:security_event_acknowledge' event.id %}">
+      <form method="post" action="{% url 'admin:security_event_acknowledge' event.id %}#security-events" data-in-place="security-acknowledge-{{ event.id }}" data-in-place-message="{% translate 'Security event acknowledged.' %}">
         {% csrf_token %}<button type="submit">{% translate "Acknowledge" %}</button>
       </form>
     </li>{% endfor %}</ul>
-  </section>{% endif %}
+  </section>{% endif %}</div>
   {% if dashboard.automation_notices %}{% include "stewardship/automation-notices.html" with notices=dashboard.automation_notices %}{% endif %}
   {% if dashboard.ministry_catalog %}{% include "stewardship/ministry-catalog-notice.html" with notice=dashboard.ministry_catalog %}{% endif %}
   {% if dashboard.families %}<section class="panel">

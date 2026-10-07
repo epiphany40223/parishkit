@@ -89,13 +89,17 @@ from .in_place_components import SLOW as IN_PLACE_SLOW
 from .in_place_components import components as in_place_components
 from .information_components import POSTS as INFORMATION_POSTS
 from .information_components import components as information_components
+from .live_status_components import POSTS as LIVE_STATUS_POSTS
+from .live_status_components import components as live_status_components
 from .log_components import components as log_components
 from .menu_components import components as menu_components
 from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
+from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .response_list_components import components as response_list_components
+from .security_components import POSTS as SECURITY_POSTS
 from .security_components import components as security_components
 from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
@@ -1874,6 +1878,7 @@ def component_origin():
     responses.update(hosted_file_components(context, admin))
     responses.update(talent_components(context, admin))
     responses.update(in_place_components(context, admin))
+    responses.update(live_status_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(step_up_components(context, admin))
@@ -1888,6 +1893,8 @@ def component_origin():
         | FOLLOWUP_POSTS
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS
+        | SECURITY_POSTS
+        | LIVE_STATUS_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
@@ -1966,10 +1973,11 @@ def component_origin():
             A path not served exactly is tried with its query's pairs
             sorted (``automation_components.canonical``), so a page may send
             its state in any order. Automation access's race tests (#621)
-            get some answers after a pause.
+            and the participation report's zone race test (#519) get some
+            answers after a pause.
             """
             path = self.path if self.path in responses else canonical(self.path)
-            if path in AUTOMATION_SLOW_GETS:
+            if path in AUTOMATION_SLOW_GETS | REPORT_SLOW_GETS:
                 time.sleep(1.5)
             kind, body = responses.get(path, ("text/plain", ""))
             self.send_response(200 if path in responses else 404)

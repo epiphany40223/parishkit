@@ -111,13 +111,22 @@ def test_presence_refresh_refreshes_the_list_in_place():
     assert '<p id="presence-as-of" data-table-sync>' in page
 
 
+# Fragment templates whose in-place control acts on a region the page
+# around them draws: the template's name, and the page template's. The
+# integration status line is also the passive status view live-status-v1.js
+# reads, whose answer never holds the page's regions.
+HOSTED = {"integration-summary.html": "integration-settings.html"}
+
+
 def test_every_in_place_control_names_its_region_as_a_fragment():
     """The fragment is required: without script (or when the fetch fails) the
     ordinary load must land on the region, not at the top, and the script
     finds the region by it. So every data-in-place link or form ends its href
     or action in a #fragment that names a region (data-in-place-region or
     data-table-region, literally or as {{ table.anchor }}) in the same
-    template. The earlier data-region-link name is gone."""
+    template, or, for a fragment template listed in HOSTED, in the page
+    template that draws it around the control. The earlier data-region-link
+    name is gone."""
     found = 0
     for path in sorted(TEMPLATES.rglob("*.html")):
         text = path.read_text()
@@ -127,7 +136,12 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
             target = re.search(r'\b(?:href|action)="([^"]*)"', tag.group(0))
             assert target and "#" in target.group(1), (path.name, tag.group(0))
             fragment = target.group(1).split("#", 1)[1]
-            assert names_region(text, fragment), (path.name, fragment)
+            host = (
+                (TEMPLATES / HOSTED[path.name]).read_text()
+                if path.name in HOSTED
+                else text
+            )
+            assert names_region(host, fragment), (path.name, fragment)
     assert found >= 8
 
 
@@ -226,3 +240,98 @@ def test_delivery_resolution_forms_stay_outside_the_history():
     text = (TEMPLATES / "delivery.html").read_text()
     history = region_body(text, "delivery-history")
     assert "<form" not in history and "Attempt history" in history
+
+
+def test_log_cross_links_filter_in_place():
+    """System logs' Show related entries, Same actor and Same campaign (#519
+    PR 3) filter in place: each is a data-in-place POST that only reads
+    (never a save), sets the filter form's visible fields from the answer,
+    says what it showed, lands on the table, and has a button id unique to
+    its entry so focus can return to it."""
+    text = (TEMPLATES / "logs.html").read_text()
+    forms = re.findall(
+        r'<form method="post" action="\{% url \'admin:logs\' %\}#[^>]*>', text
+    )
+    assert len(forms) == 3
+    for form in forms:
+        assert '#{{ table.anchor }}"' in form
+        for mark in ("data-in-place ", "data-in-place-read", "data-in-place-filters"):
+            assert mark in form, (mark, form)
+        assert "data-in-place-message=" in form
+    for kind in ("related", "actor", "campaign"):
+        assert f'id="log-{{{{ row.icon }}}}-{{{{ row.id }}}}-{kind}"' in text
+    assert '<details id="log-identifier-filters"' in text
+
+
+def test_acknowledgements_act_in_place():
+    """The critical-problems banner and Home's security events acknowledge in
+    place (#519 PR 4). Each region is drawn even when empty, so the answer
+    after the last acknowledgement still carries it. The banner's server
+    answers with Home from any page, so its form takes the banner from any
+    page's answer (data-in-place-anywhere)."""
+    banners = (TEMPLATES / "admin-banners.html").read_text()
+    assert re.search(
+        r'\{% if admin_chrome\.admin %\}<div id="critical-events" '
+        r"data-in-place-region>\{% if admin_chrome\.critical_count %\}",
+        banners,
+    )
+    form = re.search(r"<form [^>]*critical_events_acknowledge[^>]*>", banners).group(0)
+    assert '#critical-events" ' in form
+    assert 'data-in-place="critical-acknowledge"' in form
+    assert "data-in-place-anywhere" in form and "data-in-place-message=" in form
+    home = (TEMPLATES / "home.html").read_text()
+    assert re.search(
+        r'<div id="security-events" data-in-place-region>'
+        r"\{% if dashboard\.security_events %\}",
+        home,
+    )
+    form = re.search(r"<form [^>]*security_event_acknowledge[^>]*>", home).group(0)
+    assert '#security-events" ' in form
+    assert 'data-in-place="security-acknowledge-{{ event.id }}"' in form
+    assert "data-in-place-anywhere" not in form
+
+
+def test_participation_options_apply_in_place():
+    """Apply report options (#519 PR 5) is a data-in-place GET landing on
+    the statistics, and the statistics, chart and export panels are regions,
+    so every panel the options reshape is refreshed together. The chart keeps
+    its daily table's own region inside it, and no form opts out of the
+    in-place filter path any more."""
+    text = (TEMPLATES / "participation.html").read_text()
+    form = re.search(r'<form id="table-filters"[^>]*>', text).group(0)
+    assert '#participation-statistics" ' in form
+    assert 'data-in-place="report-options"' in form
+    assert "data-in-place-message=" in form and "data-filter-reload" not in form
+    for region in (
+        "participation-statistics",
+        "participation-chart",
+        "participation-export",
+    ):
+        assert names_region(text, region), region
+    chart = text.split('id="participation-chart"', 1)[1]
+    assert "data-table-region" in chart.split('id="participation-export"', 1)[0]
+    for path in TEMPLATES.rglob("*.html"):
+        assert "data-filter-reload" not in path.read_text(), path.name
+
+
+def test_live_status_pages_refresh_and_dismiss_in_place():
+    """Refresh on the live-status pages and an integration's Dismiss act in
+    place (#519 PR 7a): each is a data-in-place control whose region wraps
+    the page's live-status element, so live-status-v1.js can watch the
+    fresh one, and whose message says what was done."""
+    for name, region, words in (
+        ("credential-status.html", "credential-progress", "Refresh status"),
+        ("family-email-progress.html", "send-progress", "Refresh progress"),
+        ("campaign-mail-families.html", "family-tests", "Refresh status"),
+    ):
+        text = (TEMPLATES / name).read_text()
+        link = re.search(rf'<a [^>]*>{{% translate "{words}" %}}</a>', text).group(0)
+        assert f'#{region}" ' in link and 'data-in-place="refresh"' in link, name
+        assert "data-in-place-message=" in link, name
+        body = text.split(f'<div id="{region}" data-in-place-region>', 1)[1]
+        assert "data-live-status" in body or "progress-status.html" in body, name
+    settings = (TEMPLATES / "integration-settings.html").read_text()
+    assert '<div id="integration-status" data-in-place-region>' in settings
+    summary = (TEMPLATES / "integration-summary.html").read_text()
+    form = re.search(r"<form [^>]*dismiss_credential_result[^>]*>", summary).group(0)
+    assert '#integration-status" ' in form and 'data-in-place="dismiss"' in form

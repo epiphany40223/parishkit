@@ -22,7 +22,8 @@ from .test_user_views_postgresql import add_rules
 
 pytestmark = pytest.mark.django_db(transaction=True)
 HOME = "/admin/"
-PANEL = 'id="security-events"'
+# The panel itself; its in-place region (#519) is drawn even when empty.
+PANEL = 'id="security-events-heading"'
 
 
 def acknowledge(browser, event_id):
