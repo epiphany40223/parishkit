@@ -17,6 +17,7 @@
 {% include 'stewardship/system-health-status.html' %}
 {# Outside the polled region, so an unchanged poll leaves the region alone; live-status-v1.js moves it to each successful check. #}
 <p class="help">{% translate "Last checked" %} <time datetime="{{ health.checked_at|instant }}" data-local-instant data-live-checked>{{ health.checked_at|instant }}</time>.</p>
+{% include 'stewardship/system-health-backup-now.html' %}
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary>
 <dl>{% for line in health.processes %}<dt><code>{{ line.service }}/{{ line.process }}{% if line.target %}/{{ line.target }}{% endif %}</code></dt><dd><code>{% if line.running %}running{% else %}not_running{% endif %}{% if line.sender_state %} {{ line.sender_state }}{% endif %} {{ line.version }}{% if line.debug_logging %} debug{% endif %}</code></dd>{% endfor %}
 {% for kind in health.incidents %}<dt>{% translate "Open incident" %}</dt><dd><code>{{ kind }}</code></dd>{% endfor %}

@@ -127,8 +127,34 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
             target = re.search(r'\b(?:href|action)="([^"]*)"', tag.group(0))
             assert target and "#" in target.group(1), (path.name, tag.group(0))
             fragment = target.group(1).split("#", 1)[1]
-            assert names_region(text, fragment), (path.name, fragment)
+            assert names_region(text, fragment) or included_in_region(path, fragment), (
+                path.name,
+                fragment,
+            )
     assert found >= 8
+
+
+def included_in_region(path, fragment):
+    """Whether every template that includes ``path`` names ``fragment``.
+
+    A shared partial (System health's Take a backup now button, ADM-13) can
+    hold an in-place form whose region is defined by the page including it;
+    at least one includer must name the region, and every includer must
+    either name it or be a polled fragment that carries the partial only as
+    a template[data-live-mirror] copy for that page: with every such
+    <template> element removed, the includer no longer names the partial.
+    """
+    name = f"stewardship/{path.name}"
+    includers = [
+        other.read_text()
+        for other in TEMPLATES.rglob("*.html")
+        if other != path and name in other.read_text()
+    ]
+    mirrors = re.compile(r"<template\b[^>]*\bdata-live-mirror=.*?</template>", re.S)
+    return any(names_region(text, fragment) for text in includers) and all(
+        names_region(text, fragment) or name not in mirrors.sub("", text)
+        for text in includers
+    )
 
 
 def region_body(text, region):

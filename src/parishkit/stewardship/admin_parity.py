@@ -215,7 +215,9 @@ LEDGER = {
     # System health (ADM-13): the page, its polled fragment (``--watch``)
     # and /admin/system/, which only redirects to the page.
     "system": command("system health"),
-    "system_health": command("system health"),
+    # Take a backup now posts to the page; its fresh-gated commands wait
+    # for automation to pass the fresh sign-in check (ADM-11 PR 5).
+    "system_health": command("system health", owed="PR 5"),
     "system_health_status": command("system health"),
     # Operations.
     "background": command("task list"),

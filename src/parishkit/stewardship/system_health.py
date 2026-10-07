@@ -858,3 +858,154 @@ def read_health(store):
         offsite=offsite,
     )
     return model, page
+
+
+# ------------------------------------------------------- take a backup now
+
+# A request in these page statuses is live: another cannot be made.
+LIVE_REQUEST = frozenset({"waiting", "held", "running"})
+
+
+@dataclass(frozen=True)
+class BackupPreview:
+    """What Take a backup now's preview states before the Administrator confirms.
+
+    ``key`` becomes the request's identity, so a repeated confirmation
+    returns the first request instead of making a second. ``backup_at`` and
+    ``backup_bytes`` describe the newest backup, ``offsite`` whether
+    off-site copies are set up, and ``held`` whether a bulk Family send is
+    in progress, so the backup would wait for it.
+    """
+
+    key: object
+    backup_at: datetime | None
+    backup_bytes: int | None
+    offsite: bool
+    held: bool
+
+
+def _admit_action(caller, store):
+    """An enabled Administrator who may view System health and configure.
+
+    Returns ``(principal, signed-in instant)``; the instant must be within
+    the fresh sign-in window (``sessions.require_fresh``), or the caller
+    gets the "Confirm with Google" step-up.
+    """
+    from .accounts.policy import Capability, allows
+    from .accounts.sessions import authenticated_admin, require_fresh
+
+    actor = authenticated_admin(caller, store=store, activity=True)
+    if not (
+        allows(actor, Capability.SYSTEM_LOGS) and allows(actor, Capability.CONFIGURE)
+    ):
+        raise PermissionError("Take a backup now requires an Administrator.")
+    return actor, require_fresh(caller)
+
+
+def _refusal(now):
+    """Why a backup cannot be requested now, as a stored request, or None."""
+    request = _backup_request(now)
+    if request is not None and request.status in LIVE_REQUEST:
+        return request
+    return None
+
+
+def preview_backup(caller, store):
+    """Take a backup now's preview, for a freshly signed-in Administrator.
+
+    Refused (``StaleRecordError``) while a request is waiting or running.
+    Reads only what the page reads; changes nothing.
+    """
+    from uuid import uuid4
+
+    from .accounts.configuration_installation import coherent_configuration
+    from .accounts.sessions import database_now
+    from .campaigns.work_locks import read_transaction
+    from .source.send_hold import family_send_active
+    from .storage import StaleRecordError
+
+    _admit_action(caller, store)
+    with read_transaction():
+        configuration = coherent_configuration(store)
+        if configuration.restore_review_required:
+            raise StaleRecordError("No backup request during a restore review.")
+        now = database_now()
+        if _refusal(now) is not None:
+            raise StaleRecordError("A backup request is already waiting or running.")
+        backup_at, _, backup_bytes, _ = _backup(configuration)
+        return BackupPreview(
+            key=uuid4(),
+            backup_at=backup_at,
+            backup_bytes=backup_bytes,
+            offsite=_offsite(configuration) is not None,
+            held=family_send_active(),
+        )
+
+
+def request_backup(caller, store, *, key):
+    """Record one Take a backup now request; return ``(row, created)``.
+
+    The request's guard checks again, in the same transaction, that the
+    Administrator signed in within the fresh window, that no other request
+    is live and that no restore is under review. A repeated confirmation
+    with the same ``key`` returns the first request (``created`` false).
+    The audit event ``backup_requested`` is recorded with the request.
+    """
+    from django.db import DatabaseError, IntegrityError, transaction
+
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .jobs.backup_models import BackupRequest
+    from .storage import StaleRecordError
+
+    actor, fresh = _admit_action(caller, store)
+    session = caller.portal_session
+
+    def first():
+        """The request already recorded with this key, or None."""
+        previous = BackupRequest.objects.filter(pk=key).first()
+        if previous is not None and previous.actor_id != actor.identity:
+            raise PermissionError(
+                "This backup request was made by another Administrator."
+            )
+        return previous
+
+    try:
+        with transaction.atomic():
+            previous = first()
+            if previous is not None:
+                return previous, False
+            row = BackupRequest.objects.create(
+                id=key,
+                actor_id=actor.identity,
+                session_id=session.pk,
+                authenticated_at=fresh,
+            )
+            record_action(
+                Action.BACKUP_REQUESTED,
+                actor_kind=ActorKind.PORTAL_USER,
+                actor_id=actor.identity,
+                subject_id=row.pk,
+                context={"outcome": Outcome.SUCCEEDED},
+            )
+            return row, True
+    except IntegrityError as error:
+        # A simultaneous second click with the same key lost the race: it
+        # returns the first request. Otherwise the guard's one-at-a-time or
+        # restore-review refusal.
+        previous = first()
+        if previous is not None:
+            return previous, False
+        raise StaleRecordError(
+            "A backup request is already waiting or running."
+        ) from error
+    except DatabaseError as error:
+        # The guard's 42501: the sign-in is no longer fresh (it lapsed since
+        # the check above), so the reader gets the step-up.
+        if getattr(error.__cause__, "sqlstate", None) == "42501":
+            from .accounts.sessions import FreshAuthenticationRequired
+
+            raise FreshAuthenticationRequired(
+                "Please authenticate with Google again."
+            ) from error
+        raise

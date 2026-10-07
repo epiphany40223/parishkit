@@ -78,6 +78,8 @@
 {% elif request.status == "finished" %}{% translate "The backup requested at" %} <time datetime="{{ request.created_at|instant }}" data-local-instant>{{ request.created_at|instant }}</time> {% translate "finished at" %} <time datetime="{{ request.finished_at|instant }}" data-local-instant>{{ request.finished_at|instant }}</time>.
 {% elif request.status == "restored" %}{% translate "The backup requested at" %} <time datetime="{{ request.created_at|instant }}" data-local-instant>{{ request.created_at|instant }}</time> {% translate "was never run: the system was restored from a backup, which cancels earlier requests." %}
 {% endif %}</p>{% endif %}{% endwith %}
+{# Take a backup now's button as of this update; live-status-v1.js copies it into the Take a backup now region (data-live-mirror). #}
+<template data-live-mirror="backup-now-button">{% include 'stewardship/system-health-backup-button.html' with mirrored=True %}</template>
 {% if health.offsite %}<p{% if health.offsite.kind == 'failed' %} class="notice notice-error"{% endif %}>{% translate "Off-site copy:" %} {{ health.offsite.message }}{% if health.offsite.last_copy_at %} {% translate "Last copied:" %} <time datetime="{{ health.offsite.last_copy_at|instant }}" data-local-instant>{{ health.offsite.last_copy_at|instant }}</time>.{% endif %} <a href="{% url 'admin:integration_settings' 'backup' %}">{% translate "Off-site backup settings" %}</a></p>
 {% else %}<p>{% translate "Off-site copies are not set up." %} <a href="{% url 'admin:integration_settings' 'backup' %}">{% translate "Set up off-site backups" %}</a></p>{% endif %}
 {% if health.incidents.backup_rpo_breach %}<p class="notice notice-error">{% translate "A required backup is overdue." %}</p>{% endif %}
