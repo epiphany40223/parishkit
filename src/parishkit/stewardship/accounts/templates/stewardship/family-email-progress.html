@@ -18,10 +18,11 @@
 <p>{% translate "Watching this page does not slow the send down, and does not extend your sign-in." %}</p>{% endaboutpage %}
 {# Screen readers hear only this line, and only when the coarse status changes, not every count on every update. #}
 <p class="visually-hidden" role="status" data-live-announcer="send-progress"></p>
-{% include 'stewardship/family-email-progress-status.html' %}
+{# Refresh progress re-reads this region in place (ui-v1.js, a[data-in-place], #519); live-status-v1.js watches the fresh one while it is still pending. #}
+<div id="send-progress" data-in-place-region>{% include 'stewardship/family-email-progress-status.html' %}</div>
 {% if send %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
 <dl><dt>{% translate "Schedule type" %}</dt><dd><code>{{ send.counts.kind }}</code></dd>
 <dt>{% translate "Mode" %}</dt><dd><code>{% if testing %}testing{% else %}production{% endif %}</code></dd></dl>
 <p>{% translate "These values are as of when this page was opened." %}</p></details>{% endif %}
-<p><a href="{% url 'admin:family_email_progress' %}">{% translate "Refresh progress" %}</a> · <a href="{% url 'admin:family_email_sends' %}">{% translate "Family email history" %}</a> · <a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a>{% if campaign and not testing %} · <a href="{% url 'admin:delivery_control' campaign.pk %}">{% translate "Pause and resume mail" %}</a>{% endif %}</p>
+<p><a href="{% url 'admin:family_email_progress' %}#send-progress" data-in-place="refresh" data-in-place-message="{% translate 'Progress refreshed.' %}">{% translate "Refresh progress" %}</a> · <a href="{% url 'admin:family_email_sends' %}">{% translate "Family email history" %}</a> · <a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a>{% if campaign and not testing %} · <a href="{% url 'admin:delivery_control' campaign.pk %}">{% translate "Pause and resume mail" %}</a>{% endif %}</p>
 {% endblock %}

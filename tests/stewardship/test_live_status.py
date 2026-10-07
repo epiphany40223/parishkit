@@ -250,7 +250,9 @@ def test_script_supports_a_fixed_pace_and_change_only_announcements():
     assert "Math.min(Math.max(interval, 2000), 60000)" in source
     assert "fixed || DELAYS[" in source
     assert 'region.getAttribute("data-live-announce")' in source
-    assert "if (!announcer || text === announced) return;" in source
+    # Change-only: the sentence last spoken for the region is shared by its
+    # watchers (#519), so neither a poll nor a swap repeats it.
+    assert 'if (!announcer || text === (spoken.get(name) ?? "")) return;' in source
 
 
 def test_script_lets_a_region_renew_its_own_watching_limit():
