@@ -76,6 +76,8 @@ from .digest_components import components as digest_components
 from .directory_components import components as directory_components
 from .family_timeline_components import components as family_timeline_components
 from .financial_components import components as financial_components
+from .find_family_components import POSTS as FIND_FAMILY_POSTS
+from .find_family_components import components as find_family_components
 from .followup_components import POSTS as FOLLOWUP_POSTS
 from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
@@ -1860,6 +1862,7 @@ def component_origin():
     responses.update(dashboard_components(context, admin))
     responses.update(response_list_components(context, admin))
     responses.update(family_timeline_components(context, admin))
+    responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))
     responses.update(security_components(context, admin))
     responses.update(go_live_components(context, admin))
@@ -1882,6 +1885,7 @@ def component_origin():
         | AUTOMATION_POSTS
         | FOLLOWUP_POSTS
         | INFORMATION_POSTS
+        | FIND_FAMILY_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
@@ -1895,6 +1899,7 @@ def component_origin():
         ("admin-gate-v1.js", "application/javascript"),
         ("admin-menu-v1.js", "application/javascript"),
         ("admin-menu-state-v1.js", "application/javascript"),
+        ("find-family-v1.js", "application/javascript"),
         ("date-format-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),
         ("family-support-v1.js", "application/javascript"),

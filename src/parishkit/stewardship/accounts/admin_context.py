@@ -127,6 +127,7 @@ def portal_chrome(request):
             .date()
             .isoformat(),
             "background": counts,
+            "find_family": _find_family(actor, items, campaign),
             "delivery_unknown": delivery_unknown,
             # Presence has its own passive endpoint. Do not repeat its current
             # epoch/population/session reads on every ordinary Admin page.
@@ -165,6 +166,21 @@ def _navigation_items(actor, admin, campaign, configuration):
 
     state = admin_navigation.MenuState(campaign, configuration.mode)
     return admin_navigation.menu(state, may_open)
+
+
+def _find_family(actor, items, campaign):
+    """The header's Find a Family box (#561), or None when the viewer gets none.
+
+    Only a viewer whose menu offers the Family directory now (Administrators
+    and Staff, with a current campaign) gets the box, and only if they may
+    also open the Family timeline its results link to. It reuses the menu's
+    decision, so it costs the header no query. The search route rechecks
+    both on every request; this only decides whether to show the box.
+    """
+    directory = any(item.url for item in items if item.name == "family_directory")
+    if not directory or not allows(actor, Capability.CAMPAIGN_REPORT):
+        return None
+    return {"url": reverse("admin:find_family", args=[campaign.pk])}
 
 
 def _current_campaign(configuration):

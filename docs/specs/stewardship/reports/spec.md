@@ -581,8 +581,8 @@ identifier like a Mail message's; the Family's name, DUID, envelope number and
 code never enter the URL, and the browser title leaves the name out so browser
 history does not keep it. The Family's name opens the page from each
 [response list](#response-lists) row (in the list's mode) and each
-[Family directory](#family-directory) row, and the header's Find a Family box
-opens it once that lands (see
+[Family directory](#family-directory) row, and from each match in the header's
+Find a Family box (see
 [Admin navigation](../admin-portal/spec.md#admin-navigation)). Its breadcrumb
 parent is the Family directory. The page reads the Family's records at the
 database's current instant (**Counted at**).
