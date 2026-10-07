@@ -315,7 +315,7 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(
     assert response.status_code == 302, response.content
     assert b"Switching to it now" in browser.get(URL).content
     finish = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert install(working, finish.pk).state == "applied"
     record = _record(working)["values"]
@@ -383,7 +383,7 @@ def test_finish_switching_keeps_another_admins_newer_schedule(working):
             browser, select, {"action": "confirm", "preview": hidden(page, "preview")}
         )
     assert response.status_code == 302, response.content
-    finish = UUID(response["Location"].rsplit("/", 1)[-1])
+    finish = UUID(response["Location"].rstrip("/").rsplit("/", 1)[-1])
     assert install(working, finish).state == "applied"
     settings = _record(working)["values"]["settings"]
     assert settings["nightly_time"] == "04:15"
@@ -657,7 +657,7 @@ def test_a_key_that_still_needs_action_cannot_be_dismissed(working, monkeypatch)
 def test_parishsoft_page_offers_a_one_click_full_refresh(working):
     """The settings page posts to the manual refresh with a fresh request key."""
     page = working["browser"].get(URL).content.decode()
-    assert 'action="/admin/source/refresh"' in page
+    assert 'action="/admin/parish/parishsoft-refresh/"' in page
     assert re.search(r'name="request_key" value="[0-9a-f-]{36}"', page)
     assert "Run a full refresh now" in page
 

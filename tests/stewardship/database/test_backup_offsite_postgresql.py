@@ -744,7 +744,7 @@ def apply(store, response):
     """Install the queued configuration change the web just recorded."""
     assert response.status_code == 302, response.content
     row = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     result = install_request(store, request_id=row.pk, correlation_id=uuid4())
     assert result.state == "applied"

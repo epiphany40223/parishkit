@@ -134,7 +134,7 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     assert f'<a href="{URL}">Return to ParishSoft</a>'.encode() in status
     assert auth_service.store.active() == old
     row = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert (
         install_request(
@@ -189,7 +189,7 @@ def test_nightly_only_edit_uses_parish_time_and_real_scheduler_receipt(
     response = post(browser, URL, {"action": "confirm", "preview": preview})
     assert response.status_code == 302
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert request.request_schema == "source-cadence-patch-v8"
     assert (
@@ -252,7 +252,7 @@ def test_several_daily_times_reach_yaml_and_the_scheduler(auth_service, google):
         browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
     )
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert (
         install_request(
@@ -314,7 +314,7 @@ def test_refresh_times_are_typed_in_any_common_form(auth_service, google):
         browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
     )
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert (
         install_request(

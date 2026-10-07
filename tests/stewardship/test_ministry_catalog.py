@@ -149,7 +149,7 @@ def test_the_notice_names_changes_and_links_to_ministry_activity():
     assert "Lectors (DUID 12)" in html and "and 2 more" in html
     assert "Greeters (DUID 77) — in the current campaign" in html
     assert "Choir → X-Choir (DUID 3) — possibly retired" in html
-    assert 'href="/admin/configuration/ministries"' in html
+    assert 'href="/admin/parish/ministries/"' in html
     assert f"/admin/campaign/{CAMPAIGN}/settings#ministry-selections" in html
 
 

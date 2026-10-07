@@ -42,11 +42,11 @@ localhost {
     route {
         @internal path /health/* /metrics /metrics/*
         respond @internal 404
-        @hosted_file_upload path /admin/files/upload
+        @hosted_file_upload path /admin/parish/files/uploads/ /admin/files/upload
         request_body @hosted_file_upload {
             max_size 11MB
         }
-        @ordinary_body not path /admin/files/upload
+        @ordinary_body not path /admin/parish/files/uploads/ /admin/files/upload
         request_body @ordinary_body {
             max_size 6MB
         }

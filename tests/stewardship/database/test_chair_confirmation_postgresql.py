@@ -81,7 +81,7 @@ def recorded(browser, values):
         response = post(browser, {"action": "confirm", "preview": signed})
     assert response.status_code == 302, response.content
     return ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
 
 
@@ -128,7 +128,7 @@ def test_a_confirmation_creates_the_seeded_rule_assignment_and_evidence(
     request = confirmed(store, browser, proposal(store))
     # The POST-only review is named, never linked; Return goes to users (#196).
     with web():
-        status = browser.get(f"/admin/configuration/requests/{request.pk}").content
+        status = browser.get(f"/admin/changes/{request.pk}/").content
     assert b"<li><span>Review Chairperson suggestion</span></li>" in status
     assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
     assert request.request_schema == "chair-seed-patch-v9"

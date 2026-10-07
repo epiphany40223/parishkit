@@ -231,7 +231,7 @@ def test_tokens_cross_between_the_page_and_the_command_line(admin, google):
         accepted = post(browser, path, {"action": "confirm", "preview": command})
     assert accepted.status_code == 302
     assert ConfigurationChangeRequest.objects.filter(
-        pk=accepted["Location"].rsplit("/", 1)[-1]
+        pk=accepted["Location"].rstrip("/").rsplit("/", 1)[-1]
     ).exists()
     # Only the command line's confirmation records the command event.
     assert len(events()) == 1

@@ -26,7 +26,7 @@ from .test_current_chair_postgresql import publish
 from .test_source_families_postgresql import source_singletons  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/configuration/ministries"
+URL = "/admin/parish/ministries/"
 
 
 def post(browser, values):
@@ -272,7 +272,7 @@ def test_status_reads_do_not_renew_idle_or_expose_other_actors(auth_service, goo
         assert browser.get(response["Location"]).status_code == 200
     row.refresh_from_db()
     assert row.last_activity_at == activity
-    assert browser.get(f"/admin/configuration/requests/{uuid4()}").status_code == 404
+    assert browser.get(f"/admin/changes/{uuid4()}/").status_code == 404
 
 
 def test_real_web_role_can_use_catalog_and_intake_without_source_write_grants(

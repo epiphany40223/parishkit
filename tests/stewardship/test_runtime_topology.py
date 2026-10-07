@@ -587,9 +587,15 @@ def test_source_consumer_adds_no_service_to_any_compose_variant(
 def test_ingress_admits_large_bodies_only_for_hosted_file_uploads(tmp_path):
     """Hosted files (#346): 11 MB on the upload route, 6 MB elsewhere, buffered."""
     output = render_caddy(configuration_at(tmp_path, production=True))
-    assert "@hosted_file_upload path /admin/files/upload" in output
+    assert (
+        "@hosted_file_upload path /admin/parish/files/uploads/ /admin/files/upload"
+        in output
+    )
     assert "request_body @hosted_file_upload {\n            max_size 11MB" in output
-    assert "@ordinary_body not path /admin/files/upload" in output
+    assert (
+        "@ordinary_body not path /admin/parish/files/uploads/ /admin/files/upload"
+        in output
+    )
     assert "request_body @ordinary_body {\n            max_size 6MB" in output
     assert "@hosted_file path /files/*" in output
     hosted = output.index("reverse_proxy @hosted_file")

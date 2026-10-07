@@ -36,6 +36,21 @@ SYSTEM = (
     ("logs/export", "logs_export"),
 )
 
+# (old route, new URL name), Parish data group and change status (NAV-7).
+PARISH = (
+    ("configuration/parish", "parish_settings"),
+    ("configuration/branding", "branding_settings"),
+    ("configuration/branding/<uuid:bundle_id>", "branding_preview"),
+    ("configuration/branding/assets/<uuid:asset_id>.png", "branding_asset"),
+    ("configuration/ministries", "ministries"),
+    ("files/", "hosted_files"),
+    ("files/upload", "hosted_file_upload"),
+    ("files/delete", "hosted_file_delete"),
+    ("files/<uuid:file_id>/name", "hosted_file_rename"),
+    ("source/refresh", "source_refresh"),
+    ("configuration/requests/<uuid:request_id>", "configuration_request"),
+)
+
 # Each page already in the scheme without its trailing slash (the one
 # trailing-slash rule: "the other form redirects"). Form actions and status
 # fragments are posted or polled at the reversed URL only, so they have none.
@@ -49,12 +64,21 @@ SLASHLESS = (
     ("system/background", "background"),
     ("system/background/<uuid:task_id>", "background_task_page"),
     ("system/logs", "logs"),
+    ("parish/settings", "parish_settings"),
+    ("parish/logos", "branding_settings"),
+    ("parish/logos/<uuid:bundle_id>", "branding_preview"),
+    ("parish/ministries", "ministries"),
+    ("parish/files", "hosted_files"),
+    ("parish/files/deletion", "hosted_file_delete"),
+    ("parish/files/<uuid:file_id>/name", "hosted_file_rename"),
+    ("parish/parishsoft-refresh", "source_refresh"),
+    ("changes/<uuid:request_id>", "configuration_request"),
     ("users/automation", "automation_access"),
     ("users/automation/approval", "automation_approval"),
 )
 
 # Every legacy route: (old route, new URL name, names a campaign, name suffix).
-ROWS = tuple((old, new, False, "") for old, new in SYSTEM) + tuple(
+ROWS = tuple((old, new, False, "") for old, new in SYSTEM + PARISH) + tuple(
     (old, new, False, "_slashless") for old, new in SLASHLESS
 )
 

@@ -44,8 +44,8 @@ from .test_parish_views_postgresql import token
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ORIGIN = "https://parish.example.org"
-LIBRARY = "/admin/files/"
-UPLOAD = "/admin/files/upload"
+LIBRARY = "/admin/parish/files/"
+UPLOAD = "/admin/parish/files/uploads/"
 
 
 @pytest.fixture
@@ -326,13 +326,15 @@ def test_placeholders_render_on_pages_and_guard_rename_and_delete(
     # Deletion and renaming are refused while the content uses the files.
     delete = post(
         browser,
-        "/admin/files/delete",
+        "/admin/parish/files/deletion/",
         {"action": "confirm", "file_id": [str(guide.pk), str(picnic.pk)]},
     )
     result = unescape(delete.content.decode())
     assert result.count("Not deleted — in use:") == 2
     assert "Family welcome (page)" in result
-    rename = post(browser, f"/admin/files/{guide.pk}/name", {"slug": "handbook"})
+    rename = post(
+        browser, f"/admin/parish/files/{guide.pk}/name/", {"slug": "handbook"}
+    )
     assert rename.status_code == 400 and "This file is in use" in unescape(
         rename.content.decode()
     )
@@ -352,7 +354,9 @@ def test_placeholders_render_on_pages_and_guard_rename_and_delete(
     # Once the content no longer names them, both go for real.
     save_page(store, browser, catalog, "<p>Welcome</p>")
     assert not file_uses([guide.pk, picnic.pk])
-    renamed = post(browser, f"/admin/files/{guide.pk}/name", {"slug": "handbook"})
+    renamed = post(
+        browser, f"/admin/parish/files/{guide.pk}/name/", {"slug": "handbook"}
+    )
     assert renamed.status_code == 302
     guide.refresh_from_db()
     assert guide.slug == "handbook" and guide.version == 2
@@ -362,13 +366,13 @@ def test_placeholders_render_on_pages_and_guard_rename_and_delete(
     )
     preview = post(
         browser,
-        "/admin/files/delete",
+        "/admin/parish/files/deletion/",
         {"action": "preview", "file_id": [str(guide.pk), str(picnic.pk)]},
     )
     assert "This cannot be undone" in unescape(preview.content.decode())
     deleted = post(
         browser,
-        "/admin/files/delete",
+        "/admin/parish/files/deletion/",
         {"action": "confirm", "file_id": [str(guide.pk), str(picnic.pk)]},
     )
     assert unescape(deleted.content.decode()).count("Deleted") == 2
@@ -377,7 +381,7 @@ def test_placeholders_render_on_pages_and_guard_rename_and_delete(
     assert AuditEvent.objects.filter(event_type="hosted_file_deleted").count() == 2
     again = post(
         browser,
-        "/admin/files/delete",
+        "/admin/parish/files/deletion/",
         {"action": "confirm", "file_id": [str(guide.pk)]},
     )
     assert "Already deleted" in unescape(again.content.decode())
@@ -543,11 +547,13 @@ def test_staff_cannot_use_the_library(auth_service, google, media):
     assert upload(browser, "b.pdf", samples.pdf()).status_code == 403
     assert (
         post(
-            browser, "/admin/files/delete", {"action": "confirm", "file_id": row.pk}
+            browser,
+            "/admin/parish/files/deletion/",
+            {"action": "confirm", "file_id": row.pk},
         ).status_code
         == 403
     )
-    assert browser.get(f"/admin/files/{row.pk}/name").status_code == 403
+    assert browser.get(f"/admin/parish/files/{row.pk}/name/").status_code == 403
     assert HostedFile.objects.filter(pk=row.pk).exists()
 
 
@@ -827,7 +833,7 @@ def test_bulk_delete_reports_a_busy_library_and_continues(auth_service, google, 
     with storage.storage_lock(media):
         response = post(
             browser,
-            "/admin/files/delete",
+            "/admin/parish/files/deletion/",
             {"action": "confirm", "file_id": [str(first.pk), str(second.pk)]},
         )
     assert response.status_code == 200
@@ -835,7 +841,7 @@ def test_bulk_delete_reports_a_busy_library_and_continues(auth_service, google, 
     assert HostedFile.objects.count() == 2
     done = post(
         browser,
-        "/admin/files/delete",
+        "/admin/parish/files/deletion/",
         {"action": "confirm", "file_id": [str(first.pk), str(second.pk)]},
     )
     assert unescape(done.content.decode()).count("Deleted") == 2

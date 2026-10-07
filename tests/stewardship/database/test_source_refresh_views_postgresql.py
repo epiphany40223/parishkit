@@ -27,7 +27,7 @@ from .test_source_requests_postgresql import claim
 from .test_user_views_postgresql import add_rules
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/source/refresh"
+URL = "/admin/parish/parishsoft-refresh/"
 
 
 def web():

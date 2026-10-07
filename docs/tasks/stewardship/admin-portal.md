@@ -565,6 +565,16 @@ their page, including an export's report and Home. It is proven by
 `tests/stewardship/test_admin_page_names.py` (the Responses and reports
 group, the empty-report page, more retired names) and the updated report
 suites.
+ADM-12.10 (NAV-7, in part) moves the Parish data pages under
+`/admin/parish/` (settings, logos, Ministries, hosted files with
+`uploads/` and `deletion/` actions, and the ParishSoft refresh) and a
+change's status page to `/admin/changes/<request>/`, each old address and
+no-slash form redirecting. The ingress admits large uploads at both upload
+addresses, and the two hard-coded redirects are reversed. The Users and
+access URLs move with the Portal users split (NAV-15), so this task stays
+open until then. It is proven by the expected-redirect table in
+`tests/stewardship/test_admin_url_scheme.py`, the Caddyfile render tests and
+golden files, and the updated Parish data and change suites.
 
 ## ADM-13: System health page
 

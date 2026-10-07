@@ -32,7 +32,7 @@ from .test_user_views_postgresql import add_rules, row
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = "/admin/users/assignments"
-ACTIVITY = "/admin/configuration/ministries"
+ACTIVITY = "/admin/parish/ministries/"
 
 
 def web():
@@ -76,7 +76,7 @@ def applied(store, browser, values, url=URL):
         response = post(browser, {"action": "confirm", "preview": signed}, url)
     assert response.status_code == 302, response.content
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     with as_config_installer():
         admit_configuration_database()
@@ -122,7 +122,7 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
     request = applied(store, browser, proposal(store))
     # The POST-only review is named, never linked; Return goes to users.
     with web():
-        status = browser.get(f"/admin/configuration/requests/{request.pk}").content
+        status = browser.get(f"/admin/changes/{request.pk}/").content
     assert b"<li><span>Review Ministry assignment</span></li>" in status
     assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
     assignment = MinistryAssignment.objects.get(
@@ -206,7 +206,7 @@ def test_an_address_without_a_rule_is_assigned_and_told_how_it_takes_effect(
         response = post(browser, {"action": "confirm", "preview": signed})
     assert response.status_code == 302
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     with as_config_installer():
         admit_configuration_database()
