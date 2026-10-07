@@ -72,6 +72,12 @@ require. Their task IDs stay unchecked in the checklists.
 
 ### Manual restore for v1 (replaces item 2)
 
+Since #537 the backup runbook's
+[real restore](../../guides/stewardship-backup-runbook.md#restore-for-real)
+closes the site for review with `restore-begin`, and an Administrator settles
+held emails and releases the site on the Restore review page. The steps below
+remain for a set taken under an earlier release.
+
 Until OPS-06 exists, a restore is an operator procedure, not an application
 workflow. The runbook must say to:
 
