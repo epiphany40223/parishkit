@@ -42,6 +42,7 @@
 !src/parishkit/stewardship/schema/migrations/0015_directory_member_search.sql
 !src/parishkit/stewardship/schema/migrations/0016_backup_request.sql
 !src/parishkit/stewardship/schema/migrations/0017_report_local_days.sql
+!src/parishkit/stewardship/schema/migrations/0018_log_events.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

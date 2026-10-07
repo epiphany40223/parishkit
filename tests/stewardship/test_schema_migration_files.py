@@ -83,6 +83,9 @@ FROZEN = {
     "0017_report_local_days.sql": (
         "cc6153e9a907ed5f25a8fc0bcd11f7d199635dcac4f36546381b8c83e24db22b"
     ),
+    "0018_log_events.sql": (
+        "94cf791f848ae86df77451142a2b93fe0d56311c834e7c23fc85abfe1bc8a88a"
+    ),
 }
 
 
