@@ -759,7 +759,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `chrome` | (shared header and banners) | Every page | Administrator, Staff, Ministry leader | Every Admin page (header and banners) | `/admin/*` | (same) | Acknowledge stays on the current page (#519). |
 | `login` | Administration sign-in | (outside the menu) | Anyone | (same) | `/admin/login` | `/admin/login/` |  |
 | `local_sign_in` | Local test sign-in | (outside the menu) | Anyone | (same) | `/admin/local/sign-in` | `/admin/local/sign-in/` | LOCAL only. |
-| `maintenance` | The system is temporarily unavailable | (outside the menu) | Administrator, Staff, Ministry leader | (same) | `/admin/maintenance` | `/admin/maintenance/` | Decision 12: restore-review dead end. |
+| `maintenance` | Restore review | (outside the menu) | Administrator | The site is being restored (Staff, Ministry leader) | `/admin/maintenance` | `/admin/maintenance/` | Decision 12: the [restore review page](#restore-release) (#537). Staff and Ministry leaders see a plain notice. |
 | `availability_setup` | The system is not configured yet | (outside the menu) | Administrator, Staff, Ministry leader | (same) | (any Admin URL before setup completes, non-Administrator) | (any Admin URL before setup completes) |  |
 | `error_page` | _error title_ | (outside the menu) | Administrator, Staff, Ministry leader | _error title_ (e.g. Check your entries, This information changed, Access unavailable, Page unavailable, Confirm it's you) | (any Admin URL that fails) | (same) | Object-named (exception); offers a way back to the page or Home. |
 | `setup` | Initial setup | Setup stepper | Administrator | (same) | `/admin/setup` | `/admin/setup/` |  |
@@ -2374,8 +2374,30 @@ other high-impact actions; the session and sign-in instant are recorded with
 the decision. Like the backup request guard, the SQL check proves a live,
 recent session row, not that a real Google round trip happened: a compromised
 web process could present one. Listing held emails needs no fresh sign-in,
-because a hold only keeps mail back. The page that shows what was restored, lists the held emails by
-send, and offers settlement and release is #537's second part.
+because a hold only keeps mail back.
+
+**The Restore review page.** During a review the access gate sends an
+Administrator to the Restore review page (`/admin/maintenance`); Staff and
+Ministry leaders see a plain "The site is being restored" notice, and Families
+the neutral maintenance page. The page shows when the backup was taken and when
+it was restored, what may be lost between the two (Family responses, Staff and
+Administrator changes, sent emails, ParishSoft refreshes), and the current
+campaign. In Production it finds the held emails on request and lists them by
+send (the invitation and each reminder, by due date) with how many are not
+decided, assumed sent, or to be sent again. It also counts the emails that
+were being handed to the provider at the backup, which the delivery warning
+settles after release. Each send offers "Assume these were sent" and "Send
+these again"; each shows the exact count and asks for a short note before the
+confirm, and a count that changed in the meantime settles nothing. Counts name
+only emails that would be sent now; holds of Families that cannot be emailed,
+reminders waiting for an undecided invitation, and invitations only a
+deliverability change would retry are shown apart. "Release the site" is
+offered only once no email still needs a hold. Its preview says what Families
+get as things stand (open, mail paused, not yet open, Testing or closed), how
+many held emails stay held, and how many Families' reminders an undecided
+invitation keeps back, then releases and ends on Home. Every control acts in place; a
+stale sign-in is answered in place with the step-up. After release the page is
+gone; settling the remaining holds is #757.
 
 ### Live delivery pause
 

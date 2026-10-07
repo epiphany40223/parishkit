@@ -753,7 +753,8 @@ cached reauthentication evidence, and revokes every
 as `revoke-automation-sessions` does in the v1 manual restore).
 Fresh Google login is required for Admin,
 Staff, and Ministry leaders; neither a saved cookie nor a previously fresh
-reauthentication timestamp survives restore. Before `web` starts, the
+reauthentication timestamp survives restore. Before `scheduler`, `worker` or
+`mail-dispatch` start, the
 operator runs `pk-stewardship restore-begin --backup-at SET_NAME` in the
 `admin-recovery` profile. It records a `restore_begin` runtime transition that
 sets the durable `restore_review_required` gate with a new restore id and the

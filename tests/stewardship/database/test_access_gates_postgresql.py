@@ -79,7 +79,9 @@ def test_non_admin_cannot_enter_setup_or_maintenance_workflows(
     with restored_runtime(timezone.now() - timedelta(hours=1)):
         response = browser.get("/admin/maintenance")
         assert response.status_code == 503
-        assert b"temporarily unavailable" in response.content
+        # Staff get the plain notice, never the Restore review (#537).
+        assert b"The site is being restored" in response.content
+        assert b"Release the site" not in response.content
 
 
 @pytest.mark.parametrize("signed_domain", [None, "wrong.example", "example.org"])

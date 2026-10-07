@@ -122,7 +122,8 @@ def test_google_after_recovery_does_not_release_restore_maintenance(
         response = browser.get("/admin/")
         assert response.status_code == 302
         assert response["Location"] == "/admin/maintenance"
-        denied = browser.get("/admin/maintenance")
-        assert denied.status_code == 503
-        assert b"/admin/login" in denied.content
+        # The Restore review page (#537), never the ordinary portal.
+        review = browser.get("/admin/maintenance")
+        assert review.status_code == 200
+        assert b"Restore review" in review.content
         assert SystemConfiguration.objects.get().restore_review_required

@@ -1,0 +1,81 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Restore review" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Restore review" %}</h1>
+{% aboutpage "restore-review" %}<p>{% translate "The site was put back to an earlier backup. Anything recorded after that backup is not in the restored data, including emails that may already have gone out. The site stays closed until you release it: Families cannot sign in, no Family email is sent, and Staff and Ministry leaders see a notice that the site is being restored." %}</p>
+<dl>
+<dt>{% translate "Held emails" %}</dt><dd>{% translate "Invitations and reminders that were due and are not recorded as sent in the backup. Some may have gone out after the backup was taken. A held email is never sent unless you choose Send again. Compare each send with the mail provider's sent log for the time since the backup." %}</dd>
+<dt>{% translate "Assume these were sent" %}</dt><dd>{% translate "Use this when the provider's log shows the emails went out. They are not sent again." %}</dd>
+<dt>{% translate "Send these again" %}</dt><dd>{% translate "Use this when the emails did not go out, or when a second copy is acceptable. Families who already got one will get a second. Each Family gets the same code and link as before: a restore never changes them." %}</dd>
+<dt>{% translate "Release the site" %}</dt><dd>{% translate "Opens the site again as it was restored; a campaign start or close date that passed during the review then takes effect. Emails you have not decided on stay held and are never sent. Every decision and the release are kept in the System logs." %}</dd>
+</dl>{% endaboutpage %}
+<section class="flow" id="restore-review" data-in-place-region aria-labelledby="restore-review-heading">
+<h2 id="restore-review-heading" class="visually-hidden">{% translate "Review" %}</h2>
+{% if step.refused == "reauthenticate" %}<div class="notice" data-restore-refused="reauthenticate"><p>{% if local_environment %}{% translate "For your security, confirm your sign-in first. Nothing was changed." %}{% else %}{% translate "For your security, confirm it's you with Google first. Nothing was changed; you will return to this page." %}{% endif %}</p>
+{% url 'admin:maintenance' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>
+{% elif step.refused == "changed" %}<p class="notice" data-restore-refused="changed">{% translate "Something changed since you looked (another Administrator, or more held emails were found). Nothing was changed; review the counts below and try again." %}</p>
+{% elif step.refused == "blocked" %}<p class="notice notice-error" data-restore-refused="blocked">{% translate "The site cannot be released yet: a campaign change or a purge is still running. Nothing was changed; ask the server operator." %}</p>
+{% elif step.refused == "invalid" %}<p class="notice notice-error" data-restore-refused="invalid">{% translate "That request could not be read. Nothing was changed; try again." %}</p>
+{% elif step.settled %}<p class="notice" data-restore-settled role="status">{% blocktranslate count n=step.settled trimmed %}{{ n }} held email settled.{% plural %}{{ n }} held emails settled.{% endblocktranslate %}</p>
+{% elif step.listed is not None %}<p class="notice" data-restore-listed role="status">{% blocktranslate count n=step.listed trimmed %}Found {{ n }} more email that may have gone out.{% plural %}Found {{ n }} more emails that may have gone out.{% endblocktranslate %}</p>{% endif %}
+
+<div class="panel">
+<h2>{% translate "What was restored" %}</h2>
+<ul>
+<li>{% translate "The backup was taken at" %} <time datetime="{{ review.backup_at|instant }}" data-local-instant>{{ review.backup_at|instant }}</time>.</li>
+<li>{% translate "The site was restored at" %} <time datetime="{{ review.restored_at|instant }}" data-local-instant>{{ review.restored_at|instant }}</time>. {% translate "Anything recorded between these two times is not in the restored data: Family responses, changes made by Staff or Administrators, emails sent, and ParishSoft refreshes. A Family whose response was lost must respond again." %}</li>
+<li>{% if review.campaign_name %}{% blocktranslate with name=review.campaign_name trimmed %}Campaign: {{ name }}{% endblocktranslate %} ({% if review.campaign_state == "active" %}{% translate "open" %}{% elif review.campaign_state == "scheduled" %}{% translate "not open yet" %}{% elif review.campaign_state == "closed" %}{% translate "closed" %}{% elif review.campaign_state == "draft" %}{% translate "not live yet" %}{% elif review.campaign_state == "archived" %}{% translate "archived" %}{% else %}{% translate "being removed by the server operator" %}{% endif %}{% if review.mode == "testing" %}, {% translate "Testing" %}{% endif %}).{% else %}{% translate "No campaign is current." %}{% endif %}</li>
+</ul>
+</div>
+
+<div class="panel">
+<h2>{% translate "Emails that may have gone out" %}</h2>
+{% if review.mode != "production" %}<p>{% translate "The site is in Testing, so no Family email is held: Testing email goes only to the testing address." %}</p>
+{% elif not review.listed %}<p>{% translate "Find the invitations and reminders that were due but are not recorded as sent. Finding them only holds them; nothing is sent." %}</p>
+{% else %}<table>
+<thead><tr><th scope="col">{% translate "Send" %}</th><th scope="col">{% translate "Not decided" %}</th><th scope="col">{% translate "Assumed sent" %}</th><th scope="col">{% translate "Send again" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead>
+<tbody>{% for group in review.groups %}<tr data-restore-group="{{ group.definition_id }}">
+<th scope="row">{% if group.kind == "initial" %}{% translate "Invitation" %}{% else %}{% translate "Reminder" %}{% endif %}, {% translate "due" %} <time datetime="{{ group.due_at|instant }}" data-local-instant>{{ group.due_at|instant }}</time></th>
+<td>{{ group.reachable }}{% if group.inert %} <span class="help">{% blocktranslate count n=group.inert trimmed %}(and {{ n }} that would not be sent now){% plural %}(and {{ n }} that would not be sent now){% endblocktranslate %}</span>{% endif %}</td><td>{{ group.assumed }}</td><td>{{ group.resend }}</td>
+<td>{% if step.group.definition_id == group.definition_id %}{% translate "See below" %}{% else %}{% if group.unreviewed %}<form method="post" action="{% url 'admin:maintenance' %}#restore-review" data-in-place="restore-group-preview" data-in-place-message="{% translate 'Review the choice.' %}">{% csrf_token %}<input type="hidden" name="action" value="group-preview"><input type="hidden" name="definition" value="{{ group.definition_id }}"><input type="hidden" name="group_action" value="assume"><button type="submit" class="button-secondary">{% translate "Assume these were sent…" %}</button></form>{% endif %}
+{% if group.unreviewed %}<form method="post" action="{% url 'admin:maintenance' %}#restore-review" data-in-place="restore-group-preview" data-in-place-message="{% translate 'Review the choice.' %}">{% csrf_token %}<input type="hidden" name="action" value="group-preview"><input type="hidden" name="definition" value="{{ group.definition_id }}"><input type="hidden" name="group_action" value="resend"><button type="submit" class="button-secondary">{% translate "Send these again…" %}</button></form>{% endif %}{% if not group.unreviewed %}{% translate "Decided" %}{% endif %}{% endif %}</td>
+</tr>{% endfor %}</tbody>
+</table>
+{% if step.group %}{% with group=step.group %}<div class="panel" data-restore-preview="{{ step.group_action }}">
+{% if not group.reachable %}<h3>{% blocktranslate count n=group.unreviewed trimmed %}Settle {{ n }} held email that would not be sent now{% plural %}Settle {{ n }} held emails that would not be sent now{% endblocktranslate %}</h3>
+<p class="help">{% translate "Each is for a Family that cannot be emailed, is waiting for its invitation, or has an invitation only a deliverability change would retry." %}</p>
+{% endif %}{% if step.group_action == "assume" %}{% if group.reachable %}<h3>{% blocktranslate count n=group.reachable trimmed %}Assume {{ n }} email was sent{% plural %}Assume {{ n }} emails were sent{% endblocktranslate %}</h3>{% endif %}
+<p>{% translate "They will not be sent again. Use this when the mail provider's sent log shows them." %}</p>
+{% else %}{% if group.reachable %}<h3>{% blocktranslate count n=group.reachable trimmed %}Send {{ n }} email again{% plural %}Send {{ n }} emails again{% endblocktranslate %}</h3>{% endif %}
+<p><strong>{% translate "A Family that already got this email will get a second copy." %}</strong> {% translate "They are sent once the site is released, with each Family's same code and link." %}</p>{% endif %}
+{% if group.inert and group.reachable %}<p class="help">{% blocktranslate count n=group.inert trimmed %}This also settles {{ n }} held email that would not be sent now (the Family cannot be emailed, is waiting for its invitation, or has an invitation only a deliverability change would retry).{% plural %}This also settles {{ n }} held emails that would not be sent now (the Family cannot be emailed, is waiting for its invitation, or has an invitation only a deliverability change would retry).{% endblocktranslate %}</p>{% endif %}
+<form method="post" action="{% url 'admin:maintenance' %}#restore-review" data-in-place="restore-group-confirm" data-in-place-message="{% translate 'Held emails settled.' %}">{% csrf_token %}<input type="hidden" name="action" value="group-confirm"><input type="hidden" name="definition" value="{{ group.definition_id }}"><input type="hidden" name="group_action" value="{{ step.group_action }}"><input type="hidden" name="count" value="{{ group.unreviewed }}">
+<label for="restore-evidence">{% translate "Why (kept in the System logs)" %}</label>
+<textarea id="restore-evidence" name="evidence" required maxlength="1024" rows="2"></textarea>
+<p class="help">{% translate "For example: the provider's sent log shows these went out at 9:05 AM." %}</p>
+<button type="submit" data-submit-waits>{% if step.group_action == "assume" %}{% translate "Confirm: assume sent" %}{% else %}{% translate "Confirm: send again" %}{% endif %}</button></form>
+<form method="post" action="{% url 'admin:maintenance' %}#restore-review" data-in-place="restore-cancel" data-in-place-message="{% translate 'Nothing changed.' %}">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button type="submit" class="button-secondary">{% translate "Cancel" %}</button></form>
+</div>{% endwith %}{% endif %}
+{% endif %}
+{% if review.in_flight %}<p class="notice" data-restore-in-flight>{% blocktranslate count n=review.in_flight trimmed %}{{ n }} email was being handed to the mail provider when the backup was taken. It is not held here: after release, settle it from the delivery warning on Background work.{% plural %}{{ n }} emails were being handed to the mail provider when the backup was taken. They are not held here: after release, settle them from the delivery warning on Background work.{% endblocktranslate %}</p>{% endif %}
+{% if review.mode == "production" %}<form method="post" action="{% url 'admin:maintenance' %}#restore-review" data-in-place="restore-list" data-in-place-message="{% translate 'Held emails updated.' %}">{% csrf_token %}<input type="hidden" name="action" value="list"><button type="submit"{% if review.listed %} class="button-secondary"{% endif %}>{% if review.listed %}{% translate "Check again for emails that may have gone out" %}{% else %}{% translate "Find emails that may have gone out" %}{% endif %}</button></form>{% endif %}
+</div>
+
+<div class="panel">
+<h2>{% translate "Release the site" %}</h2>
+{% if step.release %}<div data-restore-preview="release">
+<ul>
+<li>{% translate "As things stand now:" %} {% if review.release_outcome == "open" %}{% translate "Families can sign in again, and Family email resumes." %}{% elif review.release_outcome == "paused" %}{% translate "Families can sign in again. Family email stays paused until you resume it on Pause and resume mail." %}{% elif review.release_outcome == "scheduled" %}{% translate "The campaign has not opened yet: Family access and Family email start when it opens." %}{% elif review.release_outcome == "testing" %}{% translate "The site is in Testing: Family email goes only to the testing address, as before." %}{% else %}{% translate "Family access and Family email stay off: the campaign is closed." %}{% endif %}</li>
+<li>{% if not review.listed %}{% translate "No email needed a hold." %}{% elif review.unsettled %}{% blocktranslate count n=review.unsettled trimmed %}{{ n }} held email you have not decided on stays held and is not sent.{% plural %}{{ n }} held emails you have not decided on stay held and are not sent.{% endblocktranslate %}{% else %}{% translate "Every held email that would be sent now has a decision." %}{% endif %}{% if review.inert %} {% blocktranslate count n=review.inert trimmed %}{{ n }} more undecided hold would send nothing now and stays held too.{% plural %}{{ n }} more undecided holds would send nothing now and stay held too.{% endblocktranslate %}{% endif %} {% translate "If more emails need a hold before you confirm (for example after a ParishSoft refresh), the release is refused and you find them again." %}</li>
+{% if review.reminders_blocked %}<li><strong>{% blocktranslate count n=review.reminders_blocked trimmed %}{{ n }} Family's invitation is not decided, so it gets no reminders either until it is.{% plural %}{{ n }} Families' invitations are not decided, so they get no reminders either until they are.{% endblocktranslate %}</strong></li>{% endif %}
+<li>{% translate "Staff and Ministry leaders can use the site again." %}</li>
+</ul>
+<form method="post" action="{% url 'admin:maintenance' %}#restore-review" data-in-place="restore-release-confirm" data-in-place-message="{% translate 'Site released.' %}">{% csrf_token %}<input type="hidden" name="action" value="release-confirm"><input type="hidden" name="key" value="{{ step.key }}"><input type="hidden" name="version" value="{{ review.runtime_version }}"><button type="submit" data-submit-waits>{% translate "Confirm: release the site" %}</button></form>
+<form method="post" action="{% url 'admin:maintenance' %}#restore-review" data-in-place="restore-cancel" data-in-place-message="{% translate 'Nothing changed.' %}">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button type="submit" class="button-secondary">{% translate "Cancel" %}</button></form>
+</div>{% elif review.needed %}<p data-restore-release-waits>{% blocktranslate count n=review.needed trimmed %}{{ n }} email still needs a hold. Find the emails that may have gone out first, so you can decide on each before release.{% plural %}{{ n }} emails still need a hold. Find the emails that may have gone out first, so you can decide on each before release.{% endblocktranslate %}</p>
+{% else %}<p>{% translate "When you have settled what you can, release the site. It needs a recent Google sign-in." %}</p>
+<form method="post" action="{% url 'admin:maintenance' %}#restore-review" data-in-place="restore-release-preview" data-in-place-message="{% translate 'Review the release.' %}">{% csrf_token %}<input type="hidden" name="action" value="release-preview"><button type="submit">{% translate "Release the site…" %}</button></form>{% endif %}
+</div>
+</section>
+<form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button type="submit" class="button-secondary">{% translate "Sign out" %}</button></form>
+{% endblock %}
