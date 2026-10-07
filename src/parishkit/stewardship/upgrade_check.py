@@ -149,8 +149,9 @@ def no_excess(login, tables, columns, *, reader):
     """Nothing beyond what _admit_existing_grants (or _admit_reader) admits.
 
     The backup login reads every table through pg_read_all_data, so, as in
-    _admit_reader, only its non-SELECT privileges are compared, and a column
-    write is admitted only by a whole-table grant of that privilege.
+    _admit_reader, only its non-SELECT privileges are compared. For every
+    login a column write is admitted by a whole-table grant of that privilege
+    or by its column grant.
     """
     allowed = sorted(
         (table, privilege)
@@ -179,7 +180,6 @@ def no_excess(login, tables, columns, *, reader):
         f"{text_array(p for _, p, _ in allowed_columns)},"
         f"{text_array(c for _, _, c in allowed_columns)}))"
     )
-    column_allowed = whole if reader else f"({whole} OR {by_column})"
     result = (
         "NOT EXISTS(SELECT 1 FROM pg_class c "
         "JOIN pg_namespace n ON n.oid=c.relnamespace "
@@ -192,7 +192,7 @@ def no_excess(login, tables, columns, *, reader):
         f"CROSS JOIN unnest({text_array(column_privileges)}) p "
         f"WHERE {RELATIONS} AND a.attnum>0 AND NOT a.attisdropped "
         f"AND has_column_privilege({literal(login)},c.oid,a.attnum,p) "
-        f"AND (n.nspname<>'public' OR NOT {column_allowed}))"
+        f"AND (n.nspname<>'public' OR NOT ({whole} OR {by_column})))"
     )
     if reader:
         result += f" AND pg_has_role({literal(login)},'pg_read_all_data','MEMBER')"

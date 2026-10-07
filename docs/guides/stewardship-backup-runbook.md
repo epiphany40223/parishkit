@@ -174,7 +174,46 @@ after the campaign's nightly work and again twelve hours later), and
 once immediately before Production activation and before every upgrade. The
 overdue alert below fires after 24 hours without a completed backup, so a
 single nightly run would page on any late night, and a local-time schedule
-gains an hour at the daylight-saving change. Each run leaves a dated directory under
+gains an hour at the daylight-saving change.
+
+Also schedule **request mode** every five minutes, so an Administrator's
+**Take a backup now** on the System health page runs soon after it is asked
+for:
+
+```text
+*/5 * * * * docker compose ... run --rm backup-worker backup --request --config SERVICE_CONFIG
+```
+
+`SERVICE_CONFIG` is the `backup-worker` service configuration the Compose
+file already passes to the profile. With no request waiting it exits `0` at
+once and prints nothing, so it needs no log of its own. It also exits
+quietly when the database cannot be read, when another backup is running,
+when offline work (an upgrade, a migration, a restore) holds the startup
+interlock, and during a bulk Family email send, when the request waits for
+the send to finish. When it runs a backup, it prints the same JSON line as
+the scheduled run plus `request_id`, so send its output off the host the
+same way. A request it never picks up lapses after 30 minutes and is never
+run late: the page then says the server did not pick it up and links this
+section. Every backup run, scheduled or requested, holds one backup lock
+while it makes its set, so two never make sets at the same time (an
+off-site upload that follows may still be running): a scheduled run waits
+for a running one for at most 30 minutes, then records a `task_timed_out`
+entry (`lock_timeout`) and exits `2`. A scheduled run also completes a
+request that is waiting. Both request mode and scheduled runs record
+requests they expired or found stuck as `task_timed_out` entries
+(`lease`), with the limit, the oldest one's age and how many. During a
+restore review no request is claimed; a scheduled run still backs up.
+
+Request mode arrived with the release that added Take a backup now. Its
+upgrade is a schema and grant change: run the migration and then
+`database-grants`, as the deployment runbook's upgrade describes; until
+the grants are applied, request mode logs one `startup_rejected` line per
+poll. Before any deploy, check that no backup is running, scheduled or
+requested (`docker ps --filter name=backup-worker` lists none), as for a
+restore. A rollback to a release before it must also remove the
+request-mode cron line, since that release has no `--request` option.
+
+Each run leaves a dated directory under
 `backups/` in the runtime root with `database.pgdump.sealed`,
 `files.tar.sealed` and `manifest.json`; the sets kept are those the
 [retention](#retention) rules below name. A failed run leaves its directory
@@ -428,7 +467,8 @@ One `backup-worker` run there, whether by hand, from a copied cron job or by
 following step 9, uploads that host's restored state into the source
 deployment's live Drive folder and then prunes the source deployment's own
 sets as though they were its own. On a drill host, never run
-`backup-worker`, never install the backup or off-host copy cron jobs, never
+`backup-worker` (request mode included), never install the backup,
+request-mode or off-host copy cron jobs, never
 run `smoke --target backup_drive`, and skip step 9. Only the same-host run
 on the validation deployment itself backs up after the restore.
 
@@ -440,8 +480,8 @@ Three more guards on every drill host:
   `restart: unless-stopped`, so a clone boots the whole stack on its own
   and its first cron backup uploads into the live folder and prunes it.
 - **Check the crontabs before step 4**: `sudo crontab -l -u root` and
-  `crontab -l` as the operator user must show no backup or off-host copy
-  job.
+  `crontab -l` as the operator user must show no backup, request-mode or
+  off-host copy job.
 - **Block outbound traffic** once step 3 has pulled the image, as a
   backstop: with the provider's firewall (for example a DigitalOcean Cloud
   Firewall on the droplet) allow outbound traffic only for your SSH
@@ -501,8 +541,8 @@ rendered Compose file the deployment runs (`compose.json` or
 `compose-slack.json`) and its fixed project name. Paths are the default
 layout; where the deployment YAML overrides a path, use that path instead.
 
-1. **Stop.** Disable the host's backup and off-host copy cron jobs until
-   step 9: a backup that starts mid-restore would archive a mix of old and
+1. **Stop.** Disable the host's backup and off-host copy cron jobs,
+   including the five-minute request-mode entry, until step 9: a backup that starts mid-restore would archive a mix of old and
    restored files, record itself as the newest set and be copied off the
    host. Then stop every online service and `caddy`: `stop caddy web worker
    scheduler mail-dispatch config-installer` and every credential installer.
@@ -637,7 +677,20 @@ layout; where the deployment YAML overrides a path, use that path instead.
    or `migration` step follows. Any error in the load rolls the whole
    transaction back and leaves the previous contents in place; fix the cause
    and run it again. The container's `/tmp` is memory-backed and disappears
-   when the container stops.
+   when the container stops. Then mark every restored backup request as
+   expired, so request mode never runs a request from before the restore
+   (finished as of its own creation, which System health words as
+   cancelled by a restore):
+
+   ```sh
+   docker compose ... exec -T postgres psql --username pk_stewardship_operator \
+     --dbname DATABASE_NAME -v ON_ERROR_STOP=1 -c "UPDATE stewardship_backup_request
+     SET state='expired', claimed_at=NULL, finished_at=created_at
+     WHERE state IN ('waiting','running')"
+   ```
+
+   A set taken under a release without backup requests has no such table,
+   and the command reports that the relation does not exist; skip it then.
 7. **Point at the set's image.** Run `retarget-image` back to the image the
    backup was taken under, in that image, then `pull`. The manifest's
    `application_version` names the release; the operators' notes record its

@@ -77,6 +77,9 @@ FROZEN = {
     "0015_directory_member_search.sql": (
         "dfd6c5bdf4608dae8de2ce57f8491ff57495d9257f2d74b083f3b234bc23bd15"
     ),
+    "0016_backup_request.sql": (
+        "48adee71fe33b14c2d478e3178fce3f82a062a97c2fcd060323597a9ed449564"
+    ),
 }
 
 

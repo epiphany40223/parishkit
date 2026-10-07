@@ -105,12 +105,14 @@ def _admit_operator(cursor, configuration, marker, *, initial):
             require_recent_backup(cursor)
 
 
-def _admit_reader(cursor, login, tables):
-    """The backup login reads everything by membership and writes only its row.
+def _admit_reader(cursor, login, tables, columns):
+    """The backup login reads everything by membership and writes only its rows.
 
     `pg_read_all_data` makes every table readable, so the ordinary grant
     comparison cannot apply; instead the membership must be present and no
-    privilege other than SELECT may exist beyond the registry.
+    privilege other than SELECT may exist beyond the registry: its table
+    grants, or for a column write, its column grants (the request columns
+    request mode settles, ADM-13 PR 3).
     """
     cursor.execute("SELECT pg_has_role(%s,'pg_read_all_data','MEMBER')", [login])
     if cursor.fetchone() != (True,):
@@ -128,8 +130,8 @@ def _admit_reader(cursor, login, tables):
     for schema, table, privilege in cursor.fetchall():
         if schema != "public" or privilege not in tables.get(table, set()):
             raise ConfigError("Existing SQL grants exceed initial provisioning intent.")
-    # Column-level writes are refused the same way; column reads come with
-    # the membership and need no listing.
+    # Column-level writes beyond the table or column grants are refused the
+    # same way; column reads come with the membership and need no listing.
     cursor.execute(
         "SELECT n.nspname,c.relname,a.attname,p FROM pg_class c "
         "JOIN pg_namespace n ON n.oid=c.relnamespace "
@@ -140,8 +142,11 @@ def _admit_reader(cursor, login, tables):
         "AND has_column_privilege(%s,c.oid,a.attnum,p)",
         [login],
     )
-    for schema, table, _, privilege in cursor.fetchall():
-        if schema != "public" or privilege not in tables.get(table, set()):
+    for schema, table, column, privilege in cursor.fetchall():
+        if schema != "public" or (
+            privilege not in tables.get(table, set())
+            and column not in columns.get(table, {}).get(privilege, set())
+        ):
             raise ConfigError("Existing SQL grants exceed initial provisioning intent.")
 
 
@@ -334,7 +339,7 @@ def provision_grants(configuration, deployment_id):
                 continue
             tables, columns = runtime_grants(role, target=target)
             if role is ServiceRole.BACKUP_WORKER:
-                _admit_reader(cursor, login, tables)
+                _admit_reader(cursor, login, tables, columns)
             else:
                 _admit_existing_grants(cursor, login, tables, columns)
             for table, privileges in tables.items():
