@@ -24,7 +24,7 @@ from django.utils.http import http_date
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.web.namespaces import cookie_namespace
 
-from .admin_caller import WEB, as_caller
+from .admin_caller import AUTOMATION, WEB, as_caller
 from .models import AdminRevocation, PortalSession, PortalUser
 from .policy import current_principal
 from .session_policy import (
@@ -458,11 +458,15 @@ def require_fresh(caller):
     """A fresh Google round trip, not a browser flag, admits privileged commands.
 
     ``caller`` is an ``AdminCaller`` (until the final ADM-11 PR, a Django
-    request is still converted). No automation caller is admitted yet:
-    accepting a full-scope automation session in place of a fresh sign-in
-    needs its guard migration first.
+    request is still converted). A web caller must have signed in with Google
+    within the last five minutes. An automation caller stands in for that
+    sign-in with a live, full-scope automation session (ADM-11 PR 5; see
+    ``_automation_fresh``). Returns the sign-in instant the action records,
+    which its SQL guard compares with the session row.
     """
     caller = as_caller(caller)
+    if caller.channel == AUTOMATION:
+        return _automation_fresh(caller)
     row = caller.portal_session
     if (
         caller.channel != WEB
@@ -473,6 +477,47 @@ def require_fresh(caller):
     ):
         raise FreshAuthenticationRequired("Please authenticate with Google again.")
     return row.authenticated_at
+
+
+def _automation_fresh(caller):
+    """A live, full-scope automation session stands in for a fresh sign-in.
+
+    The automation session row is locked ``FOR SHARE`` in the caller's
+    transaction, so an ending (revocation, logout, role loss) waits for the
+    action to commit, and an ending that committed first is seen here. The
+    session must be live (``stewardship_automation_live_v1``: unrevoked,
+    unexpired, its principal still an Administrator, no later recovery), of
+    full scope and the admitted principal's, and the command session must
+    carry its sign-in instant. That instant is returned: the action records
+    it as the page records a fresh sign-in, and the SQL guards accept it
+    through ``stewardship_automation_fresh_v1``. A read-only session never
+    passes. It must run in the action's transaction: outside one, the lock
+    would end at once and prove nothing about the action's commit.
+    """
+    row = caller.portal_session
+    if caller.read_only or row is None or caller.principal is None:
+        raise FreshAuthenticationRequired("This needs a full-scope session.")
+    if not connection.in_atomic_block:
+        from parishkit.stewardship.storage import StorageInvariantError
+
+        raise StorageInvariantError("An automation fresh gate needs its transaction.")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT a.scope,a.principal_id,a.authenticated_at,"
+            "public.stewardship_automation_live_v1(a.id) "
+            "FROM public.stewardship_automation_session a WHERE a.id=%s FOR SHARE",
+            [caller.automation_session_id],
+        )
+        found = cursor.fetchone()
+    if (
+        found is None
+        or found[0] != "full"
+        or found[1] != caller.principal.identity
+        or found[2] != row.authenticated_at
+        or found[3] is not True
+    ):
+        raise FreshAuthenticationRequired("This needs a live full-scope session.")
+    return found[2]
 
 
 def cleanup_admin_sessions(*, batch_size=500):

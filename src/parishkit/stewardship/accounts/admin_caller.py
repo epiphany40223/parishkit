@@ -220,6 +220,11 @@ class AdminCaller:
         rotate_token(self._request)
 
 
+def is_automation(value):
+    """Whether ``value`` is an automation caller (a Django request never is)."""
+    return isinstance(value, AdminCaller) and value.channel == AUTOMATION
+
+
 def as_caller(value, *, state_changing=False):
     """Return ``value`` as a caller, converting a Django request on the web.
 

@@ -10,7 +10,7 @@ from django.db import connection
 from parishkit.stewardship.audit.schemas import Action
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .admin_caller import as_caller
+from .admin_caller import as_caller, is_automation
 from .authentication import runtime
 from .configuration_requests import record_request
 from .models import PortalSession, PortalUser, SystemConfiguration
@@ -42,6 +42,10 @@ def admit_admin_action(caller, *, actor_id, action):
     # The web constructor asserts the CSRF-protected Admin POST.
     caller = as_caller(caller, state_changing=True)
     if caller.read_only:
+        raise PermissionError("Access is unavailable.")
+    if action is Action.DESTRUCTIVE_CONFIRMATION and is_automation(caller):
+        # No workflow lets automation confirm a destructive action yet; one
+        # that should decides so in its own specification (ADM-11).
         raise PermissionError("Access is unavailable.")
     service = runtime()
     # Configuration activation/offline recovery takes the conflicting root lock.

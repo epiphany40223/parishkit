@@ -384,6 +384,25 @@ round trip through the installer, tokens crossing between the page and the
 command line, bad tokens, scopes, ended sessions and unknown outcomes) and
 the unchanged schedule, clone, campaign, content, parish, Ministry and
 configuration request suites.
+ADM-11.06 lands in two pull requests. 5a adds the forward migration
+`stewardship_accounts.0005` with the frozen file
+`0013_automation_fresh_guards.sql`: the definer function
+`stewardship_automation_fresh_principal_v1` (granted to web and the
+parishsoft, google_workspace and slack credential installers through
+`runtime_functions`, which `admit_installer_database` now passes to
+`admit_grants`), and the four session-bound and two secret request guards
+accepting a live full-scope automation session. `require_fresh` gains its
+automation branch (the session locked `FOR SHARE`, live and full scope),
+the post-cleanup checks accept an automation caller, and
+`setup_credentials` and destructive confirmations refuse one. Proven by
+`tests/stewardship/database/test_automation_fresh_guards_postgresql.py`
+(each guard under its old and new definition, read-only, revoked and stale
+browser sessions, the function's results, the frozen file's check against
+an unchanged guard, the refusals and the post-cleanup check),
+`tests/stewardship/test_schema_migration_files.py`, the regenerated schema
+baseline and the unchanged grant, credential, Family test, delivery
+control, confirmation and withdrawal suites. 5b adds the confirmation
+prompt, `--yes` and the fresh-gated notices.
 ADM-11.10 lands in two pull requests. 9a adds `task retry`
 (`parishkit.stewardship.admin_operations`), with the retry pages' bodies,
 the delivery views' admission and their command scope moved into
