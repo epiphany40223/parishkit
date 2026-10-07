@@ -263,7 +263,7 @@ def test_from_name_edit_installs_over_legacy_content(request, monkeypatch):
     history = request.getfixturevalue("legacy_history")
     request.getfixturevalue("google")
     browser, _ = signed_in()
-    url = "/admin/configuration/integrations/email"
+    url = "/admin/system/integrations/email/"
 
     def post(values):
         return browser.post(

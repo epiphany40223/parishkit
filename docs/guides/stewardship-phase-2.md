@@ -925,7 +925,8 @@ checks pass.
 
 ### Integration configuration and credential checks (in progress)
 
-`/admin/configuration/integrations` exposes existing ParishSoft, Workspace,
+`/admin/system/integrations/` (formerly `/admin/configuration/integrations`)
+exposes existing ParishSoft, Workspace,
 outgoing-address and Slack settings. Non-secret edits use exact, actor-bound
 fifteen-minute previews and the existing YAML installer; they preserve the
 credential fingerprint. Replacement forms require a Google authentication less

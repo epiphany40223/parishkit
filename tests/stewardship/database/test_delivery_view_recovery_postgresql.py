@@ -72,7 +72,7 @@ def test_missing_delivery_refusal_and_task_are_not_outages(family_mail, google):
     assert (
         post(
             browser,
-            f"/admin/background/tasks/{missing}/retry-family-preparation",
+            f"/admin/system/background/{missing}/family-preparation-retry/",
             dict(command_id=str(uuid4())),
         ).status_code
         == 404

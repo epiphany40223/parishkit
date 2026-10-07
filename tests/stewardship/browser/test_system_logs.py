@@ -1,6 +1,7 @@
 """Administrator-only combined log screen and its private filters."""
 
 import json
+import re
 from datetime import UTC, datetime
 from urllib.parse import parse_qs
 
@@ -11,6 +12,10 @@ from parishkit.stewardship.audit.log_rows import LogQuery
 
 from .conftest import no_script_context
 from .waits import eventually, has_attribute, has_text, visible
+
+# The log page's own filter form posts to its reversed address; the table's
+# paging and sorting post to the component's "/logs". Both are intercepted.
+LOG_POSTS = re.compile(r".*/(?:logs|admin/system/logs/)$")
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -172,7 +177,7 @@ def test_log_filters_and_paging_without_scripts(browser_engine, component_origin
         # Answer only the form posts; the page itself shares this path, and
         # fallback (not continue_) keeps it passing through no_script_context.
         page.route(
-            "**/logs",
+            LOG_POSTS,
             lambda route: (
                 route.fulfill(body="Filtered")
                 if route.request.method == "POST"
@@ -257,7 +262,7 @@ def test_level_icon_column_survives_in_place_sort_and_paging(page, component_ori
         path = "/logs-older" if "page=2" in route.request.post_data else "/logs-oldest"
         route.fulfill(response=route.fetch(url=component_origin + path, method="GET"))
 
-    page.route("**/logs", answer)
+    page.route(LOG_POSTS, answer)
     page.get_by_role("button", name="sort ascending").click()
     has_attribute(
         page.locator("#table th[data-sort-column='time']"), "aria-sort", "ascending"
@@ -349,7 +354,7 @@ def test_paging_sorting_and_export_keep_the_zone(page, component_origin):
         page.get_by_role("button", name="sort ascending"),
     ):
         page.route(
-            "**/logs",
+            LOG_POSTS,
             lambda route: (
                 route.fulfill(body="Paged")
                 if route.request.method == "POST"
@@ -368,7 +373,7 @@ def test_paging_sorting_and_export_keep_the_zone(page, component_origin):
         # late document.open() aborts the goto (NS_BINDING_ABORTED in
         # Firefox, #623).
         visible(page.get_by_text("Paged", exact=True))
-        page.unroute("**/logs")
+        page.unroute(LOG_POSTS)
         page.goto(component_origin + "/logs-dated")
     export = page.locator("#table-export")
     assert export.locator("[name=zone]").input_value() == "America/Los_Angeles"
@@ -376,7 +381,7 @@ def test_paging_sorting_and_export_keep_the_zone(page, component_origin):
     # kept form, and the zone stays this browser's.
     page.evaluate(MARK)
     page.route(
-        "**/logs",
+        LOG_POSTS,
         lambda route: (
             route.fulfill(
                 response=route.fetch(url=component_origin + "/logs-dated", method="GET")
@@ -460,7 +465,7 @@ def test_an_in_place_re_sort_keeps_the_browser_zone(page, component_origin):
     assert zone.input_value() == "America/Los_Angeles"
     page.evaluate(MARK)
     page.route(
-        "**/logs",
+        LOG_POSTS,
         lambda route: (
             route.fulfill(
                 response=route.fetch(
@@ -535,7 +540,7 @@ def test_banner_log_link_sends_its_day_only_with_a_zone(
         )
     page.goto(component_origin + "/logs-critical-banner")
     page.route(
-        "**/admin/logs",
+        "**/admin/system/logs/",
         lambda route: (
             route.fulfill(body="Logs")
             if route.request.method == "POST"
@@ -601,7 +606,7 @@ def test_show_choices_filter_in_place(page, component_origin, ticks, fixture, ce
     for label in ticks:
         page.get_by_label(label, exact=True).check()
     page.route(
-        "**/logs",
+        LOG_POSTS,
         lambda route: (
             route.fulfill(
                 response=route.fetch(url=component_origin + fixture, method="GET")

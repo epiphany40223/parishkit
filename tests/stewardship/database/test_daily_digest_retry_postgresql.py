@@ -40,12 +40,12 @@ def test_retry_form_enforces_csrf_and_exact_latest_run(family_mail, google):  # 
     browser, _ = signed_in()
     with campaign_clock(INSTANT):
         status = fail_preparation(family_mail)
-        path = f"/admin/background/tasks/{status.run_id}/retry-daily-digest"
-        page_path = f"/admin/background/task/{status.run_id}"
+        path = f"/admin/system/background/{status.run_id}/daily-digest-retry/"
+        page_path = f"/admin/system/background/{status.run_id}/"
         values = {"command_id": str(uuid4())}
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = browser.get(page_path)
-            assert page.status_code == 200 and b"retry-daily-digest" in page.content
+            assert page.status_code == 200 and b"daily-digest-retry/" in page.content
             assert browser.post(path, values).status_code == 403
             for _ in range(2):
                 result = browser.post(
@@ -54,11 +54,11 @@ def test_retry_form_enforces_csrf_and_exact_latest_run(family_mail, google):  # 
                     HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 )
                 assert result.status_code == 302
-            assert b"retry-daily-digest" not in browser.get(page_path).content
+            assert b"daily-digest-retry/" not in browser.get(page_path).content
             retry = TaskRun.objects.get(parent_id=status.run_id)
             assert (
                 browser.post(
-                    f"/admin/background/tasks/{retry.pk}/retry-daily-digest",
+                    f"/admin/system/background/{retry.pk}/daily-digest-retry/",
                     values,
                     HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
                 ).status_code

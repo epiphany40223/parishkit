@@ -39,7 +39,7 @@ def test_configuration_fault_is_uniform_denial_not_invalid_input(
         "cancel": f"/admin/exports/{identifier}/cancel",
         "grant": f"/admin/exports/{identifier}/download-grant",
         "download": "/admin/exports/download",
-        "cleanup": f"/admin/background/tasks/{identifier}/retry-export-cleanup",
+        "cleanup": f"/admin/system/background/{identifier}/export-cleanup-retry/",
     }
     response = (
         browser.get(paths[endpoint])
@@ -105,9 +105,9 @@ def test_admin_cleanup_retry_form_csrf_replay_and_restricted_sql(http_scenario):
 
     setup, browser = http_scenario
     task, publication = failed_cleanup(http_scenario)
-    path = f"/admin/background/tasks/{task.run_id}/retry-export-cleanup"
+    path = f"/admin/system/background/{task.run_id}/export-cleanup-retry/"
     with web_login():
-        page = browser.get(f"/admin/background/task/{task.run_id}")
+        page = browser.get(f"/admin/system/background/{task.run_id}/")
         assert page.status_code == 200
         key = re.search(
             r'name="request_key" value="([a-f0-9-]+)"', page.content.decode()
@@ -129,11 +129,11 @@ def test_admin_cleanup_retry_form_csrf_replay_and_restricted_sql(http_scenario):
         assert conflict.status_code == 409
         assert conflict["Content-Type"].startswith("text/html")
         assert b"Return to Background task" in conflict.content
-        stale = browser.get(f"/admin/background/task/{task.run_id}")
+        stale = browser.get(f"/admin/system/background/{task.run_id}/")
         assert b'name="request_key"' not in stale.content
         assert b"View the latest retry" in stale.content
     child = TaskRun.objects.get(parent_id=task.run_id)
-    assert response["Location"] == f"/admin/background/task/{child.pk}"
+    assert response["Location"] == f"/admin/system/background/{child.pk}/"
     assert execute_hint(
         child.pk,
         queue=WorkQueue.GENERAL,
@@ -156,17 +156,17 @@ def test_staff_cannot_view_or_issue_operational_cleanup_retry(http_scenario, goo
     browser, response = signed_in()
     assert response.status_code == 302
     identifier = task.run_id
-    assert browser.get(f"/admin/background/task/{identifier}").status_code == 403
+    assert browser.get(f"/admin/system/background/{identifier}/").status_code == 403
     response = post(
         browser,
-        f"/admin/background/tasks/{identifier}/retry-export-cleanup",
+        f"/admin/system/background/{identifier}/export-cleanup-retry/",
         {"request_key": str(uuid4())},
     )
     assert response.status_code == 403
     # Authorization also precedes malformed-field diagnostics.
     assert (
         post(
-            browser, f"/admin/background/tasks/{identifier}/retry-export-cleanup"
+            browser, f"/admin/system/background/{identifier}/export-cleanup-retry/"
         ).status_code
         == 403
     )
@@ -209,7 +209,7 @@ def test_internal_cleanup_invariant_is_not_presented_as_a_retry_conflict(
     monkeypatch.setattr(export_cleanup, "retry_cleanup", unavailable)
     response = post(
         browser,
-        f"/admin/background/tasks/{task.run_id}/retry-export-cleanup",
+        f"/admin/system/background/{task.run_id}/export-cleanup-retry/",
         {"request_key": str(uuid4())},
     )
     assert response.status_code == 503

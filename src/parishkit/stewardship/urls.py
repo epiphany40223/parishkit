@@ -29,8 +29,6 @@ from .accounts import (
     go_live_views,
     hosted_file_serving,
     hosted_file_views,
-    integration_selection_views,
-    integration_views,
     ministry_views,
     parish_views,
     presence,
@@ -59,7 +57,8 @@ from .accounts import (
     user_views,
     withdrawal_views,
 )
-from .audit import log_views
+from .admin_urls import legacy as admin_legacy
+from .admin_urls import system as admin_system
 from .jobs import delivery_views, send_history_views, send_progress_views
 from .jobs import views as job_views
 from .reports import (
@@ -110,6 +109,9 @@ family_patterns = [
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
+    # Groups already in the URL scheme (ADM-12), then every old address.
+    *admin_system.patterns,
+    *admin_legacy.patterns,
     path("ministry-reports/", ministry_report_views.index, name="ministry_reports"),
     path(
         "reports/<uuid:campaign_id>/ministries/export/",
@@ -351,11 +353,6 @@ admin_patterns = [
         name="setup_notification_status",
     ),
     path(
-        "configuration/credentials/<uuid:request_id>/select",
-        integration_selection_views.select_credential,
-        name="select_credential",
-    ),
-    path(
         "configuration/branding",
         branding_views.branding_settings,
         name="branding_settings",
@@ -378,31 +375,6 @@ admin_patterns = [
         branding_views.branding_asset,
         {"private": True},
         name="branding_asset",
-    ),
-    path(
-        "configuration/integrations",
-        integration_views.integration_settings,
-        name="integrations",
-    ),
-    path(
-        "configuration/integrations/<str:target>",
-        integration_views.integration_settings,
-        name="integration_settings",
-    ),
-    path(
-        "configuration/integrations/<str:target>/status",
-        integration_views.integration_status,
-        name="integration_status",
-    ),
-    path(
-        "configuration/integrations/<str:target>/dismiss",
-        integration_views.dismiss_credential_result,
-        name="dismiss_credential_result",
-    ),
-    path(
-        "configuration/credentials/<uuid:request_id>",
-        integration_views.credential_status,
-        name="credential_status",
     ),
     path(
         "campaign/<uuid:campaign_id>/clone",
@@ -597,7 +569,6 @@ admin_patterns = [
         ministry_views.configuration_request,
         name="configuration_request",
     ),
-    path("background", job_views.background_page, name="background"),
     # System health (ADM-13): the System group's first entry, which
     # /admin/system/ opens, and the status fragment the open page polls.
     path("system/", system_health_views.system, name="system"),
@@ -607,8 +578,6 @@ admin_patterns = [
         system_health_views.system_health_status,
         name="system_health_status",
     ),
-    path("logs", log_views.logs, name="logs"),
-    path("logs/export", log_views.export_logs, name="logs_export"),
     path("deliveries", delivery_views.delivery_list, name="deliveries"),
     path(
         "deliveries/family-progress",
@@ -644,16 +613,6 @@ admin_patterns = [
         delivery_views.resolution_command,
         name="delivery_resolve",
     ),
-    path(
-        "background/task/<uuid:task_id>",
-        job_views.task_page,
-        name="background_task_page",
-    ),
-    path(
-        "background/task/<uuid:task_id>/status",
-        job_views.task_status,
-        name="background_task_status",
-    ),
     path("background/tasks", job_views.task_list, name="background_tasks"),
     path(
         "reports/weekly-digests/request/<uuid:campaign_id>/",
@@ -686,28 +645,6 @@ admin_patterns = [
         digest_views.snapshot,
         {"representation": "download"},
         name="daily_digest_download",
-    ),
-    path(
-        "background/tasks/<uuid:task_id>/retry-family-preparation",
-        delivery_views.preparation_retry,
-        name="retry_family_preparation",
-    ),
-    path(
-        "background/tasks/<uuid:task_id>/retry-daily-digest",
-        delivery_views.preparation_retry,
-        {"daily": True},
-        name="retry_daily_digest",
-    ),
-    path(
-        "background/tasks/<uuid:task_id>/retry-weekly-digest",
-        delivery_views.preparation_retry,
-        {"weekly": True},
-        name="retry_weekly_digest",
-    ),
-    path(
-        "background/tasks/<uuid:task_id>/retry-export-cleanup",
-        export_views.retry_cleanup_command,
-        name="retry_export_cleanup",
     ),
     path("background/counts", job_views.task_counts, name="background_counts"),
     path("session/status", session_views.session_status, name="session_status"),

@@ -451,7 +451,7 @@ server step is needed; the
 describes the design.
 
 1. Sign in with Google within the last five minutes, open **Integrations**,
-   then the provider's page (`/admin/configuration/integrations/<target>`).
+   then the provider's page (`/admin/system/integrations/<target>/`).
    Paste the new key in its field and select **Save**. The key is sealed at
    once and never shown again.
 2. The page follows the change: "Checking and installing the new key", then
@@ -503,7 +503,7 @@ only for the current Production campaign.
       **Retry failed mail preparation** there and wait for **Initial campaign
       mail preparation complete**. A report preparation that has *failed* never
       reaches its safe point by itself: find the failed daily or weekly
-      report task on the Background work page (`/admin/background`; the
+      report task on the Background work page (`/admin/system/background/`; the
       home page lists only the latest five failures of the past day), fix
       its cause (usually ParishSoft
       availability), choose **Retry report work** on the task's page, and

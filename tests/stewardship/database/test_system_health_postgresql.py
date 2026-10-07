@@ -88,7 +88,7 @@ def test_an_administrator_opens_the_page_and_only_the_page_is_audited(
         assert 'data-live-interval="10000"' in body
         # The first System menu entry.
         assert body.index('href="/admin/system/health/"') < body.index(
-            'href="/admin/configuration/integrations"'
+            'href="/admin/system/integrations/"'
         )
         fragment = browser.get(STATUS)
         assert fragment.status_code == 200

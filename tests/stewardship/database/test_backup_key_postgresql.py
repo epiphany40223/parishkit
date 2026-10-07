@@ -29,7 +29,7 @@ from .test_backup_postgresql import (
 from .test_integration_views_postgresql import post
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/configuration/integrations/backup_key"
+URL = "/admin/system/integrations/backup_key/"
 
 
 def keypair():
@@ -78,8 +78,8 @@ def test_admin_replaces_the_key_after_proving_the_private_key(auth_service, goog
     """Paste, prove, review, confirm: the next backup's key, audited and shown."""
     store = auth_service.store
     browser, _ = signed_in()
-    index = browser.get("/admin/configuration/integrations").content
-    assert b'href="/admin/configuration/integrations/backup_key">Backup' in index
+    index = browser.get("/admin/system/integrations/").content
+    assert b'href="/admin/system/integrations/backup_key/">Backup' in index
     page = browser.get(URL)
     assert page.status_code == 200
     assert b"No backup has run yet" in page.content

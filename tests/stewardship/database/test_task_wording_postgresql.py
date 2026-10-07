@@ -79,7 +79,7 @@ def test_the_task_page_explains_a_restart_under_the_web_role(auth_service, googl
     browser, login = signed_in()
     assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        page = browser.get(f"/admin/background/task/{status.run_id}")
+        page = browser.get(f"/admin/system/background/{status.run_id}/")
     assert page.status_code == 200
     body = page.content.decode()
     assert "temporary problem" in body and "This is attempt 2." in body

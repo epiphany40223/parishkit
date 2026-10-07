@@ -190,7 +190,5 @@ def test_unrecognized_setup_step_and_query_have_no_side_effects(setup_http, goog
     browser = started()
     assert browser.get("/admin/setup/passwords").status_code == 404
     assert browser.get("/admin/setup/parish?credential=private").status_code == 400
-    assert (
-        browser.get("/admin/configuration/integrations")["Location"] == "/admin/setup"
-    )
+    assert browser.get("/admin/system/integrations/")["Location"] == "/admin/setup"
     assert not SetupDraftSection.objects.exists()
