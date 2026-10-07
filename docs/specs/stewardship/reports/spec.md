@@ -1008,8 +1008,10 @@ with [desktop](../../../plans/stewardship/visual-reports/daily-digest-desktop.pn
 [phone](../../../plans/stewardship/visual-reports/daily-digest-phone.png) and
 [images-off](../../../plans/stewardship/visual-reports/daily-digest-images-off.png)
 screenshots, rendered from fictional fixture data by
-`docs/plans/stewardship/visual-reports/build_prototype.py`, shows the email
-layout below.
+`docs/plans/stewardship/visual-reports/build_prototype.py`, shows the first
+proposal; the emails as built after the Administrator's review are in the
+[daily email screenshot](../../../plans/stewardship/visual-reports/daily-email/daily-digest-desktop.png)
+and described below.
 
 The readers are parish staff who are not technical and who read visually.
 Each report therefore leads with pictures (progress bars, bar charts and
@@ -1046,31 +1048,29 @@ design follows published practice:
 
 ### Report email layout
 
-Both Admin report emails (the [daily email report](#daily-email-report-parity)
-and the weekly and manual Additional-information digests, see
-[Additional information](#additional-information)) use a desktop-first
-layout instead of the
-[shared 600px email layout](../data/spec.md#content-and-email-templates)
-that Family email keeps:
+The built layouts are specified with the emails themselves: the
+[daily campaign digest](../background-processing/spec.md#daily-campaign-digest)
+and the
+[weekly additional-information digest](../background-processing/spec.md#weekly-additional-information-digest)
+(the Administrator's review of the first draft, #720/#727, set them). This
+section records why they look that way:
 
-- **Width.** One white card at most 960px wide on a light grey page, with
-  40px side padding, so the content is 880px wide. Typical desktop mail
-  panes are 900–1,200px wide. Outlook for Windows (the Word engine) ignores
+- **Width.** One white card at most 960px wide on a light grey page, with the
+  shared email layout's 32px side padding, instead of the
+  [600px column](../data/spec.md#content-and-email-templates) that Family
+  email keeps. Typical desktop mail panes are 900–1,200px wide, and these
+  reports are read at a desk, so nothing is laid out for phones; a narrower
+  window shrinks the card. Outlook for Windows (the Word engine) ignores
   `max-width`, so a conditional (`<!--[if mso]>`) table fixes its width at
   960px ([Litmus, Outlook rendering](https://www.litmus.com/blog/a-guide-to-rendering-differences-in-microsoft-outlook-clients)).
   Common advice for marketing mail is 600–640px
   ([Litmus, email myths](https://www.litmus.com/blog/7-myths-of-email-development));
-  the Administrator chose desktop instead, since these reports are read at a
-  desk.
-- **Phones.** The layout is fluid ("hybrid"): the card is `width:100%` up to
-  its maximum, headline tiles are inline blocks that wrap to one column when
-  the pane is narrow, and every bar is a percentage of its row. This works
-  without media queries, which Gmail supports only in part and Outlook for
-  Windows not at all
-  ([caniemail, `@media`](https://www.caniemail.com/features/css-at-media/)).
-  A small `<style>` block only tightens padding where it is honored. The
-  chart image scales down with the card: legible enough to see the shape, and
-  the exact numbers stay in the text beside it.
+  the Administrator chose desktop instead.
+- **Each fact once, content first.** The subject names the report, so the
+  body has no title; one line names the parish and campaign; one as-of or
+  capture line is the only place that names the time zone. The first screen
+  is content: the daily totals with their bars and the chart, or the weekly
+  numbered requests. Explanations are small print at the end.
 - **Construction.** Tables for layout, every style inline, no flexbox, grid,
   gradients, background images, SVG or `data:` images, none of which Gmail or
   Outlook for Windows renders reliably
@@ -1079,98 +1079,57 @@ that Family email keeps:
   [linear-gradient](https://www.caniemail.com/features/css-linear-gradient/),
   [inline SVG](https://www.caniemail.com/features/html-svg/),
   [base64 images](https://www.caniemail.com/features/image-base64/)).
-  The HTML stays far below Gmail's 102KB clipping limit
+  The daily HTML stays far below Gmail's 102KB clipping limit
   ([Litmus, Gmail clipping](https://www.litmus.com/blog/how-to-keep-gmail-from-clipping-your-emails)).
-  The digest's compiler-owned markup, not parish-authored content, carries
-  these styles, so the [content sanitizer](../data/spec.md#content-and-email-templates)
-  for Family templates is unchanged; the digest validator allows exactly the
-  compiled elements, attributes and images.
-- **Order.** Title and data-as-of line; three headline tiles; then sections,
-  each a heading, its visual, and its exact numbers; then the button that
-  opens the full report and the small-print provenance (data load and
-  submission cutoff, today in Technical details). The ParishSoft connection
-  is one plain line, shown as a notice only when it is not working.
+  The compiler-owned markup, not parish-authored content, carries these
+  styles, and the digest validators admit only their closed set, so the
+  [content sanitizer](../data/spec.md#content-and-email-templates) for Family
+  templates is unchanged.
+- **Numbers.** Every visual has its exact value printed beside it, since an
+  email cannot show tooltips, in the report's own formatting ("463 out of
+  1,240 (37.3%)", one decimal place; money to the cent).
+- **End-of-day figures only.** The daily figures all describe the end of the
+  report day, so live-only figures (comparison pledges, email reach, Active
+  Members) are not in the email, and nothing is drawn against them: pledges
+  have no bar or comparison marker. The Statistics report shows them.
+- **Deferred.** The [response funnel](#funnel-stages) as bars needs its
+  counts read as of the end of the report day and pinned with the digest; it
+  is a later slice.
 
-**Daily campaign report.** Questions it answers, in order:
-
-1. *How far along are we?* Tile: Families who have responded, as a large
-   number, a progress bar against active Families, and "of 1,240 active
-   Families (37%)".
-2. *Is it still moving?* Tile: new responses on the report's date, with two
-   small labelled bars comparing the last 7 days with the 7 days before.
-3. *How are pledges doing?* (financial module only) Tile: annual pledges so
-   far, as a bullet bar with a dark marker at the configured comparison
-   pledges, and "46% of last year's $1,420,000".
-4. *How many Families can we reach, and how many have answered?* Two
-   labelled bars, each against active Families: responded, and reachable by
-   email (deliverable email), with one sentence giving the number reached
-   only by post. These are the [campaign statistics](#campaign-statistics),
-   unchanged.
-5. *Where do Families stop?* The [response funnel](#funnel-stages) as
-   horizontal bars (Emailed, Opened their link, Started the form, Submitted),
-   each against Emailed. This is new to the email; see the open questions.
-6. *What happened day by day?* One chart image of up to three panels on one
-   date axis: new responses each day (columns, the latest one labelled, the
-   invitation and reminder sends as labelled dashed rules); Families who have
-   responded so far (line); and, with the financial module, annual pledges so
-   far (line, the comparison as a dashed rule). Below it, the exact values for
-   the last 7 campaign days (the latest in bold), with the covered dates of a
-   recovery digest always included.
-
-Every visual has its numbers printed beside or under it, since an email
-cannot show tooltips. Percentages are whole numbers next to the exact counts;
-money in tiles is whole dollars and the table keeps cents. Dates use the
-parish date format and the campaign's time zone, as today.
-
-**Weekly and manual Additional-information digests.** Their job is a to-do
-list, so the list stays the main content, laid out wider: each request is a
-row with the Family and submission time on the left and the excerpt on the
-right. Above it, headline tiles give the count of new (or, for the manual
-digest, current) actionable requests and of corrections, each a large
-number. No chart is added: one week's counts do not need one.
-
-**Privacy.** The emails carry only what they carry today: aggregates for the
-daily report, and the weekly digests' existing Family names, DUIDs and
-excerpts. The funnel adds aggregate counts only. Images are rendered from the
-same aggregates and carry no Family data.
+**Privacy.** The emails carry only what they carried before: aggregates for
+the daily report, and the weekly digests' existing Family names, DUIDs and
+excerpts. The chart is drawn from the same aggregates and carries no Family
+data.
 
 ### Charts in email
 
 The daily report uses **both** email-safe methods, each where it is
 strongest:
 
-- **Table-based HTML bars** for every progress bar, bullet bar, comparison
-  and funnel bar: a row of table cells whose `bgcolor` and percentage widths
-  draw the bar, with the numbers as text beside it. They render in every mail
-  program including Outlook for Windows, survive image blocking (Outlook
-  desktop blocks images by default:
+- **Table-based HTML bars** for each campaign total: a row of table cells
+  whose `bgcolor` and percentage widths draw the bar, with the number as text
+  beside it. They render in every mail program including Outlook for
+  Windows, survive image blocking (Outlook desktop blocks images by default:
   [Litmus, image blocking](https://www.litmus.com/blog/the-ultimate-guide-to-email-image-blocking)),
-  and cost no attachment. A non-zero share narrower than 1% still draws a
-  1% sliver, so it never looks like zero.
-- **One server-rendered PNG, attached inline by `cid:`**, for the
-  day-by-day panels, which HTML cannot draw well. The daily digest already
-  sends its chart this way, and `cid:` is the path Outlook desktop supports
-  (`data:` images are dropped by Gmail). The PNG is a Vega-Lite specification
-  from `reports/chart_specs.py`, rendered by the [chart engine](#chart-engine)
-  at twice its 880px CSS width, so the email and the portal draw the same
-  JSON. It replaces the Matplotlib drawing in the email; the Participation
-  page moves to the same specification in its own slice. Hosted images are
-  rejected: they would need a public, unauthenticated image URL for staff
-  reports.
+  and cost no attachment. A non-zero share narrower than 1% still draws a 1%
+  sliver, and an incomplete one is never drawn full.
+- **One server-rendered PNG, attached inline by `cid:`**, for the day-by-day
+  chart, which HTML cannot draw well; `cid:` is the path Outlook desktop
+  supports (`data:` images are dropped by Gmail). Today it is the
+  [participation graph](#participation-graph)'s drawing without its page
+  title, names and footer, shown 880px wide. Moving it to a Vega-Lite
+  specification rendered by the [chart engine](#chart-engine), with one
+  measure per axis, comes with the Participation page's slice, since the
+  first server render registers the render helper's timeout name through a
+  frozen schema migration. Hosted images are rejected: they would need a
+  public, unauthenticated image URL for staff reports.
 
 **Alt text** on the chart carries the key numbers, not a description of the
 picture ([W3C WAI, complex images](https://www.w3.org/WAI/tutorials/images/complex/);
 [Datawrapper, alt text](https://www.datawrapper.de/academy/how-to-write-good-alternative-descriptions-for-your-data-visualization)):
-the chart's kind and date range, the latest day's new responses, the
-responded count out of active Families, the busiest day and its count, and
-pledges so far when shown. It is built from the same values as the table,
-styled (font, size, colour) so it reads as text when images are off, and
-followed by the exact-values table. HTML bars need no alt text: their
+the chart's kind and date range and every campaign total, from the same
+values as the table, which follows it. HTML bars need no alt text: their
 numbers are text.
-
-The first slice that renders a chart on the server registers the render
-helper's timeout name, as the [chart engine](#chart-engine) requires, through
-a frozen schema migration.
 
 ### Chart palette and style
 
