@@ -175,3 +175,54 @@ def test_information_reopen_confirmation_shows_only_when_unticking():
     assert 'aria-describedby="information-save-hint"' in text
     hint = '<p class="help" id="information-save-hint" data-complete-hint hidden>'
     assert hint in text
+
+
+# The history and report pagers (#519 PR 6): template, region, whether the
+# pager pages only its own region (data-in-place-only), and its two keys.
+PAGERS = (
+    ("delivery.html", "delivery-history", False, ("page-previous", "page-next")),
+    (
+        "information.html",
+        "information-history",
+        True,
+        ("history-newer", "history-older"),
+    ),
+    (
+        "ministry-followup.html",
+        "followup-history",
+        True,
+        ("history-newer", "history-older"),
+    ),
+    ("weekly-digest.html", "weekly-report-page", False, ("page-previous", "page-next")),
+)
+
+
+def test_history_pagers_act_in_place():
+    """Each pager's two links land on their region, hand focus to each other
+    when one is gone from the fresh page, and say what they did. A follow-up
+    history sits inside its item's panel and pages only itself, so the Save
+    form, which stays outside the history, keeps what the reader typed."""
+    for name, region, only, keys in PAGERS:
+        text = (TEMPLATES / name).read_text()
+        assert names_region(text, region), name
+        for key, other in (keys, keys[::-1]):
+            link = re.search(rf'<a [^>]*data-in-place="{key}"[^>]*>', text).group(0)
+            assert f'#{region}" ' in link, (name, key)
+            assert f'data-in-place-fallback="{other}"' in link, (name, key)
+            assert "data-in-place-message=" in link, (name, key)
+            assert ("data-in-place-only" in link) == only, (name, key)
+        if only:
+            panel = (
+                "information-item" if name == "information.html" else "followup-item"
+            )
+            body = region_body(text, panel)
+            assert names_region(body, region), name
+            assert "<form" not in region_body(text, region), name
+
+
+def test_delivery_resolution_forms_stay_outside_the_history():
+    """Paging a delivery's history never replaces a resolution form, so
+    evidence the reader is typing survives it."""
+    text = (TEMPLATES / "delivery.html").read_text()
+    history = region_body(text, "delivery-history")
+    assert "<form" not in history and "Attempt history" in history

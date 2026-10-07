@@ -3,6 +3,8 @@
 The item page is also served at its real address (``ITEM``), with a "saved"
 view (``SAVED``), and the fixture server answers its Save POST with a real
 Post/Redirect/Get redirect (``POSTS``), for the in-place Save tests (#519).
+Its Staff history's second page (``OLDER``) and first page by number
+(``NEWER``) serve the in-place history pager tests (#519 PR 6).
 """
 
 from dataclasses import replace
@@ -23,6 +25,7 @@ CAMPAIGN, ITEM_ID = UUID(int=80), UUID(int=81)
 ITEM = f"/admin/reports/{CAMPAIGN}/information/{ITEM_ID}/"
 UPDATE = ITEM + "update"
 SAVED = ITEM + "?saved=1"
+OLDER, NEWER = ITEM + "?page=2", ITEM + "?page=1"
 # The fixture server's answer to a Save (status, Location, body).
 POSTS = {UPDATE: (303, SAVED, "")}
 
@@ -145,7 +148,24 @@ def components(context, admin):
         ),
         # The item page at its real address, before and after a save that
         # changed the notes and added a version to the Staff history.
-        ITEM: ("information", values | {"item": item}),
+        ITEM: ("information", values | {"item": item, "next_history": 2}),
+        NEWER: ("information", values | {"item": item, "next_history": 2}),
+        # The history's last page: an older edit, and only Newer history.
+        OLDER: (
+            "information",
+            values
+            | {
+                "item": item,
+                "history_page": 2,
+                "previous_history": 1,
+                "history": [
+                    SimpleNamespace(
+                        **vars(values["history"][0])
+                        | {"expected_version": 0, "notes": "Older <edit>"}
+                    )
+                ],
+            },
+        ),
         SAVED: (
             "information",
             values

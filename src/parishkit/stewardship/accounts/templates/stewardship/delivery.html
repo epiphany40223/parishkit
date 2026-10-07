@@ -30,6 +30,8 @@
   <button type="submit">{{ command.label }}</button>
 </form>
 {% endfor %}
+{# Evidence and attempts share one page window, so both are one region; Previous and Next page refresh it in place (ui-v1.js, a[data-in-place], #519). The resolution forms above stay outside it, so typed evidence is kept. #}
+<div id="delivery-history" data-in-place-region>
 <h2>{% translate "Admin evidence and decisions" %}</h2>
 {% for note in notes %}<section class="panel"><p>{{ note.action|delivery_label }} · <time datetime="{{ note.created_at|instant }}" data-local-instant>{{ note.created_at|instant }}</time></p><p>{{ note.evidence_note }}</p></section>
 {% empty %}<p>{% translate "No Admin evidence on this page." %}</p>{% endfor %}
@@ -40,6 +42,6 @@
   <p><time datetime="{{ event.created_at|instant }}" data-local-instant>{{ event.created_at|instant }}</time></p>
 </section>
 {% empty %}<p>{% translate "No attempt history on this page." %}</p>{% endfor %}
-{% if next_query %}<a href="?{{ next_query }}">{% translate "Next page" %}</a>{% endif %}
-{% if previous_query %}<a href="?{{ previous_query }}">{% translate "Previous page" %}</a>{% endif %}
+<nav aria-label="{% translate 'Evidence and attempt pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-history" data-in-place="page-previous" data-in-place-fallback="page-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-history" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
+</div>
 {% endblock %}
