@@ -160,8 +160,6 @@ REVIEWS = (
     "content-preview.html",
     "content-settings.html",
     "schedule-preview.html",
-    "share-preview.html",
-    "talent-preview.html",
 )
 
 TRANSLATED = re.compile(r'{% translate "([^"]+)" %}')

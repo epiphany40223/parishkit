@@ -17,6 +17,8 @@ from .settings_components import (
     REQUEST,
     REVIEW,
     SETTINGS,
+    SHARE,
+    SHARE_REVIEW,
 )
 from .test_in_place import MARK, MARKED, count_requests
 from .waits import has_attribute, has_text, hidden, recorded, visible
@@ -309,3 +311,21 @@ def test_campaign_settings_review_waits_for_a_change(page, component_origin):
     module.evaluate("box => { box.checked = true; }")
     page.evaluate(RESTORE)
     expect_review(page, enabled=True)
+
+
+def test_share_options_review_in_place_and_redraw_the_form(page, component_origin):
+    """Share options (#750) reviews under its form; the form, a region of its
+    own, is redrawn with the values sent, the review heading takes focus, and
+    an edit afterwards withdraws the review."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+    page.goto(component_origin + SHARE)
+    page.evaluate(MARK)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    visible(page.get_by_role("heading", name="Proposed order and labels"))
+    assert page.evaluate(FOCUSED, "#settings-review-title")
+    assert current_step(page) == "Review"
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    assert page.evaluate(MARKED) == "kept"
+    page.locator("#id_options-0-label").fill("Renamed again")
+    visible(page.get_by_text("Choose Review changes again"))

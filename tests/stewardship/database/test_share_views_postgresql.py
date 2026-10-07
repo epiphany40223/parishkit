@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 import pytest
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.share_forms import default_share_options
@@ -13,11 +14,11 @@ from parishkit.stewardship.deployment import ServiceRole
 from ..campaign_factory import campaign, financial
 from ..test_share_forms import data_for
 from .auth_builders import signed_in
-from .campaign_builders import add_draft, command
+from .campaign_builders import add_draft, change, command
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
-from .test_campaign_views_postgresql import apply, fields, post
-from .test_parish_views_postgresql import token
+from .test_campaign_views_postgresql import apply, fields, post, requested
+from .test_parish_views_postgresql import digest, region, token
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -57,7 +58,12 @@ def test_share_option_apply_preserves_ids_and_produces_idempotent_receipt(
     proposal = token(preview)
     response = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, response)
-    status = browser.get(response["Location"]).content
+    # Share options applies in place (#750); Change status still leads back.
+    status_url = reverse("admin:configuration_request", args=[requested(response)])
+    assert "Applied: your change is saved" in region(
+        browser.get(response["Location"]).content
+    )
+    status = browser.get(status_url).content
     assert f'<a href="{path}">Return to Share options</a>'.encode() in status
     row.refresh_from_db()
     options = row.active_configuration.values["share_options"]
@@ -74,7 +80,7 @@ def test_share_option_apply_preserves_ids_and_produces_idempotent_receipt(
     # so the status page names it without a link (#196).
     command(row, uuid4(), Action.ACTIVATE)
     assert browser.get(path).status_code == 409
-    status = browser.get(response["Location"]).content
+    status = browser.get(status_url).content
     assert b"<li><span>Share options</span></li>" in status
     assert f'href="{path}"'.encode() not in status
 
@@ -150,11 +156,16 @@ def test_share_noop_stale_base_and_wrong_route_cannot_apply(auth_service, google
     browser, _ = signed_in()
     data = data_for(previous) | {"base_digest": store.active().digest}
     response = post(browser, path, data)
-    assert (
-        response.status_code == 200
-        and b"No share options have changed" in response.content
-    )
-    assert post(browser, path, data | {"base_digest": "a" * 64}).status_code == 409
+    # Refused in place (#750): the page again, with the reason in its review
+    # region and no Apply.
+    assert response.status_code == 400
+    assert "No share options have changed." in region(response.content)
+    assert b"Apply changes" not in response.content
+    stale = post(browser, path, data | {"base_digest": "a" * 64})
+    assert stale.status_code == 409
+    assert "This page changed in another tab or session." in region(stale.content)
+    # The refusal keeps the version the page was loaded at: reload first.
+    assert b'name="base_digest" value="' + b"a" * 64 in stale.content
     proposal = token(post(browser, path, data | {"options-0-label": "Changed"}))
     assert (
         post(
@@ -174,3 +185,39 @@ def test_census_only_has_no_share_controls(auth_service, google):
     add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
     assert browser.get("/admin/campaign/share-options/").status_code == 409
+
+
+def test_a_refused_apply_shows_the_current_list_at_its_version(auth_service, google):
+    """A confirmation refused because the settings changed elsewhere redraws
+    the form (its own in-place region, #750) with the current list at the
+    current version: what is shown is what is saved, so the next Review can
+    never quietly undo the other change."""
+    store = auth_service.store
+    row, previous, path = setup(store)
+    browser, _ = signed_in()
+    data = data_for(previous) | {
+        "base_digest": store.active().digest,
+        "options-0-label": "Reviewed label",
+    }
+    proposal = token(post(browser, path, data))
+    other = [dict(option) for option in previous]
+    other[0]["label"] = "Changed elsewhere"
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(row.pk),
+                "values": {"share_options": other},
+            }
+        ],
+    )
+    refused = post(browser, path, {"action": "confirm", "preview": proposal})
+    assert refused.status_code == 409
+    assert "This preview is out of date." in region(refused.content)
+    assert b'value="Changed elsewhere"' in refused.content
+    assert b'value="Reviewed label"' not in refused.content
+    assert digest(refused) == store.active().digest

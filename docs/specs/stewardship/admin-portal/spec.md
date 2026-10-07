@@ -1620,7 +1620,12 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   Make changes, Review and Apply. The signed preview, optimistic
   concurrency, capability and session rechecks, the durable request and its
   audit are unchanged; a refusal that needs a fresh sign-in still shows its
-  page whole. Other editors keep their review and Change status pages.
+  page whole. Share options and Member talents (#750) work the same way,
+  except that their form, to which no script is bound, is an in-place region
+  of its own: an answer redraws it with the values sent and their field
+  errors, and a refused Apply redraws the current list at its current
+  version, so what is shown is what is saved. The other editors keep their
+  review and Change status pages until issue 750 reaches them.
 
 ### Page help
 
