@@ -253,8 +253,11 @@ def test_a_realistic_population_goes_idle_cheaply(family_service):  # noqa: F811
         assert len(idle) <= 10 * 5
         assert not any("pg_advisory_xact_lock" in row["sql"] for row in idle)
         assert not any("FOR UPDATE" in row["sql"] for row in idle)
-        # A generous bound: about 14 ms a check on a laptop.
-        assert elapsed < 10
+        # Only a catastrophic-regression guard: about 14 ms a check on a
+        # laptop, but CI packs three PostgreSQL partitions onto each runner
+        # (#651), so wall-clock time here is shared-CPU noise (#688). The
+        # statement count and lock assertions above are the real checks.
+        assert elapsed < 60
         middle = REALISTIC // 2
         changed = FamilyStatus(middle, True, True, True, False)
         populate(
