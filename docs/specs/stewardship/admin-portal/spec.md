@@ -405,6 +405,14 @@ URL work lands, other pages keep their "Current URL", and so does every other
 section of this spec and the other stewardship specs that name an Admin URL
 (for example the hosted-files spec's `/admin/files/`); those follow-up issues
 update them with the code.
+flow with a way back) and #525 (one URL scheme). Every page already uses the
+table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which keeps its
+name until NAV-15 splits it into Sign-in rules, Ministry assignments and
+Chairpersons, and the Emailed reports, Ministry assignments and Chairpersons
+pages, which do not exist yet. Until the URL work lands, every page keeps its
+"Current URL", and so does every other section of this spec and the other
+stewardship specs that name an Admin URL (for example the hosted-files
+spec's `/admin/files/`); those follow-up issues update them with the code.
 
 The Admin portal serves one current campaign. The system moves to a single
 campaign after this campaign (#145), so navigation already assumes it: there
