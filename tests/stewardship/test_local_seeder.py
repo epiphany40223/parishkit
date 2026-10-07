@@ -423,7 +423,7 @@ def test_invariant_sql_is_a_self_verifying_do_block_over_the_real_tables():
     assert sql.startswith("DO $$\nDECLARE\n") and sql.rstrip().endswith("END $$;")
     assert "seeded_now timestamptz := '2026-10-07T15:25:12+00:00';" in sql
     columns = sum(len(names) for _, names in seeder._SEEDED_NOW_COLUMNS)
-    assert sql.count("RAISE EXCEPTION 'seed invariant:") == 6 + 2 + columns
+    assert sql.count("RAISE EXCEPTION 'seed invariant:") == 6 + 2 + 3 + columns
     assert "IF NOT (n = 14) THEN" in sql and "IF NOT (n >= 11) THEN" in sql
     # With the start date the elapsed days must each have a fact row, exactly.
     from datetime import date
@@ -454,6 +454,48 @@ def test_invariant_sql_is_a_self_verifying_do_block_over_the_real_tables():
     assert "RAISE NOTICE 'seed invariants hold at %'" in sql
     with pytest.raises(SeedRefused, match="seeded now"):
         invariant_sql(datetime(2026, 10, 7), {})
+
+
+def test_invariant_sql_pins_the_counts_the_timeline_states():
+    """Receipts, baselines and engagement rows are pinned exactly (#499)."""
+    seeded_now = datetime(2026, 10, 7, 15, 25, 12, tzinfo=UTC)
+    counts = {"submission": 14, "baseline": 21, "engaged": 30, "midnight": 11}
+    sql = invariant_sql(seeded_now, counts)
+    blocks = sql.split("END IF;")
+    receipts, baselines, engaged = (
+        next(block for block in blocks if message in block)
+        for message in (
+            "receipts for live submissions",
+            "live form baselines not replaced",
+            "live Family engagement rows",
+        )
+    )
+    assert "IF NOT (n = 14)" in receipts and "s.mode = 'live'" in receipts
+    assert "IF NOT (n = 21)" in baselines and "state <> 'replaced'" in baselines
+    assert "IF NOT (n = 30)" in engaged
+    # A key the counts lack expects no rows, so an empty database passes.
+    assert "IF NOT (n = 0) THEN\n        RAISE EXCEPTION 'seed invariant: % live " in (
+        invariant_sql(seeded_now, {})
+    )
+    # Outbox and occurrence counts depend on eligibility; not pinned (#731).
+    for table in ("stewardship_outbox_message", "stewardship_schedule_occurrence"):
+        assert f"SELECT count(*) FROM {table} WHERE {table}" not in sql
+
+
+def test_expected_counts_add_the_families_the_timeline_drives():
+    """Every Family with an event signs in, so each has one engagement row."""
+    result = seed_timeline.build(
+        7, 100, datetime(2026, 10, 7, 15, 30, tzinfo=UTC), range(92)
+    )
+    counts = seeder.expected_counts(result)
+    families = {e.family for e in result.events if not e.is_occurrence}
+    assert counts["engaged"] == len(families) > 0
+    assert counts["baseline"] == sum(e.kind == "baseline" for e in result.events)
+    assert counts["submission"] >= len(result.stages["submitted"])
+    # Link-only Families have a session but no baseline; they are engaged.
+    linked = set(result.stages["linked"])
+    assert linked and linked <= families
+    assert not any(e.kind == "baseline" and e.family in linked for e in result.events)
 
 
 def test_constants_match_the_specification():
