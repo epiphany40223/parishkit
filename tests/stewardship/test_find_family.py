@@ -83,7 +83,10 @@ def test_the_header_box_is_a_labelled_post_search():
     assert 'aria-controls="find-family-results"' in box and "aria-expanded" not in box
     assert 'role="status" aria-live="polite"' in box
     assert 'placeholder="Find a Family"' in box
-    assert "Search by name, DUID or address." in box
+    help_text = box[box.index('id="find-family-help"') :]
+    help_text = help_text[: help_text.index("</span>")]
+    for words in ("Family name", "member's name", "DUID", "envelope number", "address"):
+        assert words in help_text, words
     assert '<script src="/static/stewardship/find-family-v1.js" defer>' in html
     assert "data-find-family" not in _page(None)
 

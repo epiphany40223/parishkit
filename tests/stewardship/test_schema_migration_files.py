@@ -20,6 +20,8 @@ import hashlib
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / "src/parishkit/stewardship/schema"
 MIGRATIONS = SCHEMA / "migrations"
@@ -71,6 +73,9 @@ FROZEN = {
     ),
     "0014_slot_decisions.sql": (
         "3b97fdb22903dd045f1067661626bee9d2cb8be820f01fd34d5fd771113b895f"
+    ),
+    "0015_directory_member_search.sql": (
+        "dfd6c5bdf4608dae8de2ce57f8491ff57495d9257f2d74b083f3b234bc23bd15"
     ),
 }
 
@@ -139,6 +144,39 @@ def test_every_frozen_migration_file_is_pinned_and_unchanged():
                 f"!src/parishkit/stewardship/schema/migrations/{name}"
                 in ignore.read_text()
             )
+
+
+# A temporary object in a frozen file: CREATE [GLOBAL|LOCAL] TEMP[ORARY]
+# across any whitespace, or anything qualified with pg_temp.
+TEMP_OBJECT = re.compile(r"\bCREATE\s+((GLOBAL|LOCAL)\s+)?TEMP|\bpg_temp\.", re.I)
+
+
+def test_no_frozen_file_needs_the_temp_privilege():
+    """The deployed migration login cannot create temporary tables.
+
+    PostgreSQL test databases run as a superuser, so only the compose jobs
+    would otherwise notice; keep checks in settings or the DO block itself.
+    TEMP_OBJECT has no bare INTO TEMP pattern: frozen files have INTO
+    template lines.
+    """
+    for path in MIGRATIONS.glob("*.sql"):
+        assert not TEMP_OBJECT.search(path.read_text(encoding="utf-8")), path.name
+
+
+@pytest.mark.parametrize(
+    "text, found",
+    [
+        ("CREATE TEMPORARY TABLE x AS SELECT 1;", True),
+        ("create\n  local\ttemp table x (a int);", True),
+        ("CREATE GLOBAL TEMPORARY TABLE x (a int);", True),
+        ("SELECT * FROM pg_temp.x;", True),
+        ("SELECT body INTO template FROM t;", False),
+        ("SET search_path TO pg_catalog,public,pg_temp AS $$", False),
+    ],
+)
+def test_the_temp_privilege_scan_finds_only_temporary_objects(text, found):
+    """The scan above catches spaced or qualified forms, not look-alikes."""
+    assert bool(TEMP_OBJECT.search(text)) is found
 
 
 def test_latest_migration_copy_of_each_replaced_function_equals_the_baseline():
