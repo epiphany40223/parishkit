@@ -253,6 +253,8 @@ LEDGER = {
     # items; the Family's text is Family-level and stays on the page.
     "weekly_digest_item": command("digest weekly"),
     "weekly_digest_manual": command("digest weekly-request"),
+    # The Emailed reports page (NAV-14) lists the retained reports.
+    "emailed_reports": pending("PR 8", "digest list"),
     "logs": command("logs list"),
     "logs_export": command("logs export"),
     # System health (ADM-13): the page, its polled fragment (``--watch``)
