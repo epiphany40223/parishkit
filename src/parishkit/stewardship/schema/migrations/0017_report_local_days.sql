@@ -27,6 +27,35 @@
 SET LOCAL check_function_bodies = false;
 SET LOCAL search_path = public;
 
+-- The instant a calendar day begins in a browser zone, the same instant as
+-- Python's browser_day_start: local midnight read with fold=0. PostgreSQL
+-- alone reads a midnight that happens twice (clocks fall back at 01:00, as
+-- in Havana) as the later one, so this also reads it with the offset in
+-- force a day earlier and keeps whichever valid reading comes first. A day
+-- with no midnight (clocks spring forward at 00:00) begins at the change,
+-- as in Python. A blank, missing or unknown zone is refused: dates mean
+-- nothing without one. That check scans pg_timezone_names (about 6 ms), so
+-- callers evaluate it once per bound (a scalar subquery), never per row.
+CREATE FUNCTION public.stewardship_browser_day_start_v1(day date, zone text)
+RETURNS timestamp with time zone LANGUAGE plpgsql STABLE
+SET search_path TO pg_catalog,public,pg_temp
+SET jit TO off AS $$
+DECLARE
+    catalog_name text:=stewardship_timezone_name_v1(zone);
+    later timestamptz; earlier timestamptz; offset_before interval;
+BEGIN
+    IF day IS NULL OR NOT EXISTS(SELECT 1 FROM pg_timezone_names n WHERE n.name=catalog_name)
+    THEN RAISE EXCEPTION 'Invalid report time zone' USING ERRCODE='23514'; END IF;
+    later:=day::timestamp AT TIME ZONE catalog_name;
+    -- The zone's UTC offset 24 hours earlier (exact hours, whatever the
+    -- session's own time zone), before any change at this midnight.
+    offset_before:=(later-interval '24 hours') AT TIME ZONE catalog_name
+        -(later-interval '24 hours') AT TIME ZONE 'UTC';
+    earlier:=(day::timestamp-offset_before) AT TIME ZONE 'UTC';
+    RETURN CASE WHEN earlier AT TIME ZONE catalog_name=day::timestamp
+        THEN least(earlier,later) ELSE later END;
+END $$;
+
 CREATE FUNCTION public.stewardship_information_report_v2(
     campaign uuid, parameters jsonb, page_number integer DEFAULT NULL,
     item_uuid uuid DEFAULT NULL, page_size integer DEFAULT 50
@@ -106,10 +135,11 @@ BEGIN
         WHERE (item_uuid IS NULL OR i.id=item_uuid)
           -- From local midnight of the first day to local midnight after the
           -- last, in the viewer's zone; a DST day is 23 or 25 hours long.
-          AND (f->>'start'='' OR s.submitted_at>=((f->>'start')::date::timestamp
-              AT TIME ZONE stewardship_timezone_name_v1(f->>'zone')))
-          AND (f->>'end'='' OR s.submitted_at<(((f->>'end')::date+1)::timestamp
-              AT TIME ZONE stewardship_timezone_name_v1(f->>'zone')))
+          -- Each bound is a scalar subquery, so it is computed once per call.
+          AND (f->>'start'='' OR s.submitted_at>=(SELECT
+              stewardship_browser_day_start_v1((f->>'start')::date,f->>'zone')))
+          AND (f->>'end'='' OR s.submitted_at<(SELECT
+              stewardship_browser_day_start_v1((f->>'end')::date+1,f->>'zone')))
     ), filtered AS MATERIALIZED (
         SELECT * FROM rows WHERE (f->>'disposition'='all' OR disposition=f->>'disposition')
           AND (f->>'needed'='any' OR follow_up_needed=(f->>'needed'='yes'))
@@ -272,10 +302,10 @@ WITH selected AS MATERIALIZED (
         AND ((filters->>'state')='any' OR r.state=(filters->>'state')
             OR ((filters->>'state')='unresolved' AND r.state IN ('new','assigned','in_progress')))
         -- Days in the viewer's browser zone (#558), as in the information report.
-        AND ((filters->>'start')='' OR r.submitted_at>=((filters->>'start')::date::timestamp
-            AT TIME ZONE stewardship_timezone_name_v1(filters->>'zone')))
-        AND ((filters->>'end')='' OR r.submitted_at<(((filters->>'end')::date+1)::timestamp
-            AT TIME ZONE stewardship_timezone_name_v1(filters->>'zone')))
+        AND ((filters->>'start')='' OR r.submitted_at>=(SELECT
+            stewardship_browser_day_start_v1((filters->>'start')::date,filters->>'zone')))
+        AND ((filters->>'end')='' OR r.submitted_at<(SELECT
+            stewardship_browser_day_start_v1((filters->>'end')::date+1,filters->>'zone')))
 ), filtered AS MATERIALIZED (
     SELECT * FROM named WHERE (filters->>'search')=''
         OR position(lower((filters->>'search')) IN lower(member_name))>0
@@ -546,7 +576,9 @@ CREATE OR REPLACE TRIGGER ministry_export_capture BEFORE INSERT OR UPDATE OR DEL
 
 -- Refuse to commit unless everything above is installed as intended: each v2
 -- function has its v1 twin's attributes (not SECURITY DEFINER, the same
--- volatility, configuration and grants), carries the browser-zone predicate,
+-- volatility, configuration, grants and arguments with their names and
+-- defaults) and carries the browser-zone predicate; the day helper has the
+-- reports' attributes and reads a repeated midnight as its first occurrence;
 -- and each capture trigger calls its v2 function for every row event.
 DO $check$
 DECLARE pair text[];
@@ -554,10 +586,10 @@ BEGIN
     FOREACH pair SLICE 1 IN ARRAY ARRAY[
         ARRAY['stewardship_information_report_v1(uuid,jsonb,integer,uuid,integer)',
               'stewardship_information_report_v2(uuid,jsonb,integer,uuid,integer)',
-              'AT TIME ZONE stewardship_timezone_name_v1(f->>''zone'')'],
+              'stewardship_browser_day_start_v1((f->>''end'')::date+1,f->>''zone'')'],
         ARRAY['stewardship_ministry_report_v1(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)',
               'stewardship_ministry_report_v2(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)',
-              'AT TIME ZONE stewardship_timezone_name_v1(filters->>''zone'')'],
+              'stewardship_browser_day_start_v1((filters->>''end'')::date+1,filters->>''zone'')'],
         ARRAY['stewardship_information_export_capture_v1()',
               'stewardship_information_export_capture_v2()',
               'stewardship_information_report_v2(NEW.campaign_id,NEW.parameters)'],
@@ -576,10 +608,31 @@ BEGIN
               AND new.proconfig IS NOT DISTINCT FROM old.proconfig
               AND new.proacl IS NOT DISTINCT FROM old.proacl
               AND new.proowner=old.proowner
+              AND pg_get_function_arguments(new.oid)=pg_get_function_arguments(old.oid)
               AND position(pair[3] IN new.prosrc)>0)
         THEN RAISE EXCEPTION 'Migration 0017 did not install % as intended', pair[2];
         END IF;
     END LOOP;
+    -- The check below needs America/Havana; say so plainly if the server's
+    -- time zone data lacks it, rather than failing as an invalid zone.
+    IF NOT EXISTS(SELECT 1 FROM pg_timezone_names WHERE name='America/Havana')
+    THEN RAISE EXCEPTION 'Migration 0017 needs the America/Havana time zone, which this PostgreSQL server''s tzdata lacks';
+    END IF;
+    -- Havana fell back from 01:00 CDT to 00:00 CST on 2015-11-01, so that
+    -- midnight happened at 04:00 and again at 05:00 UTC.
+    IF NOT EXISTS(
+        SELECT 1 FROM pg_proc h, pg_proc r
+        WHERE h.oid='public.stewardship_browser_day_start_v1(date,text)'::regprocedure
+          AND r.oid='public.stewardship_information_report_v1(uuid,jsonb,integer,uuid,integer)'::regprocedure
+          AND NOT h.prosecdef AND h.provolatile='s' AND h.prolang=r.prolang
+          AND h.proconfig IS NOT DISTINCT FROM r.proconfig
+          AND h.proacl IS NOT DISTINCT FROM r.proacl
+          AND h.proowner=r.proowner
+          AND pg_get_function_arguments(h.oid)='day date, zone text')
+       OR stewardship_browser_day_start_v1('2015-11-01','America/Havana')
+          IS DISTINCT FROM '2015-11-01 04:00:00+00'::timestamptz
+    THEN RAISE EXCEPTION 'Migration 0017 did not install stewardship_browser_day_start_v1 as intended';
+    END IF;
     IF (SELECT count(*) FROM pg_trigger t
         WHERE NOT t.tgisinternal AND t.tgenabled='O' AND t.tgtype=31
           AND ((t.tgname='information_export_capture'

@@ -21,6 +21,9 @@ from parishkit.stewardship.reports.information import (
 )
 from parishkit.stewardship.web.tables import report_table
 
+# The browser zone of the dated fixtures, named alike by every engine.
+DATED_ZONE = "America/Havana"
+
 CAMPAIGN, ITEM_ID = UUID(int=80), UUID(int=81)
 ITEM = f"/admin/reports/{CAMPAIGN}/information/{ITEM_ID}/"
 UPDATE = ITEM + "update"
@@ -76,6 +79,8 @@ def components(context, admin):
     by_name = replace(query, sort="name")
     withdrawn = replace(query, disposition="withdrawn")
     nothing = replace(query, search="Nobody")
+    # What Apply returns for submitted days in the browser's zone (#558).
+    dated = replace(query, start="2026-11-01", end="2026-11-02", zone=DATED_ZONE)
     other = item | {"id": UUID(int=84), "family_name": "Other Family"}
     values = dict(
         metadata=dict(
@@ -138,6 +143,15 @@ def components(context, admin):
                 "query_fields": nothing.form_values(),
                 "total": 0,
                 "table": table(nothing, [], 0),
+            },
+        ),
+        "/information-dated": (
+            "information",
+            values
+            | {
+                "query": dated,
+                "query_fields": dated.form_values(),
+                "table": table(dated),
             },
         ),
         "/information-queue-gated": ("information", values | {"mutable": False}),

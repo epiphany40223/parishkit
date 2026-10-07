@@ -15,7 +15,8 @@ from django.http import QueryDict
 from parishkit.stewardship.reports.information import InformationQuery
 from parishkit.stewardship.reports.ministries import MinistryQuery
 
-from .waits import has_text, visible
+from .information_components import DATED_ZONE
+from .waits import eventually, has_text, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -122,10 +123,52 @@ def test_dates_wait_for_a_known_browser_zone(
         assert apply.is_enabled() and not hint.is_visible()
 
 
-@pytest.mark.parametrize(("path", "note_id", "hint_id", "ministry"), PAGES)
+@pytest.mark.parametrize(
+    ("path", "pattern", "applied"),
+    [
+        ("/information", "**/information/", "/information-dated"),
+        ("/ministry-detail", "**/join/", "/ministry-dated"),
+    ],
+)
 def test_the_export_carries_the_applied_zone(
-    page, component_origin, path, note_id, hint_id, ministry
+    browser_engine, component_origin, path, pattern, applied
 ):
-    """The export form sends the applied filters' zone, never the page's own."""
-    page.goto(component_origin + path)
-    assert page.locator("#table-export [name=zone]").count() == 1
+    """After Apply, the export form sends the zone the dates were applied in.
+
+    Its zone field is table state the in-place refresh copies from the
+    server's answer, not a field the page script fills with this browser's
+    zone, so a later export repeats exactly the filters the table shows.
+    """
+    context = browser_engine.new_context(timezone_id=DATED_ZONE)
+    try:
+        page = context.new_page()
+        page.goto(component_origin + path)
+        export = page.locator("#table-export [name=zone]")
+        assert export.count() == 1 and export.input_value() == ""
+        assert export.get_attribute("data-browser-zone") is None
+        page.get_by_label("Submitted on or after", exact=True).fill("2026-11-01")
+        page.get_by_label("Submitted on or before", exact=True).fill("2026-11-02")
+        # The server's answer: the page rendered with the applied filters.
+        page.route(
+            pattern,
+            lambda route: (
+                route.fulfill(
+                    response=route.fetch(url=component_origin + applied, method="GET")
+                )
+                if route.request.method == "POST"
+                else route.continue_()
+            ),
+        )
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("button", name="Apply filters").click()
+        posted = parse_qs(sent.value.post_data)["zone"]
+        assert posted == [DATED_ZONE]
+        eventually(
+            page,
+            "document.querySelector('#table-export [name=zone]').value",
+            DATED_ZONE,
+        )
+        assert export.get_attribute("data-browser-zone") is None
+        assert page.locator("#table-export [name=start]").input_value() == "2026-11-01"
+    finally:
+        context.close()
