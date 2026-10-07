@@ -31,8 +31,8 @@ from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_credential_isolation_postgresql import identity, isolated_roles  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
-INDEX = "/admin/configuration/integrations"
-URL = INDEX + "/parishsoft"
+INDEX = "/admin/system/integrations/"
+URL = INDEX + "parishsoft/"
 SECRET = "SYNTHETIC-PRIVATE-CANDIDATE"
 
 
@@ -74,7 +74,7 @@ def save_key(browser, candidate, page=None, **fields):
 
 def status_url(row):
     """The key change's details page."""
-    return f"/admin/configuration/credentials/{row.pk}"
+    return f"/admin/system/key-changes/{row.pk}/"
 
 
 def edit(store, **values):
@@ -134,7 +134,7 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     assert f'<a href="{URL}">Return to ParishSoft</a>'.encode() in status
     assert auth_service.store.active() == old
     row = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert (
         install_request(
@@ -189,7 +189,7 @@ def test_nightly_only_edit_uses_parish_time_and_real_scheduler_receipt(
     response = post(browser, URL, {"action": "confirm", "preview": preview})
     assert response.status_code == 302
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert request.request_schema == "source-cadence-patch-v8"
     assert (
@@ -252,7 +252,7 @@ def test_several_daily_times_reach_yaml_and_the_scheduler(auth_service, google):
         browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
     )
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert (
         install_request(
@@ -314,7 +314,7 @@ def test_refresh_times_are_typed_in_any_common_form(auth_service, google):
         browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
     )
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert (
         install_request(
@@ -567,7 +567,7 @@ def test_integrations_and_secrets_are_admin_only(auth_service, google, role):
     for url in (
         INDEX,
         URL,
-        "/admin/configuration/credentials/" + str(uuid4()),
+        "/admin/system/key-changes/" + str(uuid4()) + "/",
     ):
         assert browser.get(url).status_code == 403
     response = post(
@@ -589,13 +589,13 @@ def test_missing_handoff_and_unknown_targets_fail_closed(auth_service, google):
     assert b"stores new keys for this integration has not started" in page.content
     assert b"ask whoever manages the parish" in page.content
     assert b"system administrator" not in page.content
-    assert browser.get(INDEX + "/unknown").status_code == 404
+    assert browser.get(INDEX + "unknown/").status_code == 404
     # The unlinked stand-alone "replace credential" page is gone: it staged a
     # key with nothing to switch to it, which stopped mail (#307 M1).
     for target in ("parishsoft", "google_workspace", "slack", "email"):
-        assert browser.get(f"{INDEX}/{target}/credential").status_code == 404
+        assert browser.get(f"{INDEX}{target}/credential/").status_code == 404
     assert (
-        browser.get("/admin/configuration/credentials/" + str(uuid4())).status_code
+        browser.get("/admin/system/key-changes/" + str(uuid4()) + "/").status_code
         == 404
     )
 

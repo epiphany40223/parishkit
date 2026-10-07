@@ -746,7 +746,7 @@ def config_request(status):
 
 
 def read_config_request(caller, service, request_id):
-    """``config request show``: Configuration change status's read.
+    """``config request show``: Change status's read.
 
     Admitted passively, as the page is, so a read-only session can follow a
     change; only the Administrator's own requests are found. The page records

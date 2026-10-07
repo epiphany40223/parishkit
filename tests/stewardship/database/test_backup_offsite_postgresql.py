@@ -45,7 +45,7 @@ from .test_setup_exchange_postgresql import target_login
 pytestmark = pytest.mark.django_db(transaction=True)
 FOLDER = "1AbCdEfGhIjKlMnOpQrStUv"
 LINK = f"https://drive.google.com/drive/folders/{FOLDER}"
-URL = "/admin/configuration/integrations/backup"
+URL = "/admin/system/integrations/backup/"
 
 
 @pytest.fixture
@@ -744,7 +744,7 @@ def apply(store, response):
     """Install the queued configuration change the web just recorded."""
     assert response.status_code == 302, response.content
     row = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     result = install_request(store, request_id=row.pk, correlation_id=uuid4())
     assert result.state == "applied"
@@ -765,7 +765,7 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     browser, _ = signed_in()
     assert b"Off-site backups are not set up" in browser.get("/admin/").content
     # The Integrations list links to the setup page even before it's set up.
-    index = browser.get("/admin/configuration/integrations").content
+    index = browser.get("/admin/system/integrations/").content
     assert b"Off-site backups (Google Drive)" in index
     assert f'href="{URL}">Set up off-site backups</a>'.encode() in index
     page = browser.get(URL)
@@ -780,7 +780,7 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     assert response.status_code == 302
     probe = BackupDriveProbe.objects.get()
     assert (probe.folder_id, probe.subject) == (FOLDER, "mail@example.org")
-    status = browser.get(URL + "/status")
+    status = browser.get(URL + "status/")
     assert status.status_code == 200 and b"Checking access" in status.content
     # After Test access, the tested folder stays in the field for Save and is
     # named beside the result, whether the check is pending, passed or failed.
@@ -831,7 +831,7 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     )
     home = browser.get("/admin/")
     assert b"Off-site backups" in home.content
-    index = browser.get("/admin/configuration/integrations").content
+    index = browser.get("/admin/system/integrations/").content
     assert f'href="{URL}">Change</a>'.encode() in index
     assert b"copied to Google Drive" in browser.get(URL).content
     preview = hidden(post(browser, URL, {"action": "remove"}), "preview")
@@ -992,9 +992,7 @@ def test_test_access_without_workspace_links_to_its_setup(auth_service, google):
         b"Test access needs Google Workspace mail to be set up first."
         in response.content
     )
-    assert b'href="/admin/configuration/integrations/google_workspace"' in (
-        response.content
-    )
+    assert b'href="/admin/system/integrations/google_workspace/"' in (response.content)
     assert not BackupDriveProbe.objects.exists()
 
 

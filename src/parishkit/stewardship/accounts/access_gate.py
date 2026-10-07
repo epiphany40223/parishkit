@@ -138,10 +138,15 @@ class AccessGateMiddleware(MiddlewareMixin):
 
 
 # Read-only background-work views an Administrator may open during initial
-# setup, to watch the setup's own load. Commands under these paths are POSTs
-# and stay gated; each view still rechecks the Background-work capability.
+# setup, to watch the setup's own load: Background work and one task's page
+# under /admin/system/background/, the JSON reads scripts poll, and the old
+# page addresses, which only redirect to the new ones. Commands under these
+# paths are POSTs and stay gated; each view still rechecks the
+# Background-work capability.
+_TASK = r"[0-9a-f-]{36}"
 BACKGROUND_READS = re.compile(
-    r"/admin/background(?:/counts|/tasks|/tasks?/[0-9a-f-]{36})?"
+    rf"/admin/system/background/(?:{_TASK}/)?"
+    rf"|/admin/background(?:/counts|/tasks|/tasks?/{_TASK})?"
 )
 
 

@@ -360,14 +360,14 @@ def test_export_cleanup_keyboard_form_posts_only_csrf_and_replay_identity(
 ):
     """Recovery is an accessible explicit form action, never a GET or auto-poll."""
     page.route(
-        "**/admin/background/tasks/*/retry-export-cleanup",
+        "**/admin/system/background/*/export-cleanup-retry/",
         lambda route: route.fulfill(content_type="text/html", body="Retry queued"),
     )
     page.goto(component_origin + "/export-cleanup-task")
     button = page.get_by_role("button", name="Retry export cleanup", exact=True)
     button.focus()
     with page.expect_request(
-        "**/admin/background/tasks/*/retry-export-cleanup"
+        "**/admin/system/background/*/export-cleanup-retry/"
     ) as submitted:
         button.press("Enter")
     assert submitted.value.method == "POST"
@@ -942,11 +942,11 @@ def test_admin_sidebar_and_breadcrumbs_mark_the_current_page(page, component_ori
     sidebar = page.get_by_role("navigation", name="Administration")
     current = sidebar.locator('a[aria-current="page"]')
     visible(current)
-    assert current.inner_text() == "Ministry activity"
+    assert current.inner_text() == "Ministries"
     expect(sidebar.get_by_text("Menu")).to_be_hidden()
     trail = page.get_by_role("navigation", name="Breadcrumb")
     visible(trail.get_by_role("link", name="Home"))
-    assert trail.locator('[aria-current="page"]').inner_text() == "Ministry activity"
+    assert trail.locator('[aria-current="page"]').inner_text() == "Ministries"
     # The sidebar sits beside the content, not above it, on a wide screen.
     side = sidebar.bounding_box()
     main = page.locator("main").bounding_box()
@@ -983,7 +983,7 @@ def test_admin_sidebar_groups_are_labelled_disclosures_set_apart_from_links(
     assert sidebar.get_by_role("heading").count() == 0
     for name, links in (
         ("Campaign setup", ["Campaign settings", "Dates and mail schedules"]),
-        ("Parish data", ["Parish settings", "Ministry activity"]),
+        ("Parish data", ["Parish settings", "Ministries"]),
         ("System", ["Background work"]),
     ):
         group = sidebar.get_by_role("list", name=name, exact=True)

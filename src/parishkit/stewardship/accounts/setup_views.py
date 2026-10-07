@@ -18,11 +18,11 @@ from .admin_editing import error_response
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .setup_drafts import save_section, view_draft
-from .setup_forms import FORMS, STEPS, form_values, initial_values
+from .setup_forms import FORMS, form_values, initial_values
 from .setup_policy import SetupState
 from .setup_source import start_source_load
 from .setup_staging import _admit, begin_setup, cancel_setup
-from .setup_wizard import PAGES, continue_after, wizard_for
+from .setup_wizard import BY_KEY, PAGES, continue_after, wizard_for
 
 ERRORS = (
     ConfigError,
@@ -244,7 +244,8 @@ def setup_step(request, step):
             request,
             "stewardship/setup-step.html",
             _context(draft, step)
-            | {"form": form, "step": step, "step_label": STEPS[step]},
+            # A wizard heading uses its stepper label (one name per page).
+            | {"form": form, "step": step, "step_label": BY_KEY[step].label},
             status=status,
         )
         return _checked(request, service, response, draft)

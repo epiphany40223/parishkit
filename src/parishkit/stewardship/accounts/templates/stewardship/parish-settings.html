@@ -1,7 +1,6 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n %}
 {% block title %}{% translate "Parish settings" %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'admin:index' %}">{% translate "Administration" %}</a></p>
 <h1>{% translate "Parish settings" %}</h1>
 <section id="testing-mode" class="panel"><h2>{% translate "Operating mode" %}</h2>
 <p>{{ configuration.mode|capfirst }}</p>

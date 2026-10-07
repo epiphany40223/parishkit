@@ -395,14 +395,16 @@ through every Admin page (109 pages) and settled by the Administrator's
 [navigation decisions](#navigation-decisions) of 2026-10-04. The sidebar is
 moved to it, and the page names, links and URLs fixed against it, by the
 follow-up issues #520 (one name per page), #521 (every page reachable, every
-flow with a way back) and #525 (one URL scheme). The Campaign setup and Mail
-and Family portal pages already use the table's names (NAV-4), and so do the
-sections and specs that name them. Until the rest land, other pages keep the
-names in the table's "Current names" column, every page keeps its "Current
-URL", and so does every other section of this spec and the other stewardship
-specs that name an Admin page or URL (for example "Portal users" in
-[Admin tables](#admin-tables) and the hosted-files spec's `/admin/files/`);
-those follow-up issues update them with the code.
+flow with a way back) and #525 (one URL scheme). Every page already uses the
+table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which keeps its
+name until NAV-15 splits it into Sign-in rules, Ministry assignments and
+Chairpersons, and the Emailed reports, Ministry assignments and Chairpersons
+pages, which do not exist yet. The System pages already have their new
+addresses (NAV-6), and so do the Parish data pages and a change's status page
+(NAV-7), with every old address redirecting. Until the rest of the URL work
+lands, other pages keep their "Current URL", and so does every other section
+of this spec and the other stewardship specs that name an Admin URL; those
+follow-up issues update them with the code.
 
 The Admin portal serves one current campaign. The system moves to a single
 campaign after this campaign (#145), so navigation already assumes it: there
@@ -674,7 +676,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | Page | Name | Reached from | Roles | Current names | Current URL | New URL | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. |
-| `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/configuration/requests/<request>` | `/admin/changes/<request>/` |  |
+| `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same; old address redirects) |  |
 | `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/<campaign>/settings` | `/admin/campaign/settings/` |  |
 | `campaign_clone` | Copy campaign | Campaign settings | Administrator | Clone archived campaign | `/admin/campaign/<campaign>/clone` | `/admin/campaign/copy/` | Decision 18: until #145 removes it, Campaign settings shows Copy campaign greyed out, not an action, with the tip "Disabled; will be removed with the single-campaign change (#145)". The server refuses the clone action. |
 | `content_history` | Content history | Campaign settings | Administrator | Retained campaign content | `/admin/campaign/<campaign>/content/history` | `/admin/campaign/content/history/` |  |
@@ -730,15 +732,15 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `weekly_digest_snapshot` | Weekly report | Emailed reports (new page) | Administrator | Weekly information report; Weekly summary | `/admin/reports/weekly-digests/<snapshot>/` | `/admin/reports/emailed/weekly/<snapshot>/` |  |
 | `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/weekly-digests/<snapshot>/items/<item>/` | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | Links the live Additional information request. |
 | `daily_digest_snapshot` | Daily report | Emailed reports (new page) | Administrator, Staff | (report document title) daily report | `/admin/reports/daily-digests/<snapshot>/` | `/admin/reports/emailed/daily/<snapshot>/` |  |
-| `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/configuration/parish` | `/admin/parish/settings/` | Hand-written Administration link removed. |
-| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/configuration/branding` | `/admin/parish/logos/` |  |
-| `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/configuration/branding/<bundle>` | `/admin/parish/logos/<bundle>/` |  |
-| `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/configuration/ministries` | `/admin/parish/ministries/` |  |
+| `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same; old address redirects) | Hand-written Administration link removed. |
+| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same; old address redirects) |  |
+| `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/parish/logos/<bundle>/` | (same; old address redirects) |  |
+| `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same; old address redirects) |  |
 | `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/campaign/<campaign>/ministries` | `/admin/parish/ministries/campaign/` | Moves under Ministries; Campaign settings keeps a link. |
-| `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/files/` | `/admin/parish/files/` |  |
-| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/files/delete` (POST only) | `/admin/parish/files/` (POST only) |  |
-| `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/files/<file>/name` | `/admin/parish/files/<file>/name/` |  |
-| `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/source/refresh` | `/admin/parish/parishsoft-refresh/` |  |
+| `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same; old address redirects) |  |
+| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same; old address redirects) |  |
+| `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same; old address redirects) |  |
+| `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same; old address redirects) |  |
 | `users` | Sign-in rules | Menu: Sign-in rules | Administrator | Portal users | `/admin/users` | `/admin/users/sign-in-rules/` | Portal users is split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
 | `user_rules` | Review sign-in rules | Sign-in rules | Administrator | Review login rule change; Sign-in rules | `/admin/users/rules` (POST only) | `/admin/users/sign-in-rules/review/` (POST only) |  |
 | `rule_request` | (not a page) | Sign-in rules | Administrator | Rule change (status); Rule change | `/admin/users/rules/requests/<request>` | `/admin/users/sign-in-rules/requests/<request>/` (JSON) | Answers JSON only; reclassify as a non-page. |
@@ -748,13 +750,13 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); revoke posts to `/admin/users/automation/sessions/<session>/`. |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
-| `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/configuration/integrations` | `/admin/system/integrations/` |  |
-| `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/configuration/integrations/<target>` | `/admin/system/integrations/<target>/` | Object-named (exception); hand-written Integrations link removed. |
-| `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/configuration/credentials/<request>` | `/admin/system/key-changes/<request>/` |  |
-| `select_credential` | Finish switching to the new key | _integration name_ | Administrator | (same) | `/admin/configuration/credentials/<request>/select` | `/admin/system/key-changes/<request>/selection/` |  |
-| `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/background` | `/admin/system/background/` |  |
-| `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/background/task/<task>` | `/admin/system/background/<task>/` |  |
-| `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/logs` | `/admin/system/logs/` |  |
+| `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/system/integrations/` | (same; old address redirects) |  |
+| `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/system/integrations/<target>/` | (same; old address redirects) | Object-named (exception); hand-written Integrations link removed. |
+| `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/` | (same; old address redirects) |  |
+| `select_credential` | Finish switching to the new key | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/selection/` | (same; old address redirects) |  |
+| `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/system/background/` | (same; old address redirects) |  |
+| `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/system/background/<task>/` | (same; old address redirects) |  |
+| `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/system/logs/` | (same; old address redirects) |  |
 | `campaign_new` | (retired) | (retired) | Administrator | Create campaign draft; New campaign | `/admin/campaign/new` | (retired; redirects to `/admin/campaign/settings/`) | Decision 11: no New campaign control; the campaign is created in the setup wizard. The old address redirects to Campaign settings. |
 | `report_campaigns` | (retired) | (retired) | Administrator, Staff | Choose a retained campaign; Choose a campaign | `/admin/reports/campaigns/` | (retired; redirects to `/admin/reports/participation/`) | Decisions 10 and 19: no campaign chooser; reports show the current campaign. Its link on Participation is greyed out with the #145 tip until removed. The old address redirects to Participation. |
 | `ministry_report_campaigns` | (retired) | (retired) | Administrator, Staff, Ministry leader | Choose a retained campaign; Choose a campaign | `/admin/ministry-reports/campaigns/` | (retired; redirects to `/admin/reports/ministries/`) | Decisions 10 and 19: no campaign chooser. Its link on Ministry requests is greyed out with the #145 tip until removed. The old address redirects to Ministry requests. |
@@ -833,7 +835,10 @@ Admin URLs follow the menu, so the address says where the reader is
   of a campaign-UUID redirect depends on which campaign is current, and
   browsers cache 301 and 308 responses indefinitely, those redirects (and the
   410 refusals) are sent with `Cache-Control: no-store`; redirects that name
-  no campaign may be cached. Likewise a page for one record (an export, a
+  no campaign may be cached. Only a signed-in Admin portal user gets either
+  answer: anyone else gets the sign-in refusal before the campaign is
+  compared, so the choice between redirect and 410 never tells a stranger
+  which campaign is current. Likewise a page for one record (an export, a
   digest snapshot, a cleanup request) refuses a record whose campaign is not
   current. Sent digest emails, bookmarks and the operator runbooks link the
   old forms. A test lists every old pattern with its target.

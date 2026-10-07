@@ -217,6 +217,8 @@ def setup_credential(request, target):
                 "form": form,
                 "target": target,
                 "label": LABELS[target],
+                # The heading uses the step's stepper label (one name per page).
+                "step_label": BY_KEY[STEP[target]].label,
                 "saved": saved is not None,
                 "current": current,
                 "organization": organization,

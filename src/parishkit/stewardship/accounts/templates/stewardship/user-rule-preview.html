@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Review login rule change" %}{% endblock %}
+{% block title %}{% translate "Review sign-in rules" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Review login rule change" %}</h1>
+<h1>{% translate "Review sign-in rules" %}</h1>
 <section class="panel">
   <h2>{% if kind == 'domain' %}{% translate "Hosted domain" %}{% else %}{% translate "Exact address" %}{% endif %}: {{ identity }}</h2>
   {% if removed %}<p>{% translate "This rule will be removed." %} {% translate "Configured roles now:" %} {% for role in before %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "None (explicit deny)" %}{% endfor %}</p>

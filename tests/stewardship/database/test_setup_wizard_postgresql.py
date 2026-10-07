@@ -27,13 +27,17 @@ def test_before_completion_admin_pages_route_to_the_wizard_only(setup_http, goog
     """Other Admin pages redirect, and the chrome offers no other destination."""
     with web_login():
         browser = started()
-        for path in ("/admin/", "/admin/configuration/integrations", "/admin/users"):
+        for path in ("/admin/", "/admin/system/integrations/", "/admin/users"):
             response = browser.get(path)
             assert response.status_code == 302, path
             assert response["Location"] == "/admin/setup"
         body = browser.get("/admin/setup").content
         assert b"Initial setup" in body
-        for other in (b"Parish settings", b'href="/admin/users"', b"Ministry activity"):
+        for other in (
+            b"Parish settings",
+            b'href="/admin/users"',
+            b'href="/admin/parish/ministries/"',
+        ):
             assert other not in body
         assert b"Sign out" in body
 
@@ -44,18 +48,18 @@ def test_background_work_stays_readable_during_setup(setup_http, google):
     task, _ = bind_load(SetupAttempt.objects.get().pk)
     with web_login():
         body = browser.get("/admin/setup").content
-        assert b'href="/admin/background"' in body
-        page = browser.get("/admin/background")
+        assert b'href="/admin/system/background/"' in body
+        page = browser.get("/admin/system/background/")
         assert page.status_code == 200, page.content
         assert b"Initial ParishSoft data load" in page.content
         assert f"/admin/setup/source/{task.run_id}".encode() in page.content
-        detail = browser.get(f"/admin/background/task/{task.run_id}")
+        detail = browser.get(f"/admin/system/background/{task.run_id}/")
         assert detail.status_code == 200
         assert b"Initial ParishSoft data load" in detail.content
         assert browser.get("/admin/background/counts").status_code == 200
         # Commands under the same prefix remain closed until setup completes.
         command = post(
-            browser, f"/admin/background/tasks/{task.run_id}/retry-export-cleanup", {}
+            browser, f"/admin/system/background/{task.run_id}/export-cleanup-retry/", {}
         )
         assert command.status_code == 503
 

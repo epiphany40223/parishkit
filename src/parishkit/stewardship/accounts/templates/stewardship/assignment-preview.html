@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Review Ministry assignment change" %}{% endblock %}
+{% block title %}{% translate "Review Ministry assignment" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Review Ministry assignment change" %}</h1>
+<h1>{% translate "Review Ministry assignment" %}</h1>
 <section class="panel">
   <h2>{% translate "Exact address" %}: {{ identity }}</h2>
   {% if operation == 'add' %}<p>{% blocktranslate with name=ministry.name duid=ministry.duid %}An Administrator entry assignment to {{ name }} (Ministry DUID {{ duid }}) will be added. The parish source never rewrites it; only an Administrator removes it.{% endblocktranslate %}</p>

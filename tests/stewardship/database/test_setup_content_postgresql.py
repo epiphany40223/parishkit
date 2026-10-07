@@ -160,7 +160,7 @@ def test_content_http_csrf_preview_and_clear(setup_http, monkeypatch):
         assert "another tab" in stale.json()["refusal"]["message"]
         preview = browser.get(url)
         assert b"<p>Hello Sample</p>" in preview.content
-        assert b"Save and return to the content list" in preview.content
+        assert b"Save and return to Pages and emails" in preview.content
         assert (
             post(
                 browser, url, {"version": str(attempt.version + 1), "clear": "on"}

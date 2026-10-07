@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Ministry follow-up" %}{% endblock %}
+{% block title %}{% if item %}{% translate "Follow-up request" %}{% else %}{% translate "Ministry follow-up" %}{% endif %}{% endblock %}
 {% block content %}
-<h1>{% translate "Ministry follow-up" %}</h1>
+<h1>{% if item %}{% translate "Follow-up request" %}{% else %}{% translate "Ministry follow-up" %}{% endif %}</h1>
 {% aboutpage "ministry-followup" %}<p>{% translate "Live join and leave requests for the Ministries you may follow up. Follow-up never changes a Family's submitted answers or the parish roster." %}</p>
 <p>{% translate "Names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone." %}</p>
 <p>{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself. When a later ParishSoft refresh shows the change, the request can close automatically." %}</p>{% endaboutpage %}
@@ -49,7 +49,7 @@
 <nav aria-label="{% translate 'Follow-up history pages' %}">{% if previous_history %}<a href="{% url 'admin:ministry_followup_item' campaign_id item.id %}?page={{ previous_history }}#followup-history" data-in-place="history-newer" data-in-place-fallback="history-older" data-in-place-only data-in-place-message="{% translate 'Newer history shown.' %}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="{% url 'admin:ministry_followup_item' campaign_id item.id %}?page={{ next_history }}#followup-history" data-in-place="history-older" data-in-place-fallback="history-newer" data-in-place-only data-in-place-message="{% translate 'Older history shown.' %}">{% translate "Older history" %}</a>{% endif %}</nav>
 </div>
 </div>
-<p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Return to the queue" %}</a></p>
+<p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Return to Ministry follow-up" %}</a></p>
 {% else %}
 <form id="table-filters" data-table-sync method="post" action="{% url 'admin:ministry_followup' campaign_id %}">{% csrf_token %}
 <label for="followup-search">{% translate "Search Member or Ministry name" %}</label><input id="followup-search" name="search" maxlength="200" value="{{ query.search }}">

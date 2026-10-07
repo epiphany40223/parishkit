@@ -28,6 +28,7 @@ from typing import NamedTuple
 from django.urls import NoReverseMatch, Resolver404, get_resolver, resolve, reverse
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.admin_urls.legacy import TARGETS as LEGACY_TARGETS
 from parishkit.stewardship.campaigns.domain import CampaignState
 from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
@@ -174,27 +175,30 @@ PAGES = {
     # Responses and reports. Every report is a menu entry of its own. The
     # two report roots only redirect to the current campaign's report (or
     # show that there is none), so they stand alone, outside the menu.
-    "reports": Page("reports", _("Campaign reports")),
+    "reports": Page("reports", _("Participation")),
     "participation": Page("reports", _("Participation")),
-    "financial_report": Page("reports", _("Financial report")),
+    "financial_report": Page("reports", _("Financial stewardship")),
     "talents_report": Page("reports", _("Talents and limitations")),
     "response_dashboard": Page("reports", _("Response dashboard")),
     "response_list": Page("reports", _("Response list"), "response_dashboard"),
     "information_queue": Page("reports", _("Additional information")),
-    "information_item": Page("reports", _("Information item"), "information_queue"),
+    "information_item": Page("reports", _("Information request"), "information_queue"),
     "report_export": Page("reports", _("Report export"), "reports"),
-    "report_exact": Page("reports", _("Exact export"), "reports"),
-    "weekly_digest_manual": Page("reports", _("Manual information report")),
-    "weekly_digest_snapshot": Page("reports", _("Weekly summary"), "reports"),
+    "report_exact": Page("reports", _("Latest-data export"), "reports"),
+    "weekly_digest_manual": Page("reports", _("Send a weekly report now")),
+    # The emailed reports stand alone under the group until NAV-14 gives
+    # them the Emailed reports page; the reports root is Participation now,
+    # which they do not belong under.
+    "weekly_digest_snapshot": Page("reports", _("Weekly report")),
     "weekly_digest_item": Page(
-        "reports", _("Weekly summary item"), "weekly_digest_snapshot"
+        "reports", _("Weekly report item"), "weekly_digest_snapshot"
     ),
-    "daily_digest_snapshot": Page("reports", _("Daily report"), "reports"),
-    "ministry_reports": Page("reports", _("Ministry reports")),
-    "ministry_report": Page("reports", _("Ministry report")),
-    "ministry_joiners": Page("reports", _("Joining"), "ministry_report"),
-    "ministry_leavers": Page("reports", _("Leaving"), "ministry_report"),
-    "ministry_followup": Page("reports", _("Follow-up")),
+    "daily_digest_snapshot": Page("reports", _("Daily report")),
+    "ministry_reports": Page("reports", _("Ministry requests")),
+    "ministry_report": Page("reports", _("Ministry requests")),
+    "ministry_joiners": Page("reports", _("Members joining"), "ministry_report"),
+    "ministry_leavers": Page("reports", _("Members leaving"), "ministry_report"),
+    "ministry_followup": Page("reports", _("Ministry follow-up")),
     "ministry_followup_item": Page(
         "reports", _("Follow-up request"), "ministry_followup"
     ),
@@ -207,29 +211,36 @@ PAGES = {
     "branding_settings": Page("parish", _("Parish logos")),
     # Reviews one staged logo and refuses once it is chosen.
     "branding_preview": Page(
-        "parish", _("Logo preview"), "branding_settings", linkable=False
+        "parish", _("Review parish logos"), "branding_settings", linkable=False
     ),
     "hosted_files": Page("parish", _("Hosted files")),
     "hosted_file_delete": Page("parish", _("Delete hosted files"), "hosted_files"),
     "hosted_file_rename": Page("parish", _("Change placeholder name"), "hosted_files"),
-    "ministries": Page("parish", _("Ministry activity")),
+    "ministries": Page("parish", _("Ministries")),
     # A sidebar entry of its own, so a manual refresh is found without Home.
-    "source_refresh": Page("parish", _("ParishSoft refresh")),
+    "source_refresh": Page("parish", _("Refresh from ParishSoft")),
     # A configuration change can come from any settings page, so its status
     # page is registered under Home; the view places it under the page the
     # change was confirmed on when this sign-in remembers it.
-    "configuration_request": Page(None, _("Configuration change")),
+    "configuration_request": Page(None, _("Change status")),
     # Users
+    # Keeps its name until NAV-15 splits it into Sign-in rules, Ministry
+    # assignments and Chairpersons; renaming the combined page earlier would
+    # mislabel its other tables.
     "users": Page("users", _("Portal users")),
     # Only the review of a change started on Portal users (a POST from that
     # page) renders at these routes, so trails name them but never link them.
-    "user_rules": Page("users", _("Sign-in rules"), "users", linkable=False),
+    "user_rules": Page("users", _("Review sign-in rules"), "users", linkable=False),
     "rule_request": Page("users", _("Rule change"), "user_rules"),
     "chair_confirmations": Page(
-        "users", _("Chair suggestions"), "users", linkable=False
+        "users", _("Review Chairperson suggestion"), "users", linkable=False
     ),
-    "chair_reviews": Page("users", _("Chair reviews"), "users", linkable=False),
-    "assignments": Page("users", _("Assignments"), "users", linkable=False),
+    "chair_reviews": Page(
+        "users", _("Review Chairperson decision"), "users", linkable=False
+    ),
+    "assignments": Page(
+        "users", _("Review Ministry assignment"), "users", linkable=False
+    ),
     # The Administrator's own automation sessions (ADM-11), and the approval
     # of a pending one, which the command line links to.
     "automation_access": Page("users", _("Automation access")),
@@ -603,6 +614,12 @@ NON_PAGES = frozenset(
 )
 
 
+# Old Admin addresses (the URL scheme, #525): each only redirects to the page
+# that replaced it, so it is neither a page nor a non-page. ``LEGACY_TARGETS``
+# maps each one to its new URL name.
+LEGACY = frozenset(LEGACY_TARGETS)
+
+
 # Multi-step flows: each is an ordered tuple of (step key, label). A view
 # names its flow and current step with ``place``; the Admin layout shows the
 # steps under the breadcrumb trail. The indicator is orientation only: it
@@ -693,7 +710,9 @@ def change_origin(request, request_id):
         match = resolve(path)
     except Resolver404:
         return None
-    name = match.url_name
+    # A path remembered before its page moved resolves to the old address's
+    # redirect; it names the same page, so follow it to the new one.
+    name = LEGACY_TARGETS.get(match.url_name, match.url_name)
     if (
         match.namespace != NAMESPACE
         or name not in PAGES

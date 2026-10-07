@@ -305,7 +305,7 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(
     assert "switching to it did not finish" in page
     assert "ParishSoft refreshes are stopped" in page
     assert "notice-error" in page and 'role="alert"' in page
-    select = f"/admin/configuration/credentials/{row.pk}/select"
+    select = f"/admin/system/key-changes/{row.pk}/selection/"
     assert f'class="button" href="{select}"' in page
     assert summary("parishsoft", _record(working)).kind == "unselected"
     # Finish switching previews the original selection on today's settings.
@@ -315,7 +315,7 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(
     assert response.status_code == 302, response.content
     assert b"Switching to it now" in browser.get(URL).content
     finish = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert install(working, finish.pk).state == "applied"
     record = _record(working)["values"]
@@ -373,7 +373,7 @@ def test_finish_switching_keeps_another_admins_newer_schedule(working):
     """
     row = failed_switch(working, nightly_time="04:15")
     browser = working["browser"]
-    select = f"/admin/configuration/credentials/{row.pk}/select"
+    select = f"/admin/system/key-changes/{row.pk}/selection/"
     page = browser.get(select)
     changes = page.context["changes"]
     assert [(c["before"], c["after"]) for c in changes] == [("12345", "54321")]
@@ -383,7 +383,7 @@ def test_finish_switching_keeps_another_admins_newer_schedule(working):
             browser, select, {"action": "confirm", "preview": hidden(page, "preview")}
         )
     assert response.status_code == 302, response.content
-    finish = UUID(response["Location"].rsplit("/", 1)[-1])
+    finish = UUID(response["Location"].rstrip("/").rsplit("/", 1)[-1])
     assert install(working, finish).state == "applied"
     settings = _record(working)["values"]["settings"]
     assert settings["nightly_time"] == "04:15"
@@ -406,7 +406,7 @@ def test_finish_switching_cannot_change_a_loaded_organization(working, monkeypat
     monkeypatch.setattr(integration_selection, "loaded_organization", lambda: 12345)
     count = ConfigurationChangeRequest.objects.count()
     browser = working["browser"]
-    page = browser.get(f"/admin/configuration/credentials/{row.pk}/select")
+    page = browser.get(f"/admin/system/key-changes/{row.pk}/selection/")
     assert page.status_code == 409
     assert b"organization ID can't change after ParishSoft data" in page.content
     assert b'name="preview"' not in page.content
@@ -558,12 +558,12 @@ def test_pending_key_status_is_passive_and_cannot_outlive_the_idle_limit(
     browser = working["browser"]
     assert save(working).status_code == 302
     page = browser.get(URL).content
-    assert b'data-live-url="' + URL.encode() + b'/status"' in page
+    assert b'data-live-url="' + URL.encode() + b'status/"' in page
     assert b"data-reload-while-pending" not in page
     session = PortalSession.objects.get(revoked_at__isnull=True)
     activity = session.last_activity_at
     for _ in range(3):
-        status = browser.get(URL + "/status")
+        status = browser.get(URL + "status/")
         assert status.status_code == 200
         assert status["Cache-Control"] == "no-store"
         assert b"data-live-pending" in status.content
@@ -581,7 +581,7 @@ def test_pending_key_status_is_passive_and_cannot_outlive_the_idle_limit(
         request_key=selection_key(row.pk)
     )
     assert install(working, selection.pk).state == "applied"
-    finished = browser.get(URL + "/status").content
+    finished = browser.get(URL + "status/").content
     assert b"data-live-pending" not in finished
     assert b'data-live-follow href="' + URL.encode() + b'"' in finished
     # Polling never moved the idle deadline, so once the clock passes it the
@@ -591,7 +591,7 @@ def test_pending_key_status_is_passive_and_cannot_outlive_the_idle_limit(
     monkeypatch.setattr(
         sessions, "database_now", lambda: deadline + timedelta(seconds=1)
     )
-    assert browser.get(URL + "/status").status_code != 200
+    assert browser.get(URL + "status/").status_code != 200
 
 
 def rejected(value):
@@ -615,15 +615,15 @@ def test_dismissing_a_finished_key_change_hides_it_for_everyone(working):
     page = browser.get(URL).content.decode()
     assert f'name="request_id" value="{row.pk}"' in page
     # Without the CSRF token nothing is recorded.
-    refused = browser.post(URL + "/dismiss", {"request_id": str(row.pk)})
+    refused = browser.post(URL + "dismissal/", {"request_id": str(row.pk)})
     assert refused.status_code == 403
     # A stale or foreign request identity dismisses nothing.
     with identity("pk_stewardship_web"):
-        response = post(browser, URL + "/dismiss", {"request_id": str(uuid4())})
+        response = post(browser, URL + "dismissal/", {"request_id": str(uuid4())})
     assert response.status_code == 302 and response["Location"] == URL
     assert b"ParishSoft did not accept" in browser.get(URL).content
     with identity("pk_stewardship_web"):
-        response = post(browser, URL + "/dismiss", {"request_id": str(row.pk)})
+        response = post(browser, URL + "dismissal/", {"request_id": str(row.pk)})
     assert response.status_code == 302 and response["Location"] == URL
     event = AuditEvent.objects.get(event_type="credential_result_dismissed")
     assert event.subject_id == row.pk
@@ -657,7 +657,7 @@ def test_a_key_that_still_needs_action_cannot_be_dismissed(working, monkeypatch)
 def test_parishsoft_page_offers_a_one_click_full_refresh(working):
     """The settings page posts to the manual refresh with a fresh request key."""
     page = working["browser"].get(URL).content.decode()
-    assert 'action="/admin/source/refresh"' in page
+    assert 'action="/admin/parish/parishsoft-refresh/"' in page
     assert re.search(r'name="request_key" value="[0-9a-f-]{36}"', page)
     assert "Run a full refresh now" in page
 

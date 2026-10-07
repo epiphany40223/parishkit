@@ -32,7 +32,7 @@ from .test_credential_isolation_postgresql import identity, isolated_roles  # no
 from .test_integration_views_postgresql import INDEX, hidden, post
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = INDEX + "/slack"
+URL = INDEX + "slack/"
 TOKEN = b"xoxb-synthetic-slack-token"
 AGAIN = b"xoxb-synthetic-second-slack-token"
 
@@ -147,7 +147,10 @@ def remove_slack(slack):
     preview = hidden(preview_page, "preview")
     response = post(browser, URL, {"action": "confirm", "preview": preview})
     assert response.status_code == 302
-    assert apply(slack, response["Location"].rsplit("/", 1)[-1]).state == "applied"
+    assert (
+        apply(slack, response["Location"].rstrip("/").rsplit("/", 1)[-1]).state
+        == "applied"
+    )
     # The status names Slack and leads back to its page, which still opens.
     status = browser.get(response["Location"]).content
     assert f'<a href="{URL}">Return to Slack notifications</a>'.encode() in status
@@ -179,11 +182,11 @@ def test_slack_is_set_up_removed_and_set_up_again(slack):
     remove_slack(slack)
     # The old key cannot bring Slack back without a newly pasted, checked
     # token (#338 review): its selection is refused and not offered.
-    select = f"/admin/configuration/credentials/{row.pk}/select"
+    select = f"/admin/system/key-changes/{row.pk}/selection/"
     count = ConfigurationChangeRequest.objects.count()
     assert browser.get(select).status_code == 409
     assert ConfigurationChangeRequest.objects.count() == count
-    status = browser.get(f"/admin/configuration/credentials/{row.pk}").content
+    status = browser.get(f"/admin/system/key-changes/{row.pk}/").content
     assert select.encode() not in status
     # Removed: no leftover "installed" line or dead Finish switching link.
     page = browser.get(URL).content
@@ -238,15 +241,15 @@ def test_a_failed_slack_add_can_finish_switching(slack):
     assert result.state == "failed" and result.failure_code == "stale_base"
     page = browser.get(URL).content
     assert b"Slack alerts are not sent" in page
-    select = f"/admin/configuration/credentials/{row.pk}/select"
+    select = f"/admin/system/key-changes/{row.pk}/selection/"
     assert select.encode() in page
-    status = browser.get(f"/admin/configuration/credentials/{row.pk}").content
+    status = browser.get(f"/admin/system/key-changes/{row.pk}/").content
     assert select.encode() in status
     preview = hidden(browser.get(select), "preview")
     with identity("pk_stewardship_web"):
         response = post(browser, select, {"action": "confirm", "preview": preview})
     assert response.status_code == 302, response.content
-    finish = response["Location"].rsplit("/", 1)[-1]
+    finish = response["Location"].rstrip("/").rsplit("/", 1)[-1]
     assert apply(slack, finish).state == "applied"
     added = records(slack)["slack"]["values"]
     assert added["credential_fingerprint"] == file_fingerprint(TOKEN)

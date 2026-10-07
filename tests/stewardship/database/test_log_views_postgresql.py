@@ -31,7 +31,7 @@ from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/logs"
+URL = "/admin/system/logs/"
 
 
 def post(browser, values=None):
@@ -95,7 +95,8 @@ def next_fields(response):
     body = response.content.decode()
     assert 'href="?' not in body
     forms = re.findall(
-        r'<form method="post" action="/admin/logs(?:#[a-z-]+)?">(.*?)</form>', body
+        r'<form method="post" action="/admin/system/logs/(?:#[a-z-]+)?">(.*?)</form>',
+        body,
     )
     for form in forms:
         if ">Next</button>" in form:
@@ -434,7 +435,7 @@ def test_logs_are_not_exposed_to_other_roles(auth_service, google, role):
     assert b"admin_login" not in response.content
     # A denied reader submitted nothing that could be corrected.
     assert b"Identifiers must be complete" not in response.content
-    assert b'href="/admin/logs"' not in home
+    assert b'href="/admin/system/logs/"' not in home
     assert views() == []
 
 
@@ -581,7 +582,7 @@ def export(browser, values=None):
     """Download the filtered log with a genuine CSRF token."""
     token = browser.cookies["pk_admin_csrf"].value
     return browser.post(
-        URL + "/export", {"csrfmiddlewaretoken": token} | (values or {})
+        URL + "export/", {"csrfmiddlewaretoken": token} | (values or {})
     )
 
 
@@ -648,7 +649,7 @@ def test_export_refuses_unknown_choices(auth_service, google, values):
 def test_export_is_administrator_only_and_post_only(auth_service, google):
     """A GET or a non-Administrator gets nothing."""
     browser, _ = signed_in()
-    assert browser.get(URL + "/export").status_code == 405
+    assert browser.get(URL + "export/").status_code == 405
     store = auth_service.store
     change(
         store,

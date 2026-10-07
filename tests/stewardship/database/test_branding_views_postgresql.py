@@ -24,7 +24,7 @@ from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/configuration/branding"
+URL = "/admin/parish/logos/"
 
 
 @pytest.fixture
@@ -84,7 +84,7 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
         assert b"private-original" not in page.content
         assets = list(BrandingAsset.objects.order_by("label"))
         for asset in assets:
-            response = browser.get(f"{URL}/assets/{asset.pk}.png")
+            response = browser.get(f"{URL}assets/{asset.pk}.png")
             assert response.status_code == 200
             assert b"".join(response.streaming_content).startswith(b"\x89PNG")
             assert response["Cache-Control"] == "no-store"
@@ -93,7 +93,7 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
         assert result.status_code == 302, result.content
     assert auth_service.store.active() == old
     request = ConfigurationChangeRequest.objects.get(
-        pk=result["Location"].rsplit("/", 1)[-1]
+        pk=result["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     with task_login(ServiceRole.CONFIG_INSTALLER):
         assert (
@@ -105,7 +105,7 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
     # The one-time logo review is named but not linked; Return goes to the
     # logos page (#196).
     status = browser.get(result["Location"]).content
-    assert b"<li><span>Logo preview</span></li>" in status
+    assert b"<li><span>Review parish logos</span></li>" in status
     assert f'<a href="{URL}">Return to Parish logos</a>'.encode() in status
     assert browser.get(preview).status_code != 200
     for asset in assets:
@@ -135,7 +135,7 @@ def test_other_login_cannot_preview_an_unapplied_upload(auth_service, google, me
     asset = BrandingAsset.objects.first()
     another, _ = signed_in()
     assert another.get(preview).status_code == 404
-    assert another.get(f"{URL}/assets/{asset.pk}.png").status_code == 404
+    assert another.get(f"{URL}assets/{asset.pk}.png").status_code == 404
     assert another.get(f"/branding/{asset.pk}.png").status_code == 404
 
 

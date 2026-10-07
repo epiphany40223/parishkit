@@ -1,13 +1,13 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship static %}
-{% block title %}{% translate "Additional information and follow-up" %}{% endblock %}
+{% block title %}{% if item %}{% translate "Information request" %}{% else %}{% translate "Additional information" %}{% endif %}{% endblock %}
 {% block content %}
-<h1>{% translate "Additional information and follow-up" %}</h1>
+<h1>{% if item %}{% translate "Information request" %}{% else %}{% translate "Additional information" %}{% endif %}</h1>
 {% aboutpage "information-followup" %}<p>{% translate "Requests for more information that Families wrote on their forms, with Staff follow-up." %}</p>
 <p>{% translate "The list includes requests from Families that are now inactive. Staff follow-up never changes what the Family wrote, or the history of a request the Family later replaced or withdrew." %}</p>
 <p>{% translate "Family names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time> ({% translate "data load" %} {{ metadata.source_generation|number }}).</p>
 <p>{% translate "Date filters use whole days in the campaign's time zone," %} {{ metadata.timezone }}. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
-<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and campaign selection" %}</a></p>
+<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Participation" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
 <div id="information-item" data-in-place-region>
@@ -40,7 +40,7 @@
 <nav aria-label="{% translate 'Staff history pages' %}">{% if previous_history %}<a href="?page={{ previous_history }}#information-history" data-in-place="history-newer" data-in-place-fallback="history-older" data-in-place-only data-in-place-message="{% translate 'Newer history shown.' %}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="?page={{ next_history }}#information-history" data-in-place="history-older" data-in-place-fallback="history-newer" data-in-place-only data-in-place-message="{% translate 'Older history shown.' %}">{% translate "Older history" %}</a>{% endif %}</nav>
 </div>
 </div>
-<p><a href="{% url 'admin:information_queue' campaign_id %}">{% translate "Return to the queue" %}</a></p>
+<p><a href="{% url 'admin:information_queue' campaign_id %}">{% translate "Return to Additional information" %}</a></p>
 {% else %}
 <form id="table-filters" data-table-sync method="post" action="{% url 'admin:information_queue' campaign_id %}">{% csrf_token %}
 <label for="info-search">{% translate "Search Family name, DUID, submitted text or Staff notes" %}</label><input id="info-search" name="search" maxlength="200" value="{{ query.search }}">

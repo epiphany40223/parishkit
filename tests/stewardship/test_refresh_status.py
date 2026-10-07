@@ -75,7 +75,7 @@ def test_banner_links_to_the_failed_task_not_the_background_list():
         "stewardship/full-refresh-status.html",
         {"status": FullRefreshStatus(EARLY, LATE, False, task), "can_view_task": True},
     )
-    assert f"/admin/background/task/{task}" in html
+    assert f"/admin/system/background/{task}/" in html
     assert "See Background work" not in html
 
 
@@ -87,7 +87,7 @@ def test_banner_omits_the_link_for_users_who_cannot_open_tasks():
         {"status": FullRefreshStatus(EARLY, LATE, False, task), "can_view_task": False},
     )
     assert "notice-error" in html
-    assert f"/admin/background/task/{task}" not in html
+    assert f"/admin/system/background/{task}/" not in html
 
 
 def test_banner_absent_without_a_failure():
@@ -131,7 +131,7 @@ def test_healthy_deltas_are_reported_beside_a_failed_full_reload(monkeypatch):
     assert "15-minute updates are working" in html
     assert "Ministry rosters, ministries and giving" in html
     # The one-click action posts the refresh page's own request shape.
-    assert 'method="post" action="/admin/source/refresh"' in html
+    assert 'method="post" action="/admin/parish/parishsoft-refresh/"' in html
     assert f'name="request_key" value="{KEY}"' in html
 
 

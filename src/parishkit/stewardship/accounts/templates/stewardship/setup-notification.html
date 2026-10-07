@@ -1,9 +1,9 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
-{% block title %}{% translate "Setup Slack test" %}{% endblock %}
+{% block title %}{% translate "Test Slack" %} — {% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
-<h1>{% translate "Setup Slack test" %}</h1>
+<h1>{% translate "Test Slack" %}</h1>
 {% aboutpage "setup-notification" %}<p>{% translate "This page checks status without extending your login's idle deadline." %}</p>{% endaboutpage %}
 <p class="setup-intro">{% translate "Post one fixed test message to the Slack channel to prove the Slack connection works. A successful test of the current settings is required before setup can finish. Once it succeeds, Continue takes you to the next step." %}</p>
 <p class="notice">{% translate "Testing mode. This sends a fixed fictional notification to the configured Slack channel. It contains no parishioner data and does not activate the campaign." %}</p>

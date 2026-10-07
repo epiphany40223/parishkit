@@ -64,9 +64,9 @@ def test_every_admin_route_is_either_a_page_or_explicitly_not_one():
     """A new Admin route must be placed in the navigation or listed as a non-page."""
     pages = set(navigation.PAGES)
     assert not pages & navigation.NON_PAGES
-    assert set(ROUTES) == pages | navigation.NON_PAGES, set(ROUTES) ^ (
-        pages | navigation.NON_PAGES
-    )
+    assert not (pages | navigation.NON_PAGES) & navigation.LEGACY
+    known = pages | navigation.NON_PAGES | navigation.LEGACY
+    assert set(ROUTES) == known, set(ROUTES) ^ known
 
 
 def test_pages_form_acyclic_trees_within_known_sections():
@@ -392,7 +392,7 @@ def test_change_origins_are_remembered_per_request_and_bounded():
         "/admin/no-such-page",
         "/admin/logout",
         # A fixed id keeps the test ID the same wherever it is collected.
-        "/admin/configuration/requests/00000000-0000-4000-8000-000000000001",
+        "/admin/changes/00000000-0000-4000-8000-000000000001/",
         None,
     ],
 )
@@ -545,7 +545,7 @@ REPORTS = [
 ]
 # The Administrator's menu in the spec's order (admin-portal spec, "Menu
 # groups"), written out so that reordering MENU fails here. Entries for pages
-# that do not exist yet are absent; Manual information report holds the
+# that do not exist yet are absent; Send a weekly report now holds the
 # place of Emailed reports until NAV-14.
 SPEC_ORDER = [
     # Campaign setup

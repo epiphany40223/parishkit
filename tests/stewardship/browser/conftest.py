@@ -42,12 +42,13 @@ from parishkit.stewardship.accounts.setup_confirmation_views import (
 )
 from parishkit.stewardship.accounts.setup_content_views import SetupContentForm
 from parishkit.stewardship.accounts.setup_credential_views import SetupCredentialForm
-from parishkit.stewardship.accounts.setup_forms import FORMS, STEPS
+from parishkit.stewardship.accounts.setup_forms import FORMS
 from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
 from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
 )
 from parishkit.stewardship.accounts.setup_schedule_views import SetupScheduleWindow
+from parishkit.stewardship.accounts.setup_wizard import BY_KEY as SETUP_STEPS
 from parishkit.stewardship.accounts.setup_wizard import build as setup_wizard
 from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
@@ -382,7 +383,7 @@ def component_origin():
                     },
                     {
                         "url": "/ministries",
-                        "label": "Ministry activity",
+                        "label": "Ministries",
                         "current": "page",
                     },
                 ],
@@ -391,7 +392,7 @@ def component_origin():
         "breadcrumbs": [
             {"label": "Home", "url": "/home"},
             {"label": "Parish data", "url": "/parish-settings"},
-            {"label": "Ministry activity", "url": None},
+            {"label": "Ministries", "url": None},
         ],
         "testing": True,
         "testing_recipient": "testing@example.org",
@@ -1325,6 +1326,7 @@ def component_origin():
                 "draft": setup_draft,
                 "form": SetupCredentialForm("parishsoft"),
                 "label": "ParishSoft",
+                "step_label": "ParishSoft connection",
                 "saved": True,
             },
         ),
@@ -1459,7 +1461,7 @@ def component_origin():
                     }
                 ),
                 "step": "parish",
-                "step_label": STEPS["parish"],
+                "step_label": SETUP_STEPS["parish"].label,
             },
         ),
     )
@@ -1476,7 +1478,7 @@ def component_origin():
                     "wizard": wizard,
                     "form": form_type(),
                     "step": step,
-                    "step_label": STEPS[step],
+                    "step_label": SETUP_STEPS[step].label,
                 },
             ),
         )
@@ -1748,7 +1750,7 @@ def component_origin():
                         {"label": "Home", "url": "/home"},
                         {"label": "Parish data", "url": "/parish-settings"},
                         {"label": "Parish settings", "url": "/parish-settings"},
-                        {"label": "Configuration change", "url": None},
+                        {"label": "Change status", "url": None},
                     ],
                     "flow_steps": [
                         {"label": "Make changes", "state": "done"},
@@ -1941,7 +1943,7 @@ def component_origin():
 
     logo = BytesIO()
     Image.new("RGB", (1024, 512), "blue").save(logo, format="PNG")
-    for prefix in ("/branding/", "/admin/configuration/branding/assets/"):
+    for prefix in ("/branding/", "/admin/parish/logos/assets/"):
         responses[f"{prefix}{branding_asset['pk']}.png"] = (
             "image/png",
             logo.getvalue(),

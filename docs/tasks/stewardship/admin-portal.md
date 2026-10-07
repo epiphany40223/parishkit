@@ -410,9 +410,9 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.04 — NAV-2: make menu groups collapsible, remembered per browser, and end the menu with Sign out.
 - [x] ADM-12.05 — NAV-3: grey out multi-campaign controls with the #145 tip, refuse their actions on the server, and remove New campaign.
 - [x] ADM-12.06 — NAV-4: give Campaign setup and Mail pages one name each, including Cancel go-live.
-- [ ] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages, and the remaining setup wizard steps, one name each.
-- [ ] ADM-12.08 — NAV-5b: give report pages one name each.
-- [ ] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
+- [x] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages, and the remaining setup wizard steps, one name each.
+- [x] ADM-12.08 — NAV-5b: give report pages one name each.
+- [x] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
 - [ ] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
 - [ ] ADM-12.11 — NAV-8: move Mail and Family portal URLs.
 - [ ] ADM-12.12 — NAV-9: move Campaign setup URLs, part A, and add the group root.
@@ -514,6 +514,54 @@ spec's table; title and heading match the label; every "Return to" names a
 page; no template, script or user-facing message uses a retired name outside
 a commented allowlist; Cancel go-live's trail and its blocking message's
 links) and the updated page, menu and browser suites.
+ADM-12.07 (NAV-5a) names Home ("Home"), the Parish data, Users and access
+and System pages (Ministries, Review parish logos, Refresh from ParishSoft,
+Change status, Background task and the sign-in rule, Ministry assignment and
+Chairperson reviews) and every setup wizard step after its stepper label; the
+data-entry and connection steps take their heading from the stepper entry
+itself. Portal users keeps its name until NAV-15 splits it. Parish settings
+loses its hand-written Administration link, and "Back to" links become
+"Return to" links naming their page. It is proven by the extended
+`tests/stewardship/test_admin_page_names.py` (the new groups, Home, Change
+status and every setup step; more retired names) and the updated page,
+setup and browser suites.
+ADM-12.08 (NAV-5b) names the report pages after the placement table
+(Participation, Financial stewardship, Additional information and
+Information request, Latest-data export, Ministry requests with Members
+joining and Members leaving, Ministry follow-up and Follow-up request, Send
+a weekly report now, Weekly report and Weekly report item); templates
+shared by a list and its item switch their heading by context, and the
+empty-report page is named after the report opened. "Return to" links name
+their page, including an export's report and Home. It is proven by
+`tests/stewardship/test_admin_page_names.py` (the Responses and reports
+group, the empty-report page, more retired names) and the updated report
+suites.
+ADM-12.09 (NAV-6) adds the URL plumbing: `web/admin_routes.py` with
+`legacy()` (301 for GET and HEAD, 308 otherwise, query kept; for an old
+address naming a campaign, a redirect only for the current campaign and a
+never-cached 410 otherwise) and `current_campaign()`, and the
+`admin_urls/` package with the System group's routes and the old-to-new
+table. Integrations, key changes, Background work, its task pages and
+retries, and System logs move under `/admin/system/`; the JSON reads that
+scripts poll keep their addresses. Remembered change origins on old
+addresses still lead back to their page, the setup-time background
+allowance matches both forms, and the runbooks name the new addresses. It
+is proven by `tests/stewardship/test_admin_url_scheme.py` (scheme rules,
+every page reverses, each old address redirects keeping the query),
+`tests/stewardship/test_family_routes_frozen.py` (Family and OAuth routes
+unchanged), `tests/stewardship/database/test_admin_url_scheme_postgresql.py`
+(campaign redirects and refusals, `current_campaign`, bookmarks through the
+middleware) and the updated System suites.
+ADM-12.10 (NAV-7, in part) moves the Parish data pages under
+`/admin/parish/` (settings, logos, Ministries, hosted files with
+`uploads/` and `deletion/` actions, and the ParishSoft refresh) and a
+change's status page to `/admin/changes/<request>/`, each old address and
+no-slash form redirecting. The ingress admits large uploads at both upload
+addresses, and the two hard-coded redirects are reversed. The Users and
+access URLs move with the Portal users split (NAV-15), so this task stays
+open until then. It is proven by the expected-redirect table in
+`tests/stewardship/test_admin_url_scheme.py`, the Caddyfile render tests and
+golden files, and the updated Parish data and change suites.
 
 ## ADM-13: System health page
 

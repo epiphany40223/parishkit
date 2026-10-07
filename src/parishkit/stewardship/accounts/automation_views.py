@@ -127,7 +127,7 @@ def _expected(actor, pending):
 def _approval_page(request, context):
     """Render the approval page; it is never cached."""
     context.setdefault("back", reverse("admin:automation_access"))
-    context.setdefault("back_label", _("Back to Automation access"))
+    context.setdefault("back_label", _("Return to Automation access"))
     context.setdefault("next", reverse("admin:automation_approval"))
     response = render(request, "stewardship/automation-approval.html", context)
     response["Cache-Control"] = "no-store"

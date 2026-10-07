@@ -167,7 +167,7 @@ def test_a_slot_refuses_the_wrong_image_kind(auth_service, google, media, monkey
             {"base_digest": store.active().digest, "image": image(90, 90)},
         )
         assert staged.status_code == 302, staged.content
-        bundle = staged["Location"].rsplit("/", 1)[-1]
+        bundle = staged["Location"].rstrip("/").rsplit("/", 1)[-1]
         # The same staged icon is not an image for the banner slot.
         assert browser.get(f"{path}/banner/{bundle}").status_code == 404
         assert browser.get(f"{path}/unknown/{bundle}").status_code == 404

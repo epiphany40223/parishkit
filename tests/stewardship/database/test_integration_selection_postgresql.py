@@ -45,7 +45,7 @@ from .test_integration_views_postgresql import (  # noqa: F401
 pytestmark = pytest.mark.django_db(transaction=True)
 PRIOR = b"synthetic-working-parishsoft-key"
 CANDIDATE = b"synthetic-next-parishsoft-key"
-SETTINGS = "/admin/configuration/integrations/parishsoft"
+SETTINGS = "/admin/system/integrations/parishsoft/"
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ def replacement(request, monkeypatch, tmp_path, google):
         selection=ConfigurationChangeRequest.objects.get(
             request_key=selection_key(row.pk)
         ),
-        url=f"/admin/configuration/credentials/{row.pk}/select",
+        url=f"/admin/system/key-changes/{row.pk}/selection/",
     )
 
 
@@ -177,7 +177,7 @@ def test_select_acknowledged_fingerprint_via_real_web_and_config_roles(
         assert response.status_code == 302, response.content
     assert value.service.store.active() == old
     row = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     request.getfixturevalue("config_role")
     with as_config_installer():
@@ -251,7 +251,7 @@ def test_selection_parser_is_bound_to_preview_not_later_cadence(
         )
     assert response.status_code == 302, response.content
     row = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert row.request_schema == (
         "integration-credential-cadence-v8"
@@ -369,7 +369,7 @@ def test_second_replacement_requires_selection_of_the_installed_predecessor(
     preview = hidden(value.browser.get(value.url), "preview")
     response = post(value.browser, value.url, {"action": "confirm", "preview": preview})
     row = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert read_private(value.installer.files.path) == CANDIDATE
     assert (
@@ -431,7 +431,7 @@ def test_pending_replacement_does_not_permanently_reject_selection_intent(
     preview = hidden(value.browser.get(value.url), "preview")
     response = post(value.browser, value.url, {"action": "confirm", "preview": preview})
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
 
     def held(*args):
@@ -527,10 +527,10 @@ def test_another_admin_can_select_with_own_preview_but_not_replay_original(
     assert response.status_code == 302, response.content
     assert (
         b"Switching to it now"
-        in browser.get("/admin/configuration/integrations/parishsoft").content
+        in browser.get("/admin/system/integrations/parishsoft/").content
     )
     row = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     assert row.actor_id != value.row.requested_by_id
     request.getfixturevalue("config_role")

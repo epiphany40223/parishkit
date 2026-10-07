@@ -120,7 +120,7 @@ still the design record for preparation and disposal),
    configuration change may be pending. Then start the full refresh with
    **Refresh now** on the home page and wait for it to finish. **Refresh now**
    is the full ParishSoft refresh: the home page link opens the **Refresh from
-   ParishSoft** page (`/admin/source/refresh`), and that page's **Refresh
+   ParishSoft** page (`/admin/parish/parishsoft-refresh/`), and that page's **Refresh
    now** button starts it. Reviewing and checking readiness change nothing;
    only **Start Testing cleanup** in step 4 acts.
 3. **Administrator: check readiness and read the impact.** Choose **Check
@@ -391,7 +391,7 @@ resolves after a refresh gets through the cleanup without a skip.
    [Replacing a provider credential](#replacing-a-provider-credential) below
    describes. The organization ID itself cannot change after the first load.
 3. When the provider is back, use **Refresh now** on the home page
-   (`/admin/source/refresh`) rather than waiting for the next scheduled run.
+   (`/admin/parish/parishsoft-refresh/`) rather than waiting for the next scheduled run.
 
 **It is over when:** the refresh completes and the incident resolves. Data
 entered by Families during the outage was never at risk: submissions are
@@ -426,7 +426,7 @@ until the drop is explained.
 
 4. Wait until the full refresh that **Refresh now** started has completed.
    Its progress page (where **Refresh now** takes you) shows it finished,
-   and on `/admin/source/refresh` the "last full refresh" time ("ParishSoft
+   and on `/admin/parish/parishsoft-refresh/` the "last full refresh" time ("ParishSoft
    data as of", when no quick update brought newer changes) moves past the
    moment you clicked, with no "A full refresh is running now". A 15-minute update that completes first is not enough: later
    refreshes also compare with the last full refresh, so removing the
@@ -451,7 +451,7 @@ server step is needed; the
 describes the design.
 
 1. Sign in with Google within the last five minutes, open **Integrations**,
-   then the provider's page (`/admin/configuration/integrations/<target>`).
+   then the provider's page (`/admin/system/integrations/<target>/`).
    Paste the new key in its field and select **Save**. The key is sealed at
    once and never shown again.
 2. The page follows the change: "Checking and installing the new key", then
@@ -503,7 +503,7 @@ only for the current Production campaign.
       **Retry failed mail preparation** there and wait for **Initial campaign
       mail preparation complete**. A report preparation that has *failed* never
       reaches its safe point by itself: find the failed daily or weekly
-      report task on the Background work page (`/admin/background`; the
+      report task on the Background work page (`/admin/system/background/`; the
       home page lists only the latest five failures of the past day), fix
       its cause (usually ParishSoft
       availability), choose **Retry report work** on the task's page, and
