@@ -75,13 +75,13 @@ LONG_PARAGRAPH_ALLOWED = {
 HEADER_END = re.compile(
     r"<(?:form|table|section|dl|ul|ol|div|fieldset|aside)\b|{% include "
 )
-NOTICE = re.compile(r'<p\b[^>]*\bclass="[^"]*\bnotice\b[^"]*"[^>]*>.*?</p>', re.S)
+# The notice class as a whole class name: "notice-error" alone is not one.
+NOTICE_CLASS = r'\bclass="(?:[^"]*\s)?notice(?=[\s"])[^"]*"'
+NOTICE = re.compile(r"<p\b[^>]*" + NOTICE_CLASS + r"[^>]*>.*?</p>", re.S)
 # A notice block (a <div class="notice"> holding paragraphs) is skipped like
 # a notice paragraph. It must not end the introduction: a page that opens with
 # one would otherwise hide every help paragraph after it from this scan.
-NOTICE_BLOCK = re.compile(
-    r'<div\b[^>]*\bclass="[^"]*\bnotice\b[^"]*"[^>]*>.*?</div>', re.S
-)
+NOTICE_BLOCK = re.compile(r"<div\b[^>]*" + NOTICE_CLASS + r"[^>]*>.*?</div>", re.S)
 LINK = re.compile(r"<a\b.*?</a>", re.S)
 # About one line of visible introductory help.
 INTRO_WORDS = 15
@@ -355,6 +355,9 @@ def test_the_intro_guard_catches_what_it_describes(tmp_path, monkeypatch):
         "notice-block.html": '<h1>T</h1><div class="notice" role="alert">'
         + lead
         + "</div><form></form>",
+        "not-a-notice.html": '<h1>T</h1><p class="notice-error">'
+        + lead[3:-4]
+        + "</p><form></form>",
         "after-notice-block.html": '<h1>T</h1><div class="notice">'
         + lead
         + "</div>"
@@ -374,5 +377,7 @@ def test_the_intro_guard_catches_what_it_describes(tmp_path, monkeypatch):
         assert visible_intro_words(page) == 0, page
     # A notice block is skipped, but does not end the introduction.
     assert visible_intro_words("after-notice-block.html") > INTRO_WORDS
+    # Only the whole class name "notice" marks a notice.
+    assert visible_intro_words("not-a-notice.html") > INTRO_WORDS
     # A value is not words of help; the words around it still count.
     assert visible_intro_words("data-line.html") == 2

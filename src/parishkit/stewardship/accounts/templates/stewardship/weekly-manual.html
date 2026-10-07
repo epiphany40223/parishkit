@@ -13,7 +13,7 @@
 <p>{% translate "Check Background work and Outgoing mail, then open this page again." %}</p></div>
 {% endif %}
 {% if form %}
-<p class="notice">{% translate "This is a new, separately audited report—not a retry of a previous email. It may repeat previously reported information and does not replace the regularly scheduled weekly digest." %}</p>
+<p class="notice">{% translate "This is a new, separately audited report—not a retry of a previous email. It may repeat previously reported information and does not replace the regularly scheduled weekly digest." %} {% translate "Each current Administrator receives their own email." %}</p>
 <p class="help">{% translate "Resolve any unfinished weekly delivery first." %}</p>
 {% if mode == 'testing' %}<p class="notice">{% translate "Testing mode: live-only request selection excludes rehearsal answers. Any resulting email is routed only to the configured Testing recipient." %}</p>{% endif %}
 <form method="post" class="panel">{% csrf_token %}
