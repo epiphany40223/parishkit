@@ -18,6 +18,7 @@ from parishkit.stewardship.observability import (
     correlation,
     debug_swallowed,
     emit,
+    emit_started,
     redact_secrets,
     request_secrets,
 )
@@ -42,6 +43,39 @@ def test_events_keep_safe_context_and_utc(caplog, level):
     assert datetime.fromisoformat(payload["timestamp"]).utcoffset() == UTC.utcoffset(
         None
     )
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("1", [("startup_validated", "INFO"), ("debug_logging_enabled", "WARNING")]),
+        ("0", [("startup_validated", "INFO")]),
+        (None, [("startup_validated", "INFO")]),
+    ],
+)
+def test_a_start_with_debug_logging_on_is_logged_as_a_warning(
+    caplog, monkeypatch, value, expected
+):
+    """Only a process started with the switch exactly "1" logs it (#546)."""
+    if value is None:
+        monkeypatch.delenv(DEBUG_LOGGING_VARIABLE, raising=False)
+    else:
+        monkeypatch.setenv(DEBUG_LOGGING_VARIABLE, value)
+    with caplog.at_level(logging.DEBUG, logger="parishkit.stewardship"):
+        emit_started()
+    lines = [json.loads(SafeJsonFormatter().format(r)) for r in caplog.records]
+    assert [(line["message"], line["level"]) for line in lines] == expected
+
+
+def test_every_service_start_goes_through_emit_started():
+    """The web, background and installer starts all report debug logging."""
+    from pathlib import Path
+
+    from parishkit.stewardship import runtime_process
+
+    text = Path(runtime_process.__file__).read_text(encoding="utf-8")
+    assert "Event.STARTUP_VALIDATED" not in text
+    assert text.count("emit_started()") >= 4
 
 
 def test_source_loss_detail_is_logged_only_as_closed_counts(caplog):

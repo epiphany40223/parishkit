@@ -20,8 +20,8 @@ from .deployment import DeploymentProfile, ServiceRole, load_deployment
 from .observability import (
     Event,
     configure_logging,
-    emit,
     emit_failure,
+    emit_started,
     installer_request,
 )
 from .probe import MAX_AGE_SECONDS as PROBE_MAX_AGE
@@ -181,7 +181,7 @@ def load_web_application(configuration, lease):
             from django.contrib.staticfiles.handlers import StaticFilesHandler
 
             application = StaticFilesHandler(application)
-        emit(Event.STARTUP_VALIDATED)
+        emit_started()
         return application
     except Exception:
         raise ConfigError(
@@ -485,7 +485,7 @@ def serve_installer_loop(run_once, lease, *, pending=None, status=None):
             if status is not None:
                 status.report(connect=True)
 
-        emit(Event.STARTUP_VALIDATED)
+        emit_started()
         heartbeat()
         bounded_loop(
             run_once,
@@ -855,7 +855,7 @@ def serve_background(configuration, lease, *, source=False, mail=False):
             # The main process owns the container's receipts and rotation
             # acknowledgement; both processes load the same mounts at
             # container start and are only ever recreated together.
-            emit(Event.STARTUP_VALIDATED)
+            emit_started()
             return serve_consumer(
                 assembled.broker,
                 lease=lease,
@@ -864,7 +864,7 @@ def serve_background(configuration, lease, *, source=False, mail=False):
                 idle=idle_status,
             )
         publish_single_process_receipts(configuration, assembled.receipts)
-        emit(Event.STARTUP_VALIDATED)
+        emit_started()
         if configuration.service_role in {
             ServiceRole.WORKER,
             ServiceRole.MAIL_DISPATCH,

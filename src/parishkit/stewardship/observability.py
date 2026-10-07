@@ -29,6 +29,11 @@ class Event(StrEnum):
     # log only. A wait that runs out is a task_timed_out line instead.
     STARTUP_WAITING = "startup_waiting"
     STARTUP_WAIT_ENDED = "startup_wait_ended"
+    # A process started with debug logging on (#546): its lines keep free
+    # text and tracebacks, which can hold personal data. Logged at WARNING
+    # next to startup_validated, fixed text only; the System health page's
+    # debug logging panel is where an Administrator sees it (ADM-13).
+    DEBUG_LOGGING_ENABLED = "debug_logging_enabled"
     REQUEST_COMPLETED = "request_completed"
     REPORT_AUDIT_FAILED = "report_audit_failed"
     REPORT_SHAPING_FAILED = "report_shaping_failed"
@@ -560,6 +565,19 @@ def debug_logging_enabled() -> bool:
     data only; it is off unless the variable is exactly "1".
     """
     return os.environ.get(DEBUG_LOGGING_VARIABLE) == "1"
+
+
+def emit_started() -> None:
+    """Log that a process passed its startup checks, and its debug logging.
+
+    The ``startup_validated`` line, followed, only while debug logging is on,
+    by a WARNING ``debug_logging_enabled`` line (#546), so someone reading
+    the logs or a log alert sees that this process's lines can hold personal
+    data. The event is its whole detail: it carries no free text.
+    """
+    emit(Event.STARTUP_VALIDATED)
+    if debug_logging_enabled():
+        emit(Event.DEBUG_LOGGING_ENABLED, level=logging.WARNING)
 
 
 def debug_swallowed(message: str) -> None:

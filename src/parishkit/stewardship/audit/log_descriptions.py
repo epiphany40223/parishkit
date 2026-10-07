@@ -187,6 +187,15 @@ DESCRIPTIONS = {
         "database answers; if the limit runs out, a timeout entry follows and "
         "the service restarts."
     ),
+    # Process log only (#546); System health's debug logging panel shows
+    # the same state for every running service.
+    "debug_logging_enabled": _(
+        "A service started with debug logging on, so its log lines keep "
+        "free text and error details that can hold personal data. It keeps "
+        "running this way until it is restarted without debug logging. In "
+        "Production, turn it off: see the debug logging panel on System "
+        "health."
+    ),
     "startup_wait_ended": _(
         "The database answered a starting service that had been waiting for "
         "it; the detail says how many seconds the service waited. Nothing "
