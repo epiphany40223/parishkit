@@ -53,7 +53,10 @@ def test_security_events_are_prominent_accessible_and_acknowledgeable(
     assert (
         forms.nth(0)
         .get_attribute("action")
-        .endswith("/security-events/00000000-0000-0000-0000-000000000001/acknowledge")
+        .endswith(
+            "/security-events/00000000-0000-0000-0000-000000000001/acknowledge"
+            "#security-events"
+        )
     )
     assert forms.nth(0).locator("input[name=csrfmiddlewaretoken]").count() == 1
     buttons.first.focus()

@@ -96,6 +96,7 @@ from .pause_components import components as pause_components
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .response_list_components import components as response_list_components
+from .security_components import POSTS as SECURITY_POSTS
 from .security_components import components as security_components
 from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
@@ -1888,6 +1889,7 @@ def component_origin():
         | FOLLOWUP_POSTS
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS
+        | SECURITY_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
