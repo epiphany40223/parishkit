@@ -348,7 +348,7 @@ def test_concurrent_restore_decisions_cannot_overwrite_review(tmp_path):
                 correlation_id=uuid4(),
                 admit=admit_test_work,
             )
-            for state in ("assumed_delivered", "not_applicable")
+            for state in ("assumed_delivered", "resend_authorized")
         ]
     )
     assert results.count("retry") == 1

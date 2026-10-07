@@ -336,7 +336,7 @@ def test_digest_coverage_and_restore_holds_survive_restart_and_resolution(
         resolve_restore_hold(
             hold_id=hold.pk,
             expected_version=hold.version,
-            state="not_applicable",
+            state="resend_authorized",
             evidence="Synthetic inventory correction",
             actor_id=actor,
             correlation_id=uuid4(),
