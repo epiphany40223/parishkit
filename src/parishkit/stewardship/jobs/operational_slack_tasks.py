@@ -18,8 +18,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .dispatch import Handler, RecoveryPlan
 from .family_mail_delivery_tasks import preparation_attempts
 from .family_mail_dispatch import MAX_ATTEMPTS, FamilyDeliveryHeld, retry_delay
-from .models import TaskRun
-from .operational_models import OperationalNotice
+from .operational_models import OperationalNotice, unowned_notices
 from .operational_slack_storage import (
     TASK_TYPE,
     begin_submission,
@@ -54,15 +53,7 @@ def produce_slack(guard):
         runtime = SystemConfiguration.objects.first()
         if runtime is None or not configured_channel(runtime):
             return ()
-        pending = (
-            OperationalNotice.objects.exclude(
-                pk__in=TaskRun.objects.filter(task_type=TASK_TYPE).values(
-                    "domain_request_id"
-                )
-            )
-            .order_by("created_at", "pk")
-            .values_list("pk", flat=True)[:NOTICE_BATCH]
-        )
+        pending = unowned_notices(TASK_TYPE)[:NOTICE_BATCH]
         return tuple(
             enqueue(
                 task_type=TASK_TYPE,

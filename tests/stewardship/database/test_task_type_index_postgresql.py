@@ -3,12 +3,13 @@
 The operational and security producers look for notices or events no Task owns
 yet on every scheduler loop, with an anti-join on Tasks of one type in any
 state. Before ``task_type_request`` no index led with ``task_type``, so each
-loop read the whole table (#629). The plans are checked on temporary copies of
-the tables (temporary tables and views are searched before ``public``, and the
-copies keep the real indexes), filled with tens of thousands of settled Tasks
-of other types, as autovacuum would leave them: vacuumed and analyzed.
-Generated identifiers are derived from a fixed name and row number, so runs
-repeat.
+loop read the whole table (#629). The operational intake is a ``NOT EXISTS``
+anti-join, not ``NOT IN``, so it has no hash-memory cliff and no NULL hazard
+(#685). The plans are checked on temporary copies of the tables (temporary
+tables and views are searched before ``public``, and the copies keep the real
+indexes), filled with tens of thousands of settled Tasks of other types, as
+autovacuum would leave them: vacuumed and analyzed. Generated identifiers are
+derived from a fixed name and row number, so runs repeat.
 """
 
 import json
@@ -19,6 +20,7 @@ from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.jobs import operational_owner, security_owner
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.operational_models import unowned_notices
 
 TABLES = (
     "stewardship_task_run",
@@ -162,6 +164,38 @@ def task_scans(cursor, statement, params):
     return found, plan
 
 
+def anti_join_without_subplan(plan):
+    """Whether the plan anti-joins the Task table and runs no sub-plan.
+
+    ``NOT IN`` runs as a (hashed) sub-plan, which falls back to rescanning the
+    owned list per row once it outgrows hash memory; ``NOT EXISTS`` becomes a
+    hash or nested-loop anti-join, which has no such cliff (#685).
+    """
+    nodes = []
+
+    def walk(node):
+        """Flatten the plan tree."""
+        nodes.append(node)
+        for child in node.get("Plans", []):
+            walk(child)
+
+    walk(plan)
+    return any(
+        node.get("Join Type") in ("Anti", "Right Anti") for node in nodes
+    ) and not any(node.get("Parent Relationship") == "SubPlan" for node in nodes)
+
+
+def only_index_reads(scans, index):
+    """Whether every Task read is an index-only scan of ``index`` that discards
+    nothing: no Task of another type and no heap page is read, whether the
+    planner probes once per notice or reads the type's entries once.
+    """
+    return bool(scans) and all(
+        (kind, name, removed) == ("Index Only Scan", index, 0)
+        for kind, name, _, removed in scans
+    )
+
+
 def producer_scans(cursor, pending):
     """Run a producer's real ``_pending(25)``; plan the Task query it sent."""
     with CaptureQueriesContext(connection) as captured:
@@ -175,13 +209,23 @@ def producer_scans(cursor, pending):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_unowned_notice_lookup_reads_one_task_type_through_the_index(copies):
-    """The real producer query reads only its own type's index entries."""
+def test_unowned_notice_lookup_is_an_index_anti_join(copies):
+    """The real email producer query anti-joins through the index (#685)."""
     cursor, index = copies
     scans, plan = producer_scans(cursor, operational_owner._pending)
-    # One index-only scan of the operational_prepare entries: no Task of
-    # another type is read, and no heap page is visited.
-    assert scans == [("Index Only Scan", index, NOTICES, 0)], json.dumps(plan)
+    assert anti_join_without_subplan(plan), json.dumps(plan)
+    assert only_index_reads(scans, index), json.dumps(plan)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("kind", ["operational_prepare", "operational_slack"])
+def test_both_operational_intakes_are_index_anti_joins(copies, kind):
+    """The shared intake, which the email and Slack producers both slice."""
+    cursor, index = copies
+    statement, params = unowned_notices(kind)[:25].query.sql_with_params()
+    scans, plan = task_scans(cursor, statement, params)
+    assert anti_join_without_subplan(plan), json.dumps(plan)
+    assert only_index_reads(scans, index), json.dumps(plan)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -193,11 +237,7 @@ def test_unowned_security_event_lookup_uses_the_index(copies):
     """
     cursor, index = copies
     scans, plan = producer_scans(cursor, security_owner._pending)
-    assert scans, json.dumps(plan)
-    assert all(
-        (kind, name, removed) == ("Index Only Scan", index, 0)
-        for kind, name, _, removed in scans
-    ), json.dumps(plan)
+    assert only_index_reads(scans, index), json.dumps(plan)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -214,6 +254,42 @@ def test_unowned_notice_is_still_found(copies):
     cursor.execute("SELECT md5('pk641-new')::uuid")
     (new,) = cursor.fetchone()
     assert operational_owner._pending(25) == (new,)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_task_without_a_domain_request_hides_no_notice(copies):
+    """A NULL domain request owns nothing; under NOT IN it hid every notice.
+
+    Admission never writes such an operational Task, but the intake must not
+    depend on that: with ``exclude(pk__in=...)`` one NULL made the whole
+    ``NOT IN`` unknown, so no notice was ever allocated again (#685).
+    """
+    cursor, _ = copies
+    cursor.execute(
+        TASK_INSERT.format(
+            id="md5('pk685-null-'||k||n)::uuid",
+            type="k",
+            key="NULL",
+            request="NULL",
+        ).replace(
+            "FROM generate_series(1,%s) n",
+            "FROM generate_series(1,%s) n,"
+            " unnest(ARRAY['operational_prepare','operational_slack']) k",
+        ),
+        [1],
+    )
+    cursor.execute(
+        "INSERT INTO pg_temp.stewardship_ops_notice (id,created_at,"
+        "correlation_id,incident_id,incident_version,phase,level,first_seen,"
+        "observed_at,occurrences) SELECT md5('pk685-new')::uuid,"
+        "'2000-01-01T00:00:00Z',md5('pk685-new')::uuid,md5('pk685-i0')::uuid,"
+        "1,'opened','CRITICAL',statement_timestamp(),statement_timestamp(),1"
+    )
+    cursor.execute("SELECT md5('pk685-new')::uuid")
+    (new,) = cursor.fetchone()
+    assert operational_owner._pending(25) == (new,)
+    for kind in ("operational_prepare", "operational_slack"):
+        assert tuple(unowned_notices(kind)[:25]) == (new,)
 
 
 @pytest.mark.django_db(transaction=True)
