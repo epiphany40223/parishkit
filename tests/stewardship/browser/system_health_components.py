@@ -8,6 +8,7 @@ from parishkit.stewardship.accounts.system_health_views import POLL_MILLISECONDS
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
+    BackupRequestStatus,
     DropCount,
     SystemHealth,
     find_problems,
@@ -110,6 +111,19 @@ def health(now, *, troubled, backup_at=None):
         else (),
         backup_at=backup_at or now - timedelta(hours=13),
         backup_key_matches=True,
+        backup_bytes=48 * 1024 * 1024,
+        backup_version="1.4.2",
+        backup_request=BackupRequestStatus(
+            state="waiting",
+            status="held",
+            created_at=now - timedelta(minutes=12),
+            held_at=now - timedelta(minutes=2),
+            claimed_at=None,
+            finished_at=None,
+            failure_kind=None,
+        )
+        if troubled
+        else None,
         offsite=None,
     )
 

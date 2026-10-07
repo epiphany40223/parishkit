@@ -24,6 +24,7 @@ from parishkit.stewardship.jobs.task_reads import task_metadata
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
+    BackupRequestStatus,
     DropCount,
     Problem,
     SystemHealth,
@@ -478,6 +479,17 @@ def system_health():
         refused_counts=(DropCount("family", 1084, 612, 25, True),),
         backup_at=NOW,
         backup_key_matches=True,
+        backup_bytes=2048,
+        backup_version="1.4.2",
+        backup_request=BackupRequestStatus(
+            state="waiting",
+            status="held",
+            created_at=NOW,
+            held_at=NOW,
+            claimed_at=None,
+            finished_at=None,
+            failure_kind=None,
+        ),
         offsite=SimpleNamespace(
             kind="uploaded", message="Copied.", at=NOW, last_copy_at=NOW
         ),
@@ -658,6 +670,17 @@ GOLDEN = {
             ],
             "backup_at": iso(NOW),
             "backup_key_matches": True,
+            "backup_bytes": 2048,
+            "backup_version": "1.4.2",
+            "backup_request": {
+                "state": "waiting",
+                "status": "held",
+                "created_at": iso(NOW),
+                "held_at": iso(NOW),
+                "claimed_at": None,
+                "finished_at": None,
+                "failure_kind": None,
+            },
             "offsite": {
                 "state": "uploaded",
                 "at": iso(NOW),
@@ -931,6 +954,15 @@ ALLOWED = {
         "failed",
         "backup_at",
         "backup_key_matches",
+        "backup_bytes",
+        "backup_version",
+        "backup_request",
+        "status",
+        "created_at",
+        "held_at",
+        "claimed_at",
+        "finished_at",
+        "failure_kind",
         "offsite",
         "state",
         "last_copy_at",

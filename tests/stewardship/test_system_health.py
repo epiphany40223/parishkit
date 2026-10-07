@@ -213,6 +213,9 @@ def health(**values):
             "refused_counts": (),
             "backup_at": NOW,
             "backup_key_matches": True,
+            "backup_bytes": 3 * 1024 * 1024,
+            "backup_version": "1.4.2",
+            "backup_request": None,
             "offsite": None,
         }
         | values
@@ -380,7 +383,7 @@ def test_an_unreadable_configured_backup_key_is_unavailable(monkeypatch):
     from parishkit.stewardship.accounts import backup_key
     from parishkit.stewardship.jobs.backup_models import BackupRun
 
-    newest = SimpleNamespace(first=lambda: (NOW, "0123456789abcdef"))
+    newest = SimpleNamespace(first=lambda: (NOW, "0123456789abcdef", 1, 2, "1.4.2"))
     monkeypatch.setattr(
         BackupRun,
         "objects",
@@ -395,3 +398,78 @@ def test_an_unreadable_configured_backup_key_is_unavailable(monkeypatch):
     )
     with pytest.raises(ConfigError):
         system_health._backup(object())
+
+
+def test_a_requested_backup_reads_as_the_page_words_it():
+    """Request mode's lapse rules apply on the page before the next poll."""
+    from parishkit.stewardship.system_health import (
+        BackupRequestStatus,
+        request_status,
+    )
+
+    def status(state, *, age=0, held=None, claimed=None, done=None, kind=None):
+        """The status of a request made ``age`` minutes before NOW."""
+
+        def ago(minutes):
+            """An instant ``minutes`` before NOW, or None."""
+            return None if minutes is None else NOW - timedelta(minutes=minutes)
+
+        return request_status(
+            {
+                "state": state,
+                "created_at": ago(age),
+                "held_at": ago(held),
+                "claimed_at": ago(claimed),
+                "finished_at": ago(done),
+                "failure_kind": kind,
+            },
+            NOW,
+        )
+
+    assert status("waiting", age=5) == "waiting"
+    assert status("waiting", age=40, held=2) == "held"
+    assert status("waiting", age=31) == "not_picked_up"
+    assert status("waiting", age=90, held=35) == "not_picked_up"
+    assert status("running", age=10, claimed=9) == "running"
+    assert status("running", age=200, claimed=121) == "did_not_finish"
+    for state in ("finished", "failed"):
+        assert status(state, age=5, claimed=4, done=1) == state
+    assert status("failed", age=300, kind="did_not_finish") == "did_not_finish"
+    # Expired by request mode after its 30 minutes, or by a restore (as of
+    # its own creation).
+    assert status("expired", age=40, done=5) == "not_picked_up"
+    assert status("expired", age=40, done=40) == "restored"
+    for code, words in (
+        ("waiting", "is waiting for the server"),
+        ("held", "is waiting for the email send to finish"),
+        ("not_picked_up", "The server did not pick up the backup requested at"),
+        ("running", "is running; it started at"),
+        ("did_not_finish", "did not finish."),
+        ("failed", "failed. Ask the server operator"),
+        ("finished", "finished at"),
+        ("restored", "was never run: the system was restored"),
+    ):
+        request = BackupRequestStatus(
+            state="waiting",
+            status=code,
+            created_at=NOW,
+            held_at=None,
+            claimed_at=NOW,
+            finished_at=NOW,
+            failure_kind=None,
+        )
+        body = render_to_string(
+            "stewardship/system-health-status.html",
+            {
+                "health": health(backup_request=request),
+                "pause": None,
+                "poll_interval": 10000,
+            },
+        )
+        assert words in body, code
+        assert f'data-backup-request="{code}"' in body
+    body = render_to_string(
+        "stewardship/system-health-status.html",
+        {"health": health(), "pause": None, "poll_interval": 10000},
+    )
+    assert "Its size is 3.0" in body and "taken by version 1.4.2" in body

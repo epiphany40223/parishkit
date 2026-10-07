@@ -257,6 +257,25 @@ def test_grants_wait_for_the_operational_log_writer_guard(installed):
         # A column-level write beyond the registry is refused the same way.
         ((True,), [], [("public", "stewardship_campaign", "name", "UPDATE")], False),
         ((True,), [], [("public", "stewardship_backup_run", "id", "INSERT")], True),
+        # Its column grants admit exactly those column writes (request mode).
+        (
+            (True,),
+            [],
+            [("public", "stewardship_backup_request", "state", "UPDATE")],
+            True,
+        ),
+        (
+            (True,),
+            [],
+            [("public", "stewardship_backup_request", "actor_id", "UPDATE")],
+            False,
+        ),
+        (
+            (True,),
+            [],
+            [("public", "stewardship_backup_request", "state", "INSERT")],
+            False,
+        ),
     ],
 )
 def test_reader_admission_requires_membership_and_only_its_writes(
@@ -267,11 +286,13 @@ def test_reader_admission_requires_membership_and_only_its_writes(
     sweeps = iter([privileges, columns])
     cursor.fetchall = lambda: next(sweeps)
     tables = {"stewardship_backup_run": {"SELECT", "INSERT"}}
+    granted = {"stewardship_backup_request": {"UPDATE": {"state", "held_at"}}}
+    login = "pk_stewardship_backup_worker"
     if accepted:
-        provisioning._admit_reader(cursor, "pk_stewardship_backup_worker", tables)
+        provisioning._admit_reader(cursor, login, tables, granted)
     else:
         with pytest.raises(ConfigError):
-            provisioning._admit_reader(cursor, "pk_stewardship_backup_worker", tables)
+            provisioning._admit_reader(cursor, login, tables, granted)
 
 
 def test_operator_connection_uses_separate_password_argument(tmp_path, monkeypatch):
