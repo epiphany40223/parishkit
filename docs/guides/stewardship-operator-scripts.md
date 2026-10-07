@@ -51,10 +51,13 @@ A refusal or failure exits with 1, a usage error with 2, and Ctrl-C with
   the pull request named with it.
 - [`tools/stewardship-ops/release.sh`](../../tools/stewardship-ops/release.sh)
   publishes a release once its version bump has merged. It checks the
-  version on main's head, gets the successful `workflow_dispatch` CI run on
-  exactly that commit that `release.yml` requires (the run you name, or one
-  it dispatches with all jobs; both accept only a run named
-  `CI (jobs: all)`), pushes the annotated tag after you type its name, and
+  version on main's head, finds the full CI run that `release.yml` will
+  accept as its
+  [release evidence](stewardship-test-efficiency.md#release-evidence) (a
+  `CI (jobs: all)` run on the same tree, or one differing only in
+  documentation: the run you name, an existing one such as the nightly train
+  head's, or, when none passed or is running, one it dispatches with all
+  jobs), pushes the annotated tag after you type its name, and
   prints the published image digest for the
   [scripted upgrade](stewardship-deployment-runbook.md#scripted-upgrade).
   Pushing a release tag needs a human's explicit authorization; running

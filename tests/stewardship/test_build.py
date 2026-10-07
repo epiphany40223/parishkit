@@ -218,15 +218,29 @@ def test_release_build_uses_installed_locked_tools():
     assert "build" in locked_requirements("stewardship.txt")
 
 
-def test_release_requires_full_ci_of_the_tagged_commit_before_build():
-    """Releases reuse a dispatched full CI run of the exact tagged commit."""
+GATE = "Require a successful full CI run of the release tree"
+
+
+def release_gate():
+    """The release workflow's evidence step."""
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    (gate,) = [
+        step
+        for step in release["jobs"]["validate-build"]["steps"]
+        if step.get("name") == GATE
+    ]
+    return gate
+
+
+def test_release_requires_full_ci_of_the_release_tree_before_build():
+    """Releases reuse a full CI run of the tagged tree, apart from docs (#662)."""
     ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     # PyYAML reads the bare `on:` key as the boolean true. Pushes to main run
     # light validation only (temporarily); a manual dispatch must run every
     # job by default, or a tagged commit could lack complete evidence; the
     # release gate accepts only a run named "CI (jobs: all)"
-    # (test_release_accepts_only_an_all_jobs_ci_run).
+    # (release_evidence.py and its tests).
     assert ci[True]["push"] == {"branches": ["main"]}
     assert ci[True]["workflow_dispatch"]["inputs"]["jobs"]["default"] == "all"
     for job in ci["jobs"].values():
@@ -241,69 +255,78 @@ def test_release_requires_full_ci_of_the_tagged_commit_before_build():
     assert job["permissions"] == {"actions": "read", "contents": "read"}
     steps = job["steps"]
     names = [step.get("name") for step in steps]
+    checkout = steps[names.index("Check out repository")]
+    # The evidence commit is diffed against the tag, so history is needed.
+    assert checkout["with"]["fetch-depth"] == 0
     tag = steps[names.index("Validate release tag")]
     assert tag["id"] == "tag"
     assert 'echo "commit=${release_commit}" >> "$GITHUB_OUTPUT"' in tag["run"]
-    gate = steps[names.index("Require the release commit's successful full CI run")]
+    gate = steps[names.index(GATE)]
+    assert gate["id"] == "evidence"
     assert gate["env"]["RELEASE_COMMIT"] == "${{ steps.tag.outputs.commit }}"
-    for fragment in (
-        "--workflow ci.yml",
-        "--event workflow_dispatch",
-        '--commit "${RELEASE_COMMIT}"',
-        '"completed success")',
-    ):
-        assert fragment in gate["run"]
+    # The workflow asks the shared rule itself; release.sh is not trusted.
+    assert "python tools/stewardship-ops/release_evidence.py select" in gate["run"]
+    assert '--commit "${RELEASE_COMMIT}"' in gate["run"]
+    # A docs-only difference reruns the documentation checks on the tagged
+    # tree (#662): Markdown lint and every test file that reads guides or
+    # specs, without a database.
+    docs = steps[names.index("Check the documentation the evidence run did not see")]
+    assert docs["id"] == "docs"
+    assert docs["if"] == "${{ steps.evidence.outputs.docs != '0' }}"
+    assert (
+        "pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')"
+        in (docs["run"])
+    )
+    assert "release_evidence.py docs-tests" in docs["run"]
+    assert "python -m pytest ${docs_tests}" in docs["run"]
+    assert (
+        names.index(GATE) < names.index(docs["name"]) < names.index("Build artifacts")
+    )
+    notes = steps[names.index("Generate release notes")]
+    assert notes["env"]["DOCS_CHECKS"] == "${{ steps.docs.outputs.checks }}"
+    assert notes["env"]["EVIDENCE_RUN"] == "${{ steps.evidence.outputs.run }}"
+    assert notes["env"]["EVIDENCE_COMMIT"] == "${{ steps.evidence.outputs.commit }}"
+    assert "Release evidence: full CI run" in notes["run"]
     assert (
         names.index("Validate release tag")
-        < names.index("Require the release commit's successful full CI run")
+        < names.index(GATE)
         < names.index("Build artifacts")
+        < names.index("Generate release notes")
     )
 
 
 @pytest.mark.parametrize(
-    "state,code,message",
+    "selection,code,message",
     [
-        ("partial", 1, "is not named 'CI (jobs: all)'"),
-        ("completed success", 0, "Full CI passed"),
-        ("completed failure", 1, "did not pass"),
+        ("", 1, "No full CI run exists"),
+        ("77\tcompleted\tsuccess\tabc000\t2", 0, "Full CI run 77 passed on abc000"),
+        ("77\tcompleted\tfailure\tabc000\t0", 1, "did not pass (failure)"),
+        ("77\tcompleted\tcancelled\tabc000\t0", 1, "did not pass (cancelled)"),
+        ("77\tunreadable\tsuccess\tabc000\t0", 1, "cannot be fetched"),
     ],
 )
-def test_release_accepts_only_an_all_jobs_ci_run(state, code, message):
-    """Only an all-jobs dispatch is evidence; anything else is refused.
+def test_release_gate_acts_on_the_deciding_run(tmp_path, selection, code, message):
+    """The workflow passes only on a completed, successful deciding run.
 
-    ci.yml names dispatched runs "CI (jobs: <selection>)"; the release gate
-    accepts only the exact "CI (jobs: all)" name and maps any other run to
-    "partial", which it refuses. A shell function stands in for gh (the
-    query itself is pinned textually): the Compose test container mounts
-    /tmp noexec, so a stand-in executable there could not run.
+    release_evidence.py (tested in test_release_evidence.py) names the
+    deciding run; a shell function stands in for it here, and the real step
+    text runs unchanged after it. The Compose test container mounts /tmp
+    noexec, so a stand-in executable there could not run; sleep is stubbed
+    so the empty case's retries are instant.
     """
-    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-    assert ci["run-name"] == (
-        "${{ github.event_name == 'workflow_dispatch' && "
-        "format('CI (jobs: {0})', inputs.jobs) || '' }}"
+    script = (
+        'python() { printf "%b\\n" "$FAKE_SELECTION"; }\n'
+        "sleep() { :; }\n" + release_gate()["run"]
     )
-    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
-    steps = release["jobs"]["validate-build"]["steps"]
-    (gate,) = [
-        step
-        for step in steps
-        if step.get("name") == "Require the release commit's successful full CI run"
-    ]
-    assert "--json status,conclusion,displayTitle" in gate["run"]
-    assert (
-        'if .displayTitle == "CI (jobs: all)" then "\\(.status) \\(.conclusion)" '
-        'else "partial" end' in gate["run"]
-    )
-    # A function takes precedence over any gh on PATH; the real step text
-    # runs unchanged after it.
-    script = 'gh() { printf "%s\\n" "$FAKE_STATE"; }\n' + gate["run"]
+    output = tmp_path / "output"
     result = subprocess.run(
         ["bash", "-e", "-c", script],
         env={
             "PATH": os.environ["PATH"],
-            "FAKE_STATE": state,
+            "FAKE_SELECTION": selection,
             "RELEASE_COMMIT": "abc123",
             "GITHUB_REPOSITORY": "owner/repository",
+            "GITHUB_OUTPUT": str(output),
         },
         capture_output=True,
         text=True,
@@ -311,6 +334,38 @@ def test_release_accepts_only_an_all_jobs_ci_run(state, code, message):
     )
     assert result.returncode == code
     assert message in result.stdout
+    if code == 0:
+        assert output.read_text().splitlines() == [
+            "run=77",
+            "commit=abc000",
+            "docs=2",
+        ]
+
+
+def test_release_gate_waits_for_a_pending_run(tmp_path):
+    """A queued or in-progress deciding run is polled until it completes."""
+    counter = tmp_path / "count"
+    script = (
+        "python() {\n"
+        f'  n=$(cat "{counter}" 2>/dev/null || echo 0); echo $((n + 1)) >"{counter}"\n'
+        '  if [ "$n" -lt 2 ]; then printf "7\\tin_progress\\t-\\tabc\\t0\\n"; '
+        'else printf "7\\tcompleted\\tsuccess\\tabc\\t0\\n"; fi\n'
+        "}\nsleep() { :; }\n" + release_gate()["run"]
+    )
+    result = subprocess.run(
+        ["bash", "-e", "-c", script],
+        env={
+            "PATH": os.environ["PATH"],
+            "RELEASE_COMMIT": "abc",
+            "GITHUB_REPOSITORY": "owner/repository",
+            "GITHUB_OUTPUT": str(tmp_path / "output"),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count("in_progress; waiting.") == 2
 
 
 def test_build_lock_is_pinned_and_compatible_with_runtime_lock():

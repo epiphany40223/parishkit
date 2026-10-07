@@ -9,9 +9,10 @@ jobs:
   # CI's full, sharded validation (lint, every PostgreSQL shard with combined
   # coverage floors, migration drift, the container, runtime and browser
   # scenarios) is the release evidence. Rerunning that suite serially here took
-  # over two hours, so the release instead requires a successful full CI run of
-  # the tagged commit (dispatched by hand while main pushes run light CI; see
-  # #158), then packages exactly that commit.
+  # over two hours, so the release instead requires a successful full CI run
+  # (dispatched by hand while main pushes run light CI; see #158) on a tree
+  # identical to the tagged commit's apart from docs-safe paths (#662), then
+  # packages exactly the tagged commit.
   validate-build:
     runs-on: ubuntu-latest
     # Covers waiting for a just-merged commit's CI run to finish.
@@ -52,53 +53,80 @@ jobs:
           test "v${version}" = "${GITHUB_REF_NAME}"
           echo "commit=${release_commit}" >> "$GITHUB_OUTPUT"
 
-      - name: Require the release commit's successful full CI run
+      - name: Require a successful full CI run of the release tree
+        id: evidence
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ steps.tag.outputs.commit }}
         run: |
-          # Pushes to main run only light validation for now (issue
-          # #158), so a release needs a manually dispatched full CI run
-          # on exactly this commit: `gh workflow run ci.yml --ref main` while
-          # the tagged commit is main's head. A pull request run tested a
-          # different (pre-merge) commit. Poll while that run is queued or in
-          # progress; refuse a failed run or a commit with no full run. Only a
-          # run named exactly "CI (jobs: all)" (ci.yml's run-name for an
-          # all-jobs dispatch) is evidence: a jobs=affected dispatch may have
-          # skipped job groups (#626).
+          # Pushes to main run only light validation (issue #158), so a
+          # release needs a dispatched full CI run (named exactly "CI (jobs:
+          # all)"; a jobs=affected dispatch may have skipped job groups,
+          # #626) on a commit whose tree is identical to the tagged commit's
+          # or differs only in docs-safe paths (#662): a nightly train head
+          # merged into main in order has main's tree under another SHA.
+          # tools/stewardship-ops/release_evidence.py holds the rule and its
+          # closed allowlist and names the deciding run; this step enforces
+          # it on every tag push, whoever pushed the tag. Poll while that run
+          # is queued or in progress; refuse a failed run, no run, or a newer
+          # full run whose commit this clone cannot fetch (keep a train
+          # branch until this release passes). The script retries gh, limits
+          # each git and gh call, and exits 3 past a limit.
           for attempt in $(seq 1 80); do
-            state="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow ci.yml \
-              --event workflow_dispatch --commit "${RELEASE_COMMIT}" --limit 1 \
-              --json status,conclusion,displayTitle \
-              --jq '.[] | if .displayTitle == "CI (jobs: all)" then "\(.status) \(.conclusion)" else "partial" end')"
-            case "${state}" in
-              partial)
-                echo "::error::The newest dispatched CI run on ${RELEASE_COMMIT} is not named 'CI (jobs: all)'; run gh workflow run ci.yml --ref main (all jobs) while it is main's head, then re-run this release."
+            selection="$(python tools/stewardship-ops/release_evidence.py select \
+              --repo "${GITHUB_REPOSITORY}" --commit "${RELEASE_COMMIT}")"
+            read -r run status conclusion head docs <<<"${selection:-}" || true
+            case "${status:-}" in
+              unreadable)
+                echo "::error::Full CI run ${run} is newer than any qualifying run, but its commit ${head} cannot be fetched (see the log above); restore the branch that holds it, or dispatch a full run on main and re-tag."
                 exit 1 ;;
-              "completed success")
-                echo "Full CI passed for ${RELEASE_COMMIT}."
-                exit 0 ;;
-              completed*)
-                echo "::error::Full CI for ${RELEASE_COMMIT} did not pass (${state}); fix main and tag a passing commit."
+              completed)
+                if test "${conclusion}" = success; then
+                  echo "Full CI run ${run} passed on ${head} (${docs} docs-safe paths differ from ${RELEASE_COMMIT})."
+                  echo "run=${run}" >> "$GITHUB_OUTPUT"
+                  echo "commit=${head}" >> "$GITHUB_OUTPUT"
+                  echo "docs=${docs}" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                echo "::error::Full CI run ${run} on ${head}, the release evidence for ${RELEASE_COMMIT}, did not pass (${conclusion}); fix main and tag a passing commit."
                 exit 1 ;;
               "")
-                # A just-merged commit's run can take a moment to appear.
+                # A just-dispatched run can take a moment to appear.
                 if test "${attempt}" -ge 5; then
-                  echo "::error::No full CI run exists for ${RELEASE_COMMIT}; run gh workflow run ci.yml --ref main while it is main's head, then re-run this release."
+                  echo "::error::No full CI run exists on ${RELEASE_COMMIT} or on a commit whose tree differs from it only in docs-safe paths; run gh workflow run ci.yml --ref main (all jobs) while it is main's head, then re-run this release."
                   exit 1
                 fi ;;
               *)
-                echo "Full CI for ${RELEASE_COMMIT}: ${state}; waiting." ;;
+                echo "Full CI run ${run} on ${head}: ${status}; waiting." ;;
             esac
             sleep 60
           done
-          echo "::error::Timed out waiting for full CI on ${RELEASE_COMMIT}."
+          echo "::error::Timed out waiting for full CI evidence for ${RELEASE_COMMIT}."
           exit 1
+
+      # Documentation is a test input (Markdown lint, traceability and the
+      # contract tests that read guides and specs). When the evidence run's
+      # tree differs from the tagged one, those checks never ran on the
+      # tagged documentation, so run them here, fast and without a database.
+      - name: Check the documentation the evidence run did not see
+        id: docs
+        if: ${{ steps.evidence.outputs.docs != '0' }}
+        run: |
+          # release_evidence.py lists the tests, so release.sh runs the same.
+          docs_tests="$(python tools/stewardship-ops/release_evidence.py docs-tests | tr '\n' ' ')"
+          python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
+          python -m pytest ${docs_tests} --ds=parishkit.stewardship.settings.test -p no:cacheprovider -q
+          echo "checks=pymarkdown on every tracked Markdown file and pytest ${docs_tests}" >> "$GITHUB_OUTPUT"
 
       - name: Build artifacts
         run: python -m build --no-isolation
 
       - name: Generate release notes
+        env:
+          EVIDENCE_RUN: ${{ steps.evidence.outputs.run }}
+          EVIDENCE_COMMIT: ${{ steps.evidence.outputs.commit }}
+          EVIDENCE_DOCS: ${{ steps.evidence.outputs.docs }}
+          DOCS_CHECKS: ${{ steps.docs.outputs.checks }}
         run: |
           if test -f RELEASE_NOTES.md; then
             cp RELEASE_NOTES.md release-notes.md
@@ -106,6 +134,13 @@ jobs:
             python tools/prepare-release.py \
               --version "${GITHUB_REF_NAME#v}" \
               --write-notes release-notes.md
+          fi
+          # Name the evidence, as the release log does (#662).
+          printf '\nRelease evidence: full CI run %s/%s/actions/runs/%s on commit `%s` (%s docs-safe paths differ from the tagged tree).\n' \
+            "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}" "${EVIDENCE_RUN}" \
+            "${EVIDENCE_COMMIT}" "${EVIDENCE_DOCS}" >> release-notes.md
+          if test -n "${DOCS_CHECKS}"; then
+            printf 'Documentation checks on the tagged tree: %s.\n' "${DOCS_CHECKS}" >> release-notes.md
           fi
 
       - name: Upload distributions

@@ -200,10 +200,11 @@ def test_sql_state_literals_are_real_states():
 # (default a success); FAKE_GH_FAIL makes `run view` fail and FAKE_GH_SLEEP
 # makes it hang that many seconds first; FAKE_MERGEABLE is
 # what a pull request answers; FAKE_HEAD, FAKE_EVENT and FAKE_TITLE are a
-# run's commit, event and run name; ci_runs (a file) lists the dispatch CI
-# runs on the commit, newest first, and `workflow run` puts FAKE_NEW_RUN at
-# its top when that is set, as a headSha query puts FAKE_NEWER (a run started
-# meanwhile);
+# run's default commit, event and run name; ci_runs (a file) lists the
+# dispatch CI runs, newest first, one "id[|commit[|run name]]" per line, and
+# `workflow run` puts FAKE_NEW_RUN at its top when that is set, as watching a
+# run puts FAKE_NEWER there (a run started meanwhile); the run list that
+# release_evidence.py reads renders ci_runs as JSON;
 # FAKE_OLD_RELEASE is a release.yml run that always exists, and
 # FAKE_RELEASE_RUN one that exists once the bare remote FAKE_REMOTE holds a
 # tag; a run's log names IMAGE.
@@ -214,6 +215,20 @@ prepend() {{ {{ echo "$1"; cat "$runs"; }} >"$runs.new"; mv "$runs.new" "$runs";
 case "$*" in
     "workflow run"*)
         if [ -n "${{FAKE_NEW_RUN-}}" ]; then prepend "$FAKE_NEW_RUN"; fi ;;
+    "run list"*ci.yml*displayTitle*)
+        IFS='|' read -r st co _ <<<"${{FAKE_RUN_STATE:-completed|success|}}"
+        sep=""
+        printf '['
+        while IFS='|' read -r id rsha title; do
+            [ -n "$id" ] || continue
+            rsha=${{rsha:-$FAKE_HEAD}} title=${{title:-${{FAKE_TITLE-CI (jobs: all)}}}}
+            printf '%s{{"databaseId":%s,"headSha":"%s",' "$sep" "$id" "$rsha"
+            printf '"status":"%s","conclusion":"%s",' "$st" "$co"
+            printf '"displayTitle":"%s","event":"%s"}}' \
+                "$title" "${{FAKE_EVENT:-workflow_dispatch}}"
+            sep=,
+        done <"$runs"
+        echo ']' ;;
     "run list"*release.yml*)
         if [ -n "${{FAKE_RELEASE_RUN-}}" ] &&
             [ -n "$(git --git-dir="$FAKE_REMOTE" tag -l)" ]; then
@@ -222,16 +237,15 @@ case "$*" in
         if [ -n "${{FAKE_OLD_RELEASE-}}" ]; then echo "$FAKE_OLD_RELEASE"; fi ;;
     "run list"*ci.yml*)
         limit=$(printf '%s\n' "$@" | grep -A1 -x -- --limit | tail -n 1)
-        head -n "$limit" "$runs" ;;
+        head -n "$limit" "$runs" | cut -d'|' -f1 ;;
     "run view"*--log*) echo "publish Application image: \`{IMAGE}\`" ;;
     "run view"*status,conclusion,jobs*)
+        if [ -n "${{FAKE_NEWER-}}" ] && ! grep -qx "$FAKE_NEWER" "$runs"; then
+            prepend "$FAKE_NEWER"
+        fi
         if [ -n "${{FAKE_GH_SLEEP-}}" ]; then sleep "$FAKE_GH_SLEEP" >/dev/null 2>&1; fi
         if [ -n "${{FAKE_GH_FAIL-}}" ]; then echo "no such run" >&2; exit 1; fi
         echo "${{FAKE_RUN_STATE:-completed|success|}}" ;;
-    "run view"*headSha,event,conclusion*)
-        if [ -n "${{FAKE_NEWER-}}" ]; then prepend "$FAKE_NEWER"; fi
-        echo "${{FAKE_HEAD-}}|${{FAKE_EVENT:-workflow_dispatch}}|success" ;;
-    "run view"*"--json displayTitle"*) echo "${{FAKE_TITLE-CI (jobs: all)}}" ;;
     "pr view"*) echo "${{FAKE_MERGEABLE:-MERGEABLE}}" ;;
     *) echo "unexpected gh $*" >&2; exit 9 ;;
 esac
@@ -363,7 +377,7 @@ def release_repo(tmp_path, version="1.2.3"):
     git("init", "-q", "-b", "main", str(work), cwd=tmp_path)
     ops = work / "tools" / "stewardship-ops"
     ops.mkdir(parents=True)
-    for name in ("release.sh", "ci-watch.sh", "lib.sh"):
+    for name in ("release.sh", "ci-watch.sh", "lib.sh", "release_evidence.py"):
         shutil.copy(OPS / name, ops / name)
     (work / "pyproject.toml").write_text(f'[project]\nversion = "{version}"\n')
     git("add", "-A", cwd=work)
@@ -379,6 +393,22 @@ def run_release(tmp_path, work, *args, ci_runs="", stdin="", **env):
     import sys
 
     bin_dir = fake_gh(tmp_path, ci_runs)
+    # The documentation checks (`python -m pymarkdown|pytest`) are recorded
+    # and answer FAKE_LINT_STATUS and FAKE_TESTS_STATUS; FAKE_NO_DEV fails
+    # the development-environment import check; everything else runs on the
+    # real interpreter.
+    executable_stub(
+        bin_dir,
+        "python",
+        'case "${1-} ${2-}" in\n'
+        '"-m pymarkdown") echo "python $*" >>"$FAKE_DIR/python.calls"\n'
+        '    exit "${FAKE_LINT_STATUS:-0}" ;;\n'
+        '"-m pytest") echo "python $*" >>"$FAKE_DIR/python.calls"\n'
+        '    exit "${FAKE_TESTS_STATUS:-0}" ;;\n'
+        '"-c import django"*) if [ -n "${FAKE_NO_DEV-}" ]; then exit 1; fi ;;\n'
+        "esac\n"
+        f'exec "{sys.executable}" "$@"',
+    )
     result = subprocess.run(
         ["bash", str(work / "tools" / "stewardship-ops" / "release.sh"), *args],
         env=clean_env(
@@ -387,7 +417,7 @@ def run_release(tmp_path, work, *args, ci_runs="", stdin="", **env):
             **{
                 "FAKE_DIR": str(tmp_path),
                 "FAKE_REMOTE": str(work.parent / "remote.git"),
-                "STEWARDSHIP_PYTHON": sys.executable,
+                "STEWARDSHIP_PYTHON": str(bin_dir / "python"),
                 **GIT_ENV,
                 **env,
             },
@@ -398,6 +428,10 @@ def run_release(tmp_path, work, *args, ci_runs="", stdin="", **env):
         timeout=60,
     )
     return result, lines(tmp_path / "gh.calls")
+
+
+# A commit no repository holds: its run can never be evidence.
+UNKNOWN = "0" * 40
 
 
 def remote_tag(remote, tag):
@@ -474,14 +508,15 @@ def test_release_refuses_an_existing_tag(tmp_path):
 
 
 def test_release_refuses_a_run_release_yml_would_not_check(tmp_path):
-    """The named run must be the newest dispatch CI run on main's head."""
+    """The named run must be the newest full CI run on main's head's tree."""
     work, remote, sha = release_repo(tmp_path)
     result, calls = run_release(
         tmp_path, work, "--yes", "1.2.3", "77", ci_runs="78\n77\n", FAKE_HEAD=sha
     )
     assert result.returncode == 1
-    assert "not the newest workflow_dispatch CI run" in result.stderr
-    assert f"--commit {sha}" in calls[0]
+    assert "is not the full CI run that release.yml will check" in result.stderr
+    assert "(that is '78')" in result.stderr
+    assert "--workflow ci.yml --event workflow_dispatch" in calls[0]
     assert not any("workflow run" in c for c in calls)
     assert remote_tag(remote, "v1.2.3") == ""
 
@@ -507,7 +542,8 @@ def test_release_refuses_a_failed_mismatched_or_superseded_run(tmp_path):
         FAKE_HEAD=sha,
         FAKE_EVENT="push",
     )
-    assert result.returncode == 1 and "/push/success, not" in result.stderr
+    assert result.returncode == 1
+    assert "not the full CI run that release.yml will check" in result.stderr
     result, _ = run_release(
         tmp_path / "newer",
         work,
@@ -516,7 +552,9 @@ def test_release_refuses_a_failed_mismatched_or_superseded_run(tmp_path):
         FAKE_HEAD=sha,
         FAKE_NEWER="80",
     )
-    assert result.returncode == 1 and "A newer CI run (80)" in result.stderr
+    assert result.returncode == 1
+    assert "After the watch, the full CI run release.yml will check" in result.stderr
+    assert "is '80', not 77" in result.stderr
     # Only an all-jobs dispatch is evidence (#626): a jobs=affected run, or
     # one named anything else, is refused before it is watched.
     for n, title in enumerate(("CI (jobs: affected)", "CI", "")):
@@ -529,7 +567,7 @@ def test_release_refuses_a_failed_mismatched_or_superseded_run(tmp_path):
             FAKE_TITLE=title,
         )
         assert result.returncode == 1, title
-        assert "not 'CI (jobs: all)'" in result.stderr
+        assert "not the full CI run that release.yml will check" in result.stderr
         assert not any("status,conclusion,jobs" in c for c in calls)
     result, _ = run_release(
         tmp_path / "slow",
@@ -601,7 +639,7 @@ def test_release_dispatches_and_finds_a_new_run(tmp_path):
         work,
         "--yes",
         "1.2.3",
-        ci_runs="50\n",
+        ci_runs=f"50|{UNKNOWN}\n",
         FAKE_HEAD=sha,
         FAKE_NEW_RUN="51",
         FAKE_RELEASE_RUN="99",
@@ -616,6 +654,150 @@ def test_release_dispatches_and_finds_a_new_run(tmp_path):
     assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
 
 
+def test_release_reuses_a_full_run_on_a_docs_only_different_tree(tmp_path):
+    """A passed full run on a tree that differs only in docs is evidence (#662).
+
+    The tested commit is not main's head (a train head merged in order, then
+    a documentation change): no second full run is dispatched, and a named
+    run id is accepted too.
+    """
+    work, remote, tested = release_repo(tmp_path)
+    (work / "docs" / "guides").mkdir(parents=True)
+    (work / "docs" / "guides" / "note.md").write_text("A note.\n")
+    (work / "CLAUDE.md").write_text("Instructions.\n")
+    git("add", "-A", cwd=work)
+    git("commit", "-q", "-m", "docs", cwd=work)
+    git("push", "-q", "origin", "main", cwd=work)
+    sha = git("rev-parse", "HEAD", cwd=work)
+    common = {"ci_runs": f"60|{tested}\n", "FAKE_HEAD": sha, "FAKE_RELEASE_RUN": "99"}
+    named = ("--yes", "1.2.3", "60")
+    result, calls = run_release(tmp_path / "named", work, *named, **common)
+    assert result.returncode == 0, result.stderr
+    assert f"CI run 60 on {tested} (2 docs-safe paths differ from {sha})" in (
+        result.stderr
+    )
+    assert not any("workflow run" in c for c in calls)
+    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+    # The tagged documentation was checked first, in a worktree of main's
+    # head that is gone again.
+    checks = lines(tmp_path / "named" / "python.calls")
+    assert len(checks) == 2
+    assert checks[0].startswith("python -m pymarkdown --config .pymarkdown.json scan")
+    assert "CLAUDE.md" in checks[0] and "docs/guides/note.md" in checks[0]
+    assert checks[1].startswith(
+        "python -m pytest tests/stewardship/test_traceability.py "
+        "tests/stewardship/test_build.py tests/stewardship/test_ops_scripts.py "
+        "tests/stewardship/test_local_script.py "
+        "--ds=parishkit.stewardship.settings.test"
+    )
+    assert git("worktree", "list", "--porcelain", cwd=work).count("worktree ") == 1
+    git("push", "-q", "origin", ":refs/tags/v1.2.3", cwd=work)
+    git("tag", "-d", "v1.2.3", cwd=work)
+    result, calls = run_release(tmp_path / "found", work, "--yes", "1.2.3", **common)
+    assert result.returncode == 0, result.stderr
+    assert "reusing full CI run 60" in result.stderr
+    assert not any("workflow run" in c for c in calls)
+    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+    git("push", "-q", "origin", ":refs/tags/v1.2.3", cwd=work)
+    git("tag", "-d", "v1.2.3", cwd=work)
+    # Either documentation check failing refuses before anything is tagged;
+    # a failed lint is not masked by passing tests.
+    for name, status in (("FAKE_LINT_STATUS", "1"), ("FAKE_TESTS_STATUS", "1")):
+        result, _ = run_release(
+            tmp_path / name, work, "--yes", "1.2.3", **{name: status}, **common
+        )
+        assert result.returncode == 1, name
+        assert "documentation checks failed" in result.stderr
+        assert remote_tag(remote, "v1.2.3") == ""
+        worktrees = git("worktree", "list", "--porcelain", cwd=work)
+        assert worktrees.count("worktree ") == 1
+    checks = lines(tmp_path / "FAKE_LINT_STATUS" / "python.calls")
+    assert len(checks) == 1 and "pymarkdown" in checks[0]
+    # Without a development environment it refuses before watching the run.
+    result, calls = run_release(
+        tmp_path / "nodev", work, "--yes", "1.2.3", FAKE_NO_DEV="1", **common
+    )
+    assert result.returncode == 1
+    assert "cannot import django, pymarkdown, pytest and pytest_django" in (
+        result.stderr
+    )
+    assert not any("status,conclusion,jobs" in c for c in calls)
+
+
+def test_release_refuses_evidence_the_remote_does_not_serve(tmp_path):
+    """An evidence commit only this checkout holds never reaches a tag.
+
+    release.yml's fresh clone could not read it (a deleted train branch), so
+    release.sh fetches it from the remote into an empty repository first.
+    """
+    work, remote, sha = release_repo(tmp_path)
+    git("checkout", "-q", "-b", "train", cwd=work)
+    git("commit", "-q", "--allow-empty", "-m", "train head", cwd=work)
+    train = git("rev-parse", "HEAD", cwd=work)
+    git("checkout", "-q", "main", cwd=work)
+    result, calls = run_release(
+        tmp_path / "run", work, "--yes", "1.2.3", "60", ci_runs=f"60|{train}\n"
+    )
+    assert result.returncode == 1
+    assert f"The commit {train} of CI run 60 cannot be fetched" in result.stderr
+    assert not any("status,conclusion,jobs" in c for c in calls)
+    assert remote_tag(remote, "v1.2.3") == ""
+    # Once the remote serves it again, the same run is accepted.
+    git("push", "-q", "origin", "train", cwd=work)
+    result, _ = run_release(
+        tmp_path / "pushed",
+        work,
+        "--yes",
+        "1.2.3",
+        "60",
+        ci_runs=f"60|{train}\n",
+        FAKE_HEAD=sha,
+        FAKE_RELEASE_RUN="99",
+    )
+    assert result.returncode == 0, result.stderr
+    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["README.md", "docs/guides/stewardship-mail-send-report.md", "tools/x.sh"],
+)
+def test_release_dispatches_when_the_tested_tree_differs_beyond_docs(tmp_path, path):
+    """A full run on a tree with any other difference is not evidence (#662)."""
+    work, remote, tested = release_repo(tmp_path)
+    (work / path).parent.mkdir(parents=True, exist_ok=True)
+    (work / path).write_text("changed\n")
+    git("add", "-A", cwd=work)
+    git("commit", "-q", "-m", "change", cwd=work)
+    git("push", "-q", "origin", "main", cwd=work)
+    sha = git("rev-parse", "HEAD", cwd=work)
+    result, calls = run_release(
+        tmp_path / "named",
+        work,
+        "--yes",
+        "1.2.3",
+        "60",
+        ci_runs=f"60|{tested}\n",
+        FAKE_HEAD=sha,
+    )
+    assert result.returncode == 1
+    assert "(that is 'none')" in result.stderr
+    result, calls = run_release(
+        tmp_path / "found",
+        work,
+        "--yes",
+        "1.2.3",
+        ci_runs=f"60|{tested}\n",
+        FAKE_HEAD=sha,
+        FAKE_NEW_RUN="61",
+        FAKE_RELEASE_RUN="99",
+    )
+    assert result.returncode == 0, result.stderr
+    assert any(c.startswith("gh workflow run ci.yml") for c in calls)
+    assert "release evidence: CI run 61 on " + sha in result.stderr
+    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+
+
 def test_release_timeouts_are_recorded(tmp_path):
     """A dispatched run or release run that never appears is a recorded timeout."""
     work, remote, sha = release_repo(tmp_path)
@@ -624,7 +806,7 @@ def test_release_timeouts_are_recorded(tmp_path):
         work,
         "--yes",
         "1.2.3",
-        ci_runs="50\n",
+        ci_runs=f"50|{UNKNOWN}\n",
         FAKE_HEAD=sha,
         STEWARDSHIP_FIND_MINUTES="0",
     )

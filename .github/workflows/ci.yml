@@ -6,11 +6,11 @@ name: CI
 # Pushes to main run only the light validate job (temporary, to stay within
 # the free plan's 20 concurrent jobs; see issue #158). A manual dispatch runs
 # the full suite on any ref by default, and releases require that full run on
-# the tagged commit. Ready PRs, and dispatches that explicitly ask for
-# "affected" jobs, skip the heavy job groups their changed paths cannot affect
-# (parishkit.stewardship.quality_paths, issue #626); the aggregate gates accept
-# only that intentional skip, never a draft, failed, cancelled or unexpected
-# skip.
+# the tagged tree, apart from docs (#662). Ready PRs, and dispatches that
+# explicitly ask for "affected" jobs, skip the heavy job groups their changed
+# paths cannot affect (parishkit.stewardship.quality_paths, issue #626); the
+# aggregate gates accept only that intentional skip, never a draft, failed,
+# cancelled or unexpected skip.
 
 # A dispatch names its job selection. release.yml and release.sh accept only
 # a run named exactly "CI (jobs: all)" as release evidence, so keep this
