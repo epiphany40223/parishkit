@@ -1,0 +1,30 @@
+{% load i18n stewardship %}{% comment %}
+  Take a backup now (ADM-13 PR 3b), outside the polled status region so a
+  poll never discards a preview. Its forms post to the System health page
+  itself, which answers with this page; ui-v1.js swaps this region
+  (#backup-now) in place. ``backup_now`` holds the step's result:
+  ``preview`` (a system_health.BackupPreview), ``requested`` (the request
+  just made, or the first one when the confirmation was repeated) or
+  ``refused`` (why the step was refused, with the step-up for a stale
+  sign-in). Without one, or after a request, the button is shown in a
+  data-live-mirror-target that the polled region keeps current. The server
+  checks every condition again; greying only helps the reader.
+{% endcomment %}<section class="panel" id="backup-now" data-in-place-region aria-labelledby="backup-now-heading">
+<h2 id="backup-now-heading">{% translate "Take a backup now" %}</h2>
+{% if backup_now.preview %}{% with preview=backup_now.preview %}<p>{% translate "This asks the server to take one backup soon, of the same kind as the scheduled ones." %}</p>
+<ul>
+<li>{% if preview.backup_at %}{% translate "The last backup finished at" %} <time datetime="{{ preview.backup_at|instant }}" data-local-instant>{{ preview.backup_at|instant }}</time>{% if preview.backup_bytes is not None %} {% blocktranslate with size=preview.backup_bytes|filesizeformat trimmed %}and was {{ size }}{% endblocktranslate %}{% endif %}.{% else %}{% translate "No backup has been recorded yet." %}{% endif %}</li>
+<li>{% if preview.offsite %}{% translate "It will also be copied off-site to Google Drive." %}{% else %}{% translate "Off-site copies are not set up, so it stays on the server only." %}{% endif %}</li>
+<li>{% translate "It follows the usual retention rules and adds to the server's disk use until they remove it." %}</li>
+{% if preview.held %}<li><strong>{% translate "A Family email send is in progress, so the backup will wait until the send finishes." %}</strong> <a href="{% url 'admin:family_email_progress' %}">{% translate "Family email progress" %}</a></li>{% endif %}
+</ul>
+<form method="post" action="{% url 'admin:system_health' %}#backup-now" data-in-place="backup-confirm" data-in-place-message="{% translate 'Backup requested.' %}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="key" value="{{ preview.key }}"><button type="submit" data-submit-waits>{% translate "Confirm: take a backup now" %}</button></form>
+<form method="post" action="{% url 'admin:system_health' %}#backup-now" data-in-place="backup-cancel" data-in-place-fallback="backup-preview" data-in-place-message="{% translate 'Backup not requested.' %}">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button type="submit" class="button-secondary">{% translate "Cancel" %}</button></form>{% endwith %}
+{% else %}{% if backup_now.requested %}<p data-backup-requested>{% translate "Backup requested at" %} <time datetime="{{ backup_now.requested.created_at|instant }}" data-local-instant>{{ backup_now.requested.created_at|instant }}</time>. {% translate "The server checks for requests every five minutes; the Backups panel above shows its progress." %}</p>
+{% elif backup_now.refused == "reauthenticate" %}<div class="notice" data-backup-refused="reauthenticate"><p>{% if local_environment %}{% translate "For your security, confirm your sign-in before taking a backup now. Nothing was requested." %}{% else %}{% translate "For your security, confirm it's you with Google before taking a backup now. Nothing was requested; you will return to this page." %}{% endif %}</p>
+{% url 'admin:system_health' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>
+{% elif backup_now.refused == "busy" %}<p class="notice" data-backup-refused="busy">{% translate "A backup is already requested, or a restore is under review, so no other can be requested now. The Backups panel above shows it." %}</p>
+{% elif backup_now.refused == "invalid" %}<p class="notice notice-error" data-backup-refused="invalid">{% translate "That request could not be read. Nothing was requested; try again." %}</p>
+{% else %}<p>{% translate "Ask the server to take a backup now, for example before a risky change. It needs a recent Google sign-in." %}</p>{% endif %}
+<div data-live-mirror-target="backup-now-button">{% include 'stewardship/system-health-backup-button.html' %}</div>{% endif %}
+</section>

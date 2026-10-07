@@ -315,6 +315,7 @@ DESCRIPTIONS = {
         "An Administrator opened the list of Families the form cannot open."
     ),
     "data_to_fix_viewed": _("Someone opened Data to fix in ParishSoft."),
+    "backup_requested": _("An Administrator asked the server to take a backup now."),
     "background_viewed": _("An Administrator opened Background work."),
     "delivery_viewed": _("An Administrator opened Outgoing mail."),
     "delivery_bulk_resolved": _(

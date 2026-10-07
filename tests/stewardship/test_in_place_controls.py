@@ -182,7 +182,11 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
             named = re.fullmatch(r"\{\{ region_id\|default:'([\w-]+)' \}\}", fragment)
             for host in hosts:
                 if named is None:
-                    assert names_region(host, fragment), (path.name, fragment)
+                    # A shared partial (Take a backup now's button) may hold a
+                    # form whose region the page including it names.
+                    assert names_region(host, fragment) or included_in_region(
+                        path, fragment
+                    ), (path.name, fragment)
                     continue
                 assert path.name in HOSTED, path.name
                 passed = re.findall(
@@ -193,6 +197,29 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
                 for region in [named.group(1), *passed]:
                     assert names_region(host, region), (path.name, region)
     assert found >= 8
+
+
+def included_in_region(path, fragment):
+    """Whether every template that includes ``path`` names ``fragment``.
+
+    A shared partial (System health's Take a backup now button, ADM-13) can
+    hold an in-place form whose region is defined by the page including it;
+    at least one includer must name the region, and every includer must
+    either name it or be a polled fragment that carries the partial only as
+    a template[data-live-mirror] copy for that page: with every such
+    <template> element removed, the includer no longer names the partial.
+    """
+    name = f"stewardship/{path.name}"
+    includers = [
+        other.read_text()
+        for other in TEMPLATES.rglob("*.html")
+        if other != path and name in other.read_text()
+    ]
+    mirrors = re.compile(r"<template\b[^>]*\bdata-live-mirror=.*?</template>", re.S)
+    return any(names_region(text, fragment) for text in includers) and all(
+        names_region(text, fragment) or name not in mirrors.sub("", text)
+        for text in includers
+    )
 
 
 def region_body(text, region):

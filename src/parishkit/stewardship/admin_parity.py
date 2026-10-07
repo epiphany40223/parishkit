@@ -262,7 +262,9 @@ LEDGER = {
     "campaign_root": permanent(GROUP_ROOT),
     "mail_root": permanent(GROUP_ROOT),
     "parish_root": permanent(GROUP_ROOT),
-    "system_health": command("system health"),
+    # Take a backup now posts to the page; its fresh-gated commands wait
+    # for automation to pass the fresh sign-in check (ADM-11 PR 5).
+    "system_health": command("system health", owed="PR 5"),
     "system_health_status": command("system health"),
     # Families the form cannot open (#774): counts and DUIDs only.
     "source_form": command("report source-form"),

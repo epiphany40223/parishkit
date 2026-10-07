@@ -118,6 +118,8 @@ class Action(StrEnum):
     # Opening Data to fix in ParishSoft (#1011); its count is the total of
     # the section counts the viewer saw.
     DATA_TO_FIX_VIEWED = "data_to_fix_viewed"
+    # Take a backup now (ADM-13 PR 3b); the subject is the request.
+    BACKUP_REQUESTED = "backup_requested"
     PRESENCE_VIEWED = "family_presence_viewed"
     # The operator's one-time engagement backfill (#477), with its counts.
     FAMILY_ENGAGEMENT_BACKFILLED = "family_engagement_backfilled"
