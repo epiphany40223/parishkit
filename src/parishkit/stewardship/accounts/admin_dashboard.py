@@ -64,7 +64,13 @@ def summary(actor, configuration, now):
     result = {
         "campaign": campaign,
         "refreshed_at": refreshed_at,
-        "full_refresh": full_refresh_status(refresh_schedule(configuration), now),
+        # System health's facts ride on the same statement for those who
+        # may open that page (ADM-13), for Home's problem lines below.
+        "full_refresh": full_refresh_status(
+            refresh_schedule(configuration),
+            now,
+            health=allows(actor, Capability.SYSTEM_LOGS),
+        ),
         # Only an Administrator may request a manual refresh; the link is
         # offered to nobody else.
         "can_refresh": allows(actor, Capability.CONFIGURE),
@@ -138,6 +144,14 @@ def summary(actor, configuration, now):
         # Those who may change Ministry activity see it. One query.
         result["ministry_catalog"] = catalog_notice(
             configuration, campaign, now, promoted=refreshed_at is not None
+        )
+    if allows(actor, Capability.SYSTEM_LOGS):
+        from parishkit.stewardship.system_health import home_problems
+
+        # One line for each System health problem, for those who may open
+        # that page (ADM-13); others see none.
+        result["health_problems"] = home_problems(
+            configuration, now, result["full_refresh"]
         )
     if "administrator" in actor.roles:
         from .security_events import open_events

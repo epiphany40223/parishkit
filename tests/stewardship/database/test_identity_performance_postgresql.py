@@ -128,7 +128,10 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         # statement whether or not the campaign selects Ministries, which
         # test_ministry_catalog_postgresql pins), and
         # the ceiling keeps one statement of headroom so regressions are
-        # caught.
+        # caught. Home's System health problem lines (ADM-13) ride on the
+        # refresh-status statement and add none, whichever problems are
+        # open (test_system_health_postgresql pins that with a backup
+        # overdue).
         "admin_shell": _measure(admin_page, query_limit=49),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))

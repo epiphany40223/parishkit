@@ -50,7 +50,7 @@ def problems(processes=(), **values):
         "refresh": None,
         "backup_at": None,
     } | values
-    return [problem.code for problem in find_problems(**arguments)]
+    return [problem.kind for problem in find_problems(**arguments)]
 
 
 def test_a_restart_replaces_the_old_row_instead_of_showing_it_stopped():
@@ -173,7 +173,7 @@ def test_parishsoft_and_backup_problems():
         refresh=refresh,
         backup_at=backup_at,
     )
-    assert [problem.code for problem in found] == [
+    assert [problem.kind for problem in found] == [
         "mail_provider_unavailable",
         "source_failing",
         "source_late",
@@ -231,7 +231,7 @@ def test_the_document_holds_states_counts_and_instants_only():
     ).to_document()
     assert document["problems"] == [
         {
-            "code": "sender_halted",
+            "kind": "sender_halted",
             "service": "mail-dispatch",
             "process": "main",
             "target": None,

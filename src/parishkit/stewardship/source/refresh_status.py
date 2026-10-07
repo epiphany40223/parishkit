@@ -79,6 +79,9 @@ class FullRefreshStatus:
     # Held, but the send has ended or the resume point has passed: the
     # catch-up is running or about to, so no "by" time is stated.
     catching_up: bool = False
+    # System health's facts (``system_health.HealthFacts``), read in the
+    # same statement when the caller asked for them (Home, ADM-13).
+    health: object = None
 
     @property
     def offers_late_run(self):
@@ -192,7 +195,7 @@ def _facts(row):
     return facts_from_row(row[-FACTS_COLUMNS:])
 
 
-def full_refresh_status(schedule=None, now=None):
+def full_refresh_status(schedule=None, now=None, *, health=False):
     """Read the latest full and incremental outcomes and the data age.
 
     The Admin home page has a fixed query budget, so the outcomes and the
@@ -200,14 +203,22 @@ def full_refresh_status(schedule=None, now=None):
     statement. ``schedule`` (from ``refresh_schedule``) and ``now`` add the
     next scheduled full reload, the overdue full slot (three more queries,
     only once a full refresh has promoted) and the connection line.
+    ``health`` joins System health's facts (``system_health.HEALTH_SQL``)
+    into the same statement, between the two halves, for Home's problem
+    lines (ADM-13); the facts stay last, as ``_facts`` reads them.
     """
+    parts = [f"({OUTCOMES_SQL}) outcomes"]
+    parameters = facts_params()
+    if health:
+        from parishkit.stewardship.system_health import HEALTH_SQL, health_params
+
+        parts.append(f"({HEALTH_SQL}) health")
+        parameters |= health_params()
+    # The data-age facts as the last derived row, so the page pays for one
+    # statement, not two (#510).
+    parts.append(f"({FACTS_SQL}) facts")
     with connection.cursor() as cursor:
-        cursor.execute(
-            # The data-age facts as a second derived row, so the page pays
-            # for one statement, not two (#510).
-            f"SELECT * FROM ({OUTCOMES_SQL}) outcomes CROSS JOIN ({FACTS_SQL}) facts",
-            facts_params(),
-        )
+        cursor.execute("SELECT * FROM " + " CROSS JOIN ".join(parts), parameters)
         row = cursor.fetchone()
     succeeded_at, failed_at, running, failed_task_id = row[:4]
     delta_succeeded_at, delta_failed_at = (tuple(row[4:6]) + (None, None))[:2]
@@ -221,6 +232,14 @@ def full_refresh_status(schedule=None, now=None):
     if delta_failed_at is not None and latest is not None and delta_failed_at < latest:
         delta_failed_at = None
     facts = _facts(row)
+    found_health = None
+    if health:
+        from parishkit.stewardship.system_health import HEALTH_COLUMNS, health_facts
+
+        # Just before the facts, which are read from the row's end too.
+        found_health = health_facts(
+            row[-FACTS_COLUMNS - HEALTH_COLUMNS : -FACTS_COLUMNS]
+        )
     frequency = next_due = times = delta_refresh = None
     found = overdue = late = resumes = None
     out_of_date = held = catching_up = False
@@ -280,4 +299,5 @@ def full_refresh_status(schedule=None, now=None):
         held,
         resumes,
         catching_up,
+        found_health,
     )

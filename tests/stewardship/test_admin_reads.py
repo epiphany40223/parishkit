@@ -23,6 +23,12 @@ from parishkit.stewardship.jobs.send_progress import SendCounts, progress
 from parishkit.stewardship.jobs.task_reads import task_metadata
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
+from parishkit.stewardship.system_health import (
+    DropCount,
+    Problem,
+    SystemHealth,
+    group_processes,
+)
 
 from .campaign_factory import campaign as campaign_record
 from .campaign_factory import schedule as schedule_record
@@ -427,6 +433,57 @@ def go_live_progress(task_state="running", *, complete=False, control=None):
     )
 
 
+def system_health():
+    """A System health read with a halted sender, a refused load and an incident.
+
+    The off-site copy's translated message and the pause's reason and actor
+    never reach the document.
+    """
+    processes = group_processes(
+        [
+            {
+                "service": "mail-dispatch",
+                "process": "main",
+                "target": None,
+                "started_at": NOW - timedelta(hours=1),
+                "reported_at": NOW,
+                "application_version": "1.4.2",
+                "debug_logging": False,
+                "sender_state": "halted",
+                "sender_since": NOW - timedelta(minutes=5),
+                "sender_until": None,
+            }
+        ],
+        NOW,
+    )
+    return SystemHealth(
+        checked_at=NOW,
+        mode="production",
+        problems=(Problem("sender_halted", "mail-dispatch", "main", at=NOW),),
+        processes=processes,
+        missing_services=("scheduler",),
+        versions=("1.4.2",),
+        schema_current=True,
+        delivery_paused=False,
+        paused_at=None,
+        send_active=False,
+        planning_held=False,
+        retry_waiting=2,
+        next_retry_at=NOW,
+        incidents={"backup_rpo_breach": NOW},
+        refresh=FullRefreshStatus(
+            NOW, None, False, connection=Connection("working", NOW)
+        ),
+        refused_at=NOW,
+        refused_counts=(DropCount("family", 1084, 612, 25, True),),
+        backup_at=NOW,
+        backup_key_matches=True,
+        offsite=SimpleNamespace(
+            kind="uploaded", message="Copied.", at=NOW, last_copy_at=NOW
+        ),
+    )
+
+
 GOLDEN = {
     "status": (
         status,
@@ -532,6 +589,80 @@ GOLDEN = {
                     "progress": {"phase": "queued", "current": 0, "total": 4},
                 }
             ],
+        },
+    ),
+    "system health": (
+        system_health,
+        {
+            "checked_at": iso(NOW),
+            "mode": "production",
+            "problems": [
+                {
+                    "kind": "sender_halted",
+                    "service": "mail-dispatch",
+                    "process": "main",
+                    "target": None,
+                    "at": iso(NOW),
+                }
+            ],
+            "processes": [
+                {
+                    "service": "mail-dispatch",
+                    "process": "main",
+                    "target": None,
+                    "running": True,
+                    "live": 1,
+                    "version": "1.4.2",
+                    "started_at": iso(NOW - timedelta(hours=1)),
+                    "reported_at": iso(NOW),
+                    "debug_logging": False,
+                    "sender_state": "halted",
+                    "sender_since": iso(NOW - timedelta(minutes=5)),
+                    "sender_until": None,
+                }
+            ],
+            "missing_services": ["scheduler"],
+            "versions": ["1.4.2"],
+            "schema_current": True,
+            "delivery_paused": False,
+            "paused_at": None,
+            "send_active": False,
+            "planning_held": False,
+            "retry_waiting": 2,
+            "next_retry_at": iso(NOW),
+            "incidents": [{"kind": "backup_rpo_breach", "since": iso(NOW)}],
+            "refresh": {
+                "full_succeeded_at": iso(NOW),
+                "full_failed_at": None,
+                "full_running": False,
+                "delta_succeeded_at": None,
+                "full_started_at": None,
+                "data_as_of": None,
+                "connection": "working",
+                "connection_at": iso(NOW),
+                "overdue_full_at": None,
+                "out_of_date": False,
+                "held_for_send": False,
+                "resume_at": None,
+                "next_full_at": None,
+            },
+            "refused_at": iso(NOW),
+            "refused_counts": [
+                {
+                    "measure": "family",
+                    "before": 1084,
+                    "after": 612,
+                    "limit_percent": 25,
+                    "failed": True,
+                }
+            ],
+            "backup_at": iso(NOW),
+            "backup_key_matches": True,
+            "offsite": {
+                "state": "uploaded",
+                "at": iso(NOW),
+                "last_copy_at": iso(NOW),
+            },
         },
     ),
     "send progress": (
@@ -747,6 +878,63 @@ EXTRA = {
 SEND_MEMBERS = set(FINISHED_SEND)
 TASK_MEMBERS = set(TASK_DOCUMENT) | {"phase", "current", "total", "percent"}
 ALLOWED = {
+    "system health": {
+        "checked_at",
+        "mode",
+        "problems",
+        "kind",
+        "service",
+        "process",
+        "target",
+        "at",
+        "processes",
+        "running",
+        "live",
+        "version",
+        "started_at",
+        "reported_at",
+        "debug_logging",
+        "sender_state",
+        "sender_since",
+        "sender_until",
+        "missing_services",
+        "versions",
+        "schema_current",
+        "delivery_paused",
+        "paused_at",
+        "send_active",
+        "planning_held",
+        "retry_waiting",
+        "next_retry_at",
+        "incidents",
+        "since",
+        "refresh",
+        "full_succeeded_at",
+        "full_failed_at",
+        "full_running",
+        "delta_succeeded_at",
+        "full_started_at",
+        "data_as_of",
+        "connection",
+        "connection_at",
+        "overdue_full_at",
+        "out_of_date",
+        "held_for_send",
+        "resume_at",
+        "next_full_at",
+        "refused_at",
+        "refused_counts",
+        "measure",
+        "before",
+        "after",
+        "limit_percent",
+        "failed",
+        "backup_at",
+        "backup_key_matches",
+        "offsite",
+        "state",
+        "last_copy_at",
+    },
     "status": {
         "as_of",
         "mode",
@@ -981,7 +1169,7 @@ def test_each_documents_members_are_exactly_its_allowlist(command):
 
 
 def test_every_command_has_a_golden_document_and_an_allowlist():
-    """The eight read commands, no more and no fewer."""
+    """The nine read commands, no more and no fewer."""
     reads = {spec.name for spec in admin_cli.COMMANDS if spec.pr == 3}
     assert reads == set(GOLDEN) == set(ALLOWED)
 
@@ -1096,3 +1284,10 @@ def test_a_local_instant_is_printed_in_utc():
 
     local = datetime(2054, 10, 5, 9, tzinfo=ZoneInfo("America/New_York"))
     assert admin_reads.plain(local) == "2054-10-05T13:00:00+00:00"
+
+
+def test_a_system_health_watch_stops_once_everything_is_working():
+    """Problems keep a watch going; none ends it."""
+    assert not system_health().terminal
+    healthy = system_health()
+    assert SystemHealth(**{**healthy.__dict__, "problems": ()}).terminal

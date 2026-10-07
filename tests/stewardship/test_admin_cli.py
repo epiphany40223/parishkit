@@ -62,6 +62,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "schedule show",
         "go-live readiness",
         "go-live progress",
+        "system health",
     }
     changes = {"schedule preview", "schedule confirm", "config request show"}
     assert set(entries) == session | reads | changes
@@ -77,7 +78,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         assert entries[name]["scope"] == "read_only", name
         assert not entries[name]["changes_state"], name
         assert entries[name]["watch"] == (
-            name in {"task show", "send progress", "go-live progress"}
+            name in {"task show", "send progress", "go-live progress", "system health"}
         )
     assert entries["status"]["audit_event"] == "dashboard_viewed"
     assert entries["task list"]["audit_event"] == "background_viewed"
@@ -88,7 +89,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         campaign = {option["name"] for option in entries[name]["options"]}
         assert "--campaign" in campaign, name
     assert entries["task show"]["arguments"] == ["TASK_ID"]
-    for name in ("send progress", "go-live progress"):
+    assert entries["system health"]["audit_event"] == "system_health_viewed"
+    for name in ("send progress", "go-live progress", "system health"):
         watch = {option["name"] for option in entries[name]["options"]}
         assert {"--watch", "--timeout"} <= watch, name
     states = {option["name"]: option for option in entries["task list"]["options"]}
