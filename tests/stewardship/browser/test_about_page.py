@@ -204,3 +204,44 @@ def test_about_control_stays_put_when_toggled(page, component_origin, path, view
             assert summary.bounding_box() == closed, (path, key, state)
             if key:
                 assert page.evaluate("document.activeElement.tagName") == "SUMMARY"
+
+
+@pytest.mark.parametrize("path", ["/setup-credential", "/background", "/family-login"])
+def test_theme_reserves_the_scrollbar_gutter(page, component_origin, path):
+    """Both portals reserve the scrollbar's space on every page (#607)."""
+    page.goto(component_origin + path)
+    gutter = page.evaluate("getComputedStyle(document.documentElement).scrollbarGutter")
+    assert gutter == "stable", (path, gutter)
+
+
+def test_opening_help_that_makes_the_page_scroll_moves_nothing(page, component_origin):
+    """A page that fits the window keeps its width and control when help scrolls it.
+
+    The window is sized to the closed page's height, so opening the help makes
+    the page need a vertical scrollbar. With classic (always visible)
+    scrollbars, an unreserved gutter would narrow the layout and move the
+    centred page and its control sideways (#607). Headless test browsers do
+    not draw classic scrollbars, so this cannot show the shift itself; the
+    gutter test above is the one that fails without the rule. This one keeps
+    the layout width and the control's box exact as the page starts to scroll.
+    """
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": 1366, "height": 768})
+    page.goto(component_origin + "/setup-credential")
+    page.evaluate("document.fonts.ready.then(() => true)")
+    height = page.evaluate("document.documentElement.scrollHeight")
+    page.set_viewport_size({"width": 1366, "height": height})
+    root = "document.documentElement"
+    assert page.evaluate(f"{root}.scrollHeight <= {root}.clientHeight")
+    width = page.evaluate(f"{root}.clientWidth")
+    panel = page.locator("details[data-about-page]")
+    summary = panel.locator("summary")
+    closed = summary.bounding_box()
+    summary.click()
+    expect(panel).to_have_attribute("open", "")
+    visible(panel.locator(".about-page-body"))
+    # The open help made the page scroll, and nothing moved.
+    assert page.evaluate(f"{root}.scrollHeight > {root}.clientHeight")
+    assert page.evaluate(f"{root}.clientWidth") == width
+    assert summary.bounding_box() == closed
