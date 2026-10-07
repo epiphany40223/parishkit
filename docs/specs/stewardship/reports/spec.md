@@ -902,29 +902,69 @@ between Ministries. No ZIP/per-Ministry files are required.
 
 ## Pending census changes
 
-**Access:** Admin and Staff. Staff edits only manual-resolution state; Admin has
-the full review/publication controls.
+**Access:** Admin and Staff; never Ministry leaders. Staff edits only
+manual-resolution state; Admin has the full review/publication controls.
 
-The default filter shows unresolved, unreviewed current changes. Columns include
-Family/Member, DUID, field/request, proposed summary, writability, decision,
-execution, submission time, and conflict/failure indicator. Sensitive values
-are masked in the list where appropriate and visible in authorized detail.
+The page is **Census changes** under Responses and reports
+([#528](https://github.com/epiphany40223/parishkit/issues/528)): the
+worklist of every change Families reported that someone must carry into
+ParishSoft, by hand or by [publication](../data/spec.md#review-and-publication).
+It reads the existing proposal rows (one per atomic Family request) and the
+handling registry that classifies each field; it adds no state of its own.
+Testing responses are excluded, as in the other reports.
 
-Options include:
+### Census change rows
 
-- show/hide baseline/current/proposed values;
-- show only API/manual/report-only classifications;
-- omit API-writable items;
-- include ignored/resolved/published/superseded history;
-- campaign/Family/Member/date/status filters; and
-- CSV, XLSX, or PDF filtered export.
+Rows are grouped by Family (name and DUID), one row per change:
+
+- **Who**: the Member, "New Member" with the proposed Member's name, or the
+  Family for its address fields.
+- **What changed**: the field's plain label (Mobile phone, Home address,
+  Moved to another household, Deceased, New Member, and so on).
+- **ParishSoft now**, **Family's answer**, and **Edited value** (only when an
+  Administrator edited the proposed value). Values appear in full: Admin and
+  Staff need them to type into ParishSoft, and every view and download is
+  audited.
+- **How it reaches ParishSoft**: *Automatic* for a contact field the API can
+  write, *By hand* for manual work (deceased, moved, new Member, prefix,
+  suffix, marital status, email opt-out), *For reports only* for pledge,
+  frequency, share methods and the census side of Ministry join and leave.
+- **Status**, derived from the row's decision and execution: *To do* (manual
+  work still pending, an approved automatic change not yet published, or a
+  failed publication), *Conflict* (ParishSoft changed since the Family
+  answered; shown as the conflict detail below), *Being published*, *Done*
+  as *Published*, *Already in ParishSoft* or *Entered by hand*, and
+  *Ignored*. Superseded and cancelled rows appear only with *Include history*.
+- **Submitted**, in browser-local time.
 
 Conflict detail shows baseline, current upstream, Family submitted, and
 Admin-edited proposed values. It never resolves by silent last-write-wins.
 
-Staff may mark manual items resolved externally or ignored with notes. Admin
-review/publish actions are defined by the [data](../data/spec.md#review-and-publication)
-and [Admin](../admin-portal/spec.md#follow-up-workflows) specifications.
+### Census change filters and downloads
+
+The default shows *To do* and *Conflict*. Filters are status (with *Include
+history*), how the change reaches ParishSoft (with *Hide automatic changes*
+for staff working by hand), kind of change (contact details, moved, deceased,
+new Member), a Family name or DUID search, and submitted date. Sorting,
+paging and filters act [in place](../admin-portal/spec.md#in-place-controls).
+The filtered list downloads as CSV or XLSX (PDF later) with the page's
+columns and values, audited with a count like the other report downloads.
+
+The read-only page and its downloads are enough for staff to apply every
+change by hand if publication is not ready; that is why it comes first.
+
+### Manual census resolution
+
+On *By hand* rows, Staff and Admin may mark **Entered in ParishSoft**
+(resolved externally) or **Ignore**, each with an optional note, acting in
+place; an Administrator may reopen a row with a note. Who, when and the note
+are kept as history. Automatic rows are view-only for Staff. Admin
+review/publish actions are defined by the
+[data](../data/spec.md#review-and-publication) and
+[Admin](../admin-portal/spec.md#follow-up-workflows) specifications. Ministry
+roster changes, which ParishSoft never accepts through its API, are tracked
+on the [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows)
+requests themselves, not here.
 
 ## Financial stewardship detail
 

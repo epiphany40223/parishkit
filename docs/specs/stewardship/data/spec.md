@@ -1551,6 +1551,24 @@ Admins may publish any reviewed subset during or after an active campaign.
 They need not finish review in one session. Later Family submissions supersede
 unpublished proposals as appropriate but never rewrite publication history.
 
+Only an Administrator approves and publishes. Only changes the handling
+registry marks API-writable are ever written: a Member's names, birth and
+death dates, language, gender, email and phones, and a Family's home and
+mailing addresses. Deceased status, moving households, new Members, prefix,
+suffix, marital status, email opt-out, pledges, share methods and Ministry
+rosters are never written; staff enter them by hand from the
+[Census changes](../reports/spec.md#pending-census-changes) worklist and the
+[Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) requests.
+Every entity written records an audit event naming the fields, never their
+values. In Testing mode publication stops after preflight and writes
+nothing. Before the first real write, a human-run smoke tool (outside CI,
+reading credentials at runtime) writes one chosen test Member and reads it
+back; CI uses only recorded request fixtures.
+
+Publication and the refresh after it never touch Family codes or links: no
+publish, refresh or email change revokes, rotates, reissues or re-sends a
+Family's code or link. A changed email changes only where later mail goes.
+
 ## Retention and deletion
 
 Live submissions, protected and policy-anchor normalized snapshot history,

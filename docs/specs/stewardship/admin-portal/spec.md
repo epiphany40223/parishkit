@@ -3184,8 +3184,22 @@ before this rule, for example) is refused in place like the other correctable
 refusals, keeping the typed values and asking the person to save again.
 
 Manual census items may be marked resolved externally or ignored by Admin or
-Staff, with notes. API-writable changes are view-only for Staff. Admin review
-and publication follow the [data workflow](../data/spec.md#review-and-publication).
+Staff, with notes, on the
+[Census changes](../reports/spec.md#pending-census-changes) worklist.
+API-writable changes are view-only for Staff. Admin review and publication
+follow the [data workflow](../data/spec.md#review-and-publication).
+
+The ParishSoft API cannot change Ministry rosters, so a join or leave is
+always entered in ParishSoft by hand
+([#528](https://github.com/epiphany40223/parishkit/issues/528), gap G28). A
+request resolved as *joined* or *leave confirmed* carries an **Entered in
+ParishSoft** tick that Staff and Admin set or clear in place; who and when are
+kept as history. Ministry leaders see the tick, read-only, on their own
+Ministries' requests. The follow-up queue offers a *Roster changes to enter*
+filter (resolved joins and leaves not yet ticked), and its download includes
+the tick, so staff can work through the roster changes in one list. Marking a
+request resolved never changes ParishSoft, and this tick only records that a
+person did.
 
 ## System health
 
