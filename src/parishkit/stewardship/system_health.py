@@ -94,6 +94,48 @@ def process_label(service, process, target=None):
     }.get((service, process), service)
 
 
+def process_phrase(service, process, target=None, *, start=False):
+    """A process's name as it reads inside a sentence, or at its start.
+
+    Each form is written out whole for translators ("the web portal",
+    "The web portal", "mail sender 1"), never derived by changing a label's
+    case or adding an article in code, so names such as "ParishSoft" keep
+    their spelling wherever they fall in a list.
+    """
+    from django.utils.translation import gettext as _
+
+    if service == "credential-installer":
+        form = (
+            _("The key installer (%(target)s)")
+            if start
+            else _("the key installer (%(target)s)")
+        )
+        return form % {"target": target}
+    phrases = {
+        ("web", None): (_("The web portal"), _("the web portal")),
+        ("worker", None): (_("The background worker"), _("the background worker")),
+        ("scheduler", None): (_("The scheduler"), _("the scheduler")),
+        ("mail-dispatch", None): (_("The mail sender"), _("the mail sender")),
+        ("web", "main"): (_("The web portal"), _("the web portal")),
+        ("worker", "main"): (_("The background worker"), _("the background worker")),
+        ("worker", "source"): (
+            _("The ParishSoft refresh worker"),
+            _("the ParishSoft refresh worker"),
+        ),
+        ("scheduler", "main"): (_("The scheduler"), _("the scheduler")),
+        ("mail-dispatch", "main"): (_("Mail sender 1"), _("mail sender 1")),
+        ("mail-dispatch", "mail"): (_("Mail sender 2"), _("mail sender 2")),
+        ("config-installer", "main"): (
+            _("The settings installer"),
+            _("the settings installer"),
+        ),
+    }
+    pair = phrases.get((service, process))
+    if pair is None:
+        return service
+    return pair[0] if start else pair[1]
+
+
 @dataclass(frozen=True)
 class ProcessLine:
     """One process the page lists: a (service, process, target) group's state.
@@ -139,18 +181,81 @@ class ProcessLine:
 
 
 @dataclass(frozen=True)
+class Subject:
+    """A process (or, without ``process``, a whole service) a problem is about."""
+
+    service: str
+    process: str | None = None
+    target: str | None = None
+
+    @property
+    def label(self):
+        """Its name in plain words."""
+        return process_label(self.service, self.process, self.target)
+
+
+def _names(subjects, *, start):
+    """The subjects' names as one phrase for a sentence.
+
+    "The web portal, the scheduler and mail sender 1" when the sentence
+    begins with them (``start``), "the web portal, the scheduler and mail
+    sender 1" in its middle; each name is its own translated phrase
+    (``process_phrase``). The mail-dispatch service runs exactly two mail
+    senders (main and mail), so when both are named they read "both mail
+    senders"; with a third consumer this would need another phrase.
+    """
+    from django.utils.text import get_text_list
+    from django.utils.translation import gettext as _
+
+    senders = [subject for subject in subjects if subject.service == "mail-dispatch"]
+    both = len(senders) == 2 and all(subject.process for subject in senders)
+    phrases, said = [], False
+    for subject in subjects:
+        first = start and not phrases
+        if both and subject in senders:
+            if not said:
+                phrases.append(
+                    _("Both mail senders") if first else _("both mail senders")
+                )
+                said = True
+            continue
+        phrases.append(
+            process_phrase(
+                subject.service, subject.process, subject.target, start=first
+            )
+        )
+    return get_text_list(phrases, _("and"))
+
+
+@dataclass(frozen=True)
 class Problem:
     """One current problem: its stable kind, and what it names.
 
-    ``service``, ``process`` and ``target`` name the process it is about,
-    ``at`` the time the sentence states (when it began, or until when).
+    ``subjects`` are the processes (or services) it is about; a condition
+    that affects several of them at once (debug logging, a stopped or
+    silent service, a halted mail sender) is one problem naming them all,
+    so it is listed and announced once (#686). ``at`` is the time the
+    sentence states (when it began, or until when).
     """
 
     kind: str
-    service: str | None = None
-    process: str | None = None
-    target: str | None = None
+    subjects: tuple = ()
     at: datetime | None = None
+
+    @property
+    def names(self):
+        """The subjects' names, for a sentence that begins with them."""
+        return _names(self.subjects, start=True)
+
+    @property
+    def names_inline(self):
+        """The subjects' names, for the middle of a sentence."""
+        return _names(self.subjects, start=False)
+
+    @property
+    def several(self):
+        """Whether the problem is about more than one process."""
+        return len(self.subjects) > 1
 
     @property
     def summary(self):
@@ -176,14 +281,10 @@ class Problem:
             "versions_differ": _("versions differ"),
             "schema_mismatch": _("database does not match"),
         }.get(self.kind, self.kind)
-        return words % {"name": self.label} if "%(name)s" in words else words
-
-    @property
-    def label(self):
-        """The name of the process the problem is about, or None."""
-        if self.service is None:
-            return None
-        return process_label(self.service, self.process, self.target)
+        if "%(name)s" not in words:
+            return words
+        name = self.names if words.startswith("%(name)s") else self.names_inline
+        return words % {"name": name}
 
 
 @dataclass(frozen=True)
@@ -259,9 +360,15 @@ def group_processes(rows, now):
     return tuple(sorted(lines, key=_order))
 
 
-def _about(kind, line, at=None):
-    """A problem about one process line."""
-    return Problem(kind, line.service, line.process, line.target, at)
+def _grouped(kind, lines, at=None):
+    """One problem about every line in ``lines``, or none when there are none.
+
+    ``at`` picks the time the sentence states from the lines' times.
+    """
+    if not lines:
+        return []
+    subjects = tuple(Subject(line.service, line.process, line.target) for line in lines)
+    return [Problem(kind, subjects, at(lines) if at else None)]
 
 
 def find_problems(
@@ -284,21 +391,41 @@ def find_problems(
     Administrator chose, Gmail's own limit and the daily limit are reasons
     sends wait, shown in their panel, not problems.
     """
-    problems = []
-    for line in processes:
-        if line.sender and line.running and line.sender_state == "halted":
-            problems.append(_about("sender_halted", line, line.sender_since))
-        elif line.sender and line.running and line.sender_state == "outage_paused":
-            problems.append(_about("sender_outage", line, line.sender_until))
+    running = [line for line in processes if line.running]
+    senders = [line for line in running if line.sender]
+    # A halt is stated from when the first sender halted; an outage pause
+    # until the last sender tries again.
+    problems = _grouped(
+        "sender_halted",
+        [line for line in senders if line.sender_state == "halted"],
+        lambda lines: min(
+            (line.sender_since for line in lines if line.sender_since),
+            default=None,
+        ),
+    )
+    problems += _grouped(
+        "sender_outage",
+        [line for line in senders if line.sender_state == "outage_paused"],
+        lambda lines: max(
+            (line.sender_until for line in lines if line.sender_until),
+            default=None,
+        ),
+    )
     problems.extend(
         Problem(kind, at=incidents[kind])
         for kind in MAIL_INCIDENTS
         if kind in incidents
     )
-    for line in processes:
-        if not line.running:
-            problems.append(_about("not_running", line, line.reported_at))
-    problems.extend(Problem("not_reported", service) for service in missing)
+    # Stopped processes are stated from the most recent report among them.
+    problems += _grouped(
+        "not_running",
+        [line for line in processes if not line.running],
+        lambda lines: max(line.reported_at for line in lines),
+    )
+    if missing:
+        problems.append(
+            Problem("not_reported", tuple(Subject(service) for service in missing))
+        )
     if refresh is not None:
         connection = refresh.connection
         if connection is not None and connection.state == "failing":
@@ -318,10 +445,8 @@ def find_problems(
             at = backup_at if kind == "backup_rpo_breach" else incidents[kind]
             problems.append(Problem(kind, at=at))
     if mode == "production":
-        problems.extend(
-            _about("debug_logging", line)
-            for line in processes
-            if line.running and line.debug_logging
+        problems += _grouped(
+            "debug_logging", [line for line in running if line.debug_logging]
         )
     if len({line.version for line in processes if line.running}) > 1:
         problems.append(Problem("versions_differ"))
@@ -393,11 +518,17 @@ class SystemHealth(ReadModel):
                     {"kind": kind, "since": since}
                     for kind, since in sorted(value.items())
                 ]
-            elif item.name in {"problems", "processes", "refused_counts"}:
+            elif item.name == "problems":
                 value = [
-                    {part.name: getattr(entry, part.name) for part in fields(entry)}
-                    for entry in value
+                    {
+                        "kind": problem.kind,
+                        "subjects": [_members(subject) for subject in problem.subjects],
+                        "at": problem.at,
+                    }
+                    for problem in value
                 ]
+            elif item.name in {"processes", "refused_counts"}:
+                value = [_members(entry) for entry in value]
             document[item.name] = plain(value)
         return document
 
@@ -455,6 +586,11 @@ class SystemHealth(ReadModel):
             "count": len(self.problems),
             "names": "; ".join(problem.summary for problem in self.problems),
         }
+
+
+def _members(entry):
+    """A dataclass entry's fields as a mapping, for a document."""
+    return {part.name: getattr(entry, part.name) for part in fields(entry)}
 
 
 def _refresh_document(status):
