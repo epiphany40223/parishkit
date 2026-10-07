@@ -23,12 +23,16 @@ Statement MVCC protects detachment against concurrent source compaction; it does
 not create durable asynchronous ownership.
 
 Only calculation inputs leave the database: source flags and relationships,
-eligible active-head email addresses, annual pledge values and comparison pledge
-records within the mapped comparison funds/period for the active/ever-eligible
-report population. Refusals must match an
-eligible head's current address in that Family/organization; unrelated historical
-refusals never enter the document. A separate numeric whole-snapshot pledge count
-preserves the completeness proof without copying unrelated household finances.
+eligible active-head email addresses, annual pledge values, and one comparison
+aggregate: the sum of every snapshot pledge in the mapped comparison funds and
+period across all Families (#728). No Family's own comparison pledges are
+detached. Refusals must match an eligible head's current address in that
+Family/organization; unrelated historical refusals never enter the document.
+A separate numeric whole-snapshot pledge count preserves the completeness proof
+without copying unrelated household finances: if it does not match the
+snapshot's pledge count, the all-Families figure is Unavailable, not a low
+total. The sum trusts the source loader's validated amounts (a deliberate
+decision; no per-Family rows are detached to re-validate).
 Names, addresses, phones, census answers, codes, link tokens and additional text
 are not part of the detached document. Canonical JSON text prevents shallow
 dataclass immutability from exposing mutable nested inputs. Its representation
@@ -48,15 +52,13 @@ calculation; the source refresh owns validating the complete source document.
 
 The pure calculation service distinguishes eligible email from deliverable
 email and supplies their exact complement. Current active Families are the
-promoted Portal-eligible set. Include inactive adds a separately labeled subtotal
-of formerly eligible Families outside that set, never arbitrary never-eligible
-source households and never a larger active denominator. Only the latest live
-response contributes the annual pledge; its existence counts that Family once.
+promoted Portal-eligible set; formerly eligible Families outside it never
+enlarge the active denominator. The former Include inactive subtotal was removed
+(#728). Only the latest live response contributes the annual pledge; its
+existence counts that Family once.
 
 Money uses the existing exact-cent primitives and mapped giving-period/coverage
 proof. Missing coverage remains Unavailable; complete empty coverage is zero.
-A formerly eligible Family removed from the source has no observed comparison,
-so its inactive comparison subtotal is unavailable rather than an invented zero.
 An unfinished draft financial mapping leaves known population counts available
 while its financial cards remain unavailable, distinct from disabled financial
 stewardship. Live financial configuration cannot change its enabled modules;

@@ -12,7 +12,6 @@ from django.http import QueryDict
 from openpyxl import load_workbook
 
 from parishkit.stewardship.reports.daily_digest import (
-    population_cards,
     statistics_cards,
 )
 from parishkit.stewardship.reports.digest_presentation import (
@@ -20,6 +19,7 @@ from parishkit.stewardship.reports.digest_presentation import (
     snapshot_context,
     tooltip_dollars,
 )
+from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.spreadsheets import participation_xlsx
 from parishkit.stewardship.reports.workspace import RenderedReport, ReportQuery
 
@@ -94,7 +94,6 @@ def test_read_admission_refuses_a_campaign_that_is_not_current(monkeypatch, curr
         "page=１２",
         "sort=name",
         "email=private@example.org",
-        "inactive=1",
         "timezone=invalid",
         "size=7",
         "size=1000",
@@ -115,7 +114,8 @@ def test_campaign_links_preserve_only_validated_state():
     url = value.url(document().participation.campaign_id, page=3)
     assert "scope=current" in url and "page=3" in url
     assert "timezone=America%2FDetroit" in url and "sort=date_desc" in url
-    assert "inactive=yes" in url
+    # The removed inactive subtotal's parameter still loads, and is dropped.
+    assert "inactive" not in url
     assert "timezone=" not in ReportQuery.parse(QueryDict()).url(
         document().participation.campaign_id
     )
@@ -217,12 +217,16 @@ def test_live_presentation_is_the_digest_presentation_without_population_mixing(
     assert all(
         "Historical as of day" in label for label in live["chart_interaction"]["labels"]
     )
-    cards = statistics_cards(replace(value.statistics, active=None))
-    assert all(amount == "Unavailable" for _, amount in cards)
-    inactive = population_cards(
-        value.statistics.active, financial_enabled=True, inactive=True
+    missing = replace(
+        value.statistics, active=None, comparison_pledge_all=MoneyAmount(None)
     )
-    assert inactive[0] == ("Inactive Families", "1,000")
+    assert all(amount == "Unavailable" for _, amount in statistics_cards(missing))
+    # #728: one comparison figure, the parish-wide total, ends the cards.
+    whole = replace(value.statistics, comparison_pledge_all=MoneyAmount(98265700))
+    cards = statistics_cards(whole)
+    assert cards[0] == ("Active Families", "1,000")
+    assert cards[-1] == ("Last year's pledges (all Families)", "$982,657.00")
+    assert [label for label, _ in cards if "Last year" in label] == [cards[-1][0]]
 
 
 def test_xlsx_is_complete_typed_formula_safe_and_keeps_original_request():

@@ -1,5 +1,6 @@
 """Synthetic exact observations rendered by the production reporting templates."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 from urllib.parse import urlencode
 from uuid import UUID
@@ -9,6 +10,7 @@ from django.template.loader import render_to_string
 from parishkit.stewardship.jobs.queue_wait import QueueWait
 from parishkit.stewardship.reports.daily_digest import statistics_cards
 from parishkit.stewardship.reports.digest_presentation import participation_context
+from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import daily_table
 
@@ -28,8 +30,6 @@ SLOW_GETS = {canonical(REAL + "?scope=historical&timezone=America%2FLos_Angeles"
 def options(query):
     """The query string Apply report options sends for ``query``."""
     fields = {"scope": query.scope, "timezone": query.timezone}
-    if query.inactive:
-        fields["inactive"] = "yes"
     fields |= {"size": query.size, "sort": query.sort}
     return urlencode(fields)
 
@@ -180,9 +180,10 @@ def components(context, admin):
         **daily_table(chart, participation_context(chart), implicit),
     }
     los_angeles = ReportQuery(timezone="America/Los_Angeles")
-    current = ReportQuery(
-        scope="current", timezone="America/Los_Angeles", inactive=True
-    )
+    current = ReportQuery(scope="current", timezone="America/Los_Angeles")
+    # The current-population answer's statistics differ from the first page's,
+    # so a test can see that the statistics panel was swapped in place.
+    refreshed = replace(value.statistics, comparison_pledge_all=MoneyAmount(98265700))
     pages[REAL + "?timezone=UTC"] = ("participation", page | {"query": ReportQuery()})
     for query in ("", "?sort=date_desc", "?scope=historical"):
         pages[REAL + query] = ("participation", fallback)
@@ -194,7 +195,7 @@ def components(context, admin):
         page
         | {
             "query": current,
-            "inactive_cards": [("Inactive Families", "2")],
+            "cards": statistics_cards(refreshed),
             **daily_table(chart, participation_context(chart), current),
         },
     )

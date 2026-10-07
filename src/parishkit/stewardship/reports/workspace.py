@@ -61,7 +61,6 @@ class ReportQuery:
 
     scope: str = "historical"
     timezone: str = "UTC"
-    inactive: bool = False
     page: int = 1
     sort: str = "date_asc"
     timezone_explicit: bool = True
@@ -70,21 +69,23 @@ class ReportQuery:
 
     @classmethod
     def parse(cls, parameters):
-        """Reject duplicate/unknown keys, unbounded pages and arbitrary sort text."""
+        """Reject duplicate/unknown keys, unbounded pages and arbitrary sort text.
+
+        ``inactive`` is still accepted, and ignored, so bookmarks made while the
+        removed inactive subtotal option existed keep loading (#728).
+        """
         values = filters(
             parameters,
             allowed={"scope", "timezone", "inactive", "page", "sort", "size"},
         )
         scope = values.get("scope", "historical")
         zone = values.get("timezone", "UTC")
-        inactive = values.get("inactive", "no")
         page = values.get("page", "1")
         sort = values.get("sort", "date_asc")
         size = values.get("size", "50")
         if (
             scope not in SCOPE_LABELS
             or zone not in timezone_names()
-            or inactive not in {"yes", "no"}
             or not page.isascii()
             or not page.isdecimal()
             or str(int(page)) != page
@@ -96,7 +97,6 @@ class ReportQuery:
         return cls(
             scope,
             zone,
-            inactive == "yes",
             int(page),
             sort,
             "timezone" in values,
@@ -108,10 +108,7 @@ class ReportQuery:
 
         The sort token is not listed: the shared table carries it itself.
         """
-        values = [
-            ("scope", self.scope),
-            ("inactive", "yes" if self.inactive else "no"),
-        ]
+        values = [("scope", self.scope)]
         if self.timezone_explicit:
             values.append(("timezone", self.timezone))
         return values
@@ -120,7 +117,6 @@ class ReportQuery:
         """Preserve validated state and the explicit campaign on every link."""
         values = {
             "scope": self.scope,
-            "inactive": "yes" if self.inactive else "no",
             "page": self.page if page is None else page,
             "sort": self.sort,
         }

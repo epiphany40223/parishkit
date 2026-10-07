@@ -175,9 +175,8 @@ def test_malformed_or_foreign_retained_records_never_become_family_totals(change
     assert str(failure.value) == "The Family financial source is unavailable."
 
 
-def test_actual_giving_normalization_matches_form_and_statistics_totals(tmp_path):
+def test_actual_giving_normalization_matches_form_totals(tmp_path):
     """Use the real provider decoder/normalizer, not only hand-built records."""
-    from .test_campaign_statistics import calculate, observation
     from .test_source_giving import contribution, pledge, read
 
     loaded, _ = read(tmp_path, [pledge()], [contribution()])
@@ -192,11 +191,6 @@ def test_actual_giving_normalization_matches_form_and_statistics_totals(tmp_path
     )
     assert result.pledge.canonical == "1200.00"
     assert result.contributions.canonical == "100.25"
-    document = observation(count=1)
-    document["pledges"] = list(loaded.pledges.values())
-    document["source"]["counts"]["pledge"] = 1
-    document["source"]["pledge_count"] = 1
-    assert calculate(document).active.comparison_pledge == result.pledge
     malformed = record()
     del malformed["schema_version"]
     with pytest.raises(InvalidFinancialSource):
