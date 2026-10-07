@@ -94,6 +94,12 @@ class TaskRun(MutableRecord):
         indexes = [
             models.Index(fields=["state", "not_before"], name="task_due"),
             models.Index(fields=["state", "lease_expires_at"], name="task_lease"),
+            # Lookups by type and domain request, in any state, such as the
+            # operational producers' unowned-notice check (#641; installed by
+            # frozen migration file 0010_task_type_index.sql).
+            models.Index(
+                fields=["task_type", "domain_request_id"], name="task_type_request"
+            ),
         ]
         constraints = MutableRecord.Meta.constraints + [
             models.UniqueConstraint(
