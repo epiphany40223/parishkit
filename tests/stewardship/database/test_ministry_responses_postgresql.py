@@ -502,7 +502,7 @@ def test_renamed_visible_ministry_never_breaks_family_or_admin_pages(
         assert first.projection_digest == second.projection_digest
         assert form["ministries"]["members"]["3"]["current"] == [4]
         for url in (
-            "/admin/configuration/ministries",
+            "/admin/parish/ministries/",
             f"/admin/campaign/{harness.campaign.pk}/settings",
         ):
             page = admin.get(url)

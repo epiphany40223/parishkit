@@ -28,11 +28,7 @@ from .accounts import (
     family_maintenance_views,
     go_live_views,
     hosted_file_serving,
-    hosted_file_views,
-    ministry_views,
-    parish_views,
     presence,
-    refresh_views,
     rule_autosave_views,
     schedule_views,
     security_event_views,
@@ -58,6 +54,7 @@ from .accounts import (
     withdrawal_views,
 )
 from .admin_urls import legacy as admin_legacy
+from .admin_urls import parish as admin_parish
 from .admin_urls import system as admin_system
 from .jobs import delivery_views, send_history_views, send_progress_views
 from .jobs import views as job_views
@@ -111,6 +108,8 @@ family_patterns = [
 admin_patterns = [
     # Groups already in the URL scheme (ADM-12), then every old address.
     *admin_system.patterns,
+    *admin_parish.patterns,
+    *admin_parish.change_patterns,
     *admin_legacy.patterns,
     path("ministry-reports/", ministry_report_views.index, name="ministry_reports"),
     path(
@@ -353,30 +352,6 @@ admin_patterns = [
         name="setup_notification_status",
     ),
     path(
-        "configuration/branding",
-        branding_views.branding_settings,
-        name="branding_settings",
-    ),
-    path("files/", hosted_file_views.library, name="hosted_files"),
-    path("files/upload", hosted_file_views.upload, name="hosted_file_upload"),
-    path("files/delete", hosted_file_views.delete, name="hosted_file_delete"),
-    path(
-        "files/<uuid:file_id>/name",
-        hosted_file_views.rename,
-        name="hosted_file_rename",
-    ),
-    path(
-        "configuration/branding/<uuid:bundle_id>",
-        branding_views.branding_preview,
-        name="branding_preview",
-    ),
-    path(
-        "configuration/branding/assets/<uuid:asset_id>.png",
-        branding_views.branding_asset,
-        {"private": True},
-        name="branding_asset",
-    ),
-    path(
         "campaign/<uuid:campaign_id>/clone",
         clone_views.campaign_clone,
         name="campaign_clone",
@@ -514,7 +489,6 @@ admin_patterns = [
         campaign_ministry_views.campaign_ministries,
         name="campaign_ministries",
     ),
-    path("configuration/parish", parish_views.parish_settings, name="parish_settings"),
     path("users", user_views.users, name="users"),
     path("users/rules", user_rule_views.user_rules, name="user_rules"),
     path("users/rules/apply", rule_autosave_views.rule_apply, name="rule_apply"),
@@ -559,15 +533,6 @@ admin_patterns = [
         "users/automation/notices/",
         automation_views.notices_view,
         name="automation_notices",
-    ),
-    path("source/refresh", refresh_views.source_refresh, name="source_refresh"),
-    path(
-        "configuration/ministries", ministry_views.ministry_activity, name="ministries"
-    ),
-    path(
-        "configuration/requests/<uuid:request_id>",
-        ministry_views.configuration_request,
-        name="configuration_request",
     ),
     # System health (ADM-13): the System group's first entry, which
     # /admin/system/ opens, and the status fragment the open page polls.

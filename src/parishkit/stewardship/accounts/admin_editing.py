@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from django.core import signing
 from django.core.paginator import InvalidPage
 from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
@@ -170,7 +171,9 @@ def confirm(
         attach=attach,
     )
     admin_navigation.remember_origin(request, receipt.request_id)
-    return HttpResponseRedirect(f"/admin/configuration/requests/{receipt.request_id}")
+    return HttpResponseRedirect(
+        reverse("admin:configuration_request", args=[receipt.request_id])
+    )
 
 
 def confirm_intent(

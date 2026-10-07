@@ -209,7 +209,7 @@ def test_unverifiable_history_fails_visibly_instead_of_hanging(
         ],
     )
     assert (result.state, result.failure_code) == ("failed", "invalid_candidate")
-    page = browser.get(f"/admin/configuration/requests/{result.request_id}")
+    page = browser.get(f"/admin/changes/{result.request_id}/")
     assert page.status_code == 200
     assert b"did not pass validation against the saved settings" in page.content
     assert b"data-live-pending" not in page.content

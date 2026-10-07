@@ -398,11 +398,11 @@ table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which keeps its
 name until NAV-15 splits it into Sign-in rules, Ministry assignments and
 Chairpersons, and the Emailed reports, Ministry assignments and Chairpersons
 pages, which do not exist yet. The System pages already have their new
-addresses (NAV-6), with every old address redirecting. Until the rest of the
-URL work lands, other pages keep their "Current URL", and so does every other
-section of this spec and the other stewardship specs that name an Admin URL
-(for example the hosted-files spec's `/admin/files/`); those follow-up issues
-update them with the code.
+addresses (NAV-6), and so do the Parish data pages and a change's status page
+(NAV-7), with every old address redirecting. Until the rest of the URL work
+lands, other pages keep their "Current URL", and so does every other section
+of this spec and the other stewardship specs that name an Admin URL; those
+follow-up issues update them with the code.
 
 The Admin portal serves one current campaign. The system moves to a single
 campaign after this campaign (#145), so navigation already assumes it: there
@@ -674,7 +674,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | Page | Name | Reached from | Roles | Current names | Current URL | New URL | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. |
-| `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/configuration/requests/<request>` | `/admin/changes/<request>/` |  |
+| `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same; old address redirects) |  |
 | `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/<campaign>/settings` | `/admin/campaign/settings/` |  |
 | `campaign_clone` | Copy campaign | Campaign settings | Administrator | Clone archived campaign | `/admin/campaign/<campaign>/clone` | `/admin/campaign/copy/` | Decision 18: until #145 removes it, Campaign settings shows Copy campaign greyed out, not an action, with the tip "Disabled; will be removed with the single-campaign change (#145)". The server refuses the clone action. |
 | `content_history` | Content history | Campaign settings | Administrator | Retained campaign content | `/admin/campaign/<campaign>/content/history` | `/admin/campaign/content/history/` |  |
@@ -730,15 +730,15 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `weekly_digest_snapshot` | Weekly report | Emailed reports (new page) | Administrator | Weekly information report; Weekly summary | `/admin/reports/weekly-digests/<snapshot>/` | `/admin/reports/emailed/weekly/<snapshot>/` |  |
 | `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/weekly-digests/<snapshot>/items/<item>/` | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | Links the live Additional information request. |
 | `daily_digest_snapshot` | Daily report | Emailed reports (new page) | Administrator, Staff | (report document title) daily report | `/admin/reports/daily-digests/<snapshot>/` | `/admin/reports/emailed/daily/<snapshot>/` |  |
-| `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/configuration/parish` | `/admin/parish/settings/` | Hand-written Administration link removed. |
-| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/configuration/branding` | `/admin/parish/logos/` |  |
-| `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/configuration/branding/<bundle>` | `/admin/parish/logos/<bundle>/` |  |
-| `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/configuration/ministries` | `/admin/parish/ministries/` |  |
+| `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same; old address redirects) | Hand-written Administration link removed. |
+| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same; old address redirects) |  |
+| `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/parish/logos/<bundle>/` | (same; old address redirects) |  |
+| `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same; old address redirects) |  |
 | `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/campaign/<campaign>/ministries` | `/admin/parish/ministries/campaign/` | Moves under Ministries; Campaign settings keeps a link. |
-| `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/files/` | `/admin/parish/files/` |  |
-| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/files/delete` (POST only) | `/admin/parish/files/` (POST only) |  |
-| `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/files/<file>/name` | `/admin/parish/files/<file>/name/` |  |
-| `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/source/refresh` | `/admin/parish/parishsoft-refresh/` |  |
+| `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same; old address redirects) |  |
+| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same; old address redirects) |  |
+| `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same; old address redirects) |  |
+| `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same; old address redirects) |  |
 | `users` | Sign-in rules | Menu: Sign-in rules | Administrator | Portal users | `/admin/users` | `/admin/users/sign-in-rules/` | Portal users is split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
 | `user_rules` | Review sign-in rules | Sign-in rules | Administrator | Review login rule change; Sign-in rules | `/admin/users/rules` (POST only) | `/admin/users/sign-in-rules/review/` (POST only) |  |
 | `rule_request` | (not a page) | Sign-in rules | Administrator | Rule change (status); Rule change | `/admin/users/rules/requests/<request>` | `/admin/users/sign-in-rules/requests/<request>/` (JSON) | Answers JSON only; reclassify as a non-page. |

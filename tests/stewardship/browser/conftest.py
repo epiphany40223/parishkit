@@ -1936,7 +1936,7 @@ def component_origin():
 
     logo = BytesIO()
     Image.new("RGB", (1024, 512), "blue").save(logo, format="PNG")
-    for prefix in ("/branding/", "/admin/configuration/branding/assets/"):
+    for prefix in ("/branding/", "/admin/parish/logos/assets/"):
         responses[f"{prefix}{branding_asset['pk']}.png"] = (
             "image/png",
             logo.getvalue(),

@@ -10,6 +10,7 @@ from django.core import signing
 from django.db import DatabaseError
 from django.http import FileResponse, HttpResponseRedirect
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
@@ -152,7 +153,7 @@ def branding_settings(request):
                         request,
                         service,
                         HttpResponseRedirect(
-                            f"/admin/configuration/branding/{identifier}"
+                            reverse("admin:branding_preview", args=[identifier])
                         ),
                     )
             status = 400

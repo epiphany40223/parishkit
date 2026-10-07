@@ -392,7 +392,7 @@ def test_change_origins_are_remembered_per_request_and_bounded():
         "/admin/no-such-page",
         "/admin/logout",
         # A fixed id keeps the test ID the same wherever it is collected.
-        "/admin/configuration/requests/00000000-0000-4000-8000-000000000001",
+        "/admin/changes/00000000-0000-4000-8000-000000000001/",
         None,
     ],
 )

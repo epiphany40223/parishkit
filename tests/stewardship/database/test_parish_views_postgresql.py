@@ -18,7 +18,7 @@ from .campaign_builders import add_draft, change
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/configuration/parish"
+URL = "/admin/parish/settings/"
 
 
 def fields(store, **changes):
@@ -72,7 +72,7 @@ def test_profile_apply_is_durable_idempotent_and_does_not_change_campaign_timezo
     assert response.status_code == 302
     assert store.active() == before
     request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rsplit("/", 1)[-1]
+        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
     receipt = install_request(store, request_id=request.pk, correlation_id=uuid4())
     assert receipt.state == "applied"
