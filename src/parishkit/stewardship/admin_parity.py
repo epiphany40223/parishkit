@@ -177,6 +177,8 @@ LEDGER = {
     "response_list_export": pending("PR 8", "export responses"),
     "family_directory": pending("PR 8", "export directory"),
     "family_timeline": pending("PR 8", "report family-timeline"),
+    # The header's Find a Family box (#561) runs the directory's search.
+    "find_family": pending("PR 8", "export directory"),
     "postal_directory": pending("PR 8", "export postal"),
     "family_codes": pending("PR 8", "export family-codes"),
     "financial_export": pending("PR 8", "export financial"),

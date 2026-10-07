@@ -1,0 +1,21 @@
+{% load i18n %}{% comment %}
+  The header's Find a Family box (#561; admin-portal spec, "Admin
+  navigation"). admin_context.py offers it only to a viewer whose menu
+  offers the Family directory and who may open the Family timeline
+  (Administrators and Staff). find-family-v1.js posts the text to the
+  find_family route (a CSRF POST, so the text never enters a URL or the
+  history) after a pause in typing and shows the answer in the results
+  region below, which sits outside the form because the answer may hold
+  its own "See all" form. Down arrow moves from the field to the results,
+  Up and Down move between them, and Escape closes them and returns to the
+  field. The Admin portal requires JavaScript (#565): there is no no-script
+  form submission to fall back to.
+{% endcomment %}<div class="find-family" data-find-family>
+  <form method="post" action="{{ admin_chrome.find_family.url }}" role="search" aria-label="{% translate 'Find a Family' %}" data-find-family-form>{% csrf_token %}
+    <label for="find-family-search" class="visually-hidden">{% translate "Find a Family" %}</label>
+    <input type="search" id="find-family-search" name="search" maxlength="200" autocomplete="off" spellcheck="false" placeholder="{% translate 'Find a Family' %}" aria-describedby="find-family-help" aria-controls="find-family-results" data-find-family-input>
+    <span id="find-family-help" class="visually-hidden">{% translate "Search by name, DUID or address. Type at least 2 characters; matches appear below as you type. Press Down arrow to move to them." %}</span>
+  </form>
+  <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true" data-find-family-status></p>
+  <div id="find-family-results" class="find-family-results" data-find-family-results hidden></div>
+</div>

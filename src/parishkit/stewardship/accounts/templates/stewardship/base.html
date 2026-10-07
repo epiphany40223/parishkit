@@ -23,6 +23,7 @@
   {% if local_environment %}<div class="local-environment" role="note" aria-label="{% translate 'Local environment' %}"><strong>{% translate "LOCAL" %}</strong> {% translate "This is the local laptop environment: synthetic data, no real email and no real ParishSoft." %}</div>{% endif %}
   <header class="site-header">
     {% block branding %}<p class="brand">{% if parish_branding.menu %}<img src="{{ parish_branding.menu }}" alt=""> {% endif %}{% if parish_branding.name %}{{ parish_branding.name }}{% elif admin_chrome.parish_name %}{{ admin_chrome.parish_name }}{% else %}{{ parish_name|default:_("Parish campaign") }}{% endif %}</p>{% endblock %}
+    {% if admin_chrome.find_family %}{% include 'stewardship/find-family.html' %}{% endif %}
     {% block navigation %}{% if admin_chrome %}{% include 'stewardship/admin-status.html' %}{% endif %}{% endblock %}
   </header>
   {% if admin_chrome %}<div class="admin-shell">{% include 'stewardship/admin-navigation.html' %}{% endif %}

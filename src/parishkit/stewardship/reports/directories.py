@@ -445,3 +445,52 @@ def directory_page(campaign_id, query, *, postal, general, mac):
             report["metadata"]["source_as_of"]
         )
         return report
+
+
+# How many matches the header's Find a Family box lists (#561); more than
+# this offers the whole list in the Family directory instead.
+FIND_LIMIT = 8
+# The shortest search the box sends. One character would match nearly every
+# Family (any name with that letter, any DUID with that digit), so a lookup
+# that short is never useful and only costs a selection.
+FIND_MINIMUM = 2
+
+
+def find_families(campaign_id, query):
+    """The first ``FIND_LIMIT`` Families the directory search finds (#561).
+
+    Runs the installed directory selection itself, so the header's Find a
+    Family box matches exactly what the Family directory's search matches
+    (the shown name with its heads, DUID and address) and lists in the same
+    order. Only the search filter is set. Unlike ``directory_page`` it
+    decrypts no Family code and reads no head emails: a match shows only
+    its name, DUID and envelope number. The caller holds the campaign read
+    guard, as for the directory page. Returns ``{"rows", "total"}``; each row
+    has ``family_id`` (None for a Family without a campaign record),
+    ``display_name``, ``family_duid`` and ``envelope``.
+    """
+    if query != DirectoryQuery(search=query.search) or (
+        len(query.search.strip()) < FIND_MINIMUM
+    ):
+        raise ValueError("Find a Family takes only a search of 2 or more characters.")
+    # selection_parameters needs the MAC ring only for an exact-code filter,
+    # which this query never has.
+    parameters = selection_parameters(campaign_id, query, postal=False, mac=None)
+    with connection.cursor() as cursor:
+        cursor.execute(DIRECTORY, (campaign_id, json.dumps(parameters), 1))
+        result = cursor.fetchone()
+    if result is None or result[0] is None:
+        raise ReadUnavailable("Directory source information is unavailable.")
+    report = json.loads(result[0])
+    return {
+        "rows": [
+            {
+                "family_id": row["family_id"],
+                "display_name": family_heads_name(row["family_name"], row["heads"]),
+                "family_duid": row["family_duid"],
+                "envelope": row["envelope"],
+            }
+            for row in report["rows"][:FIND_LIMIT]
+        ],
+        "total": report["total"],
+    }

@@ -38,11 +38,13 @@ from parishkit.stewardship.web.tables import report_table
 
 from .directories import (
     DIRECTORY_SORTING,
+    FIND_MINIMUM,
     PAGE_SIZE,
     REACH,
     REASONS,
     DirectoryQuery,
     directory_page,
+    find_families,
     testing_codes_context,
 )
 from .directory_documents import export_headings, head_names
@@ -313,3 +315,125 @@ def directory(request, campaign_id, *, postal=False):
     finally:
         if finish is not None and not handed_off:
             finish(False)
+
+
+def _finder(request, store, *, read_only=False):
+    """A viewer who may open the Family directory and the Family timeline."""
+    principal = _principal(request, store, read_only=read_only)
+    if not allows(principal, Capability.CAMPAIGN_REPORT):
+        raise PermissionError("Find a Family is unavailable.")
+    return principal
+
+
+@require_http_methods(["POST"])
+def find_family(request, campaign_id):
+    """The header's Find a Family results, as a fragment for its script (#561).
+
+    A non-page action: the shared Admin header's search box posts its text
+    here (CSRF-protected, so the text never enters a URL, a log line or the
+    browser history) and shows the answer under the box. The viewer must be
+    able to open both the Family directory, whose search this runs, and the
+    Family timeline each result opens: Administrators and Staff. Both are
+    rechecked inside the campaign read guard, as the directory does, and the
+    search is audited as a directory view (search used, row counts; never
+    the text). Refusals answer with an empty body and the status alone; the
+    script shows its own fixed text for them.
+    """
+    finish, handed_off = None, False
+    try:
+        service = runtime()
+        principal = _finder(request, service.store)
+        parameters = request.POST.copy()
+        parameters.pop("csrfmiddlewaretoken", None)
+        if request.GET or set(parameters) != {"search"}:
+            raise ValueError("Find a Family takes only its search text.")
+        query = DirectoryQuery.parse({"search": parameters["search"].strip()})
+        if len(query.search) < FIND_MINIMUM:
+            raise ValueError("Find a Family needs a longer search.")
+        admit_report_read(campaign_id)
+        _audit(
+            principal,
+            campaign_id,
+            postal=False,
+            outcome=Outcome.STARTED,
+            count=0,
+            total=0,
+            query=query,
+        )
+        finalized, count, total = False, 0, 0
+
+        def finish(completed):
+            """Record the search's outcome once, with its row counts."""
+            nonlocal finalized
+            if finalized:
+                return
+            finalized = True
+            try:
+                _audit(
+                    principal,
+                    campaign_id,
+                    postal=False,
+                    outcome=Outcome.SUCCEEDED if completed else Outcome.FAILED,
+                    count=count,
+                    total=total,
+                    query=query,
+                )
+            except (DatabaseError, StorageInvariantError) as error:
+                emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
+
+        def authorize(guard):
+            """Both roles' access is current, not just what the request began with."""
+            current = _finder(request, service.store, read_only=True)
+            if current.identity != principal.identity:
+                raise PermissionError("Directory access changed.")
+            admit_report_read(campaign_id)
+
+        def content():
+            """Run the search and render its results under the read guard."""
+            nonlocal count, total
+            found = find_families(campaign_id, query)
+            count, total = len(found["rows"]), found["total"]
+            context = found | {
+                "campaign_id": campaign_id,
+                "directory_url": reverse("admin:family_directory", args=[campaign_id]),
+                "search": query.search,
+                "more": total > count,
+            }
+            return iter(
+                (
+                    render_to_string(
+                        "stewardship/find-family-results.html",
+                        context,
+                        request=request,
+                    ).encode(),
+                )
+            )
+
+        response = campaign_response(
+            request,
+            [campaign_id],
+            authorize=authorize,
+            open_content=content,
+            on_close=finish,
+        )
+        handed_off = response.status_code == 200 and response.streaming
+        return response
+    except (PermissionError, ObjectDoesNotExist):
+        return _bare(403)
+    except (*SAFE_FAILURES, StorageInvariantError, CryptographicError, UnicodeError):
+        return _bare(503)
+    except ValueError:
+        return _bare(400)
+    finally:
+        if finish is not None and not handed_off:
+            finish(False)
+
+
+def _bare(status):
+    """An empty, uncached refusal: the box's script words it for the reader."""
+    debug_swallowed("find a family refused")
+    response = HttpResponse(status=status, headers={"Cache-Control": "no-store"})
+    response.stewardship_safe_error = True
+    if status == 503:
+        response["Retry-After"] = "5"
+    return response
