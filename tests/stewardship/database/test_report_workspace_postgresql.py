@@ -174,12 +174,15 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         assert response.status_code == 302
         assert response["Location"] == "/admin/reports/?scope=current"
         options = "?sort=date_desc&inactive=yes&size=2"
+        # A bookmark from before #728 removed the inactive subtotal still
+        # loads: the parameter is ignored and no subtotal is shown.
         response, page_one = read(browser, path + options)
         assert response.status_code == 200
-        assert b"Inactive subtotal" in page_one
+        assert b"Inactive subtotal" not in page_one
+        assert b'name="inactive"' not in page_one
         assert b'rel="next"' in page_one and b'rel="prev"' not in page_one
         # Navigator links keep every validated report option.
-        assert b"sort=date_desc" in page_one and b"inactive=yes" in page_one
+        assert b"sort=date_desc" in page_one and b"inactive=" not in page_one
         _, page_two = read(browser, path + options + "&page=2")
         assert b'rel="prev"' in page_two and b'rel="next"' in page_two
         # Table dates use the compact parish style ("Oct 31, 2054").

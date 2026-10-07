@@ -9,7 +9,8 @@
 <h1>{% translate "Participation" %}</h1>
 {% aboutpage "participation" %}<p>{% translate "Track first responses and pledges. Repeat submissions do not increase participation. Testing responses are excluded." %}</p>
 <p>{% translate "The statistics cards count the Families who are eligible right now and their latest answers. The daily chart is calculated separately in the background, so it can lag a little behind the cards; when it is being updated, the latest complete chart is shown." %}</p>
-<p>{% translate "Historical as of day counts, for each day, every Family that had become eligible by then, including Families that later became inactive. Current population uses today's eligible Families for every day. The inactive subtotal is shown separately and never changes the active counts." %}</p>
+{% if 'financial' in campaign.active_configuration.values.modules %}<p>{% translate "Last year's pledges (all Families) adds up every ParishSoft pledge in the comparison period and funds, for every Family, whatever its status today." %}</p>{% endif %}
+<p>{% translate "Historical as of day counts, for each day, every Family that had become eligible by then, including Families that later became inactive. Current population uses today's eligible Families for every day." %}</p>
 <p>{% translate "Generate export saves the chart shown on this page. Queue export with the latest data waits for a fresh calculation from the data as it is when you submit, so it can differ from the chart shown." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p>{% multi_campaign_control "choose-campaign" _("Choose a retained campaign") %} · <a href="{% url 'admin:information_queue' campaign.pk %}">{% translate "Additional information" %}</a>{% if 'financial' in campaign.active_configuration.values.modules %} · <a href="{% url 'admin:financial_report' campaign.pk %}">{% translate "Financial stewardship" %}</a>{% endif %} · <a href="{% url 'admin:response_dashboard' campaign.pk %}">{% translate "Response dashboard" %}</a> · <a href="{% url 'admin:talents_report' campaign.pk %}">{% translate "Talents and limitations" %}</a> · <a href="{% url 'admin:family_directory' campaign.pk %}">{% translate "Family directory" %}</a></p>
@@ -19,7 +20,6 @@
 <select id="scope" name="scope"><option value="historical"{% if query.scope == 'historical' %} selected{% endif %}>{% translate "Historical as of day" %}</option><option value="current"{% if query.scope == 'current' %} selected{% endif %}>{% translate "Current population" %}</option></select>
 <div class="label-row"><label for="timezone" id="timezone-label">{% translate "Report and export timezone" %}</label>{% translate "Campaign dates stay in the campaign's time zone. Times on this page use your computer's time zone when your browser allows it, otherwise UTC. Exports use the time zone chosen here." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="timezone-tip" tip_label_id="timezone-label" tip_text=tip %}</div>
 <select id="timezone" name="timezone">{% for zone in timezones %}<option value="{{ zone }}"{% if zone == query.timezone %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-<label><input type="checkbox" name="inactive" value="yes"{% if query.inactive %} checked{% endif %}> {% translate "Show a separate inactive subtotal for statistics only" %}</label>
 <input type="hidden" name="size" value="{{ query.size }}"><input type="hidden" name="sort" value="{{ query.sort }}">
 <button type="submit">{% translate "Apply report options" %}</button>
 </form>
@@ -34,7 +34,6 @@
 <p>{% translate "Comparison period:" %} {{ statistics.financial.comparison.start|parish_date }} — {{ statistics.financial.comparison.end|parish_date }}. {% translate "Fund DUIDs:" %} {% for fund in statistics.financial.comparison.funds %}{{ fund|duid }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
 <p>{% translate "Giving observed at:" %} {% if statistics.giving %}<time datetime="{{ statistics.giving.observed_at|date:'c' }}" data-local-instant>{{ statistics.giving.observed_at|date:'c' }}</time> ({% translate "through" %} {{ statistics.giving.through_date|parish_date }}){% else %}{% translate "Unavailable" %}{% endif %}</p>
 {% endif %}
-{% if query.inactive %}<h3>{% translate "Inactive subtotal — separate from active statistics" %}</h3><dl>{% for label,value in inactive_cards %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "ParishSoft data load" %}</dt><dd>{% if statistics.source_generation %}{{ statistics.source_generation|number }}{% else %}{% translate "Unavailable" %}{% endif %}</dd>
 <dt>{% translate "Responses included up to number" %}</dt><dd>{{ statistics.submission_watermark|number }}</dd></dl></details>
 </section>
@@ -57,7 +56,7 @@
 <section class="panel" id="participation-export" data-in-place-region><h2>{% translate "Export participation" %}</h2>
 {% if not export_allowed %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}
 {% if chart %}
-<p>{% translate "Export all daily rows from the exact chart shown above, not just this page. Statistics cards and their inactive subtotal are not part of this participation export." %}</p>
+<p>{% translate "Export all daily rows from the exact chart shown above, not just this page. Statistics cards are not part of this participation export." %}</p>
 <p>{{ chart.scope_label }}; {{ row_count|number }} {% translate "daily rows; dates ascending; timezone:" %} {{ query.timezone }}.</p>
 <p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
 <form method="post" action="{% url 'admin:report_export_create' campaign.pk %}">{% csrf_token %}

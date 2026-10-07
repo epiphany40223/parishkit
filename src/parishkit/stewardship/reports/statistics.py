@@ -8,7 +8,7 @@ protection under its own durable digest owner before using them asynchronously.
 """
 
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
@@ -17,7 +17,6 @@ from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.responses.financial_inputs import (
     FinancialDefinition,
     GivingObservation,
-    family_total,
     financial_definition,
     giving_observation,
 )
@@ -57,7 +56,7 @@ class StatisticsInputs:
 
 @dataclass(frozen=True)
 class PopulationStatistics:
-    """One labeled population; inactive values never enlarge the active base."""
+    """The current active population's counts and its exact annual pledges."""
 
     families: int
     active_members: int
@@ -65,7 +64,6 @@ class PopulationStatistics:
     deliverable_email: int
     responses: int
     annual_pledge: MoneyAmount
-    comparison_pledge: MoneyAmount
 
     @property
     def no_deliverable_email(self):
@@ -91,13 +89,16 @@ class CampaignStatistics:
     source_as_of: datetime | None
     submission_watermark: int
     active: PopulationStatistics | None
-    inactive: PopulationStatistics | None
     financial_enabled: bool
     financial: FinancialDefinition | None
     giving: GivingObservation | None
+    # Every snapshot pledge in the comparison funds and period, whatever each
+    # Family's status (#728). It is the only comparison figure, captured as
+    # one aggregate: no Family's own comparison pledges leave the database.
+    comparison_pledge_all: MoneyAmount = MoneyAmount(None)
 
 
-def _calculate(document, *, include_inactive):
+def _calculate(document):
     """Validate the exact envelope, then group source/response inputs only once."""
     if document["schema"] != "campaign-statistics-v1":
         raise ValueError
@@ -130,7 +131,6 @@ def _calculate(document, *, include_inactive):
             source_generation=None,
             source_as_of=None,
             active=None,
-            inactive=None,
             giving=None,
         )
     source_id = UUID(source["id"])
@@ -187,27 +187,20 @@ def _calculate(document, *, include_inactive):
         sequences.add(sequence)
         responses[duid] = value
     giving = giving_observation(source["cursor"], financial) if financial else None
-    pledges = defaultdict(list)
-    financial_population = active | cohort
-    if giving is not None:
-        # Complete snapshot coverage is a numeric proof, not permission to copy
-        # individual financial values for households outside either population.
-        count = source["pledge_count"]
-        if (
-            type(count) is not int
-            or count != source["counts"]["pledge"]
-            or len(document["pledges"]) > count
-        ):
-            raise ValueError
-        for row in document["pledges"]:
-            if int(row["family_key"]) not in financial_population:
-                raise ValueError
-            pledges[int(row["family_key"])].append(row)
-    comparison = {
-        duid: family_total(rows, financial.comparison, family_duid=duid)
-        for duid, rows in pledges.items()
-    }
-    observed_families = {int(key) for key in corpus["family"]}
+    # The aggregate counts only when the snapshot holds every pledge row it
+    # promised: an incomplete set would show a low total, not Unavailable.
+    # The count is a plain number; no Family's own pledges are detached.
+    count = source.get("pledge_count")
+    complete = type(count) is int and count == source["counts"]["pledge"]
+    # Observations retained before #728 (daily digest snapshots) lack the
+    # all-Families aggregate: it stays unavailable there, never zero. Their
+    # per-Family "pledges" rows are ignored; nothing reads them any more.
+    everyone = source.get("comparison_pledge_all")
+    comparison_all = MoneyAmount(
+        source_cents(everyone)
+        if giving is not None and complete and everyone is not None
+        else None
+    )
 
     def population(identities):
         """Sum exact annual answers, never installment displays or Test versions."""
@@ -218,13 +211,6 @@ def _calculate(document, *, include_inactive):
             if financial and all(amount.available for amount in amounts)
             else None
         )
-        # Removed Families lack an observation, not merely a pledge row. Their
-        # comparison subtotal must stay unavailable instead of inventing zero.
-        prior = MoneyAmount(
-            sum(comparison.get(duid, MoneyAmount(0)).cents for duid in identities)
-            if giving is not None and identities <= observed_families
-            else None
-        )
         return PopulationStatistics(
             len(identities),
             sum(members[duid] for duid in identities),
@@ -232,7 +218,6 @@ def _calculate(document, *, include_inactive):
             len(identities & deliverable),
             len(responders),
             annual,
-            prior,
         )
 
     return CampaignStatistics(
@@ -241,16 +226,16 @@ def _calculate(document, *, include_inactive):
         source_generation=generation,
         source_as_of=source_as_of,
         active=population(active),
-        inactive=population(cohort - active) if include_inactive else None,
         giving=giving,
+        comparison_pledge_all=comparison_all,
     )
 
 
-def calculate_statistics(inputs, *, include_inactive=False):
+def calculate_statistics(inputs):
     """Reproduce aggregates from frozen inputs; missing source remains unavailable."""
-    if not isinstance(inputs, StatisticsInputs) or type(include_inactive) is not bool:
-        raise TypeError("Statistics require trusted inputs and an explicit filter.")
+    if not isinstance(inputs, StatisticsInputs):
+        raise TypeError("Statistics require trusted inputs.")
     try:
-        return _calculate(inputs.document(), include_inactive=include_inactive)
+        return _calculate(inputs.document())
     except (KeyError, TypeError, ValueError, OverflowError, AttributeError):
         raise StatisticsUnavailable("Campaign statistics are unavailable.") from None

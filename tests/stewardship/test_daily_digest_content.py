@@ -51,13 +51,11 @@ def document():
         source_generation=chart.source_generation,
         source_as_of=chart.source_as_of,
         submission_watermark=chart.submission_watermark,
-        active=PopulationStatistics(
-            1000, 2345, 900, 800, 2, MoneyAmount(223456), MoneyAmount(100000)
-        ),
-        inactive=None,
+        active=PopulationStatistics(1000, 2345, 900, 800, 2, MoneyAmount(223456)),
         financial_enabled=True,
         financial=None,
         giving=None,
+        comparison_pledge_all=MoneyAmount(100000),
     )
     return DailyDigestDocument(UUID(int=5), chart, statistics, (chart.last_date,))
 
@@ -102,7 +100,9 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
         assert required in result.text
     # The send-time statistics (2 of 1,000 Families, $2,234.56) are live, so
     # they never appear: they would disagree with the chart's last point.
-    for live in ("1,000", "2,345", "Active Members", "comparison"):
+    live_figures = ("1,000", "2,345", "Active Members", "comparison")
+    # #728 relabelled the comparison card; it must not appear either.
+    for live in (*live_figures, "Last year's pledges"):
         assert live not in result.text and live not in result.html
     # The live pledge total equals an earlier day's cumulative pledges in this
     # fixture, and the week table shows that day (#720), so check the totals.
@@ -286,7 +286,6 @@ def test_missing_observations_remain_unavailable_and_zero_remains_zero():
         {"submission_watermark": 1002},
         {"financial_enabled": False},
         {"active": None},
-        {"inactive": document().statistics.active},
     ],
 )
 def test_mixed_observations_are_rejected(changes):
