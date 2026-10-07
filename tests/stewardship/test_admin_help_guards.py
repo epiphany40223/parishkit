@@ -90,9 +90,11 @@ INTRO_WORDS = 15
 # Pages whose introduction is not yet converted, with the visible
 # introductory words each may keep: pages other work was changing when the
 # rest were converted (#227 follow-ups), and the two pages both portals render
-# (error.html and denied.html), whose visible text is the error itself and
-# which follow the Family portal's own layout. Lower or remove an entry when
-# its page is converted; never raise one or add a page.
+# (error.html and denied.html), whose visible text is the error itself. Each
+# uses the Admin layout when ``admin`` is set and the Family layout otherwise,
+# and one template serves both, so their wording is kept as a reviewed
+# exception. Lower or remove an entry when its page is converted; never raise
+# one or add a page.
 INTRO_ALLOWED = {
     "logs-error.html": 73,
     "ministry-followup-error.html": 38,
