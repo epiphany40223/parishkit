@@ -1,6 +1,7 @@
 """Browser CI partitions preserve the complete suite and fail closed."""
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -15,9 +16,11 @@ from parishkit.stewardship import quality_browser
 from parishkit.stewardship.quality_ci import environment
 from parishkit.stewardship.quality_pytest import BROWSER_DISCOVERY, BrowserSelection
 from parishkit.stewardship.quality_sharding import (
+    BROWSER_CASE_SECONDS,
     BROWSER_ENGINES,
     BROWSER_FILE_SECONDS,
     BROWSER_JOBS,
+    browser_estimate,
     browser_partition,
     parse_browser_partition,
     parse_browser_runs,
@@ -270,7 +273,7 @@ def test_collection_hook_keeps_exact_owner_and_reports(selection_config):
     selection_config.hook.pytest_deselected.assert_called_once_with(items=removed)
     reporter = selection_config.pluginmanager.get_plugin.return_value
     reporter.write_line.assert_called_once_with(
-        "CI_BROWSER_PARTITION chromium: 1 out of 3 (33.3%) cases"
+        "CI_BROWSER_PARTITION chromium: 1 out of 3 (33.3%) cases, estimated 2 s"
     )
 
 
@@ -381,6 +384,10 @@ def test_real_engine_jobs_equal_the_engine_share(probe):
         assert len({node.split("::")[0] for node in manifest(result)}) == 1
         jobs.extend(manifest(result))
     assert sorted(jobs) == sorted(manifest(whole))
+    # Each job logs its estimate against its measured execution time.
+    assert re.search(
+        r"CI_BROWSER_TIMING webkit 2/2: estimated 3 s, actual \d+ s", result.stdout
+    )
     result = run_probe(
         probe, "--ci-browser-engine=webkit", "--ci-browser-partition=1/3"
     )
@@ -672,8 +679,23 @@ def test_split_engine_runner_requires_its_own_job(probe, capfd):
     assert "CI_BROWSER_COMPLETE webkit 2/2: 2 executed cases" in capfd.readouterr().out
 
 
-def test_job_runs_every_partition_under_one_deadline(monkeypatch, capfd):
-    """A failed partition is reported, later ones still run, time is shared."""
+def test_browser_estimate_sums_file_hints_and_case_defaults():
+    """Known files use their recorded seconds; others the per-case default."""
+    known = next(iter(BROWSER_FILE_SECONDS))
+    nodes = [f"tests/x/{known}::a", f"tests/x/{known}::b"]
+    nodes += [f"tests/x/test_new.py::{n}" for n in "abc"]
+    assert browser_estimate(nodes) == (
+        BROWSER_FILE_SECONDS[known] + 3 * BROWSER_CASE_SECONDS
+    )
+    assert browser_estimate([]) == 0
+
+
+@pytest.mark.parametrize(
+    "error",
+    [subprocess.CalledProcessError(1, "pytest"), FileNotFoundError("python")],
+)
+def test_job_runs_every_partition_under_one_deadline(monkeypatch, capfd, error):
+    """A failed or unlaunchable partition is reported, later ones still run."""
     clock = iter([0, 100, 700])
     monkeypatch.setattr(quality_browser.time, "monotonic", lambda: next(clock))
     calls = []
@@ -682,7 +704,7 @@ def test_job_runs_every_partition_under_one_deadline(monkeypatch, capfd):
         """Record the call; the first partition fails."""
         calls.append((engine, index, count, timeout))
         if len(calls) == 1:
-            raise subprocess.CalledProcessError(1, "pytest")
+            raise error
 
     monkeypatch.setattr(quality_browser, "run_engine", run_engine)
     runs = [("webkit", 1, 2), ("chromium", 1, 2)]

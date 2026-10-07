@@ -100,7 +100,9 @@ def run_job(root, runs):
     for engine, index, count in runs:
         try:
             run_engine(root, engine, index, count, max(1, deadline - time.monotonic()))
-        except (ValueError, subprocess.SubprocessError) as error:
+        # OSError: a missing interpreter or checkout still gets a clear line
+        # and lets the job's later partitions run.
+        except (ValueError, subprocess.SubprocessError, OSError) as error:
             label = browser_label(engine, index, count)
             print(f"CI_BROWSER_FAILED {label}: {error}", flush=True)
             failed.append(label)

@@ -185,12 +185,8 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
     operational = jobs["stewardship-operational"]
-    assert operational["strategy"] == {
-        "fail-fast": False,
-        "matrix": {
-            "providers": ["configured initial complete abort"],
-        },
-    }
+    # A plain job, not a one-entry matrix, so its check name has no suffix.
+    assert "strategy" not in operational
     (step,) = (
         item
         for item in operational["steps"]
@@ -198,9 +194,9 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
     )
     assert step["env"] == {
         "PARISHKIT_RUN_RUNTIME_TESTS": "1",
-        "PROVIDER_MODES": "${{ matrix.providers }}",
+        "PROVIDER_MODES": "configured initial complete abort",
     }
-    # Each runner expands its modes into both production variants.
+    # The runner expands its modes into both production variants.
     for fragment in (
         "for mode in $PROVIDER_MODES; do",
         "for production in False True; do",
@@ -234,12 +230,10 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
         for line in collected.stdout.splitlines()
         if line.startswith("tests/stewardship/test_operational_compose.py::")
     }
-    matrix = operational["strategy"]["matrix"]
     expected = {
         "tests/stewardship/test_operational_compose.py::"
         f"test_complete_foundation_bootstrap_and_online_exclusion[{provider}-{production}]"
-        for providers in matrix["providers"]
-        for provider in providers.split()
+        for provider in step["env"]["PROVIDER_MODES"].split()
         for production in ("False", "True")
     }
     assert actual == expected, collected.stdout + collected.stderr
