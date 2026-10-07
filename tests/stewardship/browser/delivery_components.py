@@ -43,39 +43,54 @@ def components(now):
             query="",
         ),
     )
+    delivery = dict(
+        delivery=message,
+        task=task,
+        commands=[
+            dict(id=uuid4(), action=action, label=label)
+            for action, label in (
+                ("note", "Save evidence note"),
+                ("accept", "Confirm delivery using external evidence"),
+                (
+                    "confirm_unsent",
+                    "Record that the provider did not send it (no resend)",
+                ),
+                ("resend", "Authorize potentially duplicate resend"),
+            )
+        ],
+        notes=[
+            dict(
+                action="note",
+                created_at=now,
+                evidence_note="Confirmed <private> evidence",
+            )
+        ],
+        events=[
+            dict(
+                attempt=1,
+                action="mark_unknown",
+                state="delivery_unknown",
+                created_at=now,
+            )
+        ],
+    )
+    yield "/delivery", "delivery", delivery
+    # The evidence and attempt history over two pages, as Next page and
+    # Previous page fetch them in place (#519 PR 6).
+    first = delivery | dict(next_query="page=2")
+    yield "/delivery-paged", "delivery", first
+    yield "/delivery-paged?page=1", "delivery", first
     yield (
-        "/delivery",
+        "/delivery-paged?page=2",
         "delivery",
-        dict(
-            delivery=message,
-            task=task,
-            commands=[
-                dict(id=uuid4(), action=action, label=label)
-                for action, label in (
-                    ("note", "Save evidence note"),
-                    ("accept", "Confirm delivery using external evidence"),
-                    (
-                        "confirm_unsent",
-                        "Record that the provider did not send it (no resend)",
-                    ),
-                    ("resend", "Authorize potentially duplicate resend"),
-                )
-            ],
+        delivery
+        | dict(
+            # As long as the first page, so the reader's place can be kept.
             notes=[
-                dict(
-                    action="note",
-                    created_at=now,
-                    evidence_note="Confirmed <private> evidence",
-                )
+                dict(action="note", created_at=now, evidence_note="Earlier evidence")
             ],
-            events=[
-                dict(
-                    attempt=1,
-                    action="mark_unknown",
-                    state="delivery_unknown",
-                    created_at=now,
-                )
-            ],
+            events=[dict(attempt=1, action="send", state="pending", created_at=now)],
+            previous_query="page=1",
         ),
     )
     yield (

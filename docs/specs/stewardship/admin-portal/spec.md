@@ -1135,7 +1135,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   grain, the [response lists](../reports/spec.md#response-lists)' mode, the
   [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
   "Refresh current work" on "Background work", "Refresh list" on
-  "Families on the form now") or a form whose answer is the page again
+  "Families on the form now", and the page links of a mail delivery's
+  evidence and attempt history, an information item's and a Ministry
+  follow-up request's history, and a weekly information report) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](#follow-up-workflows)) names its region by its
@@ -1163,13 +1165,20 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   made, follows the server's Post/Redirect/Get redirect, and replaces every
   region the fetched page shares with this one, plus the counts, summaries,
   links and form state outside them that follow the view; views keep
-  rendering whole pages, so no partial-page endpoint exists. One request is
+  rendering whole pages, so no partial-page endpoint exists. A link marked
+  `data-in-place-only` replaces only the region it names: the history
+  pages of an information item and a Ministry follow-up request sit inside
+  the item's panel, and paging them must not replace the Save follow-up form
+  above or discard notes typed but not yet saved; a save still replaces the
+  whole panel, history included. One request is
   in flight at a time: a newer choice cancels an older read, but a POST that
   saves a change is never cancelled, and other in-place controls and repeats
   are ignored (the live region says "Still saving…") until it settles.
 - **Place, focus and announcement.** The reader keeps their scroll position;
-  focus returns to the control (or its fresh copy; when that is gone or
-  disabled, the region's first heading, else the region); the region
+  focus returns to the control (or its fresh copy; when that is gone, the
+  link its `data-in-place-fallback` key names, so Next page on the last page
+  hands focus to Previous page; when that is gone too or disabled, the
+  region's first heading, else the region); the region
   is marked busy while the request runs, and a polite live region says what
   happened ("By day", "List refreshed." and the rows now shown). A view
   choice replaces the address, and a followed redirect sets it to the

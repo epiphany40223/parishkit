@@ -37,6 +37,8 @@
 <button type="submit" aria-describedby="followup-save-hint"{% if not mutable %} disabled{% endif %}>{% translate "Save follow-up" %}</button>
 <p class="help" id="followup-save-hint" data-complete-hint hidden></p></form>
 {% else %}<p>{% translate "This request is closed. Closed outcomes are permanent." %}</p>{% if item.notes %}<div>{{ item.notes|linebreaksbr }}</div>{% endif %}{% endif %}
+{# The history pages in place by itself (data-in-place-only), so it never replaces the form above or what the reader has typed; a Save still refreshes the whole panel (#519). #}
+<div id="followup-history" data-in-place-region>
 <h2>{% translate "Follow-up history" %}</h2>
 {% for revision in history %}<section aria-label="{% translate 'Follow-up edit' %} {{ forloop.counter }}">
 <h3>{{ revision.actor_label }} — <time datetime="{{ revision.created_at|date:'c' }}" data-local-instant>{{ revision.created_at|date:'c' }}</time></h3>
@@ -44,7 +46,8 @@
 {% if revision.contact_at %}<p>{{ revision.channel_label }} {% translate "contact" %} <time datetime="{{ revision.contact_at|date:'c' }}" data-local-instant>{{ revision.contact_at|date:'c' }}</time>{% if revision.contact_notes %}: {{ revision.contact_notes|linebreaksbr }}{% endif %}</p>{% endif %}
 <div>{{ revision.notes|linebreaksbr }}</div></section>
 {% empty %}<p>{% translate "No follow-up edits yet." %}</p>{% endfor %}
-<nav aria-label="{% translate 'Follow-up history pages' %}">{% if previous_history %}<a href="{% url 'admin:ministry_followup_item' campaign_id item.id %}?page={{ previous_history }}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="{% url 'admin:ministry_followup_item' campaign_id item.id %}?page={{ next_history }}">{% translate "Older history" %}</a>{% endif %}</nav>
+<nav aria-label="{% translate 'Follow-up history pages' %}">{% if previous_history %}<a href="{% url 'admin:ministry_followup_item' campaign_id item.id %}?page={{ previous_history }}#followup-history" data-in-place="history-newer" data-in-place-fallback="history-older" data-in-place-only data-in-place-message="{% translate 'Newer history shown.' %}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="{% url 'admin:ministry_followup_item' campaign_id item.id %}?page={{ next_history }}#followup-history" data-in-place="history-older" data-in-place-fallback="history-newer" data-in-place-only data-in-place-message="{% translate 'Older history shown.' %}">{% translate "Older history" %}</a>{% endif %}</nav>
+</div>
 </div>
 <p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Return to the queue" %}</a></p>
 {% else %}

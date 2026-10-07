@@ -6,7 +6,9 @@ a real Post/Redirect/Get redirect (``POSTS``). The in-place mechanism (#519)
 follows a save only back to the same path, and Playwright cannot fulfil a
 redirect from a route on every engine. Two more requests answer a save with
 the request closed (``RESOLVED``: no form comes back) and with follow-up
-edits unavailable (``GATED``: Save comes back disabled).
+edits unavailable (``GATED``: Save comes back disabled). The history's
+second page (``OLDER``) and first page by number (``NEWER``) serve the
+in-place history pager tests (#519 PR 6).
 """
 
 from datetime import UTC, datetime
@@ -35,6 +37,7 @@ CAMPAIGN, REQUEST = UUID(int=92), UUID(int=93)
 ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{REQUEST}/"
 UPDATE = ITEM + "update"
 SAVED = ITEM + "?saved=1"
+OLDER, NEWER = ITEM + "?page=2", ITEM + "?page=1"
 RESOLVE_REQUEST, GATE_REQUEST = UUID(int=94), UUID(int=96)
 RESOLVE_ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{RESOLVE_REQUEST}/"
 RESOLVED = RESOLVE_ITEM + "?resolved=1"
@@ -222,6 +225,15 @@ def components(context, admin):
         # The request page at its real address, before and after a save that
         # moved it to In progress and added an edit to its history.
         ITEM: values | dict(item=row, form=form, history=[revision], next_history=2),
+        NEWER: values | dict(item=row, form=form, history=[revision], next_history=2),
+        # The history's last page: an older edit, and only Newer history.
+        OLDER: values
+        | dict(
+            item=row,
+            form=form,
+            history=[SimpleNamespace(**vars(revision) | dict(notes="Older <edit>"))],
+            previous_history=1,
+        ),
         # A request whose save resolves it, and one whose save comes back
         # while other campaign work makes follow-up edits unavailable.
         RESOLVE_ITEM: values
