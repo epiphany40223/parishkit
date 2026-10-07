@@ -210,12 +210,11 @@ LEDGER = {
     "weekly_digest_manual": pending("PR 8", "digest weekly-request"),
     "logs": pending("PR 8", "logs list"),
     "logs_export": pending("PR 8", "logs export"),
-    # System health (ADM-13 PR 2): its read command follows in a later
-    # ADM-13 pull request, at the latest with the log commands of PR 8 (see
-    # #530). /admin/system/ only redirects to the page.
-    "system": pending("PR 8", "system health"),
-    "system_health": pending("PR 8", "system health"),
-    "system_health_status": pending("PR 8", "system health"),
+    # System health (ADM-13): the page, its polled fragment (``--watch``)
+    # and /admin/system/, which only redirects to the page.
+    "system": command("system health"),
+    "system_health": command("system health"),
+    "system_health_status": command("system health"),
     # Operations.
     "background": command("task list"),
     "background_tasks": command("task list"),

@@ -637,6 +637,13 @@ def send_progress(args, preamble, runtime, context):
     return read_send_progress(context["caller"], runtime, audit=context["audit"])
 
 
+def system_health(args, preamble, runtime, context):
+    """The System health page's problems and panels (ADM-13)."""
+    from .admin_reads import read_system_health
+
+    return read_system_health(context["caller"], runtime, audit=context["audit"])
+
+
 def send_history(args, preamble, runtime, context):
     """One page of the current campaign's Family email sends."""
     from .admin_reads import query, read_send_history
@@ -964,6 +971,7 @@ def _read_specs():
         TaskList,
         TaskShow,
     )
+    from .system_health import SystemHealth
 
     return (
         CommandSpec(
@@ -1044,6 +1052,20 @@ def _read_specs():
             3,
             options=(_schedule_options,),
             audit_event=None,
+        ),
+        # System health (ADM-13 PR 2b): a read like the others above, so it
+        # is catalogued with them (ADM-11 PR 3's read commands).
+        CommandSpec(
+            "system health",
+            "Show the system's problems, services, mail senders and backups.",
+            system_health,
+            "read_only",
+            False,
+            SystemHealth.field_names(),
+            3,
+            options=(_watch_options,),
+            audit_event="system_health_viewed",
+            watch=True,
         ),
         CommandSpec(
             "go-live progress",

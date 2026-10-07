@@ -6,6 +6,7 @@ migrations through the restricted web login, record one audited view per page
 open (never per poll), and stay Administrator-only.
 """
 
+import json
 from datetime import timedelta
 from uuid import uuid4
 
@@ -23,6 +24,7 @@ from parishkit.stewardship.source.loading import CountCheck, DestructiveSourceCh
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .test_admin_status_cli_postgresql import admin, one, session  # noqa: F401
 from .test_background_grants_postgresql import task_login
 from .test_system_health_records_postgresql import (
     raw,
@@ -115,7 +117,7 @@ def test_problems_come_from_status_rows_incidents_and_retries(auth_service, goog
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         body = browser.get(STATUS).content.decode()
         found = system_health.read_health(auth_service.store)[0]
-    codes = [problem.code for problem in found.problems]
+    codes = [problem.kind for problem in found.problems]
     assert codes == ["sender_halted", "not_running", "backup_offsite_failed"]
     assert found.problems[1].service == "worker"
     assert found.problems[1].process == "source"
@@ -145,12 +147,18 @@ def test_the_page_is_for_administrators_only(auth_service, google, role):
         ],
     )
     google[0]["email"] = "reader@example.org"
+    # Problems exist (no core service has reported, and the worker's refresh
+    # process stopped), so only the role keeps the lines off Home.
+    insert_row("worker", process="source", age=timedelta(minutes=10))
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert browser.get(PAGE).status_code == 403
         assert browser.get(STATUS).status_code == 403
         home = browser.get("/admin/").content
     assert b'href="/admin/system/health/"' not in home
+    # Nor Home's System health problem lines, nor any problem sentence.
+    assert b"data-home-health" not in home and b"data-problem=" not in home
+    assert b"system problem" not in home and b"has not reported" not in home
     assert views() == []
 
 
@@ -207,14 +215,14 @@ def test_a_refused_load_shows_its_counts_until_a_full_refresh_follows(tmp_path):
 
 def test_the_schema_check_compares_every_applied_migration(auth_service):
     """Equal sets match; a missing or extra applied migration does not."""
-    assert system_health._schema_current()
+    assert system_health._facts().schema_current
     with connection.cursor() as cursor:
         cursor.execute(
             "INSERT INTO django_migrations (app,name,applied) "
             "VALUES ('stewardship_jobs','9999_future',now())"
         )
     try:
-        assert not system_health._schema_current()
+        assert not system_health._facts().schema_current
     finally:
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM django_migrations WHERE name='9999_future'")
@@ -235,3 +243,84 @@ def test_an_unreadable_configuration_answers_503(auth_service, google, monkeypat
         assert browser.get(PAGE).status_code == 503
         assert browser.get(STATUS).status_code == 503
     assert views() == []
+
+
+def test_home_lists_each_problem_with_the_pages_sentence(auth_service, google):
+    """Administrators see one line per problem on Home, linking the page."""
+    running_services()
+    insert_row("worker", process="source", age=timedelta(minutes=10))
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        home = browser.get("/admin/").content.decode()
+    assert "1 system problem needs attention" in home
+    assert "ParishSoft refresh worker has not reported since" in home
+    assert 'data-problem="not_running"' in home
+    assert 'href="/admin/system/health/"' in home
+
+
+def test_the_command_reads_the_page_and_watches_until_healthy(admin, google):  # noqa: F811
+    """``system health``: the page's read, audited once, never a sentence."""
+    running_services()
+    insert_row("mail-dispatch", sender="halted")
+    secret = session(admin, scope="read-only")
+    before = len(views())
+    code, document = one(admin, "system", "health", secret=secret)
+    assert code == 0 and document["ok"] and document["final"], document
+    result = document["result"]
+    assert [problem["kind"] for problem in result["problems"]] == ["sender_halted"]
+    assert result["schema_current"] is True
+    assert "has stopped" not in json.dumps(document)
+    assert len(views()) == before + 1
+    # With problems, a watch runs to its timeout (exit 7) with the last state,
+    # still audited once.
+    code, documents = admin(
+        "system", "health", "--watch", "2", "--timeout", "3", secret=secret
+    )
+    assert code == 7 and documents[-1]["error"]["code"] == "watch_timeout"
+    assert len(views()) == before + 2
+
+
+def test_a_watch_of_a_healthy_system_stops_at_once(admin, google):  # noqa: F811
+    """Nothing needs attention: one final document, exit 0."""
+    running_services()
+    secret = session(admin, scope="read-only")
+    code, documents = admin("system", "health", "--watch", "2", secret=secret)
+    assert code == 0 and len(documents) == 1 and documents[0]["final"]
+    assert documents[0]["result"]["problems"] == []
+
+
+def test_home_problem_lines_cost_no_query_whatever_is_open(auth_service, google):
+    """Home's query count is the same with problems open, a backup overdue too.
+
+    The lines ride on Home's refresh-status statement, so they add no query
+    of their own, and nothing in them reads more when an incident opens.
+    """
+    from django.test.utils import CaptureQueriesContext
+
+    running_services()
+    browser, _ = signed_in()
+
+    def count():
+        """How many statements one Home view runs under the web login."""
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            CaptureQueriesContext(connection) as queries,
+        ):
+            assert browser.get("/admin/").status_code == 200
+        return len(queries)
+
+    count()  # Fill per-process caches first.
+    healthy = count()
+    insert_row("worker", process="source", age=timedelta(minutes=10))
+    OperationalIncident.objects.create(
+        kind="backup_rpo_breach",
+        signal_level="WARNING",
+        suppression_seconds=900,
+        escalation_seconds=900,
+    )
+    troubled = count()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        home = browser.get("/admin/").content.decode()
+    assert "2 system problems need attention" in home
+    assert "No backup has finished yet." in home
+    assert troubled == healthy

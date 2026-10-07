@@ -140,13 +140,13 @@ class ProcessLine:
 
 @dataclass(frozen=True)
 class Problem:
-    """One current problem: a stable code, and what it names.
+    """One current problem: its stable kind, and what it names.
 
     ``service``, ``process`` and ``target`` name the process it is about,
     ``at`` the time the sentence states (when it began, or until when).
     """
 
-    code: str
+    kind: str
     service: str | None = None
     process: str | None = None
     target: str | None = None
@@ -175,7 +175,7 @@ class Problem:
             "debug_logging": _("debug logging on in %(name)s"),
             "versions_differ": _("versions differ"),
             "schema_mismatch": _("database does not match"),
-        }.get(self.code, self.code)
+        }.get(self.kind, self.kind)
         return words % {"name": self.label} if "%(name)s" in words else words
 
     @property
@@ -259,9 +259,9 @@ def group_processes(rows, now):
     return tuple(sorted(lines, key=_order))
 
 
-def _about(code, line, at=None):
+def _about(kind, line, at=None):
     """A problem about one process line."""
-    return Problem(code, line.service, line.process, line.target, at)
+    return Problem(kind, line.service, line.process, line.target, at)
 
 
 def find_problems(
@@ -386,6 +386,13 @@ class SystemHealth(ReadModel):
                         "last_copy_at": value.last_copy_at,
                     }
                 )
+            elif item.name == "incidents":
+                # A list of fixed members, not a mapping keyed by kind, so
+                # the document's member names never depend on the data.
+                value = [
+                    {"kind": kind, "since": since}
+                    for kind, since in sorted(value.items())
+                ]
             elif item.name in {"problems", "processes", "refused_counts"}:
                 value = [
                     {part.name: getattr(entry, part.name) for part in fields(entry)}
@@ -393,6 +400,11 @@ class SystemHealth(ReadModel):
                 ]
             document[item.name] = plain(value)
         return document
+
+    @property
+    def terminal(self):
+        """``system health --watch`` repeats until everything is working."""
+        return not self.problems
 
     @property
     def runbooks(self):
@@ -473,45 +485,83 @@ def _image_migrations():
     return frozenset(disk_migrations())
 
 
-def _schema_current():
-    """Whether the applied migrations are exactly the ones this version ships."""
+# The status records, the open incidents the page names, the applied
+# migrations and when the newest backup finished, as one derived row: Home
+# has a fixed query budget, so ``refresh_status.full_refresh_status`` joins
+# this row into the statement Home already runs, and the page runs it alone.
+# Every column is read whatever the data, so Home's query count never
+# depends on which problems are open. Times travel as JSON and are parsed.
+HEALTH_SQL = (
+    "SELECT (SELECT coalesce(json_agg(json_build_object("
+    "'service',service,'process',process,'target',target,"
+    "'started_at',started_at,'reported_at',reported_at,"
+    "'application_version',application_version,'debug_logging',debug_logging,"
+    "'sender_state',sender_state,'sender_since',sender_since,"
+    "'sender_until',sender_until)),'[]'::json) "
+    "FROM public.stewardship_service_status),"
+    "(SELECT coalesce(json_agg(json_build_array(kind,first_seen)),'[]'::json) "
+    "FROM public.stewardship_ops_incident "
+    "WHERE resolved_at IS NULL AND kind=ANY(%(health_incidents)s)),"
+    "(SELECT array_agg(app||' '||name) FROM public.django_migrations),"
+    "(SELECT completed_at FROM public.stewardship_backup_run "
+    "ORDER BY completed_at DESC,id DESC LIMIT 1)"
+)
+HEALTH_COLUMNS = 4
+_TIMES = ("started_at", "reported_at", "sender_since", "sender_until")
+
+
+def health_params():
+    """The named parameters ``HEALTH_SQL`` takes."""
+    return {"health_incidents": list(INCIDENTS)}
+
+
+@dataclass(frozen=True)
+class HealthFacts:
+    """What ``HEALTH_SQL`` read, parsed.
+
+    ``rows`` are mappings with the ``stewardship_service_status`` columns;
+    ``incidents`` maps each open kind the page names to when it began;
+    ``schema_current`` is whether the applied migrations are exactly the
+    ones this version ships; ``backup_at`` is when the newest backup
+    finished.
+    """
+
+    rows: list
+    incidents: dict
+    schema_current: bool
+    backup_at: datetime | None
+
+
+def _instant(value):
+    """A JSON timestamp from PostgreSQL as an aware datetime (None stays None)."""
+    return None if value is None else datetime.fromisoformat(value)
+
+
+def health_facts(columns):
+    """Parse the ``HEALTH_COLUMNS`` columns ``HEALTH_SQL`` selects.
+
+    psycopg decodes the JSON columns already.
+    """
+    rows, incidents, applied, backup_at = columns
+    for row in rows:
+        for name in _TIMES:
+            row[name] = _instant(row[name])
+    applied = frozenset(tuple(item.split(" ", 1)) for item in applied or ())
+    return HealthFacts(
+        rows,
+        {kind: _instant(since) for kind, since in incidents},
+        applied == _image_migrations(),
+        backup_at,
+    )
+
+
+def _facts():
+    """Run ``HEALTH_SQL`` alone (the page's read) and parse it."""
     from django.db import connection
 
     with connection.cursor() as cursor:
-        cursor.execute("SELECT app,name FROM public.django_migrations")
-        applied = frozenset(tuple(row) for row in cursor.fetchall())
-    return applied == _image_migrations()
-
-
-def _status_rows():
-    """Every service status record, as mappings."""
-    from .jobs.service_status_models import ServiceStatus
-
-    return list(
-        ServiceStatus.objects.values(
-            "service",
-            "process",
-            "target",
-            "started_at",
-            "reported_at",
-            "application_version",
-            "debug_logging",
-            "sender_state",
-            "sender_since",
-            "sender_until",
-        )
-    )
-
-
-def _open_incidents():
-    """Each open incident the page names, with when it began."""
-    from .jobs.operational_models import OperationalIncident
-
-    return dict(
-        OperationalIncident.objects.filter(
-            kind__in=INCIDENTS, resolved_at__isnull=True
-        ).values_list("kind", "first_seen")
-    )
+        cursor.execute(HEALTH_SQL, health_params())
+        return health_facts(cursor.fetchone())
 
 
 def _retries():
@@ -610,6 +660,36 @@ def _pause(campaign):
     }
 
 
+def _processes(rows, now):
+    """The process lines, and the core services that have not reported."""
+    processes = group_processes(rows, now)
+    reported = {line.service for line in processes}
+    return processes, tuple(
+        service for service in CORE_SERVICES if service not in reported
+    )
+
+
+def home_problems(configuration, now, refresh):
+    """The System health problems, for the lines on Home (ADM-13 PR 2b).
+
+    ``refresh`` is the ``FullRefreshStatus`` Home read with ``health=True``,
+    which carries ``HEALTH_SQL``'s facts from the same statement, so the
+    lines cost Home no query of their own. Returns the same ``Problem``
+    values the page lists, in its order.
+    """
+    facts = refresh.health
+    processes, missing = _processes(facts.rows, now)
+    return find_problems(
+        mode=configuration.mode,
+        processes=processes,
+        missing=missing,
+        schema_current=facts.schema_current,
+        incidents=facts.incidents,
+        refresh=refresh,
+        backup_at=facts.backup_at,
+    )
+
+
 def read_health(store):
     """Read the System health model in one read-only snapshot.
 
@@ -638,10 +718,9 @@ def read_health(store):
             )
             configuration.current_campaign = campaign
         now = database_now()
-        processes = group_processes(_status_rows(), now)
-        reported = {line.service for line in processes}
-        missing = tuple(service for service in CORE_SERVICES if service not in reported)
-        incidents = _open_incidents()
+        facts = _facts()
+        incidents, schema_current = facts.incidents, facts.schema_current
+        processes, missing = _processes(facts.rows, now)
         refresh = full_refresh_status(refresh_schedule(configuration), now)
         refused_at, refused_counts = _refused(refresh.succeeded_at)
         backup_at, key_matches = _backup(configuration)
@@ -650,7 +729,6 @@ def read_health(store):
         send = None if progress is None else progress["send"]
         production = configuration.mode == "production"
         paused = bool(production and campaign and campaign.delivery_paused)
-        schema_current = _schema_current()
         offsite = _offsite(configuration)
         page = {
             "campaign_id": None if campaign is None else campaign.pk,

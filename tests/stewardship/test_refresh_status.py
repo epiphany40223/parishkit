@@ -475,6 +475,16 @@ def test_the_status_row_halves_keep_their_column_counts():
     assert select_columns(OUTCOMES_SQL) == 6
     assert select_columns(FACTS_SQL) == FACTS_COLUMNS
     assert len(fields(SourceFacts)) == FACTS_COLUMNS
+    # System health's derived row (ADM-13), joined between the halves for
+    # Home and read just before the facts.
+    from parishkit.stewardship.system_health import (
+        HEALTH_COLUMNS,
+        HEALTH_SQL,
+        HealthFacts,
+    )
+
+    assert select_columns(HEALTH_SQL) == HEALTH_COLUMNS
+    assert len(fields(HealthFacts)) == HEALTH_COLUMNS
 
 
 def test_facts_come_from_the_end_of_the_combined_row():

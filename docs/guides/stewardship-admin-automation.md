@@ -179,8 +179,10 @@ identifiers and UTC instants only: no Family names, email addresses, codes
 or other personal data. A read-only session can run every one of them. Each
 records the same view event in System logs as its page (`status` the home
 page's, `task list` and `task show` Background work's, `send progress` and
-`send history` Outgoing mail's); `schedule show`, `go-live readiness` and
-`go-live progress` record none, like their pages.
+`send history` Outgoing mail's, `system health` System health's);
+`schedule show`, `go-live readiness` and `go-live progress` record none,
+like their pages. `system health` needs an Administrator's session, as its
+page does.
 
 ```sh
 pk-admin status
@@ -191,6 +193,7 @@ pk-admin send history
 pk-admin schedule show
 pk-admin go-live readiness
 pk-admin go-live progress --watch 30
+pk-admin system health --watch 60
 ```
 
 Each command's `result` member holds the fields below. Instants are UTC
@@ -301,12 +304,25 @@ included, is exit 1 (`denied`), as on the page; the current Production
 campaign with no confirmation receipt is exit 1 (`not_available`). Retrying
 failed preparation stays on the page until PR 12.
 
+### `system health`
+
+The [System health](../specs/stewardship/admin-portal/spec.md#system-health)
+page as a document: `problems` (each `kind`, with the `service`, `process`
+and `target` it is about and the time `at` its sentence states), the
+`processes` with their state, version and mail sender state,
+`missing_services`, `versions`, `schema_current`, the reasons Family email
+waits (`delivery_paused`, `planning_held`, `retry_waiting`), the open
+`incidents`, the ParishSoft `refresh` outcome, a refused load's
+`refused_counts`, the newest backup and the `offsite` copy's state. The
+pause's reason and who paused it, and the page's sentences, are not in it.
+
 ### Watching and errors
 
-`--watch SECONDS` (2 to 300) on `task show`, `send progress` and
-`go-live progress` prints one document per poll, `final` false until the
-last. It stops with exit 0 once the task has finished, once no send is in
-progress or about to start, or once Production preparation is complete,
+`--watch SECONDS` (2 to 300) on `task show`, `send progress`,
+`go-live progress` and `system health` prints one document per poll,
+`final` false until the last. It stops with exit 0 once the task has
+finished, once no send is in progress or about to start, once System
+health lists no problem, or once Production preparation is complete,
 absent or its task has stopped (a failed task waits for the page's retry,
 and `retry_available` says so). It stops with exit 7 and the last state
 after `--timeout` seconds (default and maximum three hours;
@@ -463,3 +479,5 @@ irreversible actions, and endings.
 - `pk-admin/1` (#510): additive. `status` `source` gains `full_started_at`,
   `data_as_of`, `connection`, `connection_at`, `overdue_full_at`,
   `out_of_date` and `held_for_send`.
+- `pk-admin/1` (ADM-13 PR 2b, #530): additive. `system health`, with
+  `--watch`.

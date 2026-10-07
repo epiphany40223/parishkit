@@ -511,5 +511,12 @@ logging and critical-problems banners' links, with no schema or grant change, ch
 `tests/stewardship/test_system_health.py`,
 `tests/stewardship/database/test_system_health_postgresql.py`,
 `tests/stewardship/browser/test_system_health.py` and the navigation and
-route-parity tests. Home's problem lines, the `system health` command and
-the 24-hour daily-limit count remain (see the work package).
+route-parity tests. Part 2b adds Home's System health problem lines for
+viewers who may open the page (the page's own sentences, shared through
+one template, read in the statement Home already runs for its ParishSoft
+status, so Home's query count is unchanged) and the
+`system health` command with `--watch` (stopping once nothing needs
+attention), checked by the golden document and allowlist in
+`tests/stewardship/test_admin_reads.py`, `tests/stewardship/test_admin_cli.py`
+and `tests/stewardship/database/test_system_health_postgresql.py`. The
+24-hour daily-limit count (part 2c) remains.
