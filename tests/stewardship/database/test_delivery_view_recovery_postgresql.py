@@ -197,7 +197,10 @@ def test_database_outage_has_fixed_private_recovery(auth_service, google, monkey
         """Simulate a private database exception at the view's read boundary."""
         raise DatabaseError("private-database-marker")
 
-    monkeypatch.setattr(delivery_views, "listing", unavailable)
+    # The page reads through jobs.delivery_reads (ADM-11 PR 9b).
+    from parishkit.stewardship.jobs import delivery_reads
+
+    monkeypatch.setattr(delivery_reads, "listing", unavailable)
     response = browser.get("/admin/mail/outgoing/")
     assert response.status_code == 503 and response["Retry-After"] == "5"
     assert b"private-database-marker" not in response.content

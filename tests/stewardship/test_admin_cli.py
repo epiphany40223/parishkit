@@ -73,7 +73,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "test families",
         "test status",
     }
-    operations = {"task retry"}
+    operations = {
+        "task retry",
+        "delivery list",
+        "delivery show",
+        "delivery resolve",
+        "delivery refusals",
+        "delivery refusal-show",
+    }
     assert set(entries) == session | reads | changes | refresh | tests | operations
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
@@ -191,6 +198,23 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "lateness_minutes",
         "source",
     ]
+    # The delivery reads: any session, the page's view event; resolve is
+    # keyed and versioned, with a full-scope session.
+    for name in (
+        "delivery list",
+        "delivery show",
+        "delivery refusals",
+        "delivery refusal-show",
+    ):
+        assert entries[name]["scope"] == "read_only", name
+        assert not entries[name]["changes_state"], name
+        assert entries[name]["audit_event"] == "delivery_viewed", name
+    resolve = entries["delivery resolve"]
+    assert resolve["scope"] == "full" and resolve["changes_state"]
+    assert resolve["request_key"] and resolve["expected_version"]
+    assert resolve["audit_event"] == "admin_cmd_delivery_resolve"
+    actions = {option["name"]: option for option in resolve["options"]}
+    assert "resend" not in actions["--action"]["choices"]
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -209,6 +233,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_test_sample",
         "admin_cmd_test_families",
         "admin_cmd_task_retry",
+        "admin_cmd_delivery_resolve",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event
@@ -824,6 +849,28 @@ def fresh_environment():
             ["task", "retry", str(uuid4()), "--request-key", str(uuid4())],
             (2, "configuration"),
         ),
+        (
+            "stub",
+            PREAMBLE,
+            ["delivery", "list", "--state", "pending"],
+            (2, "configuration"),
+        ),
+        (
+            "stub",
+            PREAMBLE,
+            [
+                "delivery",
+                "resolve",
+                str(uuid4()),
+                "--action",
+                "note",
+                "--expected-version",
+                "3",
+                "--note",
+                "x",
+            ],
+            (2, "configuration"),
+        ),
     ],
     ids=[
         "commands",
@@ -840,6 +887,8 @@ def fresh_environment():
         "admitted-schedule-confirm",
         "admitted-config-request-show",
         "admitted-task-retry",
+        "admitted-delivery-list",
+        "admitted-delivery-resolve",
     ],
 )
 def test_the_command_line_runs_before_django_is_set_up(

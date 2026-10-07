@@ -15,6 +15,19 @@ transaction it records one ``admin_cmd_task_retry`` event whose subject is
 the automation session, only when it created the retry. The request key is
 the page's ``command_id`` (``request_key`` for an export cleanup): repeating
 it returns the original retry and records nothing new.
+
+The delivery commands (PR 9b) read and resolve Outgoing mail as its pages
+do, through ``jobs.delivery_reads`` and ``delivery_resolution``:
+``delivery list``, ``delivery show``, ``delivery refusals`` and ``delivery
+refusal-show`` admit passively (any session), read in the page's
+transaction, recheck and record the page's ``delivery_viewed`` event.
+Their documents never name a recipient: no address, Family DUID or Family
+id, and no evidence note text. ``delivery resolve`` is the delivery page's
+resolution form in the page's command scope, keyed by the page's
+``command_id``, recording ``admin_cmd_delivery_resolve`` when it creates
+the resolution. The duplicate-risk ``resend`` and the verified refusal
+clearance need a ticked acknowledgement, which waits for PR 9c at the
+command-line prompt (PR 5b).
 """
 
 from dataclasses import dataclass
@@ -55,6 +68,27 @@ def task_retry_model(status, *, created, request_key):
     )
 
 
+# The constraint refusals the pages answer with 409 (stale): a check
+# (23514) or a uniqueness conflict (23505) a concurrent change caused.
+STALE_STATES = frozenset({"23514", "23505"})
+
+
+def _raise_stale_on_conflict(error):
+    """Report a check or uniqueness refusal as the page does: ``stale_version``.
+
+    The delivery and retry pages answer these with 409 (read again); other
+    database errors keep their own classification.
+    """
+    from django.db import IntegrityError
+
+    from .storage import StaleRecordError
+
+    if isinstance(error, IntegrityError) and (
+        getattr(error.__cause__, "sqlstate", None) in STALE_STATES
+    ):
+        raise StaleRecordError("The record changed; read it again.") from None
+
+
 def _admit(caller, service):
     """The page's admission of a retry, recording activity as its post does.
 
@@ -87,10 +121,10 @@ def retry_task(caller, service, task_id, *, request_key, context):
     An unknown task, or one whose type the page offers no retry for, is
     ``not_available``. A task that is no longer the latest failed run of its
     chain is ``stale_version`` (the page's 409). Keys are bound within a
-    task's retry chain: a key another Administrator used in this chain is
-    ``invalid``; one this Administrator used for another run of the chain is
-    ``stale_version`` (``invalid`` for an export cleanup); a key used only in
-    another task's chain is a new key here. A preparation that may no longer
+    task's retry chain: a key another Administrator used for this run is
+    ``invalid``; a key used for another run of the chain, whoever used it,
+    is ``stale_version`` (``invalid`` for an export cleanup); a key used only
+    in another task's chain is a new key here. A preparation that may no longer
     be retried is ``denied``. A configuration refusal (an activating
     change) is ``unavailable``.
 
@@ -172,6 +206,396 @@ def retry_task(caller, service, task_id, *, request_key, context):
     except DatabaseError as error:
         if written and not _guard_refusal(error):
             context["committed"] = True
+        _raise_stale_on_conflict(error)
+        raise
+    except (NotAvailable, PermissionError) as error:
+        _ended_or_raise(caller, service, actor, error)
+    context["committed"] = True
+    return model
+
+
+# ---------------------------------------------------------------- deliveries
+
+# The resolutions the command line offers: every one the page offers but the
+# duplicate-risk resend, whose acknowledgement waits for PR 9c at the prompt.
+RESOLVE_ACTIONS = ("note", "accept", "confirm_unsent", "retry_failed", "retry_unsent")
+# Mail a retry prepares without the web's Family keys (a receipt or report).
+KEYLESS_PURPOSES = frozenset({"receipt", "daily_digest", "weekly_digest"})
+# The page's evidence note limit (DeliveryResolution.evidence_note).
+NOTE_LIMIT = 2000
+
+
+@dataclass(frozen=True)
+class DeliveryList(ReadModel):
+    """One page of Outgoing mail: delivery metadata, never a recipient."""
+
+    state: str
+    send: str | None
+    page: int
+    size: int
+    sort: str
+    has_next: bool
+    matching: int
+    matching_capped: bool
+    deliveries: list
+
+
+@dataclass(frozen=True)
+class DeliveryShow(ReadModel):
+    """One delivery: its metadata, history, latest task, notes and actions.
+
+    ``version`` (in ``delivery``) is what ``delivery resolve`` takes as
+    ``--expected-version``. Notes give when and which action only; the
+    evidence text stays on the page.
+    """
+
+    delivery: dict
+    task: dict | None
+    actions: list
+    retry_unavailable: bool
+    page: int
+    size: int
+    has_next: bool
+    events: list
+    notes: list
+
+
+@dataclass(frozen=True)
+class RefusalList(ReadModel):
+    """One page of unresolved refused addresses, by id and time only."""
+
+    page: int
+    size: int
+    sort: str
+    has_next: bool
+    matching: int
+    matching_capped: bool
+    refusals: list
+
+
+@dataclass(frozen=True)
+class RefusalShow(ReadModel):
+    """One refusal, how it was resolved, and the source version to verify."""
+
+    id: UUID
+    created_at: object
+    resolved: dict | None
+    source: dict | None
+    can_clear: bool
+
+
+@dataclass(frozen=True)
+class DeliveryResolve(ReadModel):
+    """The resolution a ``delivery resolve`` recorded, or found for its key."""
+
+    created: bool
+    request_key: UUID
+    resolution: dict
+
+
+def delivery_row(row):
+    """A message's metadata, without its recipient or semantic key."""
+    return {
+        name: row[name]
+        for name in (
+            "id",
+            "campaign_id",
+            "purpose",
+            "mode",
+            "state",
+            "version",
+            "attempt",
+            "task_id",
+            "created_at",
+            "updated_at",
+            "finished_at",
+        )
+    }
+
+
+def delivery_list_model(data):
+    """The command's projection of ``delivery_reads.read_listing``."""
+    window, values = data["window"], data["values"]
+    count, capped = data["total"]
+    return DeliveryList(
+        state=values["state"],
+        send=values.get("send"),
+        page=window.page,
+        size=window.size,
+        sort=values["sort"],
+        has_next=data["has_next"],
+        matching=count,
+        matching_capped=capped,
+        deliveries=[delivery_row(row) for row in data["rows"]],
+    )
+
+
+def command_actions(delivery, actions):
+    """The page's offered resolutions that ``delivery resolve`` accepts.
+
+    Not ``resend`` (its acknowledgement waits for the prompt), and no retry
+    of a Family email (it needs the web's Family keys), so every action
+    listed can be given to ``delivery resolve`` as is.
+    """
+    return [
+        action
+        for action in actions
+        if action in RESOLVE_ACTIONS
+        and (not action.startswith("retry_") or delivery["purpose"] in KEYLESS_PURPOSES)
+    ]
+
+
+def delivery_show_model(data):
+    """The command's projection of ``delivery_reads.read_detail``."""
+    window = data["window"]
+    return DeliveryShow(
+        delivery=delivery_row(data["delivery"]),
+        task=data["task"],
+        actions=command_actions(data["delivery"], data["actions"]),
+        retry_unavailable=data["retry_unavailable"],
+        page=window.page,
+        size=window.size,
+        has_next=bool(data["has_next"]),
+        events=[
+            {
+                "version": event["version"],
+                "at": event["created_at"],
+                "state": event["state"],
+                "action": event["action"],
+                "attempt": event["attempt"],
+                # The stored closed code; "reason" is no document member name.
+                "result": event["reason"],
+            }
+            for event in data["events"]
+        ],
+        notes=[
+            {"created_at": note["created_at"], "action": note["action"]}
+            for note in data["notes"]
+        ],
+    )
+
+
+def refusal_list_model(data):
+    """The command's projection of ``delivery_reads.read_refusals``."""
+    window = data["window"]
+    count, capped = data["total"]
+    return RefusalList(
+        page=window.page,
+        size=window.size,
+        sort=data["values"]["sort"],
+        has_next=data["has_next"],
+        matching=count,
+        matching_capped=capped,
+        refusals=[{"id": row.pk, "created_at": row.created_at} for row in data["rows"]],
+    )
+
+
+def refusal_show_model(data):
+    """The command's projection of ``delivery_reads.read_refusal``."""
+    refusal, resolved, source = data["refusal"], data["resolved"], data["source"]
+    return RefusalShow(
+        id=refusal.pk,
+        created_at=refusal.created_at,
+        resolved=None
+        if resolved is None
+        else {"at": resolved.created_at, "kind": resolved.reason},
+        source=None
+        if source is None or source.snapshot_id is None
+        else {"snapshot_id": source.snapshot_id, "generation": source.generation},
+        can_clear=bool(data["can_clear"]),
+    )
+
+
+def _delivery_read(caller, service, read, project, *, subject=None, audit=True):
+    """Read as an Outgoing mail page does (``delivery_views._page``).
+
+    Admits passively with ``BACKGROUND_WORK``, reads in one transaction
+    unless a restore is under review, rechecks the session and the restore
+    in another, and records ``delivery_viewed`` with the page's count and
+    subject. A missing message or refusal is ``not_available``, reported
+    only after the recheck.
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+    from django.db import transaction
+
+    from .accounts.policy import Capability
+    from .admin_reads import Unavailable, _admit, _audit, _restore_review
+    from .audit.schemas import Action
+
+    def step():
+        """Admit, read, recheck and audit, as the page."""
+        actor = _admit(caller, service.store, Capability.BACKGROUND_WORK)
+        missing = False
+        with transaction.atomic():
+            if _restore_review():
+                raise Unavailable("A restore is under review.")
+            try:
+                model, count = project(read())
+            except ObjectDoesNotExist:
+                missing, count = True, 0
+        with transaction.atomic():
+            current = _recheck(caller, service.store, actor, Capability.BACKGROUND_WORK)
+            if _restore_review():
+                raise Unavailable("A restore is under review.")
+            if missing:
+                raise NotAvailable("No such record.")
+            if audit:
+                _audit(Action.DELIVERY_VIEWED, current, subject_id=subject, count=count)
+        return model
+
+    return _held(step)
+
+
+def read_deliveries(caller, service, parameters):
+    """``delivery list``: one filtered page of Outgoing mail."""
+    from .jobs.delivery_reads import read_listing
+
+    def project(data):
+        """The document, and the page's audited row count."""
+        return delivery_list_model(data), len(data["rows"])
+
+    return _delivery_read(caller, service, lambda: read_listing(parameters), project)
+
+
+def read_delivery(caller, service, message_id, parameters):
+    """``delivery show``: one delivery with a page of its history and notes."""
+    from .jobs.delivery_reads import read_detail
+
+    def project(data):
+        """The document, and the page's audited count (events and notes)."""
+        return delivery_show_model(data), len(data["events"]) + len(data["notes"])
+
+    return _delivery_read(
+        caller,
+        service,
+        lambda: read_detail(message_id, parameters),
+        project,
+        subject=message_id,
+    )
+
+
+def read_refusal_list(caller, service, parameters):
+    """``delivery refusals``: one page of unresolved refused addresses."""
+    from .jobs.delivery_reads import read_refusals
+
+    def project(data):
+        """The document, and the page's audited row count."""
+        return refusal_list_model(data), len(data["rows"])
+
+    return _delivery_read(caller, service, lambda: read_refusals(parameters), project)
+
+
+def read_refusal_detail(caller, service, refusal_id):
+    """``delivery refusal-show``: one refusal and the source version to verify."""
+    from django.http import QueryDict
+
+    from .jobs.delivery_reads import read_refusal
+
+    return _delivery_read(
+        caller,
+        service,
+        lambda: read_refusal(refusal_id, QueryDict()),
+        lambda data: (refusal_show_model(data), 1),
+        subject=refusal_id,
+    )
+
+
+def delivery_resolve_model(receipt, *, created, request_key):
+    """The command's projection of a ``DeliveryResolution`` receipt."""
+    return DeliveryResolve(
+        created=created,
+        request_key=request_key,
+        resolution={
+            "id": receipt.pk,
+            "message_id": receipt.message_id,
+            "action": receipt.action,
+            "expected_version": receipt.expected_version,
+            "previous_task_id": receipt.previous_task_id,
+            "retry_task_id": receipt.retry_task_id,
+            "created_at": receipt.created_at,
+        },
+    )
+
+
+def resolve_delivery_command(
+    caller, service, message_id, *, action, expected_version, note, request_key, context
+):
+    """``delivery resolve``: the delivery page's resolution form.
+
+    Admits as the page's form post does (``BACKGROUND_WORK``, recording
+    activity) and runs ``resolve_delivery`` inside the page's command scope,
+    where it records ``admin_cmd_delivery_resolve`` only when it creates the
+    resolution. The key is the page's ``command_id``: a repeat with the same
+    intent returns the original receipt; with another intent it is
+    ``invalid``. A delivery that changed since ``--expected-version``, or an
+    action its state does not allow, is ``stale_version``; an unknown
+    delivery is ``not_available``. A retry of a Family email needs the web's
+    Family keys, which this process does not load, so it is
+    ``not_available``; receipts and reports retry here.
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .jobs.delivery_resolution import resolve_delivery
+    from .jobs.delivery_resolution_models import DeliveryResolution
+    from .jobs.storage import TaskRetryConflict
+    from .jobs.task_retries import command_scope
+    from .observability import _guard_refusal
+    from .storage import StaleRecordError
+
+    if action not in RESOLVE_ACTIONS:
+        raise ValueError("This resolution is not offered here.")
+    actor = _admit(caller, service)
+    context["request_id"] = str(request_key)
+    written = []
+
+    def inputs(purpose):
+        """What a retry prepares with: keyless mail only, from this process."""
+        if purpose not in KEYLESS_PURPOSES:
+            raise NotAvailable("Retrying a Family email needs the page.")
+        return dict(general=None, public=None, public_origin=service.public_origin)
+
+    def step():
+        """Resolve inside the page's command scope, with the command's event."""
+        written.clear()
+        with command_scope(caller, service, actor):
+            repeat = DeliveryResolution.objects.filter(pk=request_key).exists()
+            try:
+                receipt = resolve_delivery(
+                    service.store,
+                    actor.identity,
+                    message_id=message_id,
+                    command_id=request_key,
+                    expected_version=expected_version,
+                    action=action,
+                    note=note,
+                    duplicate_acknowledged=False,
+                    preparation_inputs=inputs,
+                )
+            except TaskRetryConflict:
+                raise StaleRecordError("The delivery's task changed.") from None
+            except ObjectDoesNotExist:
+                raise NotAvailable("No such delivery.") from None
+            if not repeat:
+                record_action(
+                    Action.ADMIN_CMD_DELIVERY_RESOLVE,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=actor.identity,
+                    subject_id=caller.automation_session_id,
+                    context={"outcome": Outcome.SUCCEEDED},
+                )
+                written.append(True)
+            return delivery_resolve_model(
+                receipt, created=not repeat, request_key=request_key
+            )
+
+    try:
+        model = _held(step)
+    except DatabaseError as error:
+        if written and not _guard_refusal(error):
+            context["committed"] = True
+        _raise_stale_on_conflict(error)
         raise
     except (NotAvailable, PermissionError) as error:
         _ended_or_raise(caller, service, actor, error)
