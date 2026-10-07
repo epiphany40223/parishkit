@@ -706,7 +706,14 @@
   //   any, is a stable key that finds the link again in the fresh page, for
   //   focus and to announce the view now shown ("By day");
   // - form[data-in-place]: a form whose answer is this page again, such as a
-  //   POST whose server redirects back here (Post/Redirect/Get).
+  //   POST whose server redirects back here (Post/Redirect/Get). A POST
+  //   saves a change unless the form is marked data-in-place-read (System
+  //   logs' Show related entries, which filters the list in a POST body):
+  //   a read may be cancelled by a newer choice and, with no answer at all,
+  //   falls back to the ordinary submission, as a table's POST does. A form
+  //   marked data-in-place-filters sets the page's filters from outside
+  //   form#table-filters, so the filter form then shows the filters the
+  //   fresh page applied (syncFilters).
   // A data-in-place link or form names the region it changes by its URL's
   // fragment, or else by the region it sits in. Its data-in-place-message
   // ("List refreshed.") is announced before the region's row count.
@@ -933,6 +940,31 @@
       else field.remove();
     });
     form.prepend(...[...wanted.values()].flat().map((field) => document.importNode(field)));
+  };
+  // After a control that sets the filters from outside the filter form
+  // (data-in-place-filters), the filter form must show what the fresh page
+  // applied, or the next Apply, sort or page would quietly undo it. Its
+  // visible fields take the fresh page's values (syncHidden already took the
+  // hidden ones), a details[id] in it opens or closes as the fresh page
+  // draws it ("Filter by identifier" opens when one is set), and the Apply
+  // gate checks again. Only then: any other swap keeps filters the reader
+  // has typed but not applied. The browser-zone field holds this browser's
+  // zone and is left alone (see syncHidden).
+  const syncFilters = (parsed) => {
+    const form = document.getElementById("table-filters");
+    const fresh = parsed.getElementById("table-filters");
+    if (!(form instanceof HTMLFormElement) || !(fresh instanceof HTMLFormElement)) return;
+    const copies = [...fresh.elements];
+    [...form.elements].forEach((field) => {
+      if (!field.name || field.type === "hidden" || field.matches("[data-browser-zone]")) return;
+      const copy = copies.find((node) => node.name === field.name);
+      if (field.type === "checkbox") field.checked = Boolean(copy?.checked);
+      else if (copy && "value" in field) field.value = copy.value;
+    });
+    form.querySelectorAll("details[id]").forEach((node) => {
+      node.open = Boolean(fresh.querySelector(`#${CSS.escape(node.id)}`)?.open);
+    });
+    form.dispatchEvent(new Event("change"));
   };
   const syncControls = (parsed) => {
     document.querySelectorAll("[data-table-sync][id]").forEach((node) => {
@@ -1200,6 +1232,7 @@
       if (isRegion(copy)) swapRegion(other, copy);
     });
     syncControls(parsed);
+    if (owner?.hasAttribute("data-in-place-filters")) syncFilters(parsed);
     // A GET choice belongs in the address bar, so reload, bookmarks and
     // returning to the page keep it; a POST table's private filters never
     // reach a URL. A server redirect chose the address itself (a saving
@@ -1305,7 +1338,7 @@
     // can fail between the two and leave the form locked.
     const action = new URL(written || "", document.baseURI);
     const fields = new FormData(form, event.submitter || undefined);
-    const save = Boolean(owner) && method === "post";
+    const save = Boolean(owner) && method === "post" && !owner.hasAttribute("data-in-place-read");
     let init, load;
     if (method === "post") {
       // The same body the browser would send, submitter included: multipart

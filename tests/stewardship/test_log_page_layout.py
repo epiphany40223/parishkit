@@ -291,11 +291,11 @@ def test_entries_cross_link_by_correlation_actor_campaign_and_task():
 def test_identifier_filters_fold_away_unless_used():
     """The three identifier filters are closed until one of them is set."""
     closed = _render()
-    assert '<details class="log-more-filters">' in closed
+    assert '<details id="log-identifier-filters" class="log-more-filters">' in closed
     used = _render(
         LogQuery.parse({"applied": "yes", "audit": "yes", "actor": str(UUID(int=5))})
     )
-    assert '<details class="log-more-filters" open>' in used
+    assert '<details id="log-identifier-filters" class="log-more-filters" open>' in used
 
 
 @pytest.mark.parametrize(
