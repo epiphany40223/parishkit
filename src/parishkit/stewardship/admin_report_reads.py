@@ -496,10 +496,13 @@ def population(statistics, *, financial_enabled):
     }
 
 
-def participation_model(campaign_id, query, selection, statistics):
-    """The command's projection of the Participation page's read."""
-    document = selection.document
-    days = [
+def day_rows(document):
+    """A participation document's daily table: counts and pledge totals.
+
+    Values the page shows as unavailable are None. ``digest daily`` prints a
+    retained daily report's table the same way.
+    """
+    return [
         {
             "date": day.local_date.isoformat(),
             "first_responses": day.first_responses
@@ -517,6 +520,12 @@ def participation_model(campaign_id, query, selection, statistics):
         }
         for day in (document.days if document is not None else ())
     ]
+
+
+def participation_model(campaign_id, query, selection, statistics):
+    """The command's projection of the Participation page's read."""
+    document = selection.document
+    days = day_rows(document)
     financial = statistics.financial_enabled
     return ParticipationReport(
         campaign_id=campaign_id,

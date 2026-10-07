@@ -73,6 +73,11 @@ def snapshot_context(snapshot, *, page=1, item_id=None):
                 "value": value,
                 "captured": DISPOSITIONS[captured],
                 "current": DISPOSITIONS[current],
+                # The stored keys, for the command line's ``digest weekly``
+                # (ADM-11 PR 8d); the template shows the labels above.
+                "information": information,
+                "captured_key": captured,
+                "current_key": current,
                 "changed": current != captured,
                 "actionable": current == "current_actionable",
                 "text": (value.text if item_id is not None else excerpt(value.text))

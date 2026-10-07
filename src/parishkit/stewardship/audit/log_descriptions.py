@@ -148,6 +148,10 @@ DESCRIPTIONS = {
         "An automation session requested an expired report export again, "
         "as the export's Regenerate button does."
     ),
+    "admin_cmd_digest_weekly_request": _(
+        "An automation session requested a manual weekly report, as the "
+        "Send a weekly report now page does."
+    ),
     "admin_privileges_changed": _(
         "A portal user's roles changed, so their session was replaced with one "
         "carrying the new roles."

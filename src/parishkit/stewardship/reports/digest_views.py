@@ -51,6 +51,66 @@ def daily_rows(context, parameters):
     }
 
 
+def record_view(principal, snapshot_id, campaign_id, outcome):
+    """Retain the opaque snapshot reference, not figures or recipient names.
+
+    The page and the command line's ``digest daily`` record the same event.
+    """
+    # An audit append takes no row locks, so it need not join the writers'
+    # work order; waiting there stalled report pages behind every source
+    # promotion and installer.
+    with transaction.atomic():
+        # Audit attribution follows the current applied projection; report
+        # calculation still uses its immutable historical one.
+        current = SystemConfiguration.objects.select_related(
+            "active_configuration__parish"
+        ).get()
+        record_action(
+            Action.DAILY_DIGEST_VIEWED,
+            actor_kind=ActorKind.PORTAL_USER,
+            actor_id=principal.identity,
+            subject_id=snapshot_id,
+            parish_id=current.active_configuration.parish.pk,
+            campaign_id=campaign_id,
+            context={"outcome": outcome},
+        )
+
+
+def check_retained(snapshot_id, campaign_id):
+    """Inside the read barrier: the snapshot is still retained and ready."""
+    admit_campaign(campaign_id, mutating=False)
+    if not DailyDigestSnapshot.objects.filter(
+        pk=snapshot_id, campaign_id=campaign_id
+    ).exists():
+        raise ReadUnavailable("Retained report is unavailable.")
+    if not DailyDigestReady.objects.filter(snapshot_id=snapshot_id).exists():
+        raise ReadUnavailable("Retained report is not ready.")
+
+
+def retained_rows(snapshot_id, *, chart=False):
+    """The pinned snapshot and its ready row, read under the read barrier.
+
+    The page plots the ready row's chart bytes, so it asks for them with
+    ``chart``; the command line's ``digest daily`` does not load them.
+    """
+    selected = DailyDigestSnapshot.objects.select_related(
+        "configuration__parish", "timezone_configuration", "preparation"
+    ).get(pk=snapshot_id)
+    fields = ("id", "snapshot_id", "fact_set_id") + (("chart",) if chart else ())
+    ready = DailyDigestReady.objects.only(*fields).get(snapshot=selected)
+    return selected, ready
+
+
+def retained_document(snapshot_id):
+    """The pinned report's document and mode, read under the read barrier.
+
+    Never consults current facts: the document is the retained observation
+    the email was compiled from.
+    """
+    selected, ready = retained_rows(snapshot_id)
+    return retained_daily_document(selected, ready.fact_set), selected.preparation.mode
+
+
 @require_GET
 def snapshot(request, snapshot_id, *, representation="html"):
     """A UUID selects retained data, not permission; chart bytes are equally private."""
@@ -79,25 +139,8 @@ def snapshot(request, snapshot_id, *, representation="html"):
         finalized = False
 
         def audit(outcome):
-            """Retain the opaque snapshot reference, not figures or recipient names."""
-            # An audit append takes no row locks, so it need not join the
-            # writers' work order; waiting there stalled report pages behind
-            # every source promotion and installer.
-            with transaction.atomic():
-                # Audit attribution follows the current applied projection;
-                # report calculation still uses its immutable historical one.
-                current = SystemConfiguration.objects.select_related(
-                    "active_configuration__parish"
-                ).get()
-                record_action(
-                    Action.DAILY_DIGEST_VIEWED,
-                    actor_kind=ActorKind.PORTAL_USER,
-                    actor_id=principal.identity,
-                    subject_id=snapshot_id,
-                    parish_id=current.active_configuration.parish.pk,
-                    campaign_id=retained.campaign_id,
-                    context={"outcome": outcome},
-                )
+            """The page's view event for this snapshot."""
+            record_view(principal, snapshot_id, retained.campaign_id, outcome)
 
         def finish(completed):
             """Record server completion after closure, never imply browser receipt."""
@@ -124,13 +167,7 @@ def snapshot(request, snapshot_id, *, representation="html"):
         def authorize(guard):
             """Reload session/roles after acquiring the purge/read barrier."""
             _principal(request, service.store, read_only=True)
-            admit_campaign(retained.campaign_id, mutating=False)
-            if not DailyDigestSnapshot.objects.filter(
-                pk=snapshot_id, campaign_id=retained.campaign_id
-            ).exists():
-                raise ReadUnavailable("Retained report is unavailable.")
-            if not DailyDigestReady.objects.filter(snapshot_id=snapshot_id).exists():
-                raise ReadUnavailable("Retained report is not ready.")
+            check_retained(snapshot_id, retained.campaign_id)
 
         def content():
             """Prepare bounded bytes before headers; never consult current facts."""
@@ -139,16 +176,12 @@ def snapshot(request, snapshot_id, *, representation="html"):
                     snapshot_id=snapshot_id
                 )
                 return iter((bytes(chart),))
-            selected = DailyDigestSnapshot.objects.select_related(
-                "configuration__parish", "timezone_configuration", "preparation"
-            ).get(pk=snapshot_id)
-            ready = DailyDigestReady.objects.only(
-                "id", "snapshot_id", "fact_set_id", "chart"
-            ).get(snapshot=selected)
+            selected, ready = retained_rows(snapshot_id, chart=True)
             document = retained_daily_document(selected, ready.fact_set)
+            mode = selected.preparation.mode
             context = snapshot_context(
                 document,
-                mode=selected.preparation.mode,
+                mode=mode,
                 chart_url=reverse("admin:daily_digest_chart", args=[snapshot_id]),
                 download_url=reverse("admin:daily_digest_download", args=[snapshot_id]),
                 plot=chart_layout(bytes(ready.chart)),

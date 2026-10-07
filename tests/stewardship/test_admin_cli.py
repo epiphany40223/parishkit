@@ -97,6 +97,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report talents",
         "report information",
         "report ministry",
+        "digest daily",
+        "digest weekly",
+        "digest weekly-request",
     }
     assert set(entries) == (
         session | reads | changes | refresh | tests | operations | reports
@@ -149,6 +152,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--family"]["required"]
     status = entries["test status"]
     assert status["scope"] == "read_only" and status["audit_event"] is None
+    # The manual weekly report asks for the page's acknowledgement (PR 8d).
+    assert entries["digest weekly-request"]["prompts"]
     for name in reads:
         # Read-only status: any session, no state change, the page's event.
         assert entries[name]["scope"] == "read_only", name
@@ -296,6 +301,22 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     assert ministry["--requests"]["choices"] == ["join", "leave"]
     assert "fact_set_id" in entries["report participation"]["result_fields"]
+    # The digests: the retained reports are any session's reads with their
+    # page's view event; the manual weekly report is a keyed change that
+    # needs a full-scope session and --yes, its page's acknowledgement.
+    for name, event in (
+        ("digest daily", "daily_digest_viewed"),
+        ("digest weekly", "weekly_digest_viewed"),
+    ):
+        entry = entries[name]
+        assert entry["scope"] == "read_only" and not entry["changes_state"], name
+        assert entry["audit_event"] == event and entry["arguments"] == ["SNAPSHOT_ID"]
+    manual = entries["digest weekly-request"]
+    assert manual["scope"] == "full" and manual["changes_state"]
+    assert manual["request_key"] and manual["prompts"]
+    assert manual["audit_event"] == "admin_cmd_digest_weekly_request"
+    assert manual["result_fields"] == ["created", "request_key", "task"]
+    assert "--yes" in {option["name"] for option in manual["options"]}
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -319,6 +340,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_cancel",
         "admin_cmd_export_retry",
         "admin_cmd_export_regenerate",
+        "admin_cmd_digest_weekly_request",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event
