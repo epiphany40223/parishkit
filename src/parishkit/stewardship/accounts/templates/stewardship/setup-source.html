@@ -1,10 +1,11 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Load parish data" %} — {% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Load parish data" %}</h1>
-<p class="setup-intro">{% translate "Read the parish's Families, Members, Ministries and funds from ParishSoft with the connection you entered. The first campaign offers the Ministries and funds found here. A normal load takes several minutes, about ten for a parish of a few thousand Families; keep its progress page open until it finishes. Starting the load fixes the parish time zone for this setup attempt." %}</p>
+{% aboutpage "setup-source" %}<p>{% translate "Read the parish's Families, Members, Ministries and funds from ParishSoft with the connection you entered. The first campaign offers the Ministries and funds found here. A normal load takes several minutes, about ten for a parish of a few thousand Families; keep its progress page open until it finishes. Starting the load fixes the parish time zone for this setup attempt." %}</p>{% endaboutpage %}
+<p class="notice">{% translate "Starting the load fixes the parish time zone for this setup attempt." %}</p>
 {% if draft.source_task_id %}
 {% if draft.status.state == 'loading' %}
 <p class="notice" role="status">{% translate "The parish data load is running. Keep its progress page open until it finishes." %}</p>

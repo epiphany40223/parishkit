@@ -3,12 +3,12 @@
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 <h1>{% translate "Finishing setup" %}</h1>
+{% if attempt.state != 'expired' %}{% aboutpage "setup-finishing" %}<p>{% translate "You confirmed setup. The server is now installing the credentials and applying the configuration in the background. The system stays in Testing mode and no campaign opens to parishioners. This page checks progress automatically every 15 seconds while it is visible." %}</p>{% endaboutpage %}{% endif %}
 {% if attempt.state == 'expired' %}
-<p>{% translate "If provider-mounted consumers were already recreated, ask the operator to wait for credential rollback, then recreate worker and mail-dispatch using the documented initial-setup Compose topology. Restarting the configured services is not sufficient after candidate files have been removed." %}</p>
-<p role="status">{% translate "Cancellation is recorded. Background cleanup must restore the original configuration and remove temporary setup data before a new attempt can finish." %}</p>
+<p class="notice">{% translate "If the worker and mail containers were already recreated with the new keys, ask whoever manages the server to wait until the original keys are restored, then recreate those containers again as the Initial Setup section of the operator guide describes. Restarting them is not enough." %}</p>
+<p class="notice" role="status">{% translate "Cancellation is recorded. Background cleanup must restore the original configuration and remove temporary setup data before a new attempt can finish." %}</p>
 <p><a href="{% url 'admin:setup' %}">{% translate "Check setup status" %}</a></p>
 {% else %}
-<p class="setup-intro">{% translate "You confirmed setup. The server is now installing the credentials and applying the configuration in the background. The system stays in Testing mode and no campaign opens to parishioners. This page checks progress automatically every 15 seconds while it is visible." %}</p>
 <div class="setup-load-result" data-finishing-done hidden>
 <h2>{% translate "Setup is complete" %}</h2>
 <p>{% translate "The system is configured. Continue to the administration home." %}</p>

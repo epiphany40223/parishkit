@@ -1,10 +1,10 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Parish logos" %} — {% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Parish logos" %}</h1>
-<p class="setup-intro">{% translate "Upload the parish logo. It gives Family pages a familiar look so Families trust the site." %}</p>
+{% aboutpage "setup-branding" %}<p>{% translate "Upload the parish logo. It gives Family pages a familiar look so Families trust the site." %}</p>{% endaboutpage %}
 <p class="notice">{% translate "Testing mode. This logo is private to this setup login until final activation." %}</p>
 {% if assets %}<div class="notice setup-saved"><p><strong>{% translate "A logo is saved; its generated sizes are shown below." %}</strong></p>
 <p>{% translate "To keep it, choose no file and select Save and continue. Choose a new image only to replace it." %}</p></div>
