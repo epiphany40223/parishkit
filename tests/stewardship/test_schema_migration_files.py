@@ -216,6 +216,9 @@ FROZEN = {
     "0061_roster_entries.sql": (
         "0f1dc48e722831ef2541a82a1fe0d689769e5b0bd5229f296aaae0e785e74ecf"
     ),
+    "0062_backup_request.sql": (
+        "34a213b1c58b0bbdc133b0adc6f5655097ba59e35e99d17cf4346d7734725fae"
+    ),
 }
 
 
