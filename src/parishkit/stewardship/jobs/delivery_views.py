@@ -5,11 +5,10 @@ from uuid import UUID, uuid4
 
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
-from django.utils.translation import gettext_lazy as _
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_POST, require_safe
 
@@ -21,38 +20,30 @@ from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import (
     MESSAGES,
     ErrorCode,
-    PageWindow,
     expected_version,
-    filters,
 )
 from parishkit.stewardship.web.tables import (
-    Sorting,
-    bounded_count,
-    read_window,
     window_table,
 )
 
 from .delivery_admin import clear_recipient_refusal
-from .delivery_metadata import (
-    DELIVERY_SORTING,
-    FIELDS,
-    STATES,
-    family_duid,
-    listing,
-    messages,
+from .delivery_metadata import DELIVERY_SORTING, STATES
+from .delivery_reads import (
+    ACTION_LABELS,
+    REFUSAL_SORTING,
+    read_detail,
+    read_listing,
+    read_refusal,
+    read_refusals,
 )
 from .delivery_resolution import resolve_delivery
-from .delivery_resolution_models import DeliveryResolution
 from .models import TaskRun
-from .outbox_models import OutboxEvent, OutboxMessage
-from .recipient_models import RecipientRefusal, RecipientRefusalResolution
-from .send_history import SendKey, describe
+from .outbox_models import OutboxMessage
+from .recipient_models import RecipientRefusal
 from .storage import TaskRetryConflict
 from .task_retries import (
     DAILY_DIGEST,
@@ -68,23 +59,6 @@ UNAVAILABLE = (
     CryptographicError,
     LimiterUnavailable,
     ObjectDoesNotExist,
-)
-# Every Refused addresses column sorts on the server; the default keeps the
-# old Family DUID, then address, order. No index orders these keys (the
-# recipient_refusal_identity index leads with organization_id, then
-# family_duid), so each is a top-N sort over the unresolved refusals, a
-# small set (one row per refused Family address). id is the unique
-# tiebreak.
-REFUSAL_SORTING = Sorting.by_column(
-    {
-        "address": ("address",),
-        "duid": ("family_duid", "address"),
-        "refused": ("created_at",),
-        "id": ("id",),
-    },
-    default="duid",
-    descending_first={"refused"},
-    tiebreak=("id",),
 )
 MISSING_TARGET = (
     OutboxMessage.DoesNotExist,
@@ -150,21 +124,6 @@ def _retry_inputs(purpose):
         return dict(general=None, public=None, public_origin=origin)
     keys = family_runtime()
     return dict(general=keys.general, public=keys.public, public_origin=origin)
-
-
-def _window(request, allowed, sorting=None):
-    """Bound all lists and reject repeated, unknown or malformed query options.
-
-    A list page passes its ``sorting``, which accepts and validates ``sort``.
-    """
-    names = {"page", "size", *allowed, *({"sort"} if sorting else ())}
-    values = filters(request.GET, allowed=names)
-    if sorting is not None:
-        values["sort"] = sorting.parse(values)
-    return values, PageWindow(
-        expected_version(values.get("page", "1")),
-        expected_version(values.get("size", "25")),
-    )
 
 
 def _page(request, template, load, *, subject=None):
@@ -246,35 +205,23 @@ def delivery_list(request):
 
     def load():
         """Capture one filtered page without reading any private message payload."""
-        values, window = _window(request, {"state", "q", "send"}, DELIVERY_SORTING)
-        state, query = values.get("state", "all"), values.get("q", "")
-        # One Family email send, from the send history's links (#432). A
-        # malformed or unknown send is refused rather than ignored, so a
-        # filtered link never silently lists every email instead.
-        send = described = None
-        if "send" in values:
-            send = SendKey.parse(values["send"])
-            described = describe(send)
-            if described is None:
-                raise ValueError("Unknown Family email send.")
-        window, rows, following, total = listing(
-            window, state=state, query=query, sort=values["sort"], send=send
-        )
+        data = read_listing(request.GET)
+        values = data["values"]
         return dict(
             table=_table(
                 request,
-                window,
-                rows,
-                following,
-                total=total,
+                data["window"],
+                data["rows"],
+                data["has_next"],
+                total=data["total"],
                 sorting=DELIVERY_SORTING,
                 sort=values["sort"],
             ),
             states=STATES,
-            selected_state=state,
-            query=query,
-            send=described,
-        ), len(rows)
+            selected_state=values["state"],
+            query=values["q"],
+            send=data["send"],
+        ), len(data["rows"])
 
     return _page(request, "stewardship/deliveries.html", load)
 
@@ -285,74 +232,21 @@ def delivery_detail(request, message_id):
 
     def load():
         """Pin history's upper version to the selected message observation."""
-        window = _window(request, set())[1]
-        message = messages().values(*FIELDS).get(pk=message_id)
-        events, following = window.rows(
-            OutboxEvent.objects.filter(
-                message_id=message_id, version__lte=message["version"]
-            )
-            .order_by("-version")
-            .values("created_at", "version", "state", "action", "attempt", "reason")
-        )
-        task = (
-            TaskRun.objects.filter(root_id=message["task_id"])
-            .order_by("-retry_sequence")
-            .values("id", "state", "version", "retry_sequence")
-            .first()
-        )
-        campaign = Campaign.objects.only("state").get(pk=message["campaign_id"])
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT stewardship_export_admitted_v1(%s,true), "
-                "stewardship_delivery_retry_admitted_v1(%s)",
-                (message["campaign_id"], message_id),
-            )
-            can_resolve, can_retry = cursor.fetchone()
-        actions = ["note"] if campaign.state != "archived" and can_resolve else []
-        if task and task["state"] == "failed" and actions:
-            if message["state"] == "delivery_unknown":
-                # Both settle the attempt from external evidence without a
-                # send, so neither depends on the resend admission (can_retry).
-                actions += ["accept", "confirm_unsent"]
-                if can_retry:
-                    actions.append("resend")
-            elif can_retry:
-                if message["state"] == "permanent_failure":
-                    actions.append("retry_failed")
-                elif message["state"] in {"pending", "retry_wait"}:
-                    actions.append("retry_unsent")
-        labels = {
-            "note": _("Save evidence note"),
-            "accept": _("Confirm delivery using external evidence"),
-            "confirm_unsent": _("Record that the provider did not send it (no resend)"),
-            "resend": _("Authorize potentially duplicate resend"),
-            "retry_failed": _("Retry failed delivery"),
-            "retry_unsent": _("Retry delivery not accepted by the provider"),
-        }
-        notes, notes_following = window.rows(
-            DeliveryResolution.objects.filter(message_id=message_id)
-            .order_by("-created_at", "-id")
-            .values("created_at", "action", "evidence_note")
-        )
+        data = read_detail(message_id, request.GET)
+        window = data["window"]
         return dict(
-            delivery=message,
-            events=events,
-            task=task,
-            notes=notes,
-            retry_unavailable=bool(
-                task
-                and task["state"] == "failed"
-                and not can_retry
-                and message["state"]
-                in {"delivery_unknown", "permanent_failure", "pending", "retry_wait"}
-            ),
+            delivery=data["delivery"],
+            events=data["events"],
+            task=data["task"],
+            notes=data["notes"],
+            retry_unavailable=data["retry_unavailable"],
             commands=[
-                dict(action=action, label=labels[action], id=uuid4())
-                for action in actions
+                dict(action=action, label=ACTION_LABELS[action], id=uuid4())
+                for action in data["actions"]
             ],
-            next_query=_next(request, window, following or notes_following),
+            next_query=_next(request, window, data["has_next"]),
             previous_query=_previous(request, window),
-        ), len(events) + len(notes)
+        ), len(data["events"]) + len(data["notes"])
 
     return _page(request, "stewardship/delivery.html", load, subject=message_id)
 
@@ -363,28 +257,19 @@ def refusal_list(request):
 
     def load():
         """Read only a bounded current unresolved-address page."""
-        values, window = _window(request, {"duid"}, REFUSAL_SORTING)
-        query = RecipientRefusal.objects.exclude(
-            pk__in=RecipientRefusalResolution.objects.values("refusal_id")
-        )
-        if values.get("duid"):
-            query = query.filter(family_duid=family_duid(values["duid"]))
-        total = bounded_count(query)
-        window, rows, following = read_window(
-            window, REFUSAL_SORTING.order(query, values["sort"]), total
-        )
+        data = read_refusals(request.GET)
         return dict(
             table=_table(
                 request,
-                window,
-                rows,
-                following,
-                total=total,
+                data["window"],
+                data["rows"],
+                data["has_next"],
+                total=data["total"],
                 sorting=REFUSAL_SORTING,
-                sort=values["sort"],
+                sort=data["values"]["sort"],
             ),
-            query=values.get("duid", ""),
-        ), len(rows)
+            query=data["values"].get("duid", ""),
+        ), len(data["rows"])
 
     return _page(request, "stewardship/delivery-refusals.html", load)
 
@@ -395,32 +280,7 @@ def refusal_detail(request, refusal_id):
 
     def load():
         """Capture retained evidence and the generation the Admin must verify."""
-        filters(request.GET, allowed=set())
-        refusal = RecipientRefusal.objects.get(pk=refusal_id)
-        resolved = RecipientRefusalResolution.objects.filter(
-            refusal_id=refusal_id
-        ).first()
-        source = SourceCurrent.objects.first()
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT EXISTS(SELECT 1 FROM stewardship_source_current cur "
-                "JOIN stewardship_system_configuration r ON true "
-                "JOIN stewardship_campaign c ON c.id=r.current_campaign_id "
-                "JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id "
-                "WHERE cur.organization_id=%s AND cur.snapshot_id=k.source_snapshot_id "
-                "AND cur.generation=k.source_generation AND NOT k.population_dirty "
-                "AND c.state<>'archived' "
-                "AND stewardship_export_admitted_v1(c.id,true))",
-                (refusal.organization_id,),
-            )
-            can_clear = cursor.fetchone()[0]
-        return dict(
-            refusal=refusal,
-            resolved=resolved,
-            source=source,
-            can_clear=can_clear,
-            command_id=uuid4(),
-        ), 1
+        return read_refusal(refusal_id, request.GET), 1
 
     return _page(request, "stewardship/delivery-refusal.html", load, subject=refusal_id)
 

@@ -1,14 +1,17 @@
-"""The operations commands' documents (ADM-11 PR 9a).
+"""The operations commands' documents (ADM-11 PR 9).
 
-Pure tests: the golden document of ``task retry``, built through the
-projection the command uses, with an exact allowlist of member names; which
-of the page's retries a task type selects; and the exit-6 document naming
-the request key. The command against a real database is in
-database/test_admin_task_retry_cli_postgresql.py.
+Pure tests: the golden documents of ``task retry`` and the delivery
+commands, built through the projections the commands use, with an exact
+allowlist of member names (no recipient, address, DUID or note text at any
+depth); which of the page's retries a task type selects; and the exit-6
+document naming the request key. The commands against a real database are
+in database/test_admin_task_retry_cli_postgresql.py and
+database/test_admin_delivery_cli_postgresql.py.
 """
 
 import io
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -23,6 +26,43 @@ from .test_admin_reads import FORBIDDEN, members
 ROOT = UUID("00000000-0000-4000-8000-000000000002")
 RUN = UUID("00000000-0000-4000-8000-00000000000e")
 KEY = UUID("00000000-0000-4000-8000-00000000000f")
+MESSAGE = UUID("00000000-0000-4000-8000-000000000010")
+CAMPAIGN = UUID("00000000-0000-4000-8000-000000000001")
+REFUSAL = UUID("00000000-0000-4000-8000-000000000011")
+SNAPSHOT = UUID("00000000-0000-4000-8000-000000000012")
+NOW = datetime(2054, 10, 5, 14, tzinfo=UTC)
+WINDOW = SimpleNamespace(page=1, size=25)
+# A message as delivery_metadata.FIELDS reads it, recipient included: the
+# projection must drop the Family, its DUID and the semantic key.
+MESSAGE_ROW = {
+    "id": MESSAGE,
+    "campaign_id": CAMPAIGN,
+    "family_id": UUID("00000000-0000-4000-8000-000000000013"),
+    "family__family_duid": 4242,
+    "semantic_key": "initial:4242",
+    "purpose": "receipt",
+    "mode": "production",
+    "state": "permanent_failure",
+    "version": 3,
+    "attempt": 2,
+    "task_id": RUN,
+    "created_at": NOW,
+    "updated_at": NOW,
+    "finished_at": None,
+}
+DELIVERY = {
+    "id": str(MESSAGE),
+    "campaign_id": str(CAMPAIGN),
+    "purpose": "receipt",
+    "mode": "production",
+    "state": "permanent_failure",
+    "version": 3,
+    "attempt": 2,
+    "task_id": str(RUN),
+    "created_at": NOW.isoformat(),
+    "updated_at": NOW.isoformat(),
+    "finished_at": None,
+}
 
 
 def task_retry():
@@ -31,6 +71,98 @@ def task_retry():
         RUN, ROOT, "family_mail_prepare", None, "queued", 1, 0, 0, None, ROOT, 1
     )
     return admin_operations.task_retry_model(status, created=True, request_key=KEY)
+
+
+def delivery_list():
+    """One page of Outgoing mail with one message."""
+    return admin_operations.delivery_list_model(
+        {
+            "values": {"state": "all", "q": "", "sort": "-created"},
+            "window": WINDOW,
+            "rows": [MESSAGE_ROW],
+            "has_next": False,
+            "total": (1, False),
+            "send": None,
+        }
+    )
+
+
+def delivery_show():
+    """One delivery with an event and a note (whose text is not shown)."""
+    return admin_operations.delivery_show_model(
+        {
+            "delivery": MESSAGE_ROW,
+            "events": [
+                {
+                    "created_at": NOW,
+                    "version": 3,
+                    "state": "permanent_failure",
+                    "action": "fail",
+                    "attempt": 2,
+                    "reason": "rejected",
+                }
+            ],
+            "task": {"id": RUN, "state": "failed", "version": 4, "retry_sequence": 0},
+            "notes": [
+                {
+                    "created_at": NOW,
+                    "action": "note",
+                    "evidence_note": "private-evidence-marker",
+                }
+            ],
+            "window": WINDOW,
+            "has_next": False,
+            "actions": ["note", "retry_failed"],
+            "retry_unavailable": False,
+        }
+    )
+
+
+def delivery_refusals():
+    """One unresolved refusal, by id and time only."""
+    row = SimpleNamespace(
+        pk=REFUSAL, created_at=NOW, address="family@example.org", family_duid=4242
+    )
+    return admin_operations.refusal_list_model(
+        {
+            "values": {"sort": "duid"},
+            "window": WINDOW,
+            "rows": [row],
+            "has_next": False,
+            "total": (1, False),
+        }
+    )
+
+
+def delivery_refusal_show():
+    """A refusal, unresolved, with the current source to verify."""
+    return admin_operations.refusal_show_model(
+        {
+            "refusal": SimpleNamespace(
+                pk=REFUSAL, created_at=NOW, address="family@example.org"
+            ),
+            "resolved": None,
+            "source": SimpleNamespace(snapshot_id=SNAPSHOT, generation=7),
+            "can_clear": True,
+        }
+    )
+
+
+def delivery_resolve():
+    """A retry recorded for a failed receipt."""
+    receipt = SimpleNamespace(
+        pk=KEY,
+        message_id=MESSAGE,
+        action="retry_failed",
+        expected_version=3,
+        previous_task_id=RUN,
+        retry_task_id=ROOT,
+        created_at=NOW,
+        evidence_note="private-evidence-marker",
+    )
+    return admin_operations.delivery_resolve_model(
+        receipt, created=True, request_key=KEY
+    )
 
 
 GOLDEN = {
@@ -50,6 +182,102 @@ GOLDEN = {
         },
     ),
 }
+GOLDEN |= {
+    "delivery list": (
+        delivery_list,
+        {
+            "state": "all",
+            "send": None,
+            "page": 1,
+            "size": 25,
+            "sort": "-created",
+            "has_next": False,
+            "matching": 1,
+            "matching_capped": False,
+            "deliveries": [DELIVERY],
+        },
+    ),
+    "delivery show": (
+        delivery_show,
+        {
+            "delivery": DELIVERY,
+            "task": {
+                "id": str(RUN),
+                "state": "failed",
+                "version": 4,
+                "retry_sequence": 0,
+            },
+            "actions": ["note", "retry_failed"],
+            "retry_unavailable": False,
+            "page": 1,
+            "size": 25,
+            "has_next": False,
+            "events": [
+                {
+                    "version": 3,
+                    "at": NOW.isoformat(),
+                    "state": "permanent_failure",
+                    "action": "fail",
+                    "attempt": 2,
+                    "result": "rejected",
+                }
+            ],
+            "notes": [{"created_at": NOW.isoformat(), "action": "note"}],
+        },
+    ),
+    "delivery refusals": (
+        delivery_refusals,
+        {
+            "page": 1,
+            "size": 25,
+            "sort": "duid",
+            "has_next": False,
+            "matching": 1,
+            "matching_capped": False,
+            "refusals": [{"id": str(REFUSAL), "created_at": NOW.isoformat()}],
+        },
+    ),
+    "delivery refusal-show": (
+        delivery_refusal_show,
+        {
+            "id": str(REFUSAL),
+            "created_at": NOW.isoformat(),
+            "resolved": None,
+            "source": {"snapshot_id": str(SNAPSHOT), "generation": 7},
+            "can_clear": True,
+        },
+    ),
+    "delivery resolve": (
+        delivery_resolve,
+        {
+            "created": True,
+            "request_key": str(KEY),
+            "resolution": {
+                "id": str(KEY),
+                "message_id": str(MESSAGE),
+                "action": "retry_failed",
+                "expected_version": 3,
+                "previous_task_id": str(RUN),
+                "retry_task_id": str(ROOT),
+                "created_at": NOW.isoformat(),
+            },
+        },
+    ),
+}
+DELIVERY_MEMBERS = {
+    "id",
+    "campaign_id",
+    "purpose",
+    "mode",
+    "state",
+    "version",
+    "attempt",
+    "task_id",
+    "created_at",
+    "updated_at",
+    "finished_at",
+}
+PAGE_MEMBERS = {"page", "size", "sort", "has_next", "matching", "matching_capped"}
 ALLOWED = {
     "task retry": {
         "created",
@@ -61,6 +289,45 @@ ALLOWED = {
         "retry_sequence",
         "type",
         "state",
+    },
+    "delivery list": {"state", "send", "deliveries"} | PAGE_MEMBERS | DELIVERY_MEMBERS,
+    "delivery show": {
+        "delivery",
+        "task",
+        "retry_sequence",
+        "actions",
+        "retry_unavailable",
+        "page",
+        "size",
+        "has_next",
+        "events",
+        "at",
+        "action",
+        "result",
+        "notes",
+    }
+    | DELIVERY_MEMBERS,
+    "delivery refusals": {"refusals", "id", "created_at"} | PAGE_MEMBERS,
+    "delivery refusal-show": {
+        "id",
+        "created_at",
+        "resolved",
+        "source",
+        "snapshot_id",
+        "generation",
+        "can_clear",
+    },
+    "delivery resolve": {
+        "created",
+        "request_key",
+        "resolution",
+        "id",
+        "message_id",
+        "action",
+        "expected_version",
+        "previous_task_id",
+        "retry_task_id",
+        "created_at",
     },
 }
 
@@ -79,6 +346,16 @@ def test_each_documents_members_are_exactly_its_allowlist(command):
     assert set(members(document)) == ALLOWED[command], command
     for name in ALLOWED[command]:
         assert FORBIDDEN.search(name) is None, (command, name)
+    text = json.dumps(document)
+    assert "@" not in text and "4242" not in text and "private-evidence" not in text
+
+
+def test_the_parsers_vocabularies_match_the_pages():
+    """Spelled out before Django is set up; kept equal to their sources."""
+    from parishkit.stewardship.jobs.delivery_metadata import STATES
+
+    assert admin_cli.DELIVERY_STATES == STATES
+    assert admin_cli.RESOLVE_ACTIONS == admin_operations.RESOLVE_ACTIONS
 
 
 def test_every_operations_command_has_a_golden_document():
@@ -164,3 +441,82 @@ def test_an_unknown_outcome_names_the_request_key(monkeypatch):
     [key] = keys
     assert document["error"]["request_id"] == str(key)
     assert f"--request-key {key}" in err.getvalue()
+
+
+@pytest.mark.parametrize(
+    "purpose,offered,listed",
+    [
+        # Receipts and reports retry here; resend waits for the prompt.
+        (
+            "receipt",
+            ["note", "accept", "confirm_unsent", "resend"],
+            ["note", "accept", "confirm_unsent"],
+        ),
+        ("daily_digest", ["note", "retry_failed"], ["note", "retry_failed"]),
+        # A Family email's retry needs the page's Family keys.
+        ("initial", ["note", "retry_failed"], ["note"]),
+        ("reminder", ["note", "retry_unsent"], ["note"]),
+    ],
+)
+def test_delivery_show_lists_only_what_resolve_accepts(purpose, offered, listed):
+    """Every listed action can be given to delivery resolve as is."""
+    assert admin_operations.command_actions({"purpose": purpose}, offered) == listed
+
+
+class Cause(Exception):
+    """A driver error carrying its SQLSTATE."""
+
+    def __init__(self, sqlstate):
+        """Keep the state."""
+        super().__init__("refused")
+        self.sqlstate = sqlstate
+
+
+@pytest.mark.parametrize(
+    "state,stale", [("23514", True), ("23505", True), ("40001", False)]
+)
+@pytest.mark.parametrize("command", ["task retry", "delivery resolve"])
+def test_a_constraint_conflict_is_stale_as_on_the_page(
+    monkeypatch, command, state, stale
+):
+    """A check or uniqueness refusal is stale_version; others keep their class."""
+    from django.db import IntegrityError
+
+    from parishkit.stewardship.storage import StaleRecordError
+
+    error = IntegrityError("conflict")
+    error.__cause__ = Cause(state)
+
+    def conflict(step):
+        """The step's transaction was refused by the database."""
+        raise error
+
+    monkeypatch.setattr(admin_operations, "_admit", lambda caller, service: None)
+    monkeypatch.setattr(admin_operations, "_held", conflict)
+    caller = SimpleNamespace(automation_session_id=KEY)
+    if command == "task retry":
+
+        def act():
+            """Retry a task."""
+            admin_operations.retry_task(caller, None, RUN, request_key=KEY, context={})
+
+    else:
+
+        def act():
+            """Resolve a delivery."""
+            admin_operations.resolve_delivery_command(
+                caller,
+                SimpleNamespace(public_origin="https://x"),
+                MESSAGE,
+                action="note",
+                expected_version=3,
+                note="n",
+                request_key=KEY,
+                context={},
+            )
+
+    with pytest.raises(StaleRecordError if stale else IntegrityError):
+        act()
+    assert admin_cli.classify(
+        StaleRecordError("x") if stale else error, admitted_process=True, changed=True
+    ) == ("stale_version" if stale else "unavailable")

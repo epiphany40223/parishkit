@@ -1462,8 +1462,9 @@ signatures:
 - **PR 9a:** `delivery_views.preparation_retry` and
   `export_views.retry_cleanup_command`, with the delivery views' admission and
   command scope (`jobs.task_retries`).
-- **PR 9b:** delivery detail and resolution, and refusal clearing from
-  `delivery_views`.
+- **PR 9b:** the delivery and refusal reads from `delivery_views`
+  (`jobs.delivery_reads`), and delivery resolution through the page's
+  command scope; refusal clearing follows in PR 9c.
 - **PR 10:** campaign, content, Ministry, parish, branding and integration
   settings (including the backup folder probe) from `campaign_views`,
   `content_views`, `campaign_ministry_views`, `share_views`, `talent_views`,
@@ -1721,8 +1722,8 @@ pause, and closing work is the closed-campaign resolution. See
 | --- | --- |
 | `background`, `background_tasks`, `background_task` | `task list`, `task show` (PR 3a) |
 | `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9a) |
-| `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b) |
-| `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-clear` (PR 9b) |
+| `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b; `resend` owed by PR 9c) |
+| `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-show` (PR 9b), `delivery refusal-clear` (PR 9c) |
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
 | `system_backup_request` (ADM-13) | `system backup-now` (keyed), `system backup-status --watch` |
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
@@ -1752,14 +1753,39 @@ the page's `command_id` (an export cleanup's `request_key`), so a key
 crosses between the page and the command line, and a repeat returns the
 original retry. A run that is no longer the latest failed run of its chain
 is `stale_version` (the page's 409). Keys are bound within a task's retry
-chain, as for the page: a key another Administrator used in the chain is
-`invalid`, one used for another run of the chain is `stale_version`
-(`invalid` for an export cleanup), and a key used only in another chain is
-a new key. An `outcome_unknown` document carries the key
+chain, as for the page: a key another Administrator used for this run is
+`invalid`, one used for another run of the chain, whoever used it, is
+`stale_version` (`invalid` for an export cleanup), and a key used only in
+another chain is a new key. An `outcome_unknown` document carries the key
 as `error.request_id`. A retry is in no row of the
 [notifications](#notifications) table. The new run takes the retry
 services' own correlation ID, not the invocation's; the command event and
 the run's `retry_command_id` (the key) join them.
+
+The delivery commands (PR 9b) read through `jobs.delivery_reads`, the
+functions the Outgoing mail and Refused addresses pages use, and record the
+pages' `delivery_viewed` event. Their documents follow
+[personal data on the command line](#personal-data-on-the-command-line):
+a delivery has its metadata only (no recipient address, Family DUID or
+Family id), a resolution note only its time and action, and a refusal only
+its id, time, resolution and the source version to verify; a DUID is
+accepted as search input. A DUID-filtered read still links that Family to
+its delivery or refusal facts (counts, states, times); that is intended,
+for sessions only Administrators approve, as on the pages. `delivery show`
+lists in `actions` only what `delivery resolve` accepts. A check or
+uniqueness refusal from the database (SQLSTATE 23514 or 23505) during
+`task retry` or `delivery resolve` is `stale_version`, as the pages answer
+409. The refusal's detail is its own verb,
+`delivery refusal-show` (a default, pending Administrator confirmation).
+`delivery resolve` is the delivery page's resolution form in the page's
+command scope, keyed by its `command_id`, recording
+`admin_cmd_delivery_resolve` when it creates the resolution. Two page
+actions need a ticked acknowledgement and wait for PR 9c, which uses PR 5b's
+[prompt](#command-line-confirmation): the duplicate-risk `resend` and
+`delivery refusal-clear` ("I verified this address"). A retry of a Family
+email re-prepares it with the web's Family keys, which the command process
+does not load, so it is `not_available` from the command line; receipt and
+report retries work.
 
 The ADM-13 rows are pending exemptions until ADM-11 PR 3 (the read) and
 PR 5 (the actions) land. The ADM-13 action routes are POSTs to the
@@ -2154,8 +2180,9 @@ Administrator's approval of that deploy.
   Family portal maintenance.
 - **PR 8, reports and exports:** report reads, exports with streamed fetch
   (including the wrapper's `export fetch` and its tests), digests and logs.
-- **PR 9, operations,** in two parts. **PR 9a:** task retries. **PR 9b:**
-  delivery detail and resolution, and refusal clearing.
+- **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
+  delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
+  the prompt.
 - **PR 10, other configuration:** campaign, content, Ministries, parish,
   hosted files, artwork, branding confirmation, integration settings with the
   backup folder probe, and secret replacement: integration key replacement,

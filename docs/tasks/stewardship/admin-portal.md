@@ -419,7 +419,16 @@ the delivery views' admission and their command scope moved into
 preparation, daily digest and export cleanup retries, keys crossing between
 the page and the command line, stale runs, scopes, ended sessions and
 unknown outcomes) and the unchanged delivery, command session, digest retry
-and export retry suites. 9b adds the delivery and refusal commands.
+and export retry suites. 9b adds `delivery list`, `delivery show`,
+`delivery resolve`, `delivery refusals` and `delivery refusal-show`, with
+the pages' reads moved into `jobs.delivery_reads`; proven by
+`tests/stewardship/test_admin_operations.py` (golden documents and
+allowlists with no recipient, DUID or note text),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_delivery_cli_postgresql.py` and the
+unchanged delivery view, recovery, command session and resolution suites.
+`resend` and `delivery refusal-clear` follow in 9c, at PR 5b's prompt.
 
 ## ADM-12: Admin navigation overhaul
 
