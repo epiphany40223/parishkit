@@ -1119,7 +1119,8 @@ server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
 ignored. The participation report's options reshape its statistics, chart and
-exports rather than one table, so they always load the page in full. When
+exports rather than one table, so its options form is an
+[in-place control](#in-place-controls) of all three panels instead. When
 the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at
 the top. Portal users, whose domain and address tables carry role forms bound
 once at load, and the link preparation history keep only the fragment and
@@ -1163,9 +1164,12 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   follow-up request's history, and a weekly information report) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page: Save follow-up on an information item and on a
-  [Ministry follow-up request](#follow-up-workflows), and System logs'
-  cross-links, whose answer is the filtered page, and Acknowledge on a
-  security event) names its region by its
+  [Ministry follow-up request](#follow-up-workflows); System logs'
+  cross-links, whose answer is the filtered page; Acknowledge on a security
+  event; the
+  [participation report](../reports/spec.md#campaign-statistics)'s Apply
+  report options, which refreshes its statistics, chart and export panels)
+  names its region by its
   URL's fragment. A POST form saves a change unless it is marked
   `data-in-place-read` (the System logs cross-links only read): a read may
   be cancelled by a newer choice and, with no answer at all, falls back to
@@ -1186,7 +1190,18 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   its banner says nothing about the refusal. Because the banner's region is
   on every Admin page, any other in-place control that refreshes every
   region (a Save, a filter, a view switch) also refreshes the banner from
-  its answer, so the banner shows what that answer's page shows. A checkbox marked
+  its answer, so the banner shows what that answer's page shows. A report whose address has no
+  time zone loads the same address with this browser's zone added in place,
+  as it loads and again after any in-place refresh that brought a page
+  without one (a daily-table link followed before the zone was applied):
+  every other parameter and the address's own fragment are kept, focus
+  stays where it is and nothing is announced (the request is a link marked
+  `data-in-place-quiet`), and if it gets no answer the same address is
+  loaded the ordinary way, without a jump to a panel. Because the chart,
+  statistics and export panels are all regions, paging or sorting the daily
+  table refreshes all three from the same answer: an export format chosen
+  but not yet used, an open "Technical details" and the chart's inspected
+  date return to their defaults, as an ordinary load would leave them. A checkbox marked
   `data-submit-on-change` submits its own `form[data-in-place]` as soon as it
   changes, with no Apply button (the Admin portal requires script), and keeps
   focus. Each page records the state it shows on the box. The box submits
@@ -1257,7 +1272,10 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   alert at the top of its form says the server could not be reached and to
   reload the page to check. A redirect to another page (elsewhere, or the
   sign-in page) is followed by loading that page's address. A read (a GET)
-  that fails falls back to the ordinary load.
+  that fails falls back to the ordinary load, except when the browser cut
+  it off because the reader is leaving the page: their own navigation goes
+  ahead. A save with no answer still shows its note then, since a download
+  link also starts leaving the page and the page stays.
 - **Real targets.** Every control is a real link or form with its `href`
   or `action` and fragment, which the script requests; when an ordinary load
   happens instead (a fallback above), the fragment, kept across a

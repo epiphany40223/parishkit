@@ -1,6 +1,7 @@
 """Synthetic exact observations rendered by the production reporting templates."""
 
 from types import SimpleNamespace
+from urllib.parse import urlencode
 from uuid import UUID
 
 from django.template.loader import render_to_string
@@ -12,6 +13,25 @@ from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import daily_table
 
 from ..test_daily_digest_content import document
+from .automation_components import canonical
+
+# The participation report's real address (its options' form posts there).
+REAL = f"/admin/reports/{document().participation.campaign_id}/participation/"
+
+
+# Answered after a pause (see the server in conftest.py): applying this
+# browser's zone to the report opened at ?scope=historical, so a test can
+# follow a daily-table link while it is still in flight.
+SLOW_GETS = {canonical(REAL + "?scope=historical&timezone=America%2FLos_Angeles")}
+
+
+def options(query):
+    """The query string Apply report options sends for ``query``."""
+    fields = {"scope": query.scope, "timezone": query.timezone}
+    if query.inactive:
+        fields["inactive"] = "yes"
+    fields |= {"size": query.size, "sort": query.sort}
+    return urlencode(fields)
 
 
 def components(context, admin):
@@ -141,17 +161,36 @@ def components(context, admin):
             "report_url": "/participation",
         },
     )
-    pages["/participation-auto?scope=historical"] = (
-        "participation",
-        page | {"query": ReportQuery()},
+    # The report at its real address, for the in-place options (#519 PR 5).
+    # Opened without a zone, it shows the server's UTC fallback, and its
+    # links carry no zone (as the view renders them), until report-v1.js
+    # loads the same address with this browser's zone in place. Also: an
+    # explicit UTC, this browser's zone, and the answers the options and
+    # the zone's application ask for, served under their query's pairs in
+    # any order (the fixture server's canonical lookup).
+    implicit = ReportQuery(timezone_explicit=False)
+    fallback = page | {
+        "query": implicit,
+        **daily_table(chart, participation_context(chart), implicit),
+    }
+    los_angeles = ReportQuery(timezone="America/Los_Angeles")
+    current = ReportQuery(
+        scope="current", timezone="America/Los_Angeles", inactive=True
     )
-    pages["/participation-auto?scope=historical&timezone=America%2FLos_Angeles"] = (
+    pages[REAL + "?timezone=UTC"] = ("participation", page | {"query": ReportQuery()})
+    for query in ("", "?sort=date_desc", "?scope=historical"):
+        pages[REAL + query] = ("participation", fallback)
+        zoned = (query + "&" if query else "?") + "timezone=America%2FLos_Angeles"
+        pages[canonical(REAL + zoned)] = ("participation", page)
+    pages[canonical(REAL + "?" + options(los_angeles))] = ("participation", page)
+    pages[canonical(REAL + "?" + options(current))] = (
         "participation",
-        page,
-    )
-    pages["/participation-auto?timezone=UTC"] = (
-        "participation",
-        page | {"query": ReportQuery()},
+        page
+        | {
+            "query": current,
+            "inactive_cards": [("Inactive Families", "2")],
+            **daily_table(chart, participation_context(chart), current),
+        },
     )
     return {
         path: (

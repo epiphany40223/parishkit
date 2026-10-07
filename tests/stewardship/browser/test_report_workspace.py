@@ -76,24 +76,6 @@ def test_report_and_exports_work_without_scripts(browser_engine, component_origi
         context.close()
 
 
-def test_default_timezone_is_resolved_once_but_explicit_utc_is_kept(
-    page, component_origin
-):
-    """Start with a genuinely different server fallback and retain selected scope."""
-    from playwright.sync_api import expect
-
-    page.goto(component_origin + "/participation-auto?scope=historical")
-    expect(page).to_have_url(
-        component_origin
-        + "/participation-auto?scope=historical&timezone=America%2FLos_Angeles"
-    )
-    for field in page.locator("input[name=browser_timezone]").all():
-        expect(field).to_have_value("America/Los_Angeles")
-    page.goto(component_origin + "/participation-auto?timezone=UTC")
-    expect(page.locator("select[name=timezone]")).to_have_value("UTC")
-    assert page.url.endswith("?timezone=UTC")
-
-
 def test_export_status_updates_itself_and_downloads_once(page, component_origin):
     """A queued export is re-read in place and its ready file downloads by itself."""
     ready = page.request.get(component_origin + "/report-export").text()

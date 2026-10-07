@@ -275,3 +275,26 @@ def test_acknowledgements_act_in_place():
     assert '#security-events" ' in form
     assert 'data-in-place="security-acknowledge-{{ event.id }}"' in form
     assert "data-in-place-anywhere" not in form
+
+
+def test_participation_options_apply_in_place():
+    """Apply report options (#519 PR 5) is a data-in-place GET landing on
+    the statistics, and the statistics, chart and export panels are regions,
+    so every panel the options reshape is refreshed together. The chart keeps
+    its daily table's own region inside it, and no form opts out of the
+    in-place filter path any more."""
+    text = (TEMPLATES / "participation.html").read_text()
+    form = re.search(r'<form id="table-filters"[^>]*>', text).group(0)
+    assert '#participation-statistics" ' in form
+    assert 'data-in-place="report-options"' in form
+    assert "data-in-place-message=" in form and "data-filter-reload" not in form
+    for region in (
+        "participation-statistics",
+        "participation-chart",
+        "participation-export",
+    ):
+        assert names_region(text, region), region
+    chart = text.split('id="participation-chart"', 1)[1]
+    assert "data-table-region" in chart.split('id="participation-export"', 1)[0]
+    for path in TEMPLATES.rglob("*.html"):
+        assert "data-filter-reload" not in path.read_text(), path.name

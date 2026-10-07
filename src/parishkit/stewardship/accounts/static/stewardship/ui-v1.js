@@ -699,8 +699,9 @@
   // special response path exists. The controls are:
   // - a shared table's sort headings, navigator links and forms, and the
   //   page's filter form (form#table-filters, #484), unless that form is
-  //   marked data-filter-reload because its options reshape far more of the
-  //   page than the table (the participation chart);
+  //   itself a form[data-in-place] because its options reshape far more of
+  //   the page than a table (the participation report's options, which
+  //   refresh its statistics, chart and export panels, #519);
   // - a[data-in-place]: a link that shows another view of this page (the
   //   response dashboard's mode and grain, a list's Refresh). Its value, if
   //   any, is a stable key that finds the link again in the fresh page, for
@@ -717,6 +718,17 @@
   // A data-in-place link or form names the region it changes by its URL's
   // fragment, or else by the region it sits in. Its data-in-place-message
   // ("List refreshed.") is announced before the region's row count.
+  // A page script can follow an a[data-in-place] link on the reader's behalf
+  // (the participation report applying this browser's time zone as it
+  // loads, report-v1.js) by marking the link data-in-place-quiet. The regions
+  // are swapped, but focus is not moved and nothing is announced, since the
+  // reader did not act, and the address (or, should the fetch fail, the
+  // ordinary load) keeps the page's own fragment, not the region's.
+  const keepHash = (url) => {
+    const address = new URL(url, document.baseURI);
+    address.hash = window.location.hash;
+    return address.href;
+  };
   // Every answer refreshes every region on the page, unless the link is
   // marked data-in-place-only: then only the region it names is swapped (a
   // history pager nested in a panel whose form holds unsaved typing). A
@@ -1151,6 +1163,18 @@
       box.form.requestSubmit();
     });
   };
+  // Set while the reader is leaving the page (see refreshRegions). A
+  // navigation that never leaves (a download, a cancelled prompt) clears it
+  // again after a moment, since this page then keeps running.
+  let unloading = false;
+  window.addEventListener("beforeunload", () => {
+    unloading = true;
+    window.setTimeout(() => { unloading = false; }, 2000);
+  });
+  // A page brought back from the back/forward cache is running again.
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) unloading = false;
+  });
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
     const owner = options.owner || null;
     // Every way out below that hands the page to the browser (a full load,
@@ -1187,6 +1211,12 @@
         if (isBox(control)) heldBoxes.add(control);
         return;
       }
+      // A read the browser cut off because the reader is leaving the page
+      // (some engines report that as a network error, not an abort) must not
+      // fall back: the fallback's own navigation would hijack theirs. A
+      // saving POST's note is still shown: beforeunload also fires for a
+      // download link, and that page stays.
+      if (unloading && !form) return;
       if (form) showUnreachable(form);
       else leave(fallback);
       return;
@@ -1254,8 +1284,9 @@
     if (!anywhere && response.redirected) {
       window.history.replaceState(window.history.state, "", withFragment(response.url, id));
     } else if (!anywhere && init.method !== "POST") {
-      window.history.replaceState(window.history.state, "", url);
+      window.history.replaceState(window.history.state, "", options.quiet ? keepHash(url) : url);
     }
+    if (options.quiet && !refused) return;
     // A refusal's summary (now in the region) takes focus, as it does on an
     // ordinary load; without one the control does, as after a success. A
     // control that is gone (a save that closed a follow-up request leaves no
@@ -1295,8 +1326,10 @@
     const region = owner ? targetRegion(link, link.getAttribute("href")) : tableRegion(link);
     if (!region) return;
     event.preventDefault();
-    refreshTable(region, link, link.href, {method: "GET"}, () => window.location.assign(link.href),
-      {owner});
+    const quiet = Boolean(owner?.hasAttribute("data-in-place-quiet"));
+    const target = quiet ? keepHash(link.href) : link.href;
+    refreshTable(region, link, link.href, {method: "GET"}, () => window.location.assign(target),
+      {owner, quiet});
   });
   // Forms: a POST table's headings, Previous and Next, every table's
   // page-number form, the page's filter form (#484), whose new filters
@@ -1329,7 +1362,7 @@
       // submitter; wirePageSize noted the select. Failing both, the Go button.
       control = event.submitter || pendingControls.get(form) || form;
       pendingControls.delete(form);
-    } else if (form.matches("form#table-filters[data-table-sync]:not([data-filter-reload])")) {
+    } else if (form.matches("form#table-filters[data-table-sync]:not([data-in-place])")) {
       // The first table on the page stands for them all: every region in
       // the response is swapped, and focus stays on the filter button.
       region = document.querySelector("[data-table-region][id]");
