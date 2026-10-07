@@ -120,7 +120,12 @@ def test_presence_refresh_refreshes_the_list_in_place():
 # The in-place settings pages (#532) draw their review region around
 # settings-review.html, whose Apply names it, and around the change status a
 # confirmed change shows, whose follow-up link names it too.
-SETTINGS_PAGES = ("parish-settings.html", "campaign-settings.html")
+SETTINGS_PAGES = (
+    "parish-settings.html",
+    "campaign-settings.html",
+    "share-settings.html",
+    "talent-settings.html",
+)
 HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
     "settings-review.html": SETTINGS_PAGES,

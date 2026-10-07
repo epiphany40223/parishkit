@@ -18,9 +18,11 @@ each step of the view renders:
 Every page draws the Make changes / Review / Apply indicator at its step, so
 a test can see the indicator follow along. Campaign settings is served the
 same way at ``CAMPAIGN`` (the editor) and ``CAMPAIGN_REVIEW`` (its review),
-so a test can check its module scripts survive an in-place review. A live
-campaign's Ministry leader roles form (#922) is served at ``LEADERS``, with
-its review at ``LEADERS_REVIEW``; Apply's answer names the change at
+so a test can check its module scripts survive an in-place review, and
+Share options at ``SHARE`` and ``SHARE_REVIEW``: its form is a region of its
+own, redrawn by the answer with the values sent (#750). A live campaign's
+Ministry leader roles form (#922) is served at ``LEADERS``, with its review
+at ``LEADERS_REVIEW``; Apply's answer names the change at
 ``LEADERS_PENDING``.
 """
 
@@ -36,6 +38,10 @@ from parishkit.stewardship.accounts.campaign_forms import (
     LeaderRolesForm,
 )
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
+from parishkit.stewardship.accounts.share_forms import (
+    ShareOptions,
+    default_share_options,
+)
 
 SETTINGS = "/settings-in-place"
 REVIEW = "/settings-in-place-review"
@@ -45,6 +51,8 @@ REQUEST = UUID("53200000-0000-4000-8000-000000000532")
 PENDING = f"{SETTINGS}?request={REQUEST}"
 SETTLED = f"{SETTINGS}?request={REQUEST}&settled=1"
 CAMPAIGN = "/campaign-in-place"
+SHARE = "/share-in-place"
+SHARE_REVIEW = "/share-in-place-review"
 CAMPAIGN_REVIEW = "/campaign-in-place-review"
 LEADERS = "/campaign-leaders-in-place"
 LEADERS_REVIEW = "/campaign-leaders-in-place-review"
@@ -211,6 +219,42 @@ def components(context, admin):
             ),
         )
 
+    options = default_share_options()
+
+    def share(data, step, **region):
+        """Share options at ``step``, its formset bound to ``data`` if given."""
+        formset = ShareOptions(data, prefix="options", previous=options)
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/share-settings.html",
+                context
+                | {
+                    "admin_chrome": admin | {"flow_steps": _steps(step)},
+                    "campaign": {
+                        "pk": REQUEST,
+                        "active_configuration": {"name": "Sample campaign"},
+                    },
+                    "formset": formset,
+                    "base_digest": "a" * 64,
+                }
+                | review_region("share_settings", None, **region),
+            ),
+        )
+
+    # The formset as the browser posts it, with the first label renamed.
+    sent = {
+        "options-TOTAL_FORMS": str(len(options) + 1),
+        "options-INITIAL_FORMS": str(len(options)),
+        "options-MIN_NUM_FORMS": "0",
+        "options-MAX_NUM_FORMS": "1000",
+    }
+    for index, option in enumerate(options):
+        sent[f"options-{index}-id"] = option["id"]
+        sent[f"options-{index}-label"] = option["label"]
+        sent[f"options-{index}-ORDER"] = str(index + 1)
+    sent["options-0-label"] = "Renamed option"
+    renamed = [dict(options[0], label="Renamed option"), *options[1:]]
     pending = SimpleNamespace(state="staged", request_id=REQUEST, failure_code="")
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
     return {
@@ -262,6 +306,17 @@ def components(context, admin):
             },
         ),
         LEADERS_PENDING: leaders(2, receipt=pending),
+        SHARE: share(None, 0),
+        SHARE_REVIEW: share(
+            sent,
+            1,
+            review={
+                "template": "stewardship/option-review.html",
+                "before": options,
+                "after": renamed,
+                "preview": "synthetic-signed-intent",
+            },
+        ),
         CAMPAIGN_REVIEW: campaign(
             None,
             1,
