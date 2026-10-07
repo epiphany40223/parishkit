@@ -514,13 +514,20 @@ def downloads_paused(campaign_id):
     )
 
 
-def read_list(spec, scope, as_of, choice):
+def current_snapshot():
+    """The current ParishSoft snapshot's id, or None before the first load."""
+    return SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+
+
+def read_list(spec, scope, as_of, choice, snapshot=None):
     """Read one list's rows at ``as_of``: the funnel rows, then their facts.
 
     Runs inside the campaign read guard's read-only transaction. One funnel
     statement, the campaign's active Families for the data-quality list, and
     two snapshot queries for the names, envelope numbers and mailing names
-    of the candidates only.
+    of the candidates only. ``snapshot`` is the ParishSoft snapshot to read
+    them from (``current_snapshot()`` when not given); a caller that audits
+    the read passes the one it records (#556).
     """
     families = response_families(scope, as_of)
     active = frozenset()
@@ -531,7 +538,8 @@ def read_list(spec, scope, as_of, choice):
             ).values_list("pk", flat=True)
         )
     chosen = candidates(spec, families, active)
-    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    if snapshot is None:
+        snapshot = current_snapshot()
     facts = snapshot_family_facts(
         snapshot, [family.family_duid for family in chosen], str(_("Family"))
     )

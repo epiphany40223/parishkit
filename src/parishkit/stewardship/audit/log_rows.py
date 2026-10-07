@@ -21,7 +21,7 @@ from parishkit.stewardship.web.dates import UnknownZone, browser_day_start
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting, TablePage
 
 from .log_contract import SERIOUS
-from .log_descriptions import ACTOR_KINDS, describe, words
+from .log_descriptions import ACTOR_KINDS, describe, field_label, field_value
 from .log_details import explain
 from .schemas import FIELDS, Action
 
@@ -395,9 +395,10 @@ def detail_labels(details):
     """The recorded detail with each field named in words, for display only.
 
     Exports keep the stored field names, which are what a filter or script
-    matches; the page shows "Lag microseconds" instead of "lag_microseconds".
+    matches; the page shows "Lag microseconds" instead of "lag_microseconds",
+    and a report's recorded choices in its own menu's words (#556).
     """
-    return [(words(key), value) for key, value in details]
+    return [(field_label(key), field_value(key, value)) for key, value in details]
 
 
 def log_table(query, rows, *, through, action, number=1, total=None, capped=False):

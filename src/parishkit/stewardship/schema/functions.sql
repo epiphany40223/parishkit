@@ -5608,7 +5608,8 @@ BEGIN
         WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count',
             'matching_count','page','directory_reason','directory_phone','directory_response','directory_sort','search_used','exact_code_used','ministry_duid','ministry_duids','ministry_operational',
             'previous_ministry_duids','added_ministry_duids','removed_ministry_duids',
-            'decision','review_reason','file_slug','previous_file_slug','file_kind','file_size','file_fingerprint']
+            'decision','review_reason','file_slug','previous_file_slug','file_kind','file_size','file_fingerprint',
+            'report_mode','report_filter','talent_option_id','snapshot_id']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -5706,6 +5707,14 @@ BEGIN
                OR text_value!~'^[a-z0-9]+(-[a-z0-9]+)*$' THEN RETURN false; END IF;
         ELSIF key='file_kind' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('pdf','docx','xlsx','pptx','png','jpeg') THEN RETURN false; END IF;
+        -- An on-request report page or download (#556): the system mode it
+        -- showed and its closed filter choice (audit.schemas.REPORT_FILTERS).
+        ELSIF key='report_mode' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('production','testing') THEN RETURN false; END IF;
+        ELSIF key='report_filter' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('all','invited','uninvited','progressed',
+                'opened','followed','unfollowed','mailing-name','envelope','any','cannot_serve',
+                'cannot_attend','option') THEN RETURN false; END IF;
         ELSIF key LIKE '%\_id' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
         ELSIF key LIKE '%\_fingerprint' ESCAPE '\' THEN
