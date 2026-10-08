@@ -8,7 +8,7 @@ import pytest
 from parishkit.stewardship.accounts.templatetags.stewardship import parish_time
 from parishkit.stewardship.web import dates
 
-from .conftest import NOW, load_collections, no_script_context
+from .conftest import NOW, load_collections
 from .waits import eventually, hidden, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -685,16 +685,22 @@ def test_admin_dialog_near_absolute_limit_offers_sign_in_only(page, component_or
     expect(page.locator("[data-session-signin]")).to_be_visible()
 
 
-def test_javascript_disabled_retains_admin_form_and_family_explanation(
-    browser_engine, component_origin
-):
-    """No silent failure: Admin core forms stay ordinary POST, Family explains JS."""
-    context = no_script_context(browser_engine)
+def test_sign_in_form_posts(page, component_origin):
+    """The Admin sign-in starts with an ordinary POST form."""
+    page.goto(component_origin + "/login")
+    visible(page.get_by_role("button", name="Sign in with Google"))
+    assert page.locator("main form").get_attribute("method") == "post"
+
+
+def test_family_page_without_javascript_explains_it(browser_engine, component_origin):
+    """No silent failure: the ungated Family page explains what JavaScript adds.
+
+    The Family portal is not gated (#565), so a plain script-off context
+    loads it as a parishioner's browser would.
+    """
+    context = browser_engine.new_context(java_script_enabled=False)
     try:
         page = context.new_page()
-        page.goto(component_origin + "/login")
-        visible(page.get_by_role("button", name="Sign in with Google"))
-        assert page.locator("form").get_attribute("method") == "post"
         page.goto(component_origin + "/family")
         visible(page.locator("noscript"))
         assert "enable JavaScript" in page.locator("noscript").inner_text()
@@ -778,21 +784,6 @@ def test_campaign_modules_hide_and_disable_unselected_fields(page, component_ori
     )
     assert "financial_start" not in posted and "fund_duids" not in posted
     assert "ministry_duids" in posted
-
-
-def test_campaign_modules_remain_usable_without_javascript(
-    browser_engine, component_origin
-):
-    """Server validation remains available when progressive enhancement is absent."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/campaign-settings")
-        visible(page.get_by_role("group", name="Financial periods and funds"))
-        assert page.get_by_label("Upcoming financial period start").is_enabled()
-        visible(page.get_by_role("button", name="Preview changes"))
-    finally:
-        context.close()
 
 
 def test_family_presence_is_visible_only_bounded_and_carries_no_answers(

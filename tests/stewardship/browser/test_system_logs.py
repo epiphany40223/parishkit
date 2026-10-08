@@ -10,7 +10,6 @@ from django.http import QueryDict
 
 from parishkit.stewardship.audit.log_rows import LogQuery
 
-from .conftest import no_script_context
 from .waits import eventually, has_attribute, has_text, visible
 
 # The log page's own filter form posts to its reversed address; the table's
@@ -158,67 +157,61 @@ def test_logs_mobile_keyboard_and_accessibility(
     assert page.get_by_text("never in a web address", exact=False).count() == 0
 
 
-def test_log_filters_and_paging_without_scripts(browser_engine, component_origin):
-    """Identifiers, the snapshot and the sort post natively, never in the URL."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/logs-default")
-        page.get_by_label("Debug", exact=True).check()
-        page.get_by_label("Information", exact=True).uncheck()
-        page.get_by_label("Audit record", exact=True).uncheck()
-        # A type written directly by its owner, which no fixed list would offer.
-        page.get_by_label("Event or action type", exact=False).fill("admin_login")
-        actor = "1abcdef0-0000-4000-8000-000000000000"
-        # Identifier filters are folded away until asked for.
-        assert not page.get_by_label("Actor identifier").is_visible()
-        page.get_by_text("Filter by identifier", exact=True).click()
-        page.get_by_label("Actor identifier").fill(actor)
-        # Answer only the form posts; the page itself shares this path, and
-        # fallback (not continue_) keeps it passing through no_script_context.
-        page.route(
-            LOG_POSTS,
-            lambda route: (
-                route.fulfill(body="Filtered")
-                if route.request.method == "POST"
-                else route.fallback()
-            ),
-        )
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Apply filters").click()
-        body = sent.value.post_data
-        # A submitted form is marked, so no tick can mean none rather than default.
-        assert "applied=yes" in body and "debug=yes" in body and "info=" not in body
-        assert "audit=" not in body and "source=" not in body
-        assert "event=admin_login" in body
-        assert f"actor={actor}" in body
-        assert actor not in sent.value.url and "?" not in sent.value.url
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Filtered", exact=True))
+def test_log_filters_and_paging_post_their_private_values(page, component_origin):
+    """Identifiers, the snapshot and the sort travel in POST bodies, never the URL."""
+    page.goto(component_origin + "/logs-default")
+    page.get_by_label("Debug", exact=True).check()
+    page.get_by_label("Information", exact=True).uncheck()
+    page.get_by_label("Audit record", exact=True).uncheck()
+    # A type written directly by its owner, which no fixed list would offer.
+    page.get_by_label("Event or action type", exact=False).fill("admin_login")
+    actor = "1abcdef0-0000-4000-8000-000000000000"
+    # Identifier filters are folded away until asked for.
+    assert not page.get_by_label("Actor identifier").is_visible()
+    page.get_by_text("Filter by identifier", exact=True).click()
+    page.get_by_label("Actor identifier").fill(actor)
+    # Answer only the form posts; the page itself shares this path.
+    page.route(
+        LOG_POSTS,
+        lambda route: (
+            route.fulfill(body="Filtered")
+            if route.request.method == "POST"
+            else route.fallback()
+        ),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    body = sent.value.post_data
+    # A submitted form is marked, so no tick can mean none rather than default.
+    assert "applied=yes" in body and "debug=yes" in body and "info=" not in body
+    assert "audit=" not in body and "source=" not in body
+    assert "event=admin_login" in body
+    assert f"actor={actor}" in body
+    assert actor not in sent.value.url and "?" not in sent.value.url
+    # Let the routed answer finish loading before the next navigation,
+    # which it would otherwise interrupt (#623).
+    visible(page.get_by_text("Filtered", exact=True))
 
-        page.goto(component_origin + "/logs")
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Next", exact=True).first.click()
-        body = sent.value.post_data
-        # The snapshot travels with the applied filters, not the edited form.
-        assert "through=2026-09-19T15%3A04%3A05.123456%2B00%3A00" in body
-        assert "page=2" in body and "sort=newest" in body and "size=25" in body
-        assert "debug=yes" in body and "correlation=00000000" in body
-        assert "?" not in sent.value.url
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Filtered", exact=True))
+    page.goto(component_origin + "/logs")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Next", exact=True).first.click()
+    body = sent.value.post_data
+    # The snapshot travels with the applied filters, not the edited form.
+    assert "through=2026-09-19T15%3A04%3A05.123456%2B00%3A00" in body
+    assert "page=2" in body and "sort=newest" in body and "size=25" in body
+    assert "debug=yes" in body and "correlation=00000000" in body
+    assert "?" not in sent.value.url
+    # Let the routed answer finish loading before the next navigation,
+    # which it would otherwise interrupt (#623).
+    visible(page.get_by_text("Filtered", exact=True))
 
-        page.goto(component_origin + "/logs")
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="sort ascending").click()
-        body = sent.value.post_data
-        # A heading keeps the filters and snapshot and starts at page one.
-        assert "sort=oldest" in body and "through=" in body and "page=" not in body
-        assert "correlation=00000000" in body and "?" not in sent.value.url
-    finally:
-        context.close()
+    page.goto(component_origin + "/logs")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="sort ascending").click()
+    body = sent.value.post_data
+    # A heading keeps the filters and snapshot and starts at page one.
+    assert "sort=oldest" in body and "through=" in body and "page=" not in body
+    assert "correlation=00000000" in body and "?" not in sent.value.url
 
 
 def test_level_icon_column_survives_in_place_sort_and_paging(page, component_origin):
