@@ -881,9 +881,12 @@ that no more than 90% of `E` respond.
   prefetches, Families who stopped partway through the form, and submitted
   Families.
 - **Answer content.** Varied submissions: pledges across the synthetic parish's
-  realistic amount range, Ministry interest, census edits such as a proposed new
-  Member or a changed email, a few email opt-outs, and occasional additional
-  information text.
+  realistic amount range, Ministry interest, census edits (a changed email, or
+  a proposed new adult household Member, who also joins the first offered
+  Ministry when the campaign offers Ministries, so the Chairperson review has
+  new Members to review), a few email opt-outs, and occasional additional
+  information text. When the campaign collects census answers and the
+  timeline has enough submissions, each kind appears at least once.
 - **Edge cases.** At least:
   - re-submissions (later versions) from 3% of submitting Families, with a
     minimum of one;

@@ -474,26 +474,39 @@ def _ensure_variety(events, draw, ministries):
     """Guarantee each answer kind appears at least once among the submissions.
 
     The draws are proportional, so a small parish could by chance submit no
-    Ministry interest, census edit or free text at all; report testing wants
-    at least one of each. Distinct early submissions are given the missing
-    kinds, which changes no count and keeps the draw deterministic.
+    Ministry interest, census edit (of either kind: a changed email or a
+    proposed new Member, #498) or free text at all; report testing wants at
+    least one of each. Distinct early submissions are given the missing
+    kinds, which changes no count and keeps the draw deterministic. A census
+    edit is never given to a submission that already holds the other kind,
+    so supplying one cannot remove the other.
     """
     submissions = [index for index, e in enumerate(events) if e.kind == "submission"]
-    wanted = {
-        "ministry_interest": sorted(list(ministries)[:1]),
-        "census_edit": "changed_email",
-        "information": INFORMATION_TEXTS[0],
-    }
-    position = 0
-    for key, value in wanted.items():
+    wanted = (
+        ("ministry_interest", sorted(list(ministries)[:1])),
+        ("census_edit", "changed_email"),
+        # Free text before the proposed Member: a tiny parish with too few
+        # submissions for every kind keeps the original three kinds first.
+        ("information", INFORMATION_TEXTS[0]),
+        ("census_edit", "proposed_member"),
+    )
+    taken = set()
+    for key, value in wanted:
         if key == "ministry_interest" and not ministries:
             continue
-        if any(events[i].data["answers"][key] for i in submissions):
+        held = [events[i].data["answers"][key] for i in submissions]
+        if (value in held) if key == "census_edit" else any(held):
             continue
-        if position >= len(submissions):
-            break
-        index = submissions[position]
-        position += 1
+        free = [
+            i
+            for i in submissions
+            if i not in taken
+            and not (key == "census_edit" and events[i].data["answers"][key])
+        ]
+        if not free:
+            continue
+        index = free[0]
+        taken.add(index)
         event = events[index]
         answers = {**event.data["answers"], key: value}
         events[index] = Event(
