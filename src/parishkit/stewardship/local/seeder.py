@@ -640,7 +640,102 @@ def _raise_unless(query, comparison, message):
     )
 
 
-def invariant_sql(seeded_now, counts, *, start=None):
+# The Production Initial and Reminder instants of one campaign that fell due
+# by the seeded now, the Families each one should have mailed, and those it
+# did (#731). ``{campaign}`` is the campaign's UUID. The expected set is
+# derived from the rows the real code wrote, not from the timeline: a Family
+# active, Portal-eligible and email-eligible from before the instant
+# (first_eligible_at), with no live submission created before it. That is
+# the rule plan_family and plan_recovery apply (campaigns/
+# family_schedule_planning.py, schedule_recovery.py). A Family is mailed for
+# an instant when an occurrence of that revision, in the campaign's current
+# Production cycle (any recovery generation), has an outbox message of the
+# definition's kind to that Family and is not skipped, coalesced or failed.
+# Those three keep their message link after the message is cancelled or
+# fails: a Reminder prepared ahead and skipped at send time because the
+# Family submitted, a Reminder folded into another, or a failed send that a
+# later recovery generation resent, which is then the one that counts.
+_MAIL_SETS = """WITH instants AS (
+        SELECT d.id AS definition_id, d.kind, r.id AS revision_id, r.due_at
+        FROM stewardship_schedule_definition d
+        JOIN stewardship_schedule_revision r ON r.id = d.current_revision_id
+        WHERE d.campaign_id = '{campaign}' AND d.kind IN ('initial', 'reminder')
+          AND r.due_at <= seeded_now
+    ), expected AS (
+        SELECT i.definition_id, f.id AS family_id
+        FROM instants i
+        JOIN stewardship_family_campaign f ON f.campaign_id = '{campaign}'
+            AND f.active AND f.portal_eligible AND f.email_eligible
+            AND f.first_eligible_at <= i.due_at
+        WHERE NOT EXISTS (
+            SELECT 1 FROM stewardship_submission s
+            WHERE s.family_id = f.id AND s.mode = 'live'
+              AND s.created_at < i.due_at)
+    ), mailed AS (
+        SELECT i.definition_id, m.family_id, count(*) AS sent,
+            bool_and(o.state = 'succeeded') AS settled
+        FROM instants i
+        JOIN stewardship_schedule_occurrence o ON o.revision_id = i.revision_id
+            AND o.mode = 'production'
+            AND o.state NOT IN ('skipped', 'coalesced', 'failed')
+            AND o.production_cycle = (SELECT c.production_cycle
+                FROM stewardship_campaign c WHERE c.id = '{campaign}')
+        JOIN stewardship_outbox_message m ON m.id = o.outbox_id
+            AND m.purpose = i.kind AND m.mode = 'production'
+            AND o.target = 'family:' || m.family_id
+        GROUP BY i.definition_id, m.family_id
+    )
+    """
+
+
+def mail_checks(campaign_id):
+    """The checks that each Initial and Reminder mailed exactly the right Families.
+
+    For every Production Initial or Reminder due by the seeded now (#731):
+    each expected Family (``_MAIL_SETS``) has exactly one mailed occurrence,
+    and it was delivered (the check runs after the seed settled); no other
+    Family was mailed (a responder, such as the early responder whose
+    Initial occurrence is skipped, or the Family with no eligible email);
+    and no Production Initial or Reminder message of the campaign lacks its
+    occurrence.
+    """
+    campaign = str(UUID(str(campaign_id)))
+    sets = _MAIL_SETS.format(campaign=campaign)
+    return [
+        _raise_unless(
+            sets + "SELECT count(*) FROM expected e LEFT JOIN mailed m "
+            "USING (definition_id, family_id) WHERE m.sent IS DISTINCT FROM 1",
+            "= 0",
+            "Initial or Reminder instants where an eligible Family that had "
+            "not responded was not mailed exactly once",
+        ),
+        _raise_unless(
+            sets + "SELECT count(*) FROM mailed m WHERE NOT EXISTS ("
+            "SELECT 1 FROM expected e WHERE e.definition_id = m.definition_id "
+            "AND e.family_id = m.family_id)",
+            "= 0",
+            "Initial or Reminder emails to a Family that had responded or was "
+            "not eligible",
+        ),
+        _raise_unless(
+            sets + "SELECT count(*) FROM expected e JOIN mailed m "
+            "USING (definition_id, family_id) WHERE NOT m.settled",
+            "= 0",
+            "Initial or Reminder emails not delivered after the seed settled",
+        ),
+        _raise_unless(
+            "SELECT count(*) FROM stewardship_outbox_message m "
+            f"WHERE m.campaign_id = '{campaign}' AND m.mode = 'production' "
+            "AND m.purpose IN ('initial', 'reminder') AND NOT EXISTS ("
+            "SELECT 1 FROM stewardship_schedule_occurrence o "
+            "WHERE o.outbox_id = m.id)",
+            "= 0",
+            "Production Initial or Reminder emails without their occurrence",
+        ),
+    ]
+
+
+def invariant_sql(seeded_now, counts, *, start=None, campaign_id=None):
     """The ``DO`` block phase 3 runs under ``migration`` (specification, phase 3).
 
     It raises unless parent and child timestamps are monotone (occurrence,
@@ -651,7 +746,9 @@ def invariant_sql(seeded_now, counts, *, start=None):
     equal what the timeline implies (``counts`` is ``expected_counts``; a
     missing key expects none), and no seeded
     timestamp in the tables the seed writes through is later than the seeded
-    now, other than the allowlisted future-by-design columns. The check runs
+    now, other than the allowlisted future-by-design columns. With
+    ``campaign_id`` it also checks who got each Production Initial and
+    Reminder (``mail_checks``, #731). The check runs
     with the services stopped and before phase 4, so nothing is later than
     the seeded now by construction, and this proves it.
     """
@@ -659,7 +756,6 @@ def invariant_sql(seeded_now, counts, *, start=None):
         raise SeedRefused("The invariant check needs the seeded now.")
     submissions = int(counts.get("submission", 0))
     days = int(counts.get("midnight", 0))
-    at = seeded_now.astimezone(UTC).isoformat()
     checks = [
         _raise_unless(query, "= 0", message) for query, message in MONOTONE_CHECKS
     ]
@@ -693,7 +789,8 @@ def invariant_sql(seeded_now, counts, *, start=None):
         )
     )
     # The counts the timeline states without modelling eligibility (#499).
-    # Outbox and occurrence counts depend on it and are not pinned (#731).
+    # Outbox and occurrence counts depend on it, so they are derived from
+    # the rows instead (mail_checks, #731).
     checks += [
         _raise_unless(query, f"= {expected}", f"{what}, expected {expected}")
         for query, expected, what in (
@@ -724,6 +821,8 @@ def invariant_sql(seeded_now, counts, *, start=None):
             ),
         )
     ]
+    if campaign_id is not None:
+        checks += mail_checks(campaign_id)
     checks += [
         _raise_unless(
             f"SELECT count(*) FROM {table} WHERE {column} > seeded_now",
@@ -733,6 +832,12 @@ def invariant_sql(seeded_now, counts, *, start=None):
         for table, columns in _SEEDED_NOW_COLUMNS
         for column in columns
     ]
+    return do_block(seeded_now, checks)
+
+
+def do_block(seeded_now, checks):
+    """Wrap ``_raise_unless`` checks in one DO block bound to the seeded now."""
+    at = seeded_now.astimezone(UTC).isoformat()
     body = "\n".join(checks)
     return (
         "DO $$\n"
@@ -1236,7 +1341,8 @@ def check_step(request, configuration):
     if admit_offline_service(configuration) is not ServiceRole.MIGRATION:
         raise SeedRefused("The invariant check requires the migration profile.")
     configure_operator_database(configuration)
-    result = campaign_timeline(request, current_campaign())
+    campaign = current_campaign()
+    result = campaign_timeline(request, campaign)
     seeded_now = (
         datetime.fromisoformat(request.seeded_now)
         if request.seeded_now
@@ -1245,7 +1351,10 @@ def check_step(request, configuration):
     with connection.cursor() as cursor:
         cursor.execute(
             invariant_sql(
-                seeded_now, expected_counts(result), start=result.calendar.start
+                seeded_now,
+                expected_counts(result),
+                start=result.calendar.start,
+                campaign_id=campaign.pk,
             )
         )
     return {"step": "check", "result": "invariants hold"}
