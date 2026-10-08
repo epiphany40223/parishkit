@@ -426,9 +426,13 @@ for the request's current [attempt](../admin-portal/spec.md#go-live-page):
    the attempt number and the preparation number within the attempt
    (`prepare:<attempt>:<n>`, with `n` starting at 1). It does not depend on
    the inputs, so a preparation refused because some input moved on
-   (credential epoch, key inventory, eligibility) never blocks the next one,
-   which simply takes the next number. Preparation then runs as it does
-   today.
+   (credential epoch, key inventory, eligibility) never blocks the next one.
+   The producer finds the next `n` from the preparation rows that actually
+   exist for the request: the attempt's preparations are the rows whose
+   `request_key` equals one of the attempt's recomputed UUIDv5 keys, counted
+   from 1 until a key has no row, so the next `n` is that count plus one. A
+   refused request creates no row and so uses no number. Preparation then
+   runs as it does today.
 3. **Prepare again when the links go stale.** Prepared links are bound to the
    source snapshot and generation, so any promotion makes them stale, even
    one that changes no Family. When the ready (or still running) preparation
