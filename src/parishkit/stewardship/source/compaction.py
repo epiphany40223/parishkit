@@ -9,17 +9,23 @@ from contextlib import suppress
 from dataclasses import dataclass
 from time import monotonic
 
-from django.db import connection, transaction
+from django.db import DatabaseError, connection, transaction
 from django.db.models import Exists, OuterRef, Q
 from django.db.models.expressions import RawSQL
 
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.storage import StorageInvariantError
 
 from .leases import _now, verify_source
 from .retention_policy import retention_anchors, retention_cutoffs
-from .snapshot_models import SourceCompactionBatch, SourceSnapshot, SourceSnapshotPin
-from .snapshots import _admit, _current
+from .snapshot_models import (
+    SourceCompactionBatch,
+    SourceCurrent,
+    SourceSnapshot,
+    SourceSnapshotPin,
+)
+from .snapshots import _admit
 from .version_models import ENTITY_MODELS
 
 # Snapshots still named by live state that may read their corpus later, even
@@ -63,6 +69,24 @@ PAYLOAD_CHUNK = 500
 # One refresh spends at most this long on retention; memberships of
 # already-compacted or rejected corpora left over are reclaimed next run.
 RETENTION_BUDGET_SECONDS = 60
+
+# Report fact cleanup runs first and may use at most this share of the
+# budget, so snapshot retention always gets the rest (#387).
+FACT_BUDGET_SHARE = 0.5
+
+# One reclaim chunk's statements may run at most this long (#387). A chunk
+# holds no task or lease row, but an unexpectedly slow plan would otherwise
+# run past the whole retention budget; a stopped chunk rolls back and the
+# next run resumes.
+RECLAIM_STATEMENT_SECONDS = 10
+
+
+def _current_unlocked():
+    """The current pointer without a row lock; missing bootstrap state fails."""
+    current = SourceCurrent.objects.filter(singleton=True).first()
+    if current is None:
+        raise StorageInvariantError("Source current pointer is not initialized.")
+    return current
 
 
 def _live_pins(now):
@@ -175,6 +199,7 @@ def _reclaim_memberships(limit=MEMBERSHIP_CHUNK):
     """
     deleted = 0
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(f"SET LOCAL statement_timeout = '{RECLAIM_STATEMENT_SECONDS}s'")
         for _, membership in ENTITY_MODELS.values():
             if deleted >= limit:
                 break
@@ -202,6 +227,7 @@ def _reclaim_payloads(limit=PAYLOAD_CHUNK):
     """
     deleted = 0
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(f"SET LOCAL statement_timeout = '{RECLAIM_STATEMENT_SECONDS}s'")
         for payload, membership in ENTITY_MODELS.values():
             if deleted >= limit:
                 break
@@ -219,18 +245,51 @@ def _reclaim_payloads(limit=PAYLOAD_CHUNK):
     return deleted
 
 
-def _drain(reclaim, deadline, between, tally, key):
+def _drain(reclaim, deadline, between, tally, key, *, task_id=None):
     """Repeat one chunked reclaimer until it runs dry or the budget is spent.
 
     Each committed chunk is added to ``tally[key]`` as it commits, so a
-    caller interrupted part-way still knows exactly what was deleted.
+    caller interrupted part-way still knows exactly what was deleted. A chunk
+    stopped by its statement timeout (RECLAIM_STATEMENT_SECONDS) rolls back
+    and ends this drain; the timeout log records it, and the next run
+    resumes.
     """
+    from parishkit.stewardship.jobs.broker import sql_timeout_kind
+
     while monotonic() < deadline:
         between()
-        count = reclaim()
+        started = monotonic()
+        try:
+            count = reclaim()
+        except DatabaseError as error:
+            if sql_timeout_kind(error) != "statement_timeout":
+                raise
+            _reclaim_timed_out(monotonic() - started, task_id)
+            break
         tally[key] += count
         if count == 0:
             break
+
+
+def _reclaim_timed_out(elapsed, task_id):
+    """Log a reclaim chunk its statement timeout stopped (what, limit, elapsed).
+
+    A WARNING ``task_timed_out``, unlike the INFO budget stop: a chunk is
+    small and should finish in well under a second, so a slow one is worth
+    telling the operator about if it keeps happening. ``task_id`` names the
+    refresh task explicitly; None falls back to the worker's bound task.
+    """
+    from parishkit.stewardship.audit.timeouts import record_timeout
+    from parishkit.stewardship.observability import Event
+
+    record_timeout(
+        Event.TASK_TIMED_OUT,
+        what="statement_timeout",
+        level="WARNING",
+        task_id=task_id,
+        limit_seconds=RECLAIM_STATEMENT_SECONDS,
+        elapsed_seconds=elapsed,
+    )
 
 
 def _mark_compacted(candidates, now, worker_id):
@@ -340,7 +399,12 @@ def compact_source(
     with transaction.atomic():
         verify_source(claim)
         _admit(admit, "compact", None)
-        current = _current()
+        # Read the pointer without a row lock (#387): locking it stalled
+        # Family form opens and validation, which share-lock it. The
+        # compaction lease excludes promotion, which alone moves it, and the
+        # snapshot guard admits the mark only for a non-current, unpinned
+        # manifest.
+        current = _current_unlocked()
         now = _now()
         recent, yearly = retention_cutoffs(now)
         candidates = _select_compaction(current, now, snapshot_limit)
@@ -371,13 +435,21 @@ def compact_source(
             )
 
     try:
-        _drain(_reclaim_memberships, deadline, between, tally, "memberships")
+        _drain(
+            _reclaim_memberships,
+            deadline,
+            between,
+            tally,
+            "memberships",
+            task_id=claim.task_id,
+        )
         _drain(
             lambda: _reclaim_payloads(min(PAYLOAD_CHUNK, payload_limit)),
             deadline,
             between,
             tally,
             "payloads",
+            task_id=claim.task_id,
         )
     except BaseException:
         # Count what did commit before re-raising the original failure; a
@@ -388,7 +460,9 @@ def compact_source(
     return CompactionResult(marked, record_reclaimed())
 
 
-def _compact_superseded_facts(execution, limit=500, deadline=None):
+def _compact_superseded_facts(
+    execution, limit=500, deadline=None, budget_seconds=RETENTION_BUDGET_SECONDS
+):
     """Delete superseded, unused report fact generations in every campaign.
 
     Every refresh rebuilds report facts, and each generation pins its source
@@ -397,6 +471,9 @@ def _compact_superseded_facts(execution, limit=500, deadline=None):
     compact_facts deletes only generations SQL reports disposable (a newer
     ready generation exists and no pointer, verification, export, digest, pin
     or demand still uses them) and releases exactly their source pins.
+
+    It stops at ``deadline``, whose length ``budget_seconds`` names in the
+    timeout log (what, limit, elapsed) when the stop leaves work undone.
     """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.reports.models import CampaignDailyFactSet
@@ -415,12 +492,23 @@ def _compact_superseded_facts(execution, limit=500, deadline=None):
             .values_list("campaign_id", flat=True)
             .distinct()
         )
-    deadline = monotonic() + RETENTION_BUDGET_SECONDS if deadline is None else deadline
+    started = monotonic()
+    deadline = started + RETENTION_BUDGET_SECONDS if deadline is None else deadline
+    stopped = []
 
     def proceed():
-        """Stop at the retention budget or when the execution must drain."""
+        """Stop at the retention budget or when the execution must drain.
+
+        Asked only before more work, so reaching the deadline here means
+        work is left; that stop is logged once.
+        """
         execution.check()
-        return monotonic() < deadline
+        if monotonic() < deadline:
+            return True
+        if not stopped:
+            stopped.append(True)
+            _facts_budget_reached(execution, budget_seconds, monotonic() - started)
+        return False
 
     removed = []
     for campaign_id in campaigns:
@@ -434,6 +522,21 @@ def _compact_superseded_facts(execution, limit=500, deadline=None):
             proceed=proceed,
         )
     return removed
+
+
+def _facts_budget_reached(execution, budget_seconds, elapsed):
+    """Log that report fact cleanup stopped at its share of the budget (INFO)."""
+    from parishkit.stewardship.audit.timeouts import record_timeout
+    from parishkit.stewardship.observability import Event
+
+    record_timeout(
+        Event.WORK_BUDGET_REACHED,
+        what="retention_budget",
+        level="INFO",
+        task_id=execution.claim.run_id,
+        limit_seconds=budget_seconds,
+        elapsed_seconds=elapsed,
+    )
 
 
 def _admit_compaction(action, snapshot):
@@ -457,7 +560,7 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
     pages and delivery never wait behind retention. Retention is housekeeping:
     any failure here is logged and never fails the refresh that just promoted.
     """
-    from .leases import acquire_source, release_source
+    from .leases import acquire_source
 
     skipped = []
 
@@ -481,9 +584,16 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
                 # fact cleanup failure (for example an outdated pin guard)
                 # must not stop snapshot retention, which still reclaims
                 # every snapshot no pin protects.
-                deadline = monotonic() + RETENTION_BUDGET_SECONDS
+                started = monotonic()
+                deadline = started + RETENTION_BUDGET_SECONDS
                 try:
-                    _compact_superseded_facts(execution, deadline=deadline)
+                    # At most its share of the budget, so the snapshot
+                    # retention below always gets the rest (#387).
+                    _compact_superseded_facts(
+                        execution,
+                        deadline=started + RETENTION_BUDGET_SECONDS * FACT_BUDGET_SHARE,
+                        budget_seconds=RETENTION_BUDGET_SECONDS * FACT_BUDGET_SHARE,
+                    )
                 except Exception as error:
                     skip(error)
                 for _ in range(batches):
@@ -506,13 +616,33 @@ def compact_before_refresh(execution, *, batches=BATCHES_PER_REFRESH):
                     ):
                         break
         finally:
-            with execution.effect():
-                release_source(claim)
+            _release_compaction(execution, claim)
     except Exception as error:
         skip(error)
     if skipped:
         _record_skipped(execution.claim.run_id, skipped)
     _observe_health()
+
+
+def _release_compaction(execution, claim):
+    """Release the compaction lease, even while the worker drains (#387).
+
+    ``execution.effect()`` refuses once a graceful stop is requested, so a
+    release there left the lease held until it expired and the next refresh
+    waited for it. Like ``execution._settle``, this admits the release with
+    a drain-allowed check, then locks the task claim and releases inside a
+    work transaction. Lost ownership still refuses.
+    """
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.jobs.ownership import lock_task_claim
+
+    from .leases import release_source
+
+    with execution.control.lock:
+        execution.control.check(allow_drain=True)
+        with work_transaction():
+            lock_task_claim(execution.claim)
+            release_source(claim)
 
 
 def _budget_reached(execution, deadline):
