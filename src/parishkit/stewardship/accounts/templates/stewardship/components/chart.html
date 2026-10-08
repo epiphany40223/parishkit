@@ -1,4 +1,4 @@
-{% load i18n %}{# One chart (#477): ``chart`` is a reports.chart_specs.ChartDocument. The spec is embedded as JSON for chart-v1.js; the summary and the exact-values table are the chart's accessible equivalent and what a browser without scripts sees. The table follows the figure because a figcaption must be a figure's first or last child. #}
+{% load i18n %}{# One chart (#477): ``chart`` is a reports.chart_specs.ChartDocument. The spec is embedded as JSON for chart-v1.js; the summary and the exact-values table are the chart's accessible equivalent and the record of every value, which still shows if the chart cannot be drawn. The table follows the figure because a figcaption must be a figure's first or last child. #}
 {% with spec_id=chart.key|add:"-spec" summary_id=chart.key|add:"-summary" caption_id=chart.key|add:"-caption" %}
 <figure class="chart" data-chart="{{ spec_id }}" data-chart-state="pending">
 <div data-chart-view data-chart-title="{{ chart.title }}" aria-describedby="{{ summary_id }}"></div>
