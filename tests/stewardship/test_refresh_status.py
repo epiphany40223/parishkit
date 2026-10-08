@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.campaigns import go_live_sequencing
 from parishkit.stewardship.source import refresh_status, send_hold
 from parishkit.stewardship.source.data_age import (
     FACTS_COLUMNS,
@@ -34,6 +35,10 @@ def no_data_age(monkeypatch):
     monkeypatch.setattr(refresh_status, "_facts", lambda row: SourceFacts())
     monkeypatch.setattr(refresh_status, "overdue_full_slot", lambda now, **_: None)
     monkeypatch.setattr(send_hold, "allowance_applies", lambda *args, **kw: False)
+    # No go-live is in progress in these no-database tests (#462).
+    monkeypatch.setattr(go_live_sequencing, "held_until", lambda overdue: overdue)
+    monkeypatch.setattr(go_live_sequencing, "refreshes_held", lambda instant: False)
+    monkeypatch.setattr(go_live_sequencing, "last_hold_end", lambda instant: None)
 
 
 def status_from(monkeypatch, row, schedule=None, now=None):

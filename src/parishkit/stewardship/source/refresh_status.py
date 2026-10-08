@@ -249,12 +249,24 @@ def full_refresh_status(schedule=None, now=None, *, health=False):
             overdue = overdue_full_slot(
                 now, after=facts.full_started_at, timezone=schedule["timezone"]
             )
+            # A slot due during a go-live's refresh hold counts from the
+            # hold's end, as the stale alarm counts it (#462).
+            from parishkit.stewardship.campaigns.go_live_sequencing import (
+                held_until,
+            )
+
+            overdue = held_until(overdue)
         out_of_date = is_out_of_date(overdue, now, margin)
         if overdue is not None:
             late = max(0, int((now - overdue).total_seconds()) // 60)
         # Imported lazily: the send checks pull in the mail and schedule
         # models, and they run only when the data is out of date or the
         # connection gap is exceeded.
+        from parishkit.stewardship.campaigns.go_live_sequencing import last_hold_end
+        from parishkit.stewardship.campaigns.go_live_sequencing import (
+            refreshes_held as go_live_holding,
+        )
+
         from .health import failed_since
         from .send_hold import allowance_applies, family_send_active
         from .send_hold import resume_at as resume_point
@@ -267,7 +279,8 @@ def full_refresh_status(schedule=None, now=None, *, health=False):
             facts,
             now=now,
             threshold=connection_threshold(schedule, margin),
-            sending=family_send_active,
+            sending=lambda: family_send_active() or go_live_holding(now),
+            held=lambda: last_hold_end(now),
         )
         frequency = schedule["frequency"]
         times = tuple(schedule["full_refresh_times"])

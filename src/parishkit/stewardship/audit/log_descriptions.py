@@ -370,7 +370,14 @@ DESCRIPTIONS = {
     ),
     "go_live_step_refused": _(
         "The system could not take the next go-live step for the Administrator "
-        "who started it, so it changed nothing; it tries again on its next pass."
+        "who started it, usually because they are no longer an Administrator. "
+        "Nothing changed and the step is not tried again; the Go live page "
+        "says why."
+    ),
+    "go_live_sequencing_stopped": _(
+        "A go-live stopped preparing Family links for now, because ParishSoft "
+        "data kept changing or its refresh hold ended. The Go live page offers "
+        "Refresh and prepare again."
     ),
     "source_credential_failed": _(
         "The ParishSoft key was refused or could not be read. If the detail "

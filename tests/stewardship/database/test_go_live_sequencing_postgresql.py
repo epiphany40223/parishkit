@@ -46,6 +46,7 @@ from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.observability import Event
 from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
+from parishkit.stewardship.storage import StaleRecordError
 
 from .auth_builders import signed_in, unguarded
 from .response_builders import response_source
@@ -68,10 +69,11 @@ def go_live(response_service, google):
     return response_service, admin, request
 
 
-def start(request, admin):
+def start(request, admin, number=None):
     """Begin the next attempt as Start (or Refresh and prepare again) will."""
     return begin_attempt(
         request,
+        number=len(attempts(request)) + 1 if number is None else number,
         actor_id=admin,
         correlation_id=uuid4(),
         authorize=lambda scope: True,
@@ -125,6 +127,8 @@ def test_attempts_are_their_refresh_commands_with_bounded_holds(go_live):
     promoted = refreshed(harness)
     (first,) = attempts(request)
     assert first.promoted_at == promoted.promoted_at
+    # Cleanup completed before the refresh promoted, so the hour runs from
+    # the promotion.
     assert first.hold_end == promoted.promoted_at + REFRESH_HOLD
     # The data-age alarm counts a slot due inside the hold from its end.
     inside = first.started_at + timedelta(minutes=5)
@@ -132,6 +136,14 @@ def test_attempts_are_their_refresh_commands_with_bounded_holds(go_live):
     assert held_until(first.started_at - timedelta(minutes=1)) < first.started_at
     # A second attempt is a new command, never the first one again.
     assert start(request, admin) == 2
+    assert len(attempts(request)) == 2
+    # A replayed click returns the attempt it began; a stale page's number
+    # cannot begin another.
+    assert start(request, admin, number=2) == 2
+    with pytest.raises(StaleRecordError):
+        start(request, admin, number=4)
+    with pytest.raises(StaleRecordError):
+        start(request, admin, number=1)
     assert len(attempts(request)) == 2
 
 
@@ -231,9 +243,18 @@ def test_a_refused_step_records_nothing(go_live, caplog):
             disabled=True, version=F("version") + 1
         )
     caplog.set_level(logging.INFO, logger="parishkit.stewardship")
-    assert step() == ()
+    producer = GoLiveProducer()
+    with (
+        task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
+        scheduler_session() as guard,
+    ):
+        assert producer(guard) == ()
+        assert producer(guard) == ()
     assert not ProductionTokenPreparation.objects.exists()
-    assert any(r.msg is Event.GO_LIVE_STEP_REFUSED for r in caplog.records)
+    # Logged once, and the refused step was not asked again.
+    refusals = [r for r in caplog.records if r.msg is Event.GO_LIVE_STEP_REFUSED]
+    assert len(refusals) == 1
+    assert producer.refused == {(request.pk, ("prepare", 1, 1))}
 
 
 def test_scheduled_refreshes_wait_for_the_attempt(go_live, caplog):
@@ -263,3 +284,133 @@ def test_scheduled_refreshes_wait_for_the_attempt(go_live, caplog):
     with scheduler_session() as guard:
         assert produce_refreshes(guard, skipped=set())
     assert SourceRefreshTick.objects.exists()
+
+
+def test_a_second_attempt_discards_the_first_attempts_links(go_live):
+    """Attempt 2 first discards attempt 1's live links, then prepares (H1)."""
+    harness, admin, request = go_live
+    start(request, admin)
+    refreshed(harness)
+    (prepared,) = step()
+    first = ProductionTokenPreparation.objects.get()
+    assert run_link_task(harness, first.task_id)
+    # Refresh and prepare again begins attempt 2 with its own refresh.
+    start(request, admin)
+    refreshed(harness)
+    (discarded,) = step()
+    assert (discarded.action, discarded.attempt) == ("discard_prior", 2)
+    cancellation = ProductionTokenCancellation.objects.get(preparation=first)
+    # Waiting for disposal: nothing else is asked.
+    assert step() == ()
+    assert run_link_task(harness, cancellation.task_id, cleanup=True)
+    (again,) = step()
+    assert (again.action, again.attempt, again.preparation) == ("prepare", 2, 1)
+    assert ProductionTokenPreparation.objects.filter(
+        request_key=preparation_key(request.pk, 2, 1)
+    ).exists()
+
+
+def test_a_preparation_from_the_links_page_is_discarded_first(go_live):
+    """A preparation made by hand on today's links page does not block (H1)."""
+    from parishkit.stewardship.campaigns.activation_tokens import request_preparation
+
+    harness, admin, request = go_live
+    start(request, admin)
+    refreshed(harness)
+    manual = request_preparation(
+        transition_id=request.pk,
+        request_key=uuid4(),
+        actor_id=admin,
+        correlation_id=uuid4(),
+        admit=lambda *args: True,
+    )
+    (discarded,) = step()
+    assert discarded.action == "discard_prior"
+    cancellation = ProductionTokenCancellation.objects.get(preparation=manual)
+    assert run_link_task(harness, cancellation.task_id, cleanup=True)
+    # The hand-made preparation's own task, still queued, now ends cancelled.
+    run_link_task(harness, manual.task_id)
+    (prepared,) = step()
+    assert (prepared.action, prepared.preparation) == ("prepare", 1)
+
+
+def test_held_until_reads_as_the_scheduler_and_the_worker(go_live):
+    """The health check (worker) and refresh producer (scheduler) can read it."""
+    harness, admin, request = go_live
+    start(request, admin)
+    refreshed(harness)
+    (attempt,) = attempts(request)
+    inside = attempt.started_at + timedelta(minutes=1)
+    for role in (ServiceRole.SCHEDULER, ServiceRole.WORKER):
+        with task_login(role, exact=True, reconnect=True):
+            assert held_until(inside) == attempt.hold_end
+            assert refreshes_held(database_now()) is True
+
+
+def links_page_preparation(request, admin):
+    """A preparation an Administrator made by hand on today's links page."""
+    from parishkit.stewardship.campaigns.activation_tokens import request_preparation
+
+    return request_preparation(
+        transition_id=request.pk,
+        request_key=uuid4(),
+        actor_id=admin,
+        correlation_id=uuid4(),
+        admit=lambda *args: True,
+    )
+
+
+def test_an_exhausted_attempt_leaves_a_hand_made_preparation_alone(
+    go_live, monkeypatch
+):
+    """With no preparation left to make, nobody else's links are discarded."""
+    harness, admin, request = go_live
+    monkeypatch.setattr(sequencing, "MAX_PREPARATIONS", 1)
+    start(request, admin)
+    refreshed(harness)
+    step()
+    own = ProductionTokenPreparation.objects.get()
+    assert run_link_task(harness, own.task_id)
+    refreshed(harness)
+    step()
+    assert run_link_task(
+        harness, ProductionTokenCancellation.objects.get().task_id, cleanup=True
+    )
+    manual = links_page_preparation(request, admin)
+    assert step() == ()
+    assert not ProductionTokenCancellation.objects.filter(preparation=manual).exists()
+
+
+def test_a_refused_next_preparation_leaves_a_hand_made_one_alone(go_live):
+    """Once the attempt's next preparation was refused, nothing is discarded."""
+    harness, admin, request = go_live
+    start(request, admin)
+    refreshed(harness)
+    manual = links_page_preparation(request, admin)
+    with (
+        task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
+        work_transaction(),
+    ):
+        taken = sequencing.advance(
+            database_now(), refused=frozenset({("prepare", 1, 1)})
+        )
+    assert (taken.action, taken.of) == ("refused", "prepare")
+    assert not ProductionTokenCancellation.objects.filter(preparation=manual).exists()
+
+
+def test_the_latest_hold_end_is_the_last_one_already_passed(go_live, monkeypatch):
+    """last_hold_end names the newest hold end at or before the instant."""
+    from parishkit.stewardship.campaigns.go_live_sequencing import last_hold_end
+
+    harness, admin, request = go_live
+    assert last_hold_end(database_now()) is None
+    monkeypatch.setattr(sequencing, "REFRESH_HOLD", timedelta(0))
+    start(request, admin)
+    refreshed(harness)
+    (first,) = attempts(request)
+    assert last_hold_end(first.hold_end) == first.hold_end
+    assert last_hold_end(first.hold_end - timedelta(microseconds=1)) is None
+    start(request, admin)
+    refreshed(harness)
+    first, second = attempts(request)
+    assert last_hold_end(database_now()) == max(first.hold_end, second.hold_end)

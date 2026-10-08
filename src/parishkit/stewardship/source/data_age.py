@@ -185,7 +185,9 @@ def connection_threshold(settings, margin):
     )
 
 
-def connection_state(facts, *, now, threshold, sending=lambda: False):
+def connection_state(
+    facts, *, now, threshold, sending=lambda: False, held=lambda: None
+):
     """The connection line from ``facts``: failing, not checked or working.
 
     Only finished refresh attempts that called ParishSoft count; held or
@@ -193,15 +195,22 @@ def connection_state(facts, *, now, threshold, sending=lambda: False):
     for a send does not count toward "not checked": the gap is measured from
     the newer of the last success and the scheduler's newest durable hold
     entry, and while a send is in progress (``sending``, called only when the
-    gap is exceeded) the line never reads "not checked".
+    gap is exceeded) the line never reads "not checked". ``held``, also
+    called only when the gap is exceeded, returns the end of the latest
+    go-live refresh hold (#462) or None; the gap counts from it too, so the
+    line does not read "not checked" right after a hold ends.
     """
     if facts.newest_failed and facts.failing_since is not None:
         return Connection("failing", facts.failing_since)
     if facts.success_at is None:
         return Connection("unknown")
     since = max(t for t in (facts.success_at, facts.held_at) if t)
-    if threshold is not None and now - since > threshold and not sending():
-        return Connection("not_checked", facts.success_at)
+    if threshold is not None and now - since > threshold:
+        # Read the go-live hold only when the gap is exceeded: it counts like
+        # the scheduler's newest durable send-hold entry.
+        ended = held()
+        if (ended is None or now - ended > threshold) and not sending():
+            return Connection("not_checked", facts.success_at)
     return Connection("working", facts.answered_at or facts.success_at)
 
 
@@ -475,6 +484,10 @@ def data_age_at(as_of):
         AppliedIntegration,
     )
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.campaigns.go_live_sequencing import last_hold_end
+    from parishkit.stewardship.campaigns.go_live_sequencing import (
+        refreshes_held as go_live_holding,
+    )
     from parishkit.stewardship.jobs.operational_sources import configured_policy
 
     from .send_hold import family_send_active
@@ -500,6 +513,13 @@ def data_age_at(as_of):
         facts.data_as_of,
         facts.full_started_at,
         connection_state(
-            facts, now=as_of, threshold=threshold, sending=family_send_active
+            facts,
+            now=as_of,
+            threshold=threshold,
+            # The go-live reads use the request as it stands now, not as
+            # of ``as_of``: a digest observed during a hold may still read
+            # "not checked" once that request has moved on (#462).
+            sending=lambda: family_send_active() or go_live_holding(as_of),
+            held=lambda: last_hold_end(as_of),
         ),
     )
