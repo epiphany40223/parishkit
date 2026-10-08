@@ -2310,8 +2310,9 @@ ones, and, after an explicit confirmation, reset every applicable slot to its
 default in one versioned save; schedules that send a replaced email follow
 its new revision. A fill result names each slot it kept because it holds the
 Admin's own text, and the content list marks every slot as default,
-customized or empty. Each default passes the normal content validation
-described under
+customized or empty, and
+[flags saved text the sanitizer now cleans](../data/spec.md#content-and-email-templates).
+Each default passes the normal content validation described under
 [content and email templates](../data/spec.md#content-and-email-templates).
 
 ### Create the campaign

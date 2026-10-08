@@ -588,3 +588,176 @@ def test_closing_note_without_confirmation_email_is_listed_and_folded(
     assert not rows.filter(slot="submission_confirmation").exists()
     saved = rows.get(kind="email", slot="confirmation")
     assert (saved.subject, saved.html) == (fallback.subject, html)
+
+
+def plant_stale(store, monkeypatch, *records):
+    """Apply records as if saved before a sanitizer change (#832).
+
+    Today's content rules refuse non-canonical HTML only for authored records,
+    so patching them off for one change stands in for an older sanitizer.
+    """
+    from parishkit.stewardship.accounts import content_schema
+    from parishkit.stewardship.web.content import SafeContent
+
+    with monkeypatch.context() as patched:
+        patched.setattr(
+            content_schema,
+            "prepare_content",
+            lambda html, text=None: SafeContent(html, text),
+        )
+        patch = [{"operation": "add", "section": "content", **row} for row in records]
+        assert change(store, store.active(), uuid4(), patch).state == "applied"
+
+
+def test_stale_saved_content_is_flagged_and_resaves_without_an_edit(
+    auth_service, google, monkeypatch
+):
+    """The list and editor say re-save; previewing the unchanged form cleans it."""
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    stale = "<p>Welcome to {{ parish_name }}.</p><!-- old note -->"
+    page = content(str(campaign.pk), html=stale)
+    email = content(
+        str(campaign.pk),
+        kind="email",
+        slot="initial",
+        html='<p onclick="x()">Hi {{ family_code }} {{ family_url }}</p>',
+        text="Hi {{ family_code }} {{ family_url }}",
+    )
+    plant_stale(store, monkeypatch, page, email)
+    browser, _ = signed_in()
+    listing = browser.get(catalog).content.decode()
+    pages, emails = listing.split("<h2>Email templates</h2>", 1)
+    welcome = pages.split(">Family welcome</a>", 1)[1].split("</li>", 1)[0]
+    assert "Re-save recommended" in welcome
+    assert pages.count("Re-save recommended") == 1
+    assert emails.count("Re-save recommended") == 1
+    path = catalog + "page/welcome/"
+    editor = browser.get(path)
+    assert editor.context["stale"].removed == ("HTML comments",)
+    assert "markup that sending already removes: HTML comments." in (
+        editor.content.decode()
+    )
+    email_editor = browser.get(catalog + "email/initial/" + email["id"] + "/")
+    assert email_editor.context["stale"].removed == ("onclick attribute",)
+    # Posting the saved text unchanged is enough: the form stores it cleaned.
+    preview = post(browser, path, values(store, html=stale))
+    assert preview.status_code == 200
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    rows = SystemConfiguration.objects.get().active_configuration.content_versions
+    assert rows.get(kind="page", slot="welcome").html == (
+        "<p>Welcome to {{ parish_name }}.</p>"
+    )
+    assert browser.get(path).context["stale"] is None
+    pages = browser.get(catalog).content.decode().split("<h2>Email templates", 1)[0]
+    assert "Re-save recommended" not in pages
+
+
+def test_clean_saved_content_is_not_flagged(auth_service, google, monkeypatch):
+    """Content already in today's cleaned form shows no re-save notice."""
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    plant(store, monkeypatch, content(str(campaign.pk)))
+    browser, _ = signed_in()
+    assert "Re-save recommended" not in browser.get(catalog).content.decode()
+    editor = browser.get(catalog + "page/welcome/")
+    assert editor.context["stale"] is None
+    assert b"data-resave-notice" not in editor.content
+    # A default being started is not the saved text, so it is never flagged.
+    assert browser.get(catalog + "page/welcome/?start=default").context["stale"] is None
+
+
+def test_family_email_that_lost_its_code_is_flagged_and_refused(
+    auth_service, google, monkeypatch
+):
+    """A code only in removed markup can't be sent; the re-save says why."""
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    stale = "<p>Open {{ family_url }}</p><!-- {{ family_code }} -->"
+    email = content(
+        str(campaign.pk),
+        kind="email",
+        slot="initial",
+        html=stale,
+        text="Open {{ family_url }} {{ family_code }}",
+    )
+    plant_stale(store, monkeypatch, email)
+    browser, _ = signed_in()
+    listing = browser.get(catalog).content.decode()
+    assert "Can't be sent until fixed" in listing
+    assert "Re-save recommended" not in listing
+    path = catalog + "email/initial/" + email["id"] + "/"
+    editor = browser.get(path)
+    assert editor.context["stale"].blocked
+    body = editor.content.decode()
+    assert "{{ family_code }} is only inside that markup" in body
+    assert "same content either way" not in body
+    # Re-saving unchanged is refused, and the notice stays to explain why.
+    refused = post(
+        browser,
+        path,
+        values(
+            store,
+            subject=email["values"]["subject"],
+            html=stale,
+            generate_text="",
+            text=email["values"]["text"],
+        ),
+    )
+    assert refused.status_code == 400
+    assert "{{ family_code }}" in refused.content.decode()
+    assert refused.context["stale"].blocked
+
+
+def test_folded_confirmation_with_a_stale_note_resaves_clean(
+    auth_service, google, monkeypatch
+):
+    """The list and editor check the folded receipt; a re-save drops the note."""
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    email = content(
+        str(campaign.pk),
+        kind="email",
+        slot="confirmation",
+        html="<p>Thanks.</p>",
+        text="Thanks.",
+    )
+    note = content(
+        str(campaign.pk),
+        slot="submission_confirmation",
+        html="<p>Call.</p><!-- x -->",
+        text="Call.",
+    )
+    with monkeypatch.context() as patched:
+        from parishkit.stewardship.accounts import content_schema
+
+        patched.setattr(content_schema, "RETIRED", None)
+        plant_stale(store, patched, email, note)
+    browser, _ = signed_in()
+    confirmation = (
+        browser.get(catalog)
+        .content.decode()
+        .split(">Confirmation email<", 1)[1]
+        .split("<h3>", 1)[0]
+    )
+    assert "Re-save recommended" in confirmation
+    path = catalog + "email/confirmation/"
+    editor = browser.get(path)
+    assert editor.context["stale"].removed == ("HTML comments",)
+    preview = post(
+        browser,
+        path,
+        values(
+            store,
+            subject=email["values"]["subject"],
+            html=editor.context["form"]["html"].value(),
+        ),
+    )
+    assert preview.status_code == 200
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    rows = SystemConfiguration.objects.get().active_configuration.content_versions
+    assert not rows.filter(slot="submission_confirmation").exists()
+    assert rows.get(kind="email", slot="confirmation").html == (
+        "<p>Thanks.</p><p>Call.</p>"
+    )
+    assert browser.get(path).context["stale"] is None
