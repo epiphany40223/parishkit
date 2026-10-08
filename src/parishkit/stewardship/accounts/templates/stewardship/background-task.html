@@ -12,7 +12,7 @@
 <p>{% translate "After fixing the storage or access problem, retry removing this expired export file. The report's history and the data it was built from are kept." %}</p>
 <form method="post" action="{% url 'admin:retry_export_cleanup' task.id %}">
 {% csrf_token %}<input type="hidden" name="request_key" value="{{ export_cleanup_retry_key }}">
-<button type="submit">{% translate "Retry export cleanup" %}</button>
+{% button type="submit" %}{% translate "Retry export cleanup" %}{% endbutton %}
 </form></section>
 {% endif %}
 {% if family_preparation_retry_key %}
@@ -20,7 +20,7 @@
 <p>{% translate "After fixing the email content or campaign settings problem, try preparing the Family emails again. The failed attempt stays in the history, and retrying does not send any email right away." %}</p>
 <form method="post" action="{% url 'admin:retry_family_preparation' task.id %}">
 {% csrf_token %}<input type="hidden" name="command_id" value="{{ family_preparation_retry_key }}">
-<button type="submit">{% translate "Retry preparation" %}</button>
+{% button type="submit" %}{% translate "Retry preparation" %}{% endbutton %}
 </form></section>
 {% endif %}
 {% if digest_retry_key %}
@@ -28,7 +28,7 @@
 <p>{% translate "After fixing the problem, try again using the same report data as the original. The failed attempt stays in the history. A report email whose delivery is uncertain is never sent a second time by this retry." %}</p>
 <form method="post" action="{% url digest_retry_route task.id %}">
 {% csrf_token %}<input type="hidden" name="command_id" value="{{ digest_retry_key }}">
-<button type="submit">{% translate "Retry report work" %}</button>
+{% button type="submit" %}{% translate "Retry report work" %}{% endbutton %}
 </form></section>
 {% endif %}
 {% if history %}{% translate "Task history pages" as history_label %}<div id="{{ history.anchor }}" data-table-region>{% include "stewardship/table-navigator.html" with table=history label=history_label %}

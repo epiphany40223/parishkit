@@ -23,7 +23,7 @@
 <dt>{% if row.complete %}{% translate "Difference" %}{% else %}{% translate "Difference so far" %}{% endif %}</dt><dd>{{ row.difference|number }}</dd>
 </dl></section>{% endfor %}
 {% if demand.failure_code and not complete %}<p role="alert">{% translate "Preparation ran into a problem. The system may still be recovering it on its own. If a Retry button appears, retrying does not repeat work already done." %}</p>{% endif %}
-{% if control %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ control }}"><button type="submit">{% translate "Retry failed mail preparation" %}</button></form>{% endif %}
+{% if control %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ control }}">{% button type="submit" %}{% translate "Retry failed mail preparation" %}{% endbutton %}</form>{% endif %}
 </section>{% else %}<p>{% translate "This campaign was confirmed before its start date, so its mail follows the normal mail schedules. There is no initial mail to prepare here." %}</p>{% endif %}
 <p><a href="">{% translate "Refresh Production progress" %}</a> · <a href="{% url 'admin:campaign_settings' %}">{% translate "Review Campaign settings" %}</a></p>
 {% if withdrawal_available %}<p><a href="{% url 'admin:production_withdrawal' %}">{% translate "Cancel go-live" %}</a></p>{% endif %}

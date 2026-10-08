@@ -7,6 +7,6 @@
 {% for asset in assets %}<figure><img src="{% url 'admin:branding_asset' asset.pk %}" alt="{{ asset.label }}" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview"><figcaption>{{ asset.label|capfirst }} — {{ asset.width|number }} × {{ asset.height|number }} {% translate "pixels" %}</figcaption></figure>{% endfor %}</section>
 <p>{% translate "Uploads that are never confirmed are discarded after a day." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
-<button type="submit">{% translate "Confirm new logos" %}</button></form>
+{% button type="submit" %}{% translate "Confirm new logos" %}{% endbutton %}</form>
 <p><a href="{% url 'admin:branding_settings' %}">{% translate "Return to Parish logos" %}</a></p>
 {% endblock %}

@@ -19,7 +19,7 @@
 {% if preview %}<form method="post" action="{% url 'admin:ministries' %}">
   {% csrf_token %}<input type="hidden" name="action" value="confirm">
   <input type="hidden" name="preview" value="{{ preview }}">
-  <button type="submit">{% translate "Apply activity change" %}</button>
+  {% button type="submit" %}{% translate "Apply activity change" %}{% endbutton %}
   <a href="{% url 'admin:ministries' %}">{% translate "Cancel" %}</a>
 </form>{% else %}<p><a href="{% url 'admin:ministries' %}">{% translate "Return to Ministries" %}</a></p>{% endif %}
 {% endblock %}

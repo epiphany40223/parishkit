@@ -14,7 +14,7 @@
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview">
 <label for="withdrawal-reason">{% translate "Reason for cancelling go-live" %}</label><textarea id="withdrawal-reason" name="reason" required maxlength="2000">{{ preview.reason }}</textarea>
 <label><input type="checkbox" name="acknowledged" value="yes" required data-acknowledgment> {% translate "I understand that deleted Testing data cannot be restored." %}</label>
-<button type="submit">{% translate "Preview cancellation" %}</button></form>
+{% button type="submit" %}{% translate "Preview cancellation" %}{% endbutton %}</form>
 {% if preview %}<section class="panel"><h2>{% translate "What cancelling go-live will do" %}</h2>
 <p>{% translate "Reason" %}: {{ preview.reason }}</p>
 <dl><dt>{% translate "Scheduled mail runs recorded" %}</dt><dd>{{ preview.inventory.occurrences|number }}</dd>
@@ -25,7 +25,7 @@
 <dt>{% translate "Items blocking cancellation" %}</dt><dd>{{ preview.inventory.blocking|number }}</dd></dl>
 {% if preview.inventory.blocking %}<p role="alert">{% translate "Some mail is being sent right now, has an uncertain delivery, or needs recovery." %} {% url 'admin:delivery_control' as controls_url %}{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}Resolve it on <a href="{{ controls_url }}">Pause and resume mail</a> and <a href="{{ outgoing_url }}">Outgoing mail</a>, then preview again. Nothing has been cancelled.{% endblocktranslate %}</p>{% else %}
 <p>{% translate "Confirming cancels mail that has not been sent and makes this campaign a draft in Testing mode again. If anything changes, or the campaign starts, before you confirm, preview again." %}</p>
-{% if withdrawal_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ withdrawal_token }}"><button type="submit">{% translate "Confirm cancelling go-live" %}</button></form>{% endif %}
+{% if withdrawal_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ withdrawal_token }}">{% button type="submit" %}{% translate "Confirm cancelling go-live" %}{% endbutton %}</form>{% endif %}
 {% endif %}</section>{% endif %}
 {% elif not withdrawal %}<p role="alert">{% translate "Go-live can't be cancelled for this campaign: it can be cancelled only before the campaign starts. A live campaign stays live, even if this page was opened earlier." %}</p>{% endif %}
 <p><a href="{% url 'admin:campaign_settings' %}">{% translate "Review Campaign settings" %}</a></p>

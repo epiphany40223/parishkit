@@ -12,6 +12,6 @@
 {% if refusal %}<div class="notice notice-error" role="alert"><p>{{ refusal.message }}</p>{% if refusal.fix %}<p>{{ refusal.fix }}</p>{% endif %}{% if refusal.link %}<p><a href="{{ refusal.link }}">{{ refusal.link_label }}</a></p>{% endif %}</div>{% endif %}
 <form method="post" action="{{ post_url }}" data-content-form>{% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/content-fields.html' %}
-<button type="submit">{% translate "Preview changes" %}</button></form>
+{% button type="submit" %}{% translate "Preview changes" %}{% endbutton %}</form>
 <p><a href="{% url 'admin:content_catalog' %}">{% translate "Return to Pages and emails" %}</a></p>
 {% endblock %}

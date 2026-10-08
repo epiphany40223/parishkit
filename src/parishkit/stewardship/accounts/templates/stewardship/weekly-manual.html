@@ -1,4 +1,4 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Send a weekly report now" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Send a weekly report now" %}</h1>
@@ -18,7 +18,7 @@
 <form method="post" class="panel">{% csrf_token %}
 {{ form.command_id }}{{ form.configuration_id }}{{ form.command_id.errors }}{{ form.configuration_id.errors }}{{ form.non_field_errors }}
 <p>{{ form.acknowledge }} <label for="{{ form.acknowledge.id_for_label }}">{{ form.acknowledge.label }}</label>{{ form.acknowledge.errors }}</p>
-<button type="submit">{% translate "Queue new manual report" %}</button>
+{% button type="submit" %}{% translate "Queue new manual report" %}{% endbutton %}
 </form>
 {% endif %}
 <p><a href="{% url 'admin:background' %}">{% translate "View background work" %}</a></p>

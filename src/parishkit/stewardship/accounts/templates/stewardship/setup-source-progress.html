@@ -36,7 +36,7 @@
 <p class="help">{% translate "The loading service reports every few seconds while it works. A recent sign of activity means the load is healthy even while one item takes a long time." %}</p>
 <p>{% translate "Last checked:" %} <time data-progress-checked data-local-instant datetime="{{ progress.server_now }}">{{ progress.server_now }}</time></p>
 <p data-progress-unavailable hidden role="status">{% translate "Progress is temporarily unavailable. Your setup's inactivity timer may not be renewed. Reload the page, or sign in again if needed." %}</p>
-<form method="post">{% csrf_token %}<button class="button-secondary" type="submit">{% translate "Check progress now" %}</button></form>
+<form method="post">{% csrf_token %}{% button variant="secondary" type="submit" %}{% translate "Check progress now" %}{% endbutton %}</form>
 {% comment %}Hidden deadline instants: the polling script (ui-v1.js) stops renewing
 once the nearest passes and refreshes them from each progress response. The
 shared Admin inactivity dialog, not this page, warns before sign-out.{% endcomment %}

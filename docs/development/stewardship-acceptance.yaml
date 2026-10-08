@@ -69,6 +69,7 @@ sections:
     "Page help": [ADM-03]
     "Time entry": [ADM-03]
     "Button labels": [ADM-03]
+    "Shared visual style": [ADM-03]
     "Background indicators": [ADM-03]
     "Parish and integration configuration": [ADM-03, ARC-06]
     "ParishSoft refresh schedule settings": [ADM-03, BG-05]

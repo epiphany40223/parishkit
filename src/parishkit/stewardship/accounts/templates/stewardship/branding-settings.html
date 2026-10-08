@@ -1,4 +1,4 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Parish logos" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Parish logos" %}</h1>
@@ -7,5 +7,5 @@
 {% empty %}<p>{% translate "No stored logo variants are available for this configuration." %}</p>{% endfor %}</section>
 <p>{% translate "Upload one large logo to generate large, menu, icon and favicon variants. The original file and its metadata are not retained. Review every size before confirming." %}</p>
 <form method="post" enctype="multipart/form-data" class="panel">{% csrf_token %}{{ form.as_div }}
-<button type="submit">{% translate "Upload and preview logos" %}</button></form>
+{% button type="submit" %}{% translate "Upload and preview logos" %}{% endbutton %}</form>
 {% endblock %}

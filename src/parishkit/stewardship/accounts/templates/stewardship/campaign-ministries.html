@@ -12,7 +12,7 @@
 <fieldset id="ministry-selections"><legend>{% translate "Ministry selections" %}</legend>
 <p class="help">{% translate "Families who already submitted are not asked about an added Ministry and get no email. Removing a Ministry deletes none of their answers." %}</p>
 {{ form.ministry_duids.as_field_group }}</fieldset>
-<button type="submit">{% translate "Preview changes" %}</button>
+{% button type="submit" %}{% translate "Preview changes" %}{% endbutton %}
 </form>
 <p><a href="{% url 'admin:ministries' %}">{% translate "Return to Ministries" %}</a></p>
 {% endblock %}

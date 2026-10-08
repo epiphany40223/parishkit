@@ -1,4 +1,4 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Pages and emails" %} — {% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
@@ -9,7 +9,7 @@
 {% if filled %}<p class="notice" role="status">{% if filled.action == 'reset' %}{% blocktranslate with pages=filled.pages emails=filled.emails %}Reset {{ pages }} page(s) and {{ emails }} email(s) to the default text.{% endblocktranslate %}{% else %}{% blocktranslate with pages=filled.pages emails=filled.emails %}Filled in the default text for {{ pages }} page(s) and {{ emails }} email(s). Review each one and edit it as needed.{% endblocktranslate %}{% if kept %} {% translate "Kept your saved text for:" %} {% for entry in kept %}<a href="{{ entry.url }}">{{ entry.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}. {% translate "Use “Reset to the default text” on those to replace them." %}{% endif %}{% endif %}</p>{% endif %}
 {% if fillable %}<form method="post" class="setup-content-defaults">{% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
 <p>{% translate "Some pages or emails are empty (for example, ones you removed). They can start from the default text. Anything already saved is left unchanged." %}</p>
-<button type="submit">{% translate "Fill in the default text for all pages and emails" %}</button></form>{% endif %}
+{% button type="submit" %}{% translate "Fill in the default text for all pages and emails" %}{% endbutton %}</form>{% endif %}
 {% for group in groups %}<h2>{% if group.kind == 'page' %}{% translate "Family pages" %}{% else %}{% translate "Email templates" %}{% endif %}</h2>
 <ul>{% for entry in group.entries %}<li><a href="{{ entry.url }}">{{ entry.label }}</a> — {% if entry.state == 'default' %}{% translate "Default text" %}{% elif entry.state == 'custom' %}{% translate "Customized" %}{% else %}{% translate "Empty" %}{% endif %}</li>{% endfor %}</ul>
 {% endfor %}
@@ -17,6 +17,6 @@
 <h2>{% translate "Start over from the default text" %}</h2>
 <p>{% translate "This replaces the text of every page and email above with its default, including text you edited. Mail schedules keep sending the same kind of email, now with the default text." %}</p>
 <p><label><input type="checkbox" name="confirm" value="on" required> {% translate "Yes, replace every page and email with the default text" %}</label></p>
-<button type="submit">{% translate "Reset all pages and emails to the default text" %}</button></form>
+{% button type="submit" %}{% translate "Reset all pages and emails to the default text" %}{% endbutton %}</form>
 {% include 'stewardship/setup-navigation.html' %}
 {% endblock %}
