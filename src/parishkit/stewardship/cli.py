@@ -42,6 +42,8 @@ _COMMAND_OPTIONS = {
     "backup-keygen": {"destination"},
     "backup-open": {"key", "input", "destination"},
     "backup-prove": {"key", "input"},
+    # Compares a backup set with this image before a restore (#608).
+    "restore-check": {"manifest", "dump"},
     "smoke": {
         "config",
         "target",
@@ -174,6 +176,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "clock-dir",
         "seeded-now",
         "due-at",
+        "manifest",
+        "dump",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -253,6 +257,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .backup_commands import execute_backup_command
 
         return execute_backup_command(args)
+    if args.command == "restore-check":
+        from .restore_check import execute_restore_check
+
+        return execute_restore_check(args)
     if args.command == "smoke":
         from .smoke import execute_smoke
 

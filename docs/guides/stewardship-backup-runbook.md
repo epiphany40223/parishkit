@@ -482,9 +482,10 @@ immediately before it. Run both pre-activation drills on the deployment
 that goes live: if a schema change forces a reinstall before the gate, run
 them again afterwards. The gate approves the evidence of both
 pre-activation runs. Record the date, the set name, the manifest digests,
-the image digest, the set's `recipient_fingerprint`, which kept copies of
-the private key opened it and the outcome in the parish's operations notes,
-then delete the decrypted files. To check each copy, run step 2's
+the image digest, the `restore-check` report, the set's
+`recipient_fingerprint`, which kept copies of the private key opened it and
+the outcome in the parish's operations notes, then delete the decrypted
+files. To check each copy, run step 2's
 `backup-open` once per copy, each time into a new, empty output directory:
 `backup-open` refuses to write over an existing file, and that refusal
 prints the same generic error as a key that does not match. A copy that
@@ -562,6 +563,29 @@ layout; where the deployment YAML overrides a path, use that path instead.
 
    Copy `database.pgdump` and `files.tar` to the host over a private
    channel.
+
+   Then, still before anything changes, check the set against the image
+   you will restore it with: normally the set's own, which its manifest's
+   `image` names, or the current release if you mean to keep it. The check
+   opens no database and reads no secret:
+
+   ```text
+   docker run --rm --network none --user "$(id -u):$(id -g)" --read-only \
+     --cap-drop ALL --security-opt no-new-privileges:true \
+     --mount type=bind,source=SET_DIRECTORY,target=/set,readonly \
+     IMAGE restore-check --manifest /set/manifest.json
+   ```
+
+   It prints one JSON report. Exit 0 (`"result": "match"`) means the set's
+   applied migrations are exactly the image's, so the services will start
+   on the restored database. Exit 3 (`"mismatch"`) lists `not_in_backup`
+   (migrations the image has and the set lacks) and `unknown_to_image`
+   (migrations the set has and the image lacks), and `use_image` names the
+   image the set was taken under: restore with that image instead. A set
+   taken before the manifest recorded its migrations needs its decrypted
+   dump as well: also mount the output directory read-only
+   (`target=/out,readonly`) and add `--dump /out/database.pgdump`. Exit 2 is
+   a refusal and says why. Keep the report with the restore notes.
 3. **Replacement host only: prepare it.** Never run `provision-runtime`
    here: it would generate new passwords that the restored roles and files
    do not have. Bring the operator's deployment YAML and the deployment UUID,
@@ -578,9 +602,10 @@ layout; where the deployment YAML overrides a path, use that path instead.
    `caddy/config`, `caddy/data`, `postgresql` and `valkey`. Create
    `run/startup.lock`, owned by `10001:10001` with mode `0600`, containing
    exactly the line `parishkit-stewardship-startup-v1`. Pull the image the
-   backup was taken under by the complete digest reference in the operators'
-   notes, `docker pull IMAGE@sha256:DIGEST`: the Compose files that name it
-   come back only in step 4. For a real replacement, point the public
+   backup was taken under by its complete digest reference, the manifest's
+   `image` (for a set taken before the manifest recorded it, the one in the
+   operators' notes), `docker pull IMAGE@sha256:DIGEST`: the Compose files
+   that name it come back only in step 4. For a real replacement, point the public
    origin's DNS at this host (`caddy` obtains a new certificate; its store is
    not backed up); a drill host stays off the public DNS.
 4. **Restore the files, whole.** The archive holds the `config`,
@@ -640,8 +665,9 @@ layout; where the deployment YAML overrides a path, use that path instead.
    when the container stops.
 7. **Point at the set's image.** Run `retarget-image` back to the image the
    backup was taken under, in that image, then `pull`. The manifest's
-   `application_version` names the release; the operators' notes record its
-   image digest. The deployment YAML is not in the set: if it names a
+   `image` is its complete reference and `application_version` its release;
+   for a set taken before the manifest recorded the image, the operators'
+   notes have its digest. The deployment YAML is not in the set: if it names a
    field that release does not know, `retarget-image` refuses with no
    cause, so remove such a field first, as the deployment runbook's
    [rollback](stewardship-deployment-runbook.md#rollback) says. Then give
