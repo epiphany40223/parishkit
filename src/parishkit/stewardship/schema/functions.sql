@@ -3893,19 +3893,61 @@ CREATE FUNCTION public.stewardship_operational_log_writer_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    -- The mail-dispatch and backup logins may record only work stopped by a
-    -- time limit (#293): no other event, no CRITICAL level (which pages and
-    -- opens incidents), no actor to impersonate, and the database's own time.
-    IF current_user IN ('pk_stewardship_mail_dispatch','pk_stewardship_backup_worker') THEN
-        IF NEW.schema<>'timeout' OR NEW.event NOT IN
-               ('task_timed_out','helper_timed_out','work_budget_reached','task_lease_lost')
-           OR NEW.level NOT IN ('INFO','WARNING','ERROR')
-           OR NEW.actor_id IS NOT NULL THEN
-            RAISE EXCEPTION 'This login may record only timeout events'
-                USING ERRCODE = '42501';
-        END IF;
-        NEW.created_at := statement_timestamp();
+    -- Each runtime login that writes directly may record only the entries
+    -- its own code writes (#293 for mail dispatch and backup, #389 L2 for
+    -- web, worker and scheduler): a closed (schema, event, level) list, no
+    -- actor to impersonate, and the database's own time. Web never writes
+    -- CRITICAL, which pages and opens incidents. The schema owner, and so
+    -- every SECURITY DEFINER writer, is not limited here; no other login
+    -- holds INSERT.
+    IF pg_has_role(current_user,
+        (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
+        RETURN NEW;
     END IF;
+    IF NEW.actor_id IS NOT NULL OR NOT (
+        -- Work stopped by a time limit, from any runtime login.
+        (current_user IN ('pk_stewardship_web','pk_stewardship_worker',
+                'pk_stewardship_scheduler','pk_stewardship_mail_dispatch',
+                'pk_stewardship_backup_worker')
+         AND NEW.schema='timeout'
+         AND NEW.event IN ('task_timed_out','helper_timed_out',
+                'work_budget_reached','task_lease_lost')
+         AND NEW.level IN ('INFO','WARNING','ERROR'))
+        -- Web: an unusable source Member on a Family form, and a Family
+        -- engagement record that could not be written.
+        OR (current_user='pk_stewardship_web' AND (
+            (NEW.schema,NEW.event,NEW.level) IN (
+                ('member_source','source_member_unusable','WARNING'),
+                ('failure','family_engagement_failed','ERROR'))))
+        -- Worker: source refresh, setup load and finalize failures; source
+        -- retention; operational collection; fact verification and export
+        -- cleanup failures.
+        OR (current_user='pk_stewardship_worker' AND (
+            (NEW.schema='failure'
+             AND NEW.event IN ('source_tenant_mismatch','source_destructive_change',
+                    'source_provider_failed','source_refresh_invalid',
+                    'source_refresh_held','source_credential_failed')
+             AND NEW.level IN ('INFO','WARNING','CRITICAL'))
+            OR (NEW.schema,NEW.event,NEW.level) IN (
+                ('failure','source_retention_skipped','ERROR'),
+                ('failure','task_failed','ERROR'),
+                ('failure','task_failed','CRITICAL'),
+                ('member_source','source_member_unusable','WARNING'),
+                ('exception','configuration_digest_mismatch','WARNING'),
+                ('task','fact_drift','CRITICAL'))))
+        -- Scheduler: a held slot production, boundary lag, due-work lag
+        -- (whose health trigger runs as the scheduler) and the web health
+        -- alert (#787's trigger, which also runs as the scheduler).
+        OR (current_user='pk_stewardship_scheduler' AND (
+            (NEW.schema,NEW.event,NEW.level) IN (
+                ('schedule','source_refresh_held','INFO'),
+                ('due_work','campaign_boundary_lag','WARNING'),
+                ('due_work','due_work_lag','CRITICAL'),
+                ('failure','web_unhealthy','CRITICAL'))))) THEN
+        RAISE EXCEPTION 'This login may not record this operational entry'
+            USING ERRCODE = '42501';
+    END IF;
+    NEW.created_at := statement_timestamp();
     RETURN NEW;
 END;
 $$;

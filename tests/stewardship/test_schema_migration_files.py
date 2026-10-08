@@ -63,6 +63,9 @@ FROZEN = {
     "0034_recovery_session_grants.sql": (
         "3cec11c8f930456c8b3f81b5fd85a15d40fe1d23b6f9a66fc4951cdf1c14208e"
     ),
+    "0035_log_writer_allowlist.sql": (
+        "15c6279086403b1e9a2311d22973c64952ef0c40e7fd994174a66dc2d1d76fd2"
+    ),
 }
 
 
