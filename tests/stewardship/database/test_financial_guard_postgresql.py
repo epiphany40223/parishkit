@@ -10,7 +10,8 @@ from ..test_financial_answers import CHECK, OPTIONS, OTHER
 
 # This module calls only our immutable scalar/JSON SQL function. Each case
 # needs a rollback boundary, not a full-schema flush or a genuine commit.
-pytestmark = pytest.mark.django_db
+# Only the SQL guard decides each outcome, so these are sql_rules tests.
+pytestmark = [pytest.mark.django_db, pytest.mark.sql_rules]
 
 
 def guard(answer, *, annual=Decimal("12.30")):

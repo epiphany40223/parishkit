@@ -227,8 +227,11 @@ def repository(tmp_path):
     return root
 
 
-def artifacts(root, tmp_path, monkeypatch, *, nodes=None):
-    """Produce genuine raw coverage for opposite branches in two separate jobs."""
+def artifacts(root, tmp_path, monkeypatch, *, nodes=None, contexts=False):
+    """Produce genuine raw coverage for opposite branches in two separate jobs.
+
+    With ``contexts``, job N's execution is recorded as test ``nodes[N]``.
+    """
     directory = tmp_path / "artifacts"
     if nodes is None:
         nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
@@ -239,6 +242,8 @@ def artifacts(root, tmp_path, monkeypatch, *, nodes=None):
         data = output / "coverage.data"
         cov = Coverage(data_file=str(data), branch=True, config_file=False)
         cov.start()
+        if contexts:
+            cov.switch_context(f"{nodes[index]}|run")
         for path in sorted((root / "src").rglob("*.py")):
             exec(compile(path.read_text(), str(path), "exec"), {"value": index == 1})
         cov.stop()
@@ -738,3 +743,195 @@ def test_module_skip_rejected_with_surviving_tests(tmp_path, collect_only):
         check=False,
     )
     assert result.returncode != 0, result.stdout + result.stderr
+
+
+def selected_shard(repository, tmp_path, monkeypatch, index, nodes, subset, **options):
+    """Run one stand-in shard whose child records a selection's evidence."""
+    output = tmp_path / f"shard-{index}"
+
+    def execute(command, **kwargs):
+        """Stand in for successful children; the database one writes evidence."""
+        if ci.DATABASE_TESTS in command:
+            selected = partition(subset, index, 14)
+            (output / "tests.json").write_text(
+                json.dumps(
+                    {
+                        "universe": nodes,
+                        "selected": selected,
+                        "completed": selected,
+                        **({"subset": subset} if options.get("select") else {}),
+                    }
+                )
+            )
+        return subprocess.CompletedProcess(command, 0)
+
+    run = Mock(side_effect=execute)
+    monkeypatch.setattr(ci.subprocess, "run", run)
+    assert ci.run_shard(repository, output, index, 14, **options) == 0
+    return run, output
+
+
+@pytest.mark.parametrize("index", [1, 2, 14])
+def test_selected_shard_skips_coverage_and_may_be_empty(
+    repository, tmp_path, monkeypatch, capsys, index
+):
+    """A selection runs unmeasured, accepts an empty partition and says how
+    many tests it ran and skipped, in the log and the job summary."""
+    nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
+    subset = nodes[:3]
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    select = tmp_path / "selection.json"
+    run, output = selected_shard(
+        repository, tmp_path, monkeypatch, index, nodes, subset, select=select
+    )
+    for call in run.call_args_list:
+        command = call.args[0]
+        assert not any(argument.startswith("--cov") for argument in command)
+        assert "COVERAGE_FILE" not in call.kwargs["env"]
+    assert f"--ci-select={select.resolve()}" in run.call_args.args[0]
+    receipt = json.loads((output / "receipt.json").read_text())
+    assert receipt["coverage"] is False and receipt["data_sha256"] is None
+    line = "the selection runs 3 of 20 and skips 17"
+    assert line in capsys.readouterr().out
+    assert line in summary.read_text()
+
+
+def test_affected_whole_group_shard_skips_coverage_only(
+    repository, tmp_path, monkeypatch
+):
+    """Without a selection an unmeasured shard still runs its full partition."""
+    nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
+    run, output = selected_shard(
+        repository, tmp_path, monkeypatch, 1, nodes, nodes, coverage=False
+    )
+    command = run.call_args.args[0]
+    assert not any(argument.startswith("--cov") for argument in command)
+    assert not any(argument.startswith("--ci-select") for argument in command)
+    assert json.loads((output / "receipt.json").read_text())["coverage"] is False
+
+
+def test_unselected_shard_cannot_claim_an_empty_or_subset_partition(
+    repository, tmp_path, monkeypatch
+):
+    """Only a selection may run fewer tests than its partition of the suite."""
+    nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
+    with pytest.raises(ValueError, match="Incomplete"):
+        selected_shard(repository, tmp_path, monkeypatch, 2, nodes, nodes[:1])
+
+
+def test_measured_shards_record_per_test_contexts(repository):
+    """Full runs record which test executed each line, for the test map."""
+    assert "--cov-context=test" in ci.coverage_arguments(ci.load_scope(repository))
+
+
+@pytest.mark.parametrize("problem", ["unmeasured", "subset"])
+def test_combine_refuses_affected_evidence(repository, tmp_path, monkeypatch, problem):
+    """An unmeasured or selected partition can never become full-run evidence."""
+    directory = artifacts(repository, tmp_path, monkeypatch)
+    path = directory / "2/receipt.json"
+    receipt = json.loads(path.read_text())
+    if problem == "unmeasured":
+        receipt["coverage"] = False
+    else:
+        tests = directory / "2/tests.json"
+        evidence = json.loads(tests.read_text())
+        tests.write_text(json.dumps({**evidence, "subset": evidence["universe"]}))
+        receipt["tests_sha256"] = hashlib.sha256(tests.read_bytes()).hexdigest()
+    path.write_text(json.dumps(receipt))
+    with pytest.raises(ValueError):
+        ci.combine(repository, directory, tmp_path / "combined.json", 2)
+
+
+def test_combine_writes_the_test_map(repository, tmp_path, monkeypatch, capsys):
+    """The combined contexts become a file-to-test map for affected runs."""
+    monkeypatch.setenv("COVERAGE_CORE", "ctrace")
+    nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
+    directory = artifacts(repository, tmp_path, monkeypatch, nodes=nodes, contexts=True)
+    test_map = tmp_path / "map.json"
+    report = tmp_path / "combined.json"
+    assert ci.combine(repository, directory, report, 2, test_map) == 0
+    written = json.loads(test_map.read_text())
+    assert written["schema"] == 1 and written["count"] == 2
+    assert written["tests"] == sorted(nodes)
+    # Shard N's stand-in test ran every source file.
+    expected = sorted(sorted(nodes).index(nodes[index]) for index in (1, 2))
+    assert written["files"] == {
+        "src/parishkit/shared.py": expected,
+        "src/parishkit/stewardship/__init__.py": expected,
+    }
+    # The map is optional: failing to write it is logged, never fatal.
+    assert ci.combine(repository, directory, tmp_path / "again.json", 2, test_map) == 0
+    assert "database test map not written" in capsys.readouterr().err
+    assert json.loads(test_map.read_text()) == written
+
+
+def test_packed_job_passes_affected_options(repository, tmp_path, monkeypatch):
+    """Every partition child gets the job's coverage and selection options."""
+    launched = []
+    monkeypatch.setattr(ci.subprocess, "Popen", partial(Child, launched=launched))
+    select = tmp_path / "selection.json"
+    assert ci.run_job(repository, tmp_path / "job", 2, 14, coverage=False) == 0
+    assert all(child.command[-1] == "--no-coverage" for child in launched)
+    launched.clear()
+    assert ci.run_job(repository, tmp_path / "job2", 2, 14, select=select) == 0
+    assert all(child.command[-2:] == ["--select", str(select)] for child in launched)
+
+
+def test_actual_plugin_selection(tmp_path):
+    """Real pytest hooks partition a selection, skip unflagged sql_rules
+    tests and accept an empty partition with complete evidence."""
+    root = tmp_path / "probe"
+    directory = root / "tests/stewardship/database"
+    directory.mkdir(parents=True)
+    shutil.copyfile(ROOT / "tests/conftest.py", root / "tests/conftest.py")
+    (root / "pytest.ini").write_text("[pytest]\n")
+    (directory / "test_probe.py").write_text(
+        "import pytest\n"
+        "def test_mapped():\n    pass\n"
+        "def test_unmapped():\n    pass\n"
+        "@pytest.mark.sql_rules\ndef test_rule():\n    pass\n"
+    )
+    probe = "tests/stewardship/database/test_probe.py"
+    selection = tmp_path / "selection.json"
+    selection.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                # test_rule is new to the map and sql_rules, so it skips.
+                "tests": [f"{probe}::test_mapped"],
+                "known": [f"{probe}::test_mapped", f"{probe}::test_unmapped"],
+                "files": [],
+                "sql_rules": False,
+            }
+        )
+    )
+    for shard in ("1/1", "2/2"):
+        evidence = tmp_path / f"tests-{shard.replace('/', '-')}.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests/stewardship/database",
+                "-q",
+                "--ds=parishkit.stewardship.settings.database_test",
+                "--require-postgresql-tests",
+                "--require-no-skips",
+                f"--ci-shard={shard}",
+                f"--ci-evidence={evidence}",
+                f"--ci-select={selection}",
+            ],
+            cwd=root,
+            env=ci.environment(),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        data = json.loads(evidence.read_text())
+        assert data["subset"] == [f"{probe}::test_mapped"]
+        assert len(data["universe"]) == 3
+        expected = [f"{probe}::test_mapped"] if shard == "1/1" else []
+        assert data["selected"] == data["completed"] == expected

@@ -121,6 +121,80 @@ reached `main` may have skipped groups. `release.yml` and `release.sh`
 therefore accept only a run named exactly `CI (jobs: all)` as release
 evidence, and `release.sh` dispatches with `-f jobs=all`.
 
+### Database test selection
+
+When an `affected` dispatch runs the `postgresql` group, it also narrows the
+group to the tests that can observe the change
+([#858](https://github.com/epiphany40223/parishkit/issues/858)). Almost all
+database tests exercise application behavior, so a schema-only rule would
+skip too little, and every test imports enough of the package that a static
+import closure selects almost nothing out. The selection uses measured
+coverage instead (`parishkit.stewardship.quality_select`):
+
+- Every run that measures coverage records per-test contexts
+  (`--cov-context=test`). The PostgreSQL gate turns them into a map from each
+  `src/` file to the database tests that execute it and keeps it as the
+  `stewardship-test-map` artifact.
+- The `validate` job's "Select database tests" step takes the map from the
+  newest successful `CI (jobs: all)` run of `main` or a `train/*` branch,
+  fetches that run's commit and diffs it against the dispatched head. The
+  diff starts at the map's commit, not the merge base, so changes `main` made
+  after the map are selected too.
+- The run keeps the tests whose recorded files changed, every test in a
+  changed database test file or in any database test file that imports one
+  (directly or through helper modules anywhere under `tests/stewardship`,
+  from a static parse of the imports),
+  and every test the map does not know (new tests). The shard jobs partition
+  only that set and print how many tests the selection ran and skipped, in
+  the log and the job summary.
+- Tests marked `sql_rules` only assert that the database refuses something:
+  a trigger, guard or grant. The marker documents which tests are pure
+  database-rule checks; it rarely skips anything. Such a test still runs
+  whenever the map or a changed file selects it, and the marker only keeps
+  out a `sql_rules` test the map does not know that sits outside every
+  changed file, unless the change touches the grants registry or
+  provisioning (`src/*grants*.py`, `src/*provisioning*.py`). Schema and
+  migration changes already run the whole group.
+
+The whole group runs, unselected, whenever the selection cannot be trusted:
+no usable map (none found, an expired artifact, an unfetchable commit, a
+different schema or partition count), an empty or failed diff, any path the
+path rules always run everything for (schema, migrations, settings, CI
+tooling and workflows, the top-level conftests), the shared database
+builders and conftests, templates and other non-Python inputs coverage
+cannot see, and any Python file the map has no record of (including test
+helpers outside `src/`), any test module whose importers cannot be traced,
+and any mapped Python file whose change coverage cannot credit to every test
+that depends on it. Coverage records code that runs once per process only
+under the first test that triggers it, or under no test at all during
+import, so an AST comparison of the map's version with the checkout's runs
+the whole group for a change outside function bodies (module and class
+statements, decorators, signatures and defaults), to a function decorated
+with `cache`, `lru_cache` or `cached_property`, to a `ready()` method, or to
+a function that module or class code of the same file calls at import,
+directly, through the file's other functions or as a decorator factory (for
+example `admin_cli.py`'s `COMMANDS = COMMANDS + _read_specs() + ...`).
+Every git and gh call has a one-minute limit and the whole selection a
+six-minute budget, inside the step's ten minutes; a kill or a spent budget
+is logged with its limit and elapsed time and runs the whole group, as does
+a failure of the step itself (its output is then empty).
+
+Known limits: a selection trusts that a test which executed none of a
+changed function's lines cannot observe the change. Code an ordinary
+function runs only once per process, for example a function another file's
+import-time code calls, a session-scoped fixture or a hand-written memo, is
+credited only to the first test that ran it (or to none); code run in a subprocess (such as the upgrade-parity test's) carries no
+test context at all. Full runs still execute every test, so such a miss
+surfaces at the next train or release run, never in release evidence.
+
+Coverage is evaluated only for full runs and release evidence, so an
+`affected` dispatch runs its shards without coverage and the gate skips the
+combined report. Selected or unmeasured partition evidence says so in its
+receipt, and `quality_ci combine` refuses it, so it can never become full-run
+evidence. A map that cannot be built is logged and skipped, never failing a
+full run; later `affected` runs then fall back to the whole group. `tests/stewardship/test_quality_select.py` covers every selection
+rule and fallback.
+
 ### Release evidence
 
 A release needs a successful `CI (jobs: all)` dispatch on a commit whose tree
@@ -182,7 +256,8 @@ on purpose: successful preflight, a ready (non-draft) `pull_request` or an
 scenarios separately, so a template change can run one and skip the other.
 Drafts, failed or skipped preflight, missing classification, default
 dispatches, failures and cancellations still fail. The PostgreSQL gate
-combines coverage only when the shards ran.
+combines coverage, and keeps the database test map, only when the shards ran
+and measured every test, never on an `affected` dispatch.
 `tests/stewardship/test_quality_paths.py` executes each gate's complete truth
 table.
 

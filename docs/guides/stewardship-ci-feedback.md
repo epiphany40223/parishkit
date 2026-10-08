@@ -48,7 +48,13 @@ A ready PR, or a dispatch that explicitly asks for affected jobs only
 (`-f jobs=affected`), skips the heavy job groups its changes cannot affect;
 see
 [path-based job skipping](stewardship-test-efficiency.md#path-based-job-skipping)
-([#626](https://github.com/epiphany40223/parishkit/issues/626)). An
+([#626](https://github.com/epiphany40223/parishkit/issues/626)). Such a
+dispatch also runs only the database tests the newest full run's coverage
+ties to the change, without coverage, so a PR checked only by `affected`
+runs meets the coverage floor first at the next full train or release run;
+see
+[database test selection](stewardship-test-efficiency.md#database-test-selection)
+([#858](https://github.com/epiphany40223/parishkit/issues/858)). An
 `affected` run is never release evidence.
 
 ## Measured scheduling and setup

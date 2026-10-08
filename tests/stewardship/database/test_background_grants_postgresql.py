@@ -164,6 +164,7 @@ def test_both_background_roles_can_check_current_credential_gate_without_mutatio
         "UPDATE stewardship_source_family SET canonical='{}'",
     ],
 )
+@pytest.mark.sql_rules
 def test_background_sql_cannot_read_private_payloads_or_expand_authority(
     service, statement
 ):
@@ -186,6 +187,7 @@ def test_background_sql_cannot_read_private_payloads_or_expand_authority(
         "UPDATE stewardship_family_token SET digest=NULL",
     ],
 )
+@pytest.mark.sql_rules
 def test_empty_boundary_updates_match_guarded_worker_authority(service, statement):
     """Empty updates have no row effects; populated denials live in boundary tests."""
     with task_login(service), transaction.atomic(), connection.cursor() as cursor:
@@ -198,6 +200,7 @@ def test_empty_boundary_updates_match_guarded_worker_authority(service, statemen
 
 
 @pytest.mark.parametrize("service", [ServiceRole.WORKER, ServiceRole.SCHEDULER])
+@pytest.mark.sql_rules
 def test_empty_source_delete_matches_cleanup_authority(service):
     """Worker cleanup grants allow a zero-row DELETE, not unrestricted row deletion.
 

@@ -143,7 +143,9 @@ def test_heavy_jobs_follow_their_group_and_validate_exports_every_group():
     jobs = workflow()["jobs"]
     validate = jobs["validate"]
     assert validate["outputs"] == {
-        group: f"${{{{ steps.paths.outputs.{group} }}}}" for group in paths.GROUPS
+        **{group: f"${{{{ steps.paths.outputs.{group} }}}}" for group in paths.GROUPS},
+        # The database test selection (#858) narrows, never skips, a group.
+        "database_selection": "${{ steps.select.outputs.database_selection }}",
     }
     assert set(HEAVY.values()) == set(paths.GROUPS)
     for name, group in HEAVY.items():
@@ -213,11 +215,15 @@ def test_skipped_shards_are_replaced_by_the_non_database_suite():
 
 
 def test_coverage_combination_runs_only_when_shards_ran():
-    """An intentional skip has no shard evidence to combine; a real run must."""
+    """An intentional skip has no shard evidence to combine; a real run must,
+    unless it is an unmeasured "affected" dispatch (#858)."""
     steps = workflow()["jobs"]["stewardship-postgresql"]["steps"]
     assert steps[0]["id"] == "gate"
     for step in steps[1:]:
-        assert step["if"] == "${{ steps.gate.outputs.intentional != 'true' }}"
+        assert step["if"] == (
+            "${{ steps.gate.outputs.intentional != 'true' && "
+            "inputs.jobs != 'affected' }}"
+        )
 
 
 REACHABLE = paths.browser_modules(ROOT)
