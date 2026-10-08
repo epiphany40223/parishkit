@@ -278,6 +278,7 @@ def full_refresh_status(schedule=None, now=None, *, health=False):
             nightly_time=schedule["nightly_time"],
             frequency=frequency,
             full_refresh_times=times,
+            rules=schedule.get("rules", False),
         )
     return FullRefreshStatus(
         succeeded_at,

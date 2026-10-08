@@ -232,3 +232,17 @@ def test_refresh_times_render_as_a_parish_time_list_entry():
     assert 'data-time-blank="02:00"' in html and 'data-time-max="8"' in html
     assert 'data-show-when="full_refresh=daily"' in html
     assert 'value="02:00"' in html
+
+
+def test_a_schedule_saved_with_its_rules_has_no_fields_on_this_page():
+    """This page cannot edit a rules schedule (#632), so it leaves the fields out."""
+    form = IntegrationForm(
+        "parishsoft",
+        {"base_digest": "a" * 64, "organization_id": "123"},
+        rules_schedule=True,
+    )
+    assert form.is_valid(), form.errors
+    assert not {"full_refresh", "full_refresh_times", "delta_refresh"} & set(
+        form.fields
+    )
+    assert form.public_settings() == {"organization_id": "123"}

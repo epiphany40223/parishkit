@@ -4,11 +4,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.jobs.operational_sources import configured_policy
-from parishkit.stewardship.source.cadence import (
-    DEFAULT_DELTA_REFRESH,
-    DEFAULT_TIME,
-    MAX_FULL_REFRESH_TIMES,
-)
+from parishkit.stewardship.source.cadence import DEFAULT_DELTA_REFRESH, DEFAULT_TIME
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 from parishkit.stewardship.web.time_entry_fields import (
     FlexibleTimeListField,
@@ -35,7 +31,14 @@ REFRESH_CHOICES = (
     ("hourly", _("Once an hour")),
     ("quarter_hour", _("Every 15 minutes")),
 )
-# Stored values match source.cadence.DELTA_REFRESHES (#465).
+# This page's own limit on full refresh times. The stored schedule has no cap
+# of eight since #632; the new schedule editor replaces this page's fields.
+MAX_FULL_REFRESH_TIMES = 8
+# Schedule fields this page edits; a schedule saved with its rules (#632) is
+# kept as stored and these fields are not shown.
+SCHEDULE_FIELDS = ("full_refresh", "full_refresh_times", "delta_refresh")
+# Stored values match source.cadence.DELTA_REFRESHES (#465), except "times",
+# which only a schedule saved with its rules uses (#632).
 DELTA_CHOICES = (
     ("quarter_hour", _("Every 15 minutes")),
     ("hourly", _("Once an hour")),
@@ -50,7 +53,9 @@ class IntegrationForm(forms.Form):
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
 
-    def __init__(self, target, *args, loaded_organization=None, **kwargs):
+    def __init__(
+        self, target, *args, loaded_organization=None, rules_schedule=False, **kwargs
+    ):
         """Use a compiled form per integration, not caller-provided schema fields.
 
         ``loaded_organization`` is the ParishSoft organization ID whose data
@@ -58,6 +63,9 @@ class IntegrationForm(forms.Form):
         loaded, the organization ID is shown read-only and a different value
         is refused: every later refresh must read that same organization, so
         a changed ID would stop them all (see ``source.requests``).
+        ``rules_schedule`` says the stored refresh schedule was saved with its
+        rules (#632): this page cannot edit such a schedule, so it leaves out
+        the schedule fields and the view keeps the stored schedule.
         """
         super().__init__(*args, **kwargs)
         self.target = target
@@ -140,6 +148,9 @@ class IntegrationForm(forms.Form):
                 )
                 % {"minutes": configured_policy().source_stale_seconds // 60},
             )
+            if rules_schedule:
+                for name in SCHEDULE_FIELDS:
+                    del self.fields[name]
         elif target == "google_workspace":
             self.fields["delegated_email"] = forms.EmailField(
                 label=_("Delegated mailbox"), max_length=254
