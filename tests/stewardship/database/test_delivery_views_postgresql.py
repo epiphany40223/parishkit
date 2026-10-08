@@ -466,3 +466,93 @@ def test_preparation_retry_form_preserves_failed_task_and_hides_stale_action(
             assert conflict.status_code == 409
         assert TaskRun.objects.get(pk=ticket.task_id).state == "failed"
         assert TaskRun.objects.filter(root_id=ticket.task_id).count() == 2
+
+
+def partly_delivered(harness, *, transient=(1,), permanent=()):
+    """An accepted Production Initial to two addresses, one refused for now.
+
+    The attempt's evidence is the real SMTP result evidence
+    (``result_evidence``), so the definer function validates it as it would
+    a real worker's.
+    """
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+    from parishkit.stewardship.jobs.family_mail_results import result_evidence
+    from parishkit.stewardship.jobs.outbox_storage import create_message
+    from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
+
+    from ..test_outbox_validation import rendering
+    from .test_outbox_postgresql import change as change_status
+    from .test_outbox_postgresql import permit, submit
+
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
+    addresses = ("first@example.org", "second@example.org")
+    key = uuid4()
+    status = create_message(
+        identity=DeliveryIdentity(
+            scope_id=harness.campaign.pk,
+            campaign_id=harness.campaign.pk,
+            family_id=family.pk,
+            semantic_key=key,
+            mode="production",
+            routing="production",
+            purpose="initial",
+        ),
+        render=rendering(
+            configuration_id=harness.campaign.active_configuration.configuration_id,
+            intended_recipients=addresses,
+            routed_recipients=addresses,
+        ),
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        command_id=uuid4(),
+        admit=permit,
+    )
+    result = FamilyDeliveryResult(
+        FamilyDeliveryStatus.ACCEPTED,
+        2,
+        permanent=tuple(permanent),
+        transient=tuple(transient),
+    )
+    delivered = change_status(
+        submit(status),
+        DeliveryAction.ACCEPT,
+        evidence=result_evidence(result, semantic_key=key, with_stats=False),
+    )
+    return delivered.message_id
+
+
+def test_a_partly_delivered_message_says_how_many_addresses_it_reached(
+    response_service, google
+):
+    """Counts only, from the validated evidence; never an address (#806 slice 1)."""
+    harness = activate_response_service(response_service)
+    message_id = partly_delivered(harness)
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        page = browser.get(f"/admin/mail/outgoing/{message_id}/")
+        assert page.status_code == 200
+        body = page.content.decode()
+        assert "Delivered to 1 of 2 addresses" in body
+        assert "1 address was refused for now" in body
+        assert "1 of 2 addresses reached" in body
+        assert "refused permanently" not in body
+        assert "example.org" not in body
+        # The web reads the counts, never the evidence or the envelope.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT version, total, transient, permanent "
+                "FROM stewardship_delivery_addresses_v1(%s)",
+                [message_id],
+            )
+            ((_, total, transient, permanent),) = cursor.fetchall()
+        assert (total, transient, permanent) == (2, 1, 0)
+
+
+def test_a_fully_delivered_message_shows_no_address_notice(response_service, google):
+    """Every address accepted it: no notice, no partial label."""
+    harness = activate_response_service(response_service)
+    message_id = partly_delivered(harness, transient=())
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        body = browser.get(f"/admin/mail/outgoing/{message_id}/").content.decode()
+    assert "Delivered to" not in body and "addresses reached" not in body

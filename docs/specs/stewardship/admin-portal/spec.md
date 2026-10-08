@@ -2746,6 +2746,23 @@ before validating the query. The page does not update itself, records one
 audited Outgoing mail view and does not renew the Admin's idle time; as on
 Outgoing mail, a restore review that begins while it renders withholds it.
 
+### Addresses a Family email reached
+
+A Family email is one message to every head's address. The provider can
+accept it for some addresses and refuse others, for now (a temporary reply)
+or for good, and each attempt's immutable delivery evidence records which
+positions of its envelope were refused (#806). Outgoing mail's message page
+reads that through a definer function that returns counts only (the web
+cannot read the evidence itself): when an accepted attempt did not reach
+every address, the page says "Delivered to 1 of 2 addresses", how many were
+refused for now (not yet sent again, and never resent to the addresses that
+have it) and how many permanently (set aside for the Family, linked to
+Refused addresses), and the attempt history marks that attempt "1 of 2
+addresses reached". It names no address: Refused addresses is the page that
+does. It also says the Family's code and link are unchanged. Resending to a
+refused address, setting a flaky address aside and reporting a bounce are
+later slices of #806.
+
 ### Family portal maintenance
 
 An Administrator may close the Family portal for maintenance from System →

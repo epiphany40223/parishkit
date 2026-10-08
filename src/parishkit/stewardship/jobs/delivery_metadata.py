@@ -200,3 +200,58 @@ def family_duid(value):
     if not 0 < result < 2**63:
         raise ValueError("Use an exact Family DUID.")
     return result
+
+
+class AddressOutcome:
+    """How many of one accepted attempt's addresses it reached (#806).
+
+    ``total`` is the envelope's size, ``transient`` how many addresses the
+    provider refused for now and ``permanent`` how many it refused for good;
+    the rest accepted the message. Counts only: never an address.
+    """
+
+    __slots__ = ("total", "transient", "permanent")
+
+    def __init__(self, total, transient, permanent):
+        self.total, self.transient, self.permanent = total, transient, permanent
+
+    def __eq__(self, other):
+        return isinstance(other, AddressOutcome) and (
+            self.total,
+            self.transient,
+            self.permanent,
+        ) == (other.total, other.transient, other.permanent)
+
+    def __repr__(self):
+        return (
+            f"AddressOutcome(total={self.total}, transient={self.transient}, "
+            f"permanent={self.permanent})"
+        )
+
+    @property
+    def reached(self):
+        """The addresses that accepted the message."""
+        return self.total - self.transient - self.permanent
+
+    @property
+    def partial(self):
+        """Whether any address was not reached."""
+        return self.reached < self.total
+
+
+def address_outcomes(message_id, version):
+    """Each accepted attempt's per-address counts, by event version, up to ``version``.
+
+    Read through ``stewardship_delivery_addresses_v1``, which validates the
+    attempt's stored evidence and returns only counts. Only accepted
+    attempts appear; every other attempt has no per-address outcome here.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT version, total, transient, permanent "
+            "FROM stewardship_delivery_addresses_v1(%s) WHERE version <= %s",
+            [message_id, version],
+        )
+        return {
+            row[0]: AddressOutcome(row[1], row[2], row[3]) for row in cursor.fetchall()
+        }
