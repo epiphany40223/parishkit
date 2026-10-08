@@ -276,7 +276,8 @@ def test_edge_cases_early_responder_resubmissions_and_no_email_family(size):
     answers = [e.data["answers"] for e in result.events if e.kind == "submission"]
     assert {a["pledge"] for a in answers} - {None}
     assert any(a["ministry_interest"] for a in answers)
-    assert any(a["census_edit"] for a in answers)
+    # Both census edits appear (#498): a changed email and a new Member.
+    assert {a["census_edit"] for a in answers} >= {"changed_email", "proposed_member"}
     assert any(a["information"] for a in answers)
     if size == 1100:
         assert any(a["email_opt_out"] for a in answers)
