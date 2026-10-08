@@ -2363,6 +2363,54 @@
     update();
   });
 
+  // The chosen email, described under a schedule's email list (#446): the
+  // start of its text, the saved schedules that send it, a warning when
+  // editing it would change other schedules too, and (on Dates and mail
+  // schedules) links to preview, test and edit it, which open in a new tab so
+  // this page's unsaved changes stay. The option's data- attributes come
+  // from schedule_forms.email_details; every value is set as text.
+  const emailSummary = (row, template) => {
+    const summary = row.querySelector("[data-email-summary]");
+    if (!summary) return;
+    // The list is described by its summary as well as its help text.
+    const described = (template.getAttribute("aria-describedby") || "").split(" ").filter(Boolean);
+    if (summary.id && !described.includes(summary.id)) {
+      template.setAttribute("aria-describedby", [...described, summary.id].join(" "));
+    }
+    const option = template.selectedOptions[0];
+    summary.replaceChildren();
+    if (!option || !option.value) return;
+    let users = [];
+    try { users = JSON.parse(option.dataset.usedBy || "[]"); } catch { users = []; }
+    const line = (text) => {
+      const paragraph = document.createElement("p");
+      paragraph.className = "help";
+      paragraph.textContent = text;
+      summary.append(paragraph);
+      return paragraph;
+    };
+    if (option.dataset.excerpt) line(`Starts: ${option.dataset.excerpt}`);
+    line(users.length ? `Sent by: ${users.join(", ")}` : "No saved schedule sends this email yet.");
+    const own = row.dataset.scheduleLabel;
+    if (users.some((user) => user !== own)) {
+      line("Editing this email changes it for every schedule that sends it.");
+    }
+    const links = [["testUrl", "Preview and send a test"], ["editUrl", "Edit this email"]]
+      .filter(([key]) => option.dataset[key]);
+    if (links.length) {
+      const paragraph = line("");
+      links.forEach(([key, text], index) => {
+        if (index) paragraph.append(" · ");
+        const link = document.createElement("a");
+        link.href = option.dataset[key];
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = `${text} (opens in a new tab)`;
+        paragraph.append(link);
+      });
+    }
+  };
+
   // Mail schedule rows: show only the fields the chosen mail type uses (the
   // row's data-schedule-fields is schedule_forms.FIELDS), and offer only
   // emails of that type. A field hidden here is also cleared, so a stale date
@@ -2399,7 +2447,9 @@
       template.value = [...template.options].some((option) => option.value === selected)
         ? selected : "";
       gateComplete(row.closest("form")); // As for campaign modules above.
+      emailSummary(row, template);
     };
+    template.addEventListener("change", () => emailSummary(row, template));
     kind.addEventListener("change", () => update(false));
     // The type the server drew: a cloned blank row's first (empty) option.
     const drawn = ([...kind.options].find((option) => option.defaultSelected)

@@ -375,6 +375,7 @@ def schedule_page(
         campaign_id=owner["id"],
         campaign=owner["values"],
         prefix="schedules",
+        email_links=True,
     )
     if data is not None:
         schedules.is_valid()
@@ -748,9 +749,17 @@ def component_origin():
                         "base_digest": "a" * 64,
                     }
                 ),
+                # The copied invitation sends a real saved email, so its
+                # editor describes it (#446).
                 "schedules": Schedules(
-                    previous=[mail],
-                    templates=[],
+                    previous=[
+                        schedule(
+                            mail_campaign["id"],
+                            template_version=mail_emails[0]["id"],
+                            subject="initial mail",
+                        )
+                    ],
+                    templates=mail_emails,
                     campaign_id=mail_campaign["id"],
                     campaign=mail_campaign["values"],
                     prefix="schedules",

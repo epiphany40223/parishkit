@@ -240,6 +240,21 @@ it, are collection errors. "Add another schedule" adds blank rows (with the
 same per-type fields) before saving, and a row added this way can be removed
 again, so several schedules save in one submission and are validated together.
 
+A schedule's **Email to send** list tells look-alike emails apart
+([#446](https://github.com/epiphany40223/parishkit/issues/446)): each choice
+reads its subject and the saved schedules that send it ("sent by Reminder
+1, Reminder 2", or "not sent by any schedule", the same verb as the
+description below it), and two choices that would
+still read the same also show the start of their ID. Under the list, the
+chosen email is described in place: the start of its plain text, the saved
+schedules that send it, and, when another schedule sends it too, that
+editing it changes every one of them. On the regular page the description
+also links to the email's test page (Preview and send a test) and its
+editor (Edit this email), each in a new tab so the page's unsaved schedule
+changes stay; an email saved there makes this page's preview ask for a
+reload, as any concurrent change does. Choosing an email still saves only
+the schedule's reference to it, exactly as before.
+
 On the regular Dates and mail schedules page, a **Scheduled emails** table
 ([#448](https://github.com/epiphany40223/parishkit/issues/448)) lists every
 saved schedule above the editors, one row each, in sending order: dated sends

@@ -145,6 +145,8 @@ def schedule_settings(request, campaign_id):
                 campaign_id=campaign_id,
                 campaign=previous,
                 previous=campaign_schedules(state[0], campaign_id),
+                # Each email choice links to its preview, test and editor.
+                email_links=True,
             )
             response = (
                 _preview(

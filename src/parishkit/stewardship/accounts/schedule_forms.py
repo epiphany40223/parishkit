@@ -182,17 +182,125 @@ class ScheduleWindow(forms.Form):
 
 
 class TemplateSelect(forms.Select):
-    """An email list whose options say their mail type, for the page to filter."""
+    """An email list whose options say their mail type, for the page to filter.
+
+    ``details`` maps an email's ID to the ``data-`` attributes the page
+    script shows under the list for the chosen email (#446): the start of its
+    text, the saved schedules that send it and, on Dates and mail schedules,
+    the links to preview, test and edit it.
+    """
 
     kinds = {}
+    details = {}
 
     def create_option(self, name, value, *args, **kwargs):
-        """Tag an email option with ``data-kind`` when its mail type is known."""
+        """Tag an email option with its mail type and its summary details."""
         option = super().create_option(name, value, *args, **kwargs)
         kind = self.kinds.get(str(value))
         if kind:
             option["attrs"]["data-kind"] = kind
+        option["attrs"].update(self.details.get(str(value), {}))
         return option
+
+
+def schedule_labels(rows):
+    """Each saved schedule's name, in the given (sending) order.
+
+    Reminders are numbered in that order (Reminder 1, Reminder 2, ...), as
+    Family email history numbers them; other mail types use their label.
+    """
+    labels, reminders = [], 0
+    for row in rows:
+        kind = row["values"]["kind"]
+        if kind == "reminder":
+            reminders += 1
+            labels.append(str(_("Reminder %(number)s") % {"number": reminders}))
+        else:
+            labels.append(str(EMAIL_LABELS[kind]))
+    return labels
+
+
+def email_usage(rows):
+    """Map each email's ID to the names of the saved schedules that send it.
+
+    ``rows`` are saved schedules already in sending order (schedule_order),
+    so the names read "Reminder 1, Reminder 2" as on Dates and mail
+    schedules. The schedule email lists and Pages and emails both use this,
+    so the two pages can't name a sender differently.
+    """
+    usage = {}
+    for row, label in zip(rows, schedule_labels(rows), strict=True):
+        usage.setdefault(row["values"]["template_version"], []).append(label)
+    return usage
+
+
+def excerpt(text, limit=120):
+    """The start of an email's plain text on one line, cut at a word.
+
+    A cut never leaves half a placeholder: when the kept text ends inside an
+    unclosed "{{", the cut moves back to before it.
+    """
+    flat = " ".join((text or "").split())
+    if len(flat) <= limit:
+        return flat
+    kept = flat[:limit].rsplit(" ", 1)[0]
+    opened = kept.rfind("{{")
+    if opened > kept.rfind("}}"):
+        kept = kept[:opened].rstrip()
+    # A placeholder at the very start leaves nothing to keep before it.
+    return f"{kept} …" if kept else "…"
+
+
+def email_choices(emails, usage):
+    """Labels that tell saved emails apart (#446).
+
+    Each email reads "<subject> — sent by Reminder 2" or "<subject> — not
+    sent by any schedule", the verb the summary under the list uses too.
+    Two emails that would still read the same get the start of their ID, so
+    no two choices look identical.
+    """
+    labels = {}
+    for row in emails:
+        users = usage.get(row["id"], [])
+        labels[row["id"]] = (
+            _("%(subject)s — sent by %(users)s")
+            % {"subject": row["values"]["subject"], "users": ", ".join(users)}
+            if users
+            else _("%(subject)s — not sent by any schedule")
+            % {"subject": row["values"]["subject"]}
+        )
+    counts = {}
+    for label in labels.values():
+        counts[label] = counts.get(label, 0) + 1
+    return [
+        (
+            identifier,
+            f"{label} ({identifier[:8]})" if counts[label] > 1 else str(label),
+        )
+        for identifier, label in labels.items()
+    ]
+
+
+def email_details(emails, usage, *, links):
+    """The ``data-`` attributes of each email option (see TemplateSelect)."""
+    from django.urls import reverse
+
+    details = {}
+    for row in emails:
+        attributes = {
+            "data-excerpt": excerpt(row["values"].get("text")),
+            "data-used-by": json.dumps(usage.get(row["id"], [])),
+        }
+        if links:
+            attributes["data-test-url"] = reverse(
+                "admin:campaign_mail", args=[row["id"]]
+            )
+            attributes["data-edit-url"] = reverse(
+                "admin:content_revision",
+                args=["email", row["values"]["slot"], row["id"]],
+            )
+        details[row["id"]] = attributes
+    return details
 
 
 class ScheduleForm(forms.Form):
@@ -259,14 +367,19 @@ class ScheduleForm(forms.Form):
         ),
     )
 
-    def __init__(self, *args, templates, **kwargs):
+    def __init__(self, *args, templates, usage=None, links=False, label=None, **kwargs):
         """Offer email revisions and only this row's unresolved legacy value.
 
         A saved schedule's mail type is fixed (the configuration refuses to
         retype one), so it is shown but not editable, and only emails of that
         type are offered. A disabled field keeps its saved value whatever the
-        browser posts.
+        browser posts. ``usage`` maps an email's ID to the saved schedules that
+        send it, for labels that tell emails apart; ``links`` adds each email's
+        preview, test and edit addresses for the page script (#446).
+        ``label`` names a saved schedule (Reminder 2), so the page can tell
+        whether other schedules send the same email.
         """
+        self.schedule_label = label
         self.templates = templates
         super().__init__(*args, **kwargs)
         # A saved time with seconds (set before #631) still saves unchanged.
@@ -281,15 +394,11 @@ class ScheduleForm(forms.Form):
             and row["values"]["slot"] in KINDS
             and fixed in {None, row["values"]["slot"]}
         ]
-        choices = [
-            (
-                row["id"],
-                f"{EMAIL_LABELS[row['values']['slot']]} — {row['values']['subject']} "
-                f"({row['id'][:8]})",
-            )
-            for row in emails
-        ]
+        choices = email_choices(emails, usage or {})
         kinds = {row["id"]: row["values"]["slot"] for row in emails}
+        self.fields["template_version"].widget.details = email_details(
+            emails, usage or {}, links=links
+        )
         field_tips.shorten(
             self, {"template_version": _("Only emails of the chosen mail type fit.")}
         )
@@ -335,14 +444,29 @@ def schedule_order(row):
 class ScheduleSet(BaseFormSet):
     """The server owns saved IDs; missing rows never imply schedule removal."""
 
-    def __init__(self, *args, previous, templates, campaign_id, campaign, **kwargs):
+    def __init__(
+        self,
+        *args,
+        previous,
+        templates,
+        campaign_id,
+        campaign,
+        email_links=False,
+        **kwargs,
+    ):
         """Retain complete saved records for identity and legacy-template comparison.
 
         Saved rows are shown in sending order. Each form carries its saved ID,
         and the same deterministic order is used for the GET and the POST, so
-        sorting never mixes up which form edits which schedule.
+        sorting never mixes up which form edits which schedule. Every form's
+        email list says which saved schedules send each email; with
+        ``email_links`` (Dates and mail schedules) it also carries each
+        email's preview, test and edit addresses (#446).
         """
         self.previous = sorted(previous, key=schedule_order)
+        self.labels = schedule_labels(self.previous)
+        self.usage = email_usage(self.previous)
+        self.email_links = email_links
         self.templates = list(templates)
         self.campaign_id, self.campaign = str(campaign_id), campaign
         initial = [row["values"] | {"id": row["id"]} for row in self.previous]
@@ -350,7 +474,15 @@ class ScheduleSet(BaseFormSet):
 
     def get_form_kwargs(self, index):
         """Template choices are server-provided for initial and new forms alike."""
-        return super().get_form_kwargs(index) | {"templates": self.templates}
+        return super().get_form_kwargs(index) | {
+            "templates": self.templates,
+            "usage": self.usage,
+            "links": self.email_links,
+            # Saved forms come first, in the same order as self.previous.
+            "label": self.labels[index]
+            if index is not None and index < len(self.labels)
+            else None,
+        }
 
     @property
     def has_templates(self):
