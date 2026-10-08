@@ -142,8 +142,12 @@ Native date and time controls carry no zone, so a contact attempt was first
 entered and labelled as UTC. Since
 [#558](https://github.com/epiphany40223/parishkit/issues/558) it is entered in
 the browser's time zone, which the page script sends with the form, and
-displayed instants use the browser zone. A closed request shows its history
-without a form. A gated campaign disables every control but remains readable.
+displayed instants use the browser zone. Since
+[#534](https://github.com/epiphany40223/parishkit/issues/534), Save and next
+moves to the next open request, and "Return to Ministry follow-up" keeps the
+queue's filters, sort and page; see the
+[Admin follow-up workflows](../specs/stewardship/admin-portal/spec.md#follow-up-workflows).
+A closed request shows its history without a form. A gated campaign disables every control but remains readable.
 
 ## Fresh-install schema audit
 
