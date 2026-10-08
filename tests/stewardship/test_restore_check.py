@@ -10,6 +10,7 @@ the timeout line are the real code.
 import json
 import logging
 import os
+import shutil
 import stat
 
 import pytest
@@ -62,6 +63,12 @@ def files(tmp_path, monkeypatch):
     stand_in.write_text(STAND_IN.format(dump=dump, state=tmp_path))
     stand_in.chmod(stand_in.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("PATH", f"{bin_directory}{os.pathsep}{os.environ['PATH']}")
+    # The Compose test container mounts /tmp noexec: the stand-in is not
+    # executable there, so PATH would find the image's real pg_restore and
+    # every case would read as an unreadable dump. The other CI jobs still
+    # run these tests.
+    if shutil.which("pg_restore") != str(stand_in):
+        pytest.skip("the temporary directory cannot run the stand-in pg_restore")
 
     class Files:
         """The test's inputs."""

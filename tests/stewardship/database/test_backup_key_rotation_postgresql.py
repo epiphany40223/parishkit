@@ -144,7 +144,7 @@ def test_the_backup_command_seals_to_the_configured_key(rotated, monkeypatch, ca
 
     used = []
 
-    def run_backup(configuration, *, record, recipient):
+    def run_backup(configuration, *, record, migrations, recipient):
         """Record one run sealed to the key the command handed over."""
         used.append(recipient)
         with transaction.atomic():
