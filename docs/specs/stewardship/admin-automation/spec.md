@@ -1655,8 +1655,20 @@ Cleanup, cleanup cancel, link preparation discard, confirmation and withdrawal
 ask at the [prompt](#command-line-confirmation) unless `--yes` is given. See
 [Production transition](../admin-portal/spec.md#production-transition).
 These steps matter again only for the next campaign. The go-live redesign in
-[#462](https://github.com/epiphany40223/parishkit/issues/462) changes them, and
-PR 12 follows whichever flow is current.
+[#462](https://github.com/epiphany40223/parishkit/issues/462) changes them to
+match the [Go live page](../admin-portal/spec.md#go-live-page):
+`go-live readiness` and `go-live preview` as today (the preview runs the DNS
+check and prints the start token); `go-live start --token …` (Start
+go-live); `go-live status --watch` (the Preparing step); `go-live retry`
+(a failed stage's Retry, which retries the same task and changes no data);
+`go-live refresh-again` (Refresh and prepare again, which starts a new
+attempt); `go-live confirm-preview` and `go-live confirm --token …` (Confirm
+Production); and `go-live stop` (Stop go-live). Start, refresh-again,
+confirm and stop ask at the [prompt](#command-line-confirmation) unless
+`--yes` is given. The cleanup and links commands retire with their pages.
+The URL-name rows above change with the slices that rename the pages, since
+`test_admin_page_names` checks them against the code. PR 12 follows
+whichever flow is current.
 
 `go-live readiness` and `go-live progress` read the current campaign, or the
 campaign `--campaign` names, as `schedule show` does. Neither page records a
