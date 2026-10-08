@@ -10,6 +10,7 @@ exits 64). The catalog description itself runs against real PostgreSQL in
 import json
 import logging
 import os
+import shutil
 import stat
 
 import pytest
@@ -405,6 +406,11 @@ def stand_in(tmp_path, monkeypatch):
     script.write_text(STAND_IN.format(dump=dump, state=tmp_path))
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("PATH", f"{directory}{os.pathsep}{os.environ['PATH']}")
+    # The Compose test container mounts /tmp noexec: the stand-in is not
+    # executable there, so PATH would find the image's real pg_restore. The
+    # other CI jobs still run these tests.
+    if shutil.which("pg_restore") != str(script):
+        pytest.skip("the temporary directory cannot run the stand-in pg_restore")
     return dump
 
 
