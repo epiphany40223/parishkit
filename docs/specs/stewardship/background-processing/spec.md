@@ -421,60 +421,73 @@ for the request's current [attempt](../admin-portal/spec.md#go-live-page):
    refresh (or a later full refresh) has promoted, and the Family population
    matches the current snapshot and generation, it requests the inactive
    Family link preparation through the existing owner. The actor is the
-   Administrator who started go-live (the transition request's requester);
-   the command identity is derived from the request, the attempt and the
-   snapshot. Preparation then runs as it does today.
+   Administrator who started go-live (the transition request's
+   `initiated_by_id`). The command identity is a UUIDv5 of the request id,
+   the attempt number and the preparation number within the attempt
+   (`prepare:<attempt>:<n>`, with `n` starting at 1). It does not depend on
+   the inputs, so a preparation refused because some input moved on
+   (credential epoch, key inventory, eligibility) never blocks the next one,
+   which simply takes the next number. Preparation then runs as it does
+   today.
 3. **Prepare again when the links go stale.** Prepared links are bound to the
    source snapshot and generation, so any promotion makes them stale, even
-   one that changes no Family. When the ready preparation is no longer
-   current, the producer cancels it through the existing discard path and,
-   once disposal finishes, requests a new one on current data. Per attempt
-   it makes the first preparation and at most three re-preparations; when a
-   fourth would be needed, the step stops with "ParishSoft data keeps
-   changing; try again later" and **Retry**, which starts the next attempt.
+   one that changes no Family. When the ready (or still running) preparation
+   is no longer current, the producer discards it through the existing
+   discard path and, once disposal finishes, requests preparation `n + 1` on
+   current data. Each preparation the producer requests after the first in
+   an attempt counts as one **re-preparation**, whatever made the previous
+   one stale, including one the producer discarded itself. Per attempt it
+   makes the first preparation and at most three re-preparations (four
+   preparations in all); when a fifth would be needed, the step stops with
+   "ParishSoft data keeps changing" and offers **Refresh and prepare
+   again**, which starts the next attempt.
 4. **Retry failures.** A failed cleanup or preparation keeps its existing
    automatic retries. When they are exhausted, the step shows its failure
-   and **Retry**, which uses the existing retry paths.
+   and **Retry**, which retries the same task through the existing web
+   retry paths and changes no data. (The data-changing action is always
+   named Refresh and prepare again.)
 5. **Stop at the hold end.** Once the attempt's
    [hold end](#refreshes-wait-for-go-live) has passed, the producer makes no
    further request for that attempt, so it never chases scheduled refreshes;
    the page offers Refresh and prepare again.
 
-The producer never confirms Production, never starts cleanup and never
-changes global mode or campaign lifecycle: those stay with the Administrator
-actions. Every request it makes is an ordinary command that the existing
-owners admit and audit, so a refused request (the gate was released, the
-campaign ended, the requester is no longer a current Administrator) is
-simply not retried, and the page says why. No new table is needed: progress
-and attempts are read from the transition request, its audit events, the
-refresh requests and the preparation rows that already exist. Nothing runs
-for a deployment whose campaign is live in Production, because it has no
-open transition request.
+The producer never confirms Production, never starts cleanup, never retries
+a task and never changes global mode or campaign lifecycle: those stay with
+the Administrator actions. Every request it makes is an ordinary command that
+the existing owners admit and audit, so a refused request (the gate was
+released, the campaign ended, the requester is no longer a current
+Administrator) is simply not retried, and the page says why. No new table is
+needed: progress and attempts are read from the transition request, its audit
+events, the refresh requests and the preparation rows that already exist.
+Nothing runs for a deployment whose campaign is live in Production, because
+it has no open transition request.
 
 **Migration 0025.** Today only the web login may record link preparation or
 its discard, and only for a current Administrator: the
-`stewardship_production_tokens_intake_v1` trigger (on
-`stewardship_production_tokens` and `stewardship_production_token_cancel`)
-refuses any other session user, and the
-`stewardship_production_tokens_task_pin_v1` trigger does the same for a
-retried task. Frozen migration 0025 replaces both functions (with
-`CREATE OR REPLACE`, re-asserting `SECURITY DEFINER` and the `search_path`,
-and ending in a DO block that refuses to commit unless both are installed
-with the new checks, tested against the old definitions):
+`stewardship_production_tokens_intake_v1` trigger, shared by
+`stewardship_production_tokens` and `stewardship_production_token_cancel`,
+refuses any other session user. Frozen migration 0025 replaces that one
+function (with `CREATE OR REPLACE`, keeping `SECURITY DEFINER` and the
+`search_path`, and ending in a DO block that refuses to commit unless the
+new body is installed, tested against the previous definition):
 
 - the scheduler login (`pk_stewardship_scheduler`) is admitted beside the web
   login;
-- for the scheduler the actor must be the transition request's requester,
-  who must still be a current Administrator
-  (`stewardship_export_authorized_v1`), and the request must still own the
-  go-live gate; the web login keeps today's check;
+- for the scheduler the actor must be the transition request's
+  `initiated_by_id`, who must still be a current Administrator
+  (`stewardship_export_authorized_v1`), and the request must be
+  `cleanup_complete`, the one gate-owning state in which links are prepared.
+  For a discard, the request is the transition of the preparation being
+  discarded. The web login keeps today's check;
 - every other check is unchanged: READ COMMITTED, the work-order lock, an
   attributed actor, current scope, an available slot, the exact task root,
   and the refusal "Selected live links cannot be cancelled" for a
   generation that is active or selected.
 
-The scheduler's database grants gain `SELECT` and `INSERT` on those two
-tables, through the grants registry and the upgrade's database-grants step.
+The retry check, `stewardship_production_tokens_task_pin_v1`, is not
+changed: retries are created only by the web's `retry_failed`. The scheduler
+already reads both tables; its grants gain only `INSERT` on them, through the
+grants registry and the upgrade's database-grants step.
 
 ### Schedule replacement and removal
 

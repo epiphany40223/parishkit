@@ -1635,8 +1635,9 @@ match the [Go live page](../admin-portal/spec.md#go-live-page):
 `go-live readiness` and `go-live preview` as today (the preview runs the DNS
 check and prints the start token); `go-live start --token …` (Start
 go-live); `go-live status --watch` (the Preparing step); `go-live retry`
-(a failed stage's Retry); `go-live refresh-again` (Refresh and prepare
-again); `go-live confirm-preview` and `go-live confirm --token …` (Confirm
+(a failed stage's Retry, which retries the same task and changes no data);
+`go-live refresh-again` (Refresh and prepare again, which starts a new
+attempt); `go-live confirm-preview` and `go-live confirm --token …` (Confirm
 Production); and `go-live stop` (Stop go-live). Start, refresh-again,
 confirm and stop ask at the [prompt](#command-line-confirmation) unless
 `--yes` is given. The cleanup and links commands retire with their pages.

@@ -2413,7 +2413,8 @@ what applies now:
    stage: Testing cleanup, the go-live's full ParishSoft refresh, and
    preparing the inactive Family links. A stage that waits says what it waits
    for in words ("Waiting for the ParishSoft refresh to finish"), never a
-   time to act by. A failed stage shows its sanitized reason and **Retry**.
+   time to act by. A failed stage shows its sanitized reason and **Retry**,
+   which retries the same task and changes no data.
    If ParishSoft data changes after the links were prepared, for example
    after a manual refresh, the system
    [prepares them again](../background-processing/spec.md#go-live-sequencing)
@@ -2468,8 +2469,12 @@ re-check in `collect_readiness`, and the confirmation deadline) in place of
 today's `source_stale_seconds` expiry, is: the source is ready when the
 current full snapshot is the attempt's refresh or a later full refresh that
 started after the attempt began, it passes the tenant and scope checks, and
-the current instant is before the hold end. `source_stale_seconds` itself is
-unchanged and still governs readiness before Start.
+the current instant is before the hold end. This is deliberately looser
+than today's rule, which expires 30 minutes (`source_stale_seconds`) after
+the full refresh started: during the hold no scheduled refresh can change
+the data, so the go-live may take up to an hour after its refresh, or three
+hours in all. `source_stale_seconds` itself is unchanged and still governs
+readiness before Start.
 
 **After the hold ends.** When the hold end passes before confirmation,
 whether 60 minutes after the refresh or at the 3-hour cap, scheduled
