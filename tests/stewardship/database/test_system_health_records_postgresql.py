@@ -22,7 +22,7 @@ from parishkit.stewardship.accounts.credential_database import (
 )
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.service_status_models import ServiceStatus
-from parishkit.stewardship.runtime_grants import runtime_grants
+from parishkit.stewardship.runtime_grants import runtime_functions, runtime_grants
 from parishkit.stewardship.service_status import (
     ServiceStatusReporter,
     prune_service_status,
@@ -64,7 +64,13 @@ def credential_login(target):
             ServiceRole.CREDENTIAL_INSTALLER, target=target
         )
         with connection.cursor() as cursor:
-            grant_runtime(cursor, name, tables, columns)
+            grant_runtime(
+                cursor,
+                name,
+                tables,
+                columns,
+                runtime_functions(ServiceRole.CREDENTIAL_INSTALLER, target=target),
+            )
             cursor.execute(sql.SQL("SET SESSION AUTHORIZATION {}").format(role))
         yield
     finally:

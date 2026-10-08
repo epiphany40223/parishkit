@@ -61,6 +61,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     """The definer catalog read is granted to one login; web keeps Family login."""
     from parishkit.stewardship.deployment import ServiceRole
     from parishkit.stewardship.runtime_grants import (
+        AUTOMATION_FRESH_FUNCTION,
         FAMILY_LOGIN_FUNCTION,
         MINISTRY_CATALOG_FUNCTION,
         runtime_functions,
@@ -69,10 +70,12 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     assert runtime_functions(ServiceRole.CONFIG_INSTALLER) == {
         MINISTRY_CATALOG_FUNCTION
     }
-    # Web also reads the 24-hour Family mail count for System health (ADM-13).
+    # Web also reads the 24-hour Family mail count for System health (ADM-13)
+    # and checks a secret request's automation sign-in (ADM-11 PR 5).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
+        AUTOMATION_FRESH_FUNCTION,
     }
     # The worker's one definer routine purges ended Admin sessions (ADM-11).
     assert runtime_functions(ServiceRole.WORKER) == {

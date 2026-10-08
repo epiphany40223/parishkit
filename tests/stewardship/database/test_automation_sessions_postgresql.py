@@ -450,14 +450,14 @@ def test_read_only_sessions_are_refused_activity_and_fresh_gates(auth_service, g
         sessions.require_fresh(caller)
 
 
-def test_require_fresh_refuses_a_full_session_until_pr_5(auth_service, google):
-    """No automation caller passes a fresh-gate before its guard migration."""
+def test_require_fresh_admits_a_live_full_session(auth_service, google):
+    """From PR 5 a full-scope session stands in for a fresh sign-in."""
     from parishkit.stewardship.accounts import sessions
 
-    _, secret, _ = paired(auth_service)
+    _, secret, row = paired(auth_service)
     caller = command(auth_service, secret)
-    with pytest.raises(sessions.FreshAuthenticationRequired):
-        sessions.require_fresh(caller)
+    with transaction.atomic():
+        assert sessions.require_fresh(caller) == row.authenticated_at
 
 
 def test_fresh_v1_names_only_a_live_full_command_session(auth_service, google):

@@ -260,8 +260,15 @@ def test_require_fresh_takes_a_web_caller(monkeypatch):
 
 
 @pytest.mark.parametrize("scope", [FULL, READ_ONLY])
-def test_require_fresh_refuses_every_automation_caller(monkeypatch, scope):
-    """A fresh-looking command session still cannot stand in for a sign-in yet."""
+def test_require_fresh_refuses_an_unadmitted_or_read_only_automation_caller(
+    monkeypatch, scope
+):
+    """Without an admitted principal, or with read-only scope, no lookup admits.
+
+    A fresh-looking command session alone never stands in for a sign-in; the
+    full-scope branch is covered against the database
+    (test_automation_fresh_guards_postgresql.py).
+    """
     instant = timezone.now()
     monkeypatch.setattr(sessions, "database_now", lambda: instant)
     caller = automation(scope, portal_session=SimpleNamespace(authenticated_at=instant))

@@ -5909,7 +5909,7 @@ CREATE FUNCTION public.stewardship_sealed_intake_admission_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE setup_install boolean := false;
+DECLARE setup_install boolean := false; automation boolean := false;
 BEGIN
     IF TG_TABLE_NAME='stewardship_secret_request' THEN
         IF NEW.required_consumers<>'[]'::jsonb
@@ -5936,8 +5936,17 @@ BEGIN
                     WHERE credential.id=NEW.id AND credential.target=NEW.target
                         AND credential.scrubbed_at IS NULL
                         AND public.stewardship_setup_install_ready_live_v1(ready.id));
+            ELSIF current_user='pk_stewardship_web' OR pg_has_role(current_user,
+                    (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
+                -- A request made through a live full-scope automation session
+                -- records that session's sign-in instant (ADM-11). A separate
+                -- statement, reached only by the web (which holds EXECUTE) or
+                -- the schema owner: EXECUTE is checked whenever an expression
+                -- is initialized, so any other role keeps the plain refusal.
+                automation := coalesce(public.stewardship_automation_fresh_principal_v1(
+                    NEW.requested_by_id,NEW.reauthenticated_at),false);
             END IF;
-            IF NOT setup_install THEN
+            IF NOT setup_install AND NOT automation THEN
                 RAISE EXCEPTION 'Sealed intake requires fresh authentication'
                     USING ERRCODE='23514';
             END IF;
@@ -6104,6 +6113,7 @@ CREATE FUNCTION public.stewardship_secret_state_v2() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
+DECLARE fresh boolean := true;
 BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'Secret request history cannot be deleted' USING ERRCODE='23514';
@@ -6148,8 +6158,19 @@ BEGIN
         RAISE EXCEPTION 'Credential acknowledgement requires consumer evidence' USING ERRCODE='23514';
     END IF;
     IF OLD.state='staged' AND NEW.state='testing' THEN
+        IF NEW.reauthenticated_at<NEW.created_at-interval '5 minutes' AND NOT (CASE WHEN NEW.target IN ('parishsoft','google_workspace','slack') THEN public.stewardship_setup_install_live_v1(NEW.id) ELSE false END) THEN
+            fresh := false;
+            IF NEW.target IN ('parishsoft','google_workspace','slack') THEN
+                -- A request made through a full-scope automation session
+                -- records its sign-in instant; the session must still be live
+                -- (ADM-11). Only these targets' installers hold EXECUTE on the
+                -- check, so it is its own statement, reached only for them.
+                fresh := coalesce(public.stewardship_automation_fresh_principal_v1(
+                    NEW.requested_by_id,NEW.reauthenticated_at),false);
+            END IF;
+        END IF;
         IF NEW.actor_id IS NOT NULL OR NEW.expires_at<=statement_timestamp()
-           OR (NEW.reauthenticated_at<NEW.created_at-interval '5 minutes' AND NOT (CASE WHEN NEW.target IN ('parishsoft','google_workspace','slack') THEN public.stewardship_setup_install_live_v1(NEW.id) ELSE false END))
+           OR NOT fresh
            OR NEW.required_consumers='[]'::jsonb
            OR NOT EXISTS(SELECT 1 FROM stewardship_sealed_credential_staging WHERE request_id=NEW.id AND ciphertext IS NOT NULL) THEN
             RAISE EXCEPTION 'Credential testing requires a live sealed request' USING ERRCODE='23514';

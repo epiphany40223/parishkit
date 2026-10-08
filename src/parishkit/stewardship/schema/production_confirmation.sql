@@ -78,10 +78,12 @@ BEGIN
               AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
               AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
               AND login.authenticated_at=NEW.authenticated_at
-              AND login.authenticated_at BETWEEN clock_timestamp()-interval '5 minutes' AND clock_timestamp())
+              AND (login.authenticated_at BETWEEN clock_timestamp()-interval '5 minutes' AND clock_timestamp()
+                   OR public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)))
        OR NOT EXISTS(SELECT 1 FROM public.stewardship_production_event event
             WHERE event.request_id=request.id AND event.action='complete'
-              AND event.created_at<=NEW.authenticated_at) THEN
+              AND (event.created_at<=NEW.authenticated_at
+                   OR public.stewardship_automation_fresh_v1(NEW.session_id,NEW.actor_id))) THEN
         RAISE EXCEPTION 'Production confirmation requires fresh post-cleanup Admin authentication' USING ERRCODE='42501';
     END IF;
     IF request.id IS NULL OR preparation.id IS NULL OR generation.id IS NULL OR campaign.id IS NULL
