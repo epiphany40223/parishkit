@@ -136,13 +136,15 @@ The interactive report and complete package validation finish in Phase 5.
 
 ### RPT-08: Census and financial reports
 
-1. Build pending-census change list over derived proposal rows with current/
-   submitted/proposed toggle, writable visual indicator, filters, and option to
-   omit API-writable rows.
-2. Link Admin actions to ADM-09 while Staff remains view-only; expose manual
-   resolution where authorized by the core matrix.
-3. Implement CSV/XLSX/PDF with writability/decision/execution/conflict fields
-   and privacy-safe values.
+1. Build the read-only Census changes worklist over derived proposal rows
+   ([#528](https://github.com/epiphany40223/parishkit/issues/528)): ParishSoft
+   now, Family's answer and edited values, Automatic or By hand, the derived
+   status, and filters including *Hide automatic changes*.
+2. Link Admin actions to ADM-09 while Staff remains view-only on automatic
+   rows; add Entered in ParishSoft, Ignore and Administrator reopen of
+   Ignored rows in place, with the guard migration they need.
+3. Implement audited CSV/XLSX downloads of the filtered list with full
+   values and the status and conflict fields (PDF later).
 4. Build Admin/Staff Family financial detail/list with effective pledge,
    frequency, per-period amount, selected stable share labels/Other, prior
    pledge/contribution, mapped periods/funds, and source-as-of.
