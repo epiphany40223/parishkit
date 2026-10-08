@@ -21,7 +21,7 @@ from ..test_chart_specs import metrics
 # chart's text marks, the summary and the notes must all show it as text.
 HOSTILE_NAME = '<img src=x onerror="window.__chartInjected=1">'
 
-PAGE = """{% extends 'stewardship/base.html' %}{% load i18n %}
+PAGE = """{% extends 'stewardship/admin-base.html' %}{% load i18n %}
 {% block title %}Charts{% endblock %}
 {% block head %}{% include 'stewardship/components/chart-scripts.html' %}{% endblock %}
 {% block content %}
