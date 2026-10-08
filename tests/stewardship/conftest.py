@@ -63,6 +63,24 @@ def _close_family_mail_sessions(monkeypatch):
         )
 
 
+@pytest.fixture(autouse=True)
+def _connection_reuse_off(monkeypatch):
+    """Undo a mail-dispatch configure's process-wide keep_connections() (#365).
+
+    Tests that assemble a mail-dispatch runtime turn connection reuse on for
+    the whole pytest process; without this, later tests would keep their
+    database connections between tasks. Like the fixture above, it touches the
+    module only when it is already imported.
+    """
+    module = sys.modules.get("parishkit.stewardship.jobs.connection_reuse")
+    if module is not None:
+        monkeypatch.setattr(module, "_enabled", False)
+    yield
+    module = sys.modules.get("parishkit.stewardship.jobs.connection_reuse")
+    if module is not None:
+        module._enabled = False
+
+
 # Background threads that record timeouts through the lazily imported
 # ``audit.timeouts.record_timeout`` (#549): a worker's lease renewal
 # (jobs/lifetime.py) and a web worker's authentication-health liveness

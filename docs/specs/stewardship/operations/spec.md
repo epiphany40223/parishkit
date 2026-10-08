@@ -639,6 +639,41 @@ restarts, and rolling upgrades; a per-process semaphore alone is insufficient.
 Expose active downloads, busy rejections, pool utilization, and guard timeouts
 without recording downloaded data.
 
+### Kept mail connections
+
+Each mail-dispatch consumer keeps its task connection (one of its three
+budgeted connections) open between messages (#365); every other service
+closes its connection after each task. A kept connection is not reused once
+it is 5 minutes old, and it may stay open, idle, until the consumer's next
+message, which then reconnects. It is closed at once instead after a failed
+message, an open transaction or a database error. Before each message, and
+again after SMTP before the outcome is recorded, a consumer drops a kept
+connection that no longer answers (one `SELECT 1`, as the installers do
+since #639), so a PostgreSQL restart costs a reconnect, not a failed or
+uncertain message. TCP keepalives on the mail login's connections let the host notice
+a dead peer on an idle one.
+
+Operators should expect:
+
+- **Connection count.** At rest, `pg_stat_activity` shows two idle sessions
+  for the mail login (one per mail consumer) that used to close after each
+  message. This is inside the login's limit of six and the background
+  budget, which already counted the task connection.
+- **Cutting off the mail login.** Because a session survives `ALTER ROLE ...
+  NOLOGIN`, run `ALTER ROLE pk_stewardship_mail_dispatch NOLOGIN`, then
+  `pg_terminate_backend` each of its sessions. The consumers' next
+  reconnect is then refused. Before #365 a session ended within one
+  message.
+- **Why 5 minutes.** The age bounds how long a session runs between
+  PostgreSQL login checks (the connect-time role and superuser refusal in
+  `accounts/credential_database.py`). A restart or a terminated session is
+  already handled by the unanswered-connection check above, so the age does
+  not need to be short for liveness. Five minutes keeps the login checks
+  frequent while a send reuses each session for a few hundred messages.
+
+The [Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)
+covers the mail consumers.
+
 For the dedicated download connections, set a finite
 `idle_in_transaction_session_timeout` longer than the total download deadline
 but shorter than the purge reader-drain timeout. With the five-minute download
