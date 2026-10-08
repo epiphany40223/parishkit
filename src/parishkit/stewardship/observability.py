@@ -1,6 +1,7 @@
 """Redacted operational logging before campaign-specific audit schemas land."""
 
 import copy
+import functools
 import logging
 import os
 import re
@@ -296,6 +297,8 @@ def emit(
     ministry_duid: int | None = None,
     shaping: str | None = None,
     error_class: str | None = None,
+    watched_command: str | None = None,
+    subject_id: UUID | None = None,
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text.
 
@@ -312,7 +315,10 @@ def emit(
     ``SOURCE_MINISTRY_NAME_REPAIRED``. ``shaping`` names the display-only
     comparison (``SHAPING_STEPS``), only with ``REPORT_SHAPING_FAILED``.
     ``error_class`` names a failure's exception type (see ``class_name_of``),
-    only with a ``failure_kind``.
+    only with a ``failure_kind``. ``watched_command`` (a watchable Admin CLI
+    command's catalog name) and ``subject_id`` (the UUID of the record it
+    followed) say what an ``automation_watch`` timeout was waiting for
+    (#807), only with that timeout.
     """
     if not isinstance(event, Event) or level not in {
         logging.DEBUG,
@@ -360,6 +366,14 @@ def emit(
         failure_kind is None or not _class_name(error_class)
     ):
         raise ValueError("An error class must be a failure's dotted class name.")
+    if (watched_command is not None or subject_id is not None) and (
+        timeout != "automation_watch"
+    ):
+        raise ValueError("A watched command belongs only to a watch's timeout.")
+    if watched_command is not None and watched_command not in watch_commands():
+        raise ValueError("A watched command must be a watchable catalog name.")
+    if subject_id is not None and not isinstance(subject_id, UUID):
+        raise ValueError("A watched record is named by its UUID.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
@@ -378,9 +392,22 @@ def emit(
                 "ministry_duid": ministry_duid,
                 "shaping": shaping,
                 "error_class": error_class,
+                "watched_command": watched_command,
+                "subject_id": subject_id,
             }
         ),
     )
+
+
+@functools.cache
+def watch_commands():
+    """The Admin CLI commands ``--watch`` may repeat: a closed set of catalog
+    names, read from the command catalog itself (imported here, lazily, since
+    that module logs through this one) and cached, since the catalog is fixed
+    at import."""
+    from .admin_cli import COMMANDS
+
+    return frozenset(spec.name for spec in COMMANDS if spec.watch)
 
 
 # SQLSTATEs that mean the database answered and refused: an integrity
@@ -691,6 +718,13 @@ class SafeJsonFormatter(JsonLogFormatter):
                 safe.extra["drive_failure"] = context["drive_failure"]
             if context.get("timeout") in TIMEOUT_LIMITS:
                 safe.extra["timeout"] = context["timeout"]
+                # What a watch was waiting for (#807): re-checked, and only
+                # beside a watch's own timeout.
+                if context["timeout"] == "automation_watch":
+                    if context.get("watched_command") in watch_commands():
+                        safe.extra["watched_command"] = context["watched_command"]
+                    if isinstance(context.get("subject_id"), UUID):
+                        safe.extra["subject_id"] = str(context["subject_id"])
             for key in ("limit_seconds", "elapsed_seconds"):
                 if _seconds(context.get(key)):
                     safe.extra[key] = context[key]

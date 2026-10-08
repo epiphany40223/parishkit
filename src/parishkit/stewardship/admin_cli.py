@@ -179,6 +179,10 @@ class CommandSpec:
     expected_version: bool = False
     # Whether --watch repeats this read until it reaches a terminal state.
     watch: bool = False
+    # For a watch: the parsed argument naming the one record it follows (a
+    # UUID), logged with a watch timeout (#807); None when it follows no
+    # single record.
+    watch_subject: str | None = None
     # The audit event a state-changing command records: by default its own
     # admin_cmd_<area>_<verb> type; the session commands record the session
     # events instead, and pairing records none until approval.
@@ -1041,6 +1045,7 @@ def _read_specs():
             options=(_task_show_options,),
             audit_event="background_viewed",
             watch=True,
+            watch_subject="task_id",
         ),
         CommandSpec(
             "send progress",
@@ -1156,6 +1161,7 @@ def _change_specs():
             options=(_config_request_options,),
             audit_event=None,
             watch=True,
+            watch_subject="request_id",
         ),
     )
 
@@ -1541,6 +1547,13 @@ def watch(spec, args, preamble, runtime, context, emit):
                     timeout="automation_watch",
                     limit_seconds=int(args.timeout),
                     elapsed_seconds=int(elapsed),
+                    # Which command, and which record, the watch followed.
+                    watched_command=spec.name,
+                    subject_id=(
+                        getattr(args, spec.watch_subject)
+                        if spec.watch_subject
+                        else None
+                    ),
                 )
                 raise WatchTimeout(model)
             emit(model, final=False)
