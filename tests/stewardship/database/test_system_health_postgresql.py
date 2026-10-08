@@ -290,13 +290,22 @@ def test_a_watch_of_a_healthy_system_stops_at_once(admin, google):  # noqa: F811
     assert documents[0]["result"]["problems"] == []
 
 
-def test_home_problem_lines_cost_no_query_whatever_is_open(auth_service, google):
+def test_home_problem_lines_cost_no_query_whatever_is_open(
+    auth_service, google, monkeypatch
+):
     """Home's query count is the same with problems open, a backup overdue too.
 
     The lines ride on Home's refresh-status statement, so they add no query
     of their own, and nothing in them reads more when an incident opens.
+    The Family portal switch is cached for three seconds per process; on a
+    slow runner the two counts can straddle its expiry and differ by that one
+    unrelated read, so the cache is held for the test.
     """
     from django.test.utils import CaptureQueriesContext
+
+    from parishkit.stewardship.accounts import family_maintenance
+
+    monkeypatch.setattr(family_maintenance, "CACHE_SECONDS", 3600)
 
     running_services()
     browser, _ = signed_in()
