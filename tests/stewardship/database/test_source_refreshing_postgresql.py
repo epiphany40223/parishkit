@@ -136,8 +136,11 @@ def spy_staging(monkeypatch):
     return batches, reports
 
 
-def test_staging_holds_the_work_lock_for_small_batches(tmp_path, monkeypatch):
-    """Each lock-holding staging effect writes at most STAGING_BATCH_ROWS (#394).
+def test_staging_writes_small_batches(tmp_path, monkeypatch):
+    """Each staging step writes at most STAGING_BATCH_ROWS (#394).
+
+    Steps no longer take the work-order lock (#147, see
+    test_source_step_lock_postgresql); small batches keep them short.
 
     Progress is still reported about every PROGRESS_ROWS rows, not per batch,
     and every row is staged exactly once.

@@ -75,14 +75,15 @@ def remembered(key, read):
     return memo[key]
 
 
-def _scope(campaign_id, *, share=False):
+def _scope(campaign_id, *, share=False, lock=True):
     """Read runtime and campaign scope; see _read_scope (remembered per bulk item)."""
     return remembered(
-        ("scope", campaign_id, share), lambda: _read_scope(campaign_id, share=share)
+        ("scope", campaign_id, share, lock),
+        lambda: _read_scope(campaign_id, share=share, lock=lock),
     )
 
 
-def _read_scope(campaign_id, *, share=False):
+def _read_scope(campaign_id, *, share=False, lock=True):
     """Read runtime then campaign after the shared order lock; missing state denies.
 
     The runtime row is normally locked FOR UPDATE. ``share`` locks it FOR
@@ -95,9 +96,31 @@ def _read_scope(campaign_id, *, share=False):
     A caller that might later update the row, or lock a credential or
     session row first, must keep the default: upgrading a shared lock while
     a login holds one could deadlock with that login.
+
+    ``lock=False`` reads both rows without locks and outside the work order,
+    for a source refresh's fetch admission and staging batches (#147). Those
+    steps publish nothing: promotion re-reads this scope under the work
+    order with the default locks before anything becomes source truth, so
+    the unlocked read only stops a stale attempt early. Taking the rows
+    FOR SHARE instead could deadlock: such a step also locks its task rows,
+    and transitions lock task rows and the runtime row in both orders.
     """
     if campaign_id is not None and not isinstance(campaign_id, UUID):
         raise TypeError("Work scope requires a canonical campaign identity.")
+    if not lock:
+        runtime = SystemConfiguration.objects.first()
+        if runtime is None or runtime.active_configuration_id is None:
+            raise PermissionError("Background work requires applied configuration.")
+        campaign = None
+        if campaign_id is not None:
+            campaign = (
+                Campaign.objects.select_related("active_configuration")
+                .filter(pk=campaign_id)
+                .first()
+            )
+            if campaign is None:
+                raise PermissionError("The campaign work scope is unavailable.")
+        return WorkScope(runtime, campaign, _now())
     require_work_order()
     if share:
         # Django has no FOR SHARE, so one raw statement locks and reads the
@@ -174,7 +197,7 @@ def require_campaign_work(*, campaign_id, kind, mode, rehearsal_epoch_id=None):
     return scope
 
 
-def require_source_refresh(*, campaign_id):
+def require_source_refresh(*, campaign_id, lock=True):
     """Source refresh alone may continue during go-live cleanup and delivery pause.
 
     Its immutable parent binds the sole current campaign/giving window, or None
@@ -182,9 +205,11 @@ def require_source_refresh(*, campaign_id):
     to supersede/replan the request rather than load a different period silently.
     Restore and purge keep source mutations held; no maintenance flag bypasses
     them. The source mutation lease and corpus validation remain independent.
+    ``lock=False`` is the unlocked read of _read_scope, for source steps
+    that publish nothing (#147).
     """
     try:
-        scope = _scope(campaign_id)
+        scope = _scope(campaign_id, lock=lock)
     except PermissionError:
         raise SourceScopeChanged("Source refresh scope is unavailable.") from None
     if (
