@@ -341,7 +341,7 @@ def offline_grants(role):
         from .accounts.automation_grants import add_automation_recovery_grants
 
         grants["stewardship_config_request"].add("INSERT")
-        grants["stewardship_portal_session"] = {"SELECT", "UPDATE"}
+        # Session revocation is column-limited (offline_columns, #389 L6).
         # The restore's revocation of every automation session (ADM-11).
         add_automation_recovery_grants(grants, {})
     else:
@@ -354,13 +354,27 @@ def offline_columns(role):
 
     Admin recovery ends automation sessions through the session table's ending
     columns only (``revoke-automation-sessions``); bootstrap has none.
+
+    Recovery also revokes every live Admin session: the activation trigger
+    (``stewardship_recovery_activation_v1``) runs as this login and sets
+    ``revoked_at``, ``version``, ``actor_id`` and ``correlation_id`` on rows
+    with no ``revoked_at``, reading ``last_activity_at``. It gets exactly
+    those columns (#389 L6), never the session key, so a compromised
+    recovery run cannot read or rewrite a live session. Its SELECT columns
+    are the configuration installer's (``SESSION_COLUMNS``) plus ``version``.
     """
     if role is ServiceRole.BOOTSTRAP:
         return {}
     if role is ServiceRole.ADMIN_RECOVERY:
         from .accounts.automation_grants import add_automation_recovery_grants
+        from .accounts.setup_exchange_grants import SESSION_COLUMNS
 
-        columns = {}
+        columns = {
+            "stewardship_portal_session": {
+                "SELECT": set(SESSION_COLUMNS) | {"version"},
+                "UPDATE": {"revoked_at", "version", "actor_id", "correlation_id"},
+            }
+        }
         add_automation_recovery_grants({}, columns)
         return columns
     raise ConfigError("This role has no offline configuration grants.")
