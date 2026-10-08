@@ -140,10 +140,14 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
     with web():
         again = post(browser, proposal(store))
         assert again.status_code == 400
-        assert "already has an Administrator entry" in again.content.decode()
+        assert (
+            "already has an assignment an Administrator added" in again.content.decode()
+        )
         inactive = post(browser, proposal(store, ministry_duid=99))
         assert inactive.status_code == 400
-        assert "not an active Ministry" in inactive.content.decode()
+        assert (
+            "is not active in the latest ParishSoft data" in inactive.content.decode()
+        )
         bad = post(browser, proposal(store, identity="not an address"))
         assert bad.status_code == 400
         removal = post(browser, proposal(store, operation="remove")).content.decode()
@@ -250,7 +254,9 @@ def test_an_assignment_to_a_deactivated_ministry_is_still_removed(auth_service, 
     with web():
         inactive = post(browser, proposal(store, identity="other@example.org"))
         assert inactive.status_code == 400
-        assert "not an active Ministry" in inactive.content.decode()
+        assert (
+            "is not active in the latest ParishSoft data" in inactive.content.decode()
+        )
         removal = post(browser, proposal(store, operation="remove")).content.decode()
         assert "assignment to Choir (Ministry DUID 4) will be removed" in removal
         # A Ministry the catalog never had is removed by DUID alone.

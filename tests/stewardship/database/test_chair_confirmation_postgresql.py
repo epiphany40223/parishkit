@@ -163,7 +163,7 @@ def test_a_confirmation_creates_the_seeded_rule_assignment_and_evidence(
     with web():
         response = post(browser, proposal(store))
     assert response.status_code == 400
-    assert "already assigned to the address" in response.content.decode()
+    assert "already assigned to that address" in response.content.decode()
 
 
 def two_ministries():
@@ -189,7 +189,7 @@ def test_an_ambiguous_address_needs_its_member_chosen_for_each_row(
     with web():
         refused = post(browser, proposal(store, selection=both))
         assert refused.status_code == 400
-        assert "Choose the Member" in refused.content.decode()
+        assert "Choose a Member under Member to seed" in refused.content.decode()
         # One row answered, the other left at its blank choice.
         partial = post(
             browser,
