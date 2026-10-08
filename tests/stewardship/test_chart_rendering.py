@@ -37,6 +37,25 @@ def render(spec, **options):
     return render_chart(spec, what=WHAT, **options)
 
 
+def own_records(monkeypatch):
+    """Capture ``record_timeout`` calls; return this test's own (``WHAT``) ones.
+
+    The patch is process-wide, and production callers import the recorder
+    lazily, so a daemon thread an earlier test left behind (a lease renewal,
+    a Family mail reaper) can record its own timeout into it while this test
+    waits on a helper (#542, #549). Only records under ``WHAT`` are this
+    test's.
+    """
+    recorded = []
+    monkeypatch.setattr(
+        "parishkit.stewardship.audit.timeouts.record_timeout",
+        lambda event, **facts: recorded.append((event, facts)),
+    )
+    return lambda: [
+        (event, facts) for event, facts in recorded if facts.get("what") == WHAT
+    ]
+
+
 def helper(monkeypatch, code):
     """Make the render helper a Python one-liner, isolated as the real one is."""
     monkeypatch.setattr(chart_rendering, "COMMAND", (sys.executable, "-I", "-c", code))
@@ -136,17 +155,13 @@ def test_a_helper_killed_at_its_limit_is_logged(monkeypatch):
     Through ``helper_timeout_recorder``, as every helper's kill is; whether
     the SQL review admits the names is the first caller's test.
     """
-    recorded = []
-    monkeypatch.setattr(
-        "parishkit.stewardship.audit.timeouts.record_timeout",
-        lambda event, **facts: recorded.append((event, facts)),
-    )
+    recorded = own_records(monkeypatch)
     helper(monkeypatch, "import time; time.sleep(30)")
     started = time.monotonic()
     with pytest.raises(ChartRenderError, match="time limit"):
         render({}, format="svg", limit_seconds=0.5)
     assert time.monotonic() - started < 10
-    ((event, facts),) = recorded
+    ((event, facts),) = recorded()
     assert event is Event.HELPER_TIMED_OUT
     assert facts["what"] == WHAT
     assert facts["helper"] == "chart_render_worker"
@@ -156,11 +171,7 @@ def test_a_helper_killed_at_its_limit_is_logged(monkeypatch):
 
 def test_a_helper_that_writes_but_never_exits_is_killed_at_its_limit(monkeypatch):
     """A whole image is not enough: the helper must also exit in time."""
-    recorded = []
-    monkeypatch.setattr(
-        "parishkit.stewardship.audit.timeouts.record_timeout",
-        lambda event, **facts: recorded.append(facts),
-    )
+    recorded = own_records(monkeypatch)
     helper(
         monkeypatch,
         "import sys, time; sys.stdout.write('<svg/>'); sys.stdout.close(); "
@@ -168,7 +179,7 @@ def test_a_helper_that_writes_but_never_exits_is_killed_at_its_limit(monkeypatch
     )
     with pytest.raises(ChartRenderError, match="time limit"):
         render({}, format="svg", limit_seconds=0.5)
-    assert len(recorded) == 1
+    assert len(recorded()) == 1
 
 
 def test_a_failing_helper_raises_a_fixed_message(monkeypatch):
@@ -200,18 +211,14 @@ def test_a_reply_that_is_not_the_requested_image_is_refused(
 
 def test_an_oversized_image_is_refused_without_reading_it_all(monkeypatch):
     """The reply is read only to its bound; the helper is killed, not logged."""
-    recorded = []
-    monkeypatch.setattr(
-        "parishkit.stewardship.audit.timeouts.record_timeout",
-        lambda event, **facts: recorded.append(facts),
-    )
+    recorded = own_records(monkeypatch)
     monkeypatch.setattr(chart_rendering, "MAX_IMAGE_BYTES", 10)
     # Far more than a pipe buffer, and it never exits on its own.
     helper(monkeypatch, "import sys\nwhile True: sys.stdout.write('x' * 65536)")
     started = time.monotonic()
     with pytest.raises(ChartRenderError, match="too large"):
         render({}, format="svg")
-    assert time.monotonic() - started < 10 and not recorded
+    assert time.monotonic() - started < 10 and not recorded()
 
 
 @pytest.mark.parametrize(
