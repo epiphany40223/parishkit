@@ -1,11 +1,18 @@
 {% load i18n stewardship %}{% comment %}
-  Shared selection controls for an Admin table with bulk actions. Include it
-  first inside the table's <div class="bulk-bar">, then add the page's own
-  action buttons, each marked data-bulk-action. The whole group (bar and
+  Shared selection controls for an Admin table with bulk actions. Inside the
+  table's <div class="bulk-bar">, put the page's own action buttons (each
+  marked data-bulk-action) first and include this last: the selected count
+  and the Select all / Clear selection label change width as rows are
+  ticked, and placed after the actions they never move a button under the
+  pointer (#563). The whole group (bar and
   table) sits inside one element marked data-select-table. ui-v1.js reveals
   the Select all button, wires it with the header checkbox (data-select-all)
   and the row checkboxes (data-select-row), shows the selected count, and
-  enables the action buttons only while at least one row is selected. Without
-  script every control still submits and the server validates the selection.
+  enables the action buttons only while at least one row is selected. While
+  none is, the buttons are described (aria-describedby, plus a title) by a
+  visually hidden hint, the data-select-table element's data-missing-hint
+  (for example "Select at least one file to delete."); no visible line comes
+  and goes, so the page never shifts under the pointer. It re-checks all of
+  this on pageshow (#563). The server validates the selection.
 {% endcomment %}{% button type="button" variant="secondary" data-select-all-button hidden %}{% translate "Select all" %}{% endbutton %}
 <span class="bulk-count" data-selected-count role="status" aria-live="polite"></span>

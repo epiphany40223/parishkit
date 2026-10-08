@@ -516,8 +516,9 @@
     let hint = timeGateHints.get(form);
     const explain = unread && (!defer || Boolean(hint && !hint.hidden));
     if (!hint && explain && buttons.length) {
-      hint = document.createElement("p");
-      hint.className = "help";
+      // Always visually hidden (never toggled), so it never shifts layout.
+      hint = document.createElement("span");
+      hint.className = "visually-hidden";
       timeGateCount += 1;
       hint.id = `time-gate-hint-${timeGateCount}`;
       hint.textContent = "Fix the time that can't be read to continue.";
@@ -616,15 +617,35 @@
   // Shared Admin tables (web/tables.py, table-navigator.html and
   // table-selection.html). Row selection is per page: Select all and the
   // header checkbox choose every enabled row checkbox shown, and bulk action
-  // buttons stay disabled until something is chosen. The server still
-  // validates every submitted selection.
+  // buttons stay disabled until something is chosen. While nothing is, the
+  // buttons say why (the table's data-missing-hint, or a generic line) via
+  // aria-describedby and a title (#563). The hint element stays visually
+  // hidden: a line that appeared and vanished with the first tick shifted
+  // the page under the pointer, so the explanation never takes space. The back/
+  // forward cache can restore ticks without a change event, so every table's
+  // state is worked out again on pageshow. The server still validates every
+  // submitted selection.
+  let selectionUpdates = []; // {scope, update} for each wired table
+  let selectionHints = 0; // numbers each hint's id
   const wireSelection = (scope) => {
     const rows = () => [...scope.querySelectorAll("input[data-select-row]")]
       .filter((node) => !node.disabled);
     const header = scope.querySelector("input[data-select-all]");
     const button = scope.querySelector("[data-select-all-button]");
     const count = scope.querySelector("[data-selected-count]");
-    const actions = scope.querySelectorAll("[data-bulk-action]");
+    const actions = [...scope.querySelectorAll("[data-bulk-action]")];
+    let hint = null;
+    if (actions.length) {
+      // Always visually hidden (never toggled), so it never shifts layout.
+      hint = document.createElement("span");
+      hint.className = "visually-hidden";
+      selectionHints += 1;
+      hint.id = `selection-hint-${selectionHints}`;
+      hint.setAttribute("data-selection-hint", "");
+      hint.textContent = scope.dataset.missingHint || "Select at least one row first.";
+      const last = actions[actions.length - 1];
+      (last.closest(".bulk-bar") || last).after(hint);
+    }
     const update = () => {
       const all = rows();
       const chosen = all.filter((node) => node.checked).length;
@@ -638,7 +659,25 @@
         button.textContent = every ? "Clear selection" : "Select all";
       }
       if (count) count.textContent = chosen ? `${chosen} selected` : "";
-      actions.forEach((node) => { node.disabled = !chosen; });
+      // With no rows at all the table itself says it is empty.
+      const explain = Boolean(hint) && !chosen && all.length > 0;
+      actions.forEach((node) => {
+        node.disabled = !chosen;
+        const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
+          .filter((id) => id && id !== hint?.id);
+        if (explain) described.push(hint.id);
+        if (described.length) node.setAttribute("aria-describedby", described.join(" "));
+        else node.removeAttribute("aria-describedby");
+        // A hover tooltip for sighted readers; only a title this code set is
+        // removed again, so a template's own title survives.
+        if (explain && !node.title) {
+          node.title = hint.textContent;
+          node.dataset.selectionTitle = "";
+        } else if (!explain && "selectionTitle" in node.dataset) {
+          node.removeAttribute("title");
+          delete node.dataset.selectionTitle;
+        }
+      });
     };
     const choose = (checked) => {
       rows().forEach((node) => { node.checked = checked; });
@@ -653,8 +692,16 @@
       if (event.target instanceof HTMLInputElement
           && event.target.matches("[data-select-row]")) update();
     });
+    // A table an in-place swap replaced no longer needs its re-check.
+    selectionUpdates = selectionUpdates.filter((item) => item.scope.isConnected);
+    selectionUpdates.push({scope, update});
     update();
   };
+  window.addEventListener("pageshow", () => {
+    selectionUpdates.forEach(({scope, update}) => {
+      if (scope.isConnected) update();
+    });
+  });
   // A new rows-per-page choice applies at once and starts again at page 1.
   // The submission has no submitter, so the select is noted for the in-place
   // handler below, which puts focus back on its replacement.
@@ -2182,7 +2229,10 @@
 
   // Optional modules remain ordinary accessible fieldsets without JavaScript.
   // Hidden fields are disabled, not silently copied into submitted data. The
-  // server independently rejects stray data for every disabled module.
+  // server independently rejects stray data for every disabled module. The
+  // back/forward cache can restore a module's tick without a change event,
+  // so every group is set again on pageshow (#563); otherwise a restored
+  // Financial tick could leave its fields disabled and unsent.
   document.querySelectorAll("[data-campaign-form]").forEach((form) => {
     form.querySelectorAll("[data-campaign-module]").forEach((group) => {
       const toggle = document.getElementById(group.dataset.campaignModule);
@@ -2198,8 +2248,12 @@
           });
           initialized = true;
         }
+        // A form that adopts the complete-before-submit gate sees the
+        // fields this shows or hides, also after a pageshow re-run.
+        gateComplete(form);
       }
       toggle.addEventListener("change", update);
+      window.addEventListener("pageshow", update);
       update();
     });
   });
@@ -2251,6 +2305,8 @@
   // the campaign share at least one day (campaign_forms.overlaps). Hidden, it
   // is also unchecked so a stale confirmation is never submitted. The server
   // renders it visible whenever it is needed, so this is only a convenience.
+  // Restored dates (the back/forward cache) fire no event: pageshow checks
+  // again (#563).
   document.querySelectorAll("[data-overlap-confirmation]").forEach((group) => {
     const form = group.closest("form");
     const box = group.querySelector('input[type="checkbox"]');
@@ -2267,9 +2323,11 @@
         && periodStart <= end && periodEnd >= start);
       group.hidden = !needed;
       if (!needed) box.checked = false;
+      gateComplete(form); // As for campaign modules above.
     };
     form.addEventListener("input", update);
     form.addEventListener("change", update);
+    window.addEventListener("pageshow", update);
     update();
   });
 
@@ -2279,7 +2337,11 @@
   // or weekday is never submitted. When the page first loads, a field the
   // server reported an error on stays visible with its value, so the message
   // can be read and acted on. Without this script every field shows and the
-  // server still explains any value that does not apply.
+  // server still explains any value that does not apply. A mail type the
+  // back/forward cache restored fires no change event, so each row is set
+  // again on pageshow (#563); a row still showing the type the server drew
+  // keeps its reported errors in view, as on first load.
+  let scheduleUpdates = []; // {row, update} for each wired schedule row
   const scheduleRow = (row) => {
     let rules;
     try { rules = JSON.parse(row.dataset.scheduleFields); } catch { return; }
@@ -2304,11 +2366,22 @@
         !option.value || !option.dataset.kind || option.dataset.kind === kind.value));
       template.value = [...template.options].some((option) => option.value === selected)
         ? selected : "";
+      gateComplete(row.closest("form")); // As for campaign modules above.
     };
     kind.addEventListener("change", () => update(false));
+    // The type the server drew: a cloned blank row's first (empty) option.
+    const drawn = ([...kind.options].find((option) => option.defaultSelected)
+      || kind.options[0])?.value;
+    scheduleUpdates = scheduleUpdates.filter((item) => item.row.isConnected);
+    scheduleUpdates.push({row, update: () => update(kind.value === drawn)});
     update(true);
   };
   document.querySelectorAll("[data-schedule-row]").forEach(scheduleRow);
+  window.addEventListener("pageshow", () => {
+    scheduleUpdates.forEach(({row, update}) => {
+      if (row.isConnected) update();
+    });
+  });
 
   // "Add another schedule" clones the formset's empty form (rendered in a
   // <template> with __prefix__ names) as the next index and raises
