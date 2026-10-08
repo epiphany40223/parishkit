@@ -269,17 +269,21 @@ and Admin confirmation.
 
 1. An operator runs the minimal bootstrap command and starts Compose.
 2. The initial Admin authenticates with Google and completes the transactional
-   setup wizard, including an initial ParishSoft load and the first campaign.
-3. Admins preview pages/mail, exercise Testing mode, and correct configuration.
-4. A readiness workflow verifies integrations and deletes segregated test
+   setup wizard, including an initial ParishSoft load. Setup creates no
+   campaign.
+3. An Administrator creates the campaign with
+   [Create the campaign](admin-portal/spec.md#create-the-campaign); its
+   ParishSoft refresh adds the campaign's giving and Family codes.
+4. Admins preview pages/mail, exercise Testing mode, and correct configuration.
+5. A readiness workflow verifies integrations and deletes segregated test
    responses before moving to Production and truthfully selecting `scheduled`
    or `active` from the commit instant.
-5. The system opens the campaign, sends idempotent scheduled invitations and
+6. The system opens the campaign, sends idempotent scheduled invitations and
    reminders, refreshes ParishSoft, collects versioned responses, and reports
    progress.
-6. Staff and assigned leaders perform follow-up while Admins review and publish
+7. Staff and assigned leaders perform follow-up while Admins review and publish
    supported census changes in batches.
-7. The campaign closes; remaining Ministry, financial, and unsupported census
+8. The campaign closes; remaining Ministry, financial, and unsupported census
    work is exported/resolved and the campaign is archived.
 
 ## Global presentation rules
