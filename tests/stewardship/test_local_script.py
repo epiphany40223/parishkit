@@ -118,6 +118,7 @@ def test_the_guide_and_specification_are_cross_linked():
         "down",
         "ca",
         "rehearse",
+        "spike",
     ):
         assert f"`{command}" in GUIDE.read_text(), command
     # The spec's command table names every laptop command the script accepts.
@@ -125,6 +126,8 @@ def test_the_guide_and_specification_are_cross_linked():
         "`start`",
         "`deploy [--schema-change] [--bulk on\\|off] [--smtp-latency-ms N]`",
         "`rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]`",
+        "`spike [--families N] [--sources S] [--during-send] [--wait MIN] "
+        "[--label NAME]`",
         "`deploy --rollback`",
         "`reset --reinstall`",
         "`down`",
@@ -457,6 +460,42 @@ def test_rehearse_checks_its_options_then_runs_the_vm_half(tmp_path):
         assert ssh_calls(calls) == [], args
 
 
+def test_spike_checks_its_options_then_runs_the_vm_half(tmp_path):
+    """Defaults, explicit options, and refusals before ssh."""
+    result, calls, _ = run_local(tmp_path, "spike")
+    assert result.returncode == 0, result.stderr
+    assert vm_commands(calls) == ["spike 200 8 0 20 spike"]
+    _, calls, _ = run_local(
+        tmp_path / "options",
+        "spike",
+        "--families",
+        "1100",
+        "--sources",
+        "16",
+        "--during-send",
+        "--wait",
+        "90",
+        "--label",
+        "launch-1100",
+    )
+    assert vm_commands(calls) == ["spike 1100 16 1 90 launch-1100"]
+    for n, args in enumerate(
+        (
+            ("--families", "0"),
+            ("--families", "5001"),
+            ("--sources", "33"),
+            ("--sources", "x"),
+            ("--wait", "0"),
+            ("--wait", "241"),
+            ("--label", "a b"),
+            ("--bogus",),
+        )
+    ):
+        result, calls, _ = run_local(tmp_path / f"bad{n}", "spike", *args)
+        assert result.returncode != 0, args
+        assert ssh_calls(calls) == [], args
+
+
 def test_deploy_rollback_uploads_the_host_half_without_building(tmp_path):
     """--rollback needs no checkout: upload, then the VM half's rollback."""
     result, calls, stdins = run_local(tmp_path, "deploy", "--rollback")
@@ -629,6 +668,11 @@ case "$*" in
             echo "{\"Service\":\"$s\",$fields,\"ExitCode\":$code}"
         done ;;
     *" run --rm -T "*) echo '{"ok": true}' ;;
+    *" ps -q postgres") [ -n "$FAKE_NO_POSTGRES" ] || echo pgcontainer ;;
+    *" local-spike --profile local "*)
+        # One shard's document; FAKE_SHARD_FAIL makes shard 1 fail.
+        case "$*" in *"--shard 1 "*) [ -z "$FAKE_SHARD_FAIL" ] || exit 3 ;; esac
+        echo '{"check": "spike", "families": 2}' ;;
 esac
 exit 0
 """
@@ -1411,3 +1455,117 @@ def test_rehearse_needs_a_seeded_set_up_deployment(tmp_path):
             tmp_path / f"bad{n}", "rehearse", *args, status=1, prepare=installed
         )
         assert "rehearse" in output and calls == [], args
+
+
+def test_spike_needs_a_seeded_set_up_deployment(tmp_path):
+    """Fake clock (unseeded) or an unfinished wizard: no shard is started."""
+    calls, output, _ = run_vm(
+        tmp_path / "fake",
+        "spike",
+        "200",
+        "8",
+        "0",
+        "20",
+        "spike",
+        status=1,
+        prepare=lambda root, etc, snapshots: installed(
+            root, etc, snapshots, mode="fake"
+        ),
+    )
+    assert "seeded deployment (normal clock mode)" in output
+    assert not any("local-spike" in call for call in calls)
+    calls, output, _ = run_vm(
+        tmp_path / "wizard", "spike", "200", "8", "0", "20", "spike", status=1,
+        prepare=installed,
+    )  # fmt: skip
+    assert "setup wizard has not completed" in output
+    assert not any("local-spike" in call for call in calls)
+    _, output, _ = run_vm(tmp_path / "args", "spike", "200", status=1)
+    assert "spike needs FAMILIES SOURCES DURING_SEND WAIT LABEL" in output
+    for n, args in enumerate(
+        (("200", "8", "0", "20", "../x"), ("200", "8", "2", "20", "spike"))
+    ):
+        calls, output, _ = run_vm(
+            tmp_path / f"bad{n}", "spike", *args, status=1, prepare=installed
+        )
+        assert "spike" in output and calls == [], args
+
+
+def spike_ready(root, etc, snapshots):
+    """A seeded, set-up deployment whose Caddy has written its root certificate."""
+    installed(root, etc, snapshots)
+    crt = root / "run/persistent/caddy/data/caddy/pki/authorities/local/root.crt"
+    crt.parent.mkdir(parents=True)
+    crt.write_text("-----BEGIN CERTIFICATE-----\n")
+
+
+def test_spike_runs_every_shard_then_the_offline_report(tmp_path):
+    """The success path: postgres found, S labeled shards, run record, report."""
+    calls, output, _ = run_vm(
+        tmp_path,
+        "spike",
+        "4",
+        "2",
+        "0",
+        "1",
+        "t1",
+        prepare=spike_ready,
+        env={"FAKE_COMPLETED": "t"},
+    )
+    shards = [call for call in calls if " local-spike --profile local " in call]
+    assert len(shards) == 2
+    # The shards run in parallel, so their calls are logged in either order.
+    assert sorted(int(c.split("--shard ")[1].split()[0]) for c in shards) == [0, 1]
+    for call in shards:
+        assert "--network parishkit-local_ingress" in call
+        assert "--label parishkit.local.spike=t1-" in call
+        assert "--shards 2 --families 4" in call
+        assert "--since 1970-01-01T00:00:00Z --wait-seconds 60" in call
+        assert "--ca-file /spike/root.crt" in call
+    # The deadlock counter is read in the postgres container, before and after.
+    assert sum("exec -i -e PGOPTIONS" in call and "pgcontainer" in call
+               for call in calls) == 2  # fmt: skip
+    report = first(calls, "local-spike-report --input /spike")
+    assert report > max(calls.index(call) for call in shards)
+    # Leftover shards of this run are looked for by its label.
+    assert any("ps -aq --filter label=parishkit.local.spike=t1-" in c for c in calls)
+    (run,) = (tmp_path / "logs").glob("stewardship-spike-t1-*")
+    meta = json.loads((run / "meta.json").read_text())
+    assert meta["families"] == 4 and meta["failed_shards"] == 0
+    assert (run / "shard-0.json").read_text().startswith('{"check": "spike"')
+    assert "Spike t1 passed" in output
+
+
+def test_spike_counts_a_failed_shard_and_still_reports(tmp_path):
+    """One shard failing is recorded for the report, not fatal to the others."""
+    calls, output, _ = run_vm(
+        tmp_path,
+        "spike",
+        "4",
+        "2",
+        "0",
+        "1",
+        "t2",
+        prepare=spike_ready,
+        env={"FAKE_COMPLETED": "t", "FAKE_SHARD_FAIL": "1"},
+    )
+    (run,) = (tmp_path / "logs").glob("stewardship-spike-t2-*")
+    assert json.loads((run / "meta.json").read_text())["failed_shards"] == 1
+    assert "1 of 2 shards failed" in output
+    assert any("local-spike-report" in call for call in calls)
+
+
+def test_spike_refuses_without_postgres_or_the_certificate(tmp_path):
+    """Nothing starts when postgres is down or Caddy has no root certificate."""
+    calls, output, _ = run_vm(
+        tmp_path / "pg", "spike", "4", "2", "0", "1", "t3", status=1,
+        prepare=spike_ready, env={"FAKE_COMPLETED": "t", "FAKE_NO_POSTGRES": "1"},
+    )  # fmt: skip
+    assert "postgres is not running" in output
+    assert not any("local-spike" in call for call in calls)
+    calls, output, _ = run_vm(
+        tmp_path / "crt", "spike", "4", "2", "0", "1", "t4", status=1,
+        prepare=installed, env={"FAKE_COMPLETED": "t"},
+    )  # fmt: skip
+    assert "local root certificate" in output
+    assert not any("local-spike" in call for call in calls)

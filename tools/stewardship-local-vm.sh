@@ -31,6 +31,12 @@
 #   rehearse DUE_IN SEND_ONLY TIMEOUT LABEL
 #                                       add a Reminder due in DUE_IN minutes, measure its
 #                                       send (BG-12 rehearsal) and print the report
+#   spike FAMILIES SOURCES DURING_SEND WAIT LABEL
+#                                       the launch-day spike check (#392 M3): SOURCES
+#                                       shard containers on the ingress network open and
+#                                       submit FAMILIES Families' emailed links through
+#                                       Caddy, beside a new Reminder send when DURING_SEND
+#                                       is 1, for at most WAIT minutes; prints the report
 #   wizard                              complete the setup wizard unattended through
 #                                       its own service layer (LOCAL convenience)
 #   sign-in EMAIL                       print a local test sign-in link (OPS-10.08)
@@ -1240,11 +1246,107 @@ cmd_ca() {
     cat "$crt"
 }
 
+spike_label=""
+spike_stopped() {
+    # Remove this run's shard containers that are still there; bounded and
+    # logged, never fatal (it also runs from the EXIT trap).
+    local -a ids=()
+    [ -n "$spike_label" ] || return 0
+    while IFS= read -r line; do [ -z "$line" ] || ids+=("$line"); done < <(
+        docker ps -aq --filter "label=$spike_label" 2>/dev/null)
+    [ "${#ids[@]}" -eq 0 ] ||
+        timed 60 "removing leftover spike shards" docker rm -f "${ids[@]}" >/dev/null || true
+}
+
+cmd_spike() {
+    # The launch-day spike check (local-environment specification, "Spike
+    # check"; spike.py). Each shard is a one-off container on the ingress
+    # network, so it reaches Caddy and Mailpit by name and is its own source
+    # address; the report runs offline over the shard documents.
+    local families=$1 sources=$2 during_send=$3 wait=$4 label=$5
+    local out since due started before after rc=0 shard pids=() failed=0
+    [[ $families =~ ^[0-9]+$ && $sources =~ ^[0-9]+$ && $during_send =~ ^[01]$ && $wait =~ ^[0-9]+$ ]] ||
+        refuse "spike needs whole-number FAMILIES, SOURCES, DURING_SEND (0 or 1) and WAIT."
+    [[ $label =~ ^[A-Za-z0-9._-]{1,40}$ ]] || refuse "spike LABEL must be 1-40 letters, digits, '.', '_' or '-'."
+    require_marker
+    load_env
+    [ "$(clock_mode)" = normal ] ||
+        refuse "The spike check runs on a seeded deployment (normal clock mode); seed it first, or 'reset --seeded'."
+    select_compose
+    [ "$(setup_completed)" = t ] || refuse "The setup wizard has not completed; refusing."
+    # psql_query (the deadlock counter) runs in this container, as rehearse's do.
+    pg_container=$("${dc[@]}" ps -q postgres)
+    [ -n "$pg_container" ] || refuse "postgres is not running; 'start' first."
+    local crt="$root/run/persistent/caddy/data/caddy/pki/authorities/local/root.crt"
+    [ -f "$crt" ] || refuse "Caddy has not written its local root certificate yet ($crt)."
+    # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log.
+    out=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-spike-$label-$(date -u +%Y%m%dT%H%M%SZ)
+    install -d -m 0755 "$out"
+    install -m 0644 "$crt" "$out/root.crt"
+    started=$(date -u +%FT%TZ)
+    before=$(psql_query "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()")
+    if [ "$during_send" = 1 ]; then
+        # Families read only mail that arrives from now on: the new send's.
+        since=$started
+        due=$(date -u -d "@$(( ($(date -u +%s) / 60 + 3) * 60 ))" +%FT%TZ)
+        step "Spike $label: a Reminder due $due, then $families Families from $sources sources as its mail arrives"
+        seed_now=$(date -u +%FT%TZ)
+        seed_scale=1
+        seed_step 600 reminder web web.yaml --due-at "$due"
+    else
+        since=1970-01-01T00:00:00Z
+        step "Spike $label: $families Families from $sources sources, from the mail already in Mailpit"
+    fi
+    echo "    files: $out"
+    chown -R 10001:10001 "$out"
+    # Every shard container carries this run's label, so an interrupted run
+    # (or a shard its time limit killed) leaves none behind.
+    spike_label="parishkit.local.spike=$label-$$"
+    trap 'spike_stopped' EXIT
+    for (( shard = 0; shard < sources; shard++ )); do
+        timed $(( wait * 60 + 300 )) "spike shard $shard" \
+            docker run --rm --init --label "$spike_label" \
+            --user 10001:10001 --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true --network "${project}_ingress" \
+            --mount "type=bind,source=$out,target=/spike,readonly" "$IMAGE" \
+            local-spike --profile local --shard "$shard" --shards "$sources" \
+            --families "$families" --concurrency 4 --since "$since" \
+            --wait-seconds $(( wait * 60 )) --ca-file /spike/root.crt \
+            >"$out/shard-$shard.json" &
+        pids+=("$!")
+    done
+    for pid in "${pids[@]}"; do wait "$pid" || failed=$((failed + 1)); done
+    [ "$failed" -eq 0 ] || echo "    $failed of $sources shards failed; the report reads the rest." >&2
+    after=$(psql_query "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()")
+    jq -n --arg label "$label" --arg image "$IMAGE" --argjson families "$families" \
+        --argjson sources "$sources" \
+        --argjson during_send "$( [ "$during_send" = 1 ] && echo true || echo false )" \
+        --arg started "$started" --arg finished "$(date -u +%FT%TZ)" \
+        --argjson before "${before:-null}" --argjson after "${after:-null}" \
+        --argjson failed "$failed" \
+        '{label: $label, image: $image, families: $families, sources: $sources,
+          during_send: $during_send, started_at: $started, finished_at: $finished,
+          deadlocks_before: $before, deadlocks_after: $after,
+          failed_shards: $failed}' >"$out/meta.json"
+    chown -R 10001:10001 "$out"
+    step "Report"
+    trap - EXIT
+    spike_stopped
+    "${isolated[@]}" --mount "type=bind,source=$out,target=/spike" \
+        "$IMAGE" local-spike-report --input /spike | tee "$out/report.txt" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        echo "Spike $label passed; files in $out."
+    else
+        echo "Spike $label did NOT pass (report exit $rc); files in $out." >&2
+    fi
+    return "$rc"
+}
+
 # ---------------------------------------------------------------------------
 # Long-running commands keep their whole log on the VM under /var/log, as
 # the upgrade script does; the short ones print only their answer.
 case "$command" in
-    build|up|snapshot|reset|wipe|seed|wizard|start|down|deploy|rollback|rehearse)
+    build|up|snapshot|reset|wipe|seed|wizard|start|down|deploy|rollback|rehearse|spike)
         # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log.
         log=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-local-$command-$(date -u +%Y%m%dT%H%M%SZ).log
         exec > >(tee -a "$log") 2>&1
@@ -1265,6 +1367,7 @@ case "$command" in
         [ $# -eq 3 ] || [ $# -eq 5 ] || refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY]"
         cmd_deploy "$@" ;;
     rehearse) [ $# -eq 4 ] || refuse "rehearse needs DUE_IN SEND_ONLY TIMEOUT LABEL"; cmd_rehearse "$@" ;;
+    spike) [ $# -eq 5 ] || refuse "spike needs FAMILIES SOURCES DURING_SEND WAIT LABEL"; cmd_spike "$@" ;;
     rollback) cmd_rollback "${1:?rollback needs HOST_SCRIPT}" ;;
     seed) cmd_seed "${1:-1}" ;;
     wizard) cmd_wizard ;;

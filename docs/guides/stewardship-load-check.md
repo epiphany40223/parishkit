@@ -8,6 +8,12 @@ count, run against the validation deployment before the pre-launch gate.
 says how to run it. Scale fixtures and enforced latency budgets
 (ARC-08.01 and ARC-08.05) remain deferred.
 
+The load check is read-only, so it does not cover the launch-day spike:
+Families opening their emailed links and submitting through Caddy and
+gunicorn while mail is still going out. That check writes submissions, so it
+runs only on the local deployment:
+[checking the launch-day spike](stewardship-local-environment.md#checking-the-launch-day-spike).
+
 ## What it measures
 
 The targets are the
