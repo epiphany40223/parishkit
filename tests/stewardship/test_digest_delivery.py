@@ -101,6 +101,9 @@ def test_compiled_report_roundtrips_through_actual_private_decoder_and_mime():
         len(images) == 1 and images[0].get_payload(decode=True) == compiled.chart.data
     )
     assert images[0]["Content-ID"] == f"<{CHART_ID}>"
+    # Admin reports use the desktop column (#720), not the 600px Family one.
+    html = mime.get_body(preferencelist=("html",)).get_content()
+    assert "max-width:960px" in html
     assert "Report" not in repr(mail) and "admin@example.org" not in repr(mail)
 
 
@@ -140,6 +143,7 @@ def test_malformed_mail_rejected_before_provider_io(changes):
         "duplicate",
         "width",
         "alt",
+        "long_alt",
         "event",
         "anchor_cid",
         "style",
@@ -161,7 +165,9 @@ def test_digest_html_cannot_add_authored_images_or_executable_markup(defect):
     elif defect == "width":
         html = html.replace('width="720"', 'width="2000"')
     elif defect == "alt":
-        html = html.replace(CHART_ALT, "Different")
+        html = html.replace(f'alt="{CHART_ALT}"', 'alt=""')
+    elif defect == "long_alt":
+        html = html.replace(CHART_ALT, "x" * 501)
     elif defect == "event":
         html = html.replace("<img ", '<img onerror="alert(1)" ')
     elif defect == "anchor_cid":

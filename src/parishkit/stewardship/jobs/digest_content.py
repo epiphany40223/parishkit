@@ -1,5 +1,6 @@
 """Individually routed Administrator digests with mandatory compiled facts."""
 
+import re
 from dataclasses import dataclass
 
 from parishkit.stewardship.accounts.policy_schema import normalized_email
@@ -23,7 +24,8 @@ from .outbox_validation import DeliveryIdentity, RenderInput, WeeklyRenderInput
 class DigestTemplate:
     """Parish-authored introduction cannot replace the required compiled report."""
 
-    subject: str = "{{ campaign_name }} — daily report"
+    # The envelope appends the report kind, its date and the parish (#720).
+    subject: str = "{{ campaign_name }}"
     html: str = ""
     text: str = ""
 
@@ -34,6 +36,66 @@ class DigestTemplate:
             self.html, text=self.text
         ) != SafeContent(self.html, self.text):
             raise ValueError("Admin digest template requires canonical safe content.")
+
+
+# Room for the "[TEST] " prefix within the 254-character subject limit.
+MAX_SUBJECT = 247
+
+
+# Whole words that show an authored subject already names the kind of report
+# ("Reporting on …" does not).
+REPORT_WORDS = re.compile(r"\b(?:reports?|digests?|summary|summaries)\b", re.I)
+
+
+def _has_word(text, word):
+    """Whether ``text`` contains ``word`` as a whole word, ignoring case."""
+    return re.search(rf"\b{re.escape(word)}\b", text, re.I) is not None
+
+
+def identified_subject(authored, report, *, campaign, parish):
+    """Make the subject name the report and its day, the campaign and parish once.
+
+    The report emails open straight into their content (#720), so the subject
+    is the only place that names them. ``report`` is the compiled title and
+    date, for example "Weekly information digest — October 5, 2026". The
+    Administrator's subject is kept and only what it lacks is appended:
+
+    - the report's kind, "daily report" or "weekly report" (just "report"
+      when the subject already says daily or weekly), unless the subject
+      already names a report, digest or summary as a whole word;
+    - the date;
+    - in parentheses, "manual" or "recovery" and the campaign and parish
+      names, each only when missing.
+
+    For example "Annual campaign — daily report, November 2, 2026 (Example
+    Parish)". A subject too long for the limit loses the end of the
+    Administrator's text, never the appended date or names.
+    """
+    title, _, when = report.rpartition(" — ")
+    base = " ".join(authored.split())
+    kind = "weekly" if _has_word(title, "weekly") else "daily"
+    if not REPORT_WORDS.search(base):
+        label = "report" if _has_word(base, kind) else f"{kind} report"
+        base = f"{base} — {label}" if base else f"{kind.title()} report"
+    suffix = f", {when}" if when and when.casefold() not in base.casefold() else ""
+    notes = [
+        word
+        for word in ("manual", "recovery")
+        if _has_word(title, word) and not _has_word(base, word)
+    ]
+    notes += [
+        name
+        for name in (campaign, parish)
+        if name and name.casefold() not in (base + suffix).casefold()
+    ]
+    if notes:
+        suffix += f" ({', '.join(notes)})"
+    room = MAX_SUBJECT - len(suffix)
+    if len(base) > room:
+        # Keep what the report adds; shorten the Administrator's text.
+        base = base[: max(room - 1, 0)].rstrip() + "…"
+    subject = base + suffix
+    return subject if len(subject) <= MAX_SUBJECT else subject[: MAX_SUBJECT - 1] + "…"
 
 
 def render_digest_envelope(
@@ -78,7 +140,12 @@ def render_digest_envelope(
         bounded_text(value)
     if normalized_email(recipient) != recipient:
         raise ValueError("Admin digest requires one canonical intended recipient.")
-    subject = render_template(template.subject, values, subject=True)
+    subject = identified_subject(
+        render_template(template.subject, values, subject=True),
+        content.subject,
+        campaign=" ".join(values.get("campaign_name", "").split()),
+        parish=" ".join(values.get("parish_name", "").split()),
+    )
     html = render_template(template.html, values, html=True)
     text = render_template(template.text, values)
     # Validate authored substitutions together before appending compiler-owned

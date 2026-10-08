@@ -1660,6 +1660,39 @@ retries while that exact generation is building; a failed materialization makes
 the digest visibly failed/retryable rather than substituting stale or mixed
 facts. Later source/status changes do not rewrite the sent digest.
 
+The email is desktop-first and visual
+([#720](https://github.com/epiphany40223/parishkit/issues/720)): a 960px
+column (fixed at 960px in Outlook for Windows; a narrower window shrinks it),
+not the 600px column of Family mail. It says each fact once and opens with its
+content. The subject names the report, its report day, the campaign and the
+parish, each once. The Administrator's subject is kept and only what it lacks
+is appended: the report's short name ("daily report", or just "report" when
+it already says daily or weekly) unless it already names a report, digest or
+summary as a whole word; the date; and, in parentheses, "manual" or
+"recovery" and the campaign or parish name when missing. A subject too long
+for the limit loses the end of the Administrator's text, never what is
+appended. The default subject
+"{{ campaign_name }} — daily report" (weekly: "— weekly report") reads
+"Annual campaign — daily report, October 6, 2026 (Example Parish)". The body has no title
+or name line; it starts with the as-of line, the only place that names the
+time zone (a recovery digest starts it with the dates it covers). Any
+Administrator-written intro stays above the report. **Campaign totals** follow, one line per
+figure: its label, a bar drawn with table cells (so it shows in every mail
+program, with images off too), and the exact value, for example "Families
+that have responded — 10 out of 93 (10.8%)". Families that have responded are
+drawn against the Families they are out of, and "First submissions that day"
+against the busiest campaign day so far, which is stated beside the number; a
+bar is never drawn full unless the share is complete. Pledges have no bar,
+since their only comparison is a live figure. The chart follows (its date axis
+names no zone), with alt text carrying the same totals, then the day-by-day
+table of the last seven campaign days (every covered date of a recovery
+digest, however many), and the button to the saved report, drawn like the
+Admin portal's primary button (its accent colour, radius, padding and bold
+label, as a table cell so every mail program shows it). There is no small
+print: the ParishSoft connection is on the saved report page. The digest validator
+admits only the compiler's closed set of inline styles, bar colours and table
+attributes, so this markup cannot carry anything else.
+
 If multiple daily digest occurrences are overdue at recovery, the system sends
 one recovery digest per campaign covering the complete missed local-date range.
 It includes per-day rows and the end-of-range cumulative statistics/chart rather
@@ -1677,6 +1710,21 @@ previously digested items that have since become `superseded` or `withdrawn`,
 without repeating withdrawn text unnecessarily. Skip the message if there are
 no new actionable items or corrections; record a successful empty occurrence
 so it does not reconsider the same interval.
+
+The weekly and manual emails use the daily digest's desktop layout and its
+closed set of report markup ([daily campaign digest](#daily-campaign-digest)),
+with no image, and likewise open straight into their content: the subject
+names the report and its capture date, the campaign and the parish, in the
+same way as the daily digest's, so the body has no header line. Each section's heading
+carries its count ("5 new actionable requests", "1 correction to previously
+reported requests"), then one table row per request: the Family, DUID, link
+and submitted time (no zone) on the left and the text on the right. The
+actionable requests are numbered 1, 2, 3 in number cells, not list markers,
+so the numbers are the same in every mail program and a reader can refer back
+to them. A request's text longer than 240 characters is shortened at a word
+boundary and ends with "…" and a "Read the full request" link to its page;
+complete text has neither. Links use the portal's link colour, and the
+report button is the portal's primary button. There is no small print.
 
 Changing Admin recipients does not resend past successful digests. An Admin may
 manually generate/send a new report occurrence, visibly labeled manual and

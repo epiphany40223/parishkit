@@ -79,6 +79,8 @@ def test_real_compiler_decoder_and_mime_have_no_attachment_or_other_recipients()
         "text/html",
     }
     assert "Please call us." in mime.get_body(preferencelist=("plain",)).get_content()
+    # Weekly reports share the daily report's desktop column (#720).
+    assert "max-width:960px" in mime.get_body(preferencelist=("html",)).get_content()
     assert "Please call us." not in repr(mail)
 
 

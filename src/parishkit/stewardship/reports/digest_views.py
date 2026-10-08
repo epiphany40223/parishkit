@@ -23,7 +23,7 @@ from parishkit.stewardship.web.tables import paginate, table_parameters
 
 from .digest_building import retained_daily_document
 from .digest_models import DailyDigestReady, DailyDigestSnapshot
-from .digest_presentation import snapshot_context
+from .digest_presentation import chart_layout, snapshot_context
 from .export_services import admit_campaign
 from .export_views import _principal
 from .facts import FactUnavailable
@@ -143,7 +143,7 @@ def snapshot(request, snapshot_id, *, representation="html"):
                 "configuration__parish", "timezone_configuration", "preparation"
             ).get(pk=snapshot_id)
             ready = DailyDigestReady.objects.only(
-                "id", "snapshot_id", "fact_set_id"
+                "id", "snapshot_id", "fact_set_id", "chart"
             ).get(snapshot=selected)
             document = retained_daily_document(selected, ready.fact_set)
             context = snapshot_context(
@@ -151,6 +151,7 @@ def snapshot(request, snapshot_id, *, representation="html"):
                 mode=selected.preparation.mode,
                 chart_url=reverse("admin:daily_digest_chart", args=[snapshot_id]),
                 download_url=reverse("admin:daily_digest_download", args=[snapshot_id]),
+                plot=chart_layout(bytes(ready.chart)),
             )
             context |= daily_rows(context, paging)
             return iter(

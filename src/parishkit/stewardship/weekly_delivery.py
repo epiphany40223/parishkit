@@ -8,7 +8,7 @@ from parishkit.email.base import Email, build_message
 
 from .family_delivery import _deliver_validated, delivery_settings
 from .jobs.outbox_validation import mailbox, recipients
-from .mail_layout import email_document
+from .mail_layout import REPORT_WIDTH, email_document
 from .provider_check_worker import CheckSession
 from .web.content import bounded_text
 from .web.weekly_digest_content import validate_weekly_body
@@ -96,7 +96,7 @@ class WeeklyDeliveryMail:
                 subject=self.subject,
                 sender=self.sender,
                 to=self.recipients,
-                html=email_document(self.html),
+                html=email_document(self.html, width=REPORT_WIDTH),
                 text=self.text,
             )
         )

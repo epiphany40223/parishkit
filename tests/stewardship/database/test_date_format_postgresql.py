@@ -253,8 +253,11 @@ def test_weekly_digest_keeps_its_snapshot_date_format(live_response_service):
     observed = document.observed_at.astimezone(zone)
     assert document.date_format in (None, "us_long")
     assert content.subject.endswith(dates.format_date(observed.date(), "us_long"))
-    assert dates.format_local(observed, "us_long") in content.text
-    assert dates.format_local(observed, "eu_dot") not in content.text
+    # The body names no capture time (#720); its rows' submitted times use
+    # the pinned style, compact.
+    submitted = document.information[0].submitted_at.astimezone(zone)
+    assert dates.format_local(submitted, "us_long", compact=True) in content.text
+    assert dates.format_local(submitted, "eu_dot", compact=True) not in content.text
 
 
 def test_receipt_uses_its_pinned_configuration_date_format(live_response_service):
