@@ -709,6 +709,114 @@ layout; where the deployment YAML overrides a path, use that path instead.
     off the host is the copy to keep. Keep the moved-aside trees only until
     the restored deployment is accepted, then delete them the same way.
 
+## Comparing a set with another release
+
+Fail forward stays the default, and a set is restored with its own image.
+Only when the Administrator asks to consider restoring a set onto a
+release with a different schema (when `restore-check` reports a mismatch
+and the set's own image is not wanted) does the operator compare the two
+schemas first. `restore-compare` loads the set into a scratch PostgreSQL
+server, migrates a second scratch database with the target image and
+copies it through the same dump and load (so both sides print their
+definitions alike), and prints what differs. It never connects to the deployment's database, changes
+nothing on the host and transforms no data.
+
+Compare only a set whose origin step 2 proved: its `manifest.json` digest
+matched the one the deployment recorded, and `backup-open` opened it with a
+kept key. The load runs the dump's SQL as the scratch server's superuser,
+which can run programs inside that container, so a dump of unknown origin
+must never be loaded, even in scratch.
+
+Run it on the machine that holds the decrypted dump from step 2 (never the
+deployment's host if you can avoid it, and never with the deployment's
+networks attached). The scratch server is the pinned PostgreSQL image on
+memory-backed storage, reachable only on an internal network, with only the
+capabilities its entrypoint needs to set up its data directory and drop to
+its own user:
+
+```sh
+docker network create --internal pk-restore-scratch
+docker run -d --name pk-restore-scratch-pg --network pk-restore-scratch \
+  --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+  --cap-add SETGID --cap-add SETUID --security-opt no-new-privileges:true \
+  --tmpfs /var/lib/postgresql -e POSTGRES_PASSWORD_FILE=/run/pw \
+  --mount type=bind,source=PASSWORD_FILE,target=/run/pw,readonly \
+  POSTGRES_IMAGE
+docker run --rm --network pk-restore-scratch --user "$(id -u):$(id -g)" \
+  --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  --mount type=bind,source=OUTPUT_DIRECTORY,target=/out,readonly \
+  --mount type=bind,source=PASSWORD_FILE,target=/run/pw,readonly \
+  IMAGE restore-compare --dump /out/database.pgdump \
+    --scratch-host pk-restore-scratch-pg --scratch-password-file /run/pw \
+  > compare-report.json 2> compare-log.jsonl
+```
+
+Keep both output files with the restore notes: the report, and the log,
+whose timeout lines say what was stopped, its limit and how long it ran.
+
+`POSTGRES_IMAGE` is the PostgreSQL reference the deployment's Compose file
+pins, `IMAGE` the target release and `PASSWORD_FILE` a new owner-only file
+holding a random password. The command refuses a server that holds any
+database but a fresh server's own (so it cannot run against the deployment's
+cluster) and a login that is not that server's superuser. It loads the dump
+without owners, privileges, subscriptions or publications, in one
+transaction, stopping at the first error, within 30 minutes. Each migration
+statement may run 10 minutes, each catalog query 1 minute and each row count
+5 minutes. A kill at any of these limits is logged with the limit and the
+time the step ran, and the comparison is refused.
+
+It prints one JSON report and exits 0 when the schemas are the same, 3 when
+they differ and 2 when refused. The report lists the migrations each side
+lacks, the tables and columns only in the set or only in the image, the
+columns whose type, nullability, default, identity, generated expression or
+collation changed, and, under `objects`, for each kind of schema object
+(constraints of every kind, indexes, functions by the digest of their full
+definition, triggers, row-level security policies and switches, views,
+sequences, each table's persistence and storage options, and domains and
+enum types) the names only in the set, only in the image, or defined
+differently. It ends with row counts for the set's tables that differ.
+"Same" means every one of those matches. Not compared: owners and
+privileges (`database-grants` sets them on the deployment), schemas other
+than `public` (Stewardship has none), extensions, and composite and range
+types (the schema defines none). The report holds names, definitions and
+counts, never row values.
+
+The two scratch databases are dropped afterwards. `--keep` leaves them (the
+report names them) for an operator-supervised session, in which the
+operator, or an LLM working with the operator, plans from the report and
+experiments there. A kept database is a superuser copy of every Family's
+data:
+
+- **An LLM sees only the report and the catalog** (table, column and object
+  definitions). It never queries rows or reads values, unless the
+  Administrator has explicitly approved that one query beforehand.
+- **The operator stays at the keyboard** for the whole session and runs
+  every statement.
+
+Anything beyond the comparison is a separate decision:
+
+- **The Administrator approves** any plan that restores a set onto another
+  schema, before it touches the deployment.
+- **A data transform** runs only against the scratch copy until it is
+  proved, and then as an operator-run step, never automatically.
+- **Before switching**, the transformed database is verified. Verified
+  means both of these:
+  - a `pg_dump --format=custom` of it, compared with `restore-compare`
+    against the target image on a fresh scratch server, exits 0 (every
+    migration, table, column and schema object above matches);
+  - on the deployment, after the restore, `web` starts (every service
+    refuses a database whose migrations are not exactly its image's, and
+    whose history is inconsistent) and `docker compose ... exec -T web
+    pk-stewardship health --config WEB_CONFIG` passes.
+
+  A fresh backup follows at once.
+- **No Family code, link or credential** is created, replaced or cancelled
+  (the hard rule for emailed credentials).
+
+Destroy the scratch server and its network afterwards
+(`docker rm -f -v pk-restore-scratch-pg`, `docker network rm
+pk-restore-scratch`): it holds the set's data in plain form.
+
 ## Restore limitations in v1
 
 A restore returns the deployment to the backup's moment. v1 has no
