@@ -4,6 +4,14 @@
 <h1>{% translate "Mail message" %}</h1>
 <p>{% if delivery.family__family_duid %}{% translate "Family DUID:" %} {{ delivery.family__family_duid|duid }}{% else %}{% translate "Administrator report" %}{% endif %}</p>
 <p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
+{% if addresses and addresses.partial %}
+<aside class="notice" id="delivery-addresses">
+  <h2>{% blocktranslate count total=addresses.total with reached=addresses.reached %}Delivered to {{ reached }} of {{ total }} address{% plural %}Delivered to {{ reached }} of {{ total }} addresses{% endblocktranslate %}</h2>
+  {% if addresses.transient %}<p>{% blocktranslate count number=addresses.transient %}{{ number }} address was refused for now. It has not been sent again yet; the other addresses already have this email, so it is never resent to them.{% plural %}{{ number }} addresses were refused for now. They have not been sent again yet; the other addresses already have this email, so it is never resent to them.{% endblocktranslate %}</p>{% endif %}
+  {% if addresses.permanent %}<p>{% blocktranslate count number=addresses.permanent %}{{ number }} address was refused permanently and is set aside for this Family.{% plural %}{{ number }} addresses were refused permanently and are set aside for this Family.{% endblocktranslate %} <a href="{% url 'admin:delivery_refusals' %}">{% translate "Refused addresses" %}</a></p>{% endif %}
+  <p class="help">{% translate "The Family's code and link are unchanged, and every address that received this email can use them." %}</p>
+</aside>
+{% endif %}
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Delivery ID" %}</dt><dd>{{ delivery.id }}</dd></dl></details>
 {% if task %}<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Latest background task" %}</a>: {{ task.state|delivery_task_label }}</p>{% endif %}
 {% if delivery.state == 'delivery_unknown' %}
@@ -37,7 +45,7 @@
 <h2>{% translate "Attempt history" %}</h2>
 {% for event in events %}
 <section class="panel">
-  <p>{% translate "Attempt" %} {{ event.attempt|number }} · {{ event|delivery_event_label }} · {{ event.state|delivery_label }}</p>
+  <p>{% translate "Attempt" %} {{ event.attempt|number }} · {{ event|delivery_event_label }} · {{ event.state|delivery_label }}{% if event.addresses and event.addresses.partial %} · {% blocktranslate with reached=event.addresses.reached total=event.addresses.total %}{{ reached }} of {{ total }} addresses reached{% endblocktranslate %}{% endif %}</p>
   <p><time datetime="{{ event.created_at|instant }}" data-local-instant>{{ event.created_at|instant }}</time></p>
 </section>
 {% empty %}<p>{% translate "No attempt history on this page." %}</p>{% endfor %}

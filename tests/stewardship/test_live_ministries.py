@@ -69,7 +69,12 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     assert runtime_functions(ServiceRole.CONFIG_INSTALLER) == {
         MINISTRY_CATALOG_FUNCTION
     }
-    assert runtime_functions(ServiceRole.WEB) == {FAMILY_LOGIN_FUNCTION}
+    # Web also counts the addresses a message reached, never the evidence
+    # itself (#806).
+    assert runtime_functions(ServiceRole.WEB) == {
+        FAMILY_LOGIN_FUNCTION,
+        "stewardship_delivery_addresses_v1(uuid)",
+    }
     # The worker's one definer routine purges ended Admin sessions (ADM-11).
     assert runtime_functions(ServiceRole.WORKER) == {
         "stewardship_admin_session_purge_v1(uuid[])"

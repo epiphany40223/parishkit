@@ -43,6 +43,7 @@ from .delivery_metadata import (
     DELIVERY_SORTING,
     FIELDS,
     STATES,
+    address_outcomes,
     family_duid,
     listing,
     messages,
@@ -294,6 +295,13 @@ def delivery_detail(request, message_id):
             .order_by("-version")
             .values("created_at", "version", "state", "action", "attempt", "reason")
         )
+        # How many addresses each accepted attempt reached (#806): counts
+        # only, from the attempt's validated evidence. The latest accepted
+        # attempt's counts summarize the message whatever page is shown.
+        outcomes = address_outcomes(message_id, message["version"])
+        for event in events:
+            event["addresses"] = outcomes.get(event["version"])
+        reached = outcomes[max(outcomes)] if outcomes else None
         task = (
             TaskRun.objects.filter(root_id=message["task_id"])
             .order_by("-retry_sequence")
@@ -336,6 +344,7 @@ def delivery_detail(request, message_id):
         )
         return dict(
             delivery=message,
+            addresses=reached,
             events=events,
             task=task,
             notes=notes,
