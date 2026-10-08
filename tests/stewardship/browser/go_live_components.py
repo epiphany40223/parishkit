@@ -56,7 +56,10 @@ def components(context, admin):
         "inventory": [("submissions", 1234)],
         "origin_verified": True,
         "cleanup_token": "synthetic-preview",
+        "fresh": True,
     }
+    # A stale sign-in (#547): the step-up in place of the Start button.
+    stale = ready | {"fresh": False}
     progress = {
         "campaign": campaign,
         "status": Value(state="cleanup_failed", checkpoint_sequence=5),
@@ -120,6 +123,12 @@ def components(context, admin):
         )
         for path, template, values in (
             ("/go-live", "stewardship/go-live-readiness.html", ready),
+            ("/go-live-stale", "stewardship/go-live-readiness.html", stale),
+            (
+                "/go-live-stale-local",
+                "stewardship/go-live-readiness.html",
+                stale | {"local_environment": True},
+            ),
             ("/go-live-cleanup", "stewardship/go-live-cleanup.html", progress),
             ("/go-live-links", "stewardship/go-live-links.html", links),
             (

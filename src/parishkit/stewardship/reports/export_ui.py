@@ -12,8 +12,13 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.stewardship.accounts import admin_navigation
+from parishkit.stewardship.accounts.admin_editing import step_up_response
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.sessions import (
+    FreshAuthenticationRequired,
+    require_fresh,
+)
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.queue_wait import queue_wait
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
@@ -39,6 +44,36 @@ from .export_services import (
 from .export_views import SAFE_FAILURES, _body, _principal, download_with_grant
 from .models import CampaignDailyFactSet
 from .workspace import ReportQuery
+
+# Exports whose new file needs a fresh Google sign-in (#547): the directory
+# files carry live Family codes and the financial file financial detail.
+FRESH_REPORTS = frozenset({"family_directory", "postal_outreach", "financial"})
+
+
+def _regenerate_step_up(request, store, principal, request_id):
+    """The step-up page when regenerating this export needs a fresh sign-in.
+
+    A regenerated directory or financial file is a new copy of the same codes
+    or financial detail, so it needs the same fresh sign-in as creating one
+    (#547); the step-up returns to this export's status page. The export's
+    owner and capability are checked first (``authorize``), so its kind is
+    never revealed to anyone else. Returns None when it may be regenerated
+    now; ``regenerate_export`` still rechecks everything under its lock.
+    """
+    export = ExportRequest.objects.only(
+        "report", "requester_id", "authorization_scope"
+    ).get(pk=request_id)
+    authorize(store, principal.identity, request=export)
+    if export.report not in FRESH_REPORTS:
+        return None
+    try:
+        require_fresh(request)
+    except FreshAuthenticationRequired:
+        return step_up_response(
+            reverse("admin:report_export", args=(request_id,)),
+            admin_navigation.PAGES["report_export"].label,
+        )
+    return None
 
 
 def _redirect(identifier):
@@ -306,11 +341,13 @@ def command(request, request_id, *, action):
                 return _error(request, request_id=request_id, status=503, busy=True)
             return response
         elif action == "regenerate":
+            # A malformed key is refused before the export is even looked up.
+            key = UUID(values["request_key"])
+            refused = _regenerate_step_up(request, service.store, principal, request_id)
+            if refused is not None:
+                return refused
             result = regenerate_export(
-                service.store,
-                principal.identity,
-                request_id,
-                request_key=UUID(values["request_key"]),
+                service.store, principal.identity, request_id, request_key=key
             )
             return _redirect(result.pk)
         else:

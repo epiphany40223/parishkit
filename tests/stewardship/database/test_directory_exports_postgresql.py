@@ -33,7 +33,7 @@ from parishkit.stewardship.reports.export_services import (
 from parishkit.stewardship.reports.export_tasks import export_handler
 
 from ..policy_factory import address
-from .auth_builders import signed_in
+from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
 from .response_builders import response_source
 from .test_background_grants_postgresql import task_login
@@ -778,3 +778,99 @@ def test_regenerated_and_retried_exports_read_current_head_emails_after_compacti
     assert rows[1][:3] == ["Example, Member", "1", harness.code]
     assert rows[1][-1] == "Member Example: changed@example.org"
     assert HEAD_EMAILS_DETAIL in details
+
+
+def test_directory_export_and_regenerate_need_a_fresh_sign_in(
+    live_response_service, google, tmp_path, settings, monkeypatch
+):
+    """A stale sign-in queues nothing and returns to the page the form came from.
+
+    After the step-up the same form queues exactly one export, and posting it
+    again returns that export rather than a second one (#547). Regenerate of a
+    directory export asks for the same fresh sign-in, returning to the
+    export's status page.
+    """
+    harness = live_response_service
+    browser, _ = signed_in()
+    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    fields = DirectoryQuery(exact_code=harness.code).form_values() | dict(
+        format="csv", browser_timezone="UTC", request_key=str(uuid4())
+    )
+    stale_sign_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for path, mailing, back in (
+            (route + "export", "no", route),
+            (route + "export", "yes", route + "?mailing=yes"),
+            # The old postal route means the mail merge without a field.
+            (f"/admin/reports/{harness.campaign.pk}/postal/export", None, None),
+        ):
+            values = dict(fields)
+            if mailing is None:
+                values.pop("mailing", None)
+                back = route + "?mailing=yes"
+            else:
+                values["mailing"] = mailing
+            refused = post(browser, path, values, HTTP_ACCEPT="text/html")
+            assert refused.status_code == 403
+            page = refused.content.decode()
+            assert "Confirm with Google" in page and "Nothing was done" in page
+            assert f'name="next" value="{back}"' in page
+            assert "You will then return to Family directory." in page
+            assert harness.code not in page
+        assert not ExportRequest.objects.exists()
+    signed_in(browser)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        created = post(browser, route + "export", fields)
+        assert created.status_code == 302
+        assert (
+            post(browser, route + "export", fields)["Location"] == created["Location"]
+        )
+        assert ExportRequest.objects.count() == 1
+        request = ExportRequest.objects.get()
+    stale_sign_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        refused = post(
+            browser,
+            f"/admin/reports/exports/{request.pk}/regenerate",
+            {"request_key": str(uuid4())},
+            HTTP_ACCEPT="text/html",
+        )
+        assert refused.status_code == 403
+        page = refused.content.decode()
+        assert f'name="next" value="/admin/reports/exports/{request.pk}/"' in page
+        assert "You will then return to Report export." in page
+        assert ExportRequest.objects.count() == 1
+    # Render the file and let it expire; after the step-up, regenerating works.
+    root = tmp_path / "directory-reports"
+    root.mkdir(mode=0o700)
+    settings.STEWARDSHIP_REPORTS_ROOT = root
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        assert execute_hint(
+            request.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={
+                TASK_TYPE: export_handler(
+                    store=harness.service.store,
+                    root=root,
+                    general=harness.rings.general,
+                )
+            },
+        )
+    from parishkit.stewardship.reports import export_services
+
+    with work_transaction():
+        now = export_services.database_now()
+    monkeypatch.setattr(
+        export_services, "database_now", lambda: now + timedelta(days=8)
+    )
+    signed_in(browser)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        key = str(uuid4())
+        regenerated = post(
+            browser,
+            f"/admin/reports/exports/{request.pk}/regenerate",
+            {"request_key": key},
+        )
+        assert regenerated.status_code == 302
+        assert ExportRequest.objects.get(request_key=key).pk != request.pk

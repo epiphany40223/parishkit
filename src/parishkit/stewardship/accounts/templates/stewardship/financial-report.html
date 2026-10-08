@@ -46,6 +46,7 @@
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
 <label for="financial-format">{% translate "Export format" %}</label><select id="financial-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
 <div class="label-row"><label for="financial-export-timezone" id="financial-export-timezone-label">{% translate "Export timezone" %}</label>{% translate "Your browser's time zone is selected when your browser allows it; otherwise UTC is selected. You can change it before exporting." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="financial-export-timezone-tip" tip_label_id="financial-export-timezone-label" tip_text=tip %}</div><select id="financial-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+{% include 'stewardship/export-fresh-help.html' %}
 {% button type="submit" %}{% translate "Queue complete export" %}{% endbutton %}</fieldset></form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <div id="{{ table.anchor }}" data-table-region>

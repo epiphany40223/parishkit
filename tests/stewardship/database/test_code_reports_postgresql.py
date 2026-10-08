@@ -11,7 +11,7 @@ from parishkit.stewardship.campaigns.family_identity import code_context
 from parishkit.stewardship.campaigns.models import Campaign, FamilyCampaign
 
 from ..policy_factory import address
-from .auth_builders import signed_in
+from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import add_draft, change
 from .credential_builders import keys, populate
 
@@ -83,7 +83,7 @@ def test_role_bound_code_report_and_safe_audit(
                     .values_list("context", flat=True)
                 )
                 assert outcomes == [
-                    {"outcome": "started"},
+                    {"outcome": "started", "page": 1},
                     {"outcome": "failed", "count": 0},
                 ]
             return
@@ -104,7 +104,7 @@ def test_role_bound_code_report_and_safe_audit(
             assert event.campaign_reference == campaign.pk
             contexts = [AuditContext.objects.get(event=item).context for item in events]
             assert contexts == [
-                {"outcome": "started"},
+                {"outcome": "started", "page": 1},
                 {"outcome": "succeeded", "count": 1},
             ]
             assert code.decode() not in json.dumps(contexts)
@@ -166,3 +166,55 @@ def test_code_report_sorts_by_duid_on_the_server(auth_service, google, settings)
         finally:
             server.close()
             client.close()
+
+
+def test_code_report_needs_a_fresh_sign_in(auth_service, google, settings):
+    """A stale sign-in gets the step-up page and no code; fresh again, it lists.
+
+    The step-up returns to the same listing with its page, size and sort, and
+    the audit records the page that was opened (#547).
+    """
+    store = auth_service.store
+    result, row, _ = add_draft(store, store.active(), store.active().version_id)
+    campaign = Campaign.objects.get(pk=row["id"])
+    ring = keys()
+    populate(campaign, ring)
+    settings.STEWARDSHIP_FAMILY_RUNTIME = FamilyRuntime(
+        store, auth_service.limiter, ring.general, ring.mac, ring.public
+    )
+    family = FamilyCampaign.objects.get()
+    code = ring.general.decrypt(family.code_ciphertext, context=code_context(family.pk))
+    browser, _ = signed_in()
+    path = f"/admin/campaign/{campaign.pk}/family-codes"
+    stale_sign_in()
+    refused = browser.get(
+        path, data={"page": "1", "size": "25", "sort": "-duid"}, HTTP_ACCEPT="text/html"
+    )
+    assert refused.status_code == 403
+    page = refused.content.decode()
+    assert "Confirm with Google" in page and code.decode() not in page
+    assert f'name="next" value="{path}?page=1&amp;size=25&amp;sort=-duid"' in page
+    assert not AuditEvent.objects.filter(event_type="family_codes_viewed").exists()
+    # The step-up itself (sessions.reauthenticate_admin) refreshes this sign-in.
+    signed_in(browser)
+    server, client = socket.socketpair()
+    try:
+        response = browser.get(
+            path, data={"page": "1", "size": "25"}, **{"gunicorn.socket": server}
+        )
+        assert response.status_code == 200
+        assert code in b"".join(response.streaming_content)
+        response.close()
+    finally:
+        server.close()
+        client.close()
+    contexts = list(
+        AuditContext.objects.filter(event__event_type="family_codes_viewed")
+        .order_by("event__created_at")
+        .values_list("context", flat=True)
+    )
+    assert contexts == [
+        {"outcome": "started", "page": 1},
+        {"outcome": "succeeded", "count": 1},
+    ]
+    assert AuditEvent.objects.filter(event_type="admin_step_up").exists()

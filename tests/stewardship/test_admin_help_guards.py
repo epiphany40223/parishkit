@@ -99,7 +99,8 @@ INTRO_ALLOWED = {
     "setup-source.html": 61,
     "ministry-followup-error.html": 38,
     "setup-content.html": 60,
-    "error.html": 56,
+    # The step-up names its return page when it is another page (#547).
+    "error.html": 61,
     "setup-preview.html": 52,
     "setup-mail.html": 50,
     "setup.html": 46,

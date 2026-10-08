@@ -26,6 +26,7 @@ from .go_live_commands import start_cleanup, verify_preview
 from .go_live_inputs import collect_inputs, recent_cleanup_requests
 from .go_live_progress import control, progress
 from .integration_views import ERRORS, _checked
+from .sessions import freshness
 from .setup_views import _closed, error_response
 
 PROBLEMS = {
@@ -139,6 +140,9 @@ def readiness(request, campaign_id):
                 "inventory": sorted(preview.cleanup.inventory.counts.items()),
                 "origin_verified": verified,
                 "cleanup_token": token,
+                # Starting cleanup needs a recent Google sign-in (#547): until
+                # then the page offers the step-up instead of the Start button.
+                "fresh": token is not None and freshness(request)[0],
                 "cleanup_requests": recent_cleanup_requests(campaign_id),
             },
         )

@@ -49,9 +49,10 @@
 {% if cleanup_token %}
 <section class="panel"><h2>{% translate "Start irreversible Testing cleanup" %}</h2>
 <p>{% translate "Starting cleanup ends Testing access to the Family form (test links and codes stop working) and blocks new Testing work. Deleted data cannot be restored; cancelling later lets Testing work start again but does not bring deleted data back. This does not take the campaign live." %}</p>
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="cleanup"><input type="hidden" name="preview_token" value="{{ cleanup_token }}">
+{% if fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="cleanup"><input type="hidden" name="preview_token" value="{{ cleanup_token }}">
 <label><input type="checkbox" name="acknowledge" value="yes" required data-acknowledgment> {% translate "I acknowledge that deleting the inventoried Testing data is irreversible." %}</label>
 {% button type="submit" %}{% translate "Start Testing cleanup" %}{% endbutton %}</form>
+{% else %}<div class="notice" data-cleanup-step-up><p>{% if local_environment %}{% translate "For your security, confirm your sign-in before starting cleanup. You need to have signed in within the last five minutes. Then select Check readiness and public web address again." %}{% else %}{% translate "For your security, confirm it's you with Google before starting cleanup. You need to have signed in within the last five minutes. You will come back to this page; then select Check readiness and public web address again." %}{% endif %}</p>{% url 'admin:go_live' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>{% endif %}
 </section>
 {% endif %}
 <p><a href="">{% translate "Refresh readiness preview" %}</a></p>

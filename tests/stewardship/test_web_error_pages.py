@@ -6,7 +6,10 @@ import pytest
 from django.db import DatabaseError
 from django.test import RequestFactory, override_settings
 
-from parishkit.stewardship.accounts.admin_editing import error_response
+from parishkit.stewardship.accounts.admin_editing import (
+    error_response,
+    step_up_response,
+)
 from parishkit.stewardship.accounts.sessions import FreshAuthenticationRequired
 from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.storage import StaleRecordError
@@ -147,6 +150,33 @@ def test_refused_gated_post_says_nothing_was_done(kept):
     assert ("will be shown again when you return" in body) is kept
     assert ("enter it again after you return" in body) is not kept
     assert 'name="next" value="/admin/campaign/content/test/y/families/"' in body
+
+
+@pytest.mark.parametrize(
+    "named,expected",
+    [
+        (
+            "/admin/reports/c/families/?mailing=yes",
+            "/admin/reports/c/families/?mailing=yes",
+        ),
+        ("https://example.org/admin/", "/admin/"),
+        ("/admin/login", "/admin/"),
+    ],
+)
+def test_post_only_routes_return_to_the_form_page(named, expected):
+    """A POST-only route's step-up returns to the page its form came from (#547).
+
+    The named page is still revalidated: anything but a same-origin Admin page
+    returns to the Admin home, never to the POST URL.
+    """
+    request = RequestFactory().post("/admin/reports/c/families/export", **PAGE)
+    body = through(request, step_up_response(named, "Family directory")).content
+    body = body.decode()
+    assert "Nothing was done or sent." in body
+    assert f'name="next" value="{expected}"' in body
+    # The page names where the step-up returns, since it is not this page.
+    assert "You will then return to Family directory." in body
+    assert "return to this page" not in body
 
 
 def test_fresh_authentication_for_scripts_stays_a_json_denial():

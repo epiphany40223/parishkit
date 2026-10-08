@@ -111,11 +111,31 @@ def pages():
                 "For security, saving a new key needs a Google sign-in from the"
                 " last five minutes. If yours is older when you choose Save, you"
                 " are asked to confirm it's you with Google first,",
+                "For security, saving or removing settings here needs a"
+                " Google sign-in from the last five minutes.",
             ),
             (
                 "For security, saving a new key needs a sign-in from the last five"
                 " minutes. If yours is older when you choose Save, you are asked"
                 " to confirm your sign-in first,",
+                "For security, saving or removing settings here needs a"
+                " sign-in from the last five minutes.",
+            ),
+        ),
+        # The export panels' hint (#547), shared by the directory and
+        # financial report pages.
+        "export-fresh-help": (
+            "stewardship/export-fresh-help.html",
+            {},
+            (
+                "For security, queuing this export needs a Google sign-in from"
+                " the last five minutes. If yours is older, you are asked to"
+                " confirm it's you with Google first and nothing is queued:",
+            ),
+            (
+                "For security, queuing this export needs a sign-in from the last"
+                " five minutes. If yours is older, you are asked to confirm your"
+                " sign-in first and nothing is queued:",
             ),
         ),
         "credential-selection": (

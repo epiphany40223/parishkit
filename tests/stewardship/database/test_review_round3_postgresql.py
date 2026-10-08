@@ -100,7 +100,7 @@ def test_report_preheader_failures_always_finish_audit(
     response = browser.get(path, **{"gunicorn.socket": server})
     assert response.status_code == status
     assert report_outcomes() == [
-        {"outcome": "started"},
+        {"outcome": "started", "page": 1},
         {"outcome": "failed", "count": 0},
     ]
     assert b"synthetic" not in response.content
