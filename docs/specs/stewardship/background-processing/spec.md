@@ -235,6 +235,29 @@ restarted as a whole. A stale heartbeat alone does not stop it: each late
 observation is logged as a `helper_timed_out` entry (`source_helper`) with
 the limit and the heartbeat's age, and only silence longer than twice the
 container probe's limit stops the worker, logged the same way at `ERROR`.
+A consumer that cannot prove its last task's lease renewal or helper process
+stopped (an undrained renewal, an undrained or ownership-lost provider check)
+stops consuming
+([#386](https://github.com/epiphany40223/parishkit/issues/386)). It logs one
+`task_failed` CRITICAL process-log line naming the failure's class and the
+task, refuses every later hint (the durable task stays queued and is hinted
+again), and stops Celery's loop with status 70 at its next check, after at
+most one more drain cycle (a hint delivered in that cycle is dropped
+unrun). The runtime then stops a sibling consumer the ordinary way (stop
+request, drain within the grace) and exits 70, at once (`os._exit`) only if
+the undrained renewal thread is still alive. When the sibling process is
+the one that fails, it exits 70 and the main process sees an exited
+sibling, so the container exits 1; if the runtime's own cleanup fails, it
+exits 2. Compose restarts the container, and
+the task's lease expires and the scheduler's recovery sweep takes it over
+within its attempt budget, so a failure that recurs on every attempt ends
+in the task's ordinary recovery failure rather than an endless restart
+loop. The CRITICAL line is process-log only and opens no incident; the
+durable trace is the timeout entry the drain failure wrote first
+(`renewal_drain` or the helper's, at ERROR). Status 70 also means the
+export read guard's hard stop (`os._exit(70)` after its deadline), which
+logs its own `read_guard` timeout first; the two are told apart by those
+entries.
 Each process may hold a task connection, a lease-renewal connection and a
 private timeout-log connection, so the worker login's limit is three times
 the rollout overlap; because Compose stops a container before starting its

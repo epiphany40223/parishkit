@@ -116,7 +116,8 @@ def test_source_attachment_requires_exact_owner_and_active_nonnested_lifetime():
 def test_undrained_renewer_is_fatal_even_when_handler_already_failed(
     monkeypatch, body_fails
 ):
-    """Ordinary broker error handling must not resume beside an old live renewer."""
+    """Ordinary broker error handling must not resume beside an old live renewer:
+    the hint task stops the consumer (Celery's stop flag 70, #386 M5)."""
     from parishkit.stewardship.deployment import ServiceRole, ValkeyConfiguration
     from parishkit.stewardship.jobs import broker, lifetime
 
@@ -131,19 +132,34 @@ def test_undrained_renewer_is_fatal_even_when_handler_already_failed(
             if body_fails:
                 raise ValueError("synthetic-handler-failure")
 
+    from threading import Event as ThreadEvent
+
+    from celery.worker import state
+
     monkeypatch.setattr(broker, "consume_hint", consume)
+    monkeypatch.setattr(state, "should_stop", None)
+    monkeypatch.setattr(broker, "_fatal", ThreadEvent())
+    errors = []
+    original = broker.stop_consumer
+    monkeypatch.setattr(
+        broker,
+        "stop_consumer",
+        lambda error, args, stop: (errors.append(error), original(error, args, stop)),
+    )
     runtime = broker.build_broker(
         endpoint=ValkeyConfiguration("valkey", 6379, 0, None),
         password="synthetic-password",
         service=ServiceRole.WORKER,
         handlers={},
     )
-    with pytest.raises(RenewalDrainFailure) as caught:
-        runtime.app.tasks[broker.HINT_TASK].run(str(uuid4()))
+    runtime.app.tasks[broker.HINT_TASK].run(str(uuid4()))
+    assert state.should_stop == broker.FATAL_EXIT_STATUS
+    [error] = errors
+    assert isinstance(error, RenewalDrainFailure)
     assert context.control.failed.is_set() and not context.control.active
     thread.join.assert_called_once_with(timeout=RENEWAL_DRAIN_SECONDS)
     if body_fails:
-        assert isinstance(caught.value.__context__, ValueError)
+        assert isinstance(error.__context__, ValueError)
 
 
 def test_inflight_check_skips_while_this_workers_lock_is_busy(monkeypatch):

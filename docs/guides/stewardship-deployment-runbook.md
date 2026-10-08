@@ -1028,6 +1028,14 @@ issue #460 and belongs on the
 
 ## Known v1 limitations
 
+- A worker or mail-dispatch container that exits with status 70 stopped
+  itself on purpose (see the runtime guide's worker section): Compose
+  restarts it and the interrupted task recovers through its lease. If the
+  sibling process (source, or second mail) stopped itself, the container
+  exits 1 instead, with the same CRITICAL line in its log. No
+  incident opens for it; if it repeats, read the `task_failed` CRITICAL
+  line and the timeout entry before it, and report the task.
+
 - An upgrade cannot add a SQL login, a once-generated password, a runtime
   path or a baseline table to an existing deployment. Before the schema
   freeze such a release is taken by reinstalling; after the freeze, new

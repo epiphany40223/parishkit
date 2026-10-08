@@ -292,7 +292,17 @@ it). A late source heartbeat is only logged (a `helper_timed_out` entry for
 `source_helper` with the limit and how late it was); the worker stops only
 after twice the probe's limit of silence, logged at `ERROR`; a source process that fails to start (for
 example, an unreadable credential) looks the same as the worker failing to
-start. The design and connection budget are in the background-processing
+start. A worker or mail-dispatch container that exits with status 70
+stopped itself: either a consumer could not prove its last task's lease
+renewal or helper stopped (a `task_failed` CRITICAL line in its log, after
+a `renewal_drain` or helper timeout entry), or an export's read guard hit
+its deadline (a `read_guard` timeout entry). When the source or second
+mail process is the one that stopped this way, the container exits 1 (the
+main process stops because its sibling exited), with the same CRITICAL
+line from the sibling in its log. Production restarts it, a
+sibling process is drained first, and the interrupted task recovers through
+its lease; repeated exits on the same task end in that task's ordinary
+recovery failure. The design and connection budget are in the background-processing
 specification's
 [worker queues and processes](../specs/stewardship/background-processing/spec.md#worker-queues-and-processes).
 
