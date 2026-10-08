@@ -3695,7 +3695,12 @@ might be held back:
   with an email address: 1,084 before, 612 after"), marking each one that
   fell too far, and **Accept this change once** (see
   [accept a large ParishSoft change once](#accept-a-large-parishsoft-change-once)).
-  The counts come from the refusal's durable record, not the worker's log.
+  "Before" is the count's highest value over the past week's full refreshes
+  (and the current data, for the eligibility counts), not only the last
+  full refresh. In the example, 1,084 may come from a full refresh three days
+  ago that the last two refreshes each fell below by less than the limit. A
+  caption under the table says so. The counts come from the refusal's
+  durable record, not the worker's log.
 - **A refused organization** (`source_tenant_mismatch`): no button. The
   panel says to stop and check with the parish before changing anything,
   linking the
@@ -4077,7 +4082,7 @@ requires today.
    count's new value is at least the reviewed after value: no count falls
    below what the Administrator saw. The before values are recorded with
    the acceptance but not compared. The eligibility baselines come from the
-   current data as well as the last full refresh, so every quick update can
+   current data as well as the recent full refreshes, so every quick update can
    move them, and binding them would refuse almost every accepted refresh
    while quick updates run every 15 minutes. A count that passed in the
    refusal keeps the limit in effect. A load with no Families or no Members

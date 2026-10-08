@@ -7,7 +7,7 @@ current pointer: validated staging is not a completed campaign refresh.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from itertools import batched
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -76,6 +76,76 @@ class RefreshInputs:
     base: dict | None = field(repr=False)
 
 
+# A load's drop check compares with every full refresh promoted in this many
+# days before it, not only the last one (#387). With frequent full refreshes,
+# each could drop just under the limit from the one before, so a large loss
+# could build up over a few days without any single refusal.
+TREND_DAYS = 7
+
+
+def _resets_trend(snapshot):
+    """Whether this full refresh was accepted past the normal drop limit.
+
+    An operator raises the limit for one refresh to accept a known large
+    change; the trend then starts again from that refresh, so the next one
+    is not compared with the counts before the change. A future one-time
+    Admin acceptance of a refused change must count here too (#530).
+
+    This is deliberately broad: any full refresh whose load ran with a
+    raised limit resets the trend, whether or not anything actually fell,
+    since the manifest records the limit, not why it was raised. That errs
+    toward fewer refusals after an operator has looked, which is the
+    override's purpose; the counts it accepted become the new baseline.
+    """
+    load = snapshot.cursor.get("load") if type(snapshot.cursor) is dict else None
+    limit = load.get("maximum_drop_percent") if type(load) is dict else None
+    return type(limit) is int and limit > DEFAULT_MAXIMUM_DROP_PERCENT
+
+
+def _trend(full, since):
+    """The full refreshes a load compares with: ``full`` (the newest) and any
+    promoted from ``since`` on, newest first, up to and including the first
+    that reset the trend."""
+    recent = (
+        SourceSnapshot.objects.filter(
+            organization_id=full.organization_id,
+            state="promoted",
+            kind="full",
+            generation__lt=full.generation,
+            promoted_at__gte=since,
+        )
+        .order_by("-generation")
+        .only("counts", "cursor", "generation")
+    )
+    trend = [full]
+    for snapshot in (full, *recent):
+        if snapshot is not full:
+            trend.append(snapshot)
+        if _resets_trend(snapshot):
+            break
+    return trend
+
+
+def _largest_counts(trend):
+    """Each record count's largest value over the trend (the newest's kinds).
+
+    A malformed newest value is passed through unchanged, for the count
+    check to refuse as it always has; older malformed values are skipped.
+    """
+    newest = trend[0].counts
+    if type(newest) is not dict:
+        return newest
+    largest = {}
+    for kind, value in newest.items():
+        older = [
+            snapshot.counts[kind]
+            for snapshot in trend[1:]
+            if type(snapshot.counts) is dict and type(snapshot.counts.get(kind)) is int
+        ]
+        largest[kind] = max([value, *older]) if type(value) is int else value
+    return largest
+
+
 def _recorded_derived(snapshot):
     """The derived counts a snapshot's load recorded, or ``None`` if absent."""
     load = snapshot.cursor.get("load") if type(snapshot.cursor) is dict else None
@@ -107,7 +177,12 @@ def _base_cursor(current_id):
 
 
 def _inputs(attempt_id, execution, claim):
-    """Read the actual current base and permanent last-full count evidence."""
+    """Read the actual current base and the permanent full-refresh count trend.
+
+    Record counts are compared with each count's largest value over the
+    recent full refreshes (``_trend``), and derived counts with those
+    refreshes and the current snapshot (#320, #387).
+    """
     with execution.effect():
         attempt = verify_refresh_attempt(attempt_id, execution, claim)
         snapshot = attempt.snapshot
@@ -132,7 +207,8 @@ def _inputs(attempt_id, execution, claim):
             )
             if full is None:
                 raise InvalidSourcePayload("Refresh has no complete full baseline.")
-            counts = full.counts
+            trend = _trend(full, snapshot.started_at - timedelta(days=TREND_DAYS))
+            counts = _largest_counts(trend)
             if snapshot.kind == "delta":
                 base = reconstruct_snapshot(current.snapshot_id)
                 cursor = _base_cursor(current.snapshot_id)
@@ -151,7 +227,9 @@ def _inputs(attempt_id, execution, claim):
                         current.snapshot_id, kinds=("family", "contact")
                     )
                 )
-            derived = derived_baseline(_recorded_derived(full), recorded)
+            derived = derived_baseline(
+                *(_recorded_derived(each) for each in trend), recorded
+            )
         zone = (
             scope.campaign.active_configuration.timezone
             if scope.campaign is not None

@@ -1291,14 +1291,19 @@ The cycle:
 2. Loads source collections into staging with bounded shared retries.
 3. Normalizes IDs/dates/emails/relationships and validates referential
    integrity, uniqueness, pagination completeness, and plausible counts.
-4. Compares core record counts with the last successful full snapshot, and
-   derived eligibility counts (portal-eligible and email-eligible Families,
-   Families with an active head, and contacts with a valid email) with both
-   the last full and the current snapshot, using the same drop threshold
-   (25% by default). Every record can stay while the fields eligibility
-   depends on disappear, so both are checked. The last full snapshot bounds
-   the loss accumulated over a series of deltas. Any count falling to zero
-   is refused, even from one or two. An operator accepts a known large change
+4. Compares each core record count with its largest value over the recent
+   full snapshots: the last successful full snapshot and every other full
+   promoted in the 7 days before this load. It compares each derived
+   eligibility count (portal-eligible and email-eligible Families, Families
+   with an active head, and contacts with a valid email) with its largest
+   value over those snapshots and the current snapshot. Both use the same
+   drop threshold (25% by default). Every record can stay while the fields
+   eligibility depends on disappear, so both are checked. The recent full
+   snapshots bound the loss accumulated over a series of deltas, or over
+   several full refreshes that each drop just under the threshold. A full
+   refresh accepted past the threshold starts this trend again: older full
+   snapshots are not compared with after it. Any count falling to zero is
+   refused, even from one or two. An operator accepts a known large change
    for one refresh by raising the threshold, as the
    [launch runbook](../../../guides/stewardship-launch-runbooks.md#accepting-a-large-parishsoft-change)
    describes. Every count is checked before the load is refused, and the
