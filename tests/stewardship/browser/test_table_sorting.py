@@ -173,7 +173,8 @@ def test_navigator_pages_in_place(page, component_origin):
 def test_post_table_resorts_in_place_with_csrf_and_filters(page, component_origin):
     """A private report's heading posts the urlencoded body its form would,
     CSRF token and hidden filters included; the rows reorder in place and
-    the address bar never changes."""
+    the address bar takes only the page's link to its non-private filters
+    (#536), never the private ones."""
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + "/logs")
     first = page.locator("#table tbody th[scope=row] time").first
@@ -191,7 +192,9 @@ def test_post_table_resorts_in_place_with_csrf_and_filters(page, component_origi
     has_attribute(sort_heading(page, "time"), "aria-sort", "ascending")
     assert first.get_attribute("datetime") < newest
     assert abs(page.evaluate("window.scrollY") - offset) < 40
-    assert page.url == component_origin + "/logs"
+    assert page.url.startswith(component_origin + "/logs?")
+    assert "sort=oldest" in page.url
+    assert "correlation" not in page.url and "through" not in page.url
     assert "Time" in page.evaluate("document.activeElement.textContent")
     has_text(
         page.get_by_role("status").filter(has_text="Sorted by"),

@@ -14,7 +14,8 @@ from django.utils import timezone
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.audit import log_views
+from parishkit.stewardship.audit import log_search, log_views
+from parishkit.stewardship.audit.log_rows import DETAIL_FIELDS, DETAIL_LIMIT
 from parishkit.stewardship.audit.models import (
     AuditContext,
     AuditEvent,
@@ -182,7 +183,9 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         for invalid in (
             {"actor": "not-a-uuid"},
             {"event": "drop table"},
-            {"text": "anything"},
+            # Search text never holds an address (#536).
+            {"text": "admin@example.org"},
+            {"ministry": "042"},
             {"start": "2026-02-30"},
             # The last representable day: refused, never an unhandled overflow.
             {"end": "9999-12-31"},
@@ -748,7 +751,9 @@ def test_show_choices_select_kinds_of_entry(auth_service, google):
         unticked = post(
             browser, {"applied": "yes", "info": "yes", "campaign": str(campaign)}
         )
-        assert b"Campaign filters list audit records only" in unticked.content
+        assert (
+            b"Campaign and subject filters list audit records only" in unticked.content
+        )
         # The retired Source, as an older open tab still sends it.
         legacy = post(browser, {"applied": "yes", "error": "yes", "source": "audit"})
         assert levels(legacy) == [] and audit_entries(legacy) >= 3
@@ -784,3 +789,228 @@ def test_show_choices_select_kinds_of_entry(auth_service, google):
         exported = export(browser, {"applied": "yes", "audit": "yes"})
         rows = exported.content.decode().splitlines()[1:]
         assert rows and all(row.split(",")[1] == "Audit" for row in rows)
+
+
+def searchable():
+    """Three audit records and one diagnostic the search tests tell apart.
+
+    Returns the audit records' correlation identifiers by name. ``scoped``
+    names Ministries 5 and 42 in its retained result scope; ``reviewed``
+    holds an Administrator's review reason longer than the page shows;
+    ``subject`` is about one subject.
+    """
+    subject = uuid4()
+    with transaction.atomic():
+        scoped = record_action(
+            Action.MINISTRY_REPORT_VIEWED,
+            actor_kind=ActorKind.SYSTEM,
+            context={"outcome": Outcome.SUCCEEDED, "ministry_duids": [5, 42]},
+        )
+        single = record_action(
+            Action.MINISTRY_FOLLOWUP_VIEWED,
+            actor_kind=ActorKind.SYSTEM,
+            context={"outcome": Outcome.SUCCEEDED, "ministry_duid": 42},
+        )
+        reviewed = record_action(
+            Action.DASHBOARD_VIEWED,
+            actor_kind=ActorKind.SYSTEM,
+            subject_id=subject,
+            context={"decision": "keep_role", "review_reason": "x" * 130 + "needle"},
+        )
+    operational(
+        Event.TASK_FAILED,
+        level="ERROR",
+        schema=ContextKind.FAILURE,
+        context={"failure": "alert_mail", "outcome": Outcome.FAILED, "count": 3},
+    )
+    for record in (scoped, single, reviewed):
+        record.refresh_from_db()
+    return {
+        "scoped": scoped.correlation_id,
+        "single": single.correlation_id,
+        "reviewed": reviewed.correlation_id,
+        "subject": subject,
+    }
+
+
+def test_search_finds_types_explanations_and_shown_detail_only(auth_service, google):
+    """Text search (#536) matches the type, the type's explanation and the
+    detail values the page shows, in either case; never a key name or a
+    value too long to show."""
+    browser, _ = signed_in()
+    made = searchable()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # A detail value, in another case, on an operational entry.
+        mail = post(browser, {"text": "ALERT_MAIL"})
+        assert levels(mail) == ["error"] and audit_entries(mail) == 0
+        # Part of a stored type.
+        typed = post(browser, {"text": "followup_vie"})
+        assert identifiers(typed) == [made["single"]]
+        # A Ministry DUID is a detail value too.
+        assert made["scoped"] in identifiers(post(browser, {"text": "42"}))
+        # A key name is never searched, and a value the page hides (a
+        # review reason over 128 characters) cannot be found.
+        for hidden in ("review_reason", "needle"):
+            assert b"No matching entries." in post(browser, {"text": hidden}).content
+        # An audit event some SQL trigger wrote without a context row is
+        # still found by its type.
+        bare = uuid4()
+        AuditEvent.objects.bulk_create(
+            [AuditEvent(correlation_id=bare, event_type="weekly_manual_requested")]
+        )
+        assert identifiers(post(browser, {"text": "weekly_manual"})) == [bare]
+        # Each value is matched on its own: never through JSON quoting or
+        # across two values ("alert_mail", then "failed").
+        for across in ('"', 'mail", "fail', "mail failed"):
+            assert b"No matching entries." in post(browser, {"text": across}).content
+        # LIKE wildcards are literal text.
+        assert b"No matching entries." in post(browser, {"text": "%"}).content
+        # A double quote or backslash in a shown value is found, though the
+        # quick JSON-text prefilter escapes both.
+        with transaction.atomic():
+            noted = record_action(
+                Action.DASHBOARD_VIEWED,
+                actor_kind=ActorKind.SYSTEM,
+                context={"decision": "keep_role", "review_reason": 'say "yes" \\ ok'},
+            )
+        noted.refresh_from_db()
+        quoted = noted.correlation_id
+        for found in ('"yes"', 'say "', "\\ ok"):
+            assert identifiers(post(browser, {"text": found})) == [quoted], found
+        # The type's plain explanation, as the page shows it.
+        explained = post(
+            browser, {"applied": "yes", "audit": "yes", "text": "someone OPENED"}
+        )
+        assert {made["scoped"], made["single"]} <= set(identifiers(explained))
+        assert made["reviewed"] not in identifiers(explained)
+        # The export carries the search like every other filter.
+        exported = export(browser, {"text": "followup_vie", "format": "jsonl"})
+        assert [
+            json.loads(line)["correlation_id"]
+            for line in exported.content.decode().splitlines()
+        ] == [str(made["single"])]
+
+    # Both logs' own checks refuse a stored fraction, so the shown-value
+    # condition is checked on a literal context: a fraction, alone or in a
+    # list, is never found; a whole number is.
+    def shown(context, text):
+        """Whether the exact condition finds ``text`` in ``context``."""
+        sql = log_search.SHOWN_VALUE_SQL.format(column="%s::jsonb")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT {sql}",
+                [
+                    json.dumps(context),
+                    DETAIL_LIMIT,
+                    sorted(DETAIL_FIELDS),
+                    log_search.like_pattern(text),
+                ],
+            )
+            return cursor.fetchone()[0]
+
+    assert not shown({"count": 2.5}, "2.5")
+    assert not shown({"ministry_duids": [7, 7.5]}, "7")
+    assert shown({"count": 25}, "25") and shown({"ministry_duids": [7, 8]}, "8")
+    assert not shown({"not_reviewed": 25}, "25")
+
+
+def test_ministry_and_subject_filters(auth_service, google):
+    """A Ministry DUID matches a single Ministry and a retained Ministry set
+    (#536); a subject lists only its audit records."""
+    browser, _ = signed_in()
+    made = searchable()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        both = post(browser, {"ministry": "42"})
+        assert set(identifiers(both)) == {made["scoped"], made["single"]}
+        assert identifiers(post(browser, {"ministry": "5"})) == [made["scoped"]]
+        # Containment, not text: 4 is not 42.
+        assert b"No matching entries." in post(browser, {"ministry": "4"}).content
+        about = post(browser, {"subject": str(made["subject"])})
+        assert identifiers(about) == [made["reviewed"]] and levels(about) == []
+        assert b'id="log-audit-' in about.content and b'-subject"' in about.content
+
+
+def test_links_carry_only_non_identifying_filters(auth_service, google):
+    """A GET may carry the link filters (#536) and is audited like a view;
+    search text, an identifier, the snapshot or a POST's query string is
+    refused unechoed."""
+    browser, _ = signed_in()
+    made = searchable()
+    before = len(views())
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        linked = browser.get(
+            URL,
+            {"applied": "yes", "audit": "yes", "event": "ministry_followup_viewed"},
+        )
+        assert linked.status_code == 200
+        assert identifiers(linked) == [made["single"]]
+        body = linked.content.decode()
+        # The page draws its own address, and the form shows what it applied.
+        assert (
+            '<a href="/admin/system/logs/?applied=yes&amp;audit=yes'
+            '&amp;event=ministry_followup_viewed" data-page-address>' in body
+        )
+        assert 'value="ministry_followup_viewed"' in body
+        dated = browser.get(
+            URL, {"ministry": "42", "start": "2020-01-01", "zone": "Asia/Tokyo"}
+        )
+        assert set(identifiers(dated)) == {made["scoped"], made["single"]}
+        assert 'data-link-zone="Asia/Tokyo" hidden' in dated.content.decode()
+        for refused in (
+            # Search text is private, like Find a Family's (#536 review).
+            {"text": "followup_vie"},
+            {"correlation": str(made["single"])},
+            {"subject": str(made["subject"])},
+            {"through": "2026-09-20T12:00:00.123456+00:00"},
+            {"page": "2"},
+            {"csrfmiddlewaretoken": "x"},
+        ):
+            answer = browser.get(URL, refused)
+            assert answer.status_code == 400
+            assert b"never in a web address" in answer.content
+            for value in (made["single"], made["subject"], "followup_vie"):
+                assert str(value).encode() not in answer.content
+        # A POST never comes with a query string.
+        token = browser.cookies["pk_admin_csrf"].value
+        mixed = browser.post(URL + "?text=x", {"csrfmiddlewaretoken": token})
+        assert mixed.status_code == 400
+        # A bad link value gets the value guidance, not the address refusal.
+        bad = browser.get(URL, {"ministry": "x"})
+        assert bad.status_code == 400 and b"never in a web address" not in bad.content
+    assert len(views()) == before + 2
+
+
+def test_a_read_past_its_limit_is_stopped_recorded_and_unavailable(
+    auth_service, google, monkeypatch
+):
+    """Each log read runs under a statement timeout (#536 review): a read
+    that outlives it is stopped, recorded as a timeout with what stopped it,
+    the limit and the time taken, and answered with the unavailable page;
+    nothing is audited as a view or export."""
+    browser, _ = signed_in()
+    monkeypatch.setattr(log_views, "READ_SECONDS", 0.2)
+    real = log_views._sources
+
+    def slow(query, through):
+        """A read that takes longer than the limit."""
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_sleep(2)")
+        return real(query, through)
+
+    monkeypatch.setattr(log_views, "_sources", slow)
+    before = len(views())
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        answer = post(browser, {"text": "anything"})
+        assert answer.status_code == 503 and answer["Retry-After"] == "5"
+        assert export(browser, {"text": "anything"}).status_code == 503
+    assert len(views()) == before
+    stops = list(
+        OperationalLog.objects.filter(event="task_timed_out").values_list(
+            "context", flat=True
+        )
+    )
+    assert len(stops) == 2
+    for stop in stops:
+        assert stop["what"] == "statement_timeout"
+        assert stop["elapsed_seconds"] >= 0 and "limit_seconds" in stop
+        assert "task_id" not in stop

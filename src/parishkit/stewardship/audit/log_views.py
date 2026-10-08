@@ -3,11 +3,13 @@
 import csv
 import io
 import json
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from time import monotonic
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError, transaction
+from django.db import DatabaseError, connection, transaction
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
@@ -22,8 +24,10 @@ from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.campaigns.read_guards import DEFAULT_LIMITS
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
+from parishkit.stewardship.observability import Event
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 from parishkit.stewardship.web.dates import UnknownZone
@@ -31,6 +35,7 @@ from parishkit.stewardship.web.exports import csv_cell, download_headers
 from parishkit.stewardship.web.tables import bounded_count
 
 from .log_rows import (
+    LINK_FIELDS,
     LogQuery,
     NothingShown,
     audit_row,
@@ -40,9 +45,11 @@ from .log_rows import (
     page_context,
     task_subject,
 )
-from .models import AuditEvent, OperationalLog
+from .log_search import narrowed
+from .models import AuditContext, AuditEvent, OperationalLog
 from .schemas import Action, ActorKind, Outcome
 from .services import record_action
+from .timeouts import record_timeout
 
 UNAVAILABLE = (ConfigError, LimiterUnavailable, ObjectDoesNotExist)
 # One download holds at most this many of the newest matching entries, so an
@@ -52,6 +59,12 @@ UNAVAILABLE = (ConfigError, LimiterUnavailable, ObjectDoesNotExist)
 # the index-ordered keys of every entry before it.
 EXPORT_LIMIT = 10_000
 EXPORT_FORMATS = {"csv": "text/csv", "jsonl": "application/x-ndjson"}
+# Each read (the screen's page and count, or an export) may run at most this
+# long in PostgreSQL: the interactive page-view limit the campaign read
+# guards use. Text search has no index (#536), so on a very large log a
+# broad search could otherwise hold a web worker; it is stopped, recorded
+# and answered with the page's unavailable message instead.
+READ_SECONDS = DEFAULT_LIMITS.interactive_seconds
 # From and Through arrived without the browser's zone (a tab opened before
 # #558, or a zone the server's catalog lacks); they are never read as UTC.
 ZONE_MESSAGE = _(
@@ -144,6 +157,41 @@ AUDIT_FIELDS = (
 )
 
 
+@contextmanager
+def _bounded_read():
+    """One read transaction under ``READ_SECONDS``; a stop is recorded.
+
+    ``SET LOCAL`` ends with the transaction, so the later audit write keeps
+    the ordinary limits. A statement the limit stopped is logged (#287) with
+    what stopped it, the limit and the time taken, then re-raised for the
+    view's unavailable answer. The timeout entry names no task: a web
+    request was stopped, not a task.
+    """
+    started = monotonic()
+    try:
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"SET LOCAL statement_timeout = '{int(READ_SECONDS * 1000)}ms'"
+                )
+            yield
+    except DatabaseError as error:
+        # Imported here, as service_status does: the broker pulls in the
+        # whole job runtime, which this view needs only when a read stops.
+        from parishkit.stewardship.jobs.broker import sql_timeout_kind
+
+        if sql_timeout_kind(error) == "statement_timeout":
+            record_timeout(
+                Event.TASK_TIMED_OUT,
+                what="statement_timeout",
+                level="WARNING",
+                limit_seconds=READ_SECONDS,
+                elapsed_seconds=monotonic() - started,
+                bind_task=False,
+            )
+        raise
+
+
 def _filtered(rows, query, through):
     """Apply the filters both sources share, bounded by the snapshot instant.
 
@@ -164,15 +212,17 @@ def _filtered(rows, query, through):
 
 
 def _sources(query, through):
-    """The two filtered source querysets; a campaign filter is audit-only.
+    """The two filtered source querysets; campaign and subject are audit-only.
 
-    Either is None when the filters exclude that source entirely.
+    Either is None when the filters exclude that source entirely. Text and
+    Ministry filters (#536) apply to both, through ``log_search.narrowed``.
     """
     operational = audit = None
-    if not query.campaign and query.levels:
+    if not (query.campaign or query.subject) and query.levels:
         operational = OperationalLog.objects.filter(level__in=query.levels)
         if query.event:
             operational = operational.filter(event=query.event)
+        operational = narrowed(operational, query, type_column="event")
         operational = _filtered(operational, query, through)
     if query.audits:
         audit = AuditEvent.objects.all()
@@ -180,6 +230,11 @@ def _sources(query, through):
             audit = audit.filter(event_type=query.event)
         if query.campaign:
             audit = audit.filter(campaign_reference=query.campaign)
+        if query.subject:
+            audit = audit.filter(subject_id=query.subject)
+        audit = narrowed(
+            audit, query, type_column="event_type", contexts=AuditContext.objects
+        )
         audit = _filtered(audit, query, through)
     return operational, audit
 
@@ -307,18 +362,23 @@ def logs(request):
 
     The log only grows, so an ordinary snapshot is coherent and the shared work
     lock is not taken. Every view is itself audited, so it appears in the list
-    the next time; that is expected, not a loop. Downloads are ``export_logs``;
-    free-text search and Ministry scope filtering belong to later increments.
+    the next time; that is expected, not a loop. Downloads are ``export_logs``.
+
+    The page's own forms POST every filter. A GET (a bookmark, or a link the
+    page offers) may carry only ``LINK_FIELDS`` (#536); one that carries an
+    identifier, the snapshot or anything else is refused for where it was
+    sent, without echoing it, and a POST never comes with a query string.
     """
     try:
         service = runtime()
         actor = _principal(request, service.store)
-        if request.GET:
+        linked = request.method == "GET"
+        if request.GET and (not linked or set(request.GET) - LINK_FIELDS):
             return _error(ErrorCode.INVALID, 400, query_string=True)
-        parameters = request.POST.copy()
+        parameters = (request.GET if linked else request.POST).copy()
         parameters.pop("csrfmiddlewaretoken", None)
         query = LogQuery.parse(parameters)
-        with transaction.atomic():
+        with _bounded_read():
             configuration = SystemConfiguration.objects.first()
             if configuration is None or configuration.restore_review_required:
                 return _error(ErrorCode.UNAVAILABLE, 503)
@@ -327,7 +387,12 @@ def logs(request):
         response = render(
             request,
             "stewardship/logs.html",
-            page_context(query, table, depth_limited=depth_limited),
+            page_context(
+                query,
+                table,
+                depth_limited=depth_limited,
+                linked=linked and bool(request.GET),
+            ),
         )
         with transaction.atomic():
             current = _principal(request, service.store, final=True)
@@ -424,7 +489,7 @@ def export_logs(request):
             raise ValueError("Invalid log export choice.")
         fmt, zone = fmt[0], ZoneInfo(zone_name[0])
         query = LogQuery.parse(parameters)
-        with transaction.atomic():
+        with _bounded_read():
             configuration = SystemConfiguration.objects.first()
             if configuration is None or configuration.restore_review_required:
                 return _error(ErrorCode.UNAVAILABLE, 503)

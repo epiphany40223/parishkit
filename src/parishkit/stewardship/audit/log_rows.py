@@ -8,6 +8,7 @@ so a future schema that stores something richer cannot leak through the page.
 import re
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
+from urllib.parse import urlencode
 from uuid import UUID
 
 from django.utils.datastructures import MultiValueDict
@@ -40,6 +41,38 @@ LOG_SORTING = Sorting({"newest": ("time", True), "oldest": ("time", False)}, "ne
 # rows-per-page and sort choices (``TablePage.view_fields``), never the
 # snapshot or page, so applying filters starts a new snapshot at page 1.
 PAGING = frozenset({"through", "page", "size", "sort"})
+# Filters that may travel in a web address, so a filtered view can be
+# bookmarked or linked (#536): the closed choices, the type, the Ministry,
+# the days with their zone, and the view's size and sort. Private filters
+# stay in POST state, as the Admin tables rule requires: an address is kept
+# in the web server's access log and the browser's history (the page writes
+# its link there) and can travel on when pasted. So the identifiers (actor,
+# correlation, campaign, subject), one of which ties a person to what they
+# did, never do; nor does the search text, which can name a person (a
+# review reason, a shown DUID), as the Find a Family search keeps its text
+# out of URLs. Nor does the snapshot (``through``, ``page``), which belongs
+# to one reading. Those travel only in CSRF POST bodies, as before (#519).
+LINK_FIELDS = frozenset(
+    {
+        "applied",
+        "debug",
+        "info",
+        "warning",
+        "error",
+        "critical",
+        "audit",
+        "event",
+        "ministry",
+        "start",
+        "end",
+        "zone",
+        "size",
+        "sort",
+    }
+)
+# Search text is a short phrase. Text with an "@" (an address) is refused
+# with a hint: no log value holds an address, so it could only find nothing.
+TEXT_LIMIT = 64
 # The only detail ever shown: fields some reviewed context schema names. A key
 # that merely looks like an identifier is not enough, because a future flat text
 # field or a trigger-written context would otherwise be rendered verbatim.
@@ -88,6 +121,23 @@ class NothingShown(ValueError):
     """
 
 
+def _ministry(value):
+    """Accept only a canonical positive Ministry DUID, as entries store it."""
+    if value and not (
+        value.isascii() and value.isdecimal() and value[0] != "0" and int(value) < 2**31
+    ):
+        raise ValueError("Invalid Ministry DUID.")
+    return value
+
+
+def _text(value):
+    """Accept short printable search text without an address; trim spaces."""
+    value = value.strip()
+    if len(value) > TEXT_LIMIT or "@" in value or not value.isprintable():
+        raise ValueError("Invalid log search text.")
+    return value
+
+
 def _identifier(value):
     """Accept only a canonical lowercase UUID, or nothing."""
     if value and str(UUID(value)) != value:
@@ -97,7 +147,11 @@ def _identifier(value):
 
 @dataclass(frozen=True, repr=False)
 class LogQuery:
-    """Filters travel only in CSRF POST bodies; identifiers never reach a URL.
+    """Closed log filters; identifiers never reach a URL.
+
+    The page's forms send every filter in CSRF POST bodies. A GET may carry
+    only ``LINK_FIELDS`` (#536), so a filtered view can be bookmarked or
+    linked; ``link_values`` builds that link.
 
     The five operational levels and audit records (`audit`) are six
     checkboxes (#601). The first visit's default, before `applied` marks a
@@ -130,6 +184,9 @@ class LogQuery:
     actor: str = ""
     correlation: str = ""
     campaign: str = ""
+    subject: str = ""
+    text: str = ""
+    ministry: str = ""
     start: str = ""
     end: str = ""
     zone: str = ""
@@ -172,8 +229,10 @@ class LogQuery:
             # The page's gate keeps Apply unavailable with nothing ticked;
             # a form that bypasses it is refused, not answered with nothing.
             raise NothingShown("Log filters must show at least one kind of entry.")
-        for value in (query.actor, query.correlation, query.campaign):
+        for value in (query.actor, query.correlation, query.campaign, query.subject):
             _identifier(value)
+        _ministry(query.ministry)
+        query = replace(query, text=_text(query.text))
         for value in (query.start, query.end):
             if not value:
                 continue
@@ -276,6 +335,32 @@ class LogQuery:
         """Whether the page lists the oldest entries first."""
         return not LOG_SORTING.tokens[self.order][1]
 
+    @property
+    def private(self):
+        """Whether an identifier filter is applied."""
+        return any((self.actor, self.correlation, self.campaign, self.subject))
+
+    @property
+    def unlinked(self):
+        """Whether an applied filter is one a link leaves out (search or an
+        identifier), so the page says the link does not carry it."""
+        return self.private or bool(self.text)
+
+    def link_values(self):
+        """The applied filters a web address may carry (``LINK_FIELDS``).
+
+        The zone goes with the days, which mean nothing without it, and is
+        left out otherwise.
+        """
+        values = {
+            key: getattr(self, key)
+            for key in self.__dataclass_fields__
+            if key in LINK_FIELDS and getattr(self, key)
+        }
+        if not (self.start or self.end):
+            values.pop("zone", None)
+        return values
+
     def form_values(self):
         """Filter fields to carry into other pages, without paging or sort."""
         return {
@@ -346,14 +431,21 @@ def log_table(query, rows, *, through, action, number=1, total=None, capped=Fals
     )
 
 
-def page_context(query, table, *, depth_limited=False):
+def page_context(query, table, *, depth_limited=False, linked=False):
     """The one template context, shared by the view and its browser fixtures.
 
     ``table`` is the page's ``web.tables.TablePage``; ``depth_limited`` says a
     requested page lay past the paging depth and the last reachable one is
-    shown instead.
+    shown instead. ``linked`` says the filters came from a web address (a
+    bookmark or link, #536).
+    ``link`` is this view's own address: the page's address plus the
+    filters a link may carry. ``link_zone`` names the zone a followed link's
+    days are in; the page notes it when it is not the browser's own.
     """
+    values = query.link_values()
     return {
+        "link": table.action + (f"?{urlencode(values)}" if values else ""),
+        "link_zone": values.get("zone", "") if linked else "",
         "rows": table.rows,
         "table": table,
         "depth_limited": depth_limited,
