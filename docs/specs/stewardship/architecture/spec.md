@@ -708,8 +708,9 @@ admission check joins it. Admission then locks the runtime row
 (`SystemConfiguration`) `FOR UPDATE`. The busiest holders are:
 
 - ParishSoft refresh staging: one hold per 125-row batch, back to back for the
-  whole staging phase.
-- Fetch admission: one hold per ParishSoft request.
+  whole staging phase. Change 3 removed these holds.
+- Fetch admission: one hold per ParishSoft request. Change 3 removed these
+  holds.
 - Family mail: eight holds per message in the consumer (the claim, the
   PREPARING progress, the effect, the submission, two in-flight checks, the
   outcome and the completion).
@@ -765,6 +766,20 @@ Split the order into two tiers.
   - **Hold the work lock in shared mode.** This needs a schema change. Guards
     must accept `ShareLock` together with the entity's key, and functions that
     take the exclusive lock must not upgrade a shared hold.
+  - **Publish nothing; verify under the lock at completion.** This needs no
+    schema change. Work whose writes nobody else can see yet takes neither
+    the work lock nor the rows transitions update. A source refresh's
+    staging is the example: snapshot membership and payload versions become
+    source truth only when the snapshot is promoted. The work locks only its
+    own task, lease and entity rows, and reads its admission without row
+    locks, so it can stop early. The step that publishes takes the
+    exclusive lock and re-verifies the whole scope. A transition that
+    commits in between is then always seen before anything becomes visible.
+    The worst case is wasted work in an attempt that is then refused. Change
+    3 uses this pattern, and so may the parts of changes 8 and 9 that only
+    read or stage (attempt start, the decode and validation before
+    promotion). Change 9's Family writes and change 7's submissions publish
+    as they go, so they cannot.
 
 Three rules apply to every narrowed path:
 
@@ -785,7 +800,7 @@ responsiveness, against risk.
 | --- | --- | --- | --- |
 | 1 | Family mail admission locks the runtime and credential rows `FOR SHARE`, so logins stop waiting for mail | no | low |
 | 2 | Fewer lock takes per Family message: the PREPARING progress joins the effect, and the SQL in-flight check runs at most once a second | no | low |
-| 3 | Source fetch admission and staging batches leave the work lock: share the runtime row, then the task, lease and snapshot rows | no | medium |
+| 3 | Source fetch admission and staging batches leave the work lock: lock the task, lease and snapshot rows, and read admission without locks | no | medium |
 | 4 | The scheduler does not re-admit a due row it hinted within the last minute, while keeping the due-work health proof | no | medium |
 | 5 | Family schedule sweep skips, without the lock, Families whose groups cannot change, with a periodic full sweep | no | medium |
 | 6 | Task steps (claim, progress, heartbeat, settle, in-flight check, scheduler admission) in shared mode with a per-task key | yes | high |
@@ -793,16 +808,67 @@ responsiveness, against risk.
 | 8 | Source attempt start and snapshot completion leave the work lock | yes | medium |
 | 9 | Promotion precomputes its Family and chair effects outside the lock and applies them in a short, verified step | yes | high |
 
-**Change 3** has the largest effect on the launch send while a refresh runs. It
-needs a new ordering argument against these other holders:
+**Change 3** has the largest effect on the launch send while a refresh runs.
+Issue #147 implemented it without a schema change. A full refresh of a
+1,100-Family parish used to take the lock about 190 times and hold it for
+21–24 s, about 85% of its database time. It now takes it about 40 times and
+holds it for 2–5 s. What remains is 24 task progress transitions at about
+15 ms each (20 staging reports, one per 500 staged rows, and the fetching,
+first staging, validating and promoting reports), the attempt start,
+snapshot completion and promotion.
 
-- scheduler supersession
-- setup completion
-- compaction
-- credential switching
-- promotion
+A fetch admission and a staging batch are each a source step: one short
+transaction outside the work lock. They publish nothing. A fetch admission
+reserves the source lease for one request. A staging batch writes only its
+own attempt's snapshot membership and immutable payload versions, which
+become source truth only at promotion. Each step:
 
-Promotion keeps the exclusive lock and the `FOR UPDATE` admission.
+- waits out a configuration activation in progress;
+- locks the task root and run with the claim's fence, then the source lease
+  with its fence, then (for staging) the snapshot row, the order every other
+  holder of those rows uses;
+- reads the request's admission (runtime row, campaign, work gates, tenant,
+  window and credential fingerprint) without row locks.
+
+That admission read stops a stale attempt early but is not the proof. It
+takes no runtime or campaign row lock, because transitions lock task rows
+and the runtime row in both orders, so a step holding both could deadlock
+with one of them. Snapshot completion and promotion keep the exclusive lock
+and the `FOR UPDATE` admission and re-verify the attempt's whole scope, so a
+transition that commits while staging runs is always seen before anything is
+published. The SQL membership guard still refuses staging unless the
+snapshot is staging and its lease and task are live.
+
+The other holders of the source lease are scheduler supersession, setup
+completion, compaction, credential switching and promotion. All of them
+serialize on the lease row and the task fence. Compaction and rejection touch
+only rejected or compacted snapshots, and a credential or window switch is
+refused at the next step and, for certain, at completion.
+
+A holder of the work lock that locks the lease row can now wait for one
+source step to commit. The scheduler's hint or claim admission of a queued
+second refresh is the main case. It also holds the runtime row
+`FOR UPDATE`, so a Family login waits too. Before this change that holder
+waited for the step's work lock instead, so the waits were already serial.
+What is new is that other work-lock waiters queue behind the holder for
+that time. The wait is bounded by one step (a staging batch is 15–280 ms).
+On the common path, where hint and claim admission check for a live
+lease, they read the lease with `SKIP LOCKED` and treat a row locked by a
+step as busy, as they already treat a live lease, so they never wait. Setup
+admission reads the lease without a row lock. Its answer is advisory,
+because acquisition locks the row and rechecks both deadlines.
+
+A few rarer admissions still lock the lease `FOR UPDATE` under the work
+lock, and so may wait for one step:
+
+- a hint or claim whose full-refresh fallback failed or was cancelled
+  (the drain check);
+- the recovery hint for an abandoned root;
+- the safe-cancel, permanent-failure and retryable-failure actions.
+
+Each waits at most one step, and none can deadlock: a step never waits for
+the work lock, and it takes its row locks in the same order (task root,
+task run, lease, snapshot).
 
 **Change 4** is only an optimization. A hint is advisory, and the consumer
 rechecks admission under its own locks, so a skipped re-check costs nothing.

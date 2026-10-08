@@ -9,7 +9,7 @@ from parishkit.stewardship.deployment import recorded_profile
 from parishkit.stewardship.jobs.dispatch import Execution
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .attempts import verify_refresh_attempt
+from .attempts import source_step, verify_refresh_attempt
 from .credentials import SourceCredential
 from .errors import SourceCredentialChanged, SourceScopeChanged, local_read_admission
 from .leases import SourceClaim, reserve_source_request
@@ -46,11 +46,15 @@ def source_session(execution, claim, *, attempt_id, credential):
 
     @local_read_admission
     def before_request(seconds):
-        """Never close the caller's transaction or perform HTTP inside it."""
+        """Never close the caller's transaction or perform HTTP inside it.
+
+        A source step, outside the global work order (#147): admitting a
+        request only reserves the source lease for it.
+        """
         if connection.in_atomic_block:
             raise StorageInvariantError("Source HTTP cannot run inside a transaction.")
         try:
-            with execution.effect():
+            with source_step(execution):
                 if (
                     not execution.control.active
                     or execution.control.source_claim != claim
@@ -58,7 +62,9 @@ def source_session(execution, claim, *, attempt_id, credential):
                     raise StorageInvariantError(
                         "Source HTTP requires maintained task/source ownership."
                     )
-                attempt = verify_refresh_attempt(attempt_id, execution, claim)
+                attempt = verify_refresh_attempt(
+                    attempt_id, execution, claim, step=True
+                )
                 if attempt.snapshot.state != "staging":
                     raise SourceScopeChanged("Source HTTP observation is stale.")
                 if (

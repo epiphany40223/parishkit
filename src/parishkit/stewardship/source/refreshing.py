@@ -22,7 +22,12 @@ from parishkit.stewardship.local import source_base_url
 from parishkit.stewardship.observability import Event, emit
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .attempts import _scope, begin_refresh_attempt, verify_refresh_attempt
+from .attempts import (
+    _scope,
+    begin_refresh_attempt,
+    source_step,
+    verify_refresh_attempt,
+)
 from .canonical import InvalidSourcePayload, canonical_payload
 from .cursors import refresh_cursor
 from .delta import load_delta_source
@@ -45,14 +50,14 @@ from .snapshots import (
 from .transport import runtime_profile, source_session
 from .windows import RefreshWindow
 
-# Each staging batch is one execution.effect(): a transaction that holds the
-# deployment-wide work-order lock (736220,1) while it verifies the attempt and
-# writes the batch. At 500 rows that hold was 1.3-1.5 s on the validation
-# host, and every mail message, page and in-flight check (1 s limit) queued
-# behind it, batch after batch, for the whole refresh (#394). Smaller
-# batches cost a few more short transactions but let waiters in between.
-# stage_entities() refuses more than 500 rows, so this must stay at or below
-# that.
+# Each staging batch is one source step (attempts.source_step): a transaction
+# that verifies the attempt and writes the batch. It used to hold the
+# deployment-wide work-order lock (736220,1); at 500 rows that hold was
+# 1.3-1.5 s on the validation host, and every mail message, page and in-flight
+# check queued behind it (#394). Batches no longer take that lock (#147), but
+# small ones still keep each transaction, and its task and lease row locks,
+# short. stage_entities() refuses more than 500 rows, so this must stay at or
+# below that.
 STAGING_BATCH_ROWS = 125
 # Staging progress is reported about this often, as it was when batches
 # were 500 rows, so the smaller batches add no progress transitions.
@@ -272,6 +277,13 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
             raise PermissionError("Staging belongs to another source attempt.")
         return True
 
+    def staged(action, snapshot):
+        """``admitted`` for a staging batch, checked inside its source step."""
+        current = verify_refresh_attempt(attempt.pk, execution, claim, step=True)
+        if action != "stage" or current.snapshot_id != snapshot.pk:
+            raise PermissionError("Staging belongs to another source attempt.")
+        return True
+
     # Most quick updates find nothing (#629): the change list is empty, so
     # the corpus is the current one exactly (a day change that flips a
     # roster's "current" flag is a difference and stages as before). Any
@@ -292,18 +304,22 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
     execution.progress(done, total, phase=TaskPhase.STAGING)
     for kind, rows in loaded.corpus.items():
         for batch in batched(rows.items(), STAGING_BATCH_ROWS):
-            with execution.effect():
+            # A source step, outside the global work order (#147): a batch
+            # writes only this attempt's staging, which promotion (under the
+            # order) verifies again before it becomes source truth.
+            with source_step(execution):
                 stage_entities(
                     attempt.snapshot_id,
                     claim,
                     kind=kind,
                     entities=dict(batch),
-                    admit=admitted,
+                    admit=staged,
                 )
             done += len(batch)
-            # Progress is its own transition under the same lock, so report
-            # it per PROGRESS_ROWS rather than per batch. The validating
-            # report below always carries the final count.
+            # Progress is its own task transition, which still takes the
+            # work-order lock (#147), so report it per PROGRESS_ROWS rather
+            # than per batch. The validating report below always carries the
+            # final count.
             if done - reported >= PROGRESS_ROWS:
                 execution.progress(done, total, phase=TaskPhase.STAGING)
                 reported = done
