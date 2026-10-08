@@ -84,9 +84,28 @@ waiting source work. Any login may create only a type that some service executes
 | `failed` | Yes | None; explicit retry creates a linked new TaskRun |
 | `cancelled` | Yes | None; later independently authorized work is a new operation |
 
-Workers heartbeat and record phases/progress. Recovery of `abandoned` work
-requires lease expiry, fencing of the former owner, and task-specific external-
-request deadlines/reconciliation. Lease expiry alone never proves that an
+Workers heartbeat and record phases/progress. A worker's lease renewal runs
+every 20 seconds on its own connection and confirms a 60-second lease. A
+renewal stopped by its own lock or statement limit has not lost the lease:
+it is logged and tried again every 2 seconds while the last confirmed lease
+(timed from before the claim's or that renewal's transaction began) still
+has 20 seconds in hand. The margin plans retries but is not a hard bound,
+since a renewal may wait for the handler's lock before its statements; the
+hard bound is local: once monotonic time passes the confirmed lease's end,
+the run refuses to start any new unit of work, whatever the renewal is
+doing. Once the margin is gone, new work is refused first and then the run
+stops
+([#386](https://github.com/epiphany40223/parishkit/issues/386)). Any other
+failed renewal, a lost claim included, stops the run at once. This narrows
+the phase-2 consolidation review's C36 decision, which rejected a second
+renewal attempt on any uncertainty: the retry covers only the renewal's own
+bounded waits, it is decided from local time measured before the lease was
+committed, never from a deadline read back, and the database still refuses
+to renew an expired claim, so a retry can end a run but never extend one
+past its lease.
+
+Recovery of `abandoned` work requires lease expiry, fencing of the former
+owner, and task-specific external-request deadlines/reconciliation. Lease expiry alone never proves that an
 external write failed or was cancelled. An unresolved effect must remain
 durably represented as blocking work; a task performing only a reconciliation
 handoff may complete once that handoff is durable, but the underlying uncertain

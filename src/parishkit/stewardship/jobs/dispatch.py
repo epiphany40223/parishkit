@@ -380,6 +380,10 @@ def claim_hint(run_id, *, queue, worker_id, handlers):
         raise PermissionError("This task is unavailable to the admitted consumer.")
     if not _hint_actionable(run_id, _CLAIMABLE):
         return None
+    # Before the claim's transaction: the lease it writes runs from that
+    # transaction's start (Now()), which precedes the lock waits below, so
+    # the renewal loop's margin must not start any later (#386).
+    claimed = time.monotonic()
     with handler.scope(), _locked(original.correlation_id, root_id=original.root_id):
         row = TaskRun.objects.select_for_update().get(pk=run_id)
         # The authoritative check, repeated under the locks.
@@ -394,11 +398,13 @@ def claim_hint(run_id, *, queue, worker_id, handlers):
             admit=handler.admit,
             lease_seconds=60,
         )
-        return Execution(
+        execution = Execution(
             TaskClaim(status.run_id, status.fence, worker_id),
             handler,
             row.correlation_id,
         )
+        execution.control.lease_started = claimed
+        return execution
 
 
 def execute_hint(run_id, *, queue, worker_id, handlers, stop=None):
