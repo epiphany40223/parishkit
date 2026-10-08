@@ -22,6 +22,13 @@ it tags) ask this script which run decides, so the rule lives in one place:
   a deleted train branch) and that is newer than any qualifying run decides
   as "unreadable", which callers refuse: it might have been a newer failure.
 
+With --run (release.sh passes the run it means to use), that run is also
+read directly (#730). The listing alone still decides, as it does for
+release.yml, and it is used only when it agrees with the direct read. While
+it disagrees (the run missing from a partial page, listed in a stale state,
+or not deciding) it is read again a bounded number of times; a disagreement
+that persists is refused: no run decides.
+
 The allowlist is closed and conservative: Markdown under docs/ and the two
 root agent instruction files. It never covers README.md (the image and the
 package metadata include it), the operator guide whose SQL send-report.sh
@@ -33,6 +40,7 @@ tree whenever the deciding run's tree differs.
 Usage:
     release_evidence.py select --repo OWNER/NAME --commit SHA
         [--checkout DIR] [--remote NAME] [--limit N]
+        [--run ID [--retry-seconds N]]
     release_evidence.py docs-tests
 
 prints "RUN_ID STATUS CONCLUSION HEAD_SHA DOCS_PATHS" (tab separated;
@@ -53,12 +61,16 @@ import time
 from pathlib import PurePosixPath
 
 FULL_RUN_TITLE = "CI (jobs: all)"
+CI_WORKFLOW_PATH = ".github/workflows/ci.yml"
 TIMEOUT_STATUS = 3
 GIT_SECONDS = 120
 GH_SECONDS = 60
 GH_ATTEMPTS = 3
 PROBE_ATTEMPTS = 2
 PROBE_RETRY_SECONDS = 5
+# Listings of a named run's candidates, and the pause unit between them.
+LIST_ATTEMPTS = 4
+LIST_RETRY_SECONDS = 10
 
 # Root files that are documentation only. README.md is deliberately absent:
 # the application image copies it and pyproject.toml uses it as metadata.
@@ -203,10 +215,7 @@ def select(runs, target, paths_between):
     """
     seen = set()
     for run in runs:
-        if (
-            run.get("displayTitle") != FULL_RUN_TITLE
-            or run.get("event") != "workflow_dispatch"
-        ):
+        if not is_full_run(run):
             continue
         sha = run["headSha"]
         if sha in seen:
@@ -218,11 +227,145 @@ def select(runs, target, paths_between):
     return None
 
 
-def list_runs(repo, limit):
-    """The newest workflow_dispatch runs of ci.yml, newest first.
+def gh_json(what, command):
+    """Run a gh command that prints JSON; return the parsed output.
 
     Retries a failed gh call a few times (a network blip should not fail a
     release); a call past its limit is not retried.
+    """
+    for attempt in range(1, GH_ATTEMPTS + 1):
+        result = limited(what, GH_SECONDS, command)
+        if result.returncode == 0:
+            return json.loads(result.stdout)
+        log(f"{what} failed (attempt {attempt}): {result.stderr.strip()}")
+        if attempt < GH_ATTEMPTS:
+            time.sleep(5 * attempt)
+    raise RuntimeError(f"{what} failed")
+
+
+def view_run(repo, run_id):
+    """One run read directly, shaped as gh run list reports it.
+
+    The REST record names the workflow file (`path`), which gh run view
+    does not, so a run of another workflow that happens to share the name
+    and run name can never pass as a full CI run.
+    """
+    record = gh_json(
+        f"gh api of run {run_id}",
+        ["gh", "api", f"repos/{repo}/actions/runs/{run_id}"],
+    )
+    return {
+        "databaseId": record["id"],
+        "headSha": record["head_sha"],
+        "status": record["status"],
+        # gh run list reports a pending run's conclusion as "", REST as null.
+        "conclusion": record["conclusion"] or "",
+        "displayTitle": record["display_title"],
+        "event": record["event"],
+        "path": record["path"],
+    }
+
+
+def is_full_run(run):
+    """Whether a run is a full CI dispatch (the listing filters workflow)."""
+    return (
+        run.get("displayTitle") == FULL_RUN_TITLE
+        and run.get("event") == "workflow_dispatch"
+        and run.get("path", CI_WORKFLOW_PATH) == CI_WORKFLOW_PATH
+    )
+
+
+def listing_doubt(runs, named, chosen):
+    """Why the listing disagrees with the direct read of a named run, or None.
+
+    A listing can be a partial page or lag a run that just started, finished
+    or was re-run under the same id (#730). release.yml decides from the
+    listing alone, so release.sh may use a run only when the listing holds
+    it, in the state the direct read reports, and it decides there.
+    """
+    listed = next((r for r in runs if r["databaseId"] == named["databaseId"]), None)
+    if listed is None:
+        return f"run {named['databaseId']} is missing from the listing"
+    # gh run list reports a pending run's conclusion as "", REST as null.
+    seen = (listed["status"], listed["conclusion"] or "")
+    if seen != (named["status"], named["conclusion"]):
+        return (
+            f"the listing shows run {named['databaseId']} as {'/'.join(seen)}, "
+            f"not {named['status']}/{named['conclusion']}"
+        )
+    if chosen is None or chosen[0]["databaseId"] != named["databaseId"]:
+        decider = chosen[0]["databaseId"] if chosen else "none"
+        return f"run {decider} decides instead of run {named['databaseId']}"
+    return None
+
+
+def choose(repo, limit, target, paths_between, run_id=None, pause=LIST_RETRY_SECONDS):
+    """Return (chosen, runs) for select's command line.
+
+    The deciding run always comes from the listing alone, exactly as
+    release.yml will choose it. With run_id, that run is also read directly
+    (its state is current there) and the listing is re-read, a bounded
+    number of times, while it disagrees (see listing_doubt): a partial or
+    lagging page then gets time to catch up instead of refusing at once.
+    When the last listing still disagrees, no run decides (None), so the
+    caller refuses rather than tag on a stale success or on a run
+    release.yml could not see. Each retry and the give-up log what, the
+    limit and the elapsed time.
+    """
+    # Each comparison fetches from the remote; a re-read listing reuses them.
+    compared = {}
+
+    def paths_once(base, target):
+        if base not in compared:
+            compared[base] = paths_between(base, target)
+        return compared[base]
+
+    named = None
+    if run_id is not None:
+        named = view_run(repo, run_id)
+        if not is_full_run(named):
+            log(
+                f"run {run_id} is not a {FULL_RUN_TITLE!r} workflow_dispatch of "
+                f"{CI_WORKFLOW_PATH}, so it cannot be release evidence"
+            )
+            named = None
+        elif (paths := paths_once(named["headSha"], target)) is not None and not all(
+            docs_safe(path) for path in paths
+        ):
+            # No listing can make it decide, so re-reading would only wait.
+            log(f"run {run_id}'s tree differs from {target} beyond docs-safe paths")
+            named = None
+    start = time.monotonic()
+    for attempt in range(1, LIST_ATTEMPTS + 1):
+        runs = list_runs(repo, limit)
+        chosen = select(runs, target, paths_once)
+        doubt = named and listing_doubt(runs, named, chosen)
+        if not doubt:
+            break
+        elapsed = time.monotonic() - start
+        if attempt == LIST_ATTEMPTS:
+            log(
+                f"gave up re-reading the run listing: {doubt} "
+                f"(limit {LIST_ATTEMPTS} listings, elapsed {elapsed:.0f} s); "
+                "no run decides, so the caller refuses"
+            )
+            # Neither source can be trusted alone: the listing may hold a
+            # stale success (a re-run in progress), and release.yml cannot
+            # see what only the direct read shows.
+            return None, runs
+        log(
+            f"re-reading the run listing: {doubt} "
+            f"(listing {attempt} of {LIST_ATTEMPTS}, elapsed {elapsed:.0f} s)"
+        )
+        time.sleep(pause * attempt)
+    return chosen, runs
+
+
+def list_runs(repo, limit):
+    """The newest workflow_dispatch runs of ci.yml, newest first.
+
+    Logs how many runs gh returned against how many were requested, so a
+    partial page is visible in the log (#730).
     """
     command = [
         "gh",
@@ -239,39 +382,38 @@ def list_runs(repo, limit):
         "--json",
         "databaseId,headSha,status,conclusion,displayTitle,event",
     ]
-    for attempt in range(1, GH_ATTEMPTS + 1):
-        result = limited("gh run list", GH_SECONDS, command)
-        if result.returncode == 0:
-            return json.loads(result.stdout)
-        log(f"gh run list failed (attempt {attempt}): {result.stderr.strip()}")
-        if attempt < GH_ATTEMPTS:
-            time.sleep(5 * attempt)
-    raise RuntimeError("gh run list failed")
+    runs = gh_json("gh run list", command)
+    log(f"gh run list returned {len(runs)} of {limit} requested runs")
+    return runs
 
 
 def main(argv=None):
     """Print the deciding run for the select command."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    choose = sub.add_parser("select")
-    choose.add_argument("--repo", required=True)
-    choose.add_argument("--commit", required=True)
-    choose.add_argument("--checkout", default=".")
-    choose.add_argument("--remote", default="origin")
-    choose.add_argument("--limit", type=int, default=100)
+    pick = sub.add_parser("select")
+    pick.add_argument("--repo", required=True)
+    pick.add_argument("--commit", required=True)
+    pick.add_argument("--checkout", default=".")
+    pick.add_argument("--remote", default="origin")
+    pick.add_argument("--limit", type=int, default=100)
+    pick.add_argument("--run", type=int)
+    pick.add_argument("--retry-seconds", type=int, default=LIST_RETRY_SECONDS)
     sub.add_parser("docs-tests")
     args = parser.parse_args(argv)
     if args.command == "docs-tests":
         print("\n".join(DOCS_TESTS))
         return 0
     try:
-        runs = list_runs(args.repo, args.limit)
-        chosen = select(
-            runs,
+        chosen, runs = choose(
+            args.repo,
+            args.limit,
             args.commit,
             lambda base, target: differing_paths(
                 args.checkout, args.remote, base, target
             ),
+            args.run,
+            args.retry_seconds,
         )
     except TimedOut:
         return TIMEOUT_STATUS

@@ -222,7 +222,16 @@ fetched is refused rather than skipped, since it might be a newer failure.
 `release.yml` applies the rule on every tag push, independently of
 `release.sh`, and names the evidence run and commit in the GitHub release
 notes. `release.sh` reuses a qualifying run and dispatches a new full run only
-when none passed or is still running.
+when none passed or is still running. Once it has a run, it passes it to
+`release_evidence.py select --run`, which also reads that run directly
+([#730](https://github.com/epiphany40223/parishkit/issues/730)). The run
+listing still decides alone, as it does for `release.yml`, and is used only
+when it agrees with the direct read. While it omits the run (a partial page),
+shows it in a state the direct read contradicts (a lagging page or a re-run),
+or lets another run decide, it is read again up to three more times; a
+disagreement that persists is refused, so `release.sh` never tags on a stale
+success or on a run `release.yml` could not see. Each listing logs how many
+runs it returned against how many it asked for.
 
 Documentation is still a test input. When the evidence tree differs from the
 tagged one, `release.yml` runs Markdown lint over every tracked Markdown file

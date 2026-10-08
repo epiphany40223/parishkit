@@ -84,7 +84,7 @@ def local_rendering(root, **options):
 
 
 def test_local_rendering_matches_the_golden_files():
-    """Canonical-JSON identical to the committed fixtures (volume order sorted).
+    """Canonical-JSON identical to the committed fixtures.
 
     Regenerate both fixtures only for an intentional LOCAL change, from the
     repository root, with ``PYTHONPATH=src:tests``::
