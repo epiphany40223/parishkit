@@ -207,6 +207,8 @@ class Status(ReadModel):
     @classmethod
     def build(cls, config, data, now, tasks, presence, notices=None):
         """Project the home summary (``admin_dashboard.summary``) and the counts."""
+        from .admin_refresh import refresh_fields
+
         campaign = data["campaign"]
         refresh = data["full_refresh"]
         catalog = data.get("ministry_catalog")
@@ -226,32 +228,8 @@ class Status(ReadModel):
                 "ends_at": campaign.active_configuration.ends_at,
                 "delivery_paused": campaign.delivery_paused,
             },
-            source={
-                "refreshed_at": data["refreshed_at"],
-                "full_succeeded_at": refresh.succeeded_at,
-                "full_failed_at": refresh.failed_at,
-                "full_failed_task_id": refresh.failed_task_id,
-                "full_running": refresh.running,
-                "delta_succeeded_at": refresh.delta_succeeded_at,
-                "delta_failed_at": refresh.delta_failed_at,
-                "frequency": refresh.frequency,
-                "next_full_at": refresh.next_full_at,
-                "delta_refresh": refresh.delta_refresh,
-                # Data age and connection (#510): the newest promoted full
-                # refresh's start, "data as of", the connection line, and the
-                # overdue full slot with whether it is past the margin.
-                "full_started_at": refresh.full_started_at,
-                "data_as_of": refresh.data_as_of,
-                "connection": None
-                if refresh.connection is None
-                else refresh.connection.state,
-                "connection_at": None
-                if refresh.connection is None
-                else refresh.connection.at,
-                "overdue_full_at": refresh.overdue_at,
-                "out_of_date": refresh.out_of_date,
-                "held_for_send": refresh.held_for_send,
-            },
+            # The refresh facts are shared with ``refresh status`` (PR 6a).
+            source={"refreshed_at": data["refreshed_at"]} | refresh_fields(refresh),
             next_mail=None
             if data.get("next_mail") is None
             else {

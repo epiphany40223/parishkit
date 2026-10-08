@@ -69,24 +69,33 @@ def _pending():
     return {"running": running.exists(), "waiting": waiting.exists()}
 
 
+def read_refresh_page(service):
+    """What the confirmation page shows: what is pending and the latest refresh.
+
+    The page and ``pk-admin refresh status`` (ADM-11 PR 6a) both read this.
+    It returns the editable configuration too, which the page displays.
+    """
+    configuration = editable_configuration(service)
+    return configuration, {
+        "pending": _pending(),
+        # The same full/incremental status the dashboard shows; this page is
+        # itself the "run a full refresh now" action, so no link.
+        "full_refresh": full_refresh_status(
+            refresh_schedule(configuration), timezone.now()
+        ),
+        # The lateness margin the about text names (#510).
+        "lateness_minutes": configured_policy().source_stale_seconds // 60,
+    }
+
+
 def _page(request, service):
     """The confirmation page: the latest refresh, what is pending, a fresh key."""
-    configuration = editable_configuration(service)
+    configuration, values = read_refresh_page(service)
     request._stewardship_display_configuration = configuration
     return render(
         request,
         "stewardship/source-refresh.html",
-        {
-            "pending": _pending(),
-            # The same full/incremental status the dashboard shows; this page
-            # is itself the "run a full refresh now" action, so no link.
-            "full_refresh": full_refresh_status(
-                refresh_schedule(configuration), timezone.now()
-            ),
-            "request_key": uuid4(),
-            # The lateness margin the about text names (#510).
-            "lateness_minutes": configured_policy().source_stale_seconds // 60,
-        },
+        {**values, "request_key": uuid4()},
     )
 
 
@@ -98,12 +107,24 @@ def _request(request, service, actor):
     key = form.cleaned_data["request_key"]
     if key.version != 4:
         raise ValueError("Invalid refresh key.")
+    receipt = request_manual_refresh(request, service, actor, key)
+    return HttpResponseRedirect(
+        reverse("admin:background_task_page", args=[receipt.task_root_id])
+    )
 
+
+def request_manual_refresh(caller, service, actor, key):
+    """Record one manual full refresh command under ``key``; return its receipt.
+
+    The page's POST and ``pk-admin refresh start`` (ADM-11 PR 6a) both call
+    this. ``caller`` is the request or an ``AdminCaller``. The Administrator
+    is rechecked under the domain's work-order lock, even on a repeat.
+    """
     denied = []
 
     def authorize(scope):
         """Admission is the current Administrator's, rechecked under the lock."""
-        fresh = authenticated_admin(request, store=service.store, read_only=True)
+        fresh = authenticated_admin(caller, store=service.store, read_only=True)
         allowed = (
             allows(fresh, Capability.CONFIGURE) and fresh.identity == actor.identity
         )
@@ -132,9 +153,7 @@ def _request(request, service, actor):
         raise ConfigError(
             "Source refresh requires its configured organization."
         ) from None
-    return HttpResponseRedirect(
-        reverse("admin:background_task_page", args=[receipt.task_root_id])
-    )
+    return receipt
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

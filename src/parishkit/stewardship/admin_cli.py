@@ -750,6 +750,35 @@ def task_retry(args, preamble, runtime, context):
     )
 
 
+def refresh_status(args, preamble, runtime, context):
+    """The Source refresh page's read: pending work and the latest refresh (PR 6a)."""
+    from .admin_refresh import read_refresh_status
+
+    return read_refresh_status(context["caller"], runtime)
+
+
+def refresh_start(args, preamble, runtime, context):
+    """Ask for a full ParishSoft refresh as the Source refresh page does (PR 6a).
+
+    Without ``--request-key`` a new key is made and written to standard error
+    before anything is done, so a run that crashes can be repeated with it.
+    """
+    from uuid import uuid4
+
+    from .admin_refresh import start_refresh
+
+    key = args.request_key
+    if key is None:
+        key = uuid4()
+        print(
+            f"pk-admin: request key {key}; repeat with --request-key {key} "
+            "to request safely.",
+            file=context["stderr"],
+            flush=True,
+        )
+    return start_refresh(context["caller"], runtime, request_key=key, context=context)
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -875,6 +904,24 @@ def _task_retry_options(parser):
     parser.add_argument(
         "--request-key",
         type=_uuid,
+        help="a UUID that makes a repeat safe (default: a new one, "
+        "written to standard error)",
+    )
+
+
+def _uuid4(value):
+    """A canonical version 4 UUID, as the page's request key must be."""
+    parsed = _uuid(value)
+    if parsed.version != 4:
+        raise argparse.ArgumentTypeError("not a version 4 UUID")
+    return parsed
+
+
+def _refresh_start_options(parser):
+    """Options of ``refresh start``: the request key, a version 4 UUID."""
+    parser.add_argument(
+        "--request-key",
+        type=_uuid4,
         help="a UUID that makes a repeat safe (default: a new one, "
         "written to standard error)",
     )
@@ -1179,7 +1226,38 @@ def _operation_specs():
     )
 
 
-COMMANDS = COMMANDS + _read_specs() + _change_specs() + _operation_specs()
+def _refresh_specs():
+    """The manual ParishSoft refresh commands (PR 6a)."""
+    from .admin_refresh import RefreshStart, RefreshStatus
+
+    return (
+        CommandSpec(
+            "refresh start",
+            "Ask for a full ParishSoft refresh now, as the Source refresh page does.",
+            refresh_start,
+            "full",
+            True,
+            RefreshStart.field_names(),
+            6,
+            options=(_refresh_start_options,),
+            request_key=True,
+        ),
+        CommandSpec(
+            "refresh status",
+            "Show whether a refresh is running or waiting, and the latest ones.",
+            refresh_status,
+            "read_only",
+            False,
+            RefreshStatus.field_names(),
+            6,
+            audit_event=None,
+        ),
+    )
+
+
+COMMANDS = (
+    COMMANDS + _read_specs() + _change_specs() + _refresh_specs() + _operation_specs()
+)
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 
 
