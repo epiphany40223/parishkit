@@ -53,6 +53,27 @@ def _source_result(attempt):
     )
 
 
+def require_staged_load(request, service, attempt_id):
+    """Refuse unless the original owner's attempt has its exact staged load.
+
+    The system-only review (#142) needs the load but no campaign catalog, so
+    its refusal names the load, not the first campaign.
+    """
+    with work_transaction():
+        attempt = _owned(request, service, attempt_id)[1]
+        if (
+            attempt.state != "collecting"
+            or _expiry(attempt, database_now()) is not None
+        ):
+            raise PermissionError("Setup review is unavailable.")
+        if _source_result(attempt) is None:
+            raise UserFacingMissing(
+                _("Load the parish data before reviewing setup."),
+                link=reverse("admin:setup_source"),
+                link_label=_("Go to “Load parish data”"),
+            )
+
+
 def staged_source_result(attempt_id):
     """The id of the attempt's exact staged load result, for final readiness.
 

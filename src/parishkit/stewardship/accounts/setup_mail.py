@@ -155,6 +155,8 @@ def request_sample(
         sections = preview.compiled.candidate.document()["sections"]
         if not sections.get("campaigns"):
             # System setup (#142): a fixed message that needs no campaign.
+            # ``slot`` (the Test email page's template choice) names a
+            # campaign email, so it is ignored here.
             rendered = setup_test_message(document_parish({"sections": sections}))
         else:
             rendered = _campaign_sample(sections, slot)

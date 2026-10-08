@@ -22,9 +22,11 @@ from parishkit.stewardship.accounts.setup_mail import setup_test_message
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.readiness_mail import ReadinessMail
 from parishkit.stewardship.source.setup_completion import complete_setup
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 
+from ..test_setup_forms import VALUES
 from . import test_setup_preview_postgresql as preview
 from .credential_builders import keys
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
@@ -50,11 +52,19 @@ def test_system_setup_completes_without_a_campaign(
     setup_service, monkeypatch, tmp_path, config_role
 ):
     """No campaign, no Families and no codes; the parish data is still loaded."""
+    from parishkit.stewardship.accounts import setup_preview
+
+    # The back end is switched off until the wizard changes (#142 part b).
+    monkeypatch.setattr(setup_preview, "SYSTEM_ONLY_SETUP", True)
     monkeypatch.setattr(preview, "with_schedules", without_campaign)
     _, attempt, identifier = prepared(setup_service, monkeypatch, tmp_path)
     # The accepted setup test was the fixed message, not a campaign email.
     sent = SetupMailDelivery.objects.get()
     assert sent.state == "accepted"
+    expected = setup_test_message({"name": VALUES["parish"]["name"]})
+    mail = ReadinessMail.from_payload(sent.mail)
+    assert mail.subject == expected["subject"] == "Stewardship setup test"
+    assert (mail.text, mail.html) == (expected["text"], expected["html"])
     ring = keys()
     task = queued(setup_service, identifier)
     fake_provider(monkeypatch, pages())
@@ -88,10 +98,17 @@ def test_system_setup_completes_without_a_campaign(
     assert not document.get("campaigns") and not document.get("schedules")
 
 
-def test_setup_test_message_is_fixed_and_escaped():
-    """The setup email names the parish, escaped in HTML, and nothing else."""
-    message = setup_test_message({"name": "St. A & B <Parish>"})
-    assert message["subject"] == "Stewardship setup test"
-    assert "St. A &amp; B &lt;Parish&gt;" in message["html"]
-    assert "St. A & B <Parish>" in message["text"]
-    assert "{{" not in message["html"] + message["text"]
+def test_switched_off_review_still_requires_the_first_campaign(
+    setup_service, monkeypatch
+):
+    """Until the wizard changes, a draft with no campaign cannot be reviewed.
+
+    Otherwise an Admin could skip the campaign pages and finish setup with no
+    campaign and, before Create the campaign exists, no way to make one.
+    """
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.accounts.setup_preview import prepare_preview
+
+    request, _, _, _ = without_campaign(setup_service, monkeypatch)
+    with web_login(), pytest.raises(ConfigError):
+        prepare_preview(request, setup_service)
