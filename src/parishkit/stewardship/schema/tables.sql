@@ -985,7 +985,6 @@ CREATE TABLE public.stewardship_family_campaign (
     eligibility_changed_at timestamp with time zone NOT NULL,
     source_generation bigint NOT NULL,
     code_ciphertext text,
-    initial_invitation_state character varying(24) NOT NULL,
     first_live_submission_id uuid,
     effective_submission_id uuid,
     last_activity_at timestamp with time zone,

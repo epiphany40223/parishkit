@@ -55,7 +55,6 @@ class FamilyCampaign(MutableRecord):
     eligibility_changed_at = UTCDateTimeField()
     source_generation = models.PositiveBigIntegerField()
     code_ciphertext = models.TextField(null=True)
-    initial_invitation_state = models.CharField(max_length=24, default="not_sent")
     first_live_submission_id = models.UUIDField(null=True)
     effective_submission_id = models.UUIDField(null=True)
     last_activity_at = UTCDateTimeField(null=True)
