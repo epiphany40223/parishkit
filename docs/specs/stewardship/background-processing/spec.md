@@ -924,7 +924,11 @@ and, for a full slot, the configured time), so:
 
 The database's refresh-tick guard accepts a quick tick only at a listed quick
 time when the schedule lists them, resolved the same way, as it already does
-for full times (#465). That change and the slot decision record are two
+for full times (#465). It finds when the current schedule took effect, for
+the schedule-change catch-up, by comparing each activation's schedule
+normalized with the same defaults as the scheduler
+(`stewardship_refresh_schedule_v1`, which a test keeps in step with
+`cadence.refresh_settings`). That change and the slot decision record are two
 forward migrations, the guard change first and the table with the
 exclusions, under the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
@@ -936,7 +940,8 @@ keys added to the `source-cadence-v8` settings, as #465 added its own, so
 every earlier document stays valid:
 
 - `full_refresh_times`: the sorted, unique daily full times, with no cap of
-  eight; the earliest is also `nightly_time`;
+  eight beside `refresh_rules` (a document without them keeps the old
+  limit of eight and no spacing rule); the earliest is also `nightly_time`;
 - `quick_refresh_times`: the sorted, unique daily quick times, none of them a
   full time, present only when there is at least one;
 - `delta_refresh`: `times` when there are quick times, `off` when there are
@@ -944,13 +949,31 @@ every earlier document stays valid:
 - `full_refresh`: `daily`;
 - `refresh_rules`: the rules, single times, exceptions and the skip setting
   as the Administrator entered them, so the page can show and edit them.
+  It has exactly three fields: `rules`, a list of one to 96 rows, each
+  either `{"kind", "at"}` or `{"kind", "every", "from", "to"}` (`kind` is
+  `full` or `quick`, `every` one of the rule intervals in minutes, and `to`
+  at or after `from`); `skips`, a list of up to 96 rows, each `{"at"}` or
+  `{"from", "to"}` with `to` after `from`; and `skip_around_family_emails`,
+  a boolean.
 
 The v8 schema checks only the shape: canonical `HH:MM` times, sorted and
 unique lists, the nightly time as the earliest full time, no time in both
-lists, a closed set of rule fields and 15-minute spacing. Whether the lists
+lists, a closed set of rule fields and 15-minute spacing. Listed quick times
+and `delta_refresh: times` appear only beside `refresh_rules`, which in turn
+requires `full_refresh` `daily` (or absent) and `delta_refresh` `times` or
+`off`. Until the [slot decision record](#skipped-around-family-emails)
+exists (delivery step 2b of the
+[plan](../../../plans/stewardship/refresh-schedule.md#delivery-plan)), the
+schema refuses `skip_around_family_emails` turned on, since nothing could
+honor it. Whether a document has `refresh_rules` is part of its schedule
+for the [data-age rule](../operations/spec.md#parishsoft-data-age-and-connection),
+but their content is not: when step 2b accepts the skip setting, turning it
+on or off does not start a new schedule run, so the step 2b design must
+decide whether it should. Whether the lists
 are what the rules produce, and the quarter-hour rule for new times, are
 checked by the settings form and the command line, which share one
-validator; a stored document is never re-derived. Every place that lists or
+validator (`source/refresh_rules.py`); a stored document is never
+re-derived. Every place that lists or
 reads the cadence settings learns the new keys and values:
 
 - `CADENCE_SETTINGS` and `uses_cadence` (`accounts/source_cadence_schema.py`,

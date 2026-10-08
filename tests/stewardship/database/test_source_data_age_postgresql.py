@@ -529,3 +529,25 @@ def test_the_web_login_can_check_for_a_send_on_a_long_gap(tmp_path):
     configured(tmp_path)
     with task_login(ServiceRole.WEB), transaction.atomic():
         assert not send_hold.family_send_active()
+
+
+def test_a_catch_up_request_counts_as_a_scheduled_full_refresh(day, scheduled):
+    """The schedule-change catch-up (#632) is a scheduled full refresh.
+
+    Requested on time after the overdue slot, it means refreshes are not
+    being held (``deltas_skipped``), and like a full slot that ran it voids a
+    later hold entry as evidence for that slot (``catch_up_held``). Before
+    the overdue slot it changes nothing.
+    """
+    at = day("off")
+    morning(at, scheduled, quick=False)
+    held_entry(at(10, 30))
+    with transaction.atomic():
+        assert send_hold.deltas_skipped(at(10), at(10, 31))
+        assert send_hold.catch_up_held(at(10))
+    scheduled("catch_up", at(10, 5))
+    with transaction.atomic():
+        assert not send_hold.deltas_skipped(at(10), at(10, 31))
+        assert not send_hold.catch_up_held(at(10))
+        # Measured from 10:10, the 10:05 catch-up is before the span.
+        assert send_hold.catch_up_held(at(10, 10))

@@ -96,8 +96,10 @@ SEND_ALLOWANCE = timedelta(hours=2)
 RESUME_LEAD = timedelta(minutes=30)
 # Scheduled refreshes requested within this long mean the schedule is in use.
 DELTA_CADENCE_WINDOW = timedelta(days=1)
-# Scheduled refresh causes (a manual request is not the schedule running).
-SCHEDULED_CAUSES = ("nightly", "delta")
+# Scheduled refresh causes (a manual request is not the schedule running);
+# the full ones are a scheduled full slot and the schedule-change catch-up.
+SCHEDULED_FULL_CAUSES = ("nightly", "catch_up")
+SCHEDULED_CAUSES = (*SCHEDULED_FULL_CAUSES, "delta")
 
 
 def family_send_active(minimum=ACTIVE_MINIMUM):
@@ -186,7 +188,7 @@ def catch_up_held(overdue):
     Filtering by level first uses the operational log's level/time index.
     """
     ran_before = SourceRefreshCommand.objects.filter(
-        cause="nightly",
+        cause__in=SCHEDULED_FULL_CAUSES,
         created_at__gte=overdue,
         created_at__lt=OuterRef("created_at"),
     )

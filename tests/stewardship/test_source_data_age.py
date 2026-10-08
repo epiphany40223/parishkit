@@ -187,6 +187,15 @@ def test_connection_threshold_is_the_longest_gap_plus_the_margin():
     off = refresh_settings({"nightly_time": "02:00", "delta_refresh": "off"})
     assert connection_threshold(off, MARGIN) == timedelta(hours=24, minutes=30)
     assert connection_threshold(NIGHTLY, MARGIN) == timedelta(hours=1, minutes=30)
+    # Listed quick times (#632) count toward the gap.
+    listed = refresh_settings(
+        {
+            "nightly_time": "02:00",
+            "delta_refresh": "times",
+            "quick_refresh_times": ["08:00", "14:00", "20:00"],
+        }
+    )
+    assert connection_threshold(listed, MARGIN) == timedelta(hours=6, minutes=30)
 
 
 def test_digest_line_states_data_age_and_connection_in_the_parish_zone():

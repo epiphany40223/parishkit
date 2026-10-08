@@ -2164,7 +2164,7 @@ CREATE TABLE public.stewardship_source_refresh_command (
     kind character varying(8) NOT NULL,
     cause character varying(16) NOT NULL,
     request_id uuid NOT NULL,
-    CONSTRAINT source_refresh_command_cause CHECK (((cause)::text = ANY ((ARRAY['manual'::character varying, 'nightly'::character varying, 'initial'::character varying, 'delta'::character varying, 'fallback'::character varying])::text[]))),
+    CONSTRAINT source_refresh_command_cause CHECK (((cause)::text = ANY ((ARRAY['manual'::character varying, 'nightly'::character varying, 'initial'::character varying, 'delta'::character varying, 'fallback'::character varying, 'catch_up'::character varying])::text[]))),
     CONSTRAINT source_refresh_command_cause_kind CHECK (((((cause)::text = 'delta'::text) AND ((kind)::text = 'delta'::text)) OR ((NOT ((cause)::text = 'delta'::text)) AND ((kind)::text = 'full'::text)))),
     CONSTRAINT source_refresh_command_kind CHECK (((kind)::text = ANY ((ARRAY['full'::character varying, 'delta'::character varying])::text[]))),
     CONSTRAINT source_refresh_manual_actor CHECK (((NOT ((cause)::text = 'manual'::text)) OR (actor_id IS NOT NULL)))
