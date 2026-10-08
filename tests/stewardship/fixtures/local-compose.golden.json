@@ -525,9 +525,18 @@
      "bind": {
       "create_host_path": false
      },
-     "read_only": false,
-     "source": "/opt/parishkit/run/persistent/caddy/config",
-     "target": "/config",
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/Caddyfile",
+     "target": "/etc/caddy/Caddyfile",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/cache/static",
+     "target": "/srv/static",
      "type": "bind"
     },
     {
@@ -543,18 +552,9 @@
      "bind": {
       "create_host_path": false
      },
-     "read_only": true,
-     "source": "/opt/parishkit/config/services/Caddyfile",
-     "target": "/etc/caddy/Caddyfile",
-     "type": "bind"
-    },
-    {
-     "bind": {
-      "create_host_path": false
-     },
-     "read_only": true,
-     "source": "/opt/parishkit/cache/static",
-     "target": "/srv/static",
+     "read_only": false,
+     "source": "/opt/parishkit/run/persistent/caddy/config",
+     "target": "/config",
      "type": "bind"
     }
    ]
@@ -2597,18 +2597,18 @@
      "bind": {
       "create_host_path": false
      },
-     "read_only": true,
-     "source": "/opt/parishkit/credentials/database/operator",
-     "target": "/run/secrets/postgres-password",
+     "read_only": false,
+     "source": "/opt/parishkit/run/persistent/postgresql",
+     "target": "/var/lib/postgresql",
      "type": "bind"
     },
     {
      "bind": {
       "create_host_path": false
      },
-     "read_only": false,
-     "source": "/opt/parishkit/run/persistent/postgresql",
-     "target": "/var/lib/postgresql",
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/operator",
+     "target": "/run/secrets/postgres-password",
      "type": "bind"
     }
    ]

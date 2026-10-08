@@ -647,7 +647,9 @@ def invariant_sql(seeded_now, counts, *, start=None):
     delivery, fulfillment; session, baseline, submission, receipt), a daily-
     fact row exists for every elapsed campaign-local day from ``start`` (the
     campaign's start date; without it the count is only bounded below), the
-    live submission count equals what the timeline implies, and no seeded
+    live submission, receipt, form baseline and Family engagement counts
+    equal what the timeline implies (``counts`` is ``expected_counts``; a
+    missing key expects none), and no seeded
     timestamp in the tables the seed writes through is later than the seeded
     now, other than the allowlisted future-by-design columns. The check runs
     with the services stopped and before phase 4, so nothing is later than
@@ -690,6 +692,38 @@ def invariant_sql(seeded_now, counts, *, start=None):
             f"live submissions, expected {submissions}",
         )
     )
+    # The counts the timeline states without modelling eligibility (#499).
+    # Outbox and occurrence counts depend on it and are not pinned (#731).
+    checks += [
+        _raise_unless(query, f"= {expected}", f"{what}, expected {expected}")
+        for query, expected, what in (
+            (
+                # Accepting a submission writes its receipt (or a proven
+                # no-recipient outcome) in the same transaction.
+                "SELECT count(*) FROM stewardship_submission_receipt r "
+                "JOIN stewardship_submission s ON s.id = r.submission_id "
+                "WHERE s.mode = 'live'",
+                submissions,
+                "receipts for live submissions",
+            ),
+            (
+                # A review refresh replaces the baseline it supersedes, so
+                # every row not replaced is one the timeline opened.
+                "SELECT count(*) FROM stewardship_family_form_baseline "
+                "WHERE mode = 'live' AND state <> 'replaced'",
+                int(counts.get("baseline", 0)),
+                "live form baselines not replaced by a review refresh",
+            ),
+            (
+                # Signing in records the Family's link (one row per Family);
+                # unlike the session row, cleanup never removes it.
+                "SELECT count(*) FROM stewardship_family_engagement "
+                "WHERE mode = 'live'",
+                int(counts.get("engaged", 0)),
+                "live Family engagement rows",
+            ),
+        )
+    ]
     checks += [
         _raise_unless(
             f"SELECT count(*) FROM {table} WHERE {column} > seeded_now",
@@ -710,6 +744,17 @@ def invariant_sql(seeded_now, counts, *, start=None):
         "    RAISE NOTICE 'seed invariants hold at %', seeded_now;\n"
         "END $$;\n"
     )
+
+
+def expected_counts(timeline):
+    """The row counts the invariant check pins, from the timeline alone.
+
+    The per-kind event counts (``submission``, ``baseline``, ``midnight``
+    and the rest), plus ``engaged``: the Families with any event, each of
+    which signs in at least once and so has one live engagement row.
+    """
+    families = {event.family for event in timeline.family_events()}
+    return {**timeline.counts(), "engaged": len(families)}
 
 
 # Step runners.
@@ -1199,7 +1244,9 @@ def check_step(request, configuration):
     )
     with connection.cursor() as cursor:
         cursor.execute(
-            invariant_sql(seeded_now, result.counts(), start=result.calendar.start)
+            invariant_sql(
+                seeded_now, expected_counts(result), start=result.calendar.start
+            )
         )
     return {"step": "check", "result": "invariants hold"}
 

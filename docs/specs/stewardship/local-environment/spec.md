@@ -769,11 +769,17 @@ offline `migration` identity, a `DO` block that raises unless:
   submission, which is at or before its receipt;
 - a daily-fact row exists for exactly each elapsed campaign-local day from the
   start date;
-- the live submission count equals the count the timeline implies (other
-  per-table counts are not pinned: Family session rows are deleted an hour
-  after their last activity by design, and the outbox and occurrence counts
-  depend on eligibility the real code decided; a follow-up tracked from
-  [#476](https://github.com/epiphany40223/parishkit/issues/476) may pin them);
+- the per-table counts the timeline states without modelling eligibility
+  equal what it implies ([#499](https://github.com/epiphany40223/parishkit/issues/499)):
+  live submissions; receipts for live submissions (one each); live form
+  baselines other than those a review refresh replaced (one per baseline
+  event); and live Family engagement rows (one per Family with any event,
+  since each signs in). Family session rows are not pinned, because they are
+  deleted an hour after their last activity by design, and neither are the
+  outbox and occurrence counts, which depend on eligibility the real code
+  decides at each instant
+  ([#731](https://github.com/epiphany40223/parishkit/issues/731) derives them
+  from the database);
 - no timestamp in the tables the seed writes through (sessions, baselines,
   submissions, receipts, outbox messages, occurrences, fulfillments, daily
   facts, Family engagement, task runs and audit events) is later than the

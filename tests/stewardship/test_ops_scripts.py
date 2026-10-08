@@ -215,12 +215,33 @@ prepend() {{ {{ echo "$1"; cat "$runs"; }} >"$runs.new"; mv "$runs.new" "$runs";
 case "$*" in
     "workflow run"*)
         if [ -n "${{FAKE_NEW_RUN-}}" ]; then prepend "$FAKE_NEW_RUN"; fi ;;
+    "api repos/"*/actions/runs/*)
+        # The direct read of one run (#730); FAKE_UNLISTED (run ids,
+        # space separated) hides runs from the listing but not from this
+        # read, as a partial page does, and FAKE_API_STATE overrides
+        # FAKE_RUN_STATE here only, as a lagging listing does.
+        want=${{2##*/}}
+        state=${{FAKE_API_STATE:-${{FAKE_RUN_STATE:-completed|success|}}}}
+        IFS='|' read -r st co _ <<<"$state"
+        while IFS='|' read -r id rsha title; do
+            [ "$id" = "$want" ] || continue
+            rsha=${{rsha:-$FAKE_HEAD}} title=${{title:-${{FAKE_TITLE-CI (jobs: all)}}}}
+            printf '{{"id":%s,"head_sha":"%s","status":"%s",' "$id" "$rsha" "$st"
+            if [ -n "$co" ]; then printf '"conclusion":"%s",' "$co"
+            else printf '"conclusion":null,'; fi
+            printf '"display_title":"%s","event":"%s",' \
+                "$title" "${{FAKE_EVENT:-workflow_dispatch}}"
+            printf '"path":".github/workflows/ci.yml"}}\n'
+            exit 0
+        done <"$runs"
+        echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
     "run list"*ci.yml*displayTitle*)
         IFS='|' read -r st co _ <<<"${{FAKE_RUN_STATE:-completed|success|}}"
         sep=""
         printf '['
         while IFS='|' read -r id rsha title; do
             [ -n "$id" ] || continue
+            case " ${{FAKE_UNLISTED-}} " in *" $id "*) continue ;; esac
             rsha=${{rsha:-$FAKE_HEAD}} title=${{title:-${{FAKE_TITLE-CI (jobs: all)}}}}
             printf '%s{{"databaseId":%s,"headSha":"%s",' "$sep" "$id" "$rsha"
             printf '"status":"%s","conclusion":"%s",' "$st" "$co"
@@ -515,8 +536,15 @@ def test_release_refuses_a_run_release_yml_would_not_check(tmp_path):
     )
     assert result.returncode == 1
     assert "is not the full CI run that release.yml will check" in result.stderr
-    assert "(that is '78')" in result.stderr
-    assert "--workflow ci.yml --event workflow_dispatch" in calls[0]
+    # The listing names 78; a persistent disagreement decides none (#730).
+    assert "(that is 'none')" in result.stderr
+    # The named run is read directly first (#730), then the listing decides,
+    # re-read a bounded number of times while another run decides.
+    assert calls[0] == "gh api repos/epiphany40223/parishkit/actions/runs/77"
+    listings = [c for c in calls if "--workflow ci.yml --event workflow_dispatch" in c]
+    assert len(listings) == 4
+    assert "run 78 decides instead of run 77" in result.stderr
+    assert "gave up re-reading the run listing" in result.stderr
     assert not any("workflow run" in c for c in calls)
     assert remote_tag(remote, "v1.2.3") == ""
 
@@ -554,7 +582,8 @@ def test_release_refuses_a_failed_mismatched_or_superseded_run(tmp_path):
     )
     assert result.returncode == 1
     assert "After the watch, the full CI run release.yml will check" in result.stderr
-    assert "is '80', not 77" in result.stderr
+    assert "is 'none', not 77" in result.stderr
+    assert "run 80 decides instead of run 77" in result.stderr
     # Only an all-jobs dispatch is evidence (#626): a jobs=affected run, or
     # one named anything else, is refused before it is watched.
     for n, title in enumerate(("CI (jobs: affected)", "CI", "")):
@@ -615,6 +644,60 @@ def test_release_with_a_named_run_tags_and_prints_the_digest(tmp_path):
     # is never the one watched.
     assert "gh run view 99 --repo epiphany40223/parishkit --log" in calls
     assert not any(c.startswith("gh run view 98 ") for c in calls)
+
+
+def test_release_refuses_a_named_run_the_listing_omits(tmp_path):
+    """A run gh run list never shows is refused: release.yml could not see it.
+
+    The direct read (#730) proves the run exists and passed, and the listing
+    is re-read a bounded number of times, but only the listing decides.
+    """
+    work, remote, sha = release_repo(tmp_path)
+    result, calls = run_release(
+        tmp_path,
+        work,
+        "--yes",
+        "1.2.3",
+        "77",
+        ci_runs="77\n",
+        FAKE_HEAD=sha,
+        FAKE_UNLISTED="77",
+        FAKE_RELEASE_RUN="99",
+    )
+    assert result.returncode == 1
+    assert "(that is 'none')" in result.stderr
+    assert "gh run list returned 0 of 100 requested runs" in result.stderr
+    assert "run 77 is missing from the listing" in result.stderr
+    assert "gave up re-reading the run listing" in result.stderr
+    assert "gh api repos/epiphany40223/parishkit/actions/runs/77" in calls
+    assert not any("status,conclusion,jobs" in c for c in calls)
+    assert remote_tag(remote, "v1.2.3") == ""
+
+
+def test_release_refuses_a_stale_listed_success(tmp_path):
+    """A listed success the direct read contradicts never reaches a tag.
+
+    A re-run keeps its run id, so the listing can still show the old success
+    while the run is running again (or failed); release.sh refuses (#730).
+    """
+    work, remote, sha = release_repo(tmp_path)
+    for state in ("in_progress||", "completed|failure|"):
+        result, calls = run_release(
+            tmp_path / state.split("|")[0],
+            work,
+            "--yes",
+            "1.2.3",
+            "77",
+            ci_runs="77\n",
+            FAKE_HEAD=sha,
+            FAKE_API_STATE=state,
+            FAKE_RELEASE_RUN="99",
+        )
+        assert result.returncode == 1, state
+        assert "(that is 'none')" in result.stderr
+        assert "no run decides, so the caller refuses" in result.stderr
+        assert not any("status,conclusion,jobs" in c for c in calls)
+        assert remote_tag(remote, "v1.2.3") == ""
 
 
 def test_release_deletes_the_local_tag_when_the_push_fails(tmp_path):
