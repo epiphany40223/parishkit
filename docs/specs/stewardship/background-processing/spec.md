@@ -407,38 +407,74 @@ Between **Start go-live** and **Confirm Production** on the
 [Go live page](../admin-portal/spec.md#go-live-page), the system runs the
 steps in order by itself. The scheduler's go-live producer, built like the
 [ParishSoft refresh producer](#refresh-schedule), looks at the one open
-ProductionTransitionRequest on each loop and does at most one thing:
+ProductionTransitionRequest on each loop and does at most one thing, always
+for the request's current [attempt](../admin-portal/spec.md#go-live-page):
 
-1. **The go-live's full refresh.** The Start transaction already queued it as
-   an ordinary [manual request](#manual-request) whose actor is the
-   Administrator who started go-live, with a command identity derived from
-   the transition request, so a repeated Start or a crash cannot queue a
-   second one.
-2. **Prepare the links.** Once cleanup is `cleanup_complete` and that refresh
-   (or a later one) has promoted, and the Family population matches the
-   current snapshot and generation, it requests the inactive Family link
-   preparation through the existing owner, with the same actor and a command
-   identity derived from the transition request and the snapshot. Preparation
-   then runs as it does today.
+1. **The attempt's full refresh.** Start (attempt 1) and **Refresh and
+   prepare again** (each later attempt) queue it in the web transaction as an
+   ordinary [manual request](#manual-request) whose actor is the
+   Administrator who clicked. Its command identity is derived from the
+   transition request and the attempt number (a UUIDv5 of the request id and
+   `refresh:<attempt>`), so a repeated click or a crash cannot queue a second
+   refresh for the same attempt, and a new attempt always gets a new one.
+2. **Prepare the links.** Once cleanup is `cleanup_complete`, the attempt's
+   refresh (or a later full refresh) has promoted, and the Family population
+   matches the current snapshot and generation, it requests the inactive
+   Family link preparation through the existing owner. The actor is the
+   Administrator who started go-live (the transition request's requester);
+   the command identity is derived from the request, the attempt and the
+   snapshot. Preparation then runs as it does today.
 3. **Prepare again when the links go stale.** Prepared links are bound to the
    source snapshot and generation, so any promotion makes them stale, even
    one that changes no Family. When the ready preparation is no longer
    current, the producer cancels it through the existing discard path and,
-   once disposal finishes, requests a new one on current data. At most three
-   preparations run automatically per refresh hold; after that the step stops
-   with "ParishSoft data keeps changing; try again later" and **Retry**.
+   once disposal finishes, requests a new one on current data. Per attempt
+   it makes the first preparation and at most three re-preparations; when a
+   fourth would be needed, the step stops with "ParishSoft data keeps
+   changing; try again later" and **Retry**, which starts the next attempt.
 4. **Retry failures.** A failed cleanup or preparation keeps its existing
    automatic retries. When they are exhausted, the step shows its failure
    and **Retry**, which uses the existing retry paths.
+5. **Stop at the hold end.** Once the attempt's
+   [hold end](#refreshes-wait-for-go-live) has passed, the producer makes no
+   further request for that attempt, so it never chases scheduled refreshes;
+   the page offers Refresh and prepare again.
 
 The producer never confirms Production, never starts cleanup and never
-changes global mode or campaign lifecycle: those stay with the two
-Administrator actions. Every request it makes is an ordinary command that the
-existing owners admit and audit, so a refused request (the gate was released,
-the campaign ended) is simply not retried. No new table is needed: progress
-is read from the transition request, the refresh requests and the
-preparation rows that already exist. Nothing runs for a deployment in
-Production, because it has no open transition request.
+changes global mode or campaign lifecycle: those stay with the Administrator
+actions. Every request it makes is an ordinary command that the existing
+owners admit and audit, so a refused request (the gate was released, the
+campaign ended, the requester is no longer a current Administrator) is
+simply not retried, and the page says why. No new table is needed: progress
+and attempts are read from the transition request, its audit events, the
+refresh requests and the preparation rows that already exist. Nothing runs
+for a deployment whose campaign is live in Production, because it has no
+open transition request.
+
+**Migration 0025.** Today only the web login may record link preparation or
+its discard, and only for a current Administrator: the
+`stewardship_production_tokens_intake_v1` trigger (on
+`stewardship_production_tokens` and `stewardship_production_token_cancel`)
+refuses any other session user, and the
+`stewardship_production_tokens_task_pin_v1` trigger does the same for a
+retried task. Frozen migration 0025 replaces both functions (with
+`CREATE OR REPLACE`, re-asserting `SECURITY DEFINER` and the `search_path`,
+and ending in a DO block that refuses to commit unless both are installed
+with the new checks, tested against the old definitions):
+
+- the scheduler login (`pk_stewardship_scheduler`) is admitted beside the web
+  login;
+- for the scheduler the actor must be the transition request's requester,
+  who must still be a current Administrator
+  (`stewardship_export_authorized_v1`), and the request must still own the
+  go-live gate; the web login keeps today's check;
+- every other check is unchanged: READ COMMITTED, the work-order lock, an
+  attributed actor, current scope, an available slot, the exact task root,
+  and the refusal "Selected live links cannot be cancelled" for a
+  generation that is active or selected.
+
+The scheduler's database grants gain `SELECT` and `INSERT` on those two
+tables, through the grants registry and the upgrade's database-grants step.
 
 ### Schedule replacement and removal
 
@@ -1056,30 +1092,42 @@ unchanged.
 > **Status:** target of
 > [#462](https://github.com/epiphany40223/parishkit/issues/462).
 
-From **Start go-live** until Production is confirmed or go-live is stopped,
-the scheduler holds every scheduled ParishSoft refresh: the quick (delta)
-slots and every scheduled full slot, the nightly one included. Held means
-what it means for a [bulk send](#deltas-wait-for-a-bulk-family-send): the
-slot is due and runs later as a catch-up, it creates no command, task or
-failure, and the scheduler logs `source_refresh_held` once per held slot. A
+From the start of a go-live [attempt](../admin-portal/spec.md#go-live-page)
+(**Start go-live**, or **Refresh and prepare again**) until its hold end, the
+scheduler holds every scheduled ParishSoft refresh: the quick (delta) slots
+and every scheduled full slot, the nightly one included. Held means what it
+means for a [bulk send](#deltas-wait-for-a-bulk-family-send): the slot is due
+and runs later as a catch-up, and it creates no command, task or failure. A
 [manual request](#manual-request) still runs; the Go live page says that it
 makes the system [prepare the links again](#go-live-sequencing).
 
 The hold is derived from durable state, with no new flag: it is on while the
 current Testing campaign has a ProductionTransitionRequest in a state that
-owns the go-live gate, and it ends at whichever comes first:
+owns the go-live gate, and its current attempt's **hold end** has not
+passed. The hold end is the earlier of 60 minutes after the attempt's
+refresh promoted and 3 hours after the attempt started. Activation,
+cancellation or Stop go-live ends the hold at once.
 
-- the request is activated or cancelled;
-- 60 minutes after the go-live's latest full refresh promoted;
-- 3 hours after Start, which bounds a go-live whose refresh never promotes.
+**Evidence and logging.** The hold's only evidence is the transition request
+and its attempts. The scheduler logs `go_live_refresh_held` at INFO to the
+process log once per held slot, correlated to the slot's command identity.
+It never writes, reuses or filters on the bulk-send hold's durable
+`source_refresh_held` entry with the `schedule` context, so the bulk-send
+health rules cannot mistake a go-live for a send.
 
-After the hold ends, the first scheduler loop creates the current slots'
-refreshes, which catch up, and the Go live page offers **Refresh and prepare
-again**. Slots due while the hold was on do not count toward
-[ParishSoft data that is out of date](../operations/spec.md#parishsoft-data-age-and-connection),
-and the ParishSoft health line reads "Scheduled refreshes are waiting for
-go-live" instead of an alarm. A deployment in Production never holds a
-refresh this way.
+**Health while held, and after.** While the hold is on, the ParishSoft
+health line reads "Scheduled refreshes are waiting for go-live" instead of
+the out-of-date alarm, and slots held by it do not count toward
+[ParishSoft data that is out of date](../operations/spec.md#parishsoft-data-age-and-connection).
+Refresh failures still alert as usual: a failed attempt refresh, a failed
+manual refresh and a connection failure are reported as they are today.
+When the hold ends, the first scheduler loop creates the current slots'
+refreshes, which catch up, and held slots count again with the same
+lateness margin as the bulk-send hold's allowance: the data is out of date
+if no full refresh has promoted within `source_stale_seconds` after the hold
+end. So a go-live can silence the alarm for at most 3 hours per attempt,
+never for a day. A deployment whose campaign is live in Production never
+holds a refresh this way.
 
 ### Full cycle
 

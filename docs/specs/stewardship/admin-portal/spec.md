@@ -2209,7 +2209,10 @@ Going live is a dedicated workflow, not a toggle. It requires:
 - valid, complete campaign configuration and no overlapping active campaign;
 - a commit instant before the campaign closing instant, with the preview
   explicitly identifying whether the result will be `scheduled` or `active`;
-- recent successful full ParishSoft refresh and expected-tenant validation;
+- a successful full ParishSoft refresh with expected-tenant and scope
+  validation, recent as the [Go live page](#go-live-page) defines it: Start
+  accepts an older one because it queues the go-live's own, and
+  confirmation requires that one (or a later one);
 - successful Google email and optional Slack checks;
 - valid Admin recipients, sender, templates/placeholders, links, and DNS/public
   origin;
@@ -2369,13 +2372,15 @@ gate.
 > Testing cleanup, Family links, confirmation and progress pages, with their
 > 5-minute page limits, as the
 > [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
-> describes.
+> describes. The page keeps its registry name, Go-live readiness, in the
+> [page-name table](#page-names-and-placement) until the slice that builds it
+> renames it Go live there and in the code together.
 
 Going live is one guided page, **Go live**, at the campaign's existing go-live
-address. It replaces the readiness, Testing cleanup, Family links and final
-confirmation pages, and needs no one to time a click against the
-[refresh schedule](../background-processing/spec.md#refresh-schedule). The
-Administrator acts twice: once to start, acknowledging the irreversible
+address (today's Go-live readiness). It replaces the readiness, Testing
+cleanup, Family links and final confirmation pages, and needs no one to time a
+click against the [refresh schedule](../background-processing/spec.md#refresh-schedule).
+The Administrator acts twice: once to start, acknowledging the irreversible
 Testing cleanup, and once to confirm Production, with the only Google sign-in.
 The system does everything in between. The page is a stepper with the same
 Next/Back and completion marks as the setup wizard, and each step shows only
@@ -2387,26 +2392,40 @@ what applies now:
    public web address** button runs the DNS and origin check and shows its
    result in place, beside the button. The step also shows, as warnings that
    do not block, when the last backup completed and whether debug logging is
-   on. It is the last step of the
-   [Campaign setup](#campaign-configuration) stepper.
+   on. This step is the last step, Go live, of the Campaign setup stepper
+   that Create the campaign
+   ([#142](https://github.com/epiphany40223/parishkit/issues/142)) adds, and
+   only this step shows that stepper's Back; once go-live has started, steps
+   2 to 5 show only the Go live page's own steps, because campaign settings
+   are locked by the go-live gate.
 2. **Start.** The cleanup inventory (counts first, then the Admin-only Family
    list, each Testing Family named as the Family directory names it), the
    acknowledgement that Testing cleanup cannot be undone, and **Start
-   go-live**. Starting needs no fresh sign-in, as today.
+   go-live**. Starting needs no fresh sign-in, as today. The server re-checks
+   readiness at the POST. Every problem still blocks except one: a full
+   refresh that is merely older than `source_stale_seconds`
+   (`full_refresh_stale`), which Start waives because it queues the go-live's
+   own full refresh in the same transaction. A missing full refresh
+   (`full_refresh_required`), a tenant or scope change
+   (`source_scope_changed`), a Family population that does not match the
+   current data, and every other problem still refuse Start.
 3. **Preparing.** One progress view, refreshed in place, with one line per
    stage: Testing cleanup, the go-live's full ParishSoft refresh, and
    preparing the inactive Family links. A stage that waits says what it waits
    for in words ("Waiting for the ParishSoft refresh to finish"), never a
    time to act by. A failed stage shows its sanitized reason and **Retry**.
    If ParishSoft data changes after the links were prepared, for example
-   after a manual refresh, the system prepares them again by itself and the
-   line says so.
+   after a manual refresh, the system
+   [prepares them again](../background-processing/spec.md#go-live-sequencing)
+   by itself and the line says so.
 4. **Confirm Production.** One impact preview, built once the links are
    prepared: whether the campaign becomes `scheduled` or `active`, the
    active, eligible and no-email Family counts, and the live messages due at
    once. Below it, the typed `Production` box and **Confirm Production**.
-   When the Administrator's Google sign-in is older than the fresh window,
-   the button reads **Confirm with Google** and uses the existing
+   When the Administrator's Google sign-in is older than the fresh window
+   **or was made before Testing cleanup completed** (the SQL confirmation
+   guard requires a sign-in after cleanup's `complete` event), the button
+   reads **Confirm with Google** and uses the existing
    [step-up](../architecture/spec.md#identity-and-session-security): the same
    preview comes back after the sign-in and the Administrator presses Confirm
    Production once more. Nothing is confirmed automatically after a sign-in.
@@ -2429,20 +2448,38 @@ names it and shows the updated step, never "Check this value.":
   Review the updated preview." when the target changes from `scheduled` to
   `active`;
 - "The campaign has ended, so it cannot go live." at or after its close;
+- "ParishSoft refreshes resumed while this waited." when the refresh hold
+  has ended (below);
 - "Another Administrator stopped go-live." or "Another Administrator already
   confirmed Production." when the request moved on in another tab;
 - "Confirm it's you with Google, then confirm again." when the sign-in is
-  older than the fresh window.
+  older than the fresh window or predates cleanup's completion.
 
-**Data that cannot move under the Administrator.** From Start until
-confirmation or Stop, [scheduled refreshes wait](../background-processing/spec.md#refreshes-wait-for-go-live),
-so the prepared links stay current. Go-live readiness's full-refresh window
-is measured from the go-live's own full refresh, which the system queued at
-Start, and it cannot run out while that hold lasts. The hold is bounded (60
-minutes after the go-live's refresh promoted). When it ends before
-confirmation, the Confirm step instead shows "ParishSoft refreshes resumed
-while this waited" and one button, **Refresh and prepare again**, which queues
-a new full refresh and prepares the links again without a second cleanup.
+**Freshness during a go-live.** Each Start, and each **Refresh and prepare
+again** below, begins an **attempt**, numbered from 1 within the transition
+request. An attempt queues one full refresh, the attempt's refresh. From
+the attempt's start,
+[scheduled refreshes wait](../background-processing/spec.md#refreshes-wait-for-go-live)
+until the attempt's **hold end**, which is the earlier of 60 minutes after
+the attempt's refresh promoted and 3 hours after the attempt started (the
+cap, for a refresh that never promotes). The exact rule, used by every
+go-live check after Start (the links step, the confirmation readiness
+re-check in `collect_readiness`, and the confirmation deadline) in place of
+today's `source_stale_seconds` expiry, is: the source is ready when the
+current full snapshot is the attempt's refresh or a later full refresh that
+started after the attempt began, it passes the tenant and scope checks, and
+the current instant is before the hold end. `source_stale_seconds` itself is
+unchanged and still governs readiness before Start.
+
+**After the hold ends.** When the hold end passes before confirmation,
+whether 60 minutes after the refresh or at the 3-hour cap, scheduled
+refreshes resume, the system stops preparing links for that attempt, and the
+Confirm step shows "ParishSoft refreshes resumed while this waited" with two
+choices: **Refresh and prepare again**, which starts the next attempt (a new
+refresh, a new 60-minute hold measured from its promotion and capped 3 hours
+after it started, and new link preparation, without a second cleanup), and
+**Stop go-live**. There is no limit on attempts; each needs the
+Administrator's click.
 
 **Stop go-live.** Every step before confirmation offers **Stop go-live**. It
 asks for confirmation, says that Testing data already cleaned up is not
@@ -2461,11 +2498,14 @@ removed. The
 [command line](../admin-automation/spec.md#production-transition-and-withdrawal)
 follows the same two actions.
 
-**Production is unaffected.** All of this exists only while the current
-campaign is a Testing draft going live. A deployment already in Production
-never has a go-live request, so it never holds a refresh, never runs the
-sequencing and never shows these steps; its campaign, refreshes, mail and
-emailed Family codes and links are unchanged.
+**The current Production campaign is unaffected.** All of this exists only
+while the current campaign is a Testing draft going live. While a deployment
+is in Production with its campaign live, it has no go-live request, so it
+never holds a refresh, never runs the sequencing and never shows these steps;
+that campaign, its refreshes, mail and emailed Family codes and links are
+unchanged. The flow applies to the next campaign's go-live, after the current
+one is archived and the deployment returns to Testing
+([#527](https://github.com/epiphany40223/parishkit/issues/527)).
 
 ### Restore release
 

@@ -1060,8 +1060,9 @@ if:
   bulk-send hold's allowance; and
 - it did not fall while a go-live was
   [holding scheduled refreshes](../background-processing/spec.md#refreshes-wait-for-go-live).
-  That hold is bounded, and the go-live's own full refresh starts it, so the
-  data is never older than the hold allows.
+  The hold starts when the Administrator starts a go-live attempt and lasts
+  at most 3 hours; once it ends, held slots count as due again, with the
+  lateness margin measured from the hold's end.
 
 With the nightly refresh alone at 02:00, the data is out of date at 02:30 if
 that refresh has not promoted. With full refreshes at 00:00 and every two
@@ -1124,11 +1125,12 @@ scheduled full refresh is 02:00 tomorrow.
 - The settings page no longer refuses a schedule for its gaps: it states the
   longest wait for new data and when the alarm would sound (see
   [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary)).
-- Go-live readiness still requires a full refresh that started within
-  `source_stale_seconds`. During a go-live it uses the go-live's own full
-  refresh, and the window runs while scheduled refreshes
-  [wait for the go-live](../background-processing/spec.md#refreshes-wait-for-go-live)
-  (see the [Go live page](../admin-portal/spec.md#go-live-page)).
+- Before Start, go-live readiness still requires a full refresh that
+  started within `source_stale_seconds`, and Start waives only that age
+  because it queues the go-live's own refresh. After Start, the go-live's
+  checks require the attempt's refresh (or a later full refresh) and expire
+  at the attempt's hold end instead; see
+  [freshness during a go-live](../admin-portal/spec.md#go-live-page).
 
 Pages show these times in the browser's time zone and email and the command
 line in the parish's, each sentence in one format, for example "ParishSoft
