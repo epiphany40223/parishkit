@@ -454,7 +454,7 @@ def freshness(request):
     return 0 <= age <= FRESH_SECONDS, max(0, int(age // 60))
 
 
-def require_fresh(caller):
+def require_fresh(caller, *, irreversible=False, record=True):
     """A fresh Google round trip, not a browser flag, admits privileged commands.
 
     ``caller`` is an ``AdminCaller`` (until the final ADM-11 PR, a Django
@@ -462,11 +462,19 @@ def require_fresh(caller):
     within the last five minutes. An automation caller stands in for that
     sign-in with a live, full-scope automation session (ADM-11 PR 5; see
     ``_automation_fresh``). Returns the sign-in instant the action records,
-    which its SQL guard compares with the session row.
+    which its SQL guard compares with the session row. ``irreversible`` marks
+    the actions whose automation notice is ``irreversible`` (the Production
+    confirmation and pre-start withdrawal); the web ignores it. A passive
+    probe (a page showing whether a fresh sign-in is in place) passes
+    ``record=False``: it is no action, so it records no fresh-gate event or
+    notice.
     """
     caller = as_caller(caller)
     if caller.channel == AUTOMATION:
-        return _automation_fresh(caller)
+        instant = _automation_fresh(caller)
+        if record:
+            _record_automation_fresh(caller, irreversible=irreversible)
+        return instant
     row = caller.portal_session
     if (
         caller.channel != WEB
@@ -518,6 +526,61 @@ def _automation_fresh(caller):
     ):
         raise FreshAuthenticationRequired("This needs a live full-scope session.")
     return found[2]
+
+
+def _record_automation_fresh(caller, *, irreversible):
+    """Tell Administrators that an automation session passed a fresh gate.
+
+    Once per state-changing command (the command line sets ``command_type``;
+    a read or preview has none and records nothing), in the action's own
+    transaction so it commits or rolls back with the action. "Once" is per
+    invocation and per kind, read from the database: a notice of the same
+    kind, session and correlation already recorded suppresses another (an
+    attempt that rolled back left none, so a retried attempt records again;
+    an irreversible gate after a fresh-gated one still records its own
+    notice and incident): an
+    ``automation_fresh_gate`` audit event (the Administrator as actor, the
+    automation session as subject) distinguishes an action whose fresh
+    sign-in an automation session stood in for, and a dashboard notice
+    names the session, command and campaign. An irreversible action's
+    notice is ``irreversible`` and also observes the
+    ``automation_irreversible`` incident, which emails and posts to Slack
+    after commit.
+    """
+    from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
+    from parishkit.stewardship.audit.services import record_action
+    from parishkit.stewardship.jobs.operational_content import IncidentKind
+
+    from .automation_models import AutomationNotice
+    from .automation_sessions import notify, observe
+
+    if caller.command_type is None:
+        return
+    if (
+        caller.correlation_id is not None
+        and AutomationNotice.objects.filter(
+            automation_session_id=caller.automation_session_id,
+            correlation_id=caller.correlation_id,
+            kind="irreversible" if irreversible else "fresh_gated",
+        ).exists()
+    ):
+        return
+    record_action(
+        Action.AUTOMATION_FRESH_GATE,
+        actor_kind=ActorKind.PORTAL_USER,
+        actor_id=caller.principal.identity,
+        subject_id=caller.automation_session_id,
+        context={"outcome": Outcome.SUCCEEDED},
+    )
+    notify(
+        "irreversible" if irreversible else "fresh_gated",
+        caller.automation_session,
+        command_type=caller.command_type,
+        campaign_id=caller.campaign_id,
+        actor_id=caller.principal.identity,
+    )
+    if irreversible:
+        observe(IncidentKind.AUTOMATION_IRREVERSIBLE)
 
 
 def cleanup_admin_sessions(*, batch_size=500):

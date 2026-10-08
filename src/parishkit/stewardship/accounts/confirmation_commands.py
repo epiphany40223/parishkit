@@ -163,7 +163,7 @@ def confirm(
             or state.target_state != binding["target"]
         ):
             raise StaleRecordError("Review a fresh Production confirmation preview.")
-        authenticated = require_fresh(request)
+        authenticated = require_fresh(request, irreversible=True)
         completed = (
             ProductionTransitionEvent.objects.filter(
                 request_id=transition_id, action="complete"

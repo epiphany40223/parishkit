@@ -1303,6 +1303,17 @@ does after a person types them. A prompting command that reads a `-` input
 requires `--yes`. The structured log records `confirmation` as `prompt` or
 `yes` for each prompting command; the audit trail does not record it.
 
+From PR 5b, `admin_cli.confirm` implements this: the answer is one line of
+at most 256 bytes, compared exactly after its line ending and surrounding
+ASCII spaces are trimmed; the log field rides on the command's
+`task_started` line. A command asks before it opens the action's
+transaction, so no lock is held while a person reads and types. The host
+wrapper forwards exactly one answer line from the terminal and stops
+waiting for it once the command has finished. A command declares that it prompts in the catalog
+(`prompts`), which gives it `--yes`, and adds its `AREA_VERB` words to the
+host wrapper's `PROMPTING` list so the wrapper forwards a terminal's input.
+The first prompting commands arrive with the actions that need them.
+
 ### Audit attribution
 
 The SQL context check (`stewardship_safe_context_v1`, mirrored by
@@ -1324,6 +1335,21 @@ new context keys:
   invocation's correlation ID, and context `outcome` only. Because the session
   row is kept, this event identifies the channel, label and approver
   permanently.
+- **Fresh gates.** When an automation session stands in for a fresh
+  sign-in (from PR 5b), the state-changing command records one
+  `automation_fresh_gate` event (the Administrator as actor, the automation
+  session as subject, context `outcome` only) and its dashboard notice
+  (`fresh_gated`, or `irreversible` with the `automation_irreversible`
+  incident for the Production confirmation and pre-start withdrawal), in
+  the action's own transaction, so an action whose fresh sign-in an
+  automation session supplied is told apart from one a browser supplied. A
+  read, a preview or a page's passive check (`require_fresh(...,
+  record=False)`) records neither. One per invocation and kind: a notice of
+  the same kind for the session and the invocation's correlation ID already
+  recorded suppresses a second, so an irreversible gate after a fresh-gated
+  one still records its own notice and incident. Testing cleanup is not
+  fresh-gated, so its `irreversible` notice and incident are recorded by the
+  cleanup command itself (PR 12).
 - **Read commands** record exactly the view events the page records (for
   example `family_codes_viewed`, `delivery_viewed`, `system_logs_viewed`), and
   no others.

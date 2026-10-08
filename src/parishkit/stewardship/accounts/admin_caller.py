@@ -90,6 +90,10 @@ class AdminCaller:
     scope: str | None = None
     correlation_id: UUID | None = None
     campaign_id: int | None = None
+    # Automation only: the admin_cmd_* type of the state-changing command
+    # this caller runs (set by the command line before it acts), which the
+    # fresh-gated notice names; None for reads, previews and the web.
+    command_type: str | None = None
     # Automation only: the admitted AutomationSession row, for its label,
     # deadline and the 72-hour warning; None for the web.
     automation_session: Any = field(default=None, repr=False)
