@@ -4,7 +4,7 @@
 {% block content %}
 <h1>{% translate "Share options" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
-{% comment %}Review and apply happen in place, below the form (#750). The form is a region of its own: an answer redraws it with the values sent.{% endcomment %}<div id="settings-editor" data-in-place-region><form id="settings-form" method="post" action="#settings-review" data-in-place data-in-place-message="{% translate 'Review ready.' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
+{% comment %}Review and apply happen in place, below the form (#750). The form is a region of its own: a Review's answer redraws it with the values sent; Apply's answer leaves it, unless the change has already been applied (data-in-place-always), when it is redrawn at the applied version (#768).{% endcomment %}<div id="settings-editor" data-in-place-region{% if receipt.state == 'applied' %} data-in-place-always{% endif %}><form id="settings-form" method="post" action="#settings-review" data-in-place data-in-place-message="{% translate 'Review ready.' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
 {% include 'stewardship/share-fields.html' %}
 {% button type="submit" %}{% translate "Review changes" %}{% endbutton %}</form></div>
 <div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div>

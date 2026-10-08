@@ -14,8 +14,11 @@ beside each field, and, once a change has been applied, the applied list and
 a fresh blank row. A refusal never pairs older values with a newer version
 (which would let the next Review quietly undo a change made elsewhere): a
 stale Review keeps the values and the version that were posted, so the next
-Review is refused until the page is reloaded; a refused Apply redraws the
-current list at the current version, so what is shown is what is saved.
+Review is refused until the page is reloaded. A refused Apply's page draws
+the current list at the current version, as a reload would; in place only
+its review region and step indicator are taken (Apply is
+``data-in-place-only``, #768), so the reader's rows stay, with the version
+they were reviewed at, and the next Review is refused until a reload.
 """
 
 from collections.abc import Callable
@@ -102,6 +105,9 @@ def _preview(request, editor, service, actor, state, campaign, formset, salt):
     configuration, fingerprint = state[0], state[-1]
     if request.POST.get("base_digest") != configuration.active_configuration.digest:
         raise stale_page()
+    # The version check must stay first: the refusals below are drawn at the
+    # current version (``_page``'s default), which is then known to be the
+    # posted one, so the rows sent are never paired with a newer version.
     if not formset.is_valid():
         return _page(request, editor, configuration, campaign, formset, status=400)
     options = formset.values()
@@ -177,7 +183,8 @@ def option_settings(request, campaign_id, editor):
                     return response
                 except UserFacingStale as error:
                     # Drawn below with the current list and its version
-                    # together (see the module docstring).
+                    # together; in place only the review region is taken
+                    # (see the module docstring).
                     refusal = error.refusal
         with (
             read_transaction()

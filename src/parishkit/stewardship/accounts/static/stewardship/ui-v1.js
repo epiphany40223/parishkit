@@ -837,7 +837,9 @@
   };
   // Every answer refreshes every region on the page, unless the link is
   // marked data-in-place-only: then only the region it names is swapped (a
-  // history pager nested in a panel whose form holds unsaved typing). A
+  // history pager nested in a panel whose form holds unsaved typing), plus
+  // any regions whose ids the attribute's value lists (a settings page's
+  // Apply also moves its step indicator: data-in-place-only="flow-steps"). A
   // link whose key is gone from the fresh page (Older history on the last
   // page) hands focus to the link its data-in-place-fallback key names. A
   // form marked data-in-place-anywhere changes a region every Admin page
@@ -1389,9 +1391,17 @@
     // An answer from anywhere is another page: only the named region is
     // taken from it, never its other regions, sync nodes or address.
     const only = anywhere || Boolean(owner?.hasAttribute("data-in-place-only"));
+    const alsoSwapped = anywhere ? []
+      : (owner?.getAttribute("data-in-place-only") || "").split(/\s+/).filter(Boolean);
     document.querySelectorAll(REGIONS).forEach((other) => {
-      if (only && other !== region) return;
       const copy = parsed.getElementById(other.id);
+      // An answer may mark one of its regions data-in-place-always: it is
+      // taken even then (a settings form, once the change it applied has
+      // already settled, is redrawn at the version that change made).
+      if (only && other !== region && !alsoSwapped.includes(other.id)
+          && !(!anywhere && isRegion(copy) && copy.hasAttribute("data-in-place-always"))) {
+        return;
+      }
       if (isRegion(copy)) swapRegion(other, copy);
     });
     if (!anywhere) syncControls(parsed);
@@ -1491,12 +1501,13 @@
   // repeats (a double click, Enter pressed twice) are ignored here instead,
   // and the submitter is marked aria-disabled until the request settles.
   const inFlight = new WeakSet();
-  // Ids of forms edited while their in-place Review was in flight (see the
-  // in-place review below). A request that starts clears its form's id
-  // there, at the moment it is marked in flight: a repeated submission
-  // (Enter pressed again while the Review runs) is ignored above that point,
-  // so it never forgets an edit the running Review does not include.
-  const editedInFlight = new Set();
+  // Forms edited since their last in-place submission, by id, with the
+  // element that was edited (see the in-place review below). A request that
+  // starts clears its form's entry there, at the moment it is marked in
+  // flight: a repeated submission (Enter pressed again while a Review runs)
+  // is ignored above that point, so it never forgets an edit the running
+  // request does not include.
+  const editedSince = new Map();
   document.addEventListener("submit", (event) => {
     const form = event.target;
     if (event.defaultPrevented || !(form instanceof HTMLFormElement)) return;
@@ -1566,7 +1577,7 @@
         : () => HTMLFormElement.prototype.submit.call(form);
     }
     inFlight.add(form);
-    editedInFlight.delete(form.id);
+    editedSince.delete(form.id);
     noteSent(form); // the change gate's record of what was sent (#921)
     const submitter = event.submitter;
     submitter?.setAttribute("aria-disabled", "true");
@@ -1593,8 +1604,13 @@
   // the pointer (#736). The server's signed preview stays the authority for
   // what is applied. An edit made while Review is still in flight is not in
   // the review that answer brings, so that review is withdrawn as soon as
-  // it arrives. Forms are noted by id (editedInFlight, above): a form that
-  // is its own region is replaced by the answer.
+  // it arrives. Forms are noted by id (editedSince, above). A form that is
+  // its own region (Share options, Member talents, #750) is replaced by an
+  // answer that draws it: a Review's (accepted or refused) with the values
+  // that were sent, and the quiet refresh once a change is applied with the
+  // applied settings. Edits typed into it since it was sent are then gone,
+  // so a line at the top of the review region says they were not kept; a
+  // review that arrives with it matches the redrawn form, so it stays.
   const withdraw = (review) => {
     review.style.minHeight = `${review.offsetHeight}px`;
     review.removeAttribute("data-review-of");
@@ -1617,16 +1633,43 @@
   const withdrawReview = (event) => {
     const form = event.target instanceof Element ? event.target.closest("form") : null;
     if (!form?.id) return;
-    if (inFlight.has(form)) editedInFlight.add(form.id);
+    editedSince.set(form.id, form);
     document.querySelectorAll(`[data-review-of="${CSS.escape(form.id)}"]`).forEach(withdraw);
   };
   document.addEventListener("input", withdrawReview);
   document.addEventListener("change", withdrawReview);
   document.addEventListener("parishkit:swap", (event) => {
     if (!(event.target instanceof Element)) return;
+    // Regions are swapped in page order, so a form's own region (above its
+    // review region) is swapped first and its old element has left the page.
+    within(event.target, "form[id]").forEach((fresh) => {
+      const edited = editedSince.get(fresh.id);
+      if (!edited || edited.isConnected) return;
+      editedSince.delete(fresh.id);
+      // The line goes at the top of the region the form's action names (its
+      // review region, below it), never above the form: a line added there
+      // would move the form under the reader's caret (#736). That region may
+      // be swapped later in this same answer, so the line is added once the
+      // swaps are done (they run synchronously, before any microtask).
+      const target = (fresh.getAttribute("action") || "").split("#")[1];
+      queueMicrotask(() => {
+        const region = target ? document.getElementById(target) : null;
+        document.querySelectorAll("[data-edits-lost]").forEach((old) => old.remove());
+        const note = document.createElement("p");
+        note.className = "notice";
+        note.setAttribute("role", "note");
+        note.setAttribute("data-edits-lost", "");
+        note.textContent = "Changes you typed while this page was updating were not kept. "
+          + "Check the form before you continue.";
+        if (region) region.prepend(note);
+        else fresh.after(note);
+      });
+    });
     within(event.target, "[data-review-of]").forEach((review) => {
       const id = review.getAttribute("data-review-of");
-      if (!editedInFlight.delete(id)) return;
+      const edited = editedSince.get(id);
+      if (!edited) return;
+      editedSince.delete(id);
       withdraw(review);
     });
   });

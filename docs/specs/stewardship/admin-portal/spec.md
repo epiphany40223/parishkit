@@ -1499,19 +1499,23 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   around its table) is still a table control. A POST form should carry a
   `data-in-place-message` ("Saved.") for the live region; without one the
   clicked button's text is announced.
-- **Request.** The browser fetches exactly the request the control would have
-  made, follows the server's Post/Redirect/Get redirect, and replaces every
-  region the fetched page shares with this one, plus the counts, summaries,
-  links and form state outside them that follow the view; views keep
-  rendering whole pages, so no partial-page endpoint exists. A link marked
-  `data-in-place-only` replaces only the region it names: the history
+- **Request.** The browser fetches exactly the request the control would
+  have made, follows the server's Post/Redirect/Get redirect, and replaces
+  every region the fetched page shares with this one, plus the counts,
+  summaries, links and form state outside them that follow the view; views
+  keep rendering whole pages, so no partial-page endpoint exists. A link
+  marked `data-in-place-only` replaces only the region it names: the history
   pages of an information item and a Ministry follow-up request sit inside
   the item's panel, and paging them must not replace the Save follow-up form
   above or discard notes typed but not yet saved; a save still replaces the
-  whole panel, history included. One request is
-  in flight at a time: a newer choice cancels an older read, but a POST that
-  saves a change is never cancelled, and other in-place controls and repeats
-  are ignored (the live region says "Still saving…") until it settles.
+  whole panel, history included. The attribute's value may list further
+  region ids to replace as well: a settings page's Apply
+  (`data-in-place-only="flow-steps"`) also moves the step indicator. A
+  region the answer itself marks `data-in-place-always` is replaced even
+  then. One request is in flight at a time: a newer choice cancels an older
+  read, but a POST that saves a change is never cancelled, and other
+  in-place controls and repeats are ignored (the live region says "Still
+  saving…") until it settles.
 - **Place, focus and announcement.** The reader keeps their scroll position;
   focus returns to the control (or its fresh copy; when that is gone, the
   link its `data-in-place-fallback` key names, so Next page on the last page
@@ -1620,12 +1624,24 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   Make changes, Review and Apply. The signed preview, optimistic
   concurrency, capability and session rechecks, the durable request and its
   audit are unchanged; a refusal that needs a fresh sign-in still shows its
-  page whole. Share options and Member talents (#750) work the same way,
-  except that their form, to which no script is bound, is an in-place region
-  of its own: an answer redraws it with the values sent and their field
-  errors, and a refused Apply redraws the current list at its current
-  version, so what is shown is what is saved. The other editors keep their
-  review and Change status pages until issue 750 reaches them.
+  page whole. Apply is marked `data-in-place-only="flow-steps"`: its answer
+  replaces only the review region and the step indicator. Share options and
+  Member talents (#750) work the same way, except that their form, to which
+  no script is bound, is an in-place region of its own: a Review's answer
+  redraws it with the values sent and their field errors. Edits typed into
+  that form since it was last sent are lost whenever an answer redraws it (a
+  Review's, accepted or refused, or the quiet refresh after Apply), so a
+  line at the top of the review region, below the form, says they were not
+  kept (never above the form, which would move it under the pointer); a
+  review that arrives with it matches the redrawn form, so it stays. Apply never redraws the
+  form unless its answer finds the change already applied, when it marks the
+  form `data-in-place-always` and the form is redrawn at the applied
+  version; otherwise a refused Apply keeps the reader's rows at the version
+  they were reviewed at (the next Review is refused until a reload), and the
+  quiet follow-up refresh draws the applied list. Parish and Campaign
+  settings' forms are never redrawn; until the change is applied, Apply's
+  answer hands them the version it was reviewed at. The other editors keep
+  their review and Change status pages until issue 750 reaches them.
 
 ### Page help
 

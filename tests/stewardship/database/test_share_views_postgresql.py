@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.share_forms import default_share_options
 from parishkit.stewardship.campaigns.lifecycle import Action
@@ -60,9 +61,13 @@ def test_share_option_apply_preserves_ids_and_produces_idempotent_receipt(
     apply(store, response)
     # Share options applies in place (#750); Change status still leads back.
     status_url = reverse("admin:configuration_request", args=[requested(response)])
+    # Reading the change's status (the page's own quiet refresh once it is
+    # applied) is passive: it never renews idle time, as Change status.
+    activity = PortalSession.objects.get().last_activity_at
     assert "Applied: your change is saved" in region(
         browser.get(response["Location"]).content
     )
+    assert PortalSession.objects.get().last_activity_at == activity
     status = browser.get(status_url).content
     assert f'<a href="{path}">Return to Share options</a>'.encode() in status
     row.refresh_from_db()

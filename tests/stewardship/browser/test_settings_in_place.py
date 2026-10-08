@@ -18,7 +18,10 @@ from .settings_components import (
     REVIEW,
     SETTINGS,
     SHARE,
+    SHARE_APPLIED,
+    SHARE_REFUSED,
     SHARE_REVIEW,
+    SHARE_STATUS,
 )
 from .test_in_place import MARK, MARKED, count_requests
 from .waits import has_attribute, has_text, hidden, recorded, visible
@@ -329,3 +332,138 @@ def test_share_options_review_in_place_and_redraw_the_form(page, component_origi
     assert page.evaluate(MARKED) == "kept"
     page.locator("#id_options-0-label").fill("Renamed again")
     visible(page.get_by_text("Choose Review changes again"))
+
+
+def share_review(page, component_origin):
+    """Open Share options, rename its first option and review the change."""
+    page.goto(component_origin + SHARE)
+    page.evaluate(MARK)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    visible(page.get_by_role("heading", name="Proposed order and labels"))
+
+
+def test_a_refused_share_apply_keeps_the_rows(page, component_origin):
+    """Apply replaces only the review region and the step indicator (#768):
+    a refused Apply explains itself there, while the form keeps the reader's
+    rows at the version they were reviewed at, never the list its answer
+    draws (changed elsewhere, at a newer version)."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+
+    def refuse(route):
+        """Answer Apply with the refused page; Review falls back to the
+        handler above."""
+        if "action=confirm" not in (route.request.post_data or ""):
+            route.fallback()
+            return
+        fetched = route.fetch(url=component_origin + SHARE_REFUSED, method="GET")
+        route.fulfill(response=fetched, status=409)
+
+    page.route(lambda url: url.split("#")[0] == component_origin + SHARE, refuse)
+    share_review(page, component_origin)
+    page.get_by_role("button", name="Apply changes").click()
+    summary = page.locator("#settings-review [data-error-summary]")
+    visible(summary)
+    assert "This preview is out of date." in summary.inner_text()
+    assert current_step(page) == "Make changes"
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    assert page.locator(DIGEST).input_value() == "a" * 64
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_share_edits_during_a_review_are_said_to_be_dropped(page, component_origin):
+    """The answer redraws Share options' form with the values sent, so edits
+    made while the Review ran are gone: the review, which matches the form
+    again, stays, with a line saying those edits were not kept."""
+    held = []
+    page.route(
+        lambda url: url.split("#")[0] == component_origin + SHARE,
+        lambda route: (
+            held.append(route) if route.request.method == "POST" else route.continue_()
+        ),
+    )
+    page.goto(component_origin + SHARE)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    recorded(page, held, 1)
+    page.locator("#id_options-0-label").fill("Renamed during review")
+    fetched = held[0].fetch(url=component_origin + SHARE_REVIEW, method="GET")
+    held[0].fulfill(response=fetched)
+    visible(page.locator("#settings-review").get_by_text("were not kept"))
+    visible(page.get_by_role("heading", name="Review your changes"))
+    assert page.get_by_role("button", name="Apply changes").count() == 1
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+
+
+def test_a_share_apply_ends_at_the_applied_version(page, component_origin):
+    """Apply shows the change's status; once Change status answers Applied,
+    the quiet refresh redraws the form with the applied list at its new
+    version (#768). Rows typed while it applied are lost, and a line says so."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+    held = []
+    page.route(
+        lambda url: url.split("?")[0] == component_origin + SHARE_STATUS,
+        lambda route: held.append(route),
+    )
+    share_review(page, component_origin)
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Change status"))
+    assert current_step(page) == "Apply"
+    assert page.locator(DIGEST).input_value() == "a" * 64
+    recorded(page, held, 1)
+    page.locator("#id_options-1-label").fill("Typed while applying")
+    before = page.evaluate(FORM_TOP)
+    held[0].continue_()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    # The line is in the review region, below the form, so the form did
+    # not move under the reader's caret (#736).
+    visible(page.locator("#settings-review").get_by_text("were not kept"))
+    assert page.evaluate(FORM_TOP) == before
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_an_already_applied_share_apply_redraws_the_form(page, component_origin):
+    """When the change has settled before Apply's answer is drawn, the answer
+    marks the form data-in-place-always, so it is redrawn at the applied
+    version instead of staying at the reviewed one (#768)."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+
+    def applied(route):
+        """Answer Apply with the settled page; Review falls back above."""
+        if "action=confirm" not in (route.request.post_data or ""):
+            route.fallback()
+            return
+        fetched = route.fetch(url=component_origin + SHARE_APPLIED, method="GET")
+        route.fulfill(response=fetched)
+
+    page.route(lambda url: url.split("#")[0] == component_origin + SHARE, applied)
+    share_review(page, component_origin)
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    assert page.get_by_text("were not kept").count() == 0
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_typing_dropped_by_a_refused_review_is_said_to_be_lost(page, component_origin):
+    """A refused Review's answer (here a 409) redraws Share options' form too,
+    so rows typed while it ran are lost, and a line says so (#768)."""
+    held = []
+    page.route(
+        lambda url: url.split("#")[0] == component_origin + SHARE,
+        lambda route: (
+            held.append(route) if route.request.method == "POST" else route.continue_()
+        ),
+    )
+    page.goto(component_origin + SHARE)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    recorded(page, held, 1)
+    page.locator("#id_options-0-label").fill("Typed during the review")
+    fetched = held[0].fetch(url=component_origin + SHARE_REFUSED, method="GET")
+    held[0].fulfill(response=fetched, status=409)
+    visible(page.locator("#settings-review [data-error-summary]"))
+    visible(page.locator("#settings-review").get_by_text("were not kept"))
