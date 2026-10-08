@@ -11,6 +11,7 @@ from parishkit.parishsoft_pagination import SourceLoadBudgetExceeded
 from parishkit.parishsoft_transport import SourceTransportDrainFailure
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.audit.models import OperationalLog
+from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.source.attempts import begin_refresh_attempt
 from parishkit.stewardship.source.canonical import (
@@ -31,6 +32,7 @@ from parishkit.stewardship.source.snapshots import promote_snapshot
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .campaign_builders import add_draft
+from .test_background_grants_postgresql import task_login
 from .test_source_attempts_postgresql import configured, setup, stage
 from .test_source_fallback_postgresql import unseeded
 from .test_source_requests_postgresql import claim, command
@@ -57,9 +59,11 @@ def test_rejection_release_failure_and_private_free_log_commit_together(
         stage(attempt, execution, lease)
     with execution.effect():
         deadline = reserve_source_request(lease, timeout_seconds=30, safety_seconds=15)
-    result = settle_failed_read(
-        execution, InvalidSourcePayload("PRIVATE-CENSUS"), source_claim=lease
-    )
+    # As the worker, so the log writer's allow-list is exercised (#389 L2).
+    with task_login(ServiceRole.WORKER):
+        result = settle_failed_read(
+            execution, InvalidSourcePayload("PRIVATE-CENSUS"), source_claim=lease
+        )
     assert result.state == "failed" and execution.control.finished.is_set()
     assert SourceSnapshot.objects.get(pk=attempt.snapshot_id).state == "rejected"
     saved = SourceMutationLease.objects.get()
@@ -89,9 +93,10 @@ def test_provider_transience_does_not_persist_response_text(tmp_path):
     """The Task retry records a safe category, never endpoint/body diagnostics."""
     credential, execution, lease, *_ = setup(tmp_path)
     begin_refresh_attempt(execution, lease, credential)
-    result = settle_failed_read(
-        execution, ParishSoftAPIError(503, "PRIVATE", "PRIVATE"), source_claim=lease
-    )
+    with task_login(ServiceRole.WORKER):
+        result = settle_failed_read(
+            execution, ParishSoftAPIError(503, "PRIVATE", "PRIVATE"), source_claim=lease
+        )
     assert result.state == "retry_wait"
     log = OperationalLog.objects.get(event="source_provider_failed")
     assert log.level == "WARNING" and "PRIVATE" not in str(log.context)

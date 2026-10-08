@@ -1,6 +1,7 @@
 """Install exact application fixture grants with fewer SQL setup round trips."""
 
 from collections import defaultdict
+from contextlib import contextmanager
 
 from django.db import transaction
 from psycopg import sql
@@ -52,3 +53,32 @@ def grant_runtime(cursor, role_name, tables, columns, functions=()):
                     sql.SQL(function), role
                 )
             )
+
+
+@contextmanager
+def schema_owner():
+    """Run fixture writes as the test's owner, then return to the login.
+
+    Fixtures that seed rows a service login may not write (an operational log
+    entry outside that login's allow-list, #389 L2) drop the session's
+    restricted identity only around the seed, so the code under test still
+    runs as the real login.
+    """
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT current_user")
+        (login,) = cursor.fetchone()
+        restricted = login.startswith("pk_stewardship_")
+        if restricted:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+    try:
+        yield
+    finally:
+        if restricted:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    sql.SQL("SET SESSION AUTHORIZATION {}").format(
+                        sql.Identifier(login)
+                    )
+                )
