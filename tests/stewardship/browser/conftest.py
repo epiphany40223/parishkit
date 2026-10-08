@@ -81,6 +81,7 @@ from .find_family_components import components as find_family_components
 from .followup_components import POSTS as FOLLOWUP_POSTS
 from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
+from .held_emails_components import components as held_emails_components
 from .hosted_file_components import IMAGE_TOKEN
 from .hosted_file_components import components as hosted_file_components
 from .in_place_components import FORM as IN_PLACE_FORM
@@ -1873,6 +1874,7 @@ def component_origin():
     responses.update(send_history_components(context, admin))
     responses.update(system_health_components(context, admin))
     responses.update(restore_review_components(context, admin))
+    responses.update(held_emails_components(context, admin))
     responses.update(hosted_file_components(context, admin))
     responses.update(talent_components(context, admin))
     responses.update(in_place_components(context, admin))

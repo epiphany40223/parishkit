@@ -1,0 +1,24 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Held emails" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Held emails" %}</h1>
+{% aboutpage "held-emails" %}<p>{% translate "After a restore, some invitations and reminders were held because they may already have gone out after the backup. A held email is never sent unless you choose Send again. These were not decided before the site was released." %}</p>
+<dl>
+<dt>{% translate "Assume these were sent" %}</dt><dd>{% translate "Use this when the mail provider's sent log shows the emails went out. They are not sent again, and the Family's reminders can go on." %}</dd>
+<dt>{% translate "Send these again" %}</dt><dd>{% translate "Use this when the emails did not go out, or when a second copy is acceptable. Families who already got one will get a second. Each Family gets the same code and link as before." %}</dd>
+<dt>{% translate "Not counted" %}</dt><dd>{% translate "Holds for Families that cannot be emailed now, reminders waiting for an undecided invitation, and invitations only a deliverability change would retry are shown apart. A decision on a send settles them too; nothing is sent for them." %}</dd>
+<dt>{% translate "Decisions are final" %}</dt><dd>{% translate "An assumption may already have cancelled the unsent copy, so a decision cannot be changed later. Each decision is kept in the System logs." %}</dd>
+</dl>{% endaboutpage %}
+{# The region shares the Restore review page's name: the shared table's forms land on it. #}
+<section class="flow" id="restore-review" data-in-place-region aria-labelledby="held-emails-heading">
+<h2 id="held-emails-heading" class="visually-hidden">{% translate "Held emails" %}</h2>
+{% if step.refused == "reauthenticate" %}<div class="notice" data-held-refused="reauthenticate"><p>{% if local_environment %}{% translate "For your security, confirm your sign-in first. Nothing was changed." %}{% else %}{% translate "For your security, confirm it's you with Google first. Nothing was changed; you will return to this page." %}{% endif %}</p>
+{% url 'admin:held_emails' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>
+{% elif step.refused == "changed" %}<p class="notice" data-held-refused="changed">{% translate "Something changed since you looked (another Administrator decided some of these). Nothing was changed; review the counts below and try again." %}</p>
+{% elif step.refused == "invalid" %}<p class="notice notice-error" data-held-refused="invalid">{% translate "That request could not be read. Nothing was changed; try again." %}</p>
+{% elif step.settled %}<p class="notice" data-held-settled role="status">{% blocktranslate count n=step.settled trimmed %}{{ n }} held email settled.{% plural %}{{ n }} held emails settled.{% endblocktranslate %}{% if step.converted %} {% blocktranslate count n=step.converted trimmed %}{{ n }} was recorded as assumed sent instead, because a later reminder had already reached the Family.{% plural %}{{ n }} were recorded as assumed sent instead, because a later reminder had already reached those Families.{% endblocktranslate %}{% endif %}</p>{% endif %}
+{% if groups %}{% if reminders_blocked %}<p><strong>{% blocktranslate count n=reminders_blocked trimmed %}{{ n }} Family gets no reminders until its held invitation is decided.{% plural %}{{ n }} Families get no reminders until their held invitations are decided.{% endblocktranslate %}</strong></p>{% endif %}
+{% url 'admin:held_emails' as page_url %}{% include 'stewardship/restore-held-groups.html' with groups=groups held_url=page_url released=True %}
+{% else %}<p data-held-none>{% translate "No held emails are waiting for a decision." %}</p>{% endif %}
+</section>
+{% endblock %}

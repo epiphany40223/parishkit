@@ -717,11 +717,10 @@ layout; where the deployment YAML overrides a path, use that path instead.
    `run --rm admin-recovery restore-begin --config RECOVERY_CONFIG --backup-at SET_NAME`.
    It prints the review's id. Families cannot sign in and no Family email is
    sent until an Administrator releases the site in step 8; no Family code or
-   link changes. Never run it on a disposable drill host. Run it once per
-   restore: never re-run it while a review is open (for example after a
-   restart), because a re-run moves the restore's cutoff and holds reminders
-   that came due while the site was closed (#799). A set taken under a
-   release without the restore review has no such command; follow
+   link changes. Never run it on a disposable drill host. Re-running it for
+   the same set while its review is open (after a restart, say) is harmless:
+   it prints `restore_review_already_open` and changes nothing. A set taken
+   under a release without the restore review has no such command; follow
    [the limitations](#restore-limitations-in-v1) instead.
 8. **Start web alone and review.** **Disposable drill host: start `web` alone, stop
    after web's health check and go straight to step 10.** Starting the
@@ -765,9 +764,9 @@ limitations remain:
   the backup holds. To keep this window small, run a backup by hand right
   after each large send as well as nightly.
 - **An undecided invitation keeps the Family's reminders back.** After
-  release, emails nobody decided on stay held, and the Restore review page is
-  gone; settling them later is #757. The release preview says how many
-  Families this affects.
+  release, emails nobody decided on stay held until an Administrator decides
+  them on the Held emails page (under Outgoing mail); a banner names how many
+  Families get no reminders meanwhile.
 - **Mid-hand-off emails are not held.** An email the provider was being given
   at the backup is settled from the delivery warning on Background work after
   release.

@@ -5396,10 +5396,12 @@ BEGIN
            SELECT 1 FROM stewardship_schedule_occurrence o WHERE o.id=NEW.recovery_occurrence_id
            AND o.definition_id=h.definition_id AND o.mode=h.mode AND o.target=h.target AND o.slot=h.slot AND o.state='pending'
        )) OR (NEW.state<>'resend_authorized' AND NEW.recovery_occurrence_id IS NOT NULL)
-       -- Decisions belong to the review: once it is released (gate off with a
-       -- release stamped), nothing is decided until a later page (#757).
-       OR EXISTS(SELECT 1 FROM stewardship_system_configuration released
-           WHERE NOT released.restore_review_required AND released.restore_released_at IS NOT NULL)
+       -- After release an undecided hold is still decided, on the Held emails
+       -- page (migration 0029, #757), but only for the current campaign: the
+       -- planner never acts on another campaign's holds.
+       OR NOT EXISTS(SELECT 1 FROM stewardship_schedule_definition held
+           JOIN stewardship_system_configuration current_runtime ON current_runtime.current_campaign_id=held.campaign_id
+           WHERE held.id=h.definition_id)
        -- Another (earlier restore's) hold still keeps this email back, so a
        -- resend would silently do nothing: settle that one first.
        OR (NEW.state='resend_authorized' AND EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold other
@@ -5559,13 +5561,18 @@ BEGIN
            OR NEW.after_mode<>NEW.before_mode OR NEW.after_campaign_id IS DISTINCT FROM NEW.before_campaign_id
            OR NEW.restore_id IS NULL OR NEW.restore_id IS NOT DISTINCT FROM r.restore_id
            OR NEW.backup_at IS NULL OR NEW.backup_at>stewardship_campaign_now_v1() OR btrim(NEW.reason)=''
+           -- A re-run on the same restored data while its review is open
+           -- would move the restore cutoff (migration 0029, #799); a
+           -- different backup is a new restore and starts a new review.
+           OR (r.restore_review_required AND NEW.backup_at=r.restore_backup_at)
            OR NEW.campaign_transition_id IS NOT NULL OR NEW.session_id IS NOT NULL OR NEW.authenticated_at IS NOT NULL THEN
             RAISE EXCEPTION 'A restore review starts only from the operator restore command' USING ERRCODE='23514'; END IF;
     ELSIF NEW.action='restore_release' THEN
         -- A freshly signed-in Administrator releases the site after review.
         -- Refused while any email still needs a hold: the list must be found
-        -- first, during the review, so every hold can still be decided (none
-        -- is decided after release). Mode and campaign stay as restored.
+        -- first, during the review, so every hold exists before release; one
+        -- left undecided is decided later on the Held emails page (migration
+        -- 0029, #757). Mode and campaign stay as restored.
         IF NOT r.restore_review_required OR NEW.restore_id IS DISTINCT FROM r.restore_id
            OR NEW.backup_at IS DISTINCT FROM r.restore_backup_at
            OR NEW.after_mode<>NEW.before_mode OR NEW.after_campaign_id IS DISTINCT FROM NEW.before_campaign_id

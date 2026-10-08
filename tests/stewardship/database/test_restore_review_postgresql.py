@@ -428,28 +428,27 @@ def test_release_reopens_the_site_and_keeps_unsettled_holds(auth_service, google
     # Every unsettled hold still keeps its email from being prepared or sent
     # (the shared exclusion the planner, claim and dispatch guards use).
     assert all(excluded(row) for row in held(state="unreviewed"))
-    # Decisions belong to the review: after release they are refused, by the
-    # owner and by the guard (settling later is #757).
+    # After release an undecided hold is still decided (the Held emails
+    # page, #757, migration 0029); a decided one stays final.
     hold = held().first()
     signed_in()
-    with pytest.raises(StaleRecordError, match="already released"):
-        as_web(
-            settle_held_email,
-            hold_id=hold.pk,
-            expected_version=1,
-            state="resend_authorized",
-            evidence="Not in the provider's log; send again.",
-        )
+    as_web(
+        settle_held_email,
+        hold_id=hold.pk,
+        expected_version=1,
+        state="resend_authorized",
+        evidence="Not in the provider's log; send again.",
+    )
+    assert not excluded(hold)
     with pytest.raises(DatabaseError, match="resend binding"), transaction.atomic():
         RestoreHoldResolution.objects.create(
             hold_id=hold.pk,
-            version=2,
-            state="resend_authorized",
-            evidence="Send again.",
+            version=3,
+            state="assumed_delivered",
+            evidence="Changed my mind.",
             actor_id=administrator().principal_id,
             correlation_id=uuid4(),
         )
-    assert excluded(hold)
     # A second release is refused.
     with pytest.raises(DatabaseError, match="cannot be released"):
         as_web(
@@ -708,3 +707,74 @@ def test_work_of_a_replaced_revision_or_old_cycle_is_not_this_emails_history(
         begin()
         as_web(list_held_emails_for)
     assert held(target=f"family:{third.pk}", definition=initial).exists()
+
+
+def test_after_release_only_the_current_campaigns_holds_are_decided(
+    auth_service, google
+):
+    """A hold of a campaign that is no longer current is refused (0029)."""
+    live_campaign(auth_service)
+    signed_in()
+    with campaign_clock(NOW):
+        begin()
+        as_web(list_held_emails_for)
+        as_web(
+            release_review,
+            request_id=uuid4(),
+            expected_runtime_version=SystemConfiguration.objects.get().version,
+        )
+    hold = held().first()
+    # Model a campaign that is no longer current (as after Return to
+    # Testing), loaded directly as a restore fixture would.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_system_configuration SET current_campaign_id=NULL"
+        )
+        cursor.execute("SET LOCAL session_replication_role = origin")
+    with pytest.raises(DatabaseError, match="resend binding"), transaction.atomic():
+        RestoreHoldResolution.objects.create(
+            hold_id=hold.pk,
+            version=2,
+            state="assumed_delivered",
+            evidence="Reviewed.",
+            actor_id=administrator().principal_id,
+            correlation_id=uuid4(),
+        )
+
+
+def test_a_restore_begin_rerun_for_the_same_backup_changes_nothing(
+    auth_service, google
+):
+    """The command reports the open review; the SQL refuses a new one (0029)."""
+    live_campaign(auth_service)
+    with campaign_clock(NOW):
+        first = begin()
+    before = SystemConfiguration.objects.get()
+    with campaign_clock(NOW + timedelta(hours=3)):
+        assert begin() is None
+    after = SystemConfiguration.objects.get()
+    assert (after.restore_id, after.restore_activated_at, after.version) == (
+        first.restore_id,
+        NOW,
+        before.version,
+    )
+    # The SQL backstop, for a writer that skips the command's check.
+    with (
+        campaign_clock(NOW + timedelta(hours=3)),
+        pytest.raises(DatabaseError, match="operator restore command"),
+        transaction.atomic(),
+    ):
+        RuntimeTransition.objects.create(
+            request_id=uuid4(),
+            expected_version=after.version,
+            action="restore_begin",
+            before_mode=after.mode,
+            after_mode=after.mode,
+            before_campaign_id=after.current_campaign_id,
+            after_campaign_id=after.current_campaign_id,
+            restore_id=uuid4(),
+            backup_at=BACKUP,
+            reason="restore",
+            correlation_id=uuid4(),
+        )

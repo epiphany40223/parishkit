@@ -26,6 +26,7 @@ from .accounts import (
     family_authentication,
     family_maintenance_views,
     go_live_views,
+    held_email_views,
     hosted_file_serving,
     hosted_file_views,
     integration_selection_views,
@@ -615,6 +616,8 @@ admin_patterns = [
         send_progress_views.family_email_progress,
         name="family_email_progress",
     ),
+    # Restore holds left undecided at release (#757).
+    path("deliveries/held-emails", held_email_views.held_emails, name="held_emails"),
     path(
         "deliveries/family-sends",
         send_history_views.family_email_sends,

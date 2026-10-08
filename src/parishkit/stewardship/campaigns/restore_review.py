@@ -75,6 +75,9 @@ def _uuid(*values):
 def begin_review(*, backup_at, reason, correlation_id):
     """Close the site for review after a restore; returns the transition.
 
+    Returns None, writing nothing, when a review is already open for this
+    same backup (a re-run): its cutoff and holds stay as they are.
+
     ``backup_at`` is when the restored backup was taken (its set's name). The
     guard admits only the admin-recovery login and the schema owner, a backup
     time not in the future, and a new restore id, so a second restore starts
@@ -85,6 +88,11 @@ def begin_review(*, backup_at, reason, correlation_id):
     if not isinstance(reason, str) or not reason.strip() or len(reason) > 1024:
         raise ValueError("A restore review needs a short reason.")
     with _review_transaction(correlation_id) as runtime:
+        if runtime.restore_review_required and runtime.restore_backup_at == backup_at:
+            # A re-run on the same restored data (a restart, say): the review
+            # is already open. Writing a new one would move its cutoff, so the
+            # SQL refuses that (#799); report the open review instead.
+            return None
         return RuntimeTransition.objects.create(
             request_id=uuid4(),
             expected_version=runtime.version,
@@ -139,11 +147,14 @@ def settle_held_email(
     """Record one Administrator decision on a held email; returns the record.
 
     ``assumed_delivered`` keeps it from ever being sent; ``resend_authorized``
-    lets the ordinary planner send the restored link once the site is
-    released. Both are final and are refused once the site is released; a
-    resend is also refused while another restore's hold still keeps the same
-    email back. A repeat of the same decision returns the first record; a
-    different one on a changed hold is stale.
+    lets the ordinary planner send the restored link (after release; during a
+    review, once the site is released). A hold is decided once, during the
+    review or afterwards on the Held emails page, and a decided hold never
+    changes; a resend is also refused while another restore's hold still
+    keeps the same email back. A resend of a reminder that a later delivered
+    reminder superseded is refused (``ValueError``), as ``settle_group``
+    records such a hold as assumed sent. A repeat of the same decision
+    returns the first record; a different one on a changed hold is stale.
     """
     _uuid(hold_id, actor_id, session_id)
     if state not in DECISIONS:
@@ -152,11 +163,12 @@ def settle_held_email(
         raise ValueError("A held-email decision needs a short note.")
     if type(expected_version) is not int or expected_version < 1:
         raise ValueError("The hold version must be a positive integer.")
-    with _review_transaction(correlation_id) as runtime:
-        if not runtime.restore_review_required:
-            # Decisions belong to the review; settling after release is #757.
-            raise StaleRecordError("The site was already released.")
-        hold = RestoreDeliveryHold.objects.select_for_update().get(pk=hold_id)
+    with _review_transaction(correlation_id):
+        hold = (
+            RestoreDeliveryHold.objects.select_for_update(of=("self",))
+            .select_related("definition")
+            .get(pk=hold_id)
+        )
         existing = RestoreHoldResolution.objects.filter(
             hold=hold, version=expected_version + 1
         ).first()
@@ -170,6 +182,18 @@ def settle_held_email(
             return existing
         if hold.version != expected_version:
             raise StaleRecordError("This held email changed; reload it.")
+        if (
+            state == "resend_authorized"
+            and hold.definition.kind == "reminder"
+            and _is_superseded(
+                _later_reminders(hold.definition.campaign_id),
+                hold.definition_id,
+                hold.target,
+            )
+        ):
+            # The same rule as settle_group: a later reminder already reached
+            # this Family, so resending this one would arrive out of order.
+            raise ValueError("A later reminder was already delivered; assume it sent.")
         return RestoreHoldResolution.objects.create(
             hold=hold,
             version=expected_version + 1,
@@ -252,6 +276,10 @@ class HeldGroup:
     # because eligibility may have changed since the backup, but nothing would
     # be sent to them. A decision still covers every undecided hold.
     reachable: int = 0
+    # Undecided reminder holds of Families that already got a later reminder:
+    # sending this one now would arrive out of order. "Send these again"
+    # records them as assumed sent instead (``settle_group``).
+    superseded: int = 0
 
     @property
     def inert(self):
@@ -307,19 +335,88 @@ class ReviewState:
         return "closed"
 
 
-def review_state():
-    """The current restore review, or None when the site is not under review."""
-    runtime = SystemConfiguration.objects.get()
-    if not runtime.restore_review_required:
-        return None
-    campaign = (
-        Campaign.objects.select_related("active_configuration")
-        .filter(pk=runtime.current_campaign_id)
-        .first()
+def reachable_targets(campaign_id, targets=None):
+    """The hold targets (``family:<id>``) of Families that can be emailed now.
+
+    Active, email-eligible, deliverable and not yet responded. Holds of other
+    Families are inert. With ``targets``, only those are looked up.
+    """
+    families = FamilyCampaign.objects.filter(
+        campaign_id=campaign_id,
+        active=True,
+        email_eligible=True,
+        email_deliverable=True,
+        effective_submission_id__isnull=True,
     )
+    if targets is not None:
+        identifiers = [target.removeprefix("family:") for target in targets]
+        if not identifiers:
+            return set()
+        families = families.filter(pk__in=identifiers)
+    return {
+        f"family:{identifier}" for identifier in families.values_list("pk", flat=True)
+    }
+
+
+def held_after_release(campaign_id):
+    """``(invitations, undecided)``: what the held-emails banner and link count.
+
+    One read of the campaign's undecided Production holds; only when some are
+    invitations, two more to keep the emailable Families among them and drop
+    the invitations only a deliverability change would retry, as the page
+    does.
+    """
+    rows = list(
+        RestoreDeliveryHold.objects.filter(
+            definition__campaign_id=campaign_id, mode="production", state="unreviewed"
+        ).values_list("definition__kind", "target")
+    )
+    invitations = {target for kind, target in rows if kind == "initial"}
+    if not invitations:
+        return 0, len(rows)
+    # As the page counts them: emailable Families, less invitations only a
+    # deliverability change would retry (a resend would send nothing now).
+    blocking = reachable_targets(campaign_id, invitations)
+    return len(blocking - _ended_invitations(campaign_id, blocking)), len(rows)
+
+
+def sign_in_lapsed(error):
+    """Whether a database error is the guard's fresh-sign-in refusal.
+
+    The decision and release guards raise SQLSTATE 42501 with a "fresh
+    Administrator" message when the sign-in lapsed between the page's check
+    and the write. Any other 42501 is a real privilege error and must not be
+    shown as a step-up.
+    """
+    return getattr(
+        error.__cause__, "sqlstate", None
+    ) == "42501" and "fresh Administrator" in str(error)
+
+
+def _scope(runtime):
+    """The holds a decision may settle now.
+
+    During a review: this restore's holds (the review page). After release:
+    every restore's holds of the current campaign (the Held emails page,
+    #757); the SQL guard refuses another campaign's holds.
+    """
+    if runtime.restore_review_required:
+        return RestoreDeliveryHold.objects.filter(restore_id=runtime.restore_id)
+    return RestoreDeliveryHold.objects.filter(
+        definition__campaign_id=runtime.current_campaign_id, mode="production"
+    )
+
+
+def held_groups(runtime):
+    """The held emails by send, and how many Families' reminders wait.
+
+    Shared by the review page and the Held emails page: counts name only
+    emails that would be sent now; the rest of a send's undecided holds are
+    inert (``HeldGroup.inert``).
+    """
     counts = {}
     rows = (
-        RestoreDeliveryHold.objects.filter(restore_id=runtime.restore_id)
+        _scope(runtime)
         .values(
             "definition_id",
             "definition__kind",
@@ -333,20 +430,11 @@ def review_state():
         "assumed_delivered": "assumed",
         "resend_authorized": "resend",
     }
-    reachable = {
-        f"family:{identifier}"
-        for identifier in FamilyCampaign.objects.filter(
-            campaign_id=runtime.current_campaign_id,
-            active=True,
-            email_eligible=True,
-            email_deliverable=True,
-            effective_submission_id__isnull=True,
-        ).values_list("pk", flat=True)
-    }
+    reachable = reachable_targets(runtime.current_campaign_id)
     undecided = list(
-        RestoreDeliveryHold.objects.filter(
-            restore_id=runtime.restore_id, state="unreviewed"
-        ).values_list("definition_id", "definition__kind", "target")
+        _scope(runtime)
+        .filter(state="unreviewed")
+        .values_list("definition_id", "definition__kind", "target")
     )
     # A reminder waits for its Family's undecided invitation, and "send
     # again" on an invitation whose latest attempt ended (failed, or skipped
@@ -362,9 +450,15 @@ def review_state():
             state="unreviewed",
         ).values_list("target", flat=True)
     )
-    ended = _ended_invitations(runtime, own_invitations)
-    reachable_counts = {}
+    ended = _ended_invitations(runtime.current_campaign_id, own_invitations)
+    later = _later_reminders(runtime.current_campaign_id)
+    reachable_counts, superseded_counts = {}, {}
     for definition_id, kind, target in undecided:
+        if kind == "reminder" and _is_superseded(later, definition_id, target):
+            superseded_counts[definition_id] = (
+                superseded_counts.get(definition_id, 0) + 1
+            )
+            continue
         if target not in reachable or (
             (kind == "reminder" and target in invitation_waits)
             or (kind == "initial" and target in ended)
@@ -386,12 +480,31 @@ def review_state():
             kind,
             due_at,
             reachable=reachable_counts.get(definition_id, 0),
+            superseded=superseded_counts.get(definition_id, 0),
             **values,
         )
         for (definition_id, kind, due_at), values in sorted(
             counts.items(), key=lambda item: (item[0][2], item[0][1] != "initial")
         )
     )
+    # The banner counts the same Families (held_after_release).
+    blocking = invitation_waits & reachable
+    return groups, len(
+        blocking - _ended_invitations(runtime.current_campaign_id, blocking)
+    )
+
+
+def review_state():
+    """The current restore review, or None when the site is not under review."""
+    runtime = SystemConfiguration.objects.get()
+    if not runtime.restore_review_required:
+        return None
+    campaign = (
+        Campaign.objects.select_related("active_configuration")
+        .filter(pk=runtime.current_campaign_id)
+        .first()
+    )
+    groups, reminders_blocked = held_groups(runtime)
     return ReviewState(
         restore_id=runtime.restore_id,
         runtime_version=runtime.version,
@@ -405,11 +518,43 @@ def review_state():
         in_flight=_in_flight(runtime),
         paused=bool(campaign and campaign.delivery_paused),
         needed=holds_needed(),
-        reminders_blocked=len(invitation_waits & reachable),
+        reminders_blocked=reminders_blocked,
     )
 
 
-def _ended_invitations(runtime, targets):
+def _later_reminders(campaign_id):
+    """Per target, the due times of reminders already delivered to it.
+
+    With each reminder definition's own due time, so a held reminder can be
+    compared with the ones that went out after it.
+    """
+    from .schedule_models import ScheduleDefinition, ScheduleFulfillment
+
+    due = dict(
+        ScheduleDefinition.objects.filter(
+            campaign_id=campaign_id, kind="reminder"
+        ).values_list("pk", "current_revision__due_at")
+    )
+    delivered = {}
+    for definition_id, target in ScheduleFulfillment.objects.filter(
+        definition__campaign_id=campaign_id,
+        definition__kind="reminder",
+        mode="production",
+        disposition="delivered",
+    ).values_list("definition_id", "target"):
+        if due.get(definition_id) is not None:
+            delivered.setdefault(target, []).append(due[definition_id])
+    return due, delivered
+
+
+def _is_superseded(later, definition_id, target):
+    """Whether a reminder due after this one was already delivered to target."""
+    due, delivered = later
+    own = due.get(definition_id)
+    return own is not None and any(when > own for when in delivered.get(target, ()))
+
+
+def _ended_invitations(campaign_id, targets):
     """The targets whose invitation's latest attempt ended without sending.
 
     Read for the current revision and Production cycle, as the hold
@@ -419,7 +564,7 @@ def _ended_invitations(runtime, targets):
 
     if not targets:
         return set()
-    campaign = Campaign.objects.get(pk=runtime.current_campaign_id)
+    campaign = Campaign.objects.get(pk=campaign_id)
     latest = {}
     rows = (
         ScheduleOccurrence.objects.filter(
@@ -461,6 +606,19 @@ def _in_flight(runtime):
     ).count()
 
 
+@dataclass(frozen=True)
+class Settled:
+    """What one per-send decision did.
+
+    ``count`` holds were decided; for "send again", ``assumed_instead`` of
+    them were recorded as assumed sent, because a later reminder had already
+    reached the Family.
+    """
+
+    count: int
+    assumed_instead: int = 0
+
+
 def settle_group(
     *,
     definition_id,
@@ -472,7 +630,10 @@ def settle_group(
     authenticated_at,
     correlation_id,
 ):
-    """Settle one send's held emails at once; returns how many were settled.
+    """Settle one send's held emails at once; returns a ``Settled``.
+
+    During a review this restore's holds of the send; after release every
+    restore's undecided holds of it (``_scope``).
 
     ``action`` is a GROUP_ACTIONS key. ``expected_count`` is the count the
     Administrator confirmed in the preview: if the holds changed since (more
@@ -488,29 +649,40 @@ def settle_group(
         raise ValueError("Nothing to settle.")
     state, from_states = GROUP_ACTIONS[action]
     with _review_transaction(correlation_id) as runtime:
-        if not runtime.restore_review_required:
-            # Decisions belong to the review; settling after release is #757.
-            raise StaleRecordError("The site was already released.")
         holds = list(
-            RestoreDeliveryHold.objects.select_for_update()
-            .filter(
-                restore_id=runtime.restore_id,
-                definition_id=definition_id,
-                state__in=from_states,
-            )
+            _scope(runtime)
+            # Lock only the holds: after release the scope joins the schedule
+            # definition, which web may read but not lock.
+            .select_for_update(of=("self",))
+            .select_related("definition")
+            .filter(definition_id=definition_id, state__in=from_states)
             .order_by("pk")
         )
         if len(holds) != expected_count:
             raise StaleRecordError("These held emails changed; review them again.")
+        later = _later_reminders(runtime.current_campaign_id)
+        converted = 0
         for hold in holds:
+            decided, note = state, evidence.strip()
+            if (
+                state == "resend_authorized"
+                and hold.definition.kind == "reminder"
+                and _is_superseded(later, hold.definition_id, hold.target)
+            ):
+                # A later reminder already reached this Family: resending
+                # this one would arrive out of order, so it is recorded as
+                # assumed sent, with the reason, instead.
+                decided = "assumed_delivered"
+                note = (note + " (A later reminder was already delivered.)")[:1024]
+                converted += 1
             RestoreHoldResolution.objects.create(
                 hold=hold,
                 version=hold.version + 1,
-                state=state,
-                evidence=evidence.strip(),
+                state=decided,
+                evidence=note,
                 actor_id=actor_id,
                 session_id=session_id,
                 authenticated_at=authenticated_at,
                 correlation_id=correlation_id,
             )
-        return len(holds)
+        return Settled(len(holds), converted)

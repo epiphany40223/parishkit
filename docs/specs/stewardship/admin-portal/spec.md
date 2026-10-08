@@ -703,6 +703,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `delivery` | Mail message | Outgoing mail | Administrator | Mail delivery; Message | `/admin/deliveries/<message>` | `/admin/mail/outgoing/<message>/` |  |
 | `delivery_refusals` | Refused addresses | Outgoing mail | Administrator | (same) | `/admin/deliveries/refusals` | `/admin/mail/refusals/` |  |
 | `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/deliveries/refusals/<refusal>` | `/admin/mail/refusals/<refusal>/` |  |
+| `held_emails` | Held emails | Outgoing mail | Administrator | (same) | `/admin/deliveries/held-emails` | `/admin/mail/held-emails/` | Restore holds left undecided at release (#757); linked from Outgoing mail and the held-invitations banner. NAV-8 adds the old address to its redirect list. |
 | `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/family-portal` | `/admin/mail/family-portal/` |  |
 | `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/presence` | `/admin/mail/presence/` |  |
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same) | `/admin/reports/<campaign>/responses/` | `/admin/reports/responses/` |  |
@@ -2350,12 +2351,13 @@ copy, so a later "send again" would send nothing. "Send again" is refused
 while another restore's hold still keeps the same email back. Each decision is
 versioned, append-only and audited.
 
-Decisions are taken only during the review: once the site is released, the
-guard refuses them, and settling the remaining holds is #757. An undecided
-hold stays in force after release. An undecided invitation also keeps back
-every reminder of that Family. Besides the listing, the web login may insert a
-hold row directly; the hold guard admits one only during a review and for its
-current restore, and a hold only keeps mail back.
+An undecided hold stays in force after release, and an undecided invitation
+also keeps back every reminder of that Family. After release an Administrator
+still decides them, per send, on the Held emails page (below); the guard
+admits a decision only on an undecided hold of the current campaign. Besides
+the listing, the web login may insert a hold row directly; the hold guard
+admits one only during a review and for its current restore, and a hold only
+keeps mail back.
 
 **Release.** A freshly authenticated Administrator confirms release. It is
 refused while any email still needs a hold (the list must be found first, and
@@ -2396,8 +2398,19 @@ offered only once no email still needs a hold. Its preview says what Families
 get as things stand (open, mail paused, not yet open, Testing or closed), how
 many held emails stay held, and how many Families' reminders an undecided
 invitation keeps back, then releases and ends on Home. Every control acts in place; a
-stale sign-in is answered in place with the step-up. After release the page is
-gone; settling the remaining holds is #757.
+stale sign-in is answered in place with the step-up.
+
+**Held emails after release.** The Held emails page (under Outgoing mail,
+Administrator only) lists the current campaign's remaining undecided holds by
+send, from any restore, with the same counts as the Restore review page (emails
+that would be sent now, and the rest shown apart). Each send offers "Assume
+these were sent" and "Send these again", with the same preview, exact count,
+duplicate-risk warning, required note and fresh sign-in; decisions stay final.
+A resend is sent shortly by the ordinary planner, coalesced with any reminder
+then due. Every control acts in place. While any held invitation remains
+undecided, every Admin page shows Administrators a banner naming how many
+Families get no reminders until it is decided, with a link to the page;
+Outgoing mail links to it while any held email waits.
 
 ### Live delivery pause
 

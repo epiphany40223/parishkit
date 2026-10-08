@@ -169,6 +169,9 @@ PAGES = {
     "delivery": Page("mail", _("Mail message"), "deliveries"),
     "delivery_refusals": Page("mail", _("Refused addresses"), "deliveries"),
     "delivery_refusal": Page("mail", _("Refused address"), "delivery_refusals"),
+    # Restore holds left undecided at release (#757), reached from Outgoing
+    # mail and the held-invitations banner.
+    "held_emails": Page("mail", _("Held emails"), "deliveries"),
     "family_portal": Page("mail", _("Family portal availability")),
     "presence": Page("mail", _("Families on the form now")),
     # Responses and reports. Every report is a menu entry of its own. The
