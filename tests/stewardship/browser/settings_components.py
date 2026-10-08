@@ -20,9 +20,14 @@ a test can see the indicator follow along. Campaign settings is served the
 same way at ``CAMPAIGN`` (the editor) and ``CAMPAIGN_REVIEW`` (its review),
 so a test can check its module scripts survive an in-place review, and
 Share options at ``SHARE`` and ``SHARE_REVIEW``: its form is a region of its
-own, redrawn by the answer with the values sent (#750). A live campaign's
-Ministry leader roles form (#922) is served at ``LEADERS``, with its review
-at ``LEADERS_REVIEW``; Apply's answer names the change at
+own, redrawn by the answer with the values sent (#750). ``SHARE_REFUSED`` is
+a refused Apply's answer, as the view draws it: the list changed elsewhere,
+at a newer version, with the refusal in the review region (#768). Apply's
+answer on Share options is ``SHARE_PENDING`` (polling ``SHARE_STATUS``, which
+answers Applied and follows to ``SHARE_SETTLED``, the applied list at version
+``"b" * 64``), or, when the change has already settled, ``SHARE_APPLIED``. A
+live campaign's Ministry leader roles form (#922) is served at ``LEADERS``,
+with its review at ``LEADERS_REVIEW``; Apply's answer names the change at
 ``LEADERS_PENDING``.
 """
 
@@ -53,6 +58,11 @@ SETTLED = f"{SETTINGS}?request={REQUEST}&settled=1"
 CAMPAIGN = "/campaign-in-place"
 SHARE = "/share-in-place"
 SHARE_REVIEW = "/share-in-place-review"
+SHARE_REFUSED = "/share-in-place-refused"
+SHARE_APPLIED = "/share-in-place-applied"
+SHARE_STATUS = "/share-in-place-status"
+SHARE_PENDING = f"{SHARE}?request={REQUEST}"
+SHARE_SETTLED = f"{SHARE}?request={REQUEST}&settled=1"
 CAMPAIGN_REVIEW = "/campaign-in-place-review"
 LEADERS = "/campaign-leaders-in-place"
 LEADERS_REVIEW = "/campaign-leaders-in-place-review"
@@ -72,6 +82,7 @@ CAMPAIGN_VALUES = {
 POSTS = {
     SETTINGS: (303, PENDING, ""),
     LEADERS: (303, LEADERS_PENDING, ""),
+    SHARE: (303, SHARE_PENDING, ""),
     # A Review answered with a redirect to another page, which does not draw
     # the review region (Campaign settings' dates-only change, #532).
     "/settings-in-place-elsewhere": (303, "/in-place-other", ""),
@@ -221,9 +232,17 @@ def components(context, admin):
 
     options = default_share_options()
 
-    def share(data, step, **region):
-        """Share options at ``step``, its formset bound to ``data`` if given."""
-        formset = ShareOptions(data, prefix="options", previous=options)
+    def share(data, step, previous=None, digest="a" * 64, **region):
+        """Share options at ``step``, its formset bound to ``data`` if given.
+
+        ``previous`` (default the stock options) is the saved list, at
+        version ``digest``.
+        """
+        formset = ShareOptions(data, prefix="options", previous=previous or options)
+        values = review_region("share_settings", None, **region)
+        if region.get("receipt"):
+            # The fixture server serves Share options' Change status here.
+            values["status_url"] = SHARE_STATUS
         return (
             "text/html",
             render_to_string(
@@ -236,9 +255,9 @@ def components(context, admin):
                         "active_configuration": {"name": "Sample campaign"},
                     },
                     "formset": formset,
-                    "base_digest": "a" * 64,
+                    "base_digest": digest,
                 }
-                | review_region("share_settings", None, **region),
+                | values,
             ),
         )
 
@@ -316,6 +335,32 @@ def components(context, admin):
                 "after": renamed,
                 "preview": "synthetic-signed-intent",
             },
+        ),
+        SHARE_PENDING: share(None, 2, receipt=pending),
+        SHARE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/configuration-request.html",
+                context
+                | {
+                    "admin_chrome": admin,
+                    "receipt": applied,
+                    "follow_url": SHARE_SETTLED,
+                },
+            ),
+        ),
+        SHARE_SETTLED: share(
+            None, 2, previous=renamed, digest="b" * 64, receipt=applied
+        ),
+        SHARE_APPLIED: share(
+            None, 2, previous=renamed, digest="b" * 64, receipt=applied
+        ),
+        SHARE_REFUSED: share(
+            None,
+            0,
+            previous=[dict(options[0], label="Changed elsewhere"), *options[1:]],
+            digest="c" * 64,
+            message="This preview is out of date.",
         ),
         CAMPAIGN_REVIEW: campaign(
             None,
