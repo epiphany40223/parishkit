@@ -607,4 +607,4 @@ def test_the_prompting_list_names_every_prompting_command():
         if spec.prompts and spec.name not in YES_ONLY
     }
     assert set(listed.split()) == prompting
-    assert "test_sample" in prompting
+    assert {"test_sample", "test_families"} <= prompting

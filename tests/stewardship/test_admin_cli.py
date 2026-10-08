@@ -66,7 +66,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     changes = {"schedule preview", "schedule confirm", "config request show"}
     refresh = {"refresh start", "refresh status"}
-    tests = {"test sample-preview", "test sample"}
+    tests = {
+        "test sample-preview",
+        "test sample",
+        "test families-preview",
+        "test families",
+        "test status",
+    }
     operations = {"task retry"}
     assert set(entries) == session | reads | changes | refresh | tests | operations
     for entry in entries.values():
@@ -84,7 +90,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in operations
             else 3
         )
-        assert not entry["fresh_gated"]
+        # Only the chosen-Family send needs a recent sign-in on its page.
+        assert entry["fresh_gated"] == (name == "test families"), name
         # A prompting command, and only one, takes --yes. Other branches add
         # their own prompting commands, so this is not a closed list.
         assert ("--yes" in names) == entry["prompts"], name
@@ -99,6 +106,16 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert preview["arguments"] == ["REVISION_ID"] and sample["arguments"] == []
     assert sample["result_fields"] == ["created", "request_key", "test"]
     assert preview["result_fields"][-1] == "preview"
+    # The chosen-Family send always asks, as its page always does (PR 6c).
+    chosen, review = entries["test families"], entries["test families-preview"]
+    assert chosen["prompts"] and chosen["changes_state"] and chosen["fresh_gated"]
+    assert chosen["audit_event"] == "admin_cmd_test_families"
+    assert chosen["result_fields"] == ["created", "request_key", "tickets"]
+    assert not review["prompts"] and review["audit_event"] is None
+    options = {option["name"]: option for option in review["options"]}
+    assert options["--family"]["required"]
+    status = entries["test status"]
+    assert status["scope"] == "read_only" and status["audit_event"] is None
     for name in reads:
         # Read-only status: any session, no state change, the page's event.
         assert entries[name]["scope"] == "read_only", name
@@ -190,6 +207,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_schedule_confirm",
         "admin_cmd_refresh_start",
         "admin_cmd_test_sample",
+        "admin_cmd_test_families",
         "admin_cmd_task_retry",
     ]
     for event in events:
@@ -1018,3 +1036,14 @@ def test_the_sample_prompt_asks_the_pages_own_acknowledgement():
 
     label = CampaignMailForm.base_fields["acknowledge_unknown"].label
     assert str(label) == UNKNOWN_ACKNOWLEDGEMENT
+
+
+def test_the_families_prompt_asks_the_pages_own_acknowledgement():
+    """The prompt shows the words the page's checkbox shows, unchanged."""
+    from parishkit.stewardship.accounts.campaign_family_test_views import (
+        FamilyTestConfirmForm,
+    )
+    from parishkit.stewardship.admin_tests import FAMILIES_ACKNOWLEDGEMENT
+
+    label = FamilyTestConfirmForm.base_fields["acknowledge"].label
+    assert str(label) == FAMILIES_ACKNOWLEDGEMENT

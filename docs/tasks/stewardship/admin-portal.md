@@ -430,7 +430,17 @@ allowlists with no address or message body, and the conditional prompt),
 crossing between the page and the command line, one send per key, a pending
 test, the unknown-outcome prompt refused and answered, one activity write,
 scopes and ended sessions) and the unchanged campaign mail suite. 6c adds
-chosen-Family tests.
+`test families-preview`, `test families` and `test status`; proven by
+`tests/stewardship/test_admin_tests.py` (golden documents and allowlists
+with no Family name, Family id or address, and the always-on prompt),
+`tests/stewardship/test_admin_cli.py` (the fresh-gated, prompting catalog
+entry and the page's acknowledgement), `tests/stewardship/test_pk_admin.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_test_families_cli_postgresql.py`
+(refused prompts change nothing, one ticket per Family with one fresh-gate
+event and notice, a repeat from either channel, the page's review sent from
+the command line, an ineligible Family, scopes and ended sessions). The
+preview's `--names` export follows PR 8b (#817).
 ADM-11.10 lands in two pull requests. 9a adds `task retry`
 (`parishkit.stewardship.admin_operations`), with the retry pages' bodies,
 the delivery views' admission and their command scope moved into

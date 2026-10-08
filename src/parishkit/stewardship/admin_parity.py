@@ -165,8 +165,12 @@ LEDGER = {
     ),
     # Testing sends.
     "campaign_mail": command("test sample-preview", "test sample"),
-    "campaign_mail_families": pending(
-        "PR 6", "test families-preview", "test families", "test status"
+    # The preview's --names export waits for PR 8b's export lifecycle.
+    "campaign_mail_families": command(
+        "test families-preview",
+        "test families",
+        "test status",
+        owed="PR 8b",
     ),
     # Reports and exports.
     "reports": pending("PR 8", "report list"),
