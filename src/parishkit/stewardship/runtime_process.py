@@ -1033,7 +1033,12 @@ def execute_runtime(args):
             from .runtime_database import await_database
 
             await_database(configuration)
-            return runner(configuration, lease, **options)
+            status = runner(configuration, lease, **options)
+        # After the runner's cleanup (a sibling consumer closed, the lease
+        # released): a consumer stopped by a fatal failure exits 70 (#386).
+        from .jobs.broker import exit_if_fatal
+
+        return exit_if_fatal(status)
     except Exception as error:
         # The category (never exception text) says which kind of check
         # refused; the detail reaches the log only with debug logging on.
