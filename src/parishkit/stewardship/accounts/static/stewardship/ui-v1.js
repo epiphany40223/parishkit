@@ -2411,6 +2411,272 @@
     }
   };
 
+  // Repeating reminders (#469). expandRecurrence turns a repeat rule into
+  // the campaign-local calendar dates it produces. Dates are civil days,
+  // computed with UTC dates so the browser's own zone never shifts them; the
+  // send time is the campaign's wall-clock time, added later by the server
+  // per date. The rule: {frequency: "daily" | "weekly" | "monthly", start,
+  // end (inclusive, "YYYY-MM-DD"), weekdays: [0 (Monday) … 6] for weekly,
+  // and for monthly either {day: 1–31} or {ordinal: 1–4 or -1 (last),
+  // weekday}}. A month without the chosen day (the 31st in September) is
+  // skipped and listed in ``missing``, not moved. The result is {dates,
+  // missing} or {error}. The shared table
+  // tests/stewardship/fixtures/recurrence_cases.json pins these rules for the
+  // server's expander too (slice 2), so keep them in step.
+  const RECURRENCE_SPAN = 366;
+  const civilDay = (text) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(text ?? ""));
+    if (!match) return null;
+    const day = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    return day.toISOString().slice(0, 10) === match[0] ? day : null;
+  };
+  const isoDay = (day) => day.toISOString().slice(0, 10);
+  const monthDays = (day) => new Date(Date.UTC(day.getUTCFullYear(),
+    day.getUTCMonth() + 1, 0)).getUTCDate();
+  // Monday is 0, as in schedule_forms.WEEKDAYS and Python's date.weekday().
+  const mondayFirst = (day) => (day.getUTCDay() + 6) % 7;
+  const expandRecurrence = (rule) => {
+    const start = civilDay(rule?.start);
+    const end = civilDay(rule?.end);
+    if (!start || !end) return {error: "dates"};
+    if (end < start) return {error: "order"};
+    if ((end - start) / 86400000 >= RECURRENCE_SPAN) return {error: "span"};
+    const weekdays = new Set((rule.weekdays || []).map(Number));
+    const monthly = rule.monthly || {};
+    if (rule.frequency === "weekly" && !weekdays.size) return {error: "weekdays"};
+    if (rule.frequency === "monthly" && !(
+      Number.isInteger(monthly.day) && monthly.day >= 1 && monthly.day <= 31
+      || [1, 2, 3, 4, -1].includes(monthly.ordinal)
+        && Number.isInteger(monthly.weekday) && monthly.weekday >= 0 && monthly.weekday <= 6)) {
+      return {error: "monthly"};
+    }
+    if (!["daily", "weekly", "monthly"].includes(rule.frequency)) return {error: "frequency"};
+    const dates = [];
+    const missing = [];
+    for (let day = new Date(start); day <= end; day.setUTCDate(day.getUTCDate() + 1)) {
+      const date = day.getUTCDate();
+      if (rule.frequency === "daily") dates.push(isoDay(day));
+      else if (rule.frequency === "weekly") {
+        if (weekdays.has(mondayFirst(day))) dates.push(isoDay(day));
+      } else if (monthly.day) {
+        if (date === monthly.day) dates.push(isoDay(day));
+        // The month's last day in range stands for a missing chosen day.
+        else if (date === monthDays(day) && monthly.day > date) {
+          missing.push(isoDay(day).slice(0, 7));
+        }
+      } else if (mondayFirst(day) === monthly.weekday && (monthly.ordinal === -1
+        ? date + 7 > monthDays(day) : Math.ceil(date / 7) === monthly.ordinal)) {
+        dates.push(isoDay(day));
+      }
+    }
+    return {dates, missing};
+  };
+  window.ParishRecurrence = Object.freeze({expand: expandRecurrence});
+
+  // "Repeat a reminder" (#469 slice 1): the panel under the schedule rows
+  // lists, as the Admin types, every date its rule produces and why any of
+  // them will not be added, then appends one ordinary reminder row per date
+  // that fits. The checks here only say early what the server will refuse
+  // anyway (configuration.validate_campaign_sections stays the authority):
+  // inside the campaign dates, strictly after the initial invitation, not at
+  // the instant of another Family mailing, at most REPEAT_LIMIT dates per
+  // rule and the form's MAX_NUM_FORMS rows in all. Every comparison is of
+  // campaign-local date and time text, the zone all schedule rows use.
+  const REPEAT_LIMIT = 30;
+  const REPEAT_ERRORS = {
+    dates: "Choose the first and last dates to repeat on.",
+    order: "The last date is before the first.",
+    span: "Repeat over at most a year.",
+    weekdays: "Choose at least one day of the week.",
+    monthly: "Choose a day of the month from 1 to 31, or a weekday.",
+    frequency: "Choose how often to repeat.",
+  };
+  const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July",
+    "August", "September", "October", "November", "December"];
+  const spokenDay = (text) => {
+    const day = civilDay(text);
+    return `${DAY_NAMES[mondayFirst(day)]}, ${MONTH_NAMES[day.getUTCMonth()]} ${
+      day.getUTCDate()}, ${day.getUTCFullYear()}`;
+  };
+  const repeatPanel = ({form, panel, template, rows, maximum, status, count, addScheduleRow}) => {
+    const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
+    const list = panel.querySelector("[data-repeat-dates]");
+    const button = panel.querySelector("[data-repeat-add]");
+    const reading = panel.querySelector("[data-repeat-reading]");
+    const email = control("email");
+    // Only reminder emails, from the new-row template's own list.
+    const reminders = [...template.content.querySelectorAll(
+      '[data-schedule-field="template_version"] option[data-kind="reminder"]')];
+    email.replaceChildren(...reminders.map((option) => option.cloneNode(true)));
+    panel.querySelector("[data-repeat-no-email]").hidden = reminders.length > 0;
+    let ready = [];
+    // The summary is the panel's only live region. It is written a moment
+    // after typing pauses, and only when its text changes, so a screen
+    // reader hears one short sentence rather than every keystroke's result.
+    const summaryLine = panel.querySelector("[data-repeat-summary]");
+    let summaryTimer;
+    const announce = (text) => {
+      clearTimeout(summaryTimer);
+      summaryTimer = setTimeout(() => {
+        if (summaryLine.textContent !== text) summaryLine.textContent = text;
+      }, 300);
+    };
+    // The Family mailings already in the form, as {kind, date, time} text.
+    const mailings = () => [...rows.querySelectorAll("[data-schedule-row]")].flatMap((row) => {
+      const value = (name) => row.querySelector(`[name$="-${name}"]`)?.value ?? "";
+      const kind = value("kind");
+      const deleted = row.querySelector('[name$="-DELETE"]')?.checked;
+      const time = parseTime(value("time"), value("time"));
+      if (deleted || !["initial", "reminder"].includes(kind) || !value("date") || time.error) return [];
+      return [{kind, date: value("date"), time: canonicalTime(time.value)}];
+    });
+    const windowDay = (name) => form.querySelector(`[name="window-${name}"]`)?.value
+      || panel.dataset[`repeat${name === "start_date" ? "Start" : "End"}`];
+    const rule = () => ({
+      frequency: control("frequency").value,
+      start: control("from").value,
+      end: control("until").value,
+      weekdays: [...panel.querySelectorAll('[data-repeat="weekday"]:checked')]
+        .map((box) => Number(box.value)),
+      monthly: control("by").value === "day"
+        ? {day: Number(control("day").value)}
+        : {ordinal: Number(control("ordinal").value),
+          weekday: Number(control("month-weekday").value)},
+    });
+    const update = () => {
+      const frequency = control("frequency").value;
+      panel.querySelectorAll("[data-repeat-when]").forEach((part) => {
+        part.hidden = part.dataset.repeatWhen !== frequency;
+      });
+      panel.querySelectorAll("[data-repeat-by]").forEach((part) => {
+        part.hidden = part.dataset.repeatBy !== control("by").value;
+      });
+      const time = parseTime(control("time").value);
+      reading.textContent = control("time").value.trim()
+        ? (time.error ? time.message : `Reads as ${timeReading(time.value)}`) : "";
+      // A time that does not read is shown as an error, like the row fields.
+      reading.classList.toggle("is-error",
+        Boolean(control("time").value.trim() && time.error));
+      ready = [];
+      const items = [];
+      // What the reserved summary line says: the first thing still missing,
+      // or how many dates will be added. Without a readable send time the
+      // timed checks (after the initial invitation, already scheduled then)
+      // cannot run, so no count is offered rather than one that is too high.
+      let summary = "";
+      const sendTime = time.error ? "" : canonicalTime(time.value);
+      const expanded = expandRecurrence(rule());
+      if (expanded.error) {
+        if (control("from").value || control("until").value) {
+          summary = REPEAT_ERRORS[expanded.error];
+        }
+      } else {
+        const existing = mailings();
+        const initial = existing.find((mailing) => mailing.kind === "initial");
+        const taken = new Set(existing.map((mailing) => `${mailing.date} ${mailing.time}`));
+        const [first, last] = [windowDay("start_date"), windowDay("end_date")];
+        expanded.dates.forEach((date) => {
+          let reason = "";
+          if (date < first || date > last) reason = "outside the campaign dates";
+          // Without a send time the remaining checks wait; the date is
+          // listed but not counted.
+          else if (!sendTime) reason = "";
+          else if (initial && `${date} ${sendTime}` <= `${initial.date} ${initial.time}`) {
+            reason = "not after the initial invitation";
+          } else if (taken.has(`${date} ${sendTime}`)) {
+            reason = "another email is already scheduled then";
+          } else if (ready.length >= REPEAT_LIMIT) {
+            reason = `over the limit of ${REPEAT_LIMIT} reminders at a time`;
+          } else if (Number.isFinite(maximum) && count() + ready.length >= maximum) {
+            reason = `over the limit of ${maximum} schedules`;
+          }
+          if (!reason && sendTime) ready.push(date);
+          items.push({text: spokenDay(date), reason});
+        });
+        expanded.missing.forEach((month) => {
+          const [year, number] = month.split("-").map(Number);
+          items.push({text: `${MONTH_NAMES[number - 1]} ${year}`,
+            reason: `skipped: it has no day ${rule().monthly.day}`});
+        });
+        const left = items.filter((item) => item.reason).length;
+        const plural = (number, word) =>
+          `${number.toLocaleString("en-US")} ${word}${number === 1 ? "" : "s"}`;
+        if (!items.length) summary = "This rule gives no dates between the first and last date.";
+        else if (!sendTime) summary = "Enter a send time to check these dates.";
+        else if (!ready.length) summary = "Nothing to add: none of these dates can be used.";
+        else if (!email.value) {
+          summary = reminders.length ? "Choose the email to send."
+            : "Save a reminder email first.";
+        } else {
+          summary = `${plural(ready.length, "reminder")} to add${
+            left ? `, ${left.toLocaleString("en-US")} not added` : ""}.`;
+        }
+      }
+      announce(summary);
+      const heading = document.createElement("p");
+      heading.textContent = !sendTime ? "Dates this rule gives:"
+        : ready.length
+          ? `${ready.length.toLocaleString("en-US")} ${ready.length === 1 ? "reminder" : "reminders"} to add:`
+          : "Nothing to add yet:";
+      const listing = document.createElement("ul");
+      items.forEach((item) => {
+        const entry = document.createElement("li");
+        entry.textContent = item.reason ? `${item.text}: not added, ${item.reason}` : item.text;
+        if (item.reason) entry.className = "help";
+        listing.append(entry);
+      });
+      list.replaceChildren(...(items.length ? [heading, listing] : []));
+      button.disabled = !ready.length || !email.value;
+      button.textContent = ready.length > 1
+        ? `Add these ${ready.length.toLocaleString("en-US")} reminders`
+        : ready.length ? "Add this reminder" : "Add these reminders";
+    };
+    button.addEventListener("click", () => {
+      const sendTime = canonicalTime(parseTime(control("time").value).value);
+      const dates = [...ready];
+      const added = dates.map((date) => {
+        const row = addScheduleRow();
+        const field = (name) => row.querySelector(`[name$="-${name}"]`);
+        field("kind").value = "reminder";
+        field("kind").dispatchEvent(new Event("change", {bubbles: true}));
+        field("date").value = date;
+        field("time").value = sendTime;
+        field("time").dispatchEvent(new Event("input", {bubbles: true}));
+        field("template_version").value = email.value;
+        // So the row's email description (#446) shows the chosen email.
+        field("template_version").dispatchEvent(new Event("change", {bubbles: true}));
+        return row;
+      });
+      gateTimes(form);
+      // The message does not name the rows' numbers: how a new row is
+      // labelled belongs to the row markup (it may have no number at all).
+      status.textContent = added.length === 1
+        ? "1 reminder added. Preview to check and save it."
+        : `${added.length.toLocaleString("en-US")} reminders added. Preview to check and save them.`;
+      update();
+      // Focus the first new row's date (its mail type is already chosen), or
+      // its first field if the row has no date field.
+      (added[0].querySelector('[name$="-date"]')
+        ?? added[0].querySelector("input, select, textarea"))?.focus();
+    });
+    panel.addEventListener("input", update);
+    panel.addEventListener("change", update);
+    // Edits to the rows (an initial invitation's time, a removed row) change
+    // which dates fit.
+    rows.addEventListener("input", update);
+    rows.addEventListener("change", update);
+    form.addEventListener("schedules-changed", update);
+    form.querySelectorAll('[name^="window-"]').forEach((field) => {
+      field.addEventListener("change", update);
+    });
+    // Prefill the dates with the campaign's own, so the first list is useful.
+    control("from").value ||= windowDay("start_date") || "";
+    control("until").value ||= windowDay("end_date") || "";
+    panel.hidden = false;
+    update();
+  };
+
   // Mail schedule rows: show only the fields the chosen mail type uses (the
   // row's data-schedule-fields is schedule_forms.FIELDS), and offer only
   // emails of that type. A field hidden here is also cleared, so a stale date
@@ -2568,7 +2834,7 @@
       total.value = String(first + added.length);
       add.disabled = Number.isFinite(maximum) && first + added.length >= maximum;
     };
-    add.addEventListener("click", () => {
+    const addScheduleRow = () => {
       const row = template.content.firstElementChild.cloneNode(true);
       const remove = document.createElement("button");
       remove.type = "button";
@@ -2582,6 +2848,7 @@
         gateTimes(form);
         status.textContent = "New schedule removed.";
         add.focus();
+        form.dispatchEvent(new Event("schedules-changed"));
       });
       row.append(remove);
       rows.append(row);
@@ -2589,10 +2856,21 @@
       refresh();
       scheduleRow(row);
       wireTimeEntry(row);
+      return row;
+    };
+    add.addEventListener("click", () => {
+      const row = addScheduleRow();
       status.textContent = "New schedule added. Choose its mail type.";
       row.querySelector('[data-schedule-field="kind"] select')?.focus();
     });
     addRow.hidden = false;
+    const panel = form.querySelector("[data-repeat-panel]");
+    if (panel) repeatPanel({form, panel, template, rows, maximum, status,
+      // Saved rows marked Delete do not count toward the limit, as on the
+      // server.
+      count: () => first + added.length
+        - rows.querySelectorAll('[name$="-DELETE"]:checked').length,
+      addScheduleRow});
   });
 
   // Plain multi-select lists: say how many items are chosen, since a long list

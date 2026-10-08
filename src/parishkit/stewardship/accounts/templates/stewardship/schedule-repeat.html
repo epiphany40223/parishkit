@@ -1,0 +1,36 @@
+{% load i18n stewardship %}{% comment %}
+"Repeat a reminder" (#469 slice 1). The page script expands a repeat rule
+into concrete dates (window.ParishRecurrence, pinned by
+tests/stewardship/fixtures/recurrence_cases.json) and appends one ordinary
+reminder row per date to the schedule rows above, so the server validates,
+previews and confirms them exactly like rows added by hand. None of these
+controls has a name, so nothing here is ever posted. The panel stays hidden
+until the script reveals it; the Admin portal requires JavaScript.
+Only the one-line summary is a live region (the date list can run to
+hundreds of items and is rebuilt as the Admin types), and it sits with the
+button above the list, its line reserved, so a growing or shrinking list
+never moves the button.
+{% endcomment %}<fieldset class="panel schedule-repeat" data-repeat-panel data-repeat-start="{{ schedules.campaign.start_date }}" data-repeat-end="{{ schedules.campaign.end_date }}" hidden aria-describedby="repeat-intro">
+<legend>{% translate "Repeat a reminder" %}</legend>
+<p class="help" id="repeat-intro">{% translate "Add several reminders at once, for example every Monday until the campaign ends. They are added to the schedules above as ordinary reminders, which you can still change or remove one at a time. Nothing is saved until you preview and confirm." %}</p>
+<div class="field"><label for="repeat-frequency">{% translate "How often" %}</label>
+<select id="repeat-frequency" data-repeat="frequency"><option value="weekly">{% translate "Every week" %}</option><option value="daily">{% translate "Every day" %}</option><option value="monthly">{% translate "Every month" %}</option></select></div>
+<p class="help" data-repeat-when="daily" hidden>{% translate "A reminder every day goes to every Family that has not responded yet. Near the sending mailbox's daily limit, sending spreads out or waits." %}</p>
+<fieldset class="field" data-repeat-when="weekly"><legend>{% translate "On these days" %}</legend>
+<div class="repeat-days">{% for day in schedules.empty_form.fields.weekday.choices %}{% if day.0 != "" %}<label><input type="checkbox" data-repeat="weekday" value="{{ day.0 }}"> {{ day.1 }}</label> {% endif %}{% endfor %}</div></fieldset>
+<div data-repeat-when="monthly" hidden>
+<div class="field"><label for="repeat-by">{% translate "Repeat on" %}</label><select id="repeat-by" data-repeat="by"><option value="day">{% translate "A day of the month" %}</option><option value="weekday">{% translate "A weekday of the month" %}</option></select></div>
+<div class="field" data-repeat-by="day"><label for="repeat-day">{% translate "Day of the month" %}</label><input id="repeat-day" type="number" min="1" max="31" inputmode="numeric" data-repeat="day" value="1" aria-describedby="repeat-day-help">
+<p class="help" id="repeat-day-help">{% translate "1 to 31. A month without that day, such as the 31st in September, is skipped." %}</p></div>
+<div class="field" data-repeat-by="weekday" hidden><label for="repeat-ordinal">{% translate "Which one" %}</label><select id="repeat-ordinal" data-repeat="ordinal"><option value="1">{% translate "First" %}</option><option value="2">{% translate "Second" %}</option><option value="3">{% translate "Third" %}</option><option value="4">{% translate "Fourth" %}</option><option value="-1">{% translate "Last" %}</option></select>
+<label for="repeat-month-weekday">{% translate "Day of the week" %}</label><select id="repeat-month-weekday" data-repeat="month-weekday">{% for day in schedules.empty_form.fields.weekday.choices %}{% if day.0 != "" %}<option value="{{ day.0 }}">{{ day.1 }}</option>{% endif %}{% endfor %}</select></div></div>
+<div class="field"><label for="repeat-from">{% translate "From" %}</label><input id="repeat-from" type="date" data-repeat="from"></div>
+<div class="field"><label for="repeat-until">{% translate "Until" %}</label><input id="repeat-until" type="date" data-repeat="until"></div>
+<div class="field"><label for="repeat-time">{% translate "Send time" %}</label><input id="repeat-time" type="text" autocomplete="off" spellcheck="false" data-repeat="time" aria-describedby="repeat-time-help repeat-time-reading">
+<p class="help" id="repeat-time-help">{% blocktranslate trimmed with timezone=schedules.timezone %}In the campaign's time zone, {{ timezone }}, for example 9:00 AM. Every date uses the same time, even across a daylight-saving change.{% endblocktranslate %}</p><p class="time-reading" id="repeat-time-reading" data-repeat-reading></p></div>
+<div class="field"><label for="repeat-email">{% translate "Email to send" %}</label><select id="repeat-email" data-repeat="email"></select>
+<p class="help" data-repeat-no-email hidden>{% translate "No reminder email is saved yet. Save one with the page and email templates first." %}</p></div>
+<p class="repeat-summary" role="status" data-repeat-summary></p>
+<p>{% button type="button" variant="secondary" data-repeat-add disabled %}{% translate "Add these reminders" %}{% endbutton %}</p>
+<div data-repeat-dates></div>
+</fieldset>
