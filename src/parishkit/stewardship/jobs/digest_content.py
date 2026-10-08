@@ -8,7 +8,6 @@ from parishkit.stewardship.reports.daily_digest import DailyDigestContent
 from parishkit.stewardship.reports.weekly_digest import WeeklyDigestContent
 from parishkit.stewardship.web.content import (
     ADMIN_DIGEST_PLACEHOLDERS,
-    SafeContent,
     bounded_text,
     prepare_content,
     render_template,
@@ -30,12 +29,17 @@ class DigestTemplate:
     text: str = ""
 
     def __post_init__(self):
-        """Only canonical authored HTML and public substitutions are admitted."""
+        """Re-sanitized authored HTML and public substitutions only (#385).
+
+        Today's sanitizer cleans the stored introduction instead of an
+        equality check failing on a later sanitizer change.
+        """
+        if not self.subject.strip():
+            raise ValueError("Admin digest template requires a subject.")
+        object.__setattr__(
+            self, "html", prepare_content(self.html, text=self.text).html
+        )
         validate_admin_digest_content(self.subject, self.html, self.text)
-        if not self.subject.strip() or prepare_content(
-            self.html, text=self.text
-        ) != SafeContent(self.html, self.text):
-            raise ValueError("Admin digest template requires canonical safe content.")
 
 
 # Room for the "[TEST] " prefix within the 254-character subject limit.

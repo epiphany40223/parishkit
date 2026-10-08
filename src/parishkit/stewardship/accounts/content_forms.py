@@ -485,8 +485,12 @@ def _sample_render(value, *, parish, campaign, confirmation=False, receipt_block
             block=receipt_block,
             files=files,
         )
+    # Cleaned as the send cleans it (#385), so preview and send match even
+    # for content the sanitizer would now change.
     return {
-        "html": render_template(value["html"], substitutions, html=True, files=files),
+        "html": render_template(
+            prepare_content(value["html"]).html, substitutions, html=True, files=files
+        ),
         "text": render_template(value["text"], substitutions, files=files),
         "subject": render_template(value["subject"], substitutions, subject=True)
         if value["subject"] is not None

@@ -962,7 +962,9 @@ an applied configuration version were validated under the rules in force when
 they were applied and are integrity-checked by digest, so verifying applied
 history, and carrying an unchanged revision into a new candidate, never re-run
 today's text rules; a sanitizer improvement therefore cannot block later
-configuration changes. A configuration request that can never verify against
+configuration changes. Rendering likewise re-sanitizes retained HTML with
+today's sanitizer instead of refusing it; plain text stays as stored, and the
+placeholder and credential rules still refuse. A configuration request that can never verify against
 the applied history fails with a visible reason instead of waiting forever.
 The direct submission confirmation selects at most one email template
 per campaign; editing replaces its immutable revision, not an arbitrary member

@@ -217,10 +217,14 @@ def test_submission_receipts_cannot_use_credential_bearing_renderer():
         render(replace(identity(), purpose="receipt"))
 
 
-def test_template_is_canonical_and_never_renders_executable_source_values():
-    """Existing sanitizer/template rules remain the one rendering implementation."""
-    with pytest.raises(ValueError, match="canonical"):
-        FamilyMailTemplate("Subject", "<script>alert(1)</script><p>Hello</p>", "Hello")
+def test_template_is_resanitized_and_never_renders_executable_source_values():
+    """Stored HTML is cleaned by today's sanitizer, never refused for it (#385)."""
+    template = FamilyMailTemplate(
+        "Subject",
+        "<script>alert(1)</script><p>Hello {{ family_code }} {{ family_url }}</p>",
+        "Hello {{ family_code }} {{ family_url }}",
+    )
+    assert "<script" not in template.html and "alert" not in template.html
     with pytest.raises(ValueError, match="reserved"):
         FamilyMailTemplate("Subject", "<p>" + CODE_PLACEHOLDER + "</p>", "Hello")
 
