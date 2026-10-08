@@ -1629,6 +1629,13 @@ CREATE FUNCTION public.stewardship_chair_decisions_v1(configuration uuid) RETURN
     LANGUAGE sql STABLE
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
+    -- The current snapshot's chair relationships, read once. The planner
+    -- copies the CASE below into both uses of reason, so a correlated read
+    -- of the view there planned its ten-relation join twice per call, about
+    -- 100-200 ms under the work-order lock (#147).
+    WITH chair AS MATERIALIZED (
+        SELECT DISTINCT organization_id, member_duid, ministry_duid, email
+        FROM stewardship_current_chair)
     SELECT coalesce(jsonb_agg(jsonb_build_object(
         'assignment_record_id',record_id::text,
         'active',reason='current_chair','reason',reason) ORDER BY record_id),
@@ -1643,7 +1650,7 @@ CREATE FUNCTION public.stewardship_chair_decisions_v1(configuration uuid) RETURN
                   AND activity.organization_id=evidence.organization_id
                   AND activity.ministry_duid=assignment.ministry_duid
                   AND NOT activity.active) THEN 'ministry_inactive'
-            WHEN EXISTS (SELECT 1 FROM stewardship_current_chair chair
+            WHEN EXISTS (SELECT 1 FROM chair
                 WHERE chair.organization_id=evidence.organization_id
                   AND chair.member_duid=evidence.member_duid
                   AND chair.ministry_duid=assignment.ministry_duid
