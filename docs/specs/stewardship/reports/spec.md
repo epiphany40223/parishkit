@@ -913,11 +913,9 @@ into ParishSoft, by hand or by
 [proposed-change rows](../data/spec.md#proposed-changes) (one per atomic
 Family request) and the handling registry there that classifies each field;
 it adds no state of its own. Testing responses are excluded, as in the other
-reports. Pledges and share methods are not census changes: they reach
-ParishSoft through the
-[Financial stewardship detail](#financial-stewardship-detail) report, and
-Ministry joins and leaves through the
-[Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) requests.
+reports. Pledges, share methods and Ministry rosters are not census
+changes; the
+[data workflow](../data/spec.md#review-and-publication) says where they go.
 
 ### Census change rows
 
@@ -929,22 +927,23 @@ Rows are grouped by Family (name and DUID), one row per change:
   Moved to another household, Deceased, New Member, and so on).
 - **ParishSoft now**, **Family's answer**, and **Edited value** (only when an
   Administrator edited the proposed value). ParishSoft now is blank where no
-  verified ParishSoft read exists for the field: today that is every Family
-  household field, so a Family address never shows a ParishSoft value or a
+  verified ParishSoft read exists for the field (today every Family
+  household field), so a Family address never shows a ParishSoft value or a
   conflict. Values appear in full: Admin and Staff need them to type into
   ParishSoft, and every view and download is audited.
 - **How it reaches ParishSoft**: *Automatic* for a field the
   [handling registry](../data/spec.md#proposed-changes) marks API-writable,
   *By hand* for every other row. A Family address is *By hand* until
-  publication may write it (see below).
+  publication may write it (see the
+  [data workflow](../data/spec.md#review-and-publication)).
 - **Status**, derived from the row's decision and execution as below.
 - **Submitted**, in browser-local time.
 
 A terminal execution decides the status first, since it is the outcome
 whatever the decision says: *published* is **Published**,
 *resolved_upstream* is **Already in ParishSoft**, *resolved_external* is
-**Entered by hand**, and *superseded* or *cancelled* rows appear only with
-*Include history*. Otherwise an *ignored* decision is **Ignored**. Otherwise
+**Entered by hand**, and *superseded* or *cancelled* rows appear, as
+**Superseded** and **Cancelled**, only with *Include history*. Otherwise an *ignored* decision is **Ignored**. Otherwise
 the execution decides: *queued* is **Being published**, *conflict* is
 **Conflict** (ParishSoft changed since the Family answered, shown as the
 conflict detail below), and *failed* is **To do** (a failed publication).
@@ -985,20 +984,16 @@ review/publish actions are defined by the
 [data](../data/spec.md#review-and-publication) and
 [Admin](../admin-portal/spec.md#follow-up-workflows) specifications.
 
-Today the web role may change a proposal only to supersede it, and the
+Today the web role may change a proposal only after a later Family
+response, to *superseded*, *cancelled* or *resolved_upstream*, and the
 database guard refuses *resolved_external* from it, so the tick, Ignore and
 reopen ship with a forward migration that lets the web role make exactly
 these changes, following the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
 
-Family addresses have no verified ParishSoft read, so publication cannot
-detect a conflict for them or confirm one landed. Until a verified address
-read exists (and the publication smoke test covers the Family address
-write), they are *By hand* rows: an address entered in ParishSoft stays *To
-do* until it is ticked. Ministry roster changes, which ParishSoft never
-accepts through its API, are tracked on the
-[Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) requests
-themselves, not here.
+Since Family addresses are not yet written by publication (see the
+[data workflow](../data/spec.md#review-and-publication)), an address entered
+in ParishSoft stays *To do* until it is ticked.
 
 ## Financial stewardship detail
 

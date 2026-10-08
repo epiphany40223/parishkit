@@ -838,7 +838,7 @@ ParishSoft capability registry, not guessed in views. The initial registry is:
 
 | Change | Handling |
 | --- | --- |
-| Family home/mailing contact/address fields | ParishSoft v2 Family contact PUT |
+| Family home/mailing contact/address fields | ParishSoft v2 Family contact PUT, not written until a verified address read exists ([Review and publication](#review-and-publication)) |
 | Member first/middle/last/nickname/maiden names | ParishSoft v2 Member contact PUT |
 | Member birth date, language, gender | ParishSoft v2 Member contact PUT where semantically sufficient |
 | Member death-date field correction | ParishSoft v2 Member contact PUT |
