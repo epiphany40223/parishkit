@@ -67,14 +67,57 @@ def test_just_confirmed_setup_is_working_and_waiting():
         ("staged", "active", "Queued"),
         ("testing", "active", "Checking the credential"),
         ("installing", "active", "Installing the credential"),
-        ("expired", "failed", "rolled back"),
-        ("cancelled", "failed", "rolled back"),
+        ("expired", "failed", "not installed in time"),
+        ("cancelled", "failed", "installation was cancelled"),
     ],
 )
 def test_credential_states_have_plain_language(state, expected, text):
     """Each installer state names what is happening to that credential."""
     rows = by_key(finishing(status(credentials=[credential("parishsoft", state)])))
     assert rows["parishsoft"]["state"] == expected
+    assert text in str(rows["parishsoft"]["text"])
+
+
+@pytest.mark.parametrize(
+    "target,check",
+    [
+        ("parishsoft", "Check the key and the organization ID"),
+        ("google_workspace", "domain-wide delegation"),
+        ("slack", "invited to the channel"),
+    ],
+)
+@pytest.mark.parametrize(
+    "state,reason", [("failed", ""), ("cleanup_pending", "failed")]
+)
+def test_rejected_credential_says_what_to_check(target, check, state, reason):
+    """A provider rejection names what to check and how to try again (#456 L2).
+
+    It reads the same while the installer is still removing the rejected
+    file (cleanup pending) as once it is done.
+    """
+    result = finishing(
+        status(targets=[target], credentials=[credential(target, state, reason=reason)])
+    )
+    text = str(by_key(result)[target]["text"])
+    assert by_key(result)[target]["state"] == "failed"
+    assert check in text and "did not accept" in text
+    assert "cancel this setup and start a new one" in text
+    assert result["overall"] == "failed"
+
+
+@pytest.mark.parametrize(
+    "reason,text",
+    [
+        ("expired", "credential installers are running"),
+        ("cancelled", "installation was cancelled"),
+        ("unknown", "was not installed"),
+    ],
+)
+def test_cleanup_reason_explains_a_credential_being_removed(reason, text):
+    """While cleanup is pending, its reason says why the credential failed."""
+    item = credential("parishsoft", "cleanup_pending", reason=reason)
+    rows = by_key(finishing(status(credentials=[item])))
+    assert rows["parishsoft"]["state"] == "failed"
     assert text in str(rows["parishsoft"]["text"])
 
 

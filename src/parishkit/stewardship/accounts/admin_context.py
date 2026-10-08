@@ -105,6 +105,8 @@ def portal_chrome(request):
             "paused": bool(campaign and campaign.delivery_paused),
             "delivery_pause": delivery_pause,
             "go_live": go_live,
+            # A key change in progress holds every later settings change.
+            "key_changes": _key_changes() if admin else [],
             # The Family portal maintenance switch (family_maintenance.py).
             # Every Admin role sees this: chairs field the Families' calls.
             "family_closed": family_maintenance.current_state().closed,
@@ -139,6 +141,25 @@ def portal_chrome(request):
             ),
         }
     }
+
+
+def _key_changes():
+    """Each integration whose key change holds the settings queue (#456 M4).
+
+    Shown only to Administrators, who are the ones saving settings: a change
+    saved now waits behind the key's selection, and does not apply if the
+    new key is accepted (``integration_credentials.changes_in_progress``).
+    """
+    from .integration_credentials import changes_in_progress
+    from .integration_forms import LABELS
+
+    return [
+        {
+            "label": LABELS[target],
+            "url": reverse("admin:integration_settings", args=[target]),
+        }
+        for target in changes_in_progress()
+    ]
 
 
 def _navigation_items(actor, admin, campaign, configuration):
@@ -286,6 +307,7 @@ def _setup_chrome(actor, configuration, session):
         "paused": False,
         "delivery_pause": None,
         "go_live": False,
+        "key_changes": [],
         "critical_count": 0,
         "critical_events": [],
         "critical_shown": "",
