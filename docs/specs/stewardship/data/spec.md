@@ -839,7 +839,7 @@ ParishSoft capability registry, not guessed in views. The initial registry is:
 
 | Change | Handling |
 | --- | --- |
-| Family home/mailing contact/address fields | ParishSoft v2 Family contact PUT |
+| Family home/mailing contact/address fields | ParishSoft v2 Family contact PUT, not written until a verified address read exists ([Review and publication](#review-and-publication)) |
 | Member first/middle/last/nickname/maiden names | ParishSoft v2 Member contact PUT |
 | Member birth date, language, gender | ParishSoft v2 Member contact PUT where semantically sufficient |
 | Member death-date field correction | ParishSoft v2 Member contact PUT |
@@ -1554,6 +1554,30 @@ the promoted snapshot under a new lease claim.
 Admins may publish any reviewed subset during or after an active campaign.
 They need not finish review in one session. Later Family submissions supersede
 unpublished proposals as appropriate but never rewrite publication history.
+
+Only an Administrator approves and publishes. Only changes the
+[handling registry](#proposed-changes) marks API-writable are ever written;
+staff enter every other census change by hand from the
+[Census changes](../reports/spec.md#pending-census-changes) worklist.
+Pledges and share methods have no proposed changes: they reach ParishSoft
+through the
+[Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
+report, and Ministry rosters through the
+[Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) requests.
+Family home and mailing addresses are not written until a verified
+ParishSoft address read exists, since without one publication can neither
+detect a conflict nor confirm the write; until then they are worked by
+hand. Every entity written records an audit event naming the fields, never
+their values. In Testing mode publication stops after preflight and writes
+nothing. Before the first real write, a human-run smoke tool (outside CI,
+reading credentials at runtime) writes one chosen test Member and reads it
+back, and before the first Family address write it does the same for one
+chosen test Family's address (the Family contact PUT); CI uses only
+recorded request fixtures.
+
+Publication and the refresh after it never touch Family codes or links: no
+publish, refresh or email change revokes, rotates, reissues or re-sends a
+Family's code or link. A changed email changes only where later mail goes.
 
 ## Retention and deletion
 
