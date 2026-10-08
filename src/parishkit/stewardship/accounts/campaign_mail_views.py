@@ -13,8 +13,7 @@ from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 
 from . import admin_navigation
 from .authentication import runtime
-from .campaign_mail import SALT, prepare, request_sample
-from .campaign_mail_models import CampaignMailTest
+from .campaign_mail import SALT, prepare, recent_tests, request_sample
 from .content_forms import EMAIL_LABELS
 from .integration_views import ERRORS, _checked
 from .setup_mail_views import LABELS
@@ -63,19 +62,8 @@ def campaign_mail(request, campaign_id, revision_id):
             arguments={"kind": "email", "slot": slot},
             labels={"content_revision": EMAIL_LABELS.get(slot, slot)},
         )
-        rows = CampaignMailTest.objects.filter(campaign_id=campaign_id)
-        items = [
-            {
-                "id": row.pk,
-                "label": LABELS[row.state],
-                "created_at": row.created_at,
-                "current": row.configuration_id == preview.row.configuration_id
-                and row.template_id == preview.row.template_id,
-            }
-            for row in rows.order_by("-created_at", "-id").only(
-                "id", "state", "created_at", "configuration_id", "template_id"
-            )[:25]
-        ]
+        tests = recent_tests(campaign_id, preview.row)
+        items = [{**item, "label": LABELS[item["state"]]} for item in tests["items"]]
         response = render(
             request,
             "stewardship/campaign-mail.html",
@@ -91,8 +79,8 @@ def campaign_mail(request, campaign_id, revision_id):
                 # Real chosen-Family sends exist only for a Testing draft whose
                 # schedules use this template.
                 "families_url": preview.families_url,
-                "pending": rows.filter(state__in=["queued", "submitting"]).exists(),
-                "unknown": rows.filter(state="delivery_unknown").exists(),
+                "pending": tests["pending"],
+                "unknown": tests["unknown"],
                 "items": items,
             },
             status=400 if request.method == "POST" else 200,

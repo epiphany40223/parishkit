@@ -149,6 +149,33 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
         )
 
 
+def recent_tests(campaign_id, row):
+    """The page's test list: pending and unknown flags and the 25 newest tests.
+
+    ``row`` is the preview's ``CampaignMailTest``; a test is ``current`` when
+    it used the same configuration and template. The Preview and test email
+    page and ``pk-admin test sample-preview`` (ADM-11 PR 6b) both read this.
+    """
+    rows = CampaignMailTest.objects.filter(campaign_id=campaign_id)
+    newest = rows.order_by("-created_at", "-id").only(
+        "id", "state", "created_at", "configuration_id", "template_id"
+    )[:25]
+    return {
+        "pending": rows.filter(state__in=["queued", "submitting"]).exists(),
+        "unknown": rows.filter(state="delivery_unknown").exists(),
+        "items": [
+            {
+                "id": test.pk,
+                "state": test.state,
+                "created_at": test.created_at,
+                "current": test.configuration_id == row.configuration_id
+                and test.template_id == row.template_id,
+            }
+            for test in newest
+        ],
+    }
+
+
 def _public_origin():
     """This deployment's public origin, the only host a sample banner may use."""
     from django.conf import settings
