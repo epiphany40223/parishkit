@@ -6,6 +6,7 @@ the deciding run.
 """
 
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
@@ -323,3 +324,193 @@ def test_readability_is_decided_by_the_remote(tmp_path, capsys):
     assert f"cannot fetch {local} from origin" in capsys.readouterr().err
     git(work, "push", "-q", "origin", "train")
     assert evidence.differing_paths(str(work), "origin", local, "main") == ["x.py"]
+
+
+# ---------------------------------------------------------------------------
+# A named run is also read directly; the listing alone decides (#730). These
+# fake gh: `gh api` answers the named run's REST record, and each `gh run
+# list` answers the next listing (a partial or stale page, then a fuller one).
+
+
+def rest(number, sha, path=".github/workflows/ci.yml", **state):
+    """A run as `gh api repos/OWNER/NAME/actions/runs/ID` reports it."""
+    listed = run(number, sha, **state)
+    return {
+        "id": number,
+        "head_sha": sha,
+        "status": listed["status"],
+        "conclusion": listed["conclusion"] or None,
+        "display_title": listed["displayTitle"],
+        "event": listed["event"],
+        "path": path,
+    }
+
+
+def fake_gh(monkeypatch, record, *listings):
+    """Answer gh calls from record and listings; return the calls made.
+
+    The last listing repeats once the others are used up, and pauses are
+    recorded instead of slept.
+    """
+    calls, pauses, pages = [], [], list(listings)
+
+    def fake(what, limit, command):
+        calls.append(command[:2])
+        if command[1] == "api":
+            body = record
+        else:
+            body = pages.pop(0) if len(pages) > 1 else pages[0]
+        return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
+
+    monkeypatch.setattr(evidence, "limited", fake)
+    monkeypatch.setattr(evidence.time, "sleep", pauses.append)
+    return calls, pauses
+
+
+def choose(named, limit=100):
+    """The deciding run's (id, status, conclusion), against the TREES diffs."""
+    chosen, _ = evidence.choose(
+        "o/r", limit, "tag", lambda base, target: TREES[base], named
+    )
+    return chosen and (
+        chosen[0]["databaseId"],
+        chosen[0]["status"],
+        chosen[0]["conclusion"],
+    )
+
+
+def test_a_named_run_missing_from_every_listing_is_not_chosen(monkeypatch, capsys):
+    """release.yml sees only the listing, so a run it omits never decides."""
+    page = [run(78, "code")]
+    calls, pauses = fake_gh(monkeypatch, rest(80, "same"), page)
+    assert choose(80) is None
+    err = capsys.readouterr().err
+    assert "gh run list returned 1 of 100 requested runs" in err
+    assert "run 80 is missing from the listing (listing 1 of 4, elapsed" in err
+    assert "gave up re-reading the run listing" in err
+    assert "(limit 4 listings, elapsed " in err
+    assert [c[1] for c in calls] == ["api", "run", "run", "run", "run"]
+    assert pauses == [10, 20, 30]
+
+
+def test_a_fuller_listing_ends_the_retries(monkeypatch, capsys):
+    """Once a re-read listing holds the named run, it decides and is used."""
+    calls, pauses = fake_gh(
+        monkeypatch, rest(80, "same"), [run(78, "code")], [run(80, "same")]
+    )
+    assert choose(80) == (80, "completed", "success")
+    assert [c[1] for c in calls] == ["api", "run", "run"] and pauses == [10]
+    assert "gave up" not in capsys.readouterr().err
+
+
+def test_a_lagging_listing_is_re_read_until_it_agrees(monkeypatch, capsys):
+    """A listing that still shows the run pending gets time to catch up."""
+    pending = run(80, "same", status="in_progress", conclusion="")
+    calls, pauses = fake_gh(monkeypatch, rest(80, "same"), [pending], [run(80, "same")])
+    assert choose(80) == (80, "completed", "success") and pauses == [10]
+    assert "shows run 80 as in_progress/, not completed/success" in (
+        capsys.readouterr().err
+    )
+
+
+@pytest.mark.parametrize(
+    ("listed", "direct"),
+    [
+        # A re-run keeps its run id: the listing can hold the old success
+        # while the direct read sees the re-run pending or failed.
+        ({}, {"status": "in_progress", "conclusion": ""}),
+        ({}, {"conclusion": "failure"}),
+        ({"conclusion": "failure"}, {}),
+    ],
+)
+def test_a_persistent_state_disagreement_is_refused(
+    monkeypatch, capsys, listed, direct
+):
+    """Neither the listing nor the direct read alone decides: no run does."""
+    calls, pauses = fake_gh(
+        monkeypatch, rest(80, "same", **direct), [run(80, "same", **listed)]
+    )
+    assert choose(80) is None
+    assert len(calls) == 5 and pauses == [10, 20, 30]
+    assert "no run decides, so the caller refuses" in capsys.readouterr().err
+
+
+def test_pending_conclusions_match_across_rest_and_the_listing(monkeypatch):
+    """REST's null and the listing's "" (or null) both mean no conclusion yet."""
+    direct = rest(80, "same", status="queued", conclusion="")
+    assert direct["conclusion"] is None
+    for conclusion in ("", None):
+        queued = run(80, "same", status="queued", conclusion=conclusion)
+        calls, pauses = fake_gh(monkeypatch, direct, [queued])
+        assert choose(80) == (80, "queued", conclusion) and pauses == []
+
+
+def test_a_newer_full_run_on_an_equivalent_tree_is_refused(monkeypatch, capsys):
+    """Naming a run never skips the rule: a newer run on the tree means none."""
+    page = [run(81, "docs", conclusion="failure"), run(80, "same")]
+    calls, pauses = fake_gh(monkeypatch, rest(80, "same"), page)
+    assert choose(80) is None
+    assert "run 81 decides instead of run 80" in capsys.readouterr().err
+    assert len(calls) == 5 and pauses == [10, 20, 30]
+    # Without a named run (release.yml), that newer failure decides.
+    fake_gh(monkeypatch, None, page)
+    assert choose(None) == (81, "completed", "failure")
+    # The newest run on the same commit withdraws the named one's success.
+    page = [run(81, "same", conclusion="cancelled"), run(80, "same")]
+    fake_gh(monkeypatch, rest(80, "same"), page)
+    assert choose(80) is None
+    fake_gh(monkeypatch, None, page)
+    assert choose(None) == (81, "completed", "cancelled")
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        rest(80, "same", title="CI (jobs: affected)"),
+        rest(80, "same", event="push"),
+        rest(80, "same", path=".github/workflows/release.yml"),
+    ],
+)
+def test_a_named_run_that_is_not_a_full_ci_dispatch_is_never_merged(
+    monkeypatch, capsys, record
+):
+    """Another title, event or workflow file cannot become evidence."""
+    calls, pauses = fake_gh(monkeypatch, record, [])
+    assert choose(80) is None
+    assert "run 80 is not a 'CI (jobs: all)' workflow_dispatch" in (
+        capsys.readouterr().err
+    )
+    assert len(calls) == 2 and pauses == []
+
+
+def test_a_named_run_on_a_code_different_tree_is_not_waited_for(monkeypatch, capsys):
+    """No listing could make it decide, so the listing is read once."""
+    calls, pauses = fake_gh(monkeypatch, rest(80, "code"), [])
+    assert choose(80) is None
+    assert "differs from tag beyond docs-safe paths" in capsys.readouterr().err
+    assert len(calls) == 2 and pauses == []
+
+
+def test_without_a_named_run_one_listing_decides(monkeypatch, capsys):
+    """release.yml names no run: one listing, its size logged, no gh api."""
+    calls, pauses = fake_gh(monkeypatch, None, [run(78, "code")])
+    assert choose(None, limit=5) is None
+    assert [c[1] for c in calls] == ["run"] and pauses == []
+    assert "gh run list returned 1 of 5 requested runs" in capsys.readouterr().err
+
+
+def test_select_prints_the_listed_decision(monkeypatch, capsys):
+    """The command line passes --run and --retry-seconds through."""
+    listed = run(80, "same", status="in_progress", conclusion="")
+    _, pauses = fake_gh(
+        monkeypatch, rest(80, "same", status="in_progress", conclusion=""), [listed]
+    )
+    monkeypatch.setattr(evidence, "differing_paths", lambda *args: TREES[args[2]])
+    argv = ["select", "--repo", "o/r", "--commit", "tag", "--run", "80"]
+    assert evidence.main([*argv, "--retry-seconds", "0"]) == 0
+    assert capsys.readouterr().out == "80\tin_progress\t-\tsame\t0\n"
+    assert pauses == []
+    # Missing from every listing: nothing is printed, so release.sh refuses.
+    _, pauses = fake_gh(monkeypatch, rest(80, "same"), [])
+    assert evidence.main([*argv, "--retry-seconds", "0"]) == 0
+    assert capsys.readouterr().out == "" and pauses == [0, 0, 0]

@@ -61,24 +61,26 @@ LOCAL_DIRTY_IMAGE = f"parishkit-stewardship-local:{COMMIT}-dirty-1700000000"
 # and test_local_topology's) hold no test path.
 GOLDEN_ROOT = Path("/opt/parishkit")
 # SHA-256 of the canonical JSON (see ``canonical``) of each Production
-# rendering on main at cbea35b2 (2026-10-03), before the LOCAL profile existed.
+# rendering on main at cbea35b2 (2026-10-03), before the LOCAL profile existed;
+# the Compose digests were regenerated once when application mounts gained a
+# fixed order (#480; infrastructure volume lists unchanged).
 # The "configured" Compose document and the Caddyfile are also committed in
 # full under fixtures/ so a difference can be read, not just detected.
 GOLDEN_DIGESTS = {
     ("initial", "compose"): (
-        "14ca48e3d1a8390e697abd5011c4ab896127809bfbcb72c0daa323242f2ac968"
+        "ec0b81b692e4053b79c8b0df6b8fae0fc947b40db77717f1214929bb0764f3ab"
     ),
     ("initial", "documents"): (
         "7e34be432d98fe26781a67030ffb76d1f0ed85f850bb072bad74b4a8c9dfdeba"
     ),
     ("configured", "compose"): (
-        "0e132d5c1ccfe4755a1f63862ba495e4d9d9ab061084f572e65ad572b0ba184c"
+        "f7fd5df9addf636e4713e13fbb4d6b6a274a8c9ccec4fa44244b6ed469a40524"
     ),
     ("configured", "documents"): (
         "9d65bab1d7b28eebd476ee671871d675f86ff81cff6259cd82ded7b936a1d360"
     ),
     ("configured-slack", "compose"): (
-        "737a22ecbf75274a9005583a08379ab84ecaafd27e2c0dab5e20a82b264d2da4"
+        "c3d847dafa2ac71048094fadf0a0261eacfdcfbd62ddee7d5ffad14f19b941aa"
     ),
     ("configured-slack", "documents"): (
         "81fa8932b36a6d3a9e41c0301d63dc9ab30501f950cf815bf3e8b2caf2dc8b6c"
@@ -107,15 +109,10 @@ def configuration_for(profile, root="/opt/parishkit"):
 def canonical(value):
     """The one JSON form the golden files and digests are computed from.
 
-    Keys are sorted, and so is each service's ``volumes`` list: the renderer
-    builds a service's mounts from sets, so on main their order already
-    differs from one Python process to the next (hash randomization; #480).
-    Nothing else is normalized.
+    Only keys are sorted, and lists are compared as rendered: the renderer
+    sorts each application service's set-derived ``volumes`` itself (#480),
+    and the infrastructure services' fixed lists keep their written order.
     """
-    value = json.loads(json.dumps(value))
-    for service in value.get("services", {}).values():
-        if "volumes" in service:
-            service["volumes"].sort(key=lambda m: (m["target"], m["source"]))
     return json.dumps(value, indent=1, sort_keys=True) + "\n"
 
 
@@ -373,7 +370,6 @@ def test_direct_profiles_still_render_a_published_web_port_and_no_caddy(
 def test_production_rendering_matches_the_golden_files():
     """Canonical-JSON identical to main before LOCAL, in every provider mode.
 
-    Byte-identical up to the volume order ``canonical`` sorts (#480).
     Regenerate the two fixture files only for an intentional Production change,
     from a rendering at GOLDEN_ROOT with ``canonical``, and update the digests.
     """
@@ -393,6 +389,45 @@ def test_production_rendering_matches_the_golden_files():
             assert canonical(compose) == golden
     golden = (FIXTURES / "production-Caddyfile.golden").read_text()
     assert render_caddy(configuration) == golden
+
+
+def test_rendering_does_not_depend_on_the_hash_seed():
+    """Two hash seeds render byte-identical Compose documents (#480).
+
+    Mounts are gathered from sets, so each rendering runs in a fresh
+    interpreter with its own PYTHONHASHSEED; the renderer must order them.
+    """
+    import subprocess
+    import sys
+
+    script = (
+        "import json\n"
+        "from stewardship.test_local_profile import ("
+        "GOLDEN_ROOT, PRODUCTION_IMAGE, configuration_for)\n"
+        "from parishkit.stewardship.deployment import DeploymentProfile\n"
+        "from parishkit.stewardship.runtime_topology import render_runtime\n"
+        "c = configuration_for(DeploymentProfile.PRODUCTION, GOLDEN_ROOT)\n"
+        "compose, _ = render_runtime(c, image=PRODUCTION_IMAGE)\n"
+        "print(json.dumps(compose, indent=1))\n"
+    )
+    root = Path(__file__).resolve().parents[2]
+    rendered = {
+        subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=root,
+            env={
+                **os.environ,
+                "PYTHONHASHSEED": seed,
+                "PYTHONPATH": os.pathsep.join([str(root / "src"), str(root / "tests")]),
+                "DJANGO_SETTINGS_MODULE": "parishkit.stewardship.settings.test",
+            },
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        for seed in ("1", "2", "3")
+    }
+    assert len(rendered) == 1
 
 
 # Row: trusted proxy networks.

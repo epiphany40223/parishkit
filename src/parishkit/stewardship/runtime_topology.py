@@ -441,6 +441,14 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 }
         if checkout is not None:
             service["volumes"].append(bind(Path(checkout) / "src", target="/app/src"))
+        # An application service's mounts are gathered from sets (credential
+        # names, rotating directories), so their order followed the hash seed
+        # and the same deployment rendered different Compose bytes (#480).
+        # Docker ignores mount order; a fixed order makes rendering
+        # byte-reproducible. The infrastructure services' fixed lists are
+        # left as they are: reordering them would change their Compose
+        # configuration hash and recreate PostgreSQL or Caddy.
+        service["volumes"].sort(key=lambda mount: (mount["target"], mount["source"]))
         services[name] = service
     web = services.pop("web")
     for replica in range(budget.replicas):

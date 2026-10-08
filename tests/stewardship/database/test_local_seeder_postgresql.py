@@ -354,6 +354,13 @@ def test_invariant_do_block_runs_against_the_real_schema(tmp_path):
         c.execute(seeder.invariant_sql(now, {"submission": 3, "midnight": 0}))
     with pytest.raises(Exception, match="daily-fact row"), connection.cursor() as c:
         c.execute(seeder.invariant_sql(now, {"midnight": 2}, start=date(2026, 9, 26)))
+    # The counts pinned from the timeline (#499) raise on a mismatch too.
+    for key, message in (
+        ("baseline", "live form baselines not replaced"),
+        ("engaged", "live Family engagement rows"),
+    ):
+        with pytest.raises(Exception, match=message), connection.cursor() as c:
+            c.execute(seeder.invariant_sql(now, {key: 1, "midnight": 0}))
     # The corrupted row: an audit event (one of the checked tables) written
     # after the seeded now.
     with transaction.atomic():

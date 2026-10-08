@@ -170,11 +170,22 @@ watch() {
 # for main's head, as release.yml will choose it (all empty when none
 # qualifies). A failed lookup ends the script.
 # The script limits each git and gh call itself (logging what, limit and
-# elapsed on stderr) and exits 3 past a limit, recorded here too.
+# elapsed on stderr) and exits 3 past a limit, recorded here too. Once a run
+# is named, the script also reads it directly (#730) and re-reads a run
+# listing that omits it, shows it in a stale state or lets another run
+# decide, a bounded number of times, min(STEWARDSHIP_POLL_SECONDS, 10)
+# seconds apart, scaled per retry. The listing decides, as for release.yml,
+# and only when it agrees with the direct read: a persistent disagreement
+# decides no run, so neither a stale listed success nor a run release.yml
+# could not see is ever tagged.
 evidence() {
-    local line found=0 start=$SECONDS
+    local line found=0 start=$SECONDS given=()
+    if [ -n "$run" ]; then
+        given=(--run "$run" --retry-seconds "$((poll < 10 ? poll : 10))")
+    fi
     line=$("$python" "$here/release_evidence.py" select --repo "$repo" \
-        --commit "$sha" --checkout "$checkout" --remote "$remote") || found=$?
+        --commit "$sha" --checkout "$checkout" --remote "$remote" \
+        ${given[@]+"${given[@]}"}) || found=$?
     if [ "$found" = "$OPS_TIMEOUT_STATUS" ]; then
         ops_timeout "a git or gh call in the release evidence lookup (named above)" "its own limit" "$start"
     fi
