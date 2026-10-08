@@ -27,6 +27,26 @@ class FakeDatabase:
         self.in_atomic_block = self.needs_rollback = self.errors_occurred = False
         self.autocommit = True
         self.closed = 0
+        self.statements = []
+        self.unlock_fails = False
+
+    def cursor(self):
+        """A cursor that records statements (the advisory unlock)."""
+        database = self
+
+        class Cursor:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def execute(self, sql):
+                if database.unlock_fails:
+                    raise RuntimeError("synthetic")
+                database.statements.append(sql)
+
+        return Cursor()
 
     def get_autocommit(self):
         """Django's autocommit flag."""
@@ -49,11 +69,20 @@ class FakeConnections:
         """Every wrapper, as the real handler returns this thread's ones."""
         return list(self.databases)
 
+    def __getitem__(self, alias):
+        """The first wrapper stands in for "default"."""
+        return self.databases[0]
+
 
 @pytest.fixture
 def reuse(monkeypatch):
     """Isolate the module's process switch, clock and connection handler."""
+    from django.conf import settings
+
     monkeypatch.setattr(connection_reuse, "_enabled", False)
+    monkeypatch.setattr(
+        settings, "DATABASES", {"default": {"ENGINE": "dummy", "OPTIONS": {}}}
+    )
     monkeypatch.setattr(connection_reuse, "_kept", connection_reuse.WeakKeyDictionary())
     clock = [1000.0]
     monkeypatch.setattr(connection_reuse, "monotonic", lambda: clock[0])
@@ -197,3 +226,42 @@ def test_broker_releases_after_a_hint_and_closes_after_a_failure(monkeypatch, fa
     runtime = broker(broker_module.ServiceRole.MAIL_DISPATCH)
     runtime.app.tasks[HINT_TASK].run(str(uuid4()))
     assert calls == ["refresh", "hint", "close_all" if fails else "release"]
+
+
+def test_a_kept_session_releases_its_advisory_locks(reuse):
+    """No session-level advisory lock outlives its message; a failed unlock closes."""
+    connection_reuse.keep_connections()
+    database = FakeDatabase()
+    reuse.use(database)
+    connection_reuse.release()
+    assert database.statements == ["SELECT pg_advisory_unlock_all()"]
+    assert database.closed == 0
+    database.unlock_fails = True
+    connection_reuse.release()
+    assert database.closed == 1
+
+
+def test_keeping_turns_on_tcp_keepalives(reuse):
+    """A kept idle session notices a dead peer (libpq keepalive options)."""
+    from django.conf import settings
+
+    connection_reuse.keep_connections()
+    options = settings.DATABASES["default"]["OPTIONS"]
+    assert {name: options[name] for name in connection_reuse.KEEPALIVES} == (
+        connection_reuse.KEEPALIVES
+    )
+
+
+def test_refresh_records_whether_the_hint_starts_on_a_kept_session(reuse, monkeypatch):
+    """The db_kept send statistic: true only after a connection was kept."""
+    monkeypatch.setattr(runtime_process, "drop_unusable", Mock())
+    database = FakeDatabase()
+    reuse.use(database)
+    connection_reuse.refresh()
+    assert connection_reuse.hint_kept() is False  # Not enabled.
+    connection_reuse.keep_connections()
+    connection_reuse.refresh()
+    assert connection_reuse.hint_kept() is True
+    database.close()
+    connection_reuse.refresh()
+    assert connection_reuse.hint_kept() is False

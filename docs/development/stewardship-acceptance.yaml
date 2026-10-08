@@ -207,6 +207,7 @@ sections:
     "Offline bootstrap profile": [OPS-04]
     "Offline Admin-access recovery": [OPS-04]
     "Download capacity and timeouts": [OPS-04, ARC-08]
+    "Kept mail connections": [OPS-04, BG-12]
     "Backup": [OPS-05, ADM-13]
     "Restore": [OPS-06]
     "Temporary retention and housekeeping": [OPS-07, ADM-13]

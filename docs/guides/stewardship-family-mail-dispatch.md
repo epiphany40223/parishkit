@@ -304,11 +304,16 @@ so a message does not pay for new connections or plan the dispatch guards
 again. This adds no connection: the kept connection is the process's task
 connection, and the in-flight check during SMTP uses it. A connection is
 closed instead when anything could carry into the next message: an open
-transaction, a database error, or a failed message. It is also closed after
-5 minutes, so it passes the connect-time role check again. Before each
-message a consumer drops a kept connection that no longer answers, such as
-after a PostgreSQL restart, and reconnects. Every other service still
-closes its connection after each task. The code is
+transaction, a database error, or a failed message. A connection is not
+reused once it is 5 minutes old; it may stay open, idle, until the next
+message, which then reconnects and passes the login checks again. Before
+each message, and after SMTP before the outcome is recorded, a consumer
+drops a kept connection that no longer answers, such as after a PostgreSQL
+restart, and reconnects. Each outcome's send statistics say whether its
+message started on a kept connection (`db_kept`). Every other service still
+closes its connection after each task. The operations specification's
+[kept mail connections](../specs/stewardship/operations/spec.md#kept-mail-connections)
+gives what operators see and how to cut off the mail login. The code is
 `src/parishkit/stewardship/jobs/connection_reuse.py`.
 
 ### Falling back to one mail consumer

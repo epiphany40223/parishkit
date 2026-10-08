@@ -38,7 +38,7 @@ from parishkit.stewardship.runtime_background import mail_authority
 from parishkit.stewardship.sender_name import configured_sender_name
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .connection_reuse import release
+from .connection_reuse import drop_unusable, hint_kept, release
 from .dispatch import Handler, RecoveryPlan
 from .family_mail_dispatch import (
     CAPPED_RETRY_SECONDS,
@@ -696,7 +696,8 @@ def _execute(
     submitted = False
     launched = False
     message = None
-    stats = {}
+    # Whether this message started on a kept database session (#365).
+    stats = {"db_kept": hint_kept()}
     try:
         # Read before effect(): near the daily limit this runs for every
         # message, and it needs no lock, so it stays outside the deployment-
@@ -884,6 +885,10 @@ def _execute(
         )
     stats["total_ms"] = elapsed_ms(started)
     result = _with_stats(result, stats)
+    # A kept connection may have been ended during SMTP (a PostgreSQL
+    # restart): replace it now, so recording an accepted outcome does not
+    # fail and leave the message to recovery as delivery_unknown (#365).
+    drop_unusable()
     status = finish_submission(message.pk, execution.claim, result)
     if circuit.observe(result.health):
         if circuit.stopped:

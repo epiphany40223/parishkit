@@ -53,7 +53,7 @@ from parishkit.stewardship.family_delivery import (
 )
 
 from .admission import remembered_scopes
-from .connection_reuse import release
+from .connection_reuse import drop_unusable, release
 from .dispatch import _CLAIMABLE
 from .models import TaskRun
 from .ownership import TaskClaim, database_now, lock_task_claim
@@ -897,6 +897,9 @@ def delivery_bulk(
         transaction itself fails, each of its outcomes is tried in its own.
         """
         left = list(items)
+        # A PostgreSQL restart during the sends ends the drain's session:
+        # replace it before recording outcomes (#365).
+        drop_unusable()
         while left:
             chunk = []
             try:
