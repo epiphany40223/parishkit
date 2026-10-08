@@ -580,8 +580,11 @@ shared clock that the operator script controls.
 A seeder gives the local environment a campaign in progress with realistic
 Family activity, so reports, progress pages and the planned response reporting
 ([#477](https://github.com/epiphany40223/parishkit/issues/477)) have a
-meaningful data set. It requires a completed setup wizard and reuses the
-wizard's first campaign, rather than creating a second one. The seed,
+meaningful data set. It requires a completed setup wizard and the one
+campaign, created by
+[Create the campaign](../admin-portal/spec.md#create-the-campaign) and loaded
+by its full ParishSoft refresh, rather than creating a second one. Before the
+setup split (#142) that campaign was the wizard's first campaign. The seed,
 `families`, `--response-scale` and `now` fully determine the timeline (see
 [determinism](#seed-determinism)).
 
@@ -1109,18 +1112,22 @@ as pre-launch dev deploys did. Until the image carries the
 [fake-clock](#fake-clock) override, `up` records `normal` clock mode; with it,
 `fake` at 17 days behind real time. The step-by-step account is in the
 [developer guide](../../../guides/stewardship-local-environment.md). The developer then completes the
-real setup wizard, since that is part of what the environment tests. `up` also
+real setup wizard and then Create the campaign (pressing Load the campaign's
+ParishSoft data afterwards), since that is part of what the environment
+tests. `up` also
 builds the [fake-clock](#fake-clock) images and does all of this in fake-clock
 mode, with the clock 17 days behind real time, so that a later seed can start
 its clock forward of every existing row.
 
-Decision: `up` cannot seed before the interactive setup wizard is complete; it
-waits, then (on confirmation) verifies setup, takes the post-setup snapshot,
+Decision: `up` cannot seed before the interactive setup wizard is complete and
+the campaign exists with its Family codes; it waits, then (on confirmation)
+verifies setup and the campaign, takes the post-setup snapshot,
 runs `seed`, then `snapshot --seeded`. Declining leaves an unseeded deployment
 that `seed` can seed later.
 
-**`seed`.** It refuses unless setup is complete and the campaign has not been
-seeded since the post-setup snapshot, so campaigns never stack. It clears
+**`seed`.** It refuses unless setup is complete, the campaign exists with its
+Family codes, and the campaign has not been seeded since the post-setup
+snapshot, so campaigns never stack. It clears
 Mailpit (removing the wizard-era sample messages), runs the
 [seeder phases](#seeder-phases-and-identities) in fake-clock mode at that `now`
 (passing `--response-scale` through), then restores normal mode: offset zero,
@@ -1135,7 +1142,10 @@ deployment's mode) with its services running, and exits non-zero; a failure
 after the switch (the finish phase) leaves a seeded deployment in normal mode
 whose late-added Family may not be promoted, and `reseed` is the recovery
 either way. `reseed [--response-scale m]` restores the post-setup snapshot
-(which also restores the fake configuration) and then runs `seed`. A
+(which also restores the fake configuration) and then runs `seed`. The
+post-setup snapshot is taken after Create the campaign and its refresh, so it
+always holds the unseeded campaign the seeder requires; a snapshot taken
+before #142 already holds the wizard's campaign. A
 deployment set up in normal mode cannot be seeded: its rows are stamped at
 real time and the seed's clock would have to start before them; `seed`
 refuses when the clock-mode marker says `normal`.
@@ -1144,15 +1154,19 @@ refuses when the clock-mode marker says `normal`.
 `wizard` completes the setup wizard through the wizard pages' own service
 layer (`pk-stewardship local-seed --step wizard` under `web`: the parish,
 access, mail, Slack and Testing-recipient settings, the fake ParishSoft key
-and organization, the source load, the mail-catcher document, a first
-campaign with every module from the loaded catalog, default pages and emails,
-the Initial schedule, a generated logo through the real branding staging, the
-review, the sample mail and the final confirmation), then follows the
-deployment runbook's post-wizard step: once the credential installers report
-`awaiting_ack`, it recreates `worker` and `mail-dispatch` from `compose.json`
-and acknowledges each request inside them, which lets the installer complete
-setup. The browser wizard remains the developer-facing path; `wizard` writes
-nothing the wizard pages would not.
+and organization, the source load, the mail-catcher document, a generated
+logo through the real branding staging, the review, the sample mail and the
+final confirmation), then follows the deployment runbook's post-wizard step:
+once the credential installers report `awaiting_ack`, it recreates `worker`
+and `mail-dispatch` from `compose.json` and acknowledges each request inside
+them, which lets the installer complete setup. It then runs
+[Create the campaign](../admin-portal/spec.md#create-the-campaign) through
+that page's own service layer (a campaign with every module from the loaded
+catalog and its default pages and emails), adds the Initial schedule through
+the schedule editor's service layer, requests the campaign's full ParishSoft
+refresh and waits for it, so the deployment ends with the same campaign as
+before #142. The browser wizard and Create the campaign remain the
+developer-facing path; `wizard` writes nothing those pages would not.
 
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
 root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the

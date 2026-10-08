@@ -74,8 +74,9 @@ After migration, the latter is imported as the first applied configuration
 snapshot so the initial Admin can authenticate; the wizard supersedes it with
 the first complete version.
 
-On the first Admin login, the wizard collects all required base and first-
-campaign configuration before making the system configured:
+On the first Admin login, the wizard collects what the system needs to run
+and let Admins sign in, and nothing about a campaign, before making the system
+configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
 
 1. Parish name, website URL, optional HTTPS online giving URL, IANA timezone,
    US main phone, and logo.
@@ -83,12 +84,20 @@ campaign configuration before making the system configured:
 3. ParishSoft API key replacement, expected organization, connectivity check,
    and a complete staged source load.
 4. Google Workspace email service-account/delegated mailbox, sender/reply
-   address, optional From name, and test delivery.
+   address, optional From name, Testing recipient, and test delivery.
 5. Optional Slack token/channel and test notification.
-6. First campaign name, modules, dates, Ministry/fund selection, financial
-   period, share options, content, mail schedules, digest schedules, and test
-   recipient.
-7. Exact preview/readiness summary and final confirmation.
+6. Exact preview/readiness summary and final confirmation.
+
+The campaign is created afterwards, from Home, by
+[Create the campaign](#create-the-campaign). Status: this split is specified
+ahead of its implementation pull requests. Until they land, the wizard still
+has a First campaign step (name, modules, dates, Ministry/fund selection,
+financial period) and Share options, Pages and emails and Dates and mail
+schedules pages before Review, its email test sends that campaign's
+invitation, and finishing setup creates the campaign with its Family codes.
+Create the campaign can land before the wizard changes; until they do, no real
+deployment reaches it (setup always leaves a campaign), so it is exercised
+only by test fixtures that start without one.
 
 The [parish date format](../spec.md#global-presentation-rules) is not a wizard
 step: setup starts with the default US long style, and an Admin changes it
@@ -99,35 +108,35 @@ code. The Parish profile comes first, so the administrator starts by
 describing their own parish. The credential pages follow, each immediately
 after the public settings its staging depends on (outgoing mail and Testing
 recipient for Google Workspace, Slack settings for the Slack token). Like
-[secret replacement](#parish-and-integration-configuration), they require fresh
-Google authentication (a sign-in less than five minutes old); an older sign-in
-is offered "Confirm with Google", which keeps the setup, so the order does not
-need to race that window. The source load follows, then the pages that need
-the loaded catalog, then review, the email and Slack tests and the final
+[secret replacement](#parish-and-integration-configuration), they require
+fresh Google authentication (a sign-in less than five minutes old); an older
+sign-in is offered "Confirm with Google", which keeps the setup, so the order
+does not need to race that window. The source load, logos and administrative
+access follow, then review, the email and Slack tests and the final
 confirmation. Every page shows a compact progress stepper: the current step by
 number and name, the count of completed steps and a slim track (each segment
 names its step and status on hover; the track is hidden from assistive
-technology because the list says the same), with the full ordered list (each applicable step named as completed, current, not done,
-optional or not yet available with the reason) in a collapsed disclosure.
-Navigation is conventional: completed steps and the first unfinished required
-step are links; later unfinished steps wait for every earlier required step,
-and optional steps never hold later ones back. A step counts as completed
-only after its own explicit save, credential, load, accepted test or, for
-the share options and the review page, an explicit review for the current
-data; defaults seeded by another page never complete a step. While the
-source load runs, completed steps keep their status but are not links. The
-stepper is presentation only; each page still enforces its own
-prerequisites. Each page has one identical row of Back (secondary) and
-Save-and-continue (primary) controls (Save and continue validates, saves and
-opens the next applicable page, or redisplays the page with its errors), a
-short introduction, and plain-language help for every field. Revisiting a
-page shows its saved values; a credential page never shows the secret but
-says that one is saved (with its public scope, such as the ParishSoft
-organization), lets it be kept by leaving the key empty, and explains that it
-can be replaced until setup finishes and afterwards from Integrations. A page
-whose prerequisites are unmet explains what is missing and links the step
-that fixes it, keeping the HTTP status of the underlying refusal; closed JSON
-errors remain for polling and command endpoints.
+technology because the list says the same), with the full ordered list (each
+applicable step named as completed, current, not done, optional or not yet
+available with the reason) in a collapsed disclosure. Navigation is
+conventional: completed steps and the first unfinished required step are
+links; later unfinished steps wait for every earlier required step, and
+optional steps never hold later ones back. A step counts as completed only
+after its own explicit save, credential, load, accepted test or, for the
+review page, an explicit review for the current data; defaults seeded by
+another page never complete a step. While the source load runs, completed
+steps keep their status but are not links. The stepper is presentation only;
+each page still enforces its own prerequisites. Each page has one identical
+row of Back (secondary) and Save-and-continue (primary) controls (Save and
+continue validates, saves and opens the next applicable page, or redisplays
+the page with its errors), a short introduction, and plain-language help for
+every field. Revisiting a page shows its saved values; a credential page never
+shows the secret but says that one is saved (with its public scope, such as
+the ParishSoft organization), lets it be kept by leaving the key empty, and
+explains that it can be replaced until setup finishes and afterwards from
+Integrations. A page whose prerequisites are unmet explains what is missing
+and links the step that fixes it, keeping the HTTP status of the underlying
+refusal; closed JSON errors remain for polling and command endpoints.
 
 A refusal an Admin can correct, in the wizard or the campaign, content and
 schedule editors, says what was wrong and how to fix it, with a link to the
@@ -145,6 +154,13 @@ storage, configuration, limiter, or unavailable facts or snapshots) answers
 unavailable", never the Family sign-in denial. With debug logging enabled,
 the swallowed exception behind any such closed response is logged at debug
 level so operators can see what failed.
+
+The setup email test sends one fixed, fictional message to the Testing
+recipient from the configured sender and mailbox: the subject "Stewardship
+setup test", and a short plain-text and HTML body that names the parish and
+says its outgoing email settings work. It carries no Family data, link, code
+or campaign content, and nothing in it depends on a campaign. Before #142 it
+sent a sample of the first campaign's invitation instead.
 
 Review, Test email, Test Slack (only when Slack is on) and Finish setup are
 ordinary steps with the same action row, not a hub: the Review page links no
@@ -200,22 +216,9 @@ changing it clears nothing. The summary loses the item for a field that
 clears, and goes once it lists nothing. This applies to every Admin form,
 Django-rendered ones included, through the shared page script.
 
-Pages and emails start with built-in default text. Saving the first campaign
-fills every applicable page and email slot the draft has never set, in the same
-versioned save as the campaign, and a later campaign save fills only slots that
-became applicable (for example, a newly enabled module). It never replaces text
-the Admin saved, and it keeps a slot the Admin explicitly cleared empty. The
-content page can also fill every empty applicable slot, including cleared ones,
-and, after an explicit confirmation, reset every applicable slot to its default
-in one versioned save; schedules that send a replaced email follow its new
-revision. A fill result names each slot it kept because it holds the Admin's
-own text, and the content list marks every slot as default, customized or
-empty. Each default passes the normal content validation described under
-[content and email templates](../data/spec.md#content-and-email-templates).
-
-The mail schedule pages (the first-campaign step and the regular schedule
-settings) start with a short guide: what each mail type is, that exactly one
-initial invitation is required before final confirmation or go-live, that
+The mail schedule page (Dates and mail schedules) starts with a short guide:
+what each mail type is, that exactly one initial invitation is required before
+go-live, that
 reminders and the daily and weekly Admin digests are optional (at most one
 digest of each kind), that submission receipts and critical alerts are sent
 automatically and never scheduled, that times use the campaign time zone, and
@@ -232,9 +235,12 @@ it, are collection errors. "Add another schedule" adds blank rows (with the
 same per-type fields) before saving, and a row added this way can be removed
 again, so several schedules save in one submission and are validated together.
 
-The staged ParishSoft load provides the Ministries/funds needed by later steps.
-Starting that load fixes the Parish timezone for this setup attempt, so the
-source catalog and first campaign retain the same civil-date interpretation.
+The staged ParishSoft load is a complete load of Families, Members, Ministries
+and the fund catalog, with no giving window, as any load is before a campaign
+exists; the campaign's giving arrives with the refresh that
+[Create the campaign](#create-the-campaign) queues. Starting that load fixes
+the Parish timezone for this setup attempt, so the source catalog and the
+campaign created later keep the same civil-date interpretation.
 The Parish step explains this restriction and keeps other Parish fields editable.
 Changing the timezone then requires cancelling and starting a new setup attempt;
 it never silently reinterprets an existing source result.
@@ -277,8 +283,9 @@ Confirming with Google for a fresh-authentication step is a
 not a new login, so it keeps the wizard's staging.
 Finalization freezes the staged setup, runs each target-specific credential
 installer, applies one complete authoritative YAML version through the
-configuration installer, and then commits the promoted source snapshot, Family
-codes, Testing mode, configured marker, and one redacted setup audit event. The
+configuration installer, and then commits the promoted source snapshot,
+Testing mode, configured marker, and one redacted setup audit event. It creates
+no campaign, so it creates no Family codes either. The
 configured marker is last and cannot become visible until YAML/DB digests match
 and every required consumer acknowledges its secret fingerprint. A crash or
 failure resumes idempotently from installer checkpoints only within the original
@@ -302,6 +309,19 @@ Cancellation after YAML selection uses the
 [initial-setup abort journal](../data/spec.md#parish-and-integrations), never a
 rollback of applied configuration. Final database activation and the configured
 marker share one transaction so cancellation cannot fall between those commits.
+
+**Upgrading while setup is in progress.** A deployment upgraded to the
+release that splits setup from campaign creation (#142) while a setup attempt
+is still collecting or loading keeps that attempt. The wizard stops showing
+the campaign pages; campaign, content, share option and schedule sections the
+attempt already saved are never read again and are scrubbed with the
+attempt's other wizard data when it completes or expires, and the attempt
+finishes without a campaign. An attempt already confirmed (frozen) before
+the upgrade finishes as it was confirmed: completion still accepts its
+one-campaign shape, so its campaign and Family codes are created as before,
+and Create the campaign never appears. In the
+[local environment](../local-environment/spec.md#operator-script), resuming the
+browser wizard behaves the same way.
 
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
@@ -414,17 +434,18 @@ with the code.
 
 The Admin portal serves one current campaign. The system moves to a single
 campaign after this campaign (#145), so navigation already assumes it: there
-is no campaign chooser and no New campaign control (the campaign is created
-in the [setup wizard](#bootstrap-and-first-admin-wizard)), and no Admin URL
-names a campaign. Every remaining control whose only purpose is working with
-more than one campaign, such as **Copy campaign** on Campaign settings and the
-"Choose a retained campaign" links on Participation and Ministry requests, is
-shown greyed out until #145 removes it: an unavailable control, not a link or
-action, with the tip "Disabled; will be removed with the single-campaign
-change (#145)", shown and announced the same way as an unavailable menu
-entry's reason. The server refuses the matching actions too, so a greyed
-control cannot be bypassed ([navigation rule 10](#navigation-rules),
-[decisions 18 and 19](#navigation-decisions)).
+is no campaign chooser and no New campaign control (the one campaign is
+created by [Create the campaign](#create-the-campaign), offered only while the
+deployment has never had a campaign), and no Admin URL names a campaign. Every
+remaining control whose only purpose is working with more than one campaign,
+such as **Copy campaign** on Campaign settings and the "Choose a retained
+campaign" links on Participation and Ministry requests, is shown greyed out
+until #145 removes it: an unavailable control, not a link or action, with the
+tip "Disabled; will be removed with the single-campaign change (#145)", shown
+and announced the same way as an unavailable menu entry's reason. The server
+refuses the matching actions too, so a greyed control cannot be bypassed
+([navigation rule 10](#navigation-rules), [decisions 18 and
+19](#navigation-decisions)).
 
 #### Menu groups
 
@@ -639,13 +660,16 @@ links chosen by the campaign's state and the viewer's role:
 | Active | Response dashboard, Additional information and Ministry follow-up (with open counts), Family email progress, Outgoing mail problems (with count) | Response dashboard, Additional information, Ministry follow-up (with open counts) | Ministry requests, Ministry follow-up (with open count) |
 | Mail paused | Pause and resume mail first, then the Active list | As Active | As Active |
 | Closed or archived | Participation, Emailed reports | Participation | Ministry requests |
-| No current campaign | Says so; no next steps | Says so; no next steps | Says so; no next steps |
+| No current campaign | Create the campaign when the deployment has never had one; otherwise says so, with no next steps | Says so; no next steps | Says so; no next steps |
 
-With no current campaign (after a purge or successor preparation), there is
-no way to create one until the single-campaign change (#145), since New
-campaign is removed ([decision 11](#navigation-decisions)). That dead end is
-accepted for now; Home explains in plain language that there is no current
-campaign and that the next one cannot be created here yet.
+On a deployment that has never had a campaign (just after setup), Home's next
+step for an Administrator is [Create the campaign](#create-the-campaign). With
+no current campaign after an earlier one (after a purge or successor
+preparation), there is no way to create one until the single-campaign change
+(#145) or the close-out wizard (#527), since New campaign is removed
+([decision 11](#navigation-decisions)). That dead end is accepted for now;
+Home explains in plain language that there is no current campaign and that
+the next one cannot be created here yet.
 
 Home also shows one **Today** line for each role. Its contents are a
 proposal for the Administrator to confirm in NAV-18 (gap G10 on #522):
@@ -684,6 +708,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. |
 | `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same; old address redirects) |  |
 | `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/settings/` | (same; old address redirects) |  |
+| `campaign_create` | Create the campaign | Home | Administrator | (new, #142) | `/admin/campaign/create/` | (same) | Offered on Home only while the deployment has never had a campaign; refused once one exists. Not linked from a change's status page. |
 | `campaign_clone` | Copy campaign | Campaign settings | Administrator | Clone archived campaign | `/admin/campaign/copy/` | (same; old address redirects) | Decision 18: until #145 removes it, Campaign settings shows Copy campaign greyed out, not an action, with the tip "Disabled; will be removed with the single-campaign change (#145)". The server refuses the clone action. |
 | `content_history` | Content history | Campaign settings | Administrator | Retained campaign content | `/admin/campaign/content/history/` | (same; old address redirects) |  |
 | `content_history_revision` | Earlier version | Content history | Administrator | Retained campaign content; Revision | `/admin/campaign/content/history/<revision>/` | (same; old address redirects) |  |
@@ -763,7 +788,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/system/background/` | (same; old address redirects) |  |
 | `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/system/background/<task>/` | (same; old address redirects) |  |
 | `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/system/logs/` | (same; old address redirects) |  |
-| `campaign_new` | (retired) | (retired) | Administrator | Create campaign draft; New campaign | `/admin/campaign/new` | (retired; redirects to `/admin/campaign/settings/`) | Decision 11: no New campaign control; the campaign is created in the setup wizard. The old address redirects to Campaign settings. |
+| `campaign_new` | (retired) | (retired) | Administrator | Create campaign draft; New campaign | `/admin/campaign/new` | (retired; redirects to `/admin/campaign/settings/`) | Decision 11: no New campaign control; the one campaign is created by Create the campaign (#142). The old address redirects to Campaign settings. |
 | `report_campaigns` | (retired) | (retired) | Administrator, Staff | Choose a retained campaign; Choose a campaign | `/admin/reports/campaigns/` | (retired; redirects to `/admin/reports/participation/`) | Decisions 10 and 19: no campaign chooser; reports show the current campaign. Its link on Participation is greyed out with the #145 tip until removed. The old address redirects to Participation. |
 | `ministry_report_campaigns` | (retired) | (retired) | Administrator, Staff, Ministry leader | Choose a retained campaign; Choose a campaign | `/admin/ministry-reports/campaigns/` | (retired; redirects to `/admin/reports/ministries/`) | Decisions 10 and 19: no campaign chooser. Its link on Ministry requests is greyed out with the #145 tip until removed. The old address redirects to Ministry requests. |
 | `chrome` | (shared header and banners) | Every page | Administrator, Staff, Ministry leader | Every Admin page (header and banners) | `/admin/*` | (same) | Acknowledge stays on the current page (#519). |
@@ -994,8 +1019,10 @@ follows them.
     to a single campaign after this one (#145); reports always show the current
     campaign and the existing choosers are retired.
 11. **What should New campaign do while an archived campaign is still
-    current?** Remove the New campaign control. The one campaign is created in
-    the initial setup wizard only.
+    current?** Remove the New campaign control. The one campaign is created
+    by [Create the campaign](#create-the-campaign), offered only while the
+    deployment has never had a campaign (#142; before #142 it was the setup
+    wizard's First campaign step).
 12. **Should the restore-review maintenance page get a way forward?** Yes, in
     its own issue: #537 (as proposed).
 13. **Split Portal users into separate entries?** Split now (for example
@@ -1036,7 +1063,8 @@ follows them.
     each named after its list, at `/admin/reports/responses/<key>/`; its CSV
     is a non-page.
 23. **Dead end with no current campaign?** (Administrator.) Accepted
-    until #145; Home explains it.
+    until #145; Home explains it. A deployment that has never had a campaign
+    is not a dead end: Home offers Create the campaign (#142).
 24. **The successor-draft control does not exist yet.** (Coordinator.) The
     server's refusal is enough until it does.
 25. **Tip text?** (Administrator.) "Disabled; will be removed with the
@@ -1978,7 +2006,8 @@ requests. Use the ordinary changed-baseline reconfirmation flow for stale forms.
 
 A Ministry's name never affects its visibility. ParishSoft names are stored as
 loaded and repaired only where they are shown: on the Family form, this screen,
-Campaign settings and first-campaign setup. A name the form can already show
+Campaign settings, Create the campaign and (before #142) first-campaign setup.
+A name the form can already show
 is used exactly as before, only trimmed, so valid labels and Family form
 digests never change because of this rule. An unusable name is repaired:
 whitespace (including tabs, newlines and non-breaking spaces) becomes single
@@ -1994,7 +2023,8 @@ the process log, once per process for each Ministry and name. The warning
 carries only the Ministry DUID. It does not appear on the System logs page.
 Catalog changes themselves are reported on the Admin home page (see
 [ParishSoft Ministry catalog changes](#parishsoft-ministry-catalog-changes)). Fund names on
-Campaign settings and first-campaign setup follow the same cleaning, with
+Campaign settings, Create the campaign and (before #142) first-campaign setup
+follow the same cleaning, with
 "Fund" and its DUID as the fallback, and are not logged.
 
 Local activity may be changed during a campaign without editing its
@@ -2139,10 +2169,10 @@ records without explicit remapping to current ParishSoft IDs.
 The paragraph above and the draft-creation rules below (when a new draft may
 be created, and creating a successor after Return to Testing) are superseded
 for the Admin portal by the [navigation decisions](#navigation-decisions) 11,
-18 and 19: the campaign is created in the initial setup wizard only, there is
-no New campaign control, and Copy campaign and successor creation stay greyed
-out and refused by the server until the single-campaign change (#145) removes
-them.
+18 and 19: the one campaign is created by
+[Create the campaign](#create-the-campaign), there is no New campaign
+control, and Copy campaign and successor creation stay greyed out and refused
+by the server until the single-campaign change (#145) removes them.
 
 Draft creation and every campaign-editor save apply a new authoritative YAML
 version and its normalized PostgreSQL snapshot. Runtime lifecycle/mode fields
@@ -2175,9 +2205,8 @@ The campaign editor includes:
   an empty slot from built-in, parish-neutral default text or reset a saved
   slot to it (the editor is only pre-filled; nothing changes until the normal
   save or preview and apply), with the content list marking each slot as
-  default, customized or empty. A new campaign that is not a clone starts
-  with the default text for every applicable slot, added in its creation
-  request; a clone copies its source's content instead. Plain-text controls
+  default, customized or empty (see
+  [default content](#default-content) below). Plain-text controls
   appear only where plain text is delivered: every email. The confirmation
   email is the whole receipt message; its former separate closing note is
   folded into it (see [data](../data/spec.md#content-and-email-templates)).
@@ -2217,6 +2246,98 @@ replacement counts. One transaction locks the Campaign, close occurrence,
 schedule definitions/revisions, occurrences, and outbox rows; rechecks state and
 provider uncertainty; and commits the new end date together with every selected
 schedule change. Any failure rolls back the complete edit.
+
+### Default content
+
+Pages and emails start with built-in, parish-neutral default text.
+[Create the campaign](#create-the-campaign) fills every applicable page and
+email slot in the same versioned save as the campaign (a clone copies its
+source's content instead), and a later campaign save fills only slots that
+became applicable (for example, a newly enabled module). It never replaces
+text the Admin saved, and it keeps a slot the Admin explicitly cleared empty.
+The content page can also fill every empty applicable slot, including cleared
+ones, and, after an explicit confirmation, reset every applicable slot to its
+default in one versioned save; schedules that send a replaced email follow
+its new revision. A fill result names each slot it kept because it holds the
+Admin's own text, and the content list marks every slot as default,
+customized or empty. Each default passes the normal content validation
+described under
+[content and email templates](../data/spec.md#content-and-email-templates).
+
+### Create the campaign
+
+System setup ends without a campaign
+([#142](https://github.com/epiphany40223/parishkit/issues/142)). The campaign
+is created afterwards, by an Administrator, from **Create the campaign**: the
+next step Home offers while the deployment has never had a campaign (the
+Campaign setup menu entries stay greyed "No current campaign" until then). It
+is not a multi-campaign control: once any campaign exists it is not shown,
+and the server refuses it, as it refuses Copy campaign and successor drafts
+until #145 and the close-out wizard (#527).
+
+**Admission.** Create the campaign follows the
+[draft-creation rules](#campaign-configuration) above, with three further
+conditions: no campaign row may exist in any state, so it never creates a
+successor; no campaign work or credential hold may be in progress
+(background campaign work, or a Testing cleanup); and a ParishSoft snapshot
+must have been promoted, so there is a catalog to choose Ministries and funds
+from. The page, its review and its confirmation each check these, the
+confirmation under the same lock that records the request, so a stale page
+or a direct request cannot bypass them.
+
+**First page.** It collects the campaign's basics in the ordinary campaign
+form: name, modules, start and end dates, Ministries (from the loaded catalog,
+initially all active ones) and, for Financial stewardship, the financial
+period and current and comparison funds. The time zone comes from the Parish
+profile, as it does for every new draft. The review then shows the whole new
+campaign, and confirming records one versioned configuration request, in the
+same format as every other campaign save, that adds the draft campaign with
+its [default content](#default-content) and the default share options;
+Member talents show their built-in defaults until edited.
+
+**After confirming.** The next page is the request's status page, as for any
+campaign save. The configuration installer applies the request, and the
+database checks admission again at activation: a new campaign record becomes
+the current campaign only when the current-campaign pointer is empty in
+Testing mode and every earlier campaign is archived or purged, the rule every
+new draft follows, so of two creation requests confirmed at once one applies
+and the other fails. Once the request is applied, the status page offers
+**Load the campaign's ParishSoft data**, which requests a full ParishSoft
+refresh and opens that refresh's progress page. The refresh can only be
+requested after activation, because a refresh reads the current campaign when
+it is requested. It reads the campaign's giving window and creates the
+campaign's Families and Family codes, as a refresh does for any current
+draft. If no one presses the button, the next scheduled quick update cannot
+continue from its cursor, because the giving window changed, and runs as a
+full refresh instead. Go-live readiness, which already requires the
+population to match the current ParishSoft data, stays incomplete until a
+full refresh has finished.
+
+**Guided steps.** While the current campaign is a draft in Testing mode, the
+Campaign setup pages show a stepper with the setup wizard's look: Basics,
+Ministries and funds, Share options and Member talents (each shown only when
+the campaign's modules use it), Pages and emails, Dates and mail schedules,
+Campaign images, Preview and test email, and Go-live readiness. Each step is
+the existing settings page, not a separate staging page, so every save is
+that page's ordinary review, confirm and apply. Basics counts as completed
+when the campaign is created; any other step counts as completed once a
+change confirmed on that page has been applied for this campaign, or for
+Preview and test email once a test of the current invitation was accepted.
+Defaults (the default text, share options and talents) never complete a
+step, and Go-live readiness completes only by going live. Next and Back are
+plain links to the neighbouring step: they never save, discard or submit
+anything, so an Admin who leaves a page without confirming its review keeps
+the campaign as it was. After a change is applied, its status page offers
+Continue to the next step. The stepper is presentation only; each page still
+enforces its own prerequisites. Go-live readiness is the last step, so the
+go-live flow (and its redesign in #462) follows on from it unchanged. Once
+the campaign leaves draft (it is scheduled or goes live), the stepper is no
+longer shown.
+
+**Existing deployments.** A deployment that already has a campaign, such as
+Production, never sees Create the campaign, and its campaign, being active,
+never shows the stepper; nothing about its setup, campaign, Family codes or
+emailed links changes.
 
 ### Member talents
 
