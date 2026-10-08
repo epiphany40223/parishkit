@@ -908,29 +908,98 @@ between Ministries. No ZIP/per-Ministry files are required.
 
 ## Pending census changes
 
-**Access:** Admin and Staff. Staff edits only manual-resolution state; Admin has
-the full review/publication controls.
+**Access:** Admin and Staff; never Ministry leaders. Staff edits only
+manual-resolution state; Admin has the full review/publication controls.
 
-The default filter shows unresolved, unreviewed current changes. Columns include
-Family/Member, DUID, field/request, proposed summary, writability, decision,
-execution, submission time, and conflict/failure indicator. Sensitive values
-are masked in the list where appropriate and visible in authorized detail.
+The page is **Census changes** under Responses and reports
+([#528](https://github.com/epiphany40223/parishkit/issues/528)): the
+worklist of every census change Families reported that someone must carry
+into ParishSoft, by hand or by
+[publication](../data/spec.md#review-and-publication). It reads the existing
+[proposed-change rows](../data/spec.md#proposed-changes) (one per atomic
+Family request) and the handling registry there that classifies each field;
+it adds no state of its own. Testing responses are excluded, as in the other
+reports. Pledges, share methods and Ministry rosters are not census
+changes; the
+[data workflow](../data/spec.md#review-and-publication) says where they go.
 
-Options include:
+### Census change rows
 
-- show/hide baseline/current/proposed values;
-- show only API/manual/report-only classifications;
-- omit API-writable items;
-- include ignored/resolved/published/superseded history;
-- campaign/Family/Member/date/status filters; and
-- CSV, XLSX, or PDF filtered export.
+Rows are grouped by Family (name and DUID), one row per change:
+
+- **Who**: the Member, "New Member" with the proposed Member's name, or the
+  Family for its household fields (home and mailing address, email opt-out).
+- **What changed**: the field's plain label (Mobile phone, Home address,
+  Moved to another household, Deceased, New Member, and so on).
+- **ParishSoft now**, **Family's answer**, and **Edited value** (only when an
+  Administrator edited the proposed value). ParishSoft now is blank where no
+  verified ParishSoft read exists for the field (today every Family
+  household field), so a Family address never shows a ParishSoft value or a
+  conflict. Values appear in full: Admin and Staff need them to type into
+  ParishSoft, and every view and download is audited.
+- **How it reaches ParishSoft**: *Automatic* for a field the
+  [handling registry](../data/spec.md#proposed-changes) marks API-writable,
+  *By hand* for every other row. A Family address is *By hand* until
+  publication may write it (see the
+  [data workflow](../data/spec.md#review-and-publication)).
+- **Status**, derived from the row's decision and execution as below.
+- **Submitted**, in browser-local time.
+
+A terminal execution decides the status first, since it is the outcome
+whatever the decision says: *published* is **Published**,
+*resolved_upstream* is **Already in ParishSoft**, *resolved_external* is
+**Entered by hand**, and *superseded* or *cancelled* rows appear, as
+**Superseded** and **Cancelled**, only with *Include history*. Otherwise an *ignored* decision is **Ignored**. Otherwise
+the execution decides: *queued* is **Being published**, *conflict* is
+**Conflict** (ParishSoft changed since the Family answered, shown as the
+conflict detail below), and *failed* is **To do** (a failed publication).
+A *pending* row is **To review** when it is an *unreviewed* automatic
+change, waiting for an Administrator's decision, and **To do** otherwise
+(manual work not yet entered, or an approved automatic change not yet
+published).
 
 Conflict detail shows baseline, current upstream, Family submitted, and
 Admin-edited proposed values. It never resolves by silent last-write-wins.
 
-Staff may mark manual items resolved externally or ignored with notes. Admin
-review/publish actions are defined by the [data](../data/spec.md#review-and-publication)
-and [Admin](../admin-portal/spec.md#follow-up-workflows) specifications.
+### Census change filters and downloads
+
+The default shows *To do* and *Conflict*, and, for an Administrator, *To
+review* as well. Filters are status (with *Include history*), how the change
+reaches ParishSoft (with *Hide automatic changes* for staff working by
+hand), kind of change (contact details, moved, deceased, new Member), a
+Family name or DUID search, and submitted date. Sorting, paging and filters
+act [in place](../admin-portal/spec.md#in-place-controls). The filtered list
+downloads as CSV or XLSX (PDF later) with the page's columns and values,
+audited with a count like the other report downloads.
+
+The read-only page and its downloads are enough for staff to apply every
+change by hand if publication is not ready; that is why it comes first.
+
+### Manual census resolution
+
+On *By hand* rows in *To do* or *Conflict*, Staff and Admin may mark
+**Entered in ParishSoft** (execution *resolved_external*) or **Ignore**
+(decision *ignored*), each with an optional note, acting in place. A
+*Conflict* row shows its conflict detail beside the controls, so the person
+checks ParishSoft before ticking it. *Entered in ParishSoft* is final, as
+every resolved outcome is: a mistaken tick is corrected in ParishSoft, and a
+later Family answer creates new rows. An Administrator may reopen an
+*Ignored* row (decision back to *unreviewed*) with a note. Who, when and the
+note are kept as history. Automatic rows are view-only for Staff. Admin
+review/publish actions are defined by the
+[data](../data/spec.md#review-and-publication) and
+[Admin](../admin-portal/spec.md#follow-up-workflows) specifications.
+
+Today the web role may change a proposal only after a later Family
+response, to *superseded*, *cancelled* or *resolved_upstream*, and the
+database guard refuses *resolved_external* from it, so the tick, Ignore and
+reopen ship with a forward migration that lets the web role make exactly
+these changes, following the
+[post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
+
+Since Family addresses are not yet written by publication (see the
+[data workflow](../data/spec.md#review-and-publication)), an address entered
+in ParishSoft stays *To do* until it is ticked.
 
 ## Financial stewardship detail
 
