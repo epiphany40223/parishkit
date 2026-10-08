@@ -1092,6 +1092,25 @@ def component_origin():
             finishing_context(checkpoint="validating", prepared=False, credentials=[]),
         ),
         (
+            # A credential the provider rejected says what to check (#456 L2).
+            "/setup-credential-rejected",
+            "setup-cancel",
+            finishing_context(
+                checkpoint="staged",
+                prepared=False,
+                credentials=[
+                    {
+                        "target": "parishsoft",
+                        "request_id": uuid4(),
+                        "request__state": "failed",
+                        "request__cleanup_reason": "",
+                        "consumers": 2,
+                        "acknowledged": 0,
+                    }
+                ],
+            ),
+        ),
+        (
             "/setup-preview",
             "setup-preview",
             {
@@ -1275,6 +1294,21 @@ def component_origin():
             "/home",
             "home",
             {"configuration": {"mode": "testing"}, "admin_chrome": admin},
+        ),
+        (
+            # A key change holds later settings changes (#456 M4).
+            "/home-key-change",
+            "home",
+            {
+                "configuration": {"mode": "testing"},
+                "admin_chrome": admin
+                | {
+                    "key_changes": [
+                        {"label": "ParishSoft", "url": "/integration-settings"},
+                        {"label": "Slack notifications", "url": "/integrations"},
+                    ]
+                },
+            },
         ),
         (
             # A fuller sidebar than the shared fixture's single section, so the

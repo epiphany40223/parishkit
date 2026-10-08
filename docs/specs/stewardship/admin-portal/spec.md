@@ -300,7 +300,10 @@ acknowledgement with a count of acknowledged services, applying the
 configuration, the final parish data load, and completion) with the time since
 confirmation. It polls a passive status every 15 seconds while visible,
 reloading when a step changes and showing a Continue link to the Admin home once
-setup completes. A failed step explains what to do; when a credential cannot
+setup completes. A failed step explains what to do: a credential the provider
+rejected repeats the integration page's per-provider advice on what to check,
+one that did not finish in time asks the operator to check the credential
+installers, and each says to cancel and start a new setup (#456). When a credential cannot
 start because the original Google sign-in is more than five minutes old, the
 page offers the same-session step-up, which keeps the setup. Before the marker,
 normal routes remain unconfigured/fail-closed and cancel cleanup removes sealed
@@ -1697,6 +1700,17 @@ alerts) and offers **Finish switching to the new key**, and it keeps showing
 until it is resolved; the Admin home page shows it too. Mail meanwhile waits
 without spending attempts; see the
 [credential installer guide](../../../guides/stewardship-credential-installers.md#replacing-an-integration-key-from-the-web).
+While a ParishSoft, Google Workspace or Slack key change is still being
+checked or installed, every later settings change waits behind its selection
+in the configuration queue, so every Admin page an Administrator opens shows a
+banner naming the integration (linked to its page): other changes wait until
+it finishes (usually a minute; still there after an hour, it asks the Admin
+to have the server operator check the server), and if the new
+key is accepted a change saved before then is not applied and must be made
+again.
+The queue keeps its order: each change is checked against the settings it was
+made from, so of two changes made from the same settings the second fails, and
+failing the key's selection instead would stop its integration (#456).
 The history
 stays on the change's details page and in the audit log. The ParishSoft
 settings page edits the refresh schedule, as

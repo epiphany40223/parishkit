@@ -301,6 +301,25 @@ def summary(target, record):
     return CredentialSummary("failed", row.updated_at, message, row.pk)
 
 
+def changes_in_progress():
+    """Integrations whose key change is still being checked or installed.
+
+    The configuration installer holds each such key's selection request
+    until the change finishes, and every later settings change waits behind
+    it in the queue (#456 M4). The queue is not reordered: a later change
+    shares the key's base settings, so whichever applies second fails, and
+    failing the key's selection would stop its consumers. Admin pages say so
+    instead (``admin_context``). One small indexed query.
+    """
+    return sorted(
+        SecretReplacementRequest.objects.filter(
+            target__in=STOPPED, state__in=SECRET_PENDING
+        )
+        .values_list("target", flat=True)
+        .distinct()
+    )
+
+
 def unfinished_switches(configuration):
     """Integrations whose new key is installed but whose switch did not finish.
 

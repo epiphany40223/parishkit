@@ -255,6 +255,7 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/family",
         "/errors",
         "/home",
+        "/home-key-change",
         "/codes",
         "/availability",
         "/denied",
@@ -319,6 +320,7 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/setup-confirmation-unready",
         "/setup-finalization",
         "/setup-installation",
+        "/setup-credential-rejected",
         "/setup-mail-test",
         "/setup-mail-test-step",
         "/setup-mail-test-done",
@@ -353,6 +355,27 @@ def test_components_accessible_and_responsive(
         id, impact, targets: nodes.map(n => n.target)
     }))""")
     assert violations == []
+
+
+def test_key_change_banner_and_rejected_setup_credential_say_what_to_do(
+    page, component_origin
+):
+    """Both #456 messages reach the Administrator in plain words.
+
+    The banner names each integration whose key change holds settings
+    changes, linked to its page; a rejected setup credential names what to
+    check and that setup must start again.
+    """
+    page.goto(component_origin + "/home-key-change")
+    banner = page.locator("[data-key-changes]")
+    visible(banner.get_by_text("Other settings changes wait until it finishes"))
+    assert banner.get_by_role("link", name="ParishSoft").get_attribute("href") == (
+        "/integration-settings"
+    )
+    page.goto(component_origin + "/setup-credential-rejected")
+    step = page.locator('[data-finishing-step="parishsoft"]')
+    visible(step.get_by_text("Check the key and the organization ID"))
+    visible(step.get_by_text("cancel this setup and start a new one"))
 
 
 def test_export_cleanup_keyboard_form_posts_only_csrf_and_replay_identity(

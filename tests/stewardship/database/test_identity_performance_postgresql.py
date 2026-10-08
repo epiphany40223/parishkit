@@ -157,8 +157,10 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         # caught. Home's System health problem lines (ADM-13) ride on the
         # refresh-status statement and add none, whichever problems are
         # open (test_system_health_postgresql pins that with a backup
-        # overdue).
-        "admin_shell": _measure(admin_page, query_limit=49),
+        # overdue). An Administrator's chrome also reads whether an
+        # integration key change holds the settings queue, for its banner
+        # (one small indexed query, #456): the page measures 50.
+        "admin_shell": _measure(admin_page, query_limit=50),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))
     # A Family page reads its own session and Family, never the population.
