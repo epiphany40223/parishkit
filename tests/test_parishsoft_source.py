@@ -6,7 +6,10 @@ import pytest
 from test_parishsoft import Session
 
 from parishkit.parishsoft import ParishSoftConfig, load_families_and_members
-from parishkit.parishsoft_pagination import IncompleteSourceCollection
+from parishkit.parishsoft_pagination import (
+    IncompleteSourceCollection,
+    SourceLoadBudgetExceeded,
+)
 from parishkit.parishsoft_source import CoherentParishSoftClient
 from parishkit.parishsoft_transport import ExactSourceResponse
 
@@ -267,15 +270,18 @@ def test_wrong_tenant_or_caller_paging_filters_are_rejected_before_http(tmp_path
 def test_aggregate_request_byte_and_time_bounds_are_not_partial_success(tmp_path):
     """Many individually small pages still cannot accumulate unbounded data."""
     client = initialized(tmp_path, maximum_requests=1)
-    with pytest.raises(IncompleteSourceCollection, match="request/time"):
+    with pytest.raises(IncompleteSourceCollection, match="request bound") as error:
         client.post_paginated("families/search")
+    assert not isinstance(error.value, SourceLoadBudgetExceeded)
     assert len(client.session.calls) == 1
     client = source(tmp_path, [[{"organizationID": 5}]], maximum_bytes=1)
-    with pytest.raises(IncompleteSourceCollection, match="byte/time"):
+    with pytest.raises(IncompleteSourceCollection, match="byte bound") as error:
         client.validate_organization()
+    assert not isinstance(error.value, SourceLoadBudgetExceeded)
+    # Only running out of time is a slow provider rather than bad data (#387).
     client = initialized(tmp_path)
     client.deadline = 0
-    with pytest.raises(IncompleteSourceCollection, match="request/time"):
+    with pytest.raises(SourceLoadBudgetExceeded, match="time bound"):
         client.get("families/group/lookup/list")
 
 
