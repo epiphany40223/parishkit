@@ -104,14 +104,14 @@ def test_function_bodies_end_at_the_tag_that_opened_them():
 
 
 def test_every_frozen_migration_file_is_pinned_and_unchanged():
+    """Each frozen file is pinned, unchanged, well-formed and part of the image.
+
+    These checks run on every file even while the numbering has gaps (a pull
+    request whose file number follows others not yet merged), so a missing
+    pin or image entry is never hidden behind the sequence check below.
+    """
     files = sorted(path.name for path in MIGRATIONS.glob("*.sql"))
     assert files == sorted(FROZEN), "pin every schema/migrations/*.sql digest"
-    prefixes = [name[:4] for name in files]
-    assert all(prefix.isdigit() for prefix in prefixes), files
-    # The baseline is 0001; frozen files continue from 0002 without gaps.
-    assert [int(prefix) for prefix in prefixes] == list(range(2, 2 + len(prefixes))), (
-        "frozen files form one consecutive repository-wide sequence from 0002"
-    )
     for name, digest in FROZEN.items():
         text = (MIGRATIONS / name).read_text(encoding="utf-8")
         assert hashlib.sha256(text.encode()).hexdigest() == digest, name
@@ -127,6 +127,15 @@ def test_every_frozen_migration_file_is_pinned_and_unchanged():
                 f"!src/parishkit/stewardship/schema/migrations/{name}"
                 in ignore.read_text()
             )
+
+
+def test_frozen_files_form_one_consecutive_sequence():
+    """The baseline is 0001; frozen files continue from 0002 without gaps."""
+    prefixes = [name[:4] for name in sorted(FROZEN)]
+    assert all(prefix.isdigit() for prefix in prefixes), sorted(FROZEN)
+    assert [int(prefix) for prefix in prefixes] == list(range(2, 2 + len(prefixes))), (
+        "frozen files form one consecutive repository-wide sequence from 0002"
+    )
 
 
 def test_latest_migration_copy_of_each_replaced_function_equals_the_baseline():
