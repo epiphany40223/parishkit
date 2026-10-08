@@ -73,15 +73,21 @@ defined by [export cleanup recovery](../background-processing/spec.md#export-cle
 not a permission granted by ordinary report access.
 
 CSV is UTF-8 with a header row and CRLF-compatible output. Cells beginning with
-formula-significant characters are neutralized. XLSX uses freeze panes,
+formula-significant characters are neutralized, except canonical money
+amounts (below). XLSX uses freeze panes,
 filters, meaningful widths, types, repeated print headings, and no macros.
 XLSX money is a number cell with the dollar format `"$"#,##0.00`, so staff can
 sum it, and a negative amount shows as `-$50.00`. Each value is built exactly
 from whole cents and stored as a spreadsheet number (an IEEE double), which is
 accurate to the cent when opened in a spreadsheet. Unavailable money stays the word "Unavailable" and
-an absent amount stays blank, never zero; an amount beyond Excel's 15
-significant digits stays exact text rather than rounding. CSV and PDF money is
-the page's text, such as `$1,234.50`. PDF
+an absent amount stays blank, never zero; for an amount beyond Excel's 15
+significant digits the file's text stays exact (Excel rounds on open). CSV
+money is the
+canonical amount: a plain signed decimal with two places, such as `1234.50`
+or `-50.00`, with no dollar sign, thousands separator or formula-guard
+apostrophe, so spreadsheets and scripts read it as a number; unavailable
+money stays the word and an absent amount stays blank (#388 L5). PDF money
+is the page's text, such as `$1,234.50`. PDF
 uses parish branding, report-request/data-as-of time, page numbers, repeated
 table headings, and legible landscape layout where needed. The participation
 chart's PDF is the exception for the request and as-of time: it carries them

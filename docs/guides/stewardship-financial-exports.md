@@ -48,8 +48,9 @@ campaign, same parameters, and a publication row count equal to the capture.
 
 The read model's display shaping, previously inline in the page's read, is
 `shape_result`, and both the page and the export document pass through it.
-Money is canonical text in the capture and the same `$1,234.50` or
-`Unavailable` in a CSV or PDF cell; XLSX writes known money as a summable
+Money is canonical text in the capture. A PDF cell shows the page's
+`$1,234.50` or `Unavailable`; a CSV cell holds the canonical amount
+(`1234.50`, `-50.00`) or `Unavailable`; XLSX writes known money as a summable
 dollar-formatted number (see
 [shared report behavior](../specs/stewardship/reports/spec.md#shared-report-behavior)).
 Share wording is versioned with the configuration each Family answered under,
