@@ -152,7 +152,7 @@ def test_public_substitution_cannot_assemble_the_allocation_seed_marker():
         {"template": None},
         {"block": None},
         {"identity": None},
-        {"block": SafeContent("<script>unsafe()</script>", "")},
+        # An unsafe stored block is cleaned at render, not refused (#385).
     ],
 )
 def test_invalid_receipt_inputs_fail_without_rendering_private_payloads(change):

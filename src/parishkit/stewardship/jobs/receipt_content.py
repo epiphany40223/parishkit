@@ -39,14 +39,17 @@ class ReceiptTemplate:
     text: str = "Your submission has been received."
 
     def __post_init__(self):
-        """Reject unsafe authored content and every credential substitution."""
-        if prepare_content(self.html, text=self.text) != SafeContent(
-            self.html, self.text
-        ):
-            raise ValueError("Receipt template requires canonical safe content.")
-        validate_receipt_content(self.subject, self.html, self.text)
+        """Re-sanitize the template; reject every credential substitution.
+
+        As for Family email (#385): today's sanitizer cleans the stored HTML
+        instead of an equality check failing on a later sanitizer change.
+        """
         if not self.subject.strip():
             raise ValueError("Receipt template requires a subject.")
+        object.__setattr__(
+            self, "html", prepare_content(self.html, text=self.text).html
+        )
+        validate_receipt_content(self.subject, self.html, self.text)
 
 
 def fold_parts(html, text, note_html, note_text):
@@ -120,8 +123,8 @@ def render_receipt(
     ):
         raise ValueError("Receipt requires an aware submission instant and timezone.")
     stamp = dates.format_instant(submitted_at, campaign_timezone, date_format)
-    if prepare_content(block.html, text=block.text) != block:
-        raise ValueError("Receipt block requires canonical safe content.")
+    # Re-sanitized, not compared (#385), as the template is.
+    block = prepare_content(block.html, text=block.text)
     validate_receipt_content("", block.html, block.text)
     subject = render_template(template.subject, values, subject=True)
     # A closing note renders exactly as the folded email that replaces it

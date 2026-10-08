@@ -50,10 +50,16 @@ class FamilyMailTemplate:
     text: str
 
     def __post_init__(self):
-        """Retained content must be canonical, bounded and use inert placeholders."""
-        prepared = prepare_content(self.html, text=self.text)
-        if prepared.html != self.html:
-            raise ValueError("Family email requires canonical safe content.")
+        """Re-sanitize retained content, then require bounded inert placeholders.
+
+        Applied content is trusted (#187) and not re-checked for equality with
+        today's sanitizer: a later sanitizer change would otherwise make every
+        render of an older template fail (#385). Rendering the re-sanitized
+        HTML keeps it safe either way; plain text is kept as stored.
+        """
+        object.__setattr__(
+            self, "html", prepare_content(self.html, text=self.text).html
+        )
         validate_family_email(self.subject, self.html, self.text)
 
 
