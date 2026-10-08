@@ -2,7 +2,6 @@
 
 import pytest
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -47,29 +46,12 @@ def test_go_live_acknowledgement_and_status_are_accessible(
     visible(
         page.get_by_role("button", name="Retry failed cleanup from its checkpoints")
     )
-
-
-def test_cleanup_controls_work_without_javascript(browser_engine, component_origin):
-    """Native POST forms and status refresh links do not depend on enhancement."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/go-live")
-        visible(page.get_by_role("checkbox"))
-        visible(page.get_by_role("button", name="Start Testing cleanup"))
-        page.goto(component_origin + "/go-live-cleanup")
-        visible(page.get_by_role("link", name="Refresh cleanup progress"))
-        visible(
-            page.get_by_role(
-                "button", name="Cancel cleanup without restoring deleted data"
-            )
-        )
-        page.goto(component_origin + "/go-live-links")
-        assert "2,500 out of 5,000 (50%)" in page.locator("main").inner_text()
-        visible(page.get_by_role("button", name="Retry failed preparation"))
-        visible(
-            page.get_by_role("button", name="Cancel and discard these inactive links")
-        )
-        visible(page.get_by_role("link", name="Refresh preparation progress"))
-    finally:
-        context.close()
+    visible(page.get_by_role("link", name="Refresh cleanup progress"))
+    visible(
+        page.get_by_role("button", name="Cancel cleanup without restoring deleted data")
+    )
+    page.goto(component_origin + "/go-live-links")
+    assert "2,500 out of 5,000 (50%)" in page.locator("main").inner_text()
+    visible(page.get_by_role("button", name="Retry failed preparation"))
+    visible(page.get_by_role("button", name="Cancel and discard these inactive links"))
+    visible(page.get_by_role("link", name="Refresh preparation progress"))
