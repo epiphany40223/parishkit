@@ -68,6 +68,18 @@ admission and dedicated pool defined by
 defines how a small download rendered on request in memory is read.
 When capacity is busy, show the retryable response without discarding the
 generated export; a retry performs fresh authorization and purge checks.
+A background export whose render reaches its read guard's deadline stops the
+general worker (the guard's hard stop, logged first as a `read_guard`
+timeout entry), and recovery retries it like any abandoned export, up to five
+attempts; after a first such stop the retry waits the longest delay (10
+minutes), so one slow spell does not fail it. After a second such stop it
+fails instead
+([#386](https://github.com/epiphany40223/parishkit/issues/386)): a render
+that overran once may have met a slow moment, but one that overruns twice
+would only stop the worker again. Recovery counts those entries through
+`stewardship_read_guard_kills_v1`, a narrow definer function, since the
+worker cannot read the log's context; a stop whose entry did not land counts
+only toward the five attempts.
 Admin recovery of expired-file housekeeping is a separate operational workflow
 defined by [export cleanup recovery](../background-processing/spec.md#export-cleanup-recovery),
 not a permission granted by ordinary report access.

@@ -98,6 +98,9 @@ FROZEN = {
     "0022_directory_member_search.sql": (
         "e81f7e08b1daf3ff046da8f877040a1b2afe9758f55a827a1d8e03db5c026a66"
     ),
+    "0023_read_guard_kills.sql": (
+        "13b03cb17f7cb3f6e188470818815e172f654e3efdaf4584b229e5fde51cec6a"
+    ),
 }
 
 
