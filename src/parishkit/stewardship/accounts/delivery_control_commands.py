@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from django.core import signing
 from django.db import connection
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.delivery_control_models import (
     DeliveryControlCommand,
@@ -23,6 +24,12 @@ from .sessions import require_fresh
 
 SALT = "stewardship-delivery-control-v1"
 RESOLVABLE_TYPES = frozenset({"receipt", "daily_digest", "weekly_digest"})
+# The Resolve held messages form's names for them, in its display order.
+RESOLVABLE_LABELS = {
+    "receipt": _("Submission receipts"),
+    "daily_digest": _("Daily Admin reports"),
+    "weekly_digest": _("Weekly Admin reports"),
+}
 
 
 def _current(request, service, campaign_id, *, passive=False):
@@ -135,6 +142,43 @@ def _clears_pause(current, types):
     )
 
 
+def resolution_choices(current, proof):
+    """The held-message resolutions the page offers, as the server decides them.
+
+    The Resolve held messages form offers only what ``_closed_selection``
+    would accept for this inventory (#563), so an available Preview means
+    the server accepts the choice: a type is listed only while it holds
+    messages; Release needs a passed provider and sender check; Cancel
+    leaves out types with mail still being handed to the mail service or
+    not sure it arrived (``cancellable``); Clear needs a pause that clears
+    with no type selected (``_clears_pause``). Report preparation is known
+    only when the preview is built, so the server still checks it, along
+    with everything else, on every preview and confirmation.
+    ``uncancellable`` names the listed types Cancel cannot take yet.
+    """
+    types = []
+    for kind, label in RESOLVABLE_LABELS.items():
+        counts = current["types"].get(kind, {})
+        if counts.get("held", 0):
+            types.append(
+                {
+                    "kind": kind,
+                    "label": label,
+                    "held": counts["held"],
+                    "cancellable": not (
+                        counts.get("submitting", 0) or counts.get("unknown", 0)
+                    ),
+                }
+            )
+    return {
+        "types": types,
+        "release": bool(types) and bool(proof and proof.get("ready")),
+        "cancel": any(item["cancellable"] for item in types),
+        "uncancellable": [item["label"] for item in types if not item["cancellable"]],
+        "clear": _clears_pause(current, []),
+    }
+
+
 def _closed_selection(campaign, current, *, decision, types):
     """Bind only selected held types; cancellation never requires provider health."""
     if (
@@ -221,15 +265,18 @@ def page(request, service, campaign_id):
             fresh = True
         except PermissionError:
             fresh = False
+        current = inventory(campaign_id)
+        proof = health(campaign_id)
         return {
             "campaign": campaign,
             "available": _available(campaign, runtime),
             "fresh": fresh,
             "resume_available": _prestart_resume(campaign) or _family_resume(campaign),
             "resolve_available": _action_available(campaign, "resolve"),
-            "inventory": inventory(campaign_id),
+            "inventory": current,
+            "resolution": resolution_choices(current, proof),
             "next_due": next_due(campaign, _now()),
-            "health": health(campaign_id),
+            "health": proof,
             "family_recovery": (
                 family_recovery_impact(campaign_id)
                 if campaign.delivery_paused
