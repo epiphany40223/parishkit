@@ -25,7 +25,9 @@ privileges included, archives the configuration, credentials and media trees
 and the provisioning record (the media tree, the record and kept privileges
 come from the
 [restore correction](stewardship-restore-correction.md)), seals both to the operator's public key,
-writes a plaintext manifest of sizes and digests, records one row in
+writes a plaintext manifest of sizes and digests (plus the image the run
+used and the database's applied migrations, which `restore-check` compares
+with a target image before a restore), records one row in
 `stewardship_backup_run`, and keeps the complete sets the runbook's
 [retention](stewardship-backup-runbook.md#retention) rules name on the
 host (a failed run's directory, without a manifest, neither counts nor is
