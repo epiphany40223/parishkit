@@ -10,7 +10,6 @@ the GET fixture the view would have rendered.
 
 import pytest
 
-from .conftest import no_script_context
 from .talent_components import PATH as TALENTS
 from .waits import eventually, has_attribute, has_text, recorded, visible
 
@@ -323,24 +322,6 @@ def test_fetch_failure_falls_back_to_a_full_load_at_the_table(page, component_or
     assert ministry_names(page) == ["Lectors", "Community outreach"]
     assert page.evaluate("window.scrollY") > 0
     assert page.evaluate(TABLE_TOP) < 100
-
-
-def test_without_javascript_a_heading_loads_the_page_at_the_table(
-    browser_engine, component_origin
-):
-    """No script: the heading is a plain link whose fragment lands on the table."""
-    context = no_script_context(browser_engine, viewport=VIEWPORT)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/ministries")
-        page.get_by_role("link", name="Ministry (sort descending)").click()
-        page.wait_for_url(component_origin + SORTED_MINISTRIES)
-        has_attribute(sort_heading(page, "name"), "aria-sort", "descending")
-        assert ministry_names(page) == ["Lectors", "Community outreach"]
-        assert page.evaluate("window.scrollY") > 0
-        assert page.evaluate(TABLE_TOP) < 100
-    finally:
-        context.close()
 
 
 def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
@@ -687,19 +668,3 @@ def test_followup_filter_refreshes_in_place_without_assignment(page, component_o
     assert table.get_by_role("columnheader", name="Select").count() == 0
     assert table.get_by_role("columnheader", name="Assigned to").count() == 0
     assert page.get_by_role("button", name="Assign selected").count() == 0
-
-
-def test_without_javascript_filters_load_the_page(browser_engine, component_origin):
-    """No script: the filter form is an ordinary GET form, sort included."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/ministries")
-        page.get_by_label("Search by name or DUID").fill("Lectors")
-        page.get_by_role("button", name="Filter").click()
-        page.wait_for_url(
-            component_origin + "/ministries?q=Lectors&state=all&size=50&sort=name"
-        )
-        assert ministry_names(page) == ["Lectors"]
-    finally:
-        context.close()

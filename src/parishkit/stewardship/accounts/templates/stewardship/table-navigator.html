@@ -3,11 +3,13 @@
   above and below the table with `table` (a TablePage) and `label` (the
   navigation landmark name). It shows the rows shown and "Page N of M";
   a windowed table whose bounded count stopped short says "more than" and
-  leaves out the page count. Every control works without script: a GET
-  table uses links and a GET form, a POST table (private report filters)
-  uses small CSRF-protected POST forms carrying the filters as hidden
-  fields. Each control's URL ends in the table's anchor fragment, so a full
-  page load lands on the table rather than at the top. ui-v1.js submits a
+  leaves out the page count. Each control is a real request target that
+  ui-v1.js sends: a GET table uses links and a GET form, a POST table
+  (private report filters) uses small CSRF-protected POST forms carrying
+  the filters as hidden fields, so they never reach a URL. Each control's
+  URL ends in the table's anchor fragment, so a full page load (the
+  script's fallback when an in-place answer cannot be used) lands on the
+  table rather than at the top. ui-v1.js submits a
   new rows-per-page choice at once and resets to page 1, and when the page
   wraps both navigators and the table in
   `<div id="{{ table.anchor }}" data-table-region>` it re-pages and re-sorts

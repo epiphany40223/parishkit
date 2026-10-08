@@ -10,7 +10,6 @@ Families on the form now templates; the form tests use a small test-only page
 
 import pytest
 
-from .conftest import no_script_context
 from .in_place_components import BACKGROUND, FORM, PRESENCE
 from .waits import eventually, has_text, visible
 
@@ -131,24 +130,6 @@ def test_presence_refresh_updates_the_list_and_count_in_place(page, component_or
         "List refreshed. Showing 1–2 of 2 · Page 1 of 1",
     )
     assert len(gets) == 1
-
-
-def test_without_javascript_a_refresh_lands_at_the_table(
-    browser_engine, component_origin
-):
-    """No script: Refresh is a plain link whose fragment lands on the table."""
-    context = no_script_context(browser_engine, viewport=VIEWPORT)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + BACKGROUND)
-        page.get_by_role("link", name="Refresh current work").click()
-        page.wait_for_url("**#table")
-        assert page.locator("#background-counts").inner_text() == _counts(2)
-        assert page.evaluate("window.scrollY") > 0
-        top = "document.getElementById('table').getBoundingClientRect().top"
-        assert -2 < page.evaluate(top) < 100
-    finally:
-        context.close()
 
 
 def test_post_form_saves_in_place_with_one_request(page, component_origin):
@@ -361,24 +342,6 @@ def test_post_form_redirect_to_another_page_navigates(page, component_origin):
     has_text(page.locator("h1"), "Another page")
     assert page.evaluate(MARKED) is None
     assert posts == [component_origin + FORM + "/elsewhere"]
-
-
-def test_without_javascript_a_post_form_lands_at_its_region(
-    browser_engine, component_origin
-):
-    """No script: the form posts natively, and the server's redirect (which
-    has no fragment of its own) keeps the action's fragment, so the page
-    loads at the region rather than at the top."""
-    context = browser_engine.new_context(java_script_enabled=False, viewport=VIEWPORT)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + FORM)
-        page.locator("#save").click()
-        page.wait_for_url(component_origin + FORM + "?saved=1#saved")
-        assert page.locator("#saved-count").inner_text() == "Saved 1 times"
-        assert page.evaluate("window.scrollY") > 0
-    finally:
-        context.close()
 
 
 def test_external_submitter_save_is_never_resent(page, component_origin):

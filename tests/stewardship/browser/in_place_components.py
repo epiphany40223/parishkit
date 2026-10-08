@@ -48,7 +48,7 @@ SLOW = {f"{FORM}/slow"}
 # Enough filler that the form sits well below the fold, and the page is
 # tall enough to keep a scroll position below it.
 FILLER = range(40)
-FORM_PAGE = """{% extends 'stewardship/base.html' %}
+FORM_PAGE = """{% extends 'stewardship/admin-base.html' %}
 {% block title %}In-place form{% endblock %}
 {% block content %}
 <h1>{{ heading }}</h1>
@@ -106,14 +106,14 @@ FORM_PAGE = """{% extends 'stewardship/base.html' %}
 """
 # The page a refusal answers with when it is not this page again (a denial):
 # the Admin chrome, and so the page's own timers, but not the form's region.
-DENIED_PAGE = """{% extends 'stewardship/base.html' %}
+DENIED_PAGE = """{% extends 'stewardship/admin-base.html' %}
 {% block title %}Denied{% endblock %}
 {% block content %}<h1>Denied page</h1><p>This change is not allowed.</p>{% endblock %}
 """
 # A Django choice group refused by the server (#592): Django 5.2 draws a
 # RadioSelect as a fieldset described by the error, with each input marked
 # invalid but not described, so the page finds the message on the fieldset.
-CHOICE_PAGE = """{% extends 'stewardship/base.html' %}
+CHOICE_PAGE = """{% extends 'stewardship/admin-base.html' %}
 {% block title %}Choice group{% endblock %}
 {% block content %}<h1>Choice group</h1>
 <form method="post" action="/field-error-group">{{ form.kind.as_field_group }}
