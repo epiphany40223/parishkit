@@ -778,6 +778,20 @@ manifest, or for older sets from its decrypted dump's `django_migrations`
 rows) with the image's migration files, exits 0 on an exact match and 3 on
 a mismatch, and names the set's own image to use (see the backup runbook's
 [Restore for real](../../../guides/stewardship-backup-runbook.md#restore-for-real)).
+When the Administrator considers restoring a set onto a release with another
+schema, `pk-stewardship restore-compare` reports, value-free, how the set's
+schema differs from the target image's: it loads the set into a scratch
+PostgreSQL server that must hold no database of its own (never the
+deployment's cluster), migrates a second with the image and copies it
+through the same dump and load into a third, and compares the set's catalog
+with that copy's: migrations, tables, columns (type, nullability, default,
+identity, generated, collation), constraints, indexes, function
+definitions, triggers, row-level security, views, sequences, table storage
+options, domains and enums (owners, privileges, other schemas and
+extensions excepted). It transforms nothing; any plan built on it
+needs the Administrator's approval, the full verification pass and a fresh
+backup, and never changes a Family credential (see the runbook's
+[Comparing a set with another release](../../../guides/stewardship-backup-runbook.md#comparing-a-set-with-another-release)).
 
 Both modes verify manifest/digests, application/schema compatibility, credential
 availability, and the target-mode precondition before writing. They restore
