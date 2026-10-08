@@ -17,14 +17,43 @@ from django.db import connection, connections, transaction
 
 from parishkit.stewardship.observability import emit_failure
 
-# Any unconfirmed renewal stops new work, including a transient SQL error.
-# Do not infer continuing ownership from a previously observed lease deadline;
-# the durable bounded retry/reconciliation workflow owns recovery instead.
+# An unconfirmed renewal stops new work, including a transient SQL error,
+# with two exceptions: a configuration activation in progress (#429) and a
+# renewal stopped by its own lock or statement limit (#386), each retried
+# only while the lease the last confirmed renewal (or the claim) committed
+# still has time left. That is measured locally from before that commit, so
+# it is never inferred from a deadline read back from the database; the
+# database fences every effect and refuses a renewal of an expired claim
+# either way. The durable bounded retry/reconciliation workflow owns
+# recovery once a renewal fails for good. (The phase-2 consolidation review's
+# C36 rejected a speculative second renewal on any uncertainty; #386 narrows
+# the retry to these known, bounded waits.)
 PULSE_SECONDS = 20
 # A renewal that met a configuration activation in progress (#429) tries
 # again this soon instead of a full pulse later. An activation takes about a
 # second, well inside the 60-second lease.
 ACTIVATION_RETRY_SECONDS = 2
+# A renewal stopped by its own SQL time limit (it waited 2 seconds behind the
+# deployment-wide work-order lock, or ran 5) has not lost the lease: the last
+# confirmed renewal still holds it (#386, M2). It tries again this soon, as
+# long as that lease keeps LEASE_MARGIN_SECONDS in hand when the retry is
+# decided. The margin covers this timeout's own entry (up to about 7
+# seconds: a 5-second wait for the timeout-log slot, then a write with
+# 2-second limits), the 2-second pause and the next renewal's connect (3
+# seconds): 12 seconds, leaving 8 for that renewal's statements. The margin
+# is a planning figure, not a hard bound: statement_timeout limits each
+# statement, not the renewal, and a renewal may first wait for the control
+# lock, so the last retry can end after the database lease has expired. The
+# database then refuses it (an expired claim is never renewed), and the
+# hard bound is local: ExecutionControl.check refuses any new unit of work
+# once monotonic time passes the confirmed lease's end (``lease_end``), so
+# a handler never starts external work its lease no longer covers. Past
+# that point the execution stops, as any unconfirmed renewal does.
+TIMEOUT_RETRY_SECONDS = 2
+# The lease every renewal confirms: claim_hint's and Execution.heartbeat's
+# default. A handler that asks for a longer one only adds time to this.
+LEASE_SECONDS = 60
+LEASE_MARGIN_SECONDS = 20
 # This is a process-drain budget, not a promise that multiple independently
 # timed SQL statements finish within one statement timeout. Exhaustion must
 # terminate the consumer rather than let a lingering renewer overlap new work.
@@ -51,13 +80,39 @@ class ExecutionControl:
         self.active = False
         self.started = False
         self.source_claim = None
+        # When the claim's transaction began (monotonic), set by claim_hint:
+        # its lease runs from then. None (a synthetic execution): the
+        # renewal thread's start stands in.
+        self.lease_started = None
+        # When the renewal in progress acquired the control lock (monotonic),
+        # set by renew_once: its SQL, and its lease, start after that.
+        self.renewal_started = None
+        # When the last confirmed lease ends (monotonic): set by the renewal
+        # loop from the claim and each successful renewal. check() refuses
+        # new work past it, whatever the renewal thread is doing (#386).
+        self.lease_end = None
 
-    def check(self, *, allow_drain=False):
-        """Reject lost ownership, or a new unit after a graceful-stop request."""
+    def lease_expired(self):
+        """Whether monotonic time has passed the confirmed lease's end."""
+        return self.lease_end is not None and monotonic() >= self.lease_end
+
+    def check(self, *, allow_drain=False, inflight=False):
+        """Reject lost ownership, or a new unit after a graceful-stop request
+        or once the confirmed lease has run out locally.
+
+        The lease check is the hard local bound behind the renewal loop's
+        retries: a unit already started may still settle (``allow_drain``;
+        its SQL fences refuse it if the lease is really gone), but nothing
+        new starts. An external operation already running (``inflight``, a
+        helper's tick) is stopped once the lease has run out, as after a
+        failed renewal: it must not keep working past the lease.
+        """
+        expired = self.lease_expired()
         if (
             self.failed.is_set()
             or self.finished.is_set()
-            or (self.stop.is_set() and not allow_drain)
+            or (inflight and expired)
+            or ((self.stop.is_set() or expired) and not allow_drain)
         ):
             raise ExecutionInterrupted("Worker execution must stop at this boundary.")
 
@@ -106,6 +161,9 @@ def renew_once(execution):
 
     control = execution.control
     with control.lock:
+        # After the lock: the handler may hold it through a long effect, and
+        # that wait is neither SQL time nor lease time (#386).
+        control.renewal_started = monotonic()
         if control.finished.is_set():
             return False
         control.check(allow_drain=True)
@@ -149,8 +207,22 @@ def _renewal_loop(execution, done):
     not a lost lease: the lease still has most of its time left, so the loop
     tries again shortly. A mismatch that outlasts the lease ends in ordinary
     lease expiry and its recorded recovery.
+
+    Nor is a renewal stopped by its own lock or statement time limit (#386):
+    each is logged (what, limit, elapsed, the task, outcome ``retry``) and
+    tried again after TIMEOUT_RETRY_SECONDS while the last confirmed lease
+    still has LEASE_MARGIN_SECONDS left. ``confirmed`` is the monotonic time,
+    taken before its transaction began, of the last renewal that succeeded,
+    and at first of the claim (``control.lease_started``, taken before the
+    claim's transaction and its lock waits): the database stamped that lease
+    no earlier, so it lasts at least LEASE_SECONDS from there. Any other
+    error, a lost claim included, and a timeout with no margin left, stop
+    the execution; ``control.failed`` is set before the final timeout entry
+    is written, so new work is refused first.
     """
     from parishkit.stewardship.accounts.authority import AuthorityChanging
+
+    from .broker import sql_timeout_kind
 
     previous = connection.settings_dict
     connection.settings_dict = {
@@ -158,10 +230,16 @@ def _renewal_loop(execution, done):
         "OPTIONS": {**previous.get("OPTIONS", {}), "connect_timeout": 3},
     }
     started = None
+    # The timeout that ended the loop when its entry is already written.
+    logged = None
+    control = execution.control
+    confirmed = control.lease_started or monotonic()
+    control.lease_end = confirmed + LEASE_SECONDS
     pause = PULSE_SECONDS
     try:
         while not done.wait(pause):
             started = monotonic()
+            control.renewal_started = None
             pause = PULSE_SECONDS
             try:
                 renewed = renew_once(execution)
@@ -173,9 +251,28 @@ def _renewal_loop(execution, done):
                 )
                 pause = ACTIVATION_RETRY_SECONDS
                 continue
+            except Exception as error:
+                if sql_timeout_kind(error) is None:
+                    raise
+                connections.close_all()
+                retry = _margin_left(confirmed)
+                if not retry:
+                    # New work is refused before the entry is written; the
+                    # failure path below does not write it again.
+                    control.failed.set()
+                    logged = error
+                _record_renewal_timeout(
+                    execution, error, control.renewal_started or started, retry=retry
+                )
+                if not retry:
+                    raise
+                pause = TIMEOUT_RETRY_SECONDS
+                continue
             else:
                 _renewal_timing(started)
                 if renewed:
+                    confirmed = control.renewal_started or started
+                    control.lease_end = confirmed + LEASE_SECONDS
                     pulse(execution)
             finally:
                 connections.close_all()
@@ -185,7 +282,10 @@ def _renewal_loop(execution, done):
         # Stop new work first, then record a renewal stopped by its own SQL
         # time limit (#293).
         execution.control.failed.set()
-        _record_renewal_timeout(execution, error, started)
+        if error is not logged:
+            _record_renewal_timeout(
+                execution, error, execution.control.renewal_started or started
+            )
         emit_failure(error)
     finally:
         connections.close_all()
@@ -215,8 +315,23 @@ def _renewal_timing(started):
 RENEWAL_LIMITS = {"lock_timeout": 2, "statement_timeout": 5}
 
 
-def _record_renewal_timeout(execution, error, started):
-    """Log a renewal that PostgreSQL stopped at its lock or statement limit."""
+def _margin_left(confirmed):
+    """Whether a retry decided now (its timeout entry, the pause, then the
+    renewal) keeps LEASE_MARGIN_SECONDS before the last confirmed lease (see
+    ``_renewal_loop``) runs out."""
+    return (
+        monotonic() + TIMEOUT_RETRY_SECONDS
+        <= confirmed + LEASE_SECONDS - LEASE_MARGIN_SECONDS
+    )
+
+
+def _record_renewal_timeout(execution, error, started, *, retry=False):
+    """Log a renewal that PostgreSQL stopped at its lock or statement limit.
+
+    ``retry`` marks one the loop tolerates and tries again: a WARNING with
+    outcome ``retry``. Otherwise it is the ERROR that stopped the execution.
+    """
+    from parishkit.stewardship.audit.schemas import Outcome
     from parishkit.stewardship.audit.timeouts import record_timeout
     from parishkit.stewardship.observability import Event
 
@@ -228,9 +343,11 @@ def _record_renewal_timeout(execution, error, started):
     record_timeout(
         Event.TASK_TIMED_OUT,
         what=kind,
+        level="WARNING" if retry else "ERROR",
         task_id=execution.claim.run_id,
         limit_seconds=RENEWAL_LIMITS.get(kind),
         elapsed_seconds=None if started is None else monotonic() - started,
+        outcome=Outcome.RETRY if retry else Outcome.FAILED,
     )
 
 

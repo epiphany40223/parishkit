@@ -247,3 +247,209 @@ def test_the_renewal_loop_pulses_after_its_timing_and_outside_the_lock(
     assert order == (["renew", "timed", "pulse"] if renewed else ["renew", "timed"])
     assert held == ([False] if renewed else [])
     assert len(waits) == 2
+
+
+class SyntheticLockTimeout(Exception):
+    """What PostgreSQL raises when a renewal waits past its lock_timeout."""
+
+    sqlstate = "55P03"
+
+
+@pytest.fixture
+def renewal(monkeypatch):
+    """Drive ``_renewal_loop`` on a fake clock with scripted renewals.
+
+    ``run(script)`` takes one entry per renewal: an exception to raise,
+    or True to renew (after the last entry the task finishes). Each renewal
+    takes ``cost`` seconds of the fake clock; each wait adds its pause.
+    Returns (pauses, timeout entries, whether the execution failed).
+    """
+    from parishkit.stewardship.audit import timeouts
+    from parishkit.stewardship.jobs import lifetime
+
+    clock = {"now": 1000.0}
+    entries, pauses = [], []
+    monkeypatch.setattr(lifetime, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(lifetime, "_renewal_timing", lambda _: None)
+    monkeypatch.setattr(lifetime, "pulse", lambda execution: None)
+    monkeypatch.setattr("django.db.connections.close_all", lambda: None)
+    monkeypatch.setattr(lifetime, "emit_failure", lambda error: None)
+    contexts = []
+
+    def record(event, **facts):
+        """Keep each entry with whether new work was already refused."""
+        entries.append({**facts, "failed_first": contexts[-1].control.failed.is_set()})
+
+    monkeypatch.setattr(timeouts, "record_timeout", record)
+
+    def run(script, *, cost=5, stop_after=None, lease_started=None, lock_wait=0):
+        context = execution()
+        context.control.lease_started = lease_started
+        contexts.append(context)
+        steps = list(script)
+
+        def renew(actual):
+            # The control lock is taken after ``lock_wait``; the renewal's
+            # SQL time (``cost``) follows, as in renew_once.
+            clock["now"] += lock_wait
+            actual.control.renewal_started = clock["now"]
+            clock["now"] += cost
+            step = steps.pop(0)
+            if isinstance(step, BaseException):
+                raise step
+            if not steps:
+                actual.control.finished.set()
+            return step
+
+        monkeypatch.setattr(lifetime, "renew_once", renew)
+
+        class Done:
+            def wait(self, seconds):
+                pauses.append(seconds)
+                clock["now"] += seconds
+                return stop_after is not None and len(pauses) > stop_after
+
+        lifetime._renewal_loop(context, Done())
+        run.last = context
+        return pauses, entries, context.control.failed.is_set()
+
+    return run
+
+
+def test_a_renewal_timeout_is_logged_and_retried(renewal):
+    """One lock timeout with the lease's margin intact: a WARNING entry with
+    outcome retry, a short pause, then the renewal succeeds (#386, M2)."""
+    from parishkit.stewardship.audit.schemas import Outcome
+    from parishkit.stewardship.jobs import lifetime
+
+    pauses, entries, failed = renewal([SyntheticLockTimeout(), True])
+    assert not failed
+    assert pauses == [lifetime.PULSE_SECONDS, lifetime.TIMEOUT_RETRY_SECONDS]
+    [entry] = entries
+    assert (entry["what"], entry["level"], entry["outcome"]) == (
+        "lock_timeout",
+        "WARNING",
+        Outcome.RETRY,
+    )
+    assert entry["limit_seconds"] == 2 and entry["elapsed_seconds"] == 5
+
+
+def test_timeouts_are_retried_only_while_the_lease_keeps_its_margin(renewal):
+    """Repeated timeouts: retried until a retry would leave less than the
+    margin on the last confirmed lease, then one ERROR entry and the
+    execution stops; no entry is written twice."""
+    from parishkit.stewardship.audit.schemas import Outcome
+    from parishkit.stewardship.jobs import lifetime
+
+    pauses, entries, failed = renewal([SyntheticLockTimeout() for _ in range(20)])
+    assert failed
+    levels = [entry["level"] for entry in entries]
+    assert levels[-1] == "ERROR" and set(levels[:-1]) == {"WARNING"}
+    assert entries[-1]["outcome"] == Outcome.FAILED
+    # The thread starts at 1000 (no claim time given). Renewals start at
+    # 1020, 1027 and 1034 and each times out 5 seconds later; a retry is
+    # decided while now + 2 <= 1000 + 60 - 20 = 1040: at 1025 (1027 <= 1040)
+    # and 1032 (1034) it is retried, at 1039 (1041) it is not.
+    assert len(entries) == 3
+    assert pauses == [lifetime.PULSE_SECONDS] + [lifetime.TIMEOUT_RETRY_SECONDS] * 2
+    # New work is refused before the final entry is written, not after.
+    assert [entry["failed_first"] for entry in entries] == [False, False, True]
+
+
+def test_the_margin_starts_at_the_claim_not_the_thread(renewal):
+    """A claim that began 8 seconds before this thread started (its lock
+    waits): its lease runs from then, so the margin ends at 992 + 40 = 1032
+    and one retry fewer than from the thread's start is made (1025 is
+    retried, 1032 is not)."""
+    _, entries, failed = renewal(
+        [SyntheticLockTimeout() for _ in range(20)], lease_started=1000.0 - 8
+    )
+    assert failed and [entry["level"] for entry in entries] == ["WARNING", "ERROR"]
+
+
+def test_elapsed_is_measured_after_the_control_lock(renewal):
+    """A renewal that first waited 10 seconds for the handler's control lock
+    reports only its own 5 seconds of SQL as elapsed."""
+    _, entries, _ = renewal([SyntheticLockTimeout(), True], lock_wait=10)
+    assert entries[0]["elapsed_seconds"] == 5
+
+
+def test_a_success_restarts_the_margin_from_that_renewal(renewal):
+    """The margin runs from the last renewal that succeeded, not the claim."""
+    script = [True, SyntheticLockTimeout(), SyntheticLockTimeout(), True]
+    pauses, entries, failed = renewal(script)
+    assert not failed and [entry["level"] for entry in entries] == ["WARNING"] * 2
+
+
+def test_an_error_that_is_not_a_timeout_stops_at_once(renewal):
+    """A lost claim (or any other error) is never retried."""
+    pauses, entries, failed = renewal([RuntimeError("lost"), True])
+    assert failed and entries == [] and len(pauses) == 1
+
+
+def test_a_stop_during_a_retry_pause_ends_the_loop(renewal):
+    """Drainage is not held up by a retry: the pause's wait returns at once."""
+    pauses, entries, failed = renewal([SyntheticLockTimeout(), True], stop_after=1)
+    assert not failed and len(entries) == 1 and len(pauses) == 2
+
+
+def test_new_work_is_refused_once_the_confirmed_lease_has_run_out(monkeypatch):
+    """The hard local bound (#797 review): past the confirmed lease's end no
+    new unit starts, though a started one may still settle."""
+    from parishkit.stewardship.jobs import lifetime
+
+    context = execution()
+    clock = {"now": 100.0}
+    monkeypatch.setattr(lifetime, "monotonic", lambda: clock["now"])
+    context.control.check()  # no lease recorded yet (synthetic execution)
+    context.control.lease_end = 160.0
+    context.control.check()
+    clock["now"] = 160.0
+    with pytest.raises(ExecutionInterrupted):
+        context.control.check()
+    context.control.check(allow_drain=True)
+
+
+def test_the_loop_records_each_confirmed_lease_end(renewal):
+    """The claim's lease, then each successful renewal's, set lease_end: a
+    claim at 1000 (to 1060), then a renewal that took the control lock at
+    1020 and succeeded (to 1080)."""
+    from parishkit.stewardship.jobs import lifetime
+
+    renewal([True], lease_started=1000.0)
+    assert renewal.last.control.lease_end == 1020.0 + lifetime.LEASE_SECONDS
+
+
+def test_an_inflight_tick_stops_once_the_lease_has_run_out(monkeypatch):
+    """A running helper's check refuses past the local lease end (#797
+    review), though a settlement (allow_drain) still may run."""
+    from parishkit.stewardship.jobs import lifetime
+
+    context = execution()
+    clock = {"now": 100.0}
+    monkeypatch.setattr(lifetime, "monotonic", lambda: clock["now"])
+    context.control.lease_end = 160.0
+    context.control.check(allow_drain=True, inflight=True)
+    clock["now"] = 160.0
+    with pytest.raises(ExecutionInterrupted):
+        context.control.check(allow_drain=True, inflight=True)
+    context.control.check(allow_drain=True)
+
+
+def test_the_mail_helper_check_uses_the_inflight_bound(monkeypatch):
+    """The Family mail helper's in-flight check stops at the local deadline
+    even when its SQL verification is not due."""
+    from parishkit.stewardship.jobs import family_mail_delivery_tasks as mail
+    from parishkit.stewardship.jobs import lifetime
+
+    context = execution()
+    clock = {"now": 100.0}
+    monkeypatch.setattr(lifetime, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(mail, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(mail, "_check", lambda execution: True)
+    context.control.lease_end = 160.0
+    tick = mail._inflight_check(context)
+    tick()
+    clock["now"] = 160.5
+    with pytest.raises(ExecutionInterrupted):
+        tick()

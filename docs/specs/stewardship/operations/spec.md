@@ -898,7 +898,13 @@ seconds, a reviewed name for the limit, and an occurrence count when one
 entry summarizes several). A read deadline, a PostgreSQL
 statement, lock or transaction timeout (including the lease renewal's own
 lock and statement limits and its drain limit), or a helper process killed at its
-deadline is an ERROR (`task_timed_out`, `helper_timed_out`). A helper entry is
+deadline is an ERROR (`task_timed_out`, `helper_timed_out`). One exception
+is a lease renewal's lock or statement timeout that is retried while the
+lease keeps its margin: a WARNING with outcome `retry`; the timeout that
+ends the run is the ERROR, with outcome `failed`. Those WARNINGs are the
+rollout measure for the retry: their count per day (System logs, level
+WARNING, event `task_timed_out`) says how often renewals queue behind the
+work-order lock, and any ERROR among them says a run was lost to it. A helper entry is
 written right after the kill and names the helper (a mail, ParishSoft or provider
 check helper) and the task it served, when a worker runs it. A web worker
 killed by Gunicorn's master is a `helper_timed_out` ERROR as well, which the
