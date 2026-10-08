@@ -1040,7 +1040,13 @@ configuration also get a "Run a full refresh now" button there, which submits
 the [manual refresh](../admin-portal/spec.md#manual-parishsoft-refresh). A scan that shifted between
 pages (a record repeated from an earlier page, or a total or row order that
 changed mid-read) is retried within the bounded provider-failure allowance
-rather than reported as invalid data. It uses shared
+rather than reported as invalid data. So are two kinds of skew between
+collections read minutes apart: a record one collection names but an earlier
+read never returned (a Member's Family, a roster's Member or Ministry, a
+gift's Member or Family), and a gift that changed between two overlapping
+reads. So is a load that ran out of its time budget, which is a slow
+provider, not bad data. Malformed records, and loads past their request or
+byte bounds, stay invalid. It uses shared
 `load_families_and_members` with active/inactive data sufficient for transition
 recognition. Giving detail is limited to the financial and comparison periods
 of the sole current campaign while it is `draft`, `scheduled`, `active`, or

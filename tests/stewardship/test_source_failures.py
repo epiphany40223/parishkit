@@ -11,6 +11,7 @@ from parishkit.parishsoft_changes import ChangeFeedIncomplete
 from parishkit.parishsoft_pagination import (
     IncompleteSourceCollection,
     ShiftedSourceScan,
+    SourceLoadBudgetExceeded,
 )
 from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.parishsoft_transport import (
@@ -23,7 +24,10 @@ from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.audit.schemas import FAILURES, Outcome
 from parishkit.stewardship.jobs.lifetime import ExecutionInterrupted
 from parishkit.stewardship.observability import Event
-from parishkit.stewardship.source.canonical import InvalidSourcePayload
+from parishkit.stewardship.source.canonical import (
+    InvalidSourcePayload,
+    SourceReferenceSkew,
+)
 from parishkit.stewardship.source.errors import (
     SourceCredentialChanged,
     SourceScopeChanged,
@@ -88,10 +92,17 @@ def test_destructive_change_carries_every_checked_count():
 
 
 def test_shifted_scan_is_a_retryable_provider_failure():
-    """A scan that moved mid-read is retried, not reported as invalid data."""
+    """A scan that moved mid-read is retried, not reported as invalid data.
+
+    So are a dangling cross-collection reference (a record added between two
+    collections' reads) and a load that ran out of time (#387).
+    """
     for error in (
         ShiftedSourceScan("PRIVATE"),
         RetryError("PRIVATE", ShiftedSourceScan("PRIVATE")),
+        SourceReferenceSkew("PRIVATE"),
+        SourceLoadBudgetExceeded("PRIVATE"),
+        RetryError("PRIVATE", SourceLoadBudgetExceeded("PRIVATE")),
     ):
         decision = classify_read_failure(error, has_source_claim=True)
         assert decision.retry and not decision.contention
@@ -249,6 +260,8 @@ def test_unknown_ownership_drain_and_fallback_cases_cannot_use_failure_settlemen
     [
         (SourceOrganizationMismatch("PRIVATE"), "organization_mismatch", None),
         (ShiftedSourceScan("PRIVATE"), "shifted_scan", None),
+        (SourceReferenceSkew("PRIVATE"), "shifted_scan", None),
+        (SourceLoadBudgetExceeded("PRIVATE"), "provider_timeout", None),
         (InvalidSourcePayload("PRIVATE"), "invalid_payload", None),
         (InvalidSourceResponse("PRIVATE"), "invalid_response", None),
         (IncompleteSourceCollection("PRIVATE"), "incomplete_collection", None),

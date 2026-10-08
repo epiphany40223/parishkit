@@ -15,6 +15,7 @@ from parishkit.parishsoft import ParishSoftAPIError
 from parishkit.parishsoft_pagination import (
     IncompleteSourceCollection,
     ShiftedSourceScan,
+    SourceLoadBudgetExceeded,
 )
 from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.parishsoft_transport import InvalidSourceResponse, SourceTransportError
@@ -109,6 +110,13 @@ def classify_read_failure(error, *, has_source_claim):
         # full load failed once and passed on five immediate re-runs). Retry
         # the whole read within the bounded provider-failure allowance.
         return ReadFailure(True, False, Event.SOURCE_PROVIDER_FAILED, "shifted_scan")
+    if isinstance(error, SourceLoadBudgetExceeded):
+        # ParishSoft answered too slowly for the load to finish in its time
+        # (#387): a provider timeout, retried within the same allowance,
+        # not invalid data.
+        return ReadFailure(
+            True, False, Event.SOURCE_PROVIDER_FAILED, "provider_timeout"
+        )
     for kind, failure in (
         (InvalidSourcePayload, "invalid_payload"),
         (IncompleteSourceCollection, "incomplete_collection"),

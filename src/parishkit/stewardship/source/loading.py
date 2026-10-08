@@ -7,7 +7,10 @@ from datetime import date
 
 from parishkit.config import ConfigError
 from parishkit.parishsoft import load_families_and_members, load_funds
-from parishkit.parishsoft_pagination import ShiftedSourceScan
+from parishkit.parishsoft_pagination import (
+    ShiftedSourceScan,
+    SourceLoadBudgetExceeded,
+)
 from parishkit.parishsoft_source import (
     CoherentParishSoftClient,
     SourceOrganizationMismatch,
@@ -347,8 +350,15 @@ def load_full_source(
         corpus = normalize_core(data, as_of=as_of)
         giving = load_giving(client, corpus=corpus, window=window, as_of=as_of)
         corpus.update(pledge=giving.pledges, contribution=giving.contributions)
-    except (InvalidSourcePayload, SourceOrganizationMismatch, ShiftedSourceScan):
-        # A shifted scan keeps its type so the worker retries it (see failures).
+    except (
+        InvalidSourcePayload,
+        SourceOrganizationMismatch,
+        ShiftedSourceScan,
+        SourceLoadBudgetExceeded,
+    ):
+        # A shifted scan (including a dangling cross-collection reference)
+        # and a load that ran out of time keep their types, so the worker
+        # retries them (see failures).
         raise
     except (ConfigError, KeyError, TypeError, ValueError, OverflowError) as error:
         # Ordinary shared tools retain their diagnostics. The app boundary

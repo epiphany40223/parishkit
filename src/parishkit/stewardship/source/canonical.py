@@ -11,9 +11,23 @@ import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+from parishkit.parishsoft_pagination import ShiftedSourceScan
+
 
 class InvalidSourcePayload(ValueError):
     """A source payload cannot participate in a validated coherent snapshot."""
+
+
+class SourceReferenceSkew(ShiftedSourceScan):
+    """One collection names a record another collection did not return.
+
+    A full load reads Families, Members, rosters and giving one after another
+    over several minutes, so a Member, enrollment or gift added in between
+    can name a record the earlier read never saw (#387). That is a shifted
+    scan, retried within the bounded provider-failure allowance, not invalid
+    data; a reference that stays dangling on every attempt still fails then.
+    Shape and type errors stay InvalidSourcePayload.
+    """
 
 
 def _normalize(value, depth=0):

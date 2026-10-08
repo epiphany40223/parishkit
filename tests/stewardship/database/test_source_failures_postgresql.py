@@ -7,12 +7,16 @@ import pytest
 from django.db import transaction
 
 from parishkit.parishsoft import ParishSoftAPIError
+from parishkit.parishsoft_pagination import SourceLoadBudgetExceeded
 from parishkit.parishsoft_transport import SourceTransportDrainFailure
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.source.attempts import begin_refresh_attempt
-from parishkit.stewardship.source.canonical import InvalidSourcePayload
+from parishkit.stewardship.source.canonical import (
+    InvalidSourcePayload,
+    SourceReferenceSkew,
+)
 from parishkit.stewardship.source.failures import settle_failed_read
 from parishkit.stewardship.source.leases import (
     SourceLeaseUnavailable,
@@ -91,6 +95,50 @@ def test_provider_transience_does_not_persist_response_text(tmp_path):
     assert result.state == "retry_wait"
     log = OperationalLog.objects.get(event="source_provider_failed")
     assert log.level == "WARNING" and "PRIVATE" not in str(log.context)
+
+
+@pytest.mark.parametrize(
+    "error,failure",
+    [
+        (SourceReferenceSkew("PRIVATE-CENSUS"), "shifted_scan"),
+        (SourceLoadBudgetExceeded("PRIVATE"), "provider_timeout"),
+    ],
+)
+def test_skew_and_a_slow_provider_retry_instead_of_failing(tmp_path, error, failure):
+    """A record added between two collections' reads, or a load that ran out
+    of time, is retried as a provider failure, never a CRITICAL invalid-data
+    failure (#387)."""
+    credential, execution, lease, *_ = setup(tmp_path)
+    attempt = begin_refresh_attempt(execution, lease, credential)
+    result = settle_failed_read(execution, error, source_claim=lease)
+    assert result.state == "retry_wait"
+    assert SourceSnapshot.objects.get(pk=attempt.snapshot_id).state == "rejected"
+    assert SourceMutationLease.objects.get().owner_id is None
+    log = OperationalLog.objects.get(event="source_provider_failed")
+    assert log.level == "WARNING" and log.context["failure"] == failure
+    assert not OperationalLog.objects.filter(event="source_refresh_invalid").exists()
+    assert "PRIVATE" not in str(log.context)
+
+
+def test_skew_that_persists_through_every_retry_ends_permanent(tmp_path, monkeypatch):
+    """A reference that stays dangling on the last allowed attempt fails the
+    refresh for good, still logged as the provider failure it was retried
+    as (``shifted_scan``), at CRITICAL, never as invalid data (#387)."""
+    from parishkit.stewardship.source import outcomes
+
+    # This claim's first attempt is the last one allowed.
+    monkeypatch.setattr(outcomes, "MAX_AUTOMATIC_ATTEMPTS", 1)
+    credential, execution, lease, *_ = setup(tmp_path)
+    attempt = begin_refresh_attempt(execution, lease, credential)
+    result = settle_failed_read(
+        execution, SourceReferenceSkew("PRIVATE-CENSUS"), source_claim=lease
+    )
+    assert result.state == "failed" and execution.control.finished.is_set()
+    assert SourceSnapshot.objects.get(pk=attempt.snapshot_id).state == "rejected"
+    log = OperationalLog.objects.get(event="source_provider_failed")
+    assert log.level == "CRITICAL" and log.context["failure"] == "shifted_scan"
+    assert not OperationalLog.objects.filter(event="source_refresh_invalid").exists()
+    assert "PRIVATE" not in str(log.context)
 
 
 def test_missing_preclaim_credential_fails_without_manufacturing_an_attempt(tmp_path):

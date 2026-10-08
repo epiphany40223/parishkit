@@ -7,7 +7,11 @@ from uuid import uuid4
 import pytest
 from test_parishsoft_source import initialized, page
 
-from parishkit.stewardship.source.canonical import InvalidSourcePayload
+from parishkit.parishsoft_pagination import ShiftedSourceScan
+from parishkit.stewardship.source.canonical import (
+    InvalidSourcePayload,
+    SourceReferenceSkew,
+)
 from parishkit.stewardship.source.corpus import normalize_core
 from parishkit.stewardship.source.giving import _amount, load_giving
 from parishkit.stewardship.source.windows import GivingPeriod, RefreshWindow
@@ -142,8 +146,6 @@ def test_explicit_anonymous_and_member_attributed_records(tmp_path):
     [
         {"familyID": True},
         {"familyID": "11"},
-        {"familyID": 999},
-        {"memberID": 999},
         {"familyID": 2, "memberID": 3},
         {"fundID": 10},
         {"organizationID": 6},
@@ -155,6 +157,14 @@ def test_explicit_anonymous_and_member_attributed_records(tmp_path):
 def test_invalid_pledge_does_not_become_verified_zero(tmp_path, changes):
     """Any in-scope validation failure invalidates the complete giving load."""
     with pytest.raises(InvalidSourcePayload):
+        read(tmp_path, [pledge(**changes)])
+
+
+@pytest.mark.parametrize("changes", [{"familyID": 999}, {"memberID": 999}])
+def test_dangling_pledge_reference_is_a_retryable_skew(tmp_path, changes):
+    """A gift naming a record the earlier reads never saw still fails the load,
+    as a shifted scan the worker retries (#387), not as invalid data."""
+    with pytest.raises(SourceReferenceSkew, match="no retained"):
         read(tmp_path, [pledge(**changes)])
 
 
@@ -175,7 +185,7 @@ def test_unknown_duid_cannot_fall_back_to_a_local_family_number(tmp_path, kind):
         if kind == "pledge"
         else {"contributions": [contribution(familyId=11, memberId=None)]}
     )
-    with pytest.raises(InvalidSourcePayload, match="no retained Family"):
+    with pytest.raises(SourceReferenceSkew, match="no retained Family"):
         read(tmp_path, **options)
 
 
@@ -235,7 +245,7 @@ def test_changed_duplicate_across_period_queries_invalidates_load(tmp_path):
             page([contribution(contributionAmount=200)]),
         ],
     )
-    with pytest.raises(InvalidSourcePayload, match="changed during"):
+    with pytest.raises(ShiftedSourceScan, match="changed during"):
         load_giving(
             client,
             corpus=normalize_core(source(), as_of=TODAY),

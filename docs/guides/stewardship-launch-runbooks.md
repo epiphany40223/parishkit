@@ -398,6 +398,24 @@ resolves after a refresh gets through the cleanup without a skip.
 entered by Families during the outage was never at risk: submissions are
 stored against the snapshot and reconciled on the next refresh.
 
+Two retried failures can also open `source_refresh_failed` once their
+retries run out. The System log entry `source_provider_failed` names which
+one:
+
+- `shifted_scan`: ParishSoft's data changed while it was being read. A
+  record was added between two collections' reads, a gift changed between
+  two reads, or the pages moved. One is normal on a busy day, and the retry
+  succeeds. If it persists through every retry, a record really does name
+  one ParishSoft does not return, such as a roster entry for a removed
+  Member or Ministry. Find it in ParishSoft (the debug log names the
+  check), fix it there, and use **Refresh now**.
+- `provider_timeout`: ParishSoft did not answer, or the full load did not
+  finish within its 15-minute limit. If it repeats on full loads while
+  quick updates succeed, the load has grown or ParishSoft has slowed. Check
+  how long recent full refreshes took (each refresh's task page) against
+  the limit and ParishSoft's status, and report it if loads keep
+  approaching the limit.
+
 ### Accepting a large ParishSoft change
 
 A refresh is refused with `source_destructive_change` when, compared with the
