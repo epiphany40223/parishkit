@@ -112,7 +112,8 @@ BEGIN
               AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
               AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
               AND login.authenticated_at=NEW.authenticated_at
-              AND login.authenticated_at BETWEEN clock_timestamp()-interval '5 minutes' AND clock_timestamp()) THEN
+              AND (login.authenticated_at BETWEEN clock_timestamp()-interval '5 minutes' AND clock_timestamp()
+                   OR public.stewardship_automation_fresh_v1(login.id,NEW.actor_id))) THEN
         RAISE EXCEPTION 'Withdrawal requires fresh Admin authentication' USING ERRCODE='42501';
     END IF;
     IF campaign.id IS NULL OR confirmation.target_state<>'scheduled'

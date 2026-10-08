@@ -13,6 +13,7 @@ from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from . import go_live_commands
+from .admin_caller import is_automation
 from .admin_editing import editable_configuration, principal
 from .confirmation_preview import collect_preview
 from .confirmation_readiness import collect_readiness
@@ -170,7 +171,10 @@ def confirm(
             .latest("created_at")
             .created_at
         )
-        if authenticated < completed:
+        # A full-scope automation session stands in for the sign-in after
+        # cleanup, as its SQL guard accepts (ADM-11 PR 5); cleanup must still
+        # be complete, which the lookup above requires.
+        if authenticated < completed and not is_automation(request):
             raise PermissionError("Authenticate with Google after cleanup finishes.")
         expires = datetime.fromisoformat(binding["expires"])
         observed = datetime.fromisoformat(binding["observed"])
