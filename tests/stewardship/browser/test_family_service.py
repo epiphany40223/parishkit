@@ -10,6 +10,7 @@ import pytest
 
 from parishkit.stewardship.responses.service import DEFAULT_TALENTS
 
+from ..test_financial_answers import CHECK
 from .test_family_financial import financial_form
 from .test_family_ministry import begin, ministry_form
 from .test_family_response import expect, review, show
@@ -487,3 +488,298 @@ def test_list_emptied_mid_session_removes_the_panel(page, component_origin):
         "cannot_serve": False,
         "talents": {},
     }
+
+
+def test_a_pledge_conflict_hidden_by_cannot_give_does_not_block_review(
+    page, component_origin
+):
+    """#384 M1: a changed pledge behind "cannot contribute" needs no choice.
+
+    This tab says the Family cannot contribute while another device changed
+    the pledge. The refresh records a pledge conflict inside the pledge
+    fields "cannot contribute" hides; Review must not stop on (and focus) a
+    choice the Family cannot see, and the hidden pledge is not sent.
+    """
+    form = financial_form()
+    form["financial"]["answers"] = {
+        "annual_pledge": "12.00",
+        "frequency": "annual",
+        "shares": {},
+    }
+    fresh = deepcopy(form)
+    fresh["financial"]["answers"]["annual_pledge"] = "30.00"
+    submissions, errors = [], []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    show(page, page.get_by_label(GIVE)).check()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    # The refreshed form keeps this tab's "cannot contribute".
+    expect(show(page, page.get_by_label(GIVE))).to_be_checked()
+    expect(page.get_by_label("Annual pledge (USD)")).to_be_hidden()
+    assert review(page)
+    expect(page.locator("[data-nav-error]")).to_be_hidden()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[1]["financial"] == {
+        "annual_pledge": "",
+        "frequency": "",
+        "shares": {},
+        "cannot_give": True,
+    }
+    assert not errors, errors
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["members.3", "ministries.members.3.join", "service.members.3.talents"],
+)
+def test_a_members_section_error_names_the_member_and_links_to_them(
+    page, component_origin, path
+):
+    """#384 L2: an error with no single field points at that Member's section."""
+    begin(
+        page,
+        component_origin,
+        service_form(),
+        lambda route: route.fulfill(
+            status=422,
+            json={"error": "validation", "fields": {path: "Review this person."}},
+        ),
+    )
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    link = page.locator('#family-flow-message a[href="#member-section-3"]')
+    expect(link).to_be_visible()
+    text = link.text_content()
+    assert text.endswith(": Review this person.") and not text.startswith(
+        ("Field", "Household member")
+    ), text
+    # The section itself carries the message, so focusing it reads the error.
+    expect(page.locator("#member-section-3-error")).to_have_text("Review this person.")
+    expect(page.locator("#member-section-3")).to_have_attribute(
+        "aria-describedby", "member-section-3-error"
+    )
+    link.click()
+    expect(page.locator("#member-section-3")).to_be_focused()
+    # A change in the section is the correction: the line and its
+    # description go.
+    page.get_by_label("Painter").check()
+    expect(page.locator("#member-section-3-error")).to_have_count(0)
+    expect(page.locator("#member-section-3")).not_to_have_attribute(
+        "aria-describedby", "member-section-3-error"
+    )
+
+
+def pledged(annual_pledge="12.00", frequency="annual"):
+    """The financial form with a recorded pledge, and a copy for the refresh."""
+    form = financial_form()
+    form["financial"]["answers"] = {
+        "annual_pledge": annual_pledge,
+        "frequency": frequency,
+        # A positive pledge needs a way to give.
+        "shares": {CHECK: ""},
+    }
+    return form, deepcopy(form)
+
+
+def test_a_hidden_zero_pledge_frequency_conflict_does_not_block_review(
+    page, component_origin
+):
+    """#384 M1: a frequency choice hidden by a zero pledge needs no choice."""
+    form, fresh = pledged()
+    fresh["financial"]["answers"]["frequency"] = "monthly"
+    submissions = []
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label("Annual pledge (USD)"))).to_have_value("0")
+    expect(page.get_by_label("Pledge frequency (required)")).to_be_hidden()
+    assert review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[1]["financial"]["annual_pledge"] == "0"
+    assert submissions[1]["financial"]["frequency"] == ""
+
+
+@pytest.mark.parametrize("edited", [False, True])
+def test_unchecking_cannot_give_after_a_refresh_never_restores_a_stale_pledge(
+    page, component_origin, edited
+):
+    """#784: the pledge set aside by "cannot contribute" meets the refresh.
+
+    Recorded 12; another device changes it to 30; this tab checks "cannot
+    contribute" (after changing the pledge to 20 itself, when ``edited``)
+    and submits; the refresh comes back; the Family unchecks the box. An
+    untouched pledge shows the refreshed 30; one this tab changed asks which
+    to keep. 12 is never restored and sent.
+    """
+    form, fresh = pledged()
+    fresh["financial"]["answers"]["annual_pledge"] = "30.00"
+    submissions = []
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    if edited:
+        show(page, page.get_by_label("Annual pledge (USD)")).fill("20.00")
+    show(page, page.get_by_label(GIVE)).check()
+    review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(show(page, page.get_by_label(GIVE))).to_be_checked()
+    page.get_by_label(GIVE).uncheck()
+    pledge = page.get_by_label("Annual pledge (USD)")
+    if edited:
+        choice = page.get_by_role("radio", name="Use my edit", exact=False)
+        expect(choice).to_be_visible()
+        assert (
+            not review(page)
+            or page.get_by_role("button", name="Submit to Sample Parish").count() == 0
+        )
+        show(page, choice).check()
+        expect(pledge).to_have_value("20.00")
+    else:
+        expect(pledge).to_have_value("30.00")
+        expect(
+            page.get_by_role("radio", name="Use my edit", exact=False)
+        ).to_have_count(0)
+    assert review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    assert submissions[1]["financial"]["annual_pledge"] == (
+        "20.00" if edited else "30.00"
+    )
+
+
+def refreshing_twice(submissions, *fresh):
+    """Each Submit returns the next refreshed form; the last one is accepted."""
+
+    def submit(route):
+        submissions.append(route.request.post_data_json["answers"])
+        if len(submissions) <= len(fresh):
+            form = fresh[len(submissions) - 1]
+            route.fulfill(status=409, json={"error": "review_required", "form": form})
+        else:
+            route.fulfill(json={"accepted": True})
+
+    return submit
+
+
+def submit_again(page):
+    """Review and Submit, expecting the form to come back refreshed."""
+    assert review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+
+
+def finish(page, submissions):
+    """Review, Submit and return the accepted financial answers."""
+    assert review(page)
+    page.get_by_role("button", name="Submit to Sample Parish").click()
+    expect(
+        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
+    ).to_be_visible()
+    return submissions[-1]["financial"]
+
+
+def choose_my_edit(page):
+    """The changed-record choice is shown, blocks Review, and keeps this tab's."""
+    choice = page.get_by_role("radio", name="Use my edit", exact=False).first
+    expect(choice).to_be_visible()
+    choice.check()
+
+
+@pytest.mark.parametrize("hidden_first", [True, False])
+def test_two_refreshes_never_send_a_hidden_stale_pledge(
+    page, component_origin, hidden_first
+):
+    """#778 review: an open pledge choice survives a second refresh.
+
+    Recorded 12; this tab types 20; another device sets 30. Either this tab
+    checks "cannot contribute" before the first refresh (the choice is
+    recorded hidden), or after it (a visible choice, then hidden). A second
+    refresh follows; unchecking must still ask, never send 20 over 30.
+    """
+    form, fresh = pledged()
+    fresh["financial"]["answers"]["annual_pledge"] = "30.00"
+    submissions = []
+    begin(
+        page,
+        component_origin,
+        form,
+        refreshing_twice(submissions, fresh, deepcopy(fresh)),
+    )
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("20.00")
+    if hidden_first:
+        page.get_by_label(GIVE).check()
+    submit_again(page)
+    if not hidden_first:
+        expect(
+            show(page, page.get_by_role("radio", name="Use my edit", exact=False))
+        ).to_be_visible()
+        page.get_by_label(GIVE).check()
+    submit_again(page)
+    expect(show(page, page.get_by_label(GIVE))).to_be_checked()
+    page.get_by_label(GIVE).uncheck()
+    choose_my_edit(page)
+    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("20.00")
+    assert finish(page, submissions)["annual_pledge"] == "20.00"
+
+
+def test_cannot_give_set_on_another_device_asks_before_dropping_a_pledge(
+    page, component_origin
+):
+    """#778 review: another device's "cannot contribute" is a choice here."""
+    form, fresh = pledged()
+    fresh["financial"]["answers"] = {
+        "annual_pledge": "",
+        "frequency": "",
+        "shares": {},
+        "cannot_give": True,
+    }
+    submissions = []
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    show(page, page.get_by_label("Annual pledge (USD)")).fill("20.00")
+    submit_again(page)
+    expect(show(page, page.get_by_label(GIVE))).to_be_checked()
+    # Review stops on the choice instead of silently dropping 20.
+    review(page)
+    assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
+    # The choice rebuilds the page, so click rather than wait on its state.
+    show(page, page.get_by_label("Use my edit: my pledge")).click()
+    expect(page.get_by_label(GIVE)).not_to_be_checked()
+    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("20.00")
+    financial = finish(page, submissions)
+    assert financial["annual_pledge"] == "20.00" and not financial["cannot_give"]
+
+
+def test_a_zero_pledge_from_another_device_asks_before_dropping_a_frequency(
+    page, component_origin
+):
+    """#778 review: another device's zero pledge does not hide this tab's edit."""
+    form, fresh = pledged()
+    fresh["financial"]["answers"] = {
+        "annual_pledge": "0",
+        "frequency": "",
+        "shares": {},
+    }
+    submissions = []
+    begin(page, component_origin, form, refreshing(submissions, fresh))
+    show(page, page.get_by_label("Pledge frequency (required)")).select_option(
+        "monthly"
+    )
+    submit_again(page)
+    review(page)
+    assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
+    # Keep this tab's pledge, then its frequency.
+    choose_my_edit(page)
+    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("12.00")
+    choose_my_edit(page)
+    # The way to give was not this tab's edit, so it follows the record
+    # (none); a positive pledge needs one again.
+    show(page, page.locator(f"#financial-option-{CHECK}")).check()
+    financial = finish(page, submissions)
+    assert (financial["annual_pledge"], financial["frequency"]) == ("12.00", "monthly")
