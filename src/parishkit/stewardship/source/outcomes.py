@@ -321,7 +321,15 @@ def _superseding_digest(request):
 
 
 def admit_refresh_metadata(action, status):
-    """Compiled recovery/completion admission, never a generic terminal-state permit."""
+    """Compiled recovery/completion admission, never a generic terminal-state permit.
+
+    ``source_step`` admits one fetch admission or staging batch outside the
+    work order (attempts.source_step, #147). It is decided before any locked
+    evidence: the step has already locked its task rows, and the request's
+    admission is read without row locks.
+    """
+    if action == "source_step":
+        return admit_refresh_request(action, status)
     evidence = _Evidence(status)
     if action in {"hint", "claim", "recovery_hint"}:
         dependency = evidence.dependency
@@ -380,7 +388,19 @@ def admit_refresh_metadata(action, status):
                 # No-base fallback only queues a full dependency; it needs no
                 # source reservation, credential or external observation.
                 return True
-            lease = evidence.lease
+            # A row locked by someone else is in use: usually a source step
+            # (#147), which runs outside the work order this caller holds,
+            # together with the runtime row. Answer busy rather than make
+            # every work-lock waiter (and Family logins) wait for that step.
+            lease = (
+                SourceMutationLease.objects.select_for_update(skip_locked=True)
+                .filter(singleton=True)
+                .first()
+            )
+            if lease is None:
+                if not SourceMutationLease.objects.filter(singleton=True).exists():
+                    raise StorageInvariantError("Source ownership is not initialized.")
+                return False
             now = database_now()
             # Do not burn attempts while another owner or its drain window is
             # known to prevent acquisition. A later claim/acquire race still
