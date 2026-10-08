@@ -1051,13 +1051,17 @@ if:
   is the activation of the earliest configuration in the latest unbroken run
   of activations whose schedule settings equal the current ones, found the
   way `initial_source_at` in `source/health.py` finds a tenant's first
-  activation; other configuration changes do not move it; and
+  activation; other configuration changes do not move it;
 - its slot was not recorded as
   [skipped around a Family email](../background-processing/spec.md#skipped-around-family-emails).
   A window never stays open past its email's due time plus the two-hour send
   allowance, so a stuck or retrying send cannot keep refreshes skipped and
   the alarm silent; from then on held refreshes count as due, with the
-  bulk-send hold's allowance.
+  bulk-send hold's allowance; and
+- it did not fall while a go-live was
+  [holding scheduled refreshes](../background-processing/spec.md#refreshes-wait-for-go-live).
+  That hold is bounded, and the go-live's own full refresh starts it, so the
+  data is never older than the hold allows.
 
 With the nightly refresh alone at 02:00, the data is out of date at 02:30 if
 that refresh has not promoted. With full refreshes at 00:00 and every two
@@ -1120,8 +1124,11 @@ scheduled full refresh is 02:00 tomorrow.
 - The settings page no longer refuses a schedule for its gaps: it states the
   longest wait for new data and when the alarm would sound (see
   [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary)).
-- Go-live readiness is unchanged: it still requires a full refresh that
-  started within `source_stale_seconds`.
+- Go-live readiness still requires a full refresh that started within
+  `source_stale_seconds`. During a go-live it uses the go-live's own full
+  refresh, and the window runs while scheduled refreshes
+  [wait for the go-live](../background-processing/spec.md#refreshes-wait-for-go-live)
+  (see the [Go live page](../admin-portal/spec.md#go-live-page)).
 
 Pages show these times in the browser's time zone and email and the command
 line in the parish's, each sentence in one format, for example "ParishSoft

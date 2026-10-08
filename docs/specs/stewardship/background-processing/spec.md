@@ -367,8 +367,10 @@ Starting Production cleanup atomically acquires the Campaign go-live gate and
 creates one idempotent cleanup TaskRun. The campaign-work admission service
 rejects new Testing submissions, test sends, campaign edits, and ordinary
 Testing campaign work while the gate is held. Workers holding older hints
-recheck the gate before mutation. Source refresh, cleanup itself, and
-operational notifications are the only admitted background work.
+recheck the gate before mutation. Source refresh, cleanup itself, the
+[go-live sequencing](#go-live-sequencing) and operational notifications are
+the only admitted background work; scheduled refreshes
+[wait for the go-live](#refreshes-wait-for-go-live).
 
 The cleanup worker selects only rows captured by the request inventory and
 deletes them in bounded transactions ordered by stable primary key. This
@@ -394,6 +396,49 @@ with sanitized status. Exhausting automatic retries enters durable
 event, and offers explicit Admin retry or safe cancellation. Cancellation stops
 at a safe batch boundary, releases the gate transactionally, and leaves
 completed deletions intact.
+
+### Go-live sequencing
+
+> **Status:** target of
+> [#462](https://github.com/epiphany40223/parishkit/issues/462); until it
+> lands, the Administrator prepares the links by hand after cleanup.
+
+Between **Start go-live** and **Confirm Production** on the
+[Go live page](../admin-portal/spec.md#go-live-page), the system runs the
+steps in order by itself. The scheduler's go-live producer, built like the
+[ParishSoft refresh producer](#refresh-schedule), looks at the one open
+ProductionTransitionRequest on each loop and does at most one thing:
+
+1. **The go-live's full refresh.** The Start transaction already queued it as
+   an ordinary [manual request](#manual-request) whose actor is the
+   Administrator who started go-live, with a command identity derived from
+   the transition request, so a repeated Start or a crash cannot queue a
+   second one.
+2. **Prepare the links.** Once cleanup is `cleanup_complete` and that refresh
+   (or a later one) has promoted, and the Family population matches the
+   current snapshot and generation, it requests the inactive Family link
+   preparation through the existing owner, with the same actor and a command
+   identity derived from the transition request and the snapshot. Preparation
+   then runs as it does today.
+3. **Prepare again when the links go stale.** Prepared links are bound to the
+   source snapshot and generation, so any promotion makes them stale, even
+   one that changes no Family. When the ready preparation is no longer
+   current, the producer cancels it through the existing discard path and,
+   once disposal finishes, requests a new one on current data. At most three
+   preparations run automatically per refresh hold; after that the step stops
+   with "ParishSoft data keeps changing; try again later" and **Retry**.
+4. **Retry failures.** A failed cleanup or preparation keeps its existing
+   automatic retries. When they are exhausted, the step shows its failure
+   and **Retry**, which uses the existing retry paths.
+
+The producer never confirms Production, never starts cleanup and never
+changes global mode or campaign lifecycle: those stay with the two
+Administrator actions. Every request it makes is an ordinary command that the
+existing owners admit and audit, so a refused request (the gate was released,
+the campaign ended) is simply not retried. No new table is needed: progress
+is read from the transition request, the refresh requests and the
+preparation rows that already exist. Nothing runs for a deployment in
+Production, because it has no open transition request.
 
 ### Schedule replacement and removal
 
@@ -1005,6 +1050,36 @@ uses this allowance, and it does not run later. Sending
 never waits on source age: Family preparation requires only that the
 population match the current source generation, which a held refresh leaves
 unchanged.
+
+#### Refreshes wait for go-live
+
+> **Status:** target of
+> [#462](https://github.com/epiphany40223/parishkit/issues/462).
+
+From **Start go-live** until Production is confirmed or go-live is stopped,
+the scheduler holds every scheduled ParishSoft refresh: the quick (delta)
+slots and every scheduled full slot, the nightly one included. Held means
+what it means for a [bulk send](#deltas-wait-for-a-bulk-family-send): the
+slot is due and runs later as a catch-up, it creates no command, task or
+failure, and the scheduler logs `source_refresh_held` once per held slot. A
+[manual request](#manual-request) still runs; the Go live page says that it
+makes the system [prepare the links again](#go-live-sequencing).
+
+The hold is derived from durable state, with no new flag: it is on while the
+current Testing campaign has a ProductionTransitionRequest in a state that
+owns the go-live gate, and it ends at whichever comes first:
+
+- the request is activated or cancelled;
+- 60 minutes after the go-live's latest full refresh promoted;
+- 3 hours after Start, which bounds a go-live whose refresh never promotes.
+
+After the hold ends, the first scheduler loop creates the current slots'
+refreshes, which catch up, and the Go live page offers **Refresh and prepare
+again**. Slots due while the hold was on do not count toward
+[ParishSoft data that is out of date](../operations/spec.md#parishsoft-data-age-and-connection),
+and the ParishSoft health line reads "Scheduled refreshes are waiting for
+go-live" instead of an alarm. A deployment in Production never holds a
+refresh this way.
 
 ### Full cycle
 
