@@ -488,7 +488,9 @@ Notes on the groups:
   [Family directory](../reports/spec.md#family-directory) (with Family
   campaign codes and its mailing columns). Reports always show the current
   campaign. Ministry leaders see only their own Ministries in the Ministry
-  entries. Additional information and Ministry follow-up show their open
+  entries; the Ministry report and follow-up pages read that scope in SQL
+  from the viewer's current rules, as the Ministry exports do (#389), so the
+  page code cannot widen it. Additional information and Ministry follow-up show their open
   counts. Ministry follow-up has no assignment (#552): a request keeps its
   status, notes and outcome, and its Ministry leader handles it.
 - **Emailed reports** is a new page listing the past daily and weekly

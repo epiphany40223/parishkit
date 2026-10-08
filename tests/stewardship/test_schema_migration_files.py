@@ -72,6 +72,9 @@ FROZEN = {
     "0037_critical_ack_guard.sql": (
         "5a4f8bd815b786e3a42d1bf195d5dcf68c992343a418912b6d6d008c3b00c3aa"
     ),
+    "0038_ministry_page_scope.sql": (
+        "b721dc1dfdc0e52b816ae81a5e9b4fd49f02174bed0bc5778ebefc57ab9cb596"
+    ),
 }
 
 

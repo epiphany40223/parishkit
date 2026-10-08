@@ -47,11 +47,54 @@ def setup(harness):
     return harness
 
 
+def reader(harness, roles=("staff",), scope=()):
+    """A real portal user whose current rules grant ``roles`` and ``scope``.
+
+    The pages read their role scope in SQL from the actor's current rules
+    (#389 L3), so a synthetic Principal is not enough: each (roles, scope)
+    gets its own address rule, Ministry assignments and PortalUser once per
+    test database, and the Principal matches what those rules grant.
+    """
+    from django.utils import timezone
+
+    from parishkit.stewardship.accounts.policy_models import PortalUser
+
+    key = (tuple(sorted(roles)), tuple(sorted(scope)))
+    email = "reader-{}-{}@example.org".format(
+        "-".join(key[0]), "-".join(map(str, key[1])) or "all"
+    )
+    # Once per test database: a later harness (after an activation) reuses
+    # the user and the rules it already added.
+    user = PortalUser.objects.filter(google_subject=email).first()
+    if user is None:
+        store = harness.service.store
+        records = [address(email, roles=roles)] + [
+            assignment(email, ministry=duid) for duid in key[1]
+        ]
+        assert (
+            change(
+                store,
+                store.active(),
+                uuid4(),
+                [
+                    {"operation": "add", "section": "login_rules", **record}
+                    for record in records
+                ],
+            ).state
+            == "applied"
+        )
+        with transaction.atomic():
+            user = PortalUser.objects.create(
+                google_subject=email, email=email, verified_at=timezone.now()
+            )
+    return Principal(user.pk, frozenset(roles), frozenset(scope))
+
+
 def page(
     harness, *, roles=("staff",), scope=(), ministry=None, action="join", **filters
 ):
     """Read through actual restricted SQL grants, not the migration owner."""
-    actor = Principal(uuid4(), frozenset(roles), frozenset(scope))
+    actor = reader(harness, roles, scope)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
         return ministry_page(
             harness.campaign.pk,
@@ -545,3 +588,38 @@ def test_report_pages_never_wait_behind_the_work_lock(response_service, google):
                 cursor.execute("RESET statement_timeout")
     # The view was still audited: started and succeeded.
     assert AuditContext.objects.count() >= before + 2
+
+
+def test_the_page_scope_comes_from_the_actors_rules_in_sql(response_service):
+    """A Python principal that claims more than the rules grant sees only
+    what the rules grant (#389 L3); an actor with no rule sees nothing."""
+    from parishkit.stewardship.reports.ministry_followup import (
+        FollowupQuery,
+        followup_page,
+    )
+
+    harness = setup(response_service)
+    assert [row["duid"] for row in page(harness)["summaries"]] == [4, 9]
+    leader = reader(harness, ("ministry_leader",), (9,))
+    claims_staff = Principal(leader.identity, frozenset({"staff"}), frozenset())
+    nobody = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        with transaction.atomic():
+            widened = ministry_page(
+                harness.campaign.pk, MinistryQuery.parse({}), claims_staff
+            )
+        assert [row["duid"] for row in widened["summaries"]] == [9]
+        with transaction.atomic():
+            assert (
+                ministry_page(harness.campaign.pk, MinistryQuery.parse({}), nobody)[
+                    "summaries"
+                ]
+                == []
+            )
+        with transaction.atomic(), pytest.raises(PermissionError):
+            followup_page(harness.campaign.pk, FollowupQuery.parse({}), nobody)
+        with transaction.atomic():
+            rows = followup_page(
+                harness.campaign.pk, FollowupQuery.parse({}), claims_staff
+            )["rows"]
+        assert {row["ministry_duid"] for row in rows} <= {9}

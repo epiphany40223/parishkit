@@ -211,16 +211,18 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
     if action not in {"join", "leave"}:
         raise ValueError("Invalid Ministry action.")
     with connection.cursor() as cursor:
+        # SQL derives the role scope from the actor's current rules, as the
+        # export capture does (#389 L3); the Python checks above and below
+        # stay as a cross-check, and can only narrow what SQL returns.
         cursor.execute(
-            "SELECT stewardship_ministry_report_v1("
-            "campaign_uuid => %s, filters => %s::jsonb, operational => %s, "
-            "ministry_scope => %s::bigint[], ministry_id => %s, request_action => %s, "
+            "SELECT stewardship_ministry_report_for_v1("
+            "actor => %s, campaign_uuid => %s, filters => %s::jsonb, "
+            "ministry_id => %s, request_action => %s, "
             "page_limit => %s, page_offset => %s)::text",
             [
+                principal.identity,
                 campaign_id,
                 json.dumps(query.form_values()),
-                allows(principal, Capability.MINISTRY_REPORT),
-                sorted(value for value in principal.ministries if value < 2**31),
                 ministry_id,
                 action,
                 query.page_size,

@@ -148,20 +148,19 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
     if not can_follow_up(principal):
         raise PermissionError("Ministry follow-up access is unavailable.")
     with connection.cursor() as cursor:
+        # SQL derives the role scope from the actor's current rules, as the
+        # export capture does (#389 L3); the actor is also the viewer.
         cursor.execute(
-            "SELECT stewardship_ministry_followup_v1("
-            "campaign_uuid => %s, filters => %s::jsonb, operational => %s, "
-            "ministry_scope => %s::bigint[], viewer => %s, request_uuid => %s, "
-            "page_limit => %s, page_offset => %s)::text",
+            "SELECT stewardship_ministry_followup_for_v1("
+            "actor => %s, campaign_uuid => %s, filters => %s::jsonb, "
+            "request_uuid => %s, page_limit => %s, page_offset => %s)::text",
             [
+                principal.identity,
                 campaign_id,
                 # The frozen selection still reads an assignee filter
                 # (schema/ministry_followup.sql); without one every row
                 # fails it, so always send the neutral "any" (#552).
                 json.dumps(query.form_values() | {"assignee": "any"}),
-                allows(principal, Capability.MINISTRY_FOLLOWUP),
-                sorted(value for value in principal.ministries if value < 2**31),
-                principal.identity,
                 request_id,
                 query.page_size,
                 (query.page - 1) * query.page_size,
