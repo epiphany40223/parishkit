@@ -12,10 +12,11 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
+from parishkit.parishsoft_pagination import ShiftedSourceScan
 from parishkit.parishsoft_source import CoherentParishSoftClient
 from parishkit.stewardship.campaigns.intervals import financial_period_end
 
-from .canonical import InvalidSourcePayload
+from .canonical import InvalidSourcePayload, SourceReferenceSkew
 from .corpus import _date, _id, _put
 from .windows import GivingPeriod, RefreshWindow
 
@@ -83,7 +84,7 @@ def _family(row, corpus, *, kind):
     if member:
         value = corpus["member"].get(str(_id(member)))
         if value is None:
-            raise InvalidSourcePayload("Source giving has no retained Member.")
+            raise SourceReferenceSkew("Source giving has no retained Member.")
         member_family = value["family_key"]
     if not family:
         return member_family
@@ -93,7 +94,7 @@ def _family(row, corpus, *, kind):
     # Falling back to it can attach money to a different household.
     result = str(_id(family))
     if result not in corpus["family"]:
-        raise InvalidSourcePayload("Source giving has no retained Family.")
+        raise SourceReferenceSkew("Source giving has no retained Family.")
     if member_family is not None and member_family != result:
         raise InvalidSourcePayload("Source giving Family and Member disagree.")
     return result
@@ -207,7 +208,10 @@ def load_giving(client, *, corpus, window, as_of):
                     previous = seen[kind].get(identifier)
                     if previous is not None:
                         if previous != payload:
-                            raise InvalidSourcePayload(
+                            # Overlapping queries read minutes apart (#387):
+                            # a record edited in between is a shifted scan,
+                            # retried, not invalid data.
+                            raise ShiftedSourceScan(
                                 "Source giving changed during the load."
                             )
                         continue

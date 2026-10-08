@@ -10,6 +10,7 @@ from parishkit.parishsoft import (
 )
 from parishkit.parishsoft_changes import ChangeFeedIncomplete, load_family_changes
 from parishkit.parishsoft_households import load_family_slice
+from parishkit.parishsoft_pagination import SourceLoadBudgetExceeded
 from parishkit.parishsoft_source import CoherentParishSoftClient
 
 from .canonical import InvalidSourcePayload
@@ -189,6 +190,13 @@ def load_delta_source(
             previous_derived_counts=previous_derived_counts,
             maximum_drop_percent=maximum_drop_percent,
         )
+    except SourceLoadBudgetExceeded:
+        # A slow provider is retried as itself (#387); a full fallback would
+        # only take longer. Every other ValueError here, including a
+        # SourceReferenceSkew or ShiftedSourceScan inside the delta's slices,
+        # means the delta cannot be safely scoped and falls back to a full
+        # refresh below, which reads every collection afresh.
+        raise
     except (ConfigError, KeyError, TypeError, ValueError, OverflowError):
         raise ChangeFeedIncomplete(
             "The Family delta cannot be safely scoped."

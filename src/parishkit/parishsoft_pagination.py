@@ -23,6 +23,15 @@ class ShiftedSourceScan(IncompleteSourceCollection):
     """
 
 
+class SourceLoadBudgetExceeded(IncompleteSourceCollection):
+    """The provider answered too slowly for the load to finish in its time.
+
+    A slow provider, not invalid data: a later read may finish in time.
+    Request-count and byte bounds stay IncompleteSourceCollection, since
+    runaway paging or an oversized corpus does not fix itself by retrying.
+    """
+
+
 @dataclass(frozen=True)
 class PageContract:
     """Published field names and response shape, not caller-entered HTTP options."""
