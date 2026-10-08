@@ -939,7 +939,8 @@ read-only until it answers. A notice names the markup sanitizing removed
 request, which never renews the idle session, also returns the generated
 plain text. Generated
 plain text separates paragraphs with a blank line, starts list items with a
-hyphen (or a number), and writes each link as `label: URL`. While
+hyphen (or a number), writes each link as `label: URL`, and drops lines that
+hold only spaces or tabs (such as those left by indented HTML source). While
 "Generate plain text from HTML" is checked, the editor shows the server's
 generated plain text read-only; editing it (or "Edit plain text") unchecks
 the box and keeps the text, a saved revision whose plain text was edited
