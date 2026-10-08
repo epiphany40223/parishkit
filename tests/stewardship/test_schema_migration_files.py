@@ -66,6 +66,9 @@ FROZEN = {
     "0035_log_writer_allowlist.sql": (
         "15c6279086403b1e9a2311d22973c64952ef0c40e7fd994174a66dc2d1d76fd2"
     ),
+    "0036_portal_user_insert_guard.sql": (
+        "ef21882e62ca8bd4ea0ee97c6ca918c01fb0d50c2dd233da5c6922b2f2eb76ce"
+    ),
 }
 
 

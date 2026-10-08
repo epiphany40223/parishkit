@@ -8,7 +8,6 @@ import psycopg
 import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.models import F
-from django.utils import timezone
 
 from parishkit.stewardship.accounts import configuration_installation as installer
 from parishkit.stewardship.accounts.configuration_installation import install_request
@@ -28,6 +27,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from ..policy_factory import address, assignment, domain
 from .auth_builders import auth_runtime, signed_in, unguarded
+from .role_grants import seed_user
 from .test_background_grants_postgresql import task_login
 from .test_configuration_service_postgresql import (
     as_config_installer,
@@ -569,11 +569,10 @@ def test_the_review_counts_reach_as_the_page_does(auth_service, google):
         ("person@gmail.com", None, False),
         ("person@gmail.com", None, True),
     ):
-        PortalUser.objects.create(
+        seed_user(
             google_subject=str(uuid4()),
             email=email,
             hosted_domain=hosted,
-            verified_at=timezone.now(),
             disabled=disabled,
         )
     browser, login = signed_in()
@@ -597,11 +596,10 @@ def test_the_review_counts_reach_as_the_page_does(auth_service, google):
             proposal(store, kind="domain", identity="new.example", roles=["staff"]),
         )
         assert b"0 recorded Google accounts are authorized" in fresh.content
-        PortalUser.objects.create(
+        seed_user(
             google_subject=str(uuid4()),
             email="someone@new.example",
             hosted_domain="new.example",
-            verified_at=timezone.now(),
         )
         fresh = post(
             browser,

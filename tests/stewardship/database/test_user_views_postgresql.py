@@ -7,7 +7,6 @@ import psycopg
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from django.utils import timezone
 
 from parishkit.stewardship.accounts import user_views
 from parishkit.stewardship.accounts.authentication import AuthRuntime
@@ -19,6 +18,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from ..policy_factory import address, assignment, domain
 from .auth_builders import auth_runtime, signed_in
 from .campaign_builders import change
+from .role_grants import seed_user
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -63,11 +63,10 @@ def row(body, key):
 
 def identity(email, *, hosted=None, disabled=False):
     """A verified Google identity that never opened a session."""
-    return PortalUser.objects.create(
+    return seed_user(
         google_subject=str(uuid4()),
         email=email,
         hosted_domain=hosted,
-        verified_at=timezone.now(),
         disabled=disabled,
     )
 

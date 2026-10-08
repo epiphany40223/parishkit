@@ -12,7 +12,6 @@ from django.db import connection, transaction
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit import log_views
 from parishkit.stewardship.audit.models import (
@@ -28,7 +27,7 @@ from parishkit.stewardship.observability import Event
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import change
-from .role_grants import schema_owner
+from .role_grants import schema_owner, seed_user
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -517,10 +516,9 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
     # Entries by several distinct actors, so an actor lookup written per row
     # would show as many reads; one set lookup shows as exactly one.
     actors = [
-        PortalUser.objects.create(
+        seed_user(
             google_subject=f"actor-{index}",
             email=f"actor{index}@example.org",
-            verified_at=timezone.now(),
         ).pk
         for index in range(5)
     ]

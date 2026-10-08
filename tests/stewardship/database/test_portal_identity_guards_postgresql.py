@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.sessions.backends.db import SessionStore
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import F
 
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
@@ -213,3 +213,69 @@ def test_an_unrelated_integrity_error_is_not_a_denial(
         signed_in()
     assert "unexpected database invariant" in caplog.text
     assert PortalSession.objects.count() == 1
+
+
+def test_user_inserts_need_a_timestamp_inside_the_transaction(auth_service, google):
+    """Web may insert only an enabled, unattributed, version-1 user whose
+    verified_at lies inside the inserting transaction (#389, the #352
+    residual); SQL cannot see the sign-in itself. A sign-in still records one."""
+    with web_login():
+        assert signed_in()[1].status_code == 302
+        assert PortalUser.objects.count() == 1
+
+        def insert(**values):
+            """One direct insert, as a buggy web path could make."""
+            with transaction.atomic():
+                fields = dict(
+                    google_subject=str(uuid4()),
+                    email="synthetic@example.org",
+                    verified_at=database_now(),
+                )
+                return PortalUser.objects.create(**(fields | values))
+
+        for values in (
+            # Verified before this transaction began, or in the future.
+            dict(verified_at=database_now() - timedelta(seconds=5)),
+            dict(verified_at=database_now() + timedelta(minutes=5)),
+            dict(disabled=True),
+            dict(actor_id=uuid4()),
+            dict(google_subject=" "),
+            dict(email=""),
+        ):
+            with refused("verification inside this transaction"):
+                insert(**values)
+        # A fresh verification in the inserting transaction is admitted, with
+        # the database's own creation time.
+        fresh = insert()
+        assert fresh.verified_at <= PortalUser.objects.get(pk=fresh.pk).created_at
+
+
+def test_only_the_web_login_inserts_users():
+    """Another runtime login is refused even with a fresh verification."""
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.deployment import ServiceRole
+
+    from .test_background_grants_postgresql import task_login
+
+    with (
+        task_login(ServiceRole.WORKER),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute("RESET SESSION AUTHORIZATION")
+        cursor.execute(
+            "GRANT INSERT ON stewardship_portal_user TO pk_stewardship_worker"
+        )
+        cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_worker")
+        # A plain INSERT: the worker holds no SELECT for Django's RETURNING.
+        with (
+            pytest.raises(DatabaseError, match="Only the web login"),
+            transaction.atomic(),
+        ):
+            cursor.execute(
+                "INSERT INTO stewardship_portal_user (id, correlation_id, version, "
+                "google_subject, email, verified_at, disabled) VALUES "
+                "(%s, %s, 1, %s, 'synthetic@example.org', statement_timestamp(), "
+                "false)",
+                [uuid4(), uuid4(), str(uuid4())],
+            )

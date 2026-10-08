@@ -50,10 +50,13 @@ def login(service, *, authenticated_at=None):
 
     ``authenticated_at`` models an older Google sign-in; it defaults to now.
     """
-    user, _ = PortalUser.objects.get_or_create(
-        google_subject="synthetic-setup-admin",
-        defaults={"email": "admin@example.org", "verified_at": database_now()},
-    )
+    # One transaction, as the sign-in's: the PortalUser insert guard admits
+    # only a verification stamped inside the inserting transaction (#389).
+    with transaction.atomic():
+        user, _ = PortalUser.objects.get_or_create(
+            google_subject="synthetic-setup-admin",
+            defaults={"email": "admin@example.org", "verified_at": database_now()},
+        )
     request = RequestFactory().post("/admin/setup")
     request.session = SessionStore()
     issue_admin(
