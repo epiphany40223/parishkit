@@ -6,6 +6,7 @@ from uuid import UUID
 
 import pytest
 
+from parishkit.stewardship.reports.daily_digest import statistics_cards
 from parishkit.stewardship.reports.statistics import (
     StatisticsInputs,
     StatisticsUnavailable,
@@ -53,13 +54,13 @@ def observation(*, count=3, financial=True):
             promoted_at="2026-10-16T04:00:30+00:00",
             counts={"family": count, "member": count, "pledge": 0},
             pledge_count=0,
+            comparison_pledge_all="0.00",
             cursor=cursor(definition),
         ),
         corpus=dict(family=families, member=members, contact=contacts),
         ever_eligible=list(range(1, count + 1)),
         responses=[],
         refusals=[],
-        pledges=[],
     )
 
 
@@ -74,9 +75,8 @@ def test_active_statistics_and_exact_available_zero():
     assert result.active.eligible_email == result.active.deliverable_email == 3
     assert result.active.responses == 0
     assert result.active.annual_pledge.canonical == "0.00"
-    assert result.active.comparison_pledge.canonical == "0.00"
+    assert result.comparison_pledge_all.canonical == "0.00"
     assert result.active.no_deliverable_email == 0
-    assert result.inactive is None
     assert result.active.proportion("responses") == "0 out of 3 (0%)"
     assert result.giving.observed_at == datetime(2026, 10, 15, 4, tzinfo=UTC)
     assert result.giving.observed_at < result.source_as_of < result.observed_at
@@ -116,7 +116,7 @@ def test_absent_invalid_and_nonhead_email_never_add_eligible_families():
 
 
 @pytest.mark.parametrize("reason", ["inactive", "non_parishioner", "removed"])
-def test_formerly_eligible_subtotal_never_changes_active_denominator(reason):
+def test_formerly_eligible_family_never_changes_active_figures(reason):
     document = observation()
     document["responses"] = [[1, 1, "10.01"], [2, 4, "20.02"]]
     family = document["corpus"]["family"]["2"]
@@ -129,25 +129,19 @@ def test_formerly_eligible_subtotal_never_changes_active_denominator(reason):
         del document["corpus"]["family"]["2"]
         del document["corpus"]["member"]["2"]
         document["source"]["counts"].update(family=2, member=2)
-    ordinary = calculate(document)
-    expanded = calculate(document, include_inactive=True)
-    assert expanded.active == ordinary.active
-    assert expanded.active.families == 2 and expanded.active.responses == 1
-    assert expanded.active.annual_pledge.canonical == "10.01"
-    assert expanded.inactive.families == expanded.inactive.responses == 1
-    assert expanded.inactive.annual_pledge.canonical == "20.02"
-    assert expanded.inactive.comparison_pledge.available is (reason != "removed")
+    result = calculate(document).active
+    assert result.families == 2 and result.responses == 1
+    assert result.annual_pledge.canonical == "10.01"
 
 
-def test_never_eligible_nonparishioner_does_not_enter_either_population():
+def test_never_eligible_nonparishioner_does_not_enter_the_population():
     document = observation()
     document["ever_eligible"].remove(3)
     document["corpus"]["family"]["3"].update(
         parishioner=False, portal_eligible=False, email_eligible=False
     )
-    result = calculate(document, include_inactive=True)
+    result = calculate(document)
     assert result.active.families == result.active.active_members == 2
-    assert result.inactive.families == 0
 
 
 def test_no_source_and_observed_empty_are_different():
@@ -156,8 +150,9 @@ def test_no_source_and_observed_empty_are_different():
     assert available.active.families == 0
     assert available.active.proportion("responses") == "0 out of 0 (—)"
     empty["source"] = None
-    missing = calculate(empty, include_inactive=True)
-    assert missing.active is missing.inactive is missing.source_id is None
+    missing = calculate(empty)
+    assert missing.active is missing.source_id is None
+    assert not missing.comparison_pledge_all.available
 
 
 @pytest.mark.parametrize("financial,covered", [(False, True), (True, False)])
@@ -170,7 +165,7 @@ def test_disabled_financial_or_incomplete_source_is_not_observed_zero(
     result = calculate(document)
     assert result.financial_enabled is financial
     assert result.active.annual_pledge.available is financial
-    assert not result.active.comparison_pledge.available
+    assert not result.comparison_pledge_all.available
     assert result.giving is None
 
 
@@ -181,25 +176,60 @@ def test_unfinished_draft_financial_mapping_does_not_hide_known_population():
     assert result.financial_enabled and result.financial is None
     assert result.active.families == 3
     assert not result.active.annual_pledge.available
-    assert not result.active.comparison_pledge.available
+    assert not result.comparison_pledge_all.available
 
 
-def test_comparison_uses_exact_mapped_funds_period_and_signed_cents():
+def test_all_families_comparison_is_the_captured_aggregate():
+    """#728: the parish-wide total is the capture's sum, not a population's."""
     document = observation(count=1)
-    document["pledges"] = [
-        record("1200.01"),
-        record("-0.01"),
-        record("9999.00", fund_key="4"),
-        record("9999.00", effective_date="2025-10-01"),
-    ]
-    # The fifth source pledge belongs to an unrelated household. Its count is
-    # retained as coverage evidence, but its private value is not detached.
-    document["source"]["counts"]["pledge"] = 5
-    document["source"]["pledge_count"] = 5
+    # The SQL capture sums every snapshot pledge in the comparison funds and
+    # period, including other households'; only that aggregate is detached.
+    document["source"]["comparison_pledge_all"] = "1500.25"
     result = calculate(document)
-    assert result.active.comparison_pledge.canonical == "1200.00"
+    assert result.comparison_pledge_all.canonical == "1500.25"
     assert result.financial.comparison.funds == (9,)
     assert result.giving.through_date.isoformat() == "2026-10-15"
+
+
+def test_pre_728_retained_snapshot_shape_renders_unavailable():
+    """A real pre-#728 observation: per-Family rows, a count, no aggregate."""
+    document = observation(count=1)
+    del document["source"]["comparison_pledge_all"]
+    document["pledges"] = [record("1200.00")]
+    document["source"]["counts"]["pledge"] = 2
+    document["source"]["pledge_count"] = 2
+    document["responses"] = [[1, 4, "10.00"]]
+    result = calculate(document)
+    assert result.active.annual_pledge.canonical == "10.00"
+    assert not result.comparison_pledge_all.available
+    labels = dict(statistics_cards(result))
+    assert labels["Last year's pledges (all Families)"] == "Unavailable"
+
+
+@pytest.mark.parametrize("count", [False, -1, 1, "missing"])
+def test_incomplete_snapshot_pledge_count_is_not_observed_zero(count):
+    """Without proof of every snapshot pledge row, the total is Unavailable."""
+    document = observation()
+    if count == "missing":
+        del document["source"]["pledge_count"]
+    else:
+        document["source"]["pledge_count"] = count
+    result = calculate(document)
+    assert result.active.families == 3
+    assert not result.comparison_pledge_all.available
+
+
+@pytest.mark.parametrize("change", ["retained_before_728", "incomplete_giving"])
+def test_all_families_comparison_unavailable_is_never_zero(change):
+    """Older retained observations and incomplete giving show Unavailable."""
+    document = observation(count=1)
+    if change == "retained_before_728":
+        del document["source"]["comparison_pledge_all"]
+    else:
+        document["source"]["cursor"] = {}
+    result = calculate(document)
+    assert result.active.families == 1
+    assert not result.comparison_pledge_all.available
 
 
 def test_missing_latest_pledge_is_unavailable_but_response_is_counted():
@@ -207,32 +237,6 @@ def test_missing_latest_pledge_is_unavailable_but_response_is_counted():
     document["responses"] = [[1, 4, None]]
     result = calculate(document).active
     assert result.responses == 1 and not result.annual_pledge.available
-
-
-@pytest.mark.parametrize("count", [False, -1, 1])
-def test_incomplete_snapshot_pledge_count_is_not_observed_zero(count):
-    document = observation()
-    document["source"]["pledge_count"] = count
-    with pytest.raises(StatisticsUnavailable):
-        calculate(document)
-
-
-def test_out_of_population_pledge_cannot_become_a_trusted_detached_input():
-    document = observation(count=1)
-    document["pledges"] = [record("8888.00", family_key="2")]
-    document["source"]["counts"]["pledge"] = 1
-    document["source"]["pledge_count"] = 1
-    with pytest.raises(StatisticsUnavailable):
-        calculate(document)
-
-
-def test_detached_pledges_cannot_exceed_matching_snapshot_count():
-    document = observation(count=1)
-    document["pledges"] = [record("10.00"), record("20.00")]
-    document["source"]["counts"]["pledge"] = 1
-    document["source"]["pledge_count"] = 1
-    with pytest.raises(StatisticsUnavailable):
-        calculate(document)
 
 
 def test_document_detachment_round_trip_and_private_repr():
@@ -262,6 +266,7 @@ def test_document_detachment_round_trip_and_private_repr():
         lambda d: d.update(responses=[[1, 1, "1000000000.00"]]),
         lambda d: d.update(responses=[[999, 1, "1.00"]]),
         lambda d: d["source"].update(generation=True),
+        lambda d: d["source"].update(comparison_pledge_all="1.5"),
         lambda d: d["source"]["counts"].update(family=99),
         lambda d: d["corpus"]["member"]["1"].update(family_key="999"),
         lambda d: d["corpus"]["family"]["1"].update(email_eligible=False),
@@ -279,8 +284,6 @@ def test_malformed_trusted_inputs_fail_without_leaking_values(mutate):
 def test_strict_input_and_filter_types():
     with pytest.raises(TypeError):
         calculate_statistics({})
-    with pytest.raises(TypeError):
-        calculate(observation(), include_inactive=1)
     with pytest.raises(ValueError):
         calculate(observation()).active.proportion("arbitrary")
 

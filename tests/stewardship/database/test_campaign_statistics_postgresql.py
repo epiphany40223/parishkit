@@ -87,16 +87,21 @@ def test_actual_web_role_financial_source_and_readonly_guard(
         ) as selected,
     ):
         assert selected.statistics.source_id == snapshot.pk
-        assert selected.statistics.active.comparison_pledge.canonical == (
-            None if not covered else "0.00" if empty else "1200.00"
-        )
         assert calculate_statistics(selected.inputs) == selected.statistics
-        # The complete source includes a never-eligible Family's pledge, but
-        # only our report population's private values may leave the database.
-        assert "9999.00" not in selected.inputs.canonical
+        # #728: the never-eligible Family's comparison pledge counts in the
+        # all-Families total, as part of one aggregate only.
+        assert selected.statistics.comparison_pledge_all.canonical == (
+            None if not covered else "0.00" if empty else "11199.00"
+        )
+        # No Family's own pledge leaves the database, in or out of the
+        # population: only the aggregate is detached.
+        document = selected.inputs.document()
+        assert "pledges" not in document
         if covered and not empty:
-            assert selected.inputs.document()["source"]["pledge_count"] == 2
-            assert len(selected.inputs.document()["pledges"]) == 1
+            # The completeness proof is a plain count of every snapshot pledge.
+            assert document["source"]["pledge_count"] == 2
+        assert "9999.00" not in selected.inputs.canonical
+        assert "1200.00" not in selected.inputs.canonical
         with connection.cursor() as cursor:
             cursor.execute("SHOW transaction_read_only")
             assert cursor.fetchone() == ("on",)
@@ -174,7 +179,7 @@ def test_refusal_then_source_correction_changes_only_new_observations(
     assert after.document()["source"]["id"] != before.document()["source"]["id"]
 
 
-def test_source_inactivation_preserves_response_only_in_separate_subtotal(
+def test_source_inactivation_removes_the_family_from_active_statistics(
     live_response_service,
 ):
     from .response_builders import response_source
@@ -189,9 +194,8 @@ def test_source_inactivation_preserves_response_only_in_separate_subtotal(
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
     after = capture_statistics(harness.campaign.pk)
-    result = calculate_statistics(after, include_inactive=True)
+    result = calculate_statistics(after)
     assert result.active.families == result.active.responses == 0
-    assert result.inactive.families == result.inactive.responses == 1
     assert calculate_statistics(before).active.responses == 1
 
 
@@ -277,7 +281,7 @@ def test_revoked_user_is_denied_before_private_capture(response_service, monkeyp
         pytest.fail("Revoked users cannot read old or current statistics")
 
 
-@pytest.mark.parametrize("options", [{"include_inactive": 1}, {"abort": None}])
+@pytest.mark.parametrize("options", [{"abort": None}])
 def test_malformed_report_options_fail_before_data(response_service, options):
     principal = user("admin@example.org")
     with (
@@ -369,14 +373,14 @@ def test_archived_financial_observation_does_not_follow_a_new_global_source(
                 browser, f"/admin/reports/{harness.campaign.pk}/participation/"
             )
             assert response.status_code == 200
-            assert b"Archived campaign" in body and b"$1,200.00" in body
+            assert b"Archived campaign" in body and b"$11,199.00" in body
             # An archived campaign that is still current is reported; the
             # retired chooser (rule 10) goes to the reports root instead.
             response, _ = read(browser, "/admin/reports/campaigns/")
             assert response.status_code == 302
             assert response["Location"] == "/admin/reports/"
     assert result.source_id == retained.pk
-    assert result.active.comparison_pledge.canonical == "1200.00"
+    assert result.comparison_pledge_all.canonical == "11199.00"
     assert result.giving is not None
 
 
@@ -479,7 +483,7 @@ def test_inactive_family_refusal_and_head_address_are_not_detached(
     assert inputs.document()["refusals"] == []
     assert inputs.document()["corpus"]["contact"] == {}
     assert "valid@example.org" not in inputs.canonical
-    assert calculate_statistics(inputs, include_inactive=True).inactive.families == 1
+    assert calculate_statistics(inputs).active.families == 0
 
 
 @pytest.mark.parametrize("corrected_email", ["corrected@example.org", "invalid-text"])
@@ -552,13 +556,13 @@ def test_incomplete_draft_giving_mapping_keeps_population_readable(response_serv
         result = selected.statistics
         assert result.financial_enabled and result.financial is None
         assert result.active.families == 1
-        assert not result.active.comparison_pledge.available
+        assert not result.comparison_pledge_all.available
 
 
 @pytest.mark.parametrize(
     "excluded", [{"effective_date": "2027-01-01"}, {"fund_key": "4"}]
 )
-def test_unmapped_pledge_is_counted_for_coverage_but_not_detached(
+def test_unmapped_pledge_stays_out_of_the_all_families_total(
     response_service, excluded
 ):
     from ..financial_factory import record
@@ -570,9 +574,10 @@ def test_unmapped_pledge_is_counted_for_coverage_but_not_detached(
     )
     inputs = capture_statistics(response_service.campaign.pk)
     assert "7654.32" not in inputs.canonical
-    assert inputs.document()["source"]["pledge_count"] == 3
-    assert len(inputs.document()["pledges"]) == 1
-    assert calculate_statistics(inputs).active.comparison_pledge.canonical == "1200.00"
+    result = calculate_statistics(inputs)
+    # A pledge outside the comparison period or funds stays out of the
+    # all-Families total too (#728); the other Family's 9999.00 is in it.
+    assert result.comparison_pledge_all.canonical == "11199.00"
 
 
 @pytest.mark.parametrize("has_valid", [False, True])

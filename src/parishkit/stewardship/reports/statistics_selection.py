@@ -100,13 +100,19 @@ WITH selected AS MATERIALIZED (
     FROM active_heads h
     JOIN contact_payload c ON c.source_key='member:' || h.head_key
     CROSS JOIN LATERAL jsonb_array_elements(c.payload->'emails') e
-), report_families AS MATERIALIZED (
-    SELECT f.source_key AS family_key FROM family_payload f
-    WHERE f.payload->'portal_eligible'='true'::jsonb
-    UNION
-    SELECT f.family_duid::text FROM selected x
-    JOIN stewardship_family_campaign f ON f.campaign_id=x.id
-    WHERE f.first_eligible_at IS NOT NULL
+), comparison_pledges AS (
+    -- Every Family's pledges in the configured comparison funds and period,
+    -- whatever its status (#728). Only their sum leaves the database.
+    SELECT p.canonical::jsonb AS payload
+    FROM selected x JOIN selected_source s ON true
+    JOIN stewardship_snapshot_pledge m ON m.snapshot_id=s.id
+    JOIN stewardship_source_pledge p ON p.id=m.payload_id
+    WHERE x.configuration->'modules' ? 'financial'
+        AND p.fund_key IN (SELECT jsonb_array_elements_text(
+            x.configuration->'financial'->'comparison_fund_duids'))
+        AND p.canonical::jsonb->>'effective_date' BETWEEN
+            x.configuration->'financial'->>'comparison_start' AND
+            x.configuration->'financial'->>'comparison_end'
 ), latest AS (
     SELECT DISTINCT ON (r.family_id)
         f.family_duid, r.campaign_sequence, r.annual_pledge
@@ -124,8 +130,17 @@ SELECT jsonb_build_object(
     'source',CASE WHEN s.id IS NULL THEN NULL ELSE jsonb_build_object(
         'id',s.id,'generation',s.generation,'promoted_at',s.promoted_at,
         'counts',s.counts,'cursor',s.cursor,
+        -- A plain row count proves the snapshot's pledge set is complete
+        -- before its sum is trusted; it carries no Family's data.
         'pledge_count',(SELECT count(*) FROM stewardship_snapshot_pledge m
-            WHERE m.snapshot_id=s.id)) END,
+            WHERE m.snapshot_id=s.id),
+        -- One aggregate only (#728): no Family's own pledges are copied.
+        -- Deliberate decision: the sum trusts the source loader's validated
+        -- canonical amounts and ISO dates (source/giving.py) instead of
+        -- detaching per-Family rows for Python to re-validate.
+        'comparison_pledge_all',(SELECT round(COALESCE(sum(
+            (c.payload->>'amount')::numeric),0),2)::text
+            FROM comparison_pledges c)) END,
     'corpus',jsonb_build_object(
         'family',{FAMILIES}, 'member',{MEMBERS}, 'contact',{CONTACTS}),
     'ever_eligible',COALESCE((SELECT jsonb_agg(f.family_duid ORDER BY f.family_duid)
@@ -142,18 +157,7 @@ SELECT jsonb_build_object(
             WHERE h.family_key=r.family_duid::text
                 AND h.address=r.address)
         AND NOT EXISTS (SELECT 1 FROM stewardship_recipient_resolution q
-            WHERE q.refusal_id=r.id)),'[]'::jsonb),
-    'pledges',COALESCE((SELECT jsonb_agg(p.canonical::jsonb ORDER BY m.source_key)
-        FROM stewardship_snapshot_pledge m
-        JOIN stewardship_source_pledge p ON p.id=m.payload_id
-        WHERE m.snapshot_id=s.id AND x.configuration->'modules' ? 'financial'
-            AND p.family_key IN (SELECT family_key FROM report_families)
-            AND p.fund_key IN (SELECT jsonb_array_elements_text(
-                x.configuration->'financial'->'comparison_fund_duids'))
-            AND p.canonical::jsonb->>'effective_date' BETWEEN
-                x.configuration->'financial'->>'comparison_start' AND
-                x.configuration->'financial'->>'comparison_end'),
-        '[]'::jsonb)
+            WHERE q.refusal_id=r.id)),'[]'::jsonb)
 )::text
 FROM selected x
 LEFT JOIN selected_source s ON s.id=x.source_id
@@ -191,12 +195,10 @@ class StatisticsSelection:
 
 
 @contextmanager
-def statistics_report(store, user_id, *, campaign_id, include_inactive=False, abort):
+def statistics_report(store, user_id, *, campaign_id, abort):
     """Hold fresh Admin/Staff admission and read protection through consumption."""
     if any(not isinstance(value, UUID) for value in (campaign_id, user_id)):
         raise ValueError("Report identities must be canonical UUIDs.")
-    if type(include_inactive) is not bool:
-        raise ValueError("The inactive population option must be explicit.")
 
     def fresh(guard):
         """Current policy is checked again before any aggregate is handed off."""
@@ -205,7 +207,7 @@ def statistics_report(store, user_id, *, campaign_id, include_inactive=False, ab
 
     with CampaignReadGuard([campaign_id], authorize=fresh, abort=abort) as guard:
         inputs = capture_statistics(campaign_id)
-        result = calculate_statistics(inputs, include_inactive=include_inactive)
+        result = calculate_statistics(inputs)
         fresh(guard)
         guard.check()
         yield StatisticsSelection(inputs, result)

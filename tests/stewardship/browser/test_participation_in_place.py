@@ -26,6 +26,9 @@ pytestmark = pytest.mark.parametrize(
 
 APPLY = "#table-filters button[type=submit]"
 ZONE = "timezone=America%2FLos_Angeles"
+# The current-population answer's all-Families comparison card, which the
+# first page lacks: it shows that the statistics panel was swapped in place.
+REFRESHED = "$982,657.00"
 # Counts every AbortController.abort() call, so a test can see that a
 # swapped-out chart's page-wide listeners were removed.
 COUNT_ABORTS = """(() => {
@@ -55,18 +58,15 @@ def test_options_apply_in_place(page, component_origin):
     page.goto(component_origin + REAL + "?" + ZONE)
     page.evaluate(MARK)
     page.get_by_label("Chart population").select_option("current")
-    page.get_by_label("Show a separate inactive subtotal for statistics only").check()
+    # The inactive subtotal option was removed (#728).
+    expect(page.locator("input[name=inactive]")).to_have_count(0)
     offset = scroll_below(page, APPLY)
     gets = count_requests(page, "GET", "scope=current")
     page.locator(APPLY).click()
     visible(
         page.get_by_role("heading", name="Daily participation — Current population")
     )
-    visible(
-        page.get_by_role(
-            "heading", name="Inactive subtotal — separate from active statistics"
-        )
-    )
+    visible(page.locator("#participation-statistics dd", has_text=REFRESHED))
     assert page.evaluate(MARKED) == "kept"
     assert abs(page.evaluate("window.scrollY") - offset) < 40
     assert page.evaluate(
@@ -79,7 +79,7 @@ def test_options_apply_in_place(page, component_origin):
     assert page.url == (
         component_origin
         + REAL
-        + f"?scope=current&{ZONE}&inactive=yes"
+        + f"?scope=current&{ZONE}"
         + "&size=50&sort=date_asc#participation-statistics"
     )
     assert len(gets) == 1
@@ -99,9 +99,7 @@ def test_daily_table_refreshes_every_panel(page, component_origin):
     page.goto(component_origin + REAL + "?" + ZONE)
     page.evaluate(MARK)
     body = page.request.get(
-        component_origin
-        + REAL
-        + f"?scope=current&{ZONE}&inactive=yes&size=50&sort=date_asc"
+        component_origin + REAL + f"?scope=current&{ZONE}&size=50&sort=date_asc"
     ).text()
     page.route(
         lambda url: "sort=date_desc" in url,
@@ -110,11 +108,7 @@ def test_daily_table_refreshes_every_panel(page, component_origin):
         ),
     )
     page.locator("#table a.sort-link").first.click()
-    visible(
-        page.get_by_role(
-            "heading", name="Inactive subtotal — separate from active statistics"
-        )
-    )
+    visible(page.locator("#participation-statistics dd", has_text=REFRESHED))
     assert page.locator("input[name=population_scope]").input_value() == "current"
     assert page.evaluate(MARKED) == "kept"
 

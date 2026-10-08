@@ -27,7 +27,7 @@ from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.tables import paginate
 
 from .charts import render_participation
-from .daily_digest import population_cards, statistics_cards
+from .daily_digest import statistics_cards
 from .digest_presentation import participation_context
 from .documents import participation_document
 from .exact_models import ExactExportRequest
@@ -242,9 +242,7 @@ def _page_context(campaign_id, query, selected, principal):
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
     )
-    statistics = calculate_statistics(
-        capture_statistics(campaign_id), include_inactive=query.inactive
-    )
+    statistics = calculate_statistics(capture_statistics(campaign_id))
     mutable = True
     try:
         admit_campaign(campaign_id, mutating=True)
@@ -256,13 +254,6 @@ def _page_context(campaign_id, query, selected, principal):
         "selection": selected,
         "statistics": statistics,
         "cards": statistics_cards(statistics),
-        "inactive_cards": population_cards(
-            statistics.inactive,
-            financial_enabled=statistics.financial_enabled,
-            inactive=True,
-        )
-        if query.inactive
-        else (),
         "timezones": sorted(timezone_names()),
         "export_key": uuid4(),
         "exact_key": uuid4(),

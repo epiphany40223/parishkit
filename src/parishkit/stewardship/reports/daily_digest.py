@@ -76,7 +76,6 @@ class DailyDigestDocument:
             or chart.financial_enabled != statistics.financial_enabled
             or statistics.source_id is None
             or statistics.active is None
-            or statistics.inactive is not None
         ):
             raise ValueError("Daily digest inputs must share one exact observation.")
         if (
@@ -176,46 +175,43 @@ def _report_url(document, public_origin):
     return report_url(public_origin, document.report_path)
 
 
+# The one comparison figure (#728): the parish-wide total, plainly labelled.
+ALL_FAMILIES_COMPARISON = "Last year's pledges (all Families)"
+
+
 def statistics_cards(statistics):
-    """Reuse statistics proportions and exact money formatting without new math."""
-    return population_cards(
-        statistics.active, financial_enabled=statistics.financial_enabled
-    )
+    """Format the active population's cards; an absent observation is never zero.
 
-
-def population_cards(active, *, financial_enabled, inactive=False):
-    """Format either labeled subtotal; an absent observation is never zero."""
-    label = "Inactive" if inactive else "Active"
-    rows = [
-        (f"{label} Families", f"{active.families:,}" if active else "Unavailable"),
-        ("Active Members", f"{active.active_members:,}" if active else "Unavailable"),
-        (
-            "Families with eligible email",
-            active.proportion("eligible_email") if active else "Unavailable",
-        ),
-        (
-            "Families with deliverable email",
-            active.proportion("deliverable_email") if active else "Unavailable",
-        ),
-        (
-            "Families that have responded",
-            active.proportion("responses") if active else "Unavailable",
-        ),
+    With giving enabled, the cards end with the current annual pledges and the
+    all-Families comparison total (#728). The comparison figure is not a
+    subtotal of these Families: it covers every Family in the ParishSoft data.
+    """
+    active = statistics.active
+    labels = [
+        "Active Families",
+        "Active Members",
+        "Families with eligible email",
+        "Families with deliverable email",
+        "Families that have responded",
     ]
-    if financial_enabled:
-        rows.extend(
-            [
-                (
-                    "Current annual pledges",
-                    active.annual_pledge.display if active else "Unavailable",
-                ),
-                (
-                    "Configured comparison pledges",
-                    active.comparison_pledge.display if active else "Unavailable",
-                ),
-            ]
-        )
-    return tuple(rows)
+    values = (
+        [
+            f"{active.families:,}",
+            f"{active.active_members:,}",
+            active.proportion("eligible_email"),
+            active.proportion("deliverable_email"),
+            active.proportion("responses"),
+        ]
+        if active
+        else ["Unavailable"] * len(labels)
+    )
+    if statistics.financial_enabled:
+        labels += ["Current annual pledges", ALL_FAMILIES_COMPARISON]
+        values += [
+            active.annual_pledge.display if active else "Unavailable",
+            statistics.comparison_pledge_all.display,
+        ]
+    return tuple(zip(labels, values, strict=True))
 
 
 # One label for the card, the table column and the spec (#721).

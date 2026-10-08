@@ -153,10 +153,8 @@ whatever time zone draws the chart, and the axis names the campaign's zone.
 ## Population and calculation rules
 
 "Active" means current promoted ParishSoft eligibility. Current participation
-and financial cards/tables exclude Families that later became inactive by
-default; their Admin/Staff **Include inactive** option adds a separately labeled
-inactive subtotal/row set without changing the active denominator. Historical
-event views retain a submission made while the Family was eligible.
+and financial cards/tables exclude Families that later became inactive.
+Historical event views retain a submission made while the Family was eligible.
 
 A Family participates on the campaign-local date, resolved with the Campaign's
 immutable timezone snapshot, of its first live submission version. Repeat
@@ -173,14 +171,14 @@ Current cards use current eligibility and effective versions. Monetary values
 never derive from rounded installment displays.
 
 The participation graph exposes only its mutually exclusive **Historical as of
-day** / **Current population** scope control; it does not also expose **Include
-inactive**. Historical scope includes every Family first eligible on or before
-each day, so neither its denominator nor cumulative participant count can
-shrink and its percentage cannot exceed 100%. Current-population scope excludes
-currently inactive Families at every point. Statistics cards and current-scope
-detail tables may expose **Include inactive** using the separate-subtotal rule
-above. Digest parameters record whichever single population scope applies, so
-digest parity never combines the controls.
+day** / **Current population** scope control. Historical scope includes every
+Family first eligible on or before each day, so neither its denominator nor
+cumulative participant count can shrink and its percentage cannot exceed 100%.
+Current-population scope excludes currently inactive Families at every point.
+The statistics cards have no inactive subtotal; the Participation page ignores
+the retired `inactive` query parameter so old bookmarks still load. Digest
+parameters record whichever single population scope applies, so digest parity
+never combines the controls.
 
 Eligible email follows active `get_family_heads()` Members with at least one
 syntactically valid normalized address. Publish privacy flags do not suppress
@@ -337,7 +335,13 @@ Cards show:
 - active Families with first live response out of active Families and
   percentage;
 - effective campaign annual pledge total, when enabled; and
-- mapped prior comparison pledge total, when available.
+- "Last year's pledges (all Families)": every Family-linked ParishSoft pledge
+  record in the mapped comparison funds and period (pledges with no Family are
+  not stored), across all Families in the source
+  snapshot whatever their status, when available. Every record counts; there
+  is no de-duplication. It is the only comparison figure: there is no
+  per-population comparison subtotal, and only this one aggregate is captured,
+  never any Family's own pledges.
 
 Giving cards include mapped funds/period and source as-of. Missing/incomplete
 source displays Unavailable, not zero.
