@@ -45,6 +45,21 @@ scheduler admits and hints every due row again. While the
 rows, so a scan admits at most two of its rows per task type and page (one
 wakeup per consumer process) and skips the rest the same way.
 
+The scheduler holds a session advisory lock on its one database connection
+so that only one scheduler runs. Before and after each producer and scan
+step it checks that it still owns that lock: the same thread, the same open
+connection, the check still inside its own session scope, and the lock
+itself as listed in `pg_locks`. The three local checks run on every step.
+Reading `pg_locks` briefly takes every lock-manager partition, so a passed
+server check stands for one second; it is still made at the start of every
+loop (#629). Within that second a session the server ended
+(`pg_terminate_backend`, `idle_session_timeout`, a dropped network) looks
+open until its next statement fails, so one check can pass. That is safe:
+any database work on the dead session fails at its next statement, the SQL
+guards that need scheduler ownership check its lock in the caller's own
+session, and the only exposure is a duplicate hint, which a consumer's
+claim ignores under the task's row lock.
+
 Ordinary Production campaign occurrences are created and claimed only when
 global mode is Production and lifecycle/date/admission predicates permit them.
 Testing rehearsal work is separately and immutably classified, never satisfies
