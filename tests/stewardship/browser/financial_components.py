@@ -37,6 +37,8 @@ def components(context, admin):
         ],
         source_pledge=MoneyAmount(120000),
         source_contributions=MoneyAmount(10000),
+        # Entered by Staff for the Family through Open form (#794).
+        staff_entered=True,
     )
     # A zero pledge has no frequency; without proof, source money is unavailable.
     unproven = row | dict(
@@ -48,6 +50,7 @@ def components(context, admin):
         shares=[],
         source_pledge=MoneyAmount(None),
         source_contributions=MoneyAmount(None),
+        staff_entered=False,
     )
     # Share methods are stable option identities, as the closed grammar requires.
     online, other = str(UUID(int=98)), str(UUID(int=99))

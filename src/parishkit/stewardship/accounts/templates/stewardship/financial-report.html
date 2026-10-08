@@ -4,7 +4,8 @@
 <h1>{% translate "Financial stewardship detail" %}</h1>
 {% aboutpage "financial-report" %}<p>{% translate "One row for each Family's current live pledge. A later submission replaces the earlier one; testing responses are excluded. Pledges are reported here and are never written to the parish source." %}</p>
 <p>{% translate "Family names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone when your browser allows it, otherwise UTC." %}</p>
-<p>{% translate "ParishSoft pledged and ParishSoft contributed are each Family's pledges and gifts recorded in ParishSoft for the comparison period, for side-by-side review." %}</p>{% endaboutpage %}
+<p>{% translate "ParishSoft pledged and ParishSoft contributed are each Family's pledges and gifts recorded in ParishSoft for the comparison period, for side-by-side review." %}</p>
+<p>{% translate "Entered by Staff says Yes when a Staff member entered this current pledge for the Family through Open form, and No when the Family submitted it. An earlier response that Staff entered and the Family later replaced shows No. The Families that submitted list counts every response Staff entered instead, so the two can differ." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
 {% if metadata.giving_through %}<p>{% blocktranslate with start=metadata.comparison_start|parish_date end=metadata.comparison_end|parish_date through=metadata.giving_through|parish_date %}ParishSoft pledges and contributions cover the comparison period {{ start }} — {{ end }}, with contributions through {{ through }}.{% endblocktranslate %}</p>
 {% else %}<p class="notice">{% translate "ParishSoft pledges and contributions are unavailable: the latest giving data read from ParishSoft is not confirmed complete for this campaign's comparison period. Unavailable does not mean zero. A later full ParishSoft refresh may fill it in." %}</p>{% endif %}
@@ -51,15 +52,15 @@
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Financial result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Financial stewardship results' %}"><table>
-<caption>{% translate "Current live pledges by Family" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Annual pledge" as heading %}{% sort_heading table "pledge" heading %}<th scope="col">{% translate "Frequency and installment" %}</th><th scope="col">{% translate "Share methods" %}</th><th scope="col">{% translate "ParishSoft pledged" %}</th><th scope="col">{% translate "ParishSoft contributed" %}</th>{% translate "Responses" as heading %}{% sort_heading table "responses" heading %}</tr></thead><tbody>
+<caption>{% translate "Current live pledges by Family" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Annual pledge" as heading %}{% sort_heading table "pledge" heading %}<th scope="col">{% translate "Frequency and installment" %}</th><th scope="col">{% translate "Share methods" %}</th><th scope="col">{% translate "ParishSoft pledged" %}</th><th scope="col">{% translate "ParishSoft contributed" %}</th>{% translate "Responses" as heading %}{% sort_heading table "responses" heading %}<th scope="col">{% translate "Entered by Staff" %}</th></tr></thead><tbody>
 {% for row in table.rows %}<tr>
 <th scope="row">{{ row.family_name }}<br>{% translate "DUID" %} {{ row.family_duid }}{% if row.active is False %}<br>{% translate "Inactive" %}{% elif row.active is None %}<br>{% translate "Status unavailable" %}{% endif %}</th>
 <td>{{ row.annual.display }}</td>
 <td>{{ row.frequency_label }}{% if row.installment.available %}<br>{{ row.installment.display }}{% endif %}</td>
 <td>{% for share in row.shares %}{{ share.label }}{% if share.text %}: {{ share.text }}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None chosen" %}{% endfor %}</td>
 <td>{{ row.source_pledge.display }}</td><td>{{ row.source_contributions.display }}</td>
-<td>{% translate "Latest" %} <time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time><br>{% translate "First" %} <time datetime="{{ row.first_submitted_at|date:'c' }}" data-local-instant>{{ row.first_submitted_at|date:'c' }}</time><br>{% translate "Version" %} {{ row.family_version|number }}</td></tr>
-{% empty %}<tr><td colspan="7">{% translate "No matching pledges. Try Any status and Any amount, or clear the search and date filters." %}</td></tr>{% endfor %}</tbody></table></div>
+<td>{% translate "Latest" %} <time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time><br>{% translate "First" %} <time datetime="{{ row.first_submitted_at|date:'c' }}" data-local-instant>{{ row.first_submitted_at|date:'c' }}</time><br>{% translate "Version" %} {{ row.family_version|number }}</td><td>{% if row.staff_entered %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td></tr>
+{% empty %}<tr><td colspan="8">{% translate "No matching pledges. Try Any status and Any amount, or clear the search and date filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
 {% endblock %}

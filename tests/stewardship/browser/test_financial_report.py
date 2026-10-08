@@ -39,10 +39,19 @@ def test_financial_mobile_keyboard_and_accessibility(
         })).violations.map(({id,impact}) => ({id,impact}))""")
             == []
         )
+    # One row the Family submitted itself (No) and one Staff entered (Yes).
+    page.goto(component_origin + "/financial-unproven")
+    assert page.get_by_role("cell", name="No", exact=True).count() == 1
+    assert page.get_by_role("cell", name="Yes", exact=True).count() == 1
     page.goto(component_origin + "/financial-report")
     assert page.get_by_text("Example <Family>", exact=False).count() == 1
     assert page.get_by_text("Stock <gift>", exact=False).count() == 1
     assert page.get_by_role("cell", name="$1,234.50", exact=True).count() == 1
+    # Entered by Staff (#794): a column with Yes or No for each response.
+    assert page.get_by_role("columnheader", name="Entered by Staff").count() == 1
+    # The sample Family's current pledge was entered by Staff.
+    assert page.get_by_role("cell", name="Yes", exact=True).count() == 1
+    assert page.get_by_role("cell", name="No", exact=True).count() == 0
     assert page.get_by_text("$102.88", exact=False).count() == 1
     assert page.locator("[data-summary=annual-total]").inner_text() == "$62,959.50"
     assert page.get_by_text("contributions through June 30, 2026", exact=False).count()

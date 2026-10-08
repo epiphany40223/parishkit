@@ -1,5 +1,6 @@
 """Complete financial captures, immutable money and ownership under real roles."""
 
+import json
 from dataclasses import asdict
 from datetime import timedelta
 from io import BytesIO
@@ -311,3 +312,127 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 parameters=first.parameters,
             )
     assert FinancialExportSnapshot.objects.count() == 3
+
+
+def staff_entered(submission_id, admin_id):
+    """Mark one live submission as entered by Staff, as Open form records it.
+
+    Open form's own path is tested in test_open_form_postgresql; here only
+    the projection reading the marker matters, so the immutable submission
+    gets its #529 column directly with its guard bypassed for this one
+    statement (the test login is a superuser).
+    """
+    with work_transaction(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_submission SET entered_by_id = %s WHERE id = %s",
+            [admin_id, submission_id],
+        )
+
+
+def test_page_and_capture_say_whether_staff_entered_the_response(
+    response_service,
+):
+    """Entered by Staff for the effective response, on the page and in a capture.
+
+    Family 2's response is marked as Staff-entered; the others are their own.
+    The flag is a yes or no and never names the Staff member (#794).
+    """
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    harness = three_families(response_service)
+    actor = user("admin@example.org").pk
+    second = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=2)
+    staff_entered(second.effective_submission_id, actor)
+    page = report(harness)
+    flags = {row["family_duid"]: row["staff_entered"] for row in page["rows"]}
+    assert flags == {1: False, 2: True, 6: False}
+    request = capture(harness, actor)
+    document = FinancialExportSnapshot.objects.get(
+        pk=request.financial_snapshot_id
+    ).document
+    assert {row["family_duid"]: row["staff_entered"] for row in document["rows"]} == {
+        1: False,
+        2: True,
+        6: False,
+    }
+    assert str(actor) not in str(document)
+
+
+def test_only_the_current_response_counts_as_entered_by_staff(response_service):
+    """The column follows each Family's current response, not its first (#794).
+
+    - Family 2: Staff entered its first response, then the Family submitted
+      again as itself, so its current response reads No.
+    - Family 1: it submitted twice; only the later, current response is
+      marked as Staff-entered, so it reads Yes.
+    - Family 6: a Staff-marked Testing response stays out of the report; its
+      own live response reads No.
+    """
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+    from parishkit.stewardship.responses.models import Submission
+
+    harness = three_families(response_service)
+    actor = user("admin@example.org").pk
+    opened = harness.campaign.active_configuration.starts_at
+
+    def current(duid):
+        return FamilyCampaign.objects.get(
+            campaign=harness.campaign, family_duid=duid
+        ).effective_submission_id
+
+    first_of_two = current(2)
+    staff_entered(first_of_two, actor)
+    with campaign_clock(opened + timedelta(hours=4)), web_login():
+        again = family_session(harness, 2)
+        pledge(again, load_form(again), annual_pledge="600", frequency="weekly")
+    assert current(2) != first_of_two
+    with campaign_clock(opened + timedelta(hours=5)), web_login():
+        repeat = family_session(harness, 1)
+        pledge(repeat, load_form(repeat), shares={CHECK: ""})
+    staff_entered(current(1), actor)
+    # A Testing response for Family 6, marked as Staff-entered: a copy of its
+    # live row in Testing mode (guards bypassed for this fixture row only).
+    live = Submission.objects.get(pk=current(6))
+    with work_transaction(), connection.cursor() as cursor:
+        cursor.execute("SELECT * FROM stewardship_submission WHERE id = %s", [live.pk])
+        columns = [column.name for column in cursor.description]
+        values = dict(zip(columns, cursor.fetchone(), strict=True))
+        cursor.execute(
+            "SELECT max(campaign_sequence) + 1 FROM stewardship_submission "
+            "WHERE campaign_id = %s",
+            [live.campaign_id],
+        )
+        values.update(
+            id=uuid4(),
+            mode="test",
+            rehearsal_epoch_id=uuid4(),
+            entered_by_id=actor,
+            campaign_sequence=cursor.fetchone()[0],
+            baseline_id=uuid4(),
+            prior_submission_id=None,
+        )
+        values = {
+            key: json.dumps(value) if isinstance(value, dict | list) else value
+            for key, value in values.items()
+        }
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            f"INSERT INTO stewardship_submission ({', '.join(values)}) "
+            f"VALUES ({', '.join(['%s'] * len(values))})",
+            list(values.values()),
+        )
+    assert Submission.objects.filter(mode="test", entered_by_id=actor).count() == 1
+    flags = {
+        row["family_duid"]: row["staff_entered"] for row in report(harness)["rows"]
+    }
+    assert flags == {1: True, 2: False, 6: False}
+    request = capture(harness, actor)
+    document = FinancialExportSnapshot.objects.get(
+        pk=request.financial_snapshot_id
+    ).document
+    assert {row["family_duid"]: row["staff_entered"] for row in document["rows"]} == {
+        1: True,
+        2: False,
+        6: False,
+    }
