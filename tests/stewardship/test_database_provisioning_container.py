@@ -348,6 +348,64 @@ def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_
         timeout=60,
     )
     assert result.returncode == 0, result.stderr
+    recovery_admission(bootstrap, layout, tmp_path, configuration)
+
+
+def recovery_admission(bootstrap, layout, tmp_path, configuration):
+    """The full offline admission of admin-recovery, as its commands run it.
+
+    Its provisioned portal session grants are column grants only (#389 L6),
+    which ``admit_offline_database`` admits; the whole-table grant an
+    earlier release gave it is refused until migration 0027 revokes it.
+    """
+    recovery = replace(
+        bootstrap,
+        service_role=ServiceRole.ADMIN_RECOVERY,
+        postgres=replace(
+            bootstrap.postgres,
+            user="pk_stewardship_admin_recovery",
+            password_file=layout.database_password("admin-recovery"),
+        ),
+    )
+    recovery_file = tmp_path / "admin-recovery.json"
+    recovery_file.write_text(json.dumps(deployment_document(recovery)))
+    script = tmp_path / "admit_recovery.py"
+    script.write_text(
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from parishkit.stewardship.deployment import load_deployment\n"
+        "from parishkit.stewardship import operator_commands as commands\n"
+        "configuration = load_deployment(Path(sys.argv[1]), environ={})\n"
+        "commands.configure_operator_database(configuration)\n"
+        "from parishkit.stewardship.runtime_database import admit_offline_database\n"
+        "admit_offline_database(configuration)\n"
+    )
+
+    def admit():
+        """Run the admission in a fresh process, as the operator command does."""
+        return subprocess.run(
+            [sys.executable, str(script), str(recovery_file)],
+            text=True,
+            capture_output=True,
+            timeout=60,
+        )
+
+    result = admit()
+    assert result.returncode == 0, result.stderr
+    grant = (
+        "SELECT, UPDATE ON stewardship_portal_session {} pk_stewardship_admin_recovery"
+    )
+    with connect(configuration) as database, database.cursor() as cursor:
+        cursor.execute("GRANT " + grant.format("TO"))
+    try:
+        refused = admit()
+        # Refused by the column admission, not by some unrelated failure.
+        assert refused.returncode != 0
+        assert "column grants are excessive" in refused.stderr, refused.stderr
+    finally:
+        with connect(configuration) as database, database.cursor() as cursor:
+            cursor.execute("REVOKE " + grant.format("FROM"))
+    assert admit().returncode == 0
 
 
 def upgrade_noop(configuration, deployment, tmp_path):

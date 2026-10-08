@@ -614,18 +614,21 @@ longer an Administrator.
   `pk-stewardship revoke-automation-sessions --reason restore`. It is an
   offline operator command in the `admin-recovery` profile, on the existing
   `pk_stewardship_admin_recovery` login (which already revokes Admin sessions
-  for `recover-admin`); PR 2 adds to that login's offline grants `SELECT` and
-  column-level `UPDATE` (`revoked_at`, `end_reason`, `version`, `updated_at`,
-  `actor_id`, `correlation_id`) on `stewardship_automation_session`, and
-  `INSERT` on the notice table; offline logins have no column-level grants
-  today, so PR 2 extends `offline_grants` and `admit_offline_database` to
-  declare and verify them. Like `recover-admin`, it runs with every online
-  service stopped (the offline startup lease). It revokes every unrevoked,
-  unexpired session with `restore`, writing their audit events and notices
-  with plain `INSERT`s, and prints only a count. The operator may also run it
-  with `--reason
-  revoked_by_operator` to end every session at once. When OPS-06 lands, its
-  fenced initialization step does the same.
+  for `recover-admin`, through column grants only since #389: `SELECT` on `id`,
+  `principal_id`, `revoked_at`, `expires_at`, `last_activity_at` and `version`,
+  and `UPDATE` on `revoked_at`, `version`, `actor_id` and `correlation_id` of
+  `stewardship_portal_session`); PR 2 adds to that login's offline grants
+  `SELECT` and column-level `UPDATE` (`revoked_at`, `end_reason`, `version`,
+  `updated_at`, `actor_id`, `correlation_id`) on
+  `stewardship_automation_session`, and `INSERT` on the notice table; offline
+  logins have no column-level grants today, so PR 2 extends `offline_grants`
+  and `admit_offline_database` to declare and verify them. Like
+  `recover-admin`, it runs with every online service stopped (the offline
+  startup lease). It revokes every unrevoked, unexpired session with `restore`,
+  writing their audit events and notices with plain `INSERT`s, and prints only
+  a count. The operator may also run it with `--reason revoked_by_operator` to
+  end every session at once. When OPS-06 lands, its fenced initialization step
+  does the same.
 - **No rate limits.** Commands are not limited per session or per host
   (decision 12); only the `--watch` minimum interval and the page's own
   limits (for example a preview token's lifetime) apply. The approval page's
