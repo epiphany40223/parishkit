@@ -92,3 +92,49 @@ def test_restore_begin_refuses_a_bad_time_before_any_admission():
     """The time is checked before the profile or the database is touched."""
     with pytest.raises(ConfigError):
         operator_commands.restore_begin_command(object(), backup_at="soon", reason="")
+
+
+def test_restore_begin_reports_an_open_review_on_a_rerun(monkeypatch):
+    """A re-run for the same backup writes nothing and says so (#799)."""
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from uuid import UUID
+
+    from parishkit.stewardship.accounts import runtime_models
+    from parishkit.stewardship.campaigns import restore_review
+    from parishkit.stewardship.deployment import ServiceRole
+
+    calls = []
+    monkeypatch.setattr(
+        operator_commands, "admit_offline_service", lambda c: ServiceRole.ADMIN_RECOVERY
+    )
+    monkeypatch.setattr(
+        operator_commands, "RuntimeLayout", lambda c: SimpleNamespace(interlock=None)
+    )
+    monkeypatch.setattr(
+        operator_commands, "StartupLease", lambda *a, **k: nullcontext()
+    )
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda c: None
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_database.admit_offline_database", lambda c: None
+    )
+    monkeypatch.setattr(
+        restore_review, "begin_review", lambda **k: calls.append(k) or None
+    )
+    open_review = SimpleNamespace(restore_id=UUID(int=7))
+    monkeypatch.setattr(
+        runtime_models.SystemConfiguration,
+        "objects",
+        SimpleNamespace(get=lambda: open_review),
+    )
+    result = operator_commands.restore_begin_command(
+        object(), backup_at="20541005T020000Z", reason=""
+    )
+    assert result == {
+        "restore_review_already_open": True,
+        "restore_id": str(UUID(int=7)),
+        "backup_at": "2054-10-05T02:00:00+00:00",
+    }
+    assert calls and calls[0]["reason"] == "restore"

@@ -759,7 +759,10 @@ operator runs `pk-stewardship restore-begin --backup-at SET_NAME` in the
 `admin-recovery` profile. It records a `restore_begin` runtime transition that
 sets the durable `restore_review_required` gate with a new restore id and the
 backup's time, and changes nothing else. Restarting recovery keeps that
-review; performing another restore starts a new one. A restore never creates,
+review: a re-run for the same backup while its review is open is refused in
+SQL, and the command reports the open review and writes nothing, so the
+restore cutoff never moves. Performing another restore (a different backup)
+starts a new one. A restore never creates,
 replaces or cancels a Family code or link: the codes and links Families were
 emailed keep working once the site is released (the Administrator's hard
 rule, issue 537). The
@@ -816,7 +819,9 @@ the backup is not in the restored data; if it was invited before the restore,
 a refresh after release invites it again. Holds never apply to operational
 notifications. An undecided hold keeps its own email back for good. An
 undecided invitation also keeps back every reminder of that Family, so the
-release preview counts those Families. Settling holds after release is #757.
+release preview counts those Families. After release an Administrator
+decides the remaining holds on the
+[Held emails page](../admin-portal/spec.md#restore-release).
 The Admin can resolve each hold as assumed delivered or authorize resend after
 acknowledging duplicate risk; neither the restore command nor the release may
 globally treat unknown delivery as provider success.

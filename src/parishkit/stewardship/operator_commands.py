@@ -274,7 +274,9 @@ def restore_begin_command(configuration, *, backup_at, reason):
     Run after the database is restored and before web starts. Family access,
     Family mail and ordinary background work stay stopped until an
     Administrator releases the site from the Restore review page. No Family
-    code or link changes. Prints the new review's id and the backup time.
+    code or link changes. Prints the new review's id and the backup time; a
+    re-run for the same backup while its review is open changes nothing and
+    says so (#799).
     """
     instant = parse_backup_time(backup_at)
     if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
@@ -293,6 +295,16 @@ def restore_begin_command(configuration, *, backup_at, reason):
                 reason=reason or "restore",
                 correlation_id=uuid4(),
             )
+            if transition is None:
+                # Already open for this backup (a re-run): nothing written.
+                from .accounts.runtime_models import SystemConfiguration
+
+                runtime = SystemConfiguration.objects.get()
+                return {
+                    "restore_review_already_open": True,
+                    "restore_id": str(runtime.restore_id),
+                    "backup_at": instant.isoformat(),
+                }
         finally:
             connection.close()
     return {

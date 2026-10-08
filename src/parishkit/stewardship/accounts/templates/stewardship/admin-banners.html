@@ -16,6 +16,7 @@
   {% if admin_chrome.admin %}<p><a href="{% url 'admin:system_health' %}#health-debug-heading">{% translate "See debug logging in System health" %}</a></p>{% endif %}
 </aside>{% endif %}
 {% if admin_chrome.restored %}<aside class="notice notice-error">{% translate "Restore review is required. Normal campaign activity is unavailable." %}</aside>{% endif %}
+{% if admin_chrome.admin and admin_chrome.held_invitations and not hide_held_banner %}<aside class="notice" data-held-invitations>{% blocktranslate count n=admin_chrome.held_invitations trimmed %}After a restore, {{ n }} Family's invitation is still held, so it gets no reminders until the hold is decided.{% plural %}After a restore, {{ n }} Families' invitations are still held, so they get no reminders until the holds are decided.{% endblocktranslate %} <a href="{{ admin_chrome.held_emails_url }}">{% translate "Held emails" %}</a></aside>{% endif %}
 {% if admin_chrome.paused %}<aside class="notice">{% translate "Live campaign email delivery is paused." %}
 {% if admin_chrome.delivery_pause %}<p>{% translate "Paused by" %}: {{ admin_chrome.delivery_pause.actor|default:"—" }}. {% translate "Reason" %}: {{ admin_chrome.delivery_pause.reason }}</p>
 <p>{% translate "Since" %} <time data-local-instant datetime="{{ admin_chrome.delivery_pause.since|instant }}">{{ admin_chrome.delivery_pause.since|instant }}</time> ({{ admin_chrome.delivery_pause.since|timesince }}).</p>

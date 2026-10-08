@@ -1,0 +1,33 @@
+{% load i18n stewardship %}{% comment %}
+  One table of held emails by send, with the per-send "Assume these were
+  sent" / "Send these again" previews and confirms. Shared by the Restore
+  review page and the Held emails page (#757). Include with groups (the
+  HeldGroup rows), step (the posted step's result), held_url (the page's
+  own address, which the forms post to) and released (true after release).
+  Both pages name their in-place region "restore-review", which these forms
+  land on.
+{% endcomment %}<table>
+<thead><tr><th scope="col">{% translate "Send" %}</th><th scope="col">{% translate "Not decided" %}</th><th scope="col">{% translate "Assumed sent" %}</th><th scope="col">{% translate "Send again" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead>
+<tbody>{% for group in groups %}<tr data-restore-group="{{ group.definition_id }}">
+<th scope="row">{% if group.kind == "initial" %}{% translate "Invitation" %}{% else %}{% translate "Reminder" %}{% endif %}, {% translate "due" %} <time datetime="{{ group.due_at|instant }}" data-local-instant>{{ group.due_at|instant }}</time></th>
+<td>{{ group.reachable }}{% if group.inert %} <span class="help">{% blocktranslate count n=group.inert trimmed %}(and {{ n }} that would not be sent now){% plural %}(and {{ n }} that would not be sent now){% endblocktranslate %}</span>{% endif %}</td><td>{{ group.assumed }}</td><td>{{ group.resend }}</td>
+<td>{% if step.group.definition_id == group.definition_id %}{% translate "See below" %}{% else %}{% if group.unreviewed %}<form method="post" action="{{ held_url }}#restore-review" data-in-place="restore-group-preview" data-in-place-message="{% translate 'Review the choice.' %}">{% csrf_token %}<input type="hidden" name="action" value="group-preview"><input type="hidden" name="definition" value="{{ group.definition_id }}"><input type="hidden" name="group_action" value="assume"><button type="submit" class="button-secondary">{% translate "Assume these were sent…" %}</button></form>{% endif %}
+{% if group.unreviewed %}<form method="post" action="{{ held_url }}#restore-review" data-in-place="restore-group-preview" data-in-place-message="{% translate 'Review the choice.' %}">{% csrf_token %}<input type="hidden" name="action" value="group-preview"><input type="hidden" name="definition" value="{{ group.definition_id }}"><input type="hidden" name="group_action" value="resend"><button type="submit" class="button-secondary">{% translate "Send these again…" %}</button></form>{% endif %}{% if not group.unreviewed %}{% translate "Decided" %}{% endif %}{% endif %}</td>
+</tr>{% endfor %}</tbody>
+</table>
+{% if step.group %}{% with group=step.group %}<div class="panel" data-restore-preview="{{ step.group_action }}">
+{% if not group.reachable %}<h3>{% blocktranslate count n=group.unreviewed trimmed %}Settle {{ n }} held email that would not be sent now{% plural %}Settle {{ n }} held emails that would not be sent now{% endblocktranslate %}</h3>
+<p class="help">{% translate "Each is for a Family that cannot be emailed, is waiting for its invitation, already got a later reminder, or has an invitation only a deliverability change would retry." %}</p>
+{% endif %}{% if step.group_action == "assume" %}{% if group.reachable %}<h3>{% blocktranslate count n=group.reachable trimmed %}Assume {{ n }} email was sent{% plural %}Assume {{ n }} emails were sent{% endblocktranslate %}</h3>{% endif %}
+<p>{% translate "They will not be sent again. Use this when the mail provider's sent log shows them." %}</p>
+{% else %}{% if group.reachable %}<h3>{% blocktranslate count n=group.reachable trimmed %}Send {{ n }} email again{% plural %}Send {{ n }} emails again{% endblocktranslate %}</h3>{% endif %}
+<p><strong>{% translate "A Family that already got this email will get a second copy." %}</strong> {% if released %}{% translate "They are sent shortly, with each Family's same code and link." %}{% else %}{% translate "They are sent once the site is released, with each Family's same code and link." %}{% endif %}</p>{% endif %}
+{% if step.group_action == "resend" and group.superseded %}<p class="notice" data-held-superseded>{% blocktranslate count n=group.superseded trimmed %}{{ n }} of these is for a Family that already got a later reminder. Sending it now would arrive out of order, so it is recorded as assumed sent instead.{% plural %}{{ n }} of these are for Families that already got a later reminder. Sending them now would arrive out of order, so they are recorded as assumed sent instead.{% endblocktranslate %}</p>{% endif %}
+{% if group.inert and group.reachable %}<p class="help">{% blocktranslate count n=group.inert trimmed %}This also settles {{ n }} held email that would not be sent now (the Family cannot be emailed, is waiting for its invitation, already got a later reminder, or has an invitation only a deliverability change would retry).{% plural %}This also settles {{ n }} held emails that would not be sent now (the Family cannot be emailed, is waiting for its invitation, already got a later reminder, or has an invitation only a deliverability change would retry).{% endblocktranslate %}</p>{% endif %}
+<form method="post" action="{{ held_url }}#restore-review" data-in-place="restore-group-confirm" data-in-place-message="{% translate 'Held emails settled.' %}">{% csrf_token %}<input type="hidden" name="action" value="group-confirm"><input type="hidden" name="definition" value="{{ group.definition_id }}"><input type="hidden" name="group_action" value="{{ step.group_action }}"><input type="hidden" name="count" value="{{ group.unreviewed }}">
+<label for="restore-evidence">{% translate "Why (kept in the System logs)" %}</label>
+<textarea id="restore-evidence" name="evidence" required maxlength="1024" rows="2"></textarea>
+<p class="help">{% translate "For example: the provider's sent log shows these went out at 9:05 AM." %}</p>
+<button type="submit" data-submit-waits>{% if step.group_action == "assume" %}{% translate "Confirm: assume sent" %}{% else %}{% translate "Confirm: send again" %}{% endif %}</button></form>
+<form method="post" action="{{ held_url }}#restore-review" data-in-place="restore-cancel" data-in-place-message="{% translate 'Nothing changed.' %}">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button type="submit" class="button-secondary">{% translate "Cancel" %}</button></form>
+</div>{% endwith %}{% endif %}

@@ -24,6 +24,25 @@ from .runtime_models import SystemConfiguration
 from .sessions import ADMIN_IDLE, database_now
 
 
+def _held_email_counts(configuration, campaign):
+    """``(invitations, undecided)`` held after a restore was released.
+
+    ``invitations`` is how many emailable Families' invitations are still
+    held (each gets no reminders until it is decided on the Held emails
+    page); ``undecided`` is every undecided held email. Zero during a review,
+    whose own page owns them, and free of queries when no restore ever began.
+    """
+    from parishkit.stewardship.campaigns import restore_review
+
+    if (
+        campaign is None
+        or configuration.restore_id is None
+        or configuration.restore_review_required
+    ):
+        return 0, 0
+    return restore_review.held_after_release(campaign.pk)
+
+
 def portal_chrome(request):
     """Use the view's authenticated principal, not browser roles or session data.
 
@@ -83,6 +102,7 @@ def portal_chrome(request):
                 .first(),
                 "url": reverse("admin:delivery_control", args=[campaign.pk]),
             }
+    held = _held_email_counts(configuration, campaign) if admin else (0, 0)
     # A view may place the page more precisely than its route can (#196).
     match = getattr(request, "resolver_match", None)
     placed = admin_navigation.placement(request)
@@ -102,6 +122,11 @@ def portal_chrome(request):
             "testing_recipient": configuration.testing_recipient if admin else None,
             "debug_in_production": _debug_in_production(configuration),
             "restored": configuration.restore_review_required,
+            # Families whose held invitation nobody decided at release (#757).
+            # One read of the undecided holds, none when no restore ever began.
+            "held_invitations": held[0],
+            "held_undecided": held[1],
+            "held_emails_url": reverse("admin:held_emails"),
             "paused": bool(campaign and campaign.delivery_paused),
             "delivery_pause": delivery_pause,
             "go_live": go_live,

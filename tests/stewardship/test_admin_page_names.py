@@ -61,6 +61,7 @@ TEMPLATES = {
     "delivery": "delivery.html",
     "delivery_refusals": "delivery-refusals.html",
     "delivery_refusal": "delivery-refusal.html",
+    "held_emails": "held-emails.html",
     "family_portal": "family-portal-maintenance.html",
     "presence": "presence.html",
 }

@@ -44,11 +44,6 @@ _FIELDS = {
 _REFUSALS = {"reauthenticate": 403, "changed": 409, "blocked": 409, "invalid": 400}
 
 
-def _fresh_or_refused(error):
-    """The guard's 42501 is a sign-in that lapsed between check and write."""
-    return getattr(error.__cause__, "sqlstate", None) == "42501"
-
-
 @require_http_methods(["GET", "HEAD", "POST"])
 def restore_review(request):
     """Show the review, or run one posted step and show it again in place."""
@@ -76,7 +71,7 @@ def restore_review(request):
         except IntegrityError as error:
             # The release guard's refusal (a purge or campaign change still
             # running) or a fresh-sign-in lapse between check and write.
-            if _fresh_or_refused(error):
+            if review.sign_in_lapsed(error):
                 result = {"refused": "reauthenticate"}
             elif request.POST.get("action") == "release-confirm" and (
                 "stale" not in str(error)
@@ -87,7 +82,7 @@ def restore_review(request):
                 # Another decision on the same hold won the race.
                 result = {"refused": "changed"}
         except DatabaseError as error:
-            if not _fresh_or_refused(error):
+            if not review.sign_in_lapsed(error):
                 raise
             result = {"refused": "reauthenticate"}
         except (ValueError, TypeError, KeyError):
@@ -147,7 +142,11 @@ def _step(request, principal, state):
             authenticated_at=signed_in,
             correlation_id=uuid4(),
         )
-        return {"settled": settled, "group_action": request.POST["group_action"]}
+        return {
+            "settled": settled.count,
+            "converted": settled.assumed_instead,
+            "group_action": request.POST["group_action"],
+        }
     if action == "release-preview":
         # The page offers no release while an email still needs a hold; a
         # posted preview is checked the same way (the SQL refuses too).
