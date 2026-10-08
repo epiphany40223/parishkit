@@ -7,7 +7,8 @@ from parishkit.stewardship.deployment import ServiceRole
 
 from .test_background_grants_postgresql import task_login
 
-pytestmark = pytest.mark.django_db(transaction=True)
+# Every test here asserts only a database grant or trigger property.
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.sql_rules]
 
 
 @pytest.mark.parametrize(

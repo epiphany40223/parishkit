@@ -24,6 +24,7 @@ from coverage.exceptions import CoverageException
 
 from .arguments import StewardshipArgumentParser
 from .quality import FLOOR, coverage_percentages, load_scope
+from .quality_select import build_map
 from .quality_sharding import partition, tree_digest
 
 DATABASE_TESTS = "tests/stewardship/database"
@@ -150,27 +151,44 @@ def child_status(result):
     return result.returncode
 
 
-def run_shard(root, output, index, count, basetemp=None):
+def coverage_arguments(scope):
+    """Branch coverage of the scope, with per-test contexts for the test map."""
+    return [
+        "--cov-branch",
+        *(f"--cov={module}" for module in scope.modules),
+        "--cov-report=",
+        "--cov-context=test",
+    ]
+
+
+def run_shard(root, output, index, count, basetemp=None, *, coverage=True, select=None):
     """Run one partition and, on shard one only, the baseline; require success.
 
     ``basetemp``, when given, is pytest's private temporary root, so packed
     partitions on one runner never share or prune each other's directories.
+    ``coverage=False`` (an "affected" run) skips measurement, and ``select``
+    (a ``quality_select`` file, which implies no coverage) partitions only
+    the selected tests. Either way the receipt says so, and ``combine``,
+    which full runs and release evidence need, refuses it.
     """
     partition([], index, count)
+    coverage = coverage and select is None
     scope = load_scope(root)
     digest = tree_digest(root)
     output = outside(root, output)
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     data = output / "coverage.data"
     env = environment()
-    env["COVERAGE_FILE"] = str(data)
+    if coverage:
+        env["COVERAGE_FILE"] = str(data)
+        # Per-test contexts feed the test map; coverage's sys.monitoring core
+        # (the default from Python 3.14) records them incompletely.
+        env["COVERAGE_CORE"] = "ctrace"
     arguments = [
         sys.executable,
         "-m",
         "pytest",
-        "--cov-branch",
-        *(f"--cov={module}" for module in scope.modules),
-        "--cov-report=",
+        *(coverage_arguments(scope) if coverage else []),
         "-p",
         "no:cacheprovider",
         "--durations=20",
@@ -195,12 +213,13 @@ def run_shard(root, output, index, count, basetemp=None):
     result = subprocess.run(
         [
             *arguments,
-            *(["--cov-append"] if index == 1 else []),
+            *(["--cov-append"] if coverage and index == 1 else []),
             "--ds=parishkit.stewardship.settings.database_test",
             "--require-postgresql-tests",
             "--require-no-skips",
             f"--ci-shard={index}/{count}",
             f"--ci-evidence={output / 'tests.json'}",
+            *([f"--ci-select={Path(select).resolve()}"] if select else []),
             DATABASE_TESTS,
         ],
         cwd=root,
@@ -213,9 +232,12 @@ def run_shard(root, output, index, count, basetemp=None):
     if tree_digest(root) != digest:
         raise ValueError("Repository changed during CI measurement")
     evidence = json.loads((output / "tests.json").read_text())
-    expected = partition(evidence["universe"], index, count)
+    universe = evidence["universe"]
+    pool = evidence["subset"] if select else universe
+    expected = partition(pool, index, count)
     if (
-        not expected
+        not (expected or select)
+        or not set(pool) <= set(universe)
         or evidence["selected"] != expected
         or evidence["completed"] != expected
     ):
@@ -225,19 +247,34 @@ def run_shard(root, output, index, count, basetemp=None):
         "index": index,
         "count": count,
         "baseline": index == 1,
+        "coverage": coverage,
         "root": str(root),
         "tree": digest,
-        "data_sha256": hashlib.sha256(data.read_bytes()).hexdigest(),
+        "data_sha256": (
+            hashlib.sha256(data.read_bytes()).hexdigest() if coverage else None
+        ),
         "tests_sha256": hashlib.sha256(
             (output / "tests.json").read_bytes()
         ).hexdigest(),
     }
     with (output / "receipt.json").open("x", encoding="utf-8") as stream:
         json.dump(receipt, stream)
-    print(
-        f"CI shard {index}/{count}: {len(expected):,} database tests passed", flush=True
-    )
+    message = f"CI shard {index}/{count}: {len(expected):,} database tests passed"
+    if select:
+        message += (
+            f"; the selection runs {len(pool):,} of {len(universe):,} "
+            f"and skips {len(universe) - len(pool):,}"
+        )
+        summarize(message)
+    print(message, flush=True)
     return 0
+
+
+def summarize(line):
+    """Append one line to the GitHub Actions job summary, when there is one."""
+    if path := os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(path, "a", encoding="utf-8") as stream:
+            stream.write(f"- {line}\n")
 
 
 def job_count(count, per_job=PARTITIONS_PER_JOB):
@@ -311,16 +348,17 @@ def terminated(signum, frame):
     raise SystemExit(128 + signum)
 
 
-def run_job(root, output, job, count):
+def run_job(root, output, job, count, *, coverage=True, select=None):
     """Run one CI job's partitions concurrently and require every one to pass.
 
     Each partition is an ordinary `shard` child with its own deadline,
     receipt and output directory (``partition-N`` under ``output``), pointed
     at its own PostgreSQL/Valkey pair by port and given its own pytest
     temporary root beside ``output``. The combiner later reads those
-    directories exactly as it reads single-partition artifacts. If starting a
-    child fails, or the job is interrupted or terminated, children already
-    started are stopped rather than orphaned.
+    directories exactly as it reads single-partition artifacts. ``coverage``
+    and ``select`` pass through to every partition (see ``run_shard``). If
+    starting a child fails, or the job is interrupted or terminated,
+    children already started are stopped rather than orphaned.
     """
     indexes = job_partitions(job, count)
     output = outside(root, output)
@@ -351,6 +389,8 @@ def run_job(root, output, job, count):
                     str(output / f"partition-{index}"),
                     "--basetemp",
                     str(temporary / f"partition-{index}"),
+                    *([] if coverage else ["--no-coverage"]),
+                    *(["--select", str(select)] if select else []),
                 ],
                 cwd=root,
                 env=env,
@@ -397,8 +437,14 @@ def remap(root, recorded_root, filename):
     return str(result)
 
 
-def combine(root, directory, report, count):
-    """Require every exact partition before combining raw line/branch evidence."""
+def combine(root, directory, report, count, test_map=None):
+    """Require every exact partition before combining raw line/branch evidence.
+
+    Only complete, measured, unselected partitions combine, so an "affected"
+    run's evidence can never pass. ``test_map``, when given, is a new file
+    that receives the per-test source map (``quality_select.build_map``)
+    that later "affected" runs select database tests from.
+    """
     partition([], 1, count)
     scope = load_scope(root)
     digest = tree_digest(root)
@@ -422,6 +468,7 @@ def combine(root, directory, report, count):
             or receipt["schema"] != 1
             or receipt["count"] != count
             or receipt["baseline"] is not (index == 1)
+            or receipt.get("coverage", True) is not True
             or receipt["tree"] != digest
         ):
             raise ValueError("Duplicate, stale or incompatible CI shard")
@@ -455,9 +502,30 @@ def combine(root, directory, report, count):
         pass
     combined.json_report(outfile=str(report))
     lines, branches = coverage_percentages(root, scope, report)
+    if test_map is not None:
+        write_map(root, test_map, combined.get_data(), universe, count)
     print(f"All {len(universe):,} database tests accounted for across {count} shards")
     print(f"Stewardship scope: lines {lines:.2f}%; branches {branches:.2f}%")
     return 0 if lines >= FLOOR and branches >= FLOOR else 1
+
+
+def write_map(root, path, data, universe, count):
+    """Write the database test map; a failure is logged, never fatal.
+
+    The map only lets later "affected" runs skip tests, so it must never
+    change a full run's (or release evidence's) outcome. Without a map,
+    affected runs fall back to the whole database group.
+    """
+    try:
+        document = build_map(data, root, universe, count)
+        with outside(root, path).open("x", encoding="utf-8") as stream:
+            json.dump(document, stream)
+    except Exception as error:  # noqa: BLE001 - optional output only
+        print(
+            f"WARNING: database test map not written ({type(error).__name__}: "
+            f"{error}); affected runs will run the whole database group",
+            file=sys.stderr,
+        )
 
 
 def main(argv=None):
@@ -475,13 +543,30 @@ def main(argv=None):
     parser.add_argument("--input", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--basetemp", type=Path)
+    parser.add_argument("--no-coverage", action="store_true")
+    parser.add_argument("--select", type=Path)
+    parser.add_argument("--map", type=Path)
     args = parser.parse_args(argv)
     try:
         root = args.root.resolve(strict=True)
         if args.operation == "shard":
-            if args.index is None or args.output is None or args.input or args.report:
+            if (
+                args.index is None
+                or args.output is None
+                or args.input
+                or args.report
+                or args.map
+            ):
                 parser.usage_error("shard requires --index/--output only")
-            return run_shard(root, args.output, args.index, args.count, args.basetemp)
+            return run_shard(
+                root,
+                args.output,
+                args.index,
+                args.count,
+                args.basetemp,
+                coverage=not args.no_coverage,
+                select=args.select,
+            )
         if args.operation == "job":
             if (
                 args.index is None
@@ -489,18 +574,28 @@ def main(argv=None):
                 or args.input
                 or args.report
                 or args.basetemp
+                or args.map
             ):
                 parser.usage_error("job requires --index/--output only")
-            return run_job(root, args.output, args.index, args.count)
+            return run_job(
+                root,
+                args.output,
+                args.index,
+                args.count,
+                coverage=not args.no_coverage,
+                select=args.select,
+            )
         if (
             args.input is None
             or args.report is None
             or args.index
             or args.output
             or args.basetemp
+            or args.no_coverage
+            or args.select
         ):
-            parser.usage_error("combine requires --input/--report only")
-        return combine(root, args.input, args.report, args.count)
+            parser.usage_error("combine requires --input/--report (and --map) only")
+        return combine(root, args.input, args.report, args.count, args.map)
     except (
         OSError,
         ValueError,

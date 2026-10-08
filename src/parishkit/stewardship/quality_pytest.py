@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from .quality_select import chosen, load_selection
 from .quality_sharding import (
     BROWSER_ENGINES,
     browser_estimate,
@@ -42,6 +43,10 @@ def pytest_addoption(parser):
     parser.addoption("--ci-shard", help="Required PostgreSQL partition INDEX/COUNT")
     parser.addoption("--ci-evidence", help="New outside-repository execution receipt")
     parser.addoption(
+        "--ci-select",
+        help="Partition only the database tests this selection file chooses",
+    )
+    parser.addoption(
         "--ci-progress", action="store_true", help="Timestamp test progress"
     )
     parser.addoption(
@@ -60,6 +65,14 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     """Register state per pytest invocation, not across nested test sessions."""
+    config.addinivalue_line(
+        "markers",
+        "sql_rules: asserts only that the database refuses something (a trigger, "
+        "guard or grant); affected CI runs skip it unless the grants or its "
+        "own file change",
+    )
+    if config.getoption("--ci-select") and not config.getoption("--ci-shard"):
+        raise pytest.UsageError("A database test selection requires a shard")
     if config.getoption("--ci-evidence") and not config.getoption("--ci-shard"):
         raise pytest.UsageError("CI evidence requires a PostgreSQL shard")
     if config.getoption("--ci-browser-evidence") and not config.getoption(
@@ -226,8 +239,10 @@ class Progress:
         self.completed = []
         self.universe = []
         self.selected = []
+        self.subset = None
         self.shard = None
         self.evidence = None
+        self.selection = None
         if value := config.getoption("--ci-shard"):
             try:
                 index, count = [int(part) for part in value.split("/")]
@@ -241,20 +256,38 @@ class Progress:
                     or self.evidence.exists()
                 ):
                     raise ValueError("Evidence must be a new external path")
-            except (TypeError, ValueError, OSError) as error:
+                if path := config.getoption("--ci-select"):
+                    self.selection = load_selection(path)
+            except (TypeError, ValueError, KeyError, OSError) as error:
                 raise pytest.UsageError("Invalid CI shard/evidence options") from error
 
     @pytest.hookimpl(trylast=True)
     def pytest_collection_modifyitems(self, items):
-        """Partition the entire database suite; partial selections fail closed."""
+        """Partition the entire database suite, or an explicit selection of it.
+
+        Without ``--ci-select`` an empty partition fails closed. A selection
+        (an "affected" run only) may leave a partition empty: few tests can
+        spread thinner than the fixed partition count.
+        """
         if self.shard is None:
             return
         directory = self.config.rootpath / "tests/stewardship/database"
         if any(not item.path.is_relative_to(directory) for item in items):
             raise pytest.UsageError("CI shards must contain only database tests")
         self.universe = sorted(item.nodeid for item in items)
-        self.selected = partition(self.universe, *self.shard)
-        if not self.selected:
+        pool = self.universe
+        if self.selection is not None:
+            self.subset = pool = sorted(
+                item.nodeid
+                for item in items
+                if chosen(
+                    item.nodeid,
+                    item.get_closest_marker("sql_rules") is not None,
+                    self.selection,
+                )
+            )
+        self.selected = partition(pool, *self.shard)
+        if not self.selected and self.selection is None:
             raise pytest.UsageError("CI partition selected no tests")
         selected = set(self.selected)
         removed = [item for item in items if item.nodeid not in selected]
@@ -283,20 +316,29 @@ class Progress:
 
     def pytest_sessionfinish(self, session, exitstatus):
         """Emit a fresh success receipt only for a fully executed partition."""
+        if (
+            self.selection is not None
+            and not self.selected
+            and exitstatus == pytest.ExitCode.NO_TESTS_COLLECTED
+        ):
+            # A selection's empty partition ran nothing, which is complete.
+            session.exitstatus = exitstatus = pytest.ExitCode.OK
         if self.shard is None or exitstatus != 0:
             return
         if sorted(self.completed) != self.selected:
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
             return
         with self.evidence.open("x", encoding="utf-8") as stream:
-            json.dump(
-                {
-                    "universe": self.universe,
-                    "selected": self.selected,
-                    "completed": sorted(self.completed),
-                },
-                stream,
-            )
+            evidence = {
+                "universe": self.universe,
+                "selected": self.selected,
+                "completed": sorted(self.completed),
+            }
+            # Only a selection records its subset, so quality_ci.combine (full
+            # runs and release evidence) rejects selected evidence outright.
+            if self.subset is not None:
+                evidence["subset"] = self.subset
+            json.dump(evidence, stream)
         # Keep optional scheduling diagnostics outside the strictly validated
         # execution receipt consumed by quality_ci.combine.
         with self.evidence.with_suffix(".timings.json").open(

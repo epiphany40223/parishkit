@@ -48,10 +48,18 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    # The complete non-database suite adds a few minutes when shards are skipped.
-    timeout-minutes: 25
+    # The complete non-database suite adds a few minutes when shards are
+    # skipped, and an affected dispatch's database test selection up to 10.
+    timeout-minutes: 35
+    # actions: read lets an "affected" dispatch fetch the newest test map.
+    permissions:
+      contents: read
+      actions: read
     outputs:
       postgresql: ${{ steps.paths.outputs.postgresql }}
+      # "subset" only on an "affected" dispatch with a usable test map;
+      # empty or "all" runs every database test (quality_select, #858).
+      database_selection: ${{ steps.select.outputs.database_selection }}
       browser: ${{ steps.paths.outputs.browser }}
       compose: ${{ steps.paths.outputs.compose }}
       operational: ${{ steps.paths.outputs.operational }}
@@ -89,6 +97,29 @@ jobs:
           JOBS: ${{ inputs.jobs }}
         run: python -m parishkit.stewardship.quality_paths --event "$EVENT" --jobs "$JOBS" --output "$GITHUB_OUTPUT"
 
+      # An "affected" dispatch narrows the database group to the tests the
+      # newest full run's coverage map ties to the changed files. Any doubt,
+      # including this step failing, leaves the output empty, which runs the
+      # whole group.
+      - name: Select database tests for an affected-jobs dispatch
+        id: select
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.jobs == 'affected' && steps.paths.outputs.postgresql == 'true' }}
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python -m parishkit.stewardship.quality_select --count 14 --map-directory "$RUNNER_TEMP/test-maps" --selection "$RUNNER_TEMP/database-selection.json" --output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain the database test selection
+        if: ${{ steps.select.outputs.database_selection == 'subset' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: stewardship-database-selection
+          path: ${{ runner.temp }}/database-selection.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Ruff check
         run: python -m ruff check .
 
@@ -115,6 +146,7 @@ jobs:
           tests/stewardship/test_log_rows.py
           tests/stewardship/test_smoke.py
           tests/stewardship/test_quality_paths.py
+          tests/stewardship/test_quality_select.py
           --require-no-skips -q
 
       # Shard one normally runs the complete non-database suite, which includes
@@ -411,12 +443,29 @@ jobs:
         run: |
           tools/ci-pip-install.sh -r requirements/stewardship-build.txt
           tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
+      - name: Download the database test selection
+        if: ${{ needs.validate.outputs.database_selection == 'subset' }}
+        uses: actions/download-artifact@v5
+        with:
+          name: stewardship-database-selection
+          path: ${{ runner.temp }}/database-selection
+      # Coverage gates only full runs and release evidence, so an "affected"
+      # dispatch skips measurement (#858); a selection also implies it.
       - name: Measure isolated database partitions
+        env:
+          JOBS: ${{ inputs.jobs }}
+          SELECTION: ${{ needs.validate.outputs.database_selection }}
         run: |
-          python -m parishkit.stewardship.quality_ci job --index ${{ matrix.job }} --count 14 --output "$RUNNER_TEMP/stewardship-partitions"
+          set --
+          if test "$JOBS" = affected; then set -- --no-coverage; fi
+          if test "$SELECTION" = subset; then
+            set -- "$@" --select "$RUNNER_TEMP/database-selection/database-selection.json"
+          fi
+          python -m parishkit.stewardship.quality_ci job --index ${{ matrix.job }} --count 14 --output "$RUNNER_TEMP/stewardship-partitions" "$@"
       # One artifact holds this job's partition-N directories; the gate
       # merges every job's artifact into one directory before combining.
       - name: Retain successful partition evidence
+        if: ${{ inputs.jobs != 'affected' }}
         uses: actions/upload-artifact@v4
         with:
           name: stewardship-coverage-${{ matrix.job }}
@@ -458,20 +507,22 @@ jobs:
             exit 0
           fi
           test "$SHARD_RESULT" = success
+      # Coverage, its combined report and the test map come only from runs
+      # that measured every test; an "affected" dispatch stops at the shards.
       - uses: actions/checkout@v4
-        if: ${{ steps.gate.outputs.intentional != 'true' }}
+        if: ${{ steps.gate.outputs.intentional != 'true' && inputs.jobs != 'affected' }}
       - uses: actions/setup-python@v5
-        if: ${{ steps.gate.outputs.intentional != 'true' }}
+        if: ${{ steps.gate.outputs.intentional != 'true' && inputs.jobs != 'affected' }}
         with:
           python-version: "3.12"
           cache: pip
       - name: Install dependencies
-        if: ${{ steps.gate.outputs.intentional != 'true' }}
+        if: ${{ steps.gate.outputs.intentional != 'true' && inputs.jobs != 'affected' }}
         run: |
           tools/ci-pip-install.sh -r requirements/stewardship-build.txt
           tools/ci-pip-install.sh --no-build-isolation -r requirements.txt
       - name: Download this run's coverage evidence
-        if: ${{ steps.gate.outputs.intentional != 'true' }}
+        if: ${{ steps.gate.outputs.intentional != 'true' && inputs.jobs != 'affected' }}
         uses: actions/download-artifact@v5
         with:
           pattern: stewardship-coverage-*
@@ -480,13 +531,23 @@ jobs:
           # every partition directly under one directory for the combiner.
           merge-multiple: true
       - name: Scoped line and branch coverage
-        if: ${{ steps.gate.outputs.intentional != 'true' }}
-        run: python -m parishkit.stewardship.quality_ci combine --count 14 --input "$RUNNER_TEMP/stewardship-shards" --report "$RUNNER_TEMP/stewardship-coverage.json"
+        if: ${{ steps.gate.outputs.intentional != 'true' && inputs.jobs != 'affected' }}
+        run: python -m parishkit.stewardship.quality_ci combine --count 14 --input "$RUNNER_TEMP/stewardship-shards" --report "$RUNNER_TEMP/stewardship-coverage.json" --map "$RUNNER_TEMP/stewardship-test-map.json"
       - name: Retain combined coverage
-        if: ${{ steps.gate.outputs.intentional != 'true' }}
+        if: ${{ steps.gate.outputs.intentional != 'true' && inputs.jobs != 'affected' }}
         uses: actions/upload-artifact@v4
         with:
           name: stewardship-coverage-combined
           path: ${{ runner.temp }}/stewardship-coverage.json
           if-no-files-found: error
           retention-days: 7
+      # Later "affected" dispatches select database tests from this map.
+      - name: Retain the database test map
+        if: ${{ steps.gate.outputs.intentional != 'true' && inputs.jobs != 'affected' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: stewardship-test-map
+          path: ${{ runner.temp }}/stewardship-test-map.json
+          # combine logs a map it could not build; that never fails a run.
+          if-no-files-found: warn
+          retention-days: 14

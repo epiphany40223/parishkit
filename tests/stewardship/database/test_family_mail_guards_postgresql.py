@@ -209,6 +209,7 @@ def test_new_refusal_after_enqueue_skips_before_credentials(family_mail, monkeyp
     assert row.outbox_id is None
 
 
+@pytest.mark.sql_rules
 def test_trigger_functions_do_not_have_public_execution_grants(family_mail):  # noqa: F811
     """Compiled triggers execute normally without direct runtime invocation rights."""
     with task_login(ServiceRole.WORKER, exact=True), connection.cursor() as cursor:
