@@ -122,6 +122,9 @@ FROZEN = {
     "0030_portal_user_insert_guard.sql": (
         "8b854b725381710c2b31061116b6956d1391f1f0bfaf9540143bddf1ada11afd"
     ),
+    "0031_critical_ack_guard.sql": (
+        "088a1368d806ba1718794986bfeb6d580992ebc203f412d0daf076c42e91af34"
+    ),
 }
 
 
