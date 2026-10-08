@@ -61,6 +61,7 @@ from .reports import (
     information_views,
     ministry_export_views,
     ministry_followup_views,
+    ministry_roster_views,
     response_dashboard,
     response_list_views,
     weekly_manual_views,
@@ -143,6 +144,21 @@ admin_patterns = [
         "reports/<uuid:campaign_id>/ministries/follow-up/<uuid:request_id>/",
         ministry_followup_views.detail,
         name="ministry_followup_item",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/ministries/follow-up/<uuid:request_id>/roster",
+        ministry_followup_views.roster,
+        name="ministry_followup_roster",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/ministries/roster/",
+        ministry_roster_views.page,
+        name="ministry_roster",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/ministries/roster/export",
+        ministry_roster_views.export,
+        name="ministry_roster_export",
     ),
     path(
         "reports/<uuid:campaign_id>/ministries/follow-up/<uuid:request_id>/update",

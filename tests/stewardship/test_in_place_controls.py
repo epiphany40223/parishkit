@@ -115,7 +115,11 @@ def test_presence_refresh_refreshes_the_list_in_place():
 # around them draws: the template's name, and the page template's. The
 # integration status line is also the passive status view live-status-v1.js
 # reads, whose answer never holds the page's regions.
-HOSTED = {"integration-summary.html": "integration-settings.html"}
+HOSTED = {
+    "integration-summary.html": ("integration-settings.html",),
+    # The roster tick (#528) is drawn on the list and on the request page.
+    "roster-tick.html": ("ministry-roster.html", "ministry-followup.html"),
+}
 
 
 def test_every_in_place_control_names_its_region_as_a_fragment():
@@ -136,12 +140,15 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
             target = re.search(r'\b(?:href|action)="([^"]*)"', tag.group(0))
             assert target and "#" in target.group(1), (path.name, tag.group(0))
             fragment = target.group(1).split("#", 1)[1]
-            host = (
-                (TEMPLATES / HOSTED[path.name]).read_text()
+            hosts = (
+                [(TEMPLATES / host).read_text() for host in HOSTED[path.name]]
                 if path.name in HOSTED
-                else text
+                else [text]
             )
-            assert names_region(host, fragment), (path.name, fragment)
+            assert any(names_region(host, fragment) for host in hosts), (
+                path.name,
+                fragment,
+            )
     assert found >= 8
 
 

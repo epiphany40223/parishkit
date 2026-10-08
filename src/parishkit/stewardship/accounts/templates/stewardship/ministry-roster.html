@@ -1,0 +1,35 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block title %}{% translate "Roster changes to enter" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Roster changes to enter" %}</h1>
+{% aboutpage "ministry-roster" %}<p>{% translate "Ministry joins and leaves that someone resolved as Joined or Left, which must be entered in ParishSoft by hand: the ParishSoft API cannot change Ministry rosters. Mark each one Entered in ParishSoft once it is; clear a mark made by mistake. Changes the ParishSoft roster already showed are not listed, since nothing is left to enter. Marking never changes ParishSoft. Opening this page and every download is recorded." %}</p>
+<p>{% translate "If a Family answered again after a change was resolved, and the new request was resolved too, the same change can be listed twice: once marked Replaced by a later Family response. Enter it in ParishSoft once, then mark both." %}</p>{% endaboutpage %}
+<p>{{ metadata.name }}</p>
+<p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Ministry follow-up" %}</a></p>
+<div id="roster-notice" data-table-sync>{% if changed %}<p class="notice">{% translate "That mark was changed by someone else first, so nothing was recorded. The list shows its current state." %}</p>{% endif %}</div>
+{% if not mutable %}<p class="notice">{% translate "Other campaign work is under way, so the Entered in ParishSoft mark cannot be changed until it finishes." %}</p>{% endif %}
+<form id="table-filters" data-table-sync method="get" action="{% url 'admin:ministry_roster' campaign_id %}">
+<label for="roster-show">{% translate "Show" %}</label><select id="roster-show" name="show">{% for key,label in show_choices %}<option value="{{ key }}"{% if show == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+{% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+{% comment %}Plain markup until the shared button component (#746) lands.{% endcomment %}<button type="submit">{% translate "Apply" %}</button></form>
+<section aria-labelledby="roster-export-heading">
+<h2 id="roster-export-heading">{% translate "Download" %}</h2>
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:ministry_roster_export' campaign_id %}">{% csrf_token %}<input type="hidden" name="show" value="{{ show }}">
+<label for="roster-format">{% translate "Format" %}</label><select id="roster-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option></select>
+<label for="roster-timezone">{% translate "Timezone" %}</label><select id="roster-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+<button type="submit">{% translate "Download this list" %}</button></form></section>
+<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
+<div id="{{ table.anchor }}" data-table-region>
+{% translate "Roster change pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Roster changes to enter' %}"><table>
+<caption>{% translate "Roster changes to enter" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading table "member" heading %}{% translate "Ministry" as heading %}{% sort_heading table "ministry" heading %}{% translate "Request" as heading %}{% sort_heading table "request" heading %}{% translate "Resolved" as heading %}{% sort_heading table "resolved" heading %}<th scope="col">{% translate "Entered in ParishSoft" %}</th></tr></thead><tbody>
+{% for row in table.rows %}<tr>
+<th scope="row"><a href="{% url 'admin:ministry_followup_item' campaign_id row.id %}">{{ row.member_name }}</a>{% if row.member_duid %}<br>{% translate "DUID" %} {{ row.member_duid|duid }}{% endif %}{% if row.family_duid %}<br>{% translate "Family DUID" %} {{ row.family_duid|duid }}{% endif %}{% if row.latest is False %}<br>{% if row.roster_entered %}{% translate "Replaced by a later Family response" %}{% else %}{% translate "Replaced by a later Family response; still to enter" %}{% endif %}{% endif %}</th>
+<td>{{ row.ministry_name }}<br>{% translate "DUID" %} {{ row.ministry_duid|duid }}</td>
+<td>{% if row.action == 'join' %}{% translate "Join" %}{% else %}{% translate "Leave" %}{% endif %}</td>
+<td>{% if row.resolved_at %}<time datetime="{{ row.resolved_at|date:'c' }}" data-local-instant>{{ row.resolved_at|date:'c' }}</time>{% endif %}{% if row.resolved_by %}<br>{% translate "by" %} {{ row.resolved_by }}{% endif %}</td>
+<td>{% include "stewardship/roster-tick.html" with row=row return_to="roster" %}</td></tr>
+{% empty %}<tr><td colspan="5">{% translate "No roster changes to enter." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
+</div>
+{% endblock %}

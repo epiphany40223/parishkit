@@ -86,6 +86,9 @@ class Action(StrEnum):
     CENSUS_CHANGES_VIEWED = "census_changes_viewed"
     CENSUS_CHANGES_EXPORTED = "census_changes_exported"
     CENSUS_CHANGE_UPDATED = "census_change_updated"
+    MINISTRY_ROSTER_ENTERED = "ministry_roster_entered"
+    ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
+    ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
     # The lists of Families behind the response funnel (#477): one event type
     # per list, so the audit names the list without a new context field.
