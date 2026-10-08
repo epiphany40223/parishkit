@@ -242,6 +242,7 @@ EXPECTED = {
     "/admin/campaign/schedules": "/admin/campaign/schedules/",
     "/admin/campaign/share-options": "/admin/campaign/share-options/",
     "/admin/campaign/talents": "/admin/campaign/talents/",
+    "/admin/campaign/reminder-workgroup": "/admin/campaign/reminder-workgroup/",
     f"/admin/campaign/content/test/{T}": f"/admin/campaign/content/test/{T}/",
     f"/admin/campaign/content/test/{T}/families": (
         f"/admin/campaign/content/test/{T}/families/"

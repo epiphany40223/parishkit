@@ -20,6 +20,7 @@ from parishkit.stewardship.jobs.ownership import TaskClaim, lock_task_claim
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
 from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.responses.models import Submission
+from parishkit.stewardship.source.workgroups import excluded_duids
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .credential_models import CampaignCredentialState, FamilyCampaign, RehearsalEpoch
@@ -41,6 +42,7 @@ PREPARE_AHEAD = timedelta(hours=2)
 FAMILY_FIELDS = (
     "id",
     "campaign_id",
+    "family_duid",
     "active",
     "email_eligible",
     "email_deliverable",
@@ -179,6 +181,14 @@ def plan_family(guard, *, family_id, worker_id, nested=False, ahead=False):
             ).exists()
         )
         eligible = family["active"] and family["email_eligible"]
+        # A Family in the campaign's Reminder WorkGroup (#861) gets no
+        # reminders; its invitation is planned as for any Family. Catch-up
+        # never applies it: its SQL proof admits only the established skip
+        # reasons, and a reminder catch-up selects is skipped when it is
+        # dispatched (this function, called by the dispatcher).
+        workgroup = not catchup and family["family_duid"] in excluded_duids(
+            scope.campaign.active_configuration.values
+        )
         covered = set(
             ScheduleFulfillment.objects.filter(
                 definition_id__in=[row.pk for row in definitions],
@@ -317,49 +327,71 @@ def plan_family(guard, *, family_id, worker_id, nested=False, ahead=False):
                 row = recovered
             if row is not None:
                 rows.append((row, definition.kind))
-        decision = plan_recovery(
-            tuple(
-                RecoverySlot(
-                    occurrence_id=row.pk,
-                    definition_id=row.definition_id,
-                    kind=kind,
-                    mode=row.mode,
-                    target=row.target,
-                    slot=row.slot,
-                    due_at=row.due_at,
-                    state=row.state,
-                    safely_cancellable=(
-                        row.state == "pending"
-                        and (
-                            (row.task_id is None and row.outbox_id is None)
-                            or (dispatch and _dispatch_cancellable(row))
-                        )
-                    ),
-                )
-                for row, kind in rows
-            ),
-            # A reminder planned ahead counts as due here, so an older due
-            # reminder not yet sent coalesces into it, up to PREPARE_AHEAD
-            # earlier than at its own due time; the Family is mailed once
-            # (two reminders less than PREPARE_AHEAD apart merge this way).
-            # Only reminder-only groups look ahead (above), so an unsent
-            # invitation never absorbs a reminder early.
-            cutoff=reminders,
-            closed=closed,
-            eligible=eligible,
-            responded=responded,
-            deliverable=family["email_deliverable"],
-            initial_delivered=initial_delivered,
-        )
-        if not decision.blocked:
-            _persist_decision(
-                rows,
-                decision,
-                worker_id=worker_id,
-                correlation_id=correlation_id,
-                check=check,
-                dispatch_claim=guard if dispatch else None,
+
+        def decide(group, excluded=False):
+            """Plan one group of rows (see plan_recovery)."""
+            return plan_recovery(
+                tuple(
+                    RecoverySlot(
+                        occurrence_id=row.pk,
+                        definition_id=row.definition_id,
+                        kind=kind,
+                        mode=row.mode,
+                        target=row.target,
+                        slot=row.slot,
+                        due_at=row.due_at,
+                        state=row.state,
+                        safely_cancellable=(
+                            row.state == "pending"
+                            and (
+                                (row.task_id is None and row.outbox_id is None)
+                                or (dispatch and _dispatch_cancellable(row))
+                            )
+                        ),
+                    )
+                    for row, kind in group
+                ),
+                # A reminder planned ahead counts as due here, so an older due
+                # reminder not yet sent coalesces into it, up to PREPARE_AHEAD
+                # earlier than at its own due time; the Family is mailed once
+                # (two reminders less than PREPARE_AHEAD apart merge this way).
+                # Only reminder-only groups look ahead (above), so an unsent
+                # invitation never absorbs a reminder early.
+                cutoff=reminders,
+                closed=closed,
+                eligible=eligible,
+                responded=responded,
+                deliverable=family["email_deliverable"],
+                initial_delivered=initial_delivered,
+                excluded=excluded,
             )
+
+        # A WorkGroup Family's reminders are their own group, skipped as
+        # workgroup_excluded (or for an earlier reason, such as a response),
+        # so none is sent and none coalesces into the invitation; the rest
+        # is planned exactly as before.
+        groups = [rows]
+        if workgroup:
+            groups = [
+                [item for item in rows if item[1] != "reminder"],
+                [item for item in rows if item[1] == "reminder"],
+            ]
+        plans = [
+            decide(group, excluded=index == 1) for index, group in enumerate(groups)
+        ]
+        for group, plan in zip(groups, plans, strict=True):
+            if not plan.blocked:
+                _persist_decision(
+                    group,
+                    plan,
+                    worker_id=worker_id,
+                    correlation_id=correlation_id,
+                    check=check,
+                    dispatch_claim=guard if dispatch else None,
+                )
+        decision = plans[0]
+        skipped = sum(len(plan.skipped) for plan in plans)
+        blocked = next((plan for plan in plans if plan.blocked), None)
         if catchup and not decision.blocked:
             from .catchup_family_coverage import forward_family_coverage
 
@@ -369,10 +401,10 @@ def plan_family(guard, *, family_id, worker_id, nested=False, ahead=False):
             family_id,
             created,
             len(decision.coalesced),
-            len(decision.skipped),
+            skipped,
             decision.selected,
-            decision.blocked,
-            decision.reason,
+            blocked is not None,
+            blocked.reason if blocked is not None else decision.reason,
             len(rows),
         )
 

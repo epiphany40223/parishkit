@@ -97,6 +97,7 @@ from .log_components import components as log_components
 from .menu_components import components as menu_components
 from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
+from .reminder_workgroup_components import components as workgroup_components
 from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
@@ -1942,6 +1943,7 @@ def component_origin():
     responses.update(system_health_components(context, admin))
     responses.update(hosted_file_components(context, admin))
     responses.update(talent_components(context, admin))
+    responses.update(workgroup_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
     responses.update(menu_components(context, admin))

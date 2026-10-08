@@ -796,6 +796,20 @@ def _pause(campaign):
     }
 
 
+def _workgroup_missing(campaign):
+    """The campaign's Reminder WorkGroup name when ParishSoft has none by it.
+
+    None when the campaign names no WorkGroup, when the newest refresh found
+    it, or when no refresh has read the current name yet (#861).
+    """
+    from .source.workgroups import current_evidence
+
+    if campaign is None:
+        return None
+    name, evidence = current_evidence(campaign.active_configuration.values)
+    return name if evidence is not None and not evidence["found"] else None
+
+
 def _processes(rows, now):
     """The process lines, and the core services that have not reported."""
     processes = group_processes(rows, now)
@@ -869,6 +883,7 @@ def read_health(store):
         page = {
             "campaign_id": None if campaign is None else campaign.pk,
             "pause": _pause(campaign) if paused else None,
+            "workgroup_missing": _workgroup_missing(campaign),
         }
     model = SystemHealth(
         checked_at=now,

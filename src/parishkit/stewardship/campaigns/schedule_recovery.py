@@ -102,6 +102,11 @@ class RecoveryPlan:
     blocked: bool = False
 
 
+# The skip reason of a reminder not sent because its Family is in the
+# campaign's Reminder WorkGroup (#861).
+WORKGROUP_EXCLUDED = "workgroup_excluded"
+
+
 def plan_recovery(
     slots,
     *,
@@ -111,6 +116,7 @@ def plan_recovery(
     responded=False,
     deliverable=True,
     initial_delivered=False,
+    excluded=False,
 ):
     """Choose at most one due Family/weekly message or one daily recovery digest.
 
@@ -118,6 +124,9 @@ def plan_recovery(
     restore-held and terminal work cannot be consumed by an overdue group.
     Uncertain provider acceptance blocks the group before any safe cancellations.
     Family status affects only Family mail, never completed-day reporting.
+    ``excluded`` skips the group's due Family mail as ``workgroup_excluded``:
+    the caller passes it only for a group of a Reminder WorkGroup Family's
+    reminders (#861), never with its invitation.
     """
     if (
         type(slots) is not tuple
@@ -127,7 +136,14 @@ def plan_recovery(
         or cutoff.utcoffset() != timedelta(0)
         or any(
             type(value) is not bool
-            for value in (closed, eligible, responded, deliverable, initial_delivered)
+            for value in (
+                closed,
+                eligible,
+                responded,
+                deliverable,
+                initial_delivered,
+                excluded,
+            )
         )
     ):
         raise ValueError("Recovery requires a complete bounded group and UTC cutoff.")
@@ -156,6 +172,8 @@ def plan_recovery(
             if not eligible
             else "family_responded"
             if responded
+            else WORKGROUP_EXCLUDED
+            if excluded
             else "no_deliverable_recipient"
             if not deliverable
             else ""

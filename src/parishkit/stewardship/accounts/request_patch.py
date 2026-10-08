@@ -344,6 +344,12 @@ def _build_records(
                 # optional key rather than storing an empty mapping.
                 if section == "campaigns" and values.get("artwork", "") is None:
                     existing["values"].pop("artwork", None)
+                # And clearing the Reminder WorkGroup (#861) turns it off.
+                if (
+                    section == "campaigns"
+                    and values.get("reminder_workgroup", "") is None
+                ):
+                    existing["values"].pop("reminder_workgroup", None)
             item["values"] = values
         normalized.append(item)
     # Content records carried unchanged from the base keep their applied

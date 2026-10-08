@@ -629,6 +629,8 @@ both roles see:
   the Family form as a chosen Family" for roles that may open that page
   (Administrators).
 
+While the Family is in the campaign's Reminder WorkGroup, both roles see
+"Reminders skipped: in ParishSoft WorkGroup" with its name.
 Administrators also see whether campaign email can reach the Family (or why
 not), the furthest form step reached and when the Family was last seen on the
 form (live values of the
@@ -642,7 +644,9 @@ shows them all, with no paging or row navigator. Rows are each Family email
 with its outcome (including Not sent (cancelled)), linked to its Mail message page; the invitation skipped because
 the Family had already responded (the [funnel's](#funnel-stages) skip), which
 stands in for that invitation's cancelled email, so the one planned email is
-listed once; each sign-in, labelled as possibly a mail scanner checking the
+listed once; likewise each reminder not sent because the Family is in the
+campaign's [Reminder WorkGroup](../background-processing/spec.md#family-invitations-and-reminders)
+(#861); each sign-in, labelled as possibly a mail scanner checking the
 link; each form open; getting past the first step and the furthest step
 reached; and each submission, noting when no receipt was sent because the
 Family had no email address. Staff get none of

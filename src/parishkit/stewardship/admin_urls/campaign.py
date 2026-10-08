@@ -23,6 +23,7 @@ from ..accounts import (
     content_history,
     content_views,
     go_live_views,
+    reminder_workgroup_views,
     schedule_views,
     share_views,
     talent_views,
@@ -95,6 +96,11 @@ patterns = [
     _page("campaign/schedules/", schedule_views.schedule_settings, "schedule_settings"),
     _page("campaign/share-options/", share_views.share_settings, "share_settings"),
     _page("campaign/talents/", talent_views.talent_settings, "talent_settings"),
+    _page(
+        "campaign/reminder-workgroup/",
+        reminder_workgroup_views.reminder_workgroup,
+        "reminder_workgroup",
+    ),
     # Going live: readiness, Testing cleanup, Family links, then Confirm
     # Production, each step under the one before it.
     _page("campaign/go-live/", go_live_views.readiness, "go_live"),

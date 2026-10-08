@@ -110,6 +110,7 @@ FINISHED_SEND = {
     "waiting": 0,
     "unreachable": 2,
     "not_needed": 3,
+    "workgroup_skipped": 0,
     "rate_per_minute": 0.5,
     "started_at": iso(NOW - timedelta(minutes=30)),
     "last_settled_at": iso(NOW - timedelta(minutes=10)),

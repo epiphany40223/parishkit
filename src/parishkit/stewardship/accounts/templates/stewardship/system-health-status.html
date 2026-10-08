@@ -61,6 +61,7 @@
 <p>{% translate "Check these numbers in ParishSoft first. Until the drop is fixed there or accepted on the server, as “Accepting a large ParishSoft change” in the launch runbooks describes, every later refresh is refused too." %}</p>
 </div>{% endif %}
 {% if health.incidents.source_tenant_mismatch %}<p class="notice notice-error">{% translate "The ParishSoft key reaches a different organization than before. Stop and check with the parish before changing anything, as “ParishSoft outage” in the launch runbooks describes." %}</p>{% endif %}
+{% if workgroup_missing %}<p class="notice notice-error" data-workgroup-missing>{% blocktranslate with name=workgroup_missing trimmed %}The campaign's Reminder WorkGroup “{{ name }}” is not a Family WorkGroup in ParishSoft, so no Family's Reminders are being skipped.{% endblocktranslate %} <a href="{% url 'admin:reminder_workgroup' %}">{% translate "Check the Reminder WorkGroup setting" %}</a></p>{% endif %}
 {% if health.incidents.source_retention_failing %}<p class="notice notice-error">{% translate "Old ParishSoft copies are not being removed. Ask the server operator to follow “ParishSoft outage” in the launch runbooks." %}</p>{% endif %}
 <p><a href="{% url 'admin:source_refresh' %}">{% translate "Refresh from ParishSoft" %}</a></p>
 </section>

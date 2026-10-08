@@ -1,0 +1,14 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Review Reminder WorkGroup" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review Reminder WorkGroup" %}</h1>
+{% if unchanged %}<p>{% translate "The Reminder WorkGroup has not changed." %}</p>{% else %}
+<dl>
+<dt>{% translate "Current WorkGroup" %}</dt><dd>{% if before %}{{ before }}{% else %}{% translate "None" %}{% endif %}</dd>
+<dt>{% translate "New WorkGroup" %}</dt><dd>{% if after %}{{ after }}{% else %}{% translate "None: every eligible Family that has not responded gets the Reminders" %}{% endif %}</dd>
+</dl>
+<p>{% translate "Confirm to save. The change takes effect at the next ParishSoft refresh." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">{% button type="submit" %}{% translate "Apply changes" %}{% endbutton %}</form>
+{% endif %}
+<p><a href="{% url 'admin:reminder_workgroup' %}">{% translate "Return to Reminder WorkGroup" %}</a></p>
+{% endblock %}
