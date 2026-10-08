@@ -923,6 +923,16 @@ Only the dedicated source-compaction service may thin unprotected snapshot
 corpora, under the normative retention and reference guards in the
 [data specification](../data/spec.md#source-snapshot).
 
+Each refresh runs this retention first, within a time budget:
+
+- report fact cleanup goes first and has at most half of it;
+- report fact cleanup waits no more than about a second for a row lock;
+- each reclaim statement has its own time limit;
+- the compaction lease is released even while the worker stops gracefully.
+
+A stop at any of these limits is recorded in the timeout log, and the next
+refresh resumes the work.
+
 Run dedicated derived-fact compaction hourly by default, with a configurable
 positive interval and bounded batches, under the
 [derived fact retention policy](../data/spec.md#derived-fact-retention).

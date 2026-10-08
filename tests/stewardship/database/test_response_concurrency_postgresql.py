@@ -22,8 +22,9 @@ from parishkit.stewardship.responses.models import (
 from parishkit.stewardship.source import compaction, snapshots
 from parishkit.stewardship.source.compaction import compact_source
 from parishkit.stewardship.source.leases import acquire_source, release_source
-from parishkit.stewardship.source.models import SourceCurrent, SourceSnapshotPin
+from parishkit.stewardship.source.models import SourceSnapshotPin
 
+from .lock_observer import wait_for_lock
 from .response_builders import response_source
 from .source_builders import running_source_task
 from .test_response_submission_postgresql import form_and_answers, submit
@@ -198,9 +199,21 @@ def test_baseline_creation_races_real_promotion(live_response_service, first_own
     ).exists()
 
 
-@pytest.mark.parametrize("finish", ["submit", "cancel"])
-def test_compaction_waits_for_final_form_pin_lifetime(request, monkeypatch, finish):
-    """Compaction sees a permanent Submit pin or completed cancellation, never a gap."""
+# Advisory key the gated LIVE_REFERENCES subquery waits on (test-only).
+COMPACTION_GATE = 736299
+
+
+def final_form_compaction(request, monkeypatch):
+    """Build a compactable form baseline whose expiring pin has lapsed.
+
+    The baseline's snapshot is old and superseded, and a later snapshot is
+    that day's retention anchor. The fixture's credential rows still name it,
+    so the live-reference rule is cleared. The compactor's clock is then
+    moved past the baseline pin's expiry: that pin is still committed and
+    still lets the Family submit or cancel, but no longer protects the
+    snapshot, so it cannot mask the race. The only protection left is the
+    pin change itself.
+    """
     with connection.cursor() as cursor:
         cursor.execute("SELECT clock_timestamp()")
         old_time = (cursor.fetchone()[0] - timedelta(days=100)).replace(
@@ -210,53 +223,97 @@ def test_compaction_waits_for_final_form_pin_lifetime(request, monkeypatch, fini
         patch.setattr(snapshots, "_now", lambda: old_time)
         harness = request.getfixturevalue("live_response_service")
     form, answers = form_and_answers(harness)
-    # A later snapshot is that day's retention anchor, leaving the actual form
-    # baseline compactable except for its real expiring/permanent parent pin.
     with monkeypatch.context() as patch:
         patch.setattr(snapshots, "_now", lambda: old_time + timedelta(hours=1))
         anchor, claim = prepare(response_source())
         promote(anchor, claim, harness.campaign, harness.rings)
     current, claim = prepare(response_source())
     promote(current, claim, harness.campaign, harness.rings)
-    # The campaign fixture's credential/token rows still name the original
-    # snapshot, which retention's live-reference rule would protect. Clear that
-    # rule here so this test isolates the form-baseline pin lifetime.
     monkeypatch.setattr(
         compaction,
         "LIVE_REFERENCES",
         "SELECT id FROM (SELECT NULL::uuid AS id) AS live WHERE id IS NOT NULL",
     )
+    lapsed = form.baseline.expires_at + timedelta(minutes=1)
+    monkeypatch.setattr(compaction, "_now", lambda: lapsed)
+    return harness, form, answers
+
+
+def compact_now():
+    """Run the actual bounded compactor with its own live source ownership."""
     claim = acquire_source(**running_source_task(), phase="compaction")
-    ready = Queue()
+    try:
+        return compact_source(claim, admit=permit)
+    finally:
+        release_source(claim)
 
-    def compact_now():
-        """Run the actual bounded compactor with its own live source ownership."""
-        try:
-            return compact_source(claim, admit=permit)
-        finally:
-            release_source(claim)
 
+def finish_form(harness, form, answers, finish):
+    """End the Family's form the real way: Submit or cancellation."""
+    if finish == "submit":
+        assert submit(harness, form, answers).submission is not None
+    else:
+        end_baseline(form.baseline, state="cancelled")
+
+
+@pytest.mark.parametrize("finish", ["submit", "cancel"])
+def test_compaction_skips_a_snapshot_whose_final_pin_change_is_open(
+    request, monkeypatch, finish
+):
+    """A Family's uncommitted final pin change wins; compaction neither waits nor marks.
+
+    Submit and cancellation change the form pin through the pin guard, which
+    locks the snapshot row. With the baseline pin lapsed, the compactor's
+    first query selects that snapshot, so only its SKIP LOCKED keeps it from
+    waiting behind the Family (#387) or marking through the change.
+    """
+    harness, form, answers = final_form_compaction(request, monkeypatch)
     with ThreadPoolExecutor(max_workers=1) as pool:
         with work_transaction():
-            SourceCurrent.objects.select_for_update().get()
-            future = pool.submit(contender, ready, compact_now)
-            pid = ready.get(timeout=5)
-            deadline = monotonic() + 5
-            while monotonic() < deadline:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "SELECT cardinality(pg_blocking_pids(%s)) > 0", [pid]
-                    )
-                    if cursor.fetchone()[0]:
-                        break
-                sleep(0.01)
-            else:
-                pytest.fail("Compactor did not wait for the current source lock")
-            if finish == "submit":
-                assert submit(harness, form, answers).submission is not None
-            else:
-                end_baseline(form.baseline, state="cancelled")
-        result = future.result(timeout=10)
-    assert result.snapshot_count == (0 if finish == "submit" else 1)
+            finish_form(harness, form, answers, finish)
+            during = pool.submit(contender, Queue(), compact_now).result(timeout=5)
+        assert during.snapshot_count == 0
+        after = pool.submit(contender, Queue(), compact_now).result(timeout=10)
+    assert after.snapshot_count == (0 if finish == "submit" else 1)
     harness.snapshot.refresh_from_db()
     assert (harness.snapshot.compacted_at is None) == (finish == "submit")
+
+
+def test_compaction_rechecks_a_pin_committed_after_its_selection(request, monkeypatch):
+    """A permanent Submit pin committed mid-selection keeps the snapshot.
+
+    The compactor's candidate query is paused (on an advisory gate in its
+    live-reference subquery) after its statement snapshot is taken but
+    before it locks any row. Submit then commits its permanent pin. The
+    query, still seeing the old pins, selects and locks the snapshot; only
+    the recheck after locking keeps it. Without the recheck the snapshot
+    guard refuses the mark (23514) and the whole batch fails.
+    """
+    harness, form, answers = final_form_compaction(request, monkeypatch)
+    monkeypatch.setattr(
+        compaction,
+        "LIVE_REFERENCES",
+        "SELECT id FROM (SELECT NULL::uuid AS id, "
+        f"pg_advisory_lock_shared({COMPACTION_GATE}) AS gate OFFSET 0) AS live "
+        "WHERE id IS NOT NULL",
+    )
+    ready = Queue()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_lock(%s)", [COMPACTION_GATE])
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(contender, ready, compact_now)
+            wait_for_lock(ready.get(timeout=5))
+            assert submit(harness, form, answers).submission is not None
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock(%s)", [COMPACTION_GATE])
+            result = future.result(timeout=10)
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock_all()")
+    assert result.snapshot_count == 0
+    harness.snapshot.refresh_from_db()
+    assert harness.snapshot.compacted_at is None
+    assert SourceSnapshotPin.objects.filter(
+        snapshot_id=harness.snapshot.pk, parent_kind="submission"
+    ).exists()

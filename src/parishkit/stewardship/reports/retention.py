@@ -1,8 +1,9 @@
 """Explicit ready-generation pins and bounded, reference-safe derived cleanup."""
 
+from time import monotonic
 from uuid import UUID
 
-from django.db import connection, transaction
+from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
@@ -17,6 +18,11 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .facts import FACT_READ_NAMESPACE, FactUnavailable, _admit, fact_inputs
 from .models import CampaignDailyFactSet, CampaignFactPin, FactCompactionRecord
+
+# How long one generation's cleanup may wait for a row lock (#387). The
+# refresh heartbeat waits for this task's row under the global work lock with
+# a 2 s limit, so cleanup that holds the row must give up well before that.
+LOCK_SECONDS = 1
 
 
 def pin_facts(fact_set_id, *, parent_kind, parent_id, admit):
@@ -76,6 +82,19 @@ def compact_facts(campaign_id, claim, *, admit, limit=50, proceed=None):
     with cleanup. A skipped candidate does not end the batch. ``proceed``, if
     given, is asked before each generation (e.g. a time budget or a drain
     check); returning False stops early and leaves the rest for later.
+
+    Cleanup never waits long for a lock (#387): every lock in a generation's
+    transaction, the Campaign row included, waits at most LOCK_SECONDS. On
+    contention that generation rolls back, the batch stops, and the timeout
+    log records it; the next refresh resumes. Without this, a cleanup
+    waiting on the Campaign kept this task's row locked, and the heartbeat
+    waited behind it while holding the global work lock.
+
+    The Campaign is locked FOR NO KEY UPDATE, not FOR UPDATE: every insert
+    that references the Campaign (a submission, a fact, a delivery) takes a
+    FOR KEY SHARE lock on it, which FOR UPDATE would conflict with but FOR
+    NO KEY UPDATE does not. Campaign transitions, which update the row,
+    still exclude cleanup.
     """
     if type(limit) is not int or not 1 <= limit <= 500:
         raise ValueError("Fact cleanup requires a bounded positive batch size.")
@@ -96,21 +115,53 @@ def compact_facts(campaign_id, claim, *, admit, limit=50, proceed=None):
     for identifier, source_id in candidates:
         if proceed is not None and not proceed():
             break
-        with transaction.atomic():
-            lock_task_claim(claim)
-            Campaign.objects.select_for_update().get(pk=campaign_id)
+        started = monotonic()
+        try:
             with transaction.atomic():
-                deleted = _compact_candidate(identifier, source_id, claim, admit)
-                if not deleted:
-                    # Release this skipped candidate's source/generation locks,
-                    # not merely its advisory lock, before the next candidate.
-                    transaction.set_rollback(True)
-            # Fence the commit: a lease that expired during the deletion rolls
-            # this generation back.
-            lock_task_claim(claim)
+                with connection.cursor() as cursor:
+                    cursor.execute(f"SET LOCAL lock_timeout = '{LOCK_SECONDS}s'")
+                lock_task_claim(claim)
+                Campaign.objects.select_for_update(no_key=True).get(pk=campaign_id)
+                with transaction.atomic():
+                    deleted = _compact_candidate(identifier, source_id, claim, admit)
+                    if not deleted:
+                        # Release this skipped candidate's source/generation
+                        # locks, not merely its advisory lock, before the next.
+                        transaction.set_rollback(True)
+                # Fence the commit: a lease that expired during the deletion
+                # rolls this generation back.
+                lock_task_claim(claim)
+        except DatabaseError as error:
+            if not _lock_busy(error, claim, monotonic() - started):
+                raise
+            break
         if deleted:
             removed.append(identifier)
     return removed
+
+
+def _lock_busy(error, claim, elapsed):
+    """Log a generation that stopped on a busy lock; False for any other error.
+
+    Recorded through the timeout log (``lock_timeout``, its limit and the
+    time waited) at INFO, like the retention budget: contention is expected
+    housekeeping, not a failure, and the next refresh resumes the cleanup.
+    """
+    from parishkit.stewardship.audit.timeouts import record_timeout
+    from parishkit.stewardship.jobs.broker import sql_timeout_kind
+    from parishkit.stewardship.observability import Event
+
+    if sql_timeout_kind(error) != "lock_timeout":
+        return False
+    record_timeout(
+        Event.WORK_BUDGET_REACHED,
+        what="lock_timeout",
+        level="INFO",
+        task_id=claim.run_id,
+        limit_seconds=LOCK_SECONDS,
+        elapsed_seconds=elapsed,
+    )
+    return True
 
 
 def _compact_candidate(identifier, source_id, claim, admit):
