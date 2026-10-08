@@ -1,8 +1,9 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Testing submissions" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Testing submissions" %}</h1><p>{{ campaign.active_configuration.name }}</p>
-<p>{% translate "Families that still have Testing responses to delete. Cleanup deletes their Testing responses, not the Families themselves or the Family codes they will use after go-live." %}</p>
+<h1>{% translate "Testing submissions" %}</h1>
+{% aboutpage "go-live-families" %}<p>{% translate "Families that still have Testing responses to delete. Cleanup deletes their Testing responses, not the Families themselves or the Family codes they will use after go-live." %}</p>{% endaboutpage %}
+<p>{{ campaign.active_configuration.name }}</p>
 {% translate "Testing submissions pages" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}

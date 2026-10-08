@@ -75,8 +75,9 @@ def test_page_data_starts_on_a_laptop_screen(page, component_origin, path):
 
 
 # Pages converted in #227 (campaign email and schedules in help-ux-1; keys,
-# refreshes and refusals in help-ux-2), each with the caution or data line
-# that must stay visible while its help is closed.
+# refreshes and refusals in help-ux-2; the setup wizard in help-ux-3), each
+# with the caution or data line that must stay visible while its help is
+# closed.
 CONVERTED_PAGES = {
     "/campaign-mail": "It is sent only to",
     "/live-family-tests-later": "never to the Family",
@@ -90,6 +91,14 @@ CONVERTED_PAGES = {
     "/source-refresh": "Refresh now",
     "/backup-key": "Never give this server the private key.",
     "/delivery-refusal": "Clearing removes only this refusal",
+    "/setup-parish": "Do not enter API tokens",
+    "/setup-confirmation": "only this sign-in can continue or cancel setup",
+    "/setup-preview": "This is a read-only preview",
+    "/setup-mail-test": "Send a fictional sample only",
+    "/setup-shares": "Saving changes only this temporary wizard draft.",
+    "/setup-branding": "This logo is private",
+    "/setup-source": "Starting the load fixes the parish time zone",
+    "/setup-credential": "never shown again",
 }
 
 

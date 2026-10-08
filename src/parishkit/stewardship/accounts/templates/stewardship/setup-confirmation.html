@@ -1,14 +1,15 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Finish setup" %} — {% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Finish setup" %}</h1>
-<p class="setup-intro">{% translate "Confirm to make these settings the system's configuration. The system stays in Testing mode afterwards, so no Family receives anything until you later choose to go live. Finishing first checks that everything is ready, including accepted tests of these exact settings." %}</p>
-<p class="notice">{% translate "The system will remain in Testing mode. This does not activate a live campaign or send invitations to Families." %}</p>
+{% aboutpage "setup-confirmation" %}<p>{% translate "Confirm to make these settings the system's configuration. The system stays in Testing mode afterwards, so no Family receives anything until you later choose to go live. Finishing first checks that everything is ready, including accepted tests of these exact settings." %}</p>
 <p>{% translate "Confirming locks in these settings. The system then saves your keys, loads fresh parish data for the selected financial periods, and finishes setup. This usually takes a few minutes." %}</p>
-<p>{% translate "An operator may need to recreate the worker and mail containers with their installed credential mounts. The progress page explains this step. No container-control access is granted to the web app." %}</p>
 <p>{% translate "Keep this original login available. Its idle and absolute time limits still apply. You can cancel until setup completes, but cannot edit frozen settings or resume them under a different login." %}</p>
+<p>{% translate "Whoever manages the server may need to recreate the worker and mail containers so they pick up the saved keys. The progress page explains this step; this site cannot restart containers itself." %}</p>{% endaboutpage %}
+<p class="notice">{% translate "The system will remain in Testing mode. This does not activate a live campaign or send invitations to Families." %}</p>
+<p class="notice">{% translate "After you confirm, these settings are locked, and only this sign-in can continue or cancel setup, so stay signed in until setup finishes." %}</p>
 {% if readiness_problem %}
 <p role="status">{{ readiness_problem }}</p>
 <p><a href="{% url 'admin:setup_mail' %}">{% translate "Send and check the required email test" %}</a></p>

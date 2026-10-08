@@ -1,10 +1,11 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Share options" %} — {% translate "Initial setup" %}{% endblock %}
 {% block head %}{% include 'stewardship/setup-head.html' %}{% endblock %}
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
-<h1>{% translate "Share options" %}</h1><p>{{ campaign_name }}</p>
-<p class="setup-intro">{% translate "The choices Families pick from to say how they will give, for example online, by envelope or through a bank. Default options are provided; edit, reorder or remove them to match your parish." %}</p>
+<h1>{% translate "Share options" %}</h1>
+{% aboutpage "setup-shares" %}<p>{% translate "The choices Families pick from to say how they will give, for example online, by envelope or through a bank. Default options are provided; edit, reorder or remove them to match your parish." %}</p>{% endaboutpage %}
+<p>{{ campaign_name }}</p>
 <p class="notice">{% translate "Testing mode. Saving changes only this temporary wizard draft." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
 {% include 'stewardship/share-fields.html' %}
