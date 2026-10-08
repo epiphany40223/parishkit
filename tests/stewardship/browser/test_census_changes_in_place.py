@@ -7,7 +7,7 @@ outside every region shows the page never reloaded.
 
 import pytest
 
-from .census_components import PATH
+from .census_components import PATH, RESOLVED, STALE
 from .test_table_sorting import MARK, MARKED, fulfil_post_with, sort_heading
 from .waits import has_attribute, has_text
 
@@ -42,3 +42,53 @@ def test_census_changes_page_and_sort_in_place(page, component_origin):
     has_text(page.locator(ROWS).first, "Member 29")
     assert page.evaluate(MARKED) == "kept"
     assert "status" not in page.url and page.url.endswith("/census-changes")
+
+
+def test_a_resolution_is_recorded_in_place(page, component_origin):
+    """A row's Entered in ParishSoft posts its note with the page's filters
+    and the answer refreshes the page in place, with its notice."""
+    page.goto(component_origin + PATH)
+    page.evaluate(MARK)
+    posts = []
+
+    def choose(request):
+        """Answer the resolution with the page after it."""
+        posts.append(request.post_data)
+        return "/census-changes-resolved"
+
+    fulfil_post_with(page, "**" + PATH, component_origin, choose)
+    record = page.locator("details.census-record").first
+    # The form stays folded away, keeping the row short, until it is opened.
+    assert not record.locator("form.census-resolve").is_visible()
+    record.locator("summary").click()
+    form = record.locator("form.census-resolve")
+    form.get_by_label("Note (optional)").fill("Typed it in")
+    form.get_by_role("button", name="Entered in ParishSoft").click()
+    has_text(page.locator("#census-notice"), RESOLVED)
+    # The page's own notice is what is announced, never a fixed "Saved."
+    has_text(
+        page.get_by_role("status").filter(has_text="marked entered in ParishSoft"),
+        RESOLVED,
+    )
+    sent = posts[-1]
+    assert "resolve=entered" in sent and "note=Typed+it+in" in sent
+    assert "status=open" in sent and "request_key=" in sent
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_stale_resolution_is_announced_as_such(page, component_origin):
+    """A row someone else changed first answers with the current page and a
+    notice naming the row; that notice, not "Saved.", is announced."""
+    page.goto(component_origin + PATH)
+    page.evaluate(MARK)
+    fulfil_post_with(
+        page, "**" + PATH, component_origin, lambda request: "/census-changes-stale"
+    )
+    record = page.locator("details.census-record").first
+    record.locator("summary").click()
+    record.get_by_role("button", name="Ignore").click()
+    has_text(page.locator("#census-notice"), STALE)
+    announced = page.get_by_role("status").filter(has_text="updated by someone else")
+    has_text(announced, STALE)
+    assert page.get_by_role("status").filter(has_text="Saved.").count() == 0
+    assert page.evaluate(MARKED) == "kept"

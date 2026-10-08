@@ -210,6 +210,9 @@ FROZEN = {
     "0059_campaign_archives.sql": (
         "9b5886ac3f5fd6d1140c31bb2ddf89548915381a15c8ab7b24d094f4e74e1e3a"
     ),
+    "0060_census_resolution.sql": (
+        "d4c782a2bb55f81365403aefc492fc63fed76915a0443a185635b209a7d2660c"
+    ),
 }
 
 

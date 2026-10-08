@@ -5,7 +5,10 @@
 {% aboutpage "census-changes" %}<p>{% translate "Every census change Families reported that someone must carry into ParishSoft. Automatic changes can be published by an Administrator; every other change is entered in ParishSoft by hand. Each Family's live responses are used, and Testing responses are excluded. Values are shown in full so you can type them into ParishSoft; opening this page and every download is recorded." %}</p>
 <p>{% translate "ParishSoft now is blank where ParishSoft's current value cannot be read, which today includes every Family address. Status To review means an Administrator has not yet decided an automatic change; To do means the change still has to reach ParishSoft." %}</p>
 <p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can sort or copy it." %}</p>
-<p>{% translate "Member DUID, beside Who, is the Member's ID number in ParishSoft. It shows New Member for someone the Family added on the form, who is not in ParishSoft yet, and is blank for a change to the whole Family." %}</p>{% endaboutpage %}
+<p>{% translate "Member DUID, beside Who, is the Member's ID number in ParishSoft. It shows New Member for someone the Family added on the form, who is not in ParishSoft yet, and is blank for a change to the whole Family." %}</p>
+<p>{% translate "On a change entered by hand, open Record outcome and choose Entered in ParishSoft once you have typed it into ParishSoft. This is final and cannot be undone, so check ParishSoft first (for a Conflict, compare the values shown). Choose Ignore when the change will not be entered. An Administrator may reopen an ignored change, saying why." %}</p>
+<p>{% translate "Recorded by, Recorded at and Note show the latest Entered in ParishSoft, Ignore or Reopen on the change: who chose it, when, and the note they left. The downloads carry the same three columns." %}</p>{% endaboutpage %}
+<div id="census-notice" data-table-sync>{% if notice %}<p class="notice">{{ notice }}</p>{% endif %}</div>
 <div id="census-summary" data-table-sync><h2>{% translate "Summary" %}</h2>
 <p class="help">{% if query.history %}{% translate "Every census change by status, including history." %}{% else %}{% translate "Every census change by status, not counting history." %}{% endif %}</p>
 <dl>{% for label,count in summary %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% empty %}<dt>{% translate "Census changes" %}</dt><dd>0</dd>{% endfor %}</dl></div>
@@ -36,20 +39,29 @@
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Census change pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Census changes' %}"><table>
-<caption>{% translate "Census changes" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Who" as heading %}{% sort_heading table "who" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}{% translate "What changed" as heading %}{% sort_heading table "what" heading %}<th scope="col">{% translate "ParishSoft now" %}</th><th scope="col">{% translate "Family's answer" %}</th><th scope="col">{% translate "Edited value" %}</th>{% translate "How it reaches ParishSoft" as heading %}{% sort_heading table "route" heading %}{% translate "Status" as heading %}{% sort_heading table "status" heading %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}</tr></thead><tbody>
+<caption>{% translate "Census changes" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Who" as heading %}{% sort_heading table "who" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}{% translate "What changed" as heading %}{% sort_heading table "what" heading %}<th scope="col">{% translate "ParishSoft now" %}</th><th scope="col">{% translate "Family's answer" %}</th><th scope="col">{% translate "Edited value" %}</th>{% translate "How it reaches ParishSoft" as heading %}{% sort_heading table "route" heading %}{% translate "Status" as heading %}{% sort_heading table "status" heading %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}<th scope="col">{% translate "Recorded by" %}</th><th scope="col">{% translate "Recorded at" %}</th><th scope="col">{% translate "Note" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead><tbody>
 {% for row in table.rows %}<tr>
 <td>{{ row.family_name }}</td>
 <td class="numeric">{{ row.family_duid|duid }}</td>
-<th scope="row">{{ row.who }}</th>
+<th scope="row" id="who-{{ row.id }}">{{ row.who }}</th>
 <td class="numeric">{% if row.member_duid %}{{ row.member_duid|duid }}{% elif row.entity_kind == 'proposed_member' %}{% translate "New Member" %}{% endif %}</td>
-<td>{{ row.label }}</td>
+<td id="what-{{ row.id }}">{{ row.label }}</td>
 <td>{{ row.parishsoft_now }}{% if row.status == 'conflict' and row.baseline %}<br>{% translate "When the Family answered:" %} {{ row.baseline }}{% endif %}</td>
 <td>{{ row.family_answer }}</td>
 <td>{{ row.edited }}</td>
 <td>{{ row.route_label }}</td>
 <td>{{ row.status_label }}</td>
-<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant data-compact>{{ row.submitted_at|date:'c' }}</time></td></tr>
-{% empty %}<tr><td colspan="11">{% translate "No matching census changes." %}</td></tr>{% endfor %}</tbody></table></div>
+<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant data-compact>{{ row.submitted_at|date:'c' }}</time></td>
+<td>{{ row.resolution_by|default:"" }}</td>
+<td>{% if row.resolution_at %}<time datetime="{{ row.resolution_at|date:'c' }}" data-local-instant data-compact>{{ row.resolution_at|date:'c' }}</time>{% endif %}</td>
+<td>{{ row.resolution_note|default:"" }}</td>
+<td>{% if row.can_resolve or row.can_reopen and administrator %}{% comment %}A resolution posts with the page's own filters and table choices, so the answer is this page, refreshed in place (#528). The form sits in a disclosure so the row stays one line until someone opens it (table fit and row height).{% endcomment %}<details class="census-record"><summary aria-describedby="{{ row.describedby }}">{% translate "Record outcome" %}</summary>
+<form id="resolve-{{ row.id }}" class="census-resolve" method="post" action="{{ action }}#{{ table.anchor }}" data-in-place data-in-place-message-from="census-notice">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}{% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}<input type="hidden" name="proposal" value="{{ row.id }}"><input type="hidden" name="version" value="{{ row.version }}"><input type="hidden" name="request_key" value="{{ row.request_key }}">
+{% if row.can_resolve %}<label for="note-{{ row.id }}">{% translate "Note (optional)" %}</label><input id="note-{{ row.id }}" name="note" maxlength="2000" aria-describedby="{{ row.describedby }}">
+<p class="help" id="final-{{ row.id }}">{% translate "Entered in ParishSoft cannot be undone." %}</p>
+{% button type="submit" name="resolve" value="entered" aria-describedby=row.final_describedby %}{% translate "Entered in ParishSoft" %}{% endbutton %} {% button type="submit" variant="secondary" name="resolve" value="ignored" aria-describedby=row.describedby %}{% translate "Ignore" %}{% endbutton %}{% else %}<label for="note-{{ row.id }}">{% translate "Why reopen? (required)" %}</label><input id="note-{{ row.id }}" name="note" maxlength="2000" required aria-describedby="{{ row.describedby }}">
+{% button type="submit" variant="secondary" name="resolve" value="reopened" aria-describedby=row.describedby %}{% translate "Reopen" %}{% endbutton %}{% endif %}</form></details>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="15">{% translate "No matching census changes." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 </div>
 {% endblock %}

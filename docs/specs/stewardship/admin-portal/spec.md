@@ -816,7 +816,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `report_exact` | Latest-data export | Participation | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
 | `limitations_report` | Limitations | Menu: Limitations | Administrator, Staff | Talents and limitations | `/admin/reports/limitations/` | (same) | Renamed when talents were retired (#970); the old address is gone. Its CSV/XLSX/PDF download (`limitations/exports/`) is a non-page action. |
-| `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX/PDF download (`census/exports/`) is a non-page action. |
+| `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX/PDF download (`census/exports/`) is a non-page action; a row's Entered in ParishSoft, Ignore and Reopen post to the page itself. |
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
@@ -4369,13 +4369,14 @@ contact attempt that reaches the server without a usable zone (a page opened
 before this rule, for example) is refused in place like the other correctable
 refusals, keeping the typed values and asking the person to save again.
 
-Status: the two paragraphs below (manual census resolution and the
-**Entered in ParishSoft** tick) are not built yet; they belong to
+Status: the roster paragraph below (the Ministry **Entered in ParishSoft**
+tick) is not built yet; it belongs to
 [#528](https://github.com/epiphany40223/parishkit/issues/528) (ADM-09).
 
 Manual census items may be marked resolved externally or ignored by Admin or
 Staff, with notes, on the
-[Census changes](../reports/spec.md#pending-census-changes) worklist.
+[Census changes](../reports/spec.md#pending-census-changes) worklist
+([manual census resolution](../reports/spec.md#manual-census-resolution)).
 API-writable changes are view-only for Staff. Admin review and publication
 follow the [data workflow](../data/spec.md#review-and-publication).
 

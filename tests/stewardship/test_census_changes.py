@@ -50,6 +50,11 @@ def row(**values):
         "family_duid": 7001,
         "family_name": "Sample",
         "member_name": "Pat Sample",
+        "version": 1,
+        "resolution_action": None,
+        "resolution_note": None,
+        "resolution_at": None,
+        "resolution_by": None,
     } | values
 
 
@@ -216,14 +221,17 @@ def test_parse_refuses_values_outside_the_closed_choices(values):
 
 def test_csv_follows_the_page_column_order_in_the_chosen_zone():
     """The download has the page's columns in the page's order (#932):
-    Member DUID right after Who, Submitted last, times in the chosen zone."""
+    Member DUID right after Who, then Submitted and the latest resolution's
+    three columns (#528), times in the chosen zone."""
     result = select(rows(), CensusQuery(), administrator=False)
     text = census_csv(result, ZoneInfo("America/Chicago")).decode()
     table = list(csv.reader(io.StringIO(text)))
     assert tuple(table[0]) == HEADINGS
     assert HEADINGS[2:4] == ("Who", "Member DUID")
-    assert HEADINGS[-1] == "Submitted"
-    assert table[1][2] == "Pat Sample" and table[1][-1] == "2054-10-05T09:30:00-05:00"
+    assert HEADINGS[10:] == ("Submitted", "Recorded by", "Recorded at", "Note")
+    assert table[1][2] == "Pat Sample" and table[1][10] == "2054-10-05T09:30:00-05:00"
+    # No resolution yet: its three columns are blank.
+    assert table[1][11:] == ["", "", ""]
     assert len(table) == 4
 
 
@@ -409,12 +417,13 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
         )
     assert body.startswith(b"%PDF-")
     assert drawn["table"].headings == HEADINGS == tuple(table[0])
-    # Every cell matches except Submitted, which the PDF words as a date.
+    # Every cell matches except the times, which the PDF words as dates.
     submitted = HEADINGS.index("Submitted")
+    times = {submitted, HEADINGS.index("Recorded at")}
 
     def without_submitted(values):
-        """The row's cells other than its Submitted time."""
-        return [cell for index, cell in enumerate(values) if index != submitted]
+        """The row's cells other than its Submitted and Recorded at times."""
+        return [cell for index, cell in enumerate(values) if index not in times]
 
     assert [without_submitted(values) for values in drawn["rows"]] == [
         without_submitted(values) for values in table[1:]
@@ -425,11 +434,168 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
     # Every heading has a PDF column width, and the columns fill the page.
     assert set(PDF_WEIGHTS) == set(HEADINGS)
     assert sum(drawn["table"].widths) == pytest.approx(pdf_design.BODY_WIDTH)
-    # A compact time and the longest status each stay on one line.
-    for heading, text in (
-        ("Submitted", "Sep 30, 2026 12:04 PM"),
-        ("Status", "Being published"),
+    # A compact time keeps its date on one line and its time on the next;
+    # the longest status and "Automatic" each stay on one line.
+    for heading, text, lines in (
+        ("Submitted", "Sep 30, 2026 12:04 PM", ["Sep 30, 2026", "12:04 PM"]),
+        ("Recorded at", "Sep 30, 2026 12:04 PM", ["Sep 30, 2026", "12:04 PM"]),
+        ("Status", "Being published", ["Being published"]),
+        ("How it reaches ParishSoft", "Automatic", ["Automatic"]),
     ):
         values = [text if name == heading else "" for name in HEADINGS]
         cell = drawn["table"].cells(values)[HEADINGS.index(heading)]
-        assert cell == [text], heading
+        assert [line.strip() for line in cell] == lines, heading
+
+
+@pytest.mark.parametrize(
+    ("values", "resolve", "reopen"),
+    [
+        # A By-hand change still to do, or in conflict, takes the tick and Ignore.
+        ({"handling": "manual", "field": "suffix"}, True, False),
+        ({"handling": "manual", "execution": "conflict"}, True, False),
+        ({"entity_kind": "family", "field": "home_address"}, True, False),
+        # An automatic change is the Administrator's to publish.
+        ({}, False, False),
+        # Ignored: only reopen (offered to Administrators by the page).
+        ({"handling": "manual", "decision": "ignored"}, False, True),
+        # Final outcomes take nothing.
+        ({"handling": "manual", "execution": "resolved_external"}, False, False),
+        ({"handling": "manual", "execution": "superseded"}, False, False),
+    ],
+)
+def test_shape_offers_only_the_actions_the_row_allows(values, resolve, reopen):
+    """The page draws exactly the actions the service would accept."""
+    shown = shape(row(**values))
+    assert (shown["can_resolve"], shown["can_reopen"]) == (resolve, reopen)
+
+
+def test_shape_reads_the_latest_resolution():
+    """The latest resolution's who, when and note reach the page and files."""
+    when = datetime(2054, 10, 6, 15, tzinfo=UTC)
+    shown = shape(
+        row(
+            handling="manual",
+            execution="resolved_external",
+            resolution_action="entered",
+            resolution_note="Typed it in",
+            resolution_at=when.isoformat(),
+            resolution_by="staff@example.org",
+        )
+    )
+    assert shown["status_label"] == "Entered by hand"
+    assert shown["resolution_at"] == when
+    text = census_csv({"rows": [shown]}, ZoneInfo("UTC")).decode()
+    line = list(csv.reader(io.StringIO(text)))[1]
+    assert line[11:] == [
+        "staff@example.org",
+        "2054-10-06T15:00:00+00:00",
+        "Typed it in",
+    ]
+    # A resolution whose portal user is gone still says someone made it.
+    gone = shape(row(resolution_action="ignored", resolution_at=when))
+    assert gone["resolution_by"] == "Former portal user"
+
+
+def test_page_offers_record_outcome_last_and_only_where_allowed():
+    """The page heads Recorded by, Recorded at and Note after Submitted, as
+    the files do, and Actions last; Record outcome appears only on a row it
+    applies to, Reopen only for an Administrator (#528)."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.web.tables import paginate
+
+    when = datetime(2054, 10, 6, 15, tzinfo=UTC)
+    shown = [
+        shape(row(id="todo", handling="manual", field="suffix")),
+        shape(row(id="auto")),
+        shape(
+            row(
+                id="ignored",
+                handling="manual",
+                decision="ignored",
+                resolution_action="ignored",
+                resolution_at=when,
+                resolution_by="staff@example.org",
+                resolution_note="Duplicate",
+            )
+        ),
+    ]
+    for item in shown:
+        item["describedby"] = f"who-{item['id']} what-{item['id']}"
+        item["final_describedby"] = f"{item['describedby']} final-{item['id']}"
+
+    def page(administrator):
+        """The page as an Administrator or a Staff member sees it."""
+        return render_to_string(
+            "stewardship/census-changes.html",
+            {
+                "table": paginate(shown, {}, sorting=SORTING),
+                "query": CensusQuery(),
+                "query_fields": {},
+                "summary": [],
+                "status_choices": [],
+                "route_choices": [],
+                "kind_choices": [],
+                "export_timezones": ["UTC"],
+                "administrator": administrator,
+                "action": "/admin/reports/census/",
+            },
+        )
+
+    html = page(True)
+    headings = ["Submitted", "Recorded by", "Recorded at", "Note", "Actions"]
+    positions = [html.index(f">{heading}<") for heading in headings]
+    assert positions == sorted(positions)
+    assert 'id="resolve-todo"' in html and 'id="resolve-auto"' not in html
+    assert 'id="resolve-ignored"' in html and 'value="reopened"' in html
+    assert "staff@example.org" in html and "Duplicate" in html
+    assert "data-compact>2054-10-06T15:00:00+00:00</time>" in html
+    staff = page(False)
+    assert 'id="resolve-todo"' in staff and 'id="resolve-ignored"' not in staff
+
+
+def test_resolution_form_parsing():
+    """A row's form is all five fields once, or none (a filter POST)."""
+    from django.http import QueryDict
+
+    from parishkit.stewardship.reports.census_change_views import _resolution
+
+    proposal, key = (
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000002",
+    )
+    form = QueryDict(mutable=True)
+    form.update(
+        {
+            "resolve": "ignored",
+            "proposal": proposal,
+            "version": "3",
+            "request_key": key,
+            "note": "  Duplicate  ",
+            "status": "open",
+        }
+    )
+    parsed = _resolution(form)
+    assert parsed["action"] == "ignored" and parsed["expected_version"] == 3
+    assert parsed["note"] == "Duplicate" and str(parsed["proposal_id"]) == proposal
+    assert dict(form) == {"status": ["open"]}
+    assert _resolution(QueryDict("status=open", mutable=True)) is None
+    for broken in (
+        "resolve=entered",
+        f"resolve=entered&proposal={proposal}&version=x&request_key={key}&note=",
+        f"resolve=entered&proposal=bad&version=1&request_key={key}&note=",
+        f"resolve=entered&resolve=ignored&proposal={proposal}&version=1"
+        f"&request_key={key}&note=",
+    ):
+        with pytest.raises(ValueError):
+            _resolution(QueryDict(broken, mutable=True))
+
+
+def test_pdf_keeps_a_seven_digit_duid_on_one_line():
+    """The narrow DUID columns still hold a whole DUID on one line."""
+    from parishkit.stewardship.reports.pdf_design import Table
+
+    table = Table.weighted(HEADINGS, [PDF_WEIGHTS[name] for name in HEADINGS])
+    for heading in ("Family DUID", "Member DUID"):
+        values = ["1234567" if name == heading else "" for name in HEADINGS]
+        assert table.cells(values)[HEADINGS.index(heading)] == ["1234567"], heading

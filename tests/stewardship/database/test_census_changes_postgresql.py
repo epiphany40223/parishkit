@@ -128,8 +128,10 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert "stewardship-census-changes-" in response["Content-Disposition"]
         assert b"Requested" in body and b"How it reaches ParishSoft" in body
         table = list(csv.reader(io.StringIO(body.decode())))
-        # The page's order (#932): Member DUID right after Who, Submitted last.
-        assert table[0][2:4] == ["Who", "Member DUID"] and table[0][-1] == "Submitted"
+        # The page's order (#932): Member DUID right after Who, then
+        # Submitted and the latest resolution's three columns (#528).
+        assert table[0][2:4] == ["Who", "Member DUID"]
+        assert table[0][10:] == ["Submitted", "Recorded by", "Recorded at", "Note"]
         assert any(values[3] == "3" for values in table[1:])
         response, body = search(
             browser, export, {"format": "xlsx", "timezone": "UTC", "status": "all"}
