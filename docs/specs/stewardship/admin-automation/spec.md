@@ -667,7 +667,29 @@ registry (`runtime_background.py`), `jobs/queue_wait.py`, the task labels in
   (see [notifications](#notifications));
 - deletes the
   [service status records](../admin-portal/spec.md#service-status-records)
-  of processes that have not reported for a day (ADM-13).
+  of processes that have not reported for a day (ADM-13);
+- deletes the `heartbeat` and `progress` task events of task runs that
+  finished (succeeded, failed or cancelled) more than 30 days ago, through
+  `stewardship_task_event_prune_v1`
+  ([#386](https://github.com/epiphany40223/parishkit/issues/386)). Each
+  batch takes up to 20 such runs that finished in the week past the cutoff,
+  found through the partial index `task_terminal_updated`, in its own short
+  transaction with a 5-second statement and 1-second lock limit, never under
+  the work-order lock: it touches only finished runs' liveness rows, which
+  no writer changes. A batch stopped by a limit is a WARNING
+  `task_timed_out` entry (what, limit, elapsed) and ends the pass; the pass
+  also ends at a 60-second budget (an INFO `retention_budget` entry) or when
+  nothing is left, and the next hourly pass resumes. Every task run and its
+  other events (claims, transitions, expiry and recovery) are kept, and the
+  append-only guard refuses every other deletion. The 30 days are a code
+  constant (`EVENT_RETENTION_DAYS`); changing them is a code change, and
+  the function refuses fewer than 7. Runs older than the week's window are
+  not revisited, so after an outage longer than that an operator catches up
+  by hand, as the runtime guide's
+  [task event retention](../../../guides/stewardship-runtime.md#task-event-retention)
+  step says. A setup source load's progress
+  page reads its progress events, so after 30 days a finished load shows
+  no counts.
 
 The worker's grants, through the database grant manifest, are what
 `cleanup_admin_sessions` and the liveness check use, confirmed against the code

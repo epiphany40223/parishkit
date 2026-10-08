@@ -9842,8 +9842,24 @@ CREATE FUNCTION public.stewardship_task_event_binding_v1() RETURNS trigger
 -- FUNCTION: stewardship_task_event_immutable_v1()
 CREATE FUNCTION public.stewardship_task_event_immutable_v1() RETURNS trigger
     LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
             BEGIN
+                -- Only stewardship_task_event_prune_v1 deletes: it runs as
+                -- the schema owner and sets the flag for its own statement,
+                -- and only liveness events of a finished run go (#386). The
+                -- age floor (at least 7 days) is that function's to enforce.
+                IF TG_OP = 'DELETE'
+                   AND current_setting('stewardship.event_prune', true) = 'on'
+                   AND pg_has_role(current_user,
+                                   (SELECT nspowner FROM pg_namespace
+                                     WHERE nspname = 'public'), 'USAGE')
+                   AND OLD.action IN ('heartbeat', 'progress')
+                   AND EXISTS (SELECT 1 FROM public.stewardship_task_run r
+                                WHERE r.id = OLD.run_id
+                                  AND r.state IN ('succeeded', 'failed', 'cancelled')) THEN
+                    RETURN OLD;
+                END IF;
                 RAISE EXCEPTION 'Historical records are append-only'
                     USING ERRCODE = '23514';
             END;

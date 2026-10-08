@@ -82,6 +82,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     assert runtime_functions(ServiceRole.WORKER) == {
         "stewardship_admin_session_purge_v1(uuid[])",
         "stewardship_read_guard_kills_v1(uuid)",
+        "stewardship_task_event_prune_v1(integer, integer, integer)",
     }
     for role in (ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):
         assert runtime_functions(role) == frozenset()

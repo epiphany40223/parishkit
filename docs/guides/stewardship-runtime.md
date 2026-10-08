@@ -319,6 +319,26 @@ way, and its timeouts are logged for `mail_helper`. The
 [Family mail dispatch guide](stewardship-family-mail-dispatch.md#two-mail-consumers)
 describes it and the one-command fallback to one process.
 
+### Task event retention
+
+The worker's hourly maintenance removes the heartbeat and progress events
+of background tasks that finished more than 30 days ago, looking back one
+week past that each pass. After the worker was stopped for longer than a
+week, catch up by hand: as the database operator login, call the prune with
+a window that covers the outage, repeatedly, until it returns 0. Each call
+takes at most 200 finished runs, and each has its own time limit:
+
+```sh
+docker compose ... exec -T postgres psql --username pk_stewardship_operator \
+  --dbname DATABASE_NAME -v ON_ERROR_STOP=1 -c "SET statement_timeout = '30s'" \
+  -c "SELECT public.stewardship_task_event_prune_v1(30, OUTAGE_DAYS, 200)"
+```
+
+`OUTAGE_DAYS` is how many days the worker was stopped, plus a week. Repeat
+the command until it prints 0. A call stopped by its statement limit
+changes nothing; run it again. Nothing else is removed: every task and its
+claims, transitions, retries and outcome stay.
+
 ## Offline work and upgrade boundary
 
 Stop web and every online installer/worker before offline work. Dependency

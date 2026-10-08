@@ -172,6 +172,7 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
     assert runtime_functions(ServiceRole.WORKER) == {
         "stewardship_admin_session_purge_v1(uuid[])",
         "stewardship_read_guard_kills_v1(uuid)",
+        "stewardship_task_event_prune_v1(integer, integer, integer)",
     }
     tables, columns = runtime_grants(ServiceRole.WEB)
     allowed = {table: set(grants) for table, grants in tables.items()}

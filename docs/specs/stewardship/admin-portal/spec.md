@@ -3479,7 +3479,11 @@ or running after a restart explains why, from its newest restart event: an unexp
 server restart, recorded as an expired lease) or a temporary problem (a
 retryable failure), with the attempt number. A finished run shows no such
 notice; its history table still lists every attempt. Other background tasks get the
-same retry explanation and a phase in words.
+same retry explanation and a phase in words. For a task that finished more
+than 30 days ago, the history no longer shows its heartbeat and progress
+events, which the hourly maintenance removes
+([#386](https://github.com/epiphany40223/parishkit/issues/386)); its claims,
+transitions, retries and outcome stay.
 
 ## Follow-up workflows
 
