@@ -82,3 +82,19 @@ def schema_owner():
                         sql.Identifier(login)
                     )
                 )
+
+
+def seed_user(**fields):
+    """Create one PortalUser fixture as the schema owner.
+
+    The PortalUser insert guard (#389, migration 0030) admits only the web
+    login's sign-in shape: an enabled, version-1 row verified inside the
+    inserting transaction. Fixtures model other states (disabled users,
+    identities that never signed in) and some run inside a web-login block,
+    so they are seeded as the owner, with the database's own clock.
+    """
+    from parishkit.stewardship.accounts.policy_models import PortalUser
+    from parishkit.stewardship.accounts.sessions import database_now
+
+    with schema_owner(), transaction.atomic():
+        return PortalUser.objects.create(**({"verified_at": database_now()} | fields))

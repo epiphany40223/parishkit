@@ -727,7 +727,12 @@ recoverable and is not invented.
 
 `PortalUser` links a Google `sub` and current normalized verified email to the
 login/audit history, including the validated Google hosted-domain claim when
-present. It is runtime identity state. Authorization policy materialized from
+present. It is runtime identity state. A SQL guard (#389) admits an insert
+only from the web login, with `verified_at` inside the inserting transaction
+(as the sign-in stamps it), and only for an enabled, unattributed, version-1
+row with a non-empty subject and email. SQL cannot see the Google sign-in
+itself, and it does not check email or hosted-domain normalization.
+Authorization policy materialized from
 the active YAML version uses:
 
 - `DomainRule`: normalized domain with Staff and/or Ministry-leader roles;
