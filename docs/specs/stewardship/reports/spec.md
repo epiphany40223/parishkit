@@ -983,7 +983,13 @@ source comparison pledge/contribution aggregates with as-of time. The page and
 every export format (CSV, XLSX, PDF) head those two aggregates "ParishSoft
 pledged" and "ParishSoft contributed", and say "ParishSoft" rather than
 "Source" in the export metadata that describes them, so a downloaded file names
-its figures as the page does.
+its figures as the page does. An "Entered by Staff" column says Yes when Staff
+entered the Family's current response through [Open form](#family-timeline)
+(#529), and No when the Family submitted it, so an earlier response Staff
+entered and the Family later replaced shows No; it names no Staff member. The
+page's help says so, since the response lists' column of the same name counts
+every response Staff entered. A file captured before
+the column existed leaves it blank, never No (#794).
 
 Filters include active/inactive, first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method. Summary shows

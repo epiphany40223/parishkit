@@ -306,6 +306,10 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
         row["source_contributions"] = parse_money(row.pop("contribution_total"))
         for field in ("submitted_at", "first_submitted_at"):
             row[field] = datetime.fromisoformat(row[field])
+        # Whether Staff entered the current response (#794); None for an
+        # export captured before the projection carried it, shown blank.
+        # financial_documents reads this key directly.
+        row["staff_entered"] = row.get("staff_entered")
     summary = result["summary"]
     summary["annual_total"] = parse_money(summary["annual_total"])
     summary["frequencies"] = [

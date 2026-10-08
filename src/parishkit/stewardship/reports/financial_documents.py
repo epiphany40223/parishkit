@@ -33,9 +33,13 @@ HEADINGS = (
     "Latest response",
     "First response",
     "Family version",
+    "Entered by Staff",
     "Response reference",
 )
 STATUS = {True: "Active", False: "Inactive", None: "Status unavailable"}
+# Whether Staff entered the effective response for the Family (#794). A
+# capture made before the projection carried it has None: blank, never "No".
+STAFF_ENTERED = {True: "Yes", False: "No", None: ""}
 UNPROVEN = (
     "Unavailable: the latest giving data read from ParishSoft is not confirmed "
     "complete for this campaign's comparison period. Unavailable does not mean "
@@ -183,6 +187,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 instant(row["submitted_at"]),
                 instant(row["first_submitted_at"]),
                 f"{row['family_version']:,}",
+                STAFF_ENTERED[row["staff_entered"]],
                 row["id"],
             )
         )
@@ -194,7 +199,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 (row["family_name"], str(row["family_duid"]))
                 + ("",) * 4
                 + (CONTINUED + cell,)
-                + ("",) * 5
+                + ("",) * 6
                 + (row["id"],)
             )
     return FinancialDocument(metadata, tuple(rows), result["total"], requested_at)

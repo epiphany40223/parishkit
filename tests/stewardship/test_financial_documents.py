@@ -47,6 +47,7 @@ def row(**changes):
         ],
         "source_pledge": MoneyAmount(120000),
         "source_contributions": MoneyAmount(10000),
+        "staff_entered": False,
     } | changes
 
 
@@ -118,6 +119,8 @@ def test_rows_word_money_status_shares_and_local_instants():
         datetime(2026, 9, 19, 11, 4, tzinfo=NEW_YORK),
         datetime(2026, 9, 1, 11, 4, tzinfo=NEW_YORK),
         "2",
+        # Entered by Staff (#794): the Family submitted it itself.
+        "No",
         str(UUID(int=97)),
     )
     # A zero pledge has no frequency or installment; unproven money is typed
@@ -185,9 +188,9 @@ def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
     assert built.item_count == 2 and len(built.rows) == 6
     assert [cell[1] for cell in built.rows] == ["1234567"] * 5 + ["2"]
     # A continuation row carries the Family, the wording and the reference only.
-    assert built.rows[1][2:6] == ("", "", "", "") and built.rows[1][7:12] == ("",) * 5
+    assert built.rows[1][2:6] == ("", "", "", "") and built.rows[1][7:13] == ("",) * 6
     assert built.rows[1][6].startswith("(continued) Option ")
-    assert built.rows[1][12] == str(UUID(int=97))
+    assert built.rows[1][13] == str(UUID(int=97))
     expected = visible_text("; ".join(f"{s['label']}: {s['text']}" for s in shares))
     # Every character survives a workbook round trip, in order, in the
     # writer's own spelling, and no stored cell exceeds the maximum.
@@ -205,7 +208,7 @@ def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
     data = records[2:]
     assert len(data) == 6 and [item[1] for item in data] == [c[1] for c in built.rows]
     assert data[1][6].startswith("(continued) ") and data[1][2] == data[1][3] == ""
-    assert data[1][12] == str(UUID(int=97))
+    assert data[1][13] == str(UUID(int=97))
     output = io.BytesIO()
     render_information(built, output, format="pdf")
     assert output.getvalue().startswith(b"%PDF")
@@ -418,3 +421,16 @@ def test_xlsx_money_is_accurate_to_the_cent_despite_doubles():
         # Read back, the stored double rounds to the exact cent.
         assert Decimal(str(round(float(cell.value), 2))) == exact, reference
     book.close()
+
+
+@pytest.mark.parametrize("value, cell", [(True, "Yes"), (False, "No"), (None, "")])
+def test_entered_by_staff_is_yes_no_or_blank_for_an_older_capture(value, cell):
+    """Staff entry for the current response (#794); old captures stay blank.
+
+    ``shape_result`` gives an older capture's row (no marker) None, which
+    renders blank, never No.
+    """
+    built = document([row(staff_entered=value)])
+    index = built.headings.index("Entered by Staff")
+    assert built.headings[index + 1] == "Response reference"
+    assert built.rows[0][index] == cell
