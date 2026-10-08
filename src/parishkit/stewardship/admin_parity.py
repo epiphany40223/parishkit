@@ -101,7 +101,7 @@ LEDGER = {
         "the human side of the automation interface: acknowledging notices"
     ),
     # Source refresh.
-    "source_refresh": pending("PR 6", "refresh start", "refresh status"),
+    "source_refresh": command("refresh start", "refresh status"),
     "background_task_page": command("task show"),
     "background_task_status": command("task show"),
     # Schedules and configuration.

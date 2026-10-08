@@ -384,6 +384,17 @@ round trip through the installer, tokens crossing between the page and the
 command line, bad tokens, scopes, ended sessions and unknown outcomes) and
 the unchanged schedule, clone, campaign, content, parish, Ministry and
 configuration request suites.
+ADM-11.07 lands in three pull requests. 6a adds `refresh start` and
+`refresh status` (`parishkit.stewardship.admin_refresh`), with the Source
+refresh page's read and request moved into `read_refresh_page` and
+`request_manual_refresh`; proven by `tests/stewardship/test_admin_refresh.py`
+(golden documents, allowlists, one event per key, refusal mapping and the
+unknown outcome), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_refresh_cli_postgresql.py` (keys
+crossing between the page and the command line, joining a waiting refresh,
+running and waiting status, scopes and ended sessions) and the unchanged
+refresh view suite. 6b adds `test sample`, and 6c chosen-Family tests.
 ADM-11.10 lands in two pull requests. 9a adds `task retry`
 (`parishkit.stewardship.admin_operations`), with the retry pages' bodies,
 the delivery views' admission and their command scope moved into
