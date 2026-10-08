@@ -194,7 +194,7 @@ def test_stored_settings_list_the_daily_times_and_the_nightly():
 
 
 def test_check_schedule_reports_every_problem_by_name():
-    """Close times, off-quarter times, unmatched skips and the skip setting."""
+    """Close times, off-quarter times and unmatched skips; skipping is allowed."""
     document = rules(
         at("full", "23:50"),
         at("full", "00:00"),
@@ -207,13 +207,15 @@ def test_check_schedule_reports_every_problem_by_name():
     assert Problem("off_quarter", ("12:10",)) in problems
     assert Problem("off_quarter", ("23:50",)) in problems
     assert Problem("unmatched_skip", index=0) in problems
-    assert Problem("skip_not_available") in problems
+    # Skipping around Family emails is honored since #632 step 2b.
+    assert {problem.code for problem in problems} == {
+        "too_close",
+        "off_quarter",
+        "unmatched_skip",
+    }
     # A kept off-quarter-hour full time is allowed; a new one is not.
     kept = check_schedule(stored_settings(document), kept=("23:50",))
     assert Problem("off_quarter", ("23:50",)) not in kept
-    assert Problem("skip_not_available") not in check_schedule(
-        stored_settings(document), skip_available=True
-    )
 
 
 def test_check_schedule_refuses_lists_the_rules_do_not_produce():

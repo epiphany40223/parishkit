@@ -56,8 +56,16 @@ def task_runtime_grants(role):
         "stewardship_setup_completion",
         "stewardship_secret_request",
         "stewardship_credential_consumer_ack",
+        # Recorded skips and holds of refresh slots (#632): the data-age
+        # alarm ignores skipped full slots, and held ones are catch-up
+        # evidence.
+        "stewardship_source_slot_decision",
     ):
         tables[table] = {"SELECT"}
+    if role is ServiceRole.WORKER:
+        # The hourly maintenance removes slot decisions eight days after
+        # their due time; the table's guard refuses any younger deletion.
+        tables["stewardship_source_slot_decision"].add("DELETE")
     tables["stewardship_credential_consumer_ack"].add("INSERT")
     for table in (
         "stewardship_audit_event",

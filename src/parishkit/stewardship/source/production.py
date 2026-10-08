@@ -27,10 +27,16 @@ from parishkit.stewardship.observability import (
 )
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .cadence import catch_up_slot, due_slots, refresh_settings
+from .cadence import (
+    catch_up_slot,
+    due_slots,
+    listed_due_slots,
+    refresh_settings,
+    skips_around_emails,
+)
 from .data_age import catch_up_at, source_timezone
 from .outcomes import scope_fingerprint
-from .refresh_models import SourceRefreshTick
+from .refresh_models import SourceRefreshTick, SourceSlotDecision
 from .requests import TASK_TYPE, _organization, _receipt, _window, request_refresh
 from .send_hold import delta_held
 from .superseding import cancel_superseded_refresh
@@ -123,10 +129,13 @@ def produce_refreshes(guard, *, skipped=None, refused=None):
     # and this read takes no lock, so the lock is not held any longer for it.
     # The schedule-change catch-up's reads (about five small queries) are
     # also made here, outside the lock; inside, the slot is rebuilt from the
-    # locked inputs and the tick guard checks the instant again.
+    # locked inputs and the tick guard checks the instant again. So are the
+    # Family email windows of a schedule that skips around them (#632).
     with transaction.atomic():
-        held = delta_held(database_now())
+        instant = database_now()
+        held = delta_held(instant)
         effective_at = _catch_up_at()
+        planning = _skip_planning(instant)
     guard.check()
     with work_transaction():
         campaign_id = SystemConfiguration.objects.values_list(
@@ -151,11 +160,9 @@ def produce_refreshes(guard, *, skipped=None, refused=None):
         schedule = refresh_settings(integration.settings)
         nightly_time = schedule["nightly_time"]
         fingerprint = scope_fingerprint(organization, window.digest)
+        now = database_now()
         slots = due_slots(
-            now=database_now(),
-            timezone=timezone,
-            scope_fingerprint=fingerprint,
-            **schedule,
+            now=now, timezone=timezone, scope_fingerprint=fingerprint, **schedule
         )
         catch_up = _catch_up(effective_at, timezone, fingerprint)
         if catch_up is not None:
@@ -165,6 +172,52 @@ def produce_refreshes(guard, *, skipped=None, refused=None):
             slots = (*slots[:1], catch_up, *slots[1:])
         result = []
         waiting, rejected = set(), set()
+        decisions = None
+        # A slot recorded as skipped never runs, whatever the schedule says
+        # now: turning the setting off later must not make the scheduler
+        # create a tick the guard refuses (which would roll back the loop).
+        recorded_skips = set(
+            SourceSlotDecision.objects.filter(
+                slot_key__in=[slot.slot_key for slot in slots], decision="skipped"
+            ).values_list("slot_key", flat=True)
+        )
+        if (
+            planning is not None
+            and skips_around_emails(integration.settings)
+            # The windows were read before the lock: decide nothing if the
+            # mode, the current campaign or its pause has changed since.
+            and planning[2] == _delivery_state()
+        ):
+            # Skip refreshes around Family emails (#632): every due,
+            # undecided slot is decided first, and the slot decision record
+            # then governs the latest slots below.
+            record = _recorder(
+                scope.runtime.active_configuration_id,
+                timezone,
+                nightly_time,
+                refused,
+                rejected,
+            )
+            windows, skip_since, _ = planning
+            decisions, extra = _decide(
+                windows=windows,
+                skip_since=skip_since,
+                candidates=listed_due_slots(
+                    now=now,
+                    timezone=timezone,
+                    nightly_time=nightly_time,
+                    scope_fingerprint=fingerprint,
+                    full_refresh_times=schedule["full_refresh_times"],
+                    quick_refresh_times=schedule["quick_refresh_times"],
+                ),
+                latest=slots,
+                held=held,
+                nightly_time=nightly_time,
+                record=record,
+                skipped=skipped,
+                waiting=waiting,
+            )
+            slots = (*slots, *extra)
         for slot in slots:
             guard.check()
             previous = (
@@ -175,8 +228,20 @@ def produce_refreshes(guard, *, skipped=None, refused=None):
             if previous is not None:
                 result.append(_receipt(previous.command))
                 continue
+            if slot.slot_key in recorded_skips or (
+                decisions is not None and decisions.get(slot.slot_key) == "skipped"
+            ):
+                # Skipped around a Family email: never run, never replaced.
+                continue
             if held and _waits_for_send(slot, nightly_time):
-                if skipped is None or slot.slot_key not in skipped:
+                if decisions is not None and slot.slot_key not in decisions:
+                    decisions[slot.slot_key] = "held"
+                    record(slot, "held")
+                # Logged once per held slot per process (``_decide`` may
+                # have logged it in this loop already).
+                if slot.slot_key not in waiting and (
+                    skipped is None or slot.slot_key not in skipped
+                ):
                     _log_skip(slot)
                 waiting.add(slot.slot_key)
                 continue
@@ -231,6 +296,176 @@ def produce_refreshes(guard, *, skipped=None, refused=None):
         refused.clear()
         refused.update(rejected)
     return tuple(result)
+
+
+def _delivery_state():
+    """The inputs the windows depend on: mode, current campaign and its pause."""
+    return SystemConfiguration.objects.values_list(
+        "mode", "current_campaign_id", "current_campaign__delivery_paused"
+    ).first()
+
+
+def _skip_planning(now):
+    """``(windows, skip_since, state)`` for a schedule that skips, or None.
+
+    Read before the work-order lock (#632): the Family email windows at
+    ``now``, when the skip setting last took effect
+    (``data_age.skip_setting_since``) and the delivery state they were read
+    under (``_delivery_state``), which the loop re-reads under the lock: if
+    the mode, the current campaign or its pause changed in between, nothing
+    is decided in that loop. None when the active configuration's schedule
+    does not skip around Family emails.
+    """
+    from .data_age import skip_setting_since
+    from .send_windows import current_windows
+
+    settings = (
+        AppliedIntegration.objects.filter(
+            configuration_id__in=SystemConfiguration.objects.values(
+                "active_configuration_id"
+            ),
+            kind="parishsoft",
+        )
+        .values_list("settings", flat=True)
+        .first()
+    )
+    if settings is None or not skips_around_emails(settings):
+        return None
+    return current_windows(now), skip_setting_since(), _delivery_state()
+
+
+def _recorder(configuration_id, timezone, nightly_time, refused, rejected):
+    """A function recording one slot decision, each in its own savepoint.
+
+    ``record(slot, decision, window_cause=None)`` writes the row with the
+    inputs the slot's tick would carry. A guard refusal (a defect, or inputs
+    that moved since they were read) rolls back only that row, adds the key
+    to ``rejected`` and is logged once per scheduler process like a refused
+    catch-up (``refused`` holds the keys already logged); the loop goes on.
+    Returns whether the row was written.
+    """
+
+    def record(slot, decision, window_cause=None):
+        """Write the decision for ``slot``; False if the guard refused it."""
+        if slot.slot_key in rejected:
+            # Already refused in this loop: not retried, not logged again.
+            return False
+        try:
+            with transaction.atomic():
+                SourceSlotDecision.objects.create(
+                    configuration_id=configuration_id,
+                    cause=slot.cause,
+                    due_at=slot.due_at,
+                    timezone=timezone,
+                    nightly_time=slot.nightly_time or nightly_time,
+                    slot_key=slot.slot_key,
+                    decision=decision,
+                    window_cause=window_cause,
+                    correlation_id=slot.command_id,
+                )
+            return True
+        except IntegrityError as error:
+            if getattr(error.__cause__, "sqlstate", None) != "23514":
+                raise
+            if refused is None or slot.slot_key not in refused:
+                with correlation(slot.command_id):
+                    emit(
+                        Event.STARTUP_VALIDATED,
+                        level=logging.WARNING,
+                        failure_kind=FailureKind.REFRESH_DECISION_REFUSED,
+                    )
+            rejected.add(slot.slot_key)
+            return False
+
+    return record
+
+
+def _decide(
+    *,
+    windows,
+    skip_since,
+    candidates,
+    latest,
+    held,
+    nightly_time,
+    record,
+    skipped,
+    waiting,
+):
+    """Decide every due, undecided slot; return the decisions and extra slots.
+
+    For a schedule that skips refreshes around Family emails (#632), in each
+    loop, for every due slot of today or yesterday that has no refresh and
+    no decision (``candidates``, oldest first), other than the nightly
+    refresh: inside a Family email's window it is recorded as skipped (never
+    due, never run); otherwise, held by the bulk-send hold (``held``), it is
+    recorded as held (still due). Any other undecided slot stays undecided:
+    only the latest slot of each kind (``latest``) gets a refresh, in the
+    caller's loop. ``windows`` were read before the work-order lock. Slots
+    due before ``skip_since`` (when the skip setting last took effect) are
+    not decided at all: one already overdue, and perhaps alarming, must not
+    be turned into a skip by switching the setting on.
+
+    Returns ``(decisions, extra)``: every candidate's and latest slot's
+    recorded decision by slot key, and the held slot to run as the catch-up
+    when the hold has ended and the latest due slot of its kind was skipped
+    (the newest held slot of that kind, unless a later one of that kind has
+    run). ``skipped`` and ``waiting`` are the caller's held-slot logging sets.
+    """
+    from .send_windows import window_cause
+
+    keys = {slot.slot_key for slot in (*candidates, *latest)}
+    ticked = set(
+        SourceRefreshTick.objects.filter(slot_key__in=keys).values_list(
+            "slot_key", flat=True
+        )
+    )
+    decisions = dict(
+        SourceSlotDecision.objects.filter(slot_key__in=keys).values_list(
+            "slot_key", "decision"
+        )
+    )
+    undecided = [
+        slot
+        for slot in candidates
+        if slot.slot_key not in ticked
+        and slot.slot_key not in decisions
+        and _waits_for_send(slot, nightly_time)
+        and (skip_since is None or slot.due_at >= skip_since)
+    ]
+    for slot in undecided:
+        cause = window_cause(windows, slot.due_at)
+        if cause is not None:
+            if record(slot, "skipped", cause):
+                decisions[slot.slot_key] = "skipped"
+        elif held:
+            if record(slot, "held"):
+                decisions[slot.slot_key] = "held"
+            if skipped is None or slot.slot_key not in skipped:
+                _log_skip(slot)
+            waiting.add(slot.slot_key)
+    extra = []
+    if not held:
+        for slot in latest:
+            if decisions.get(slot.slot_key) != "skipped":
+                continue
+            same = [c for c in candidates if c.cause == slot.cause]
+            newest = max(
+                (
+                    c
+                    for c in same
+                    if c.due_at < slot.due_at
+                    and decisions.get(c.slot_key) == "held"
+                    and c.slot_key not in ticked
+                ),
+                key=lambda c: c.due_at,
+                default=None,
+            )
+            if newest is not None and not any(
+                c.slot_key in ticked and c.due_at > newest.due_at for c in same
+            ):
+                extra.append(newest)
+    return decisions, extra
 
 
 def _catch_up_at():

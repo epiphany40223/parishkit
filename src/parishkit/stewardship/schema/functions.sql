@@ -4929,18 +4929,6 @@ CREATE FUNCTION public.stewardship_refresh_tick_guard_v1() RETURNS trigger
 DECLARE runtime stewardship_system_configuration%ROWTYPE;
         command stewardship_source_refresh_command%ROWTYPE;
         request stewardship_source_refresh_request%ROWTYPE;
-        zone text;
-        nightly text;
-        frequency text;
-        times jsonb;
-        deltas text;
-        quick jsonb;
-        schedule jsonb;
-        boundary bigint;
-        effective timestamptz;
-        scope_digest text;
-        expected_key text;
-        local_day date;
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
         AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
@@ -4976,123 +4964,25 @@ BEGIN
         RAISE EXCEPTION 'Refresh tick command does not match its current source scope'
             USING ERRCODE='23514';
     END IF;
-    IF runtime.current_campaign_id IS NULL THEN
-        SELECT timezone INTO zone FROM stewardship_parish
-            WHERE configuration_id=NEW.configuration_id;
-    ELSE
-        SELECT cfg.timezone INTO zone FROM stewardship_campaign c
-            JOIN stewardship_campaign_configuration cfg
-                ON cfg.id=c.active_configuration_id
-            WHERE c.id=runtime.current_campaign_id;
-    END IF;
-    -- The applied schedule: the nightly time, the full-refresh frequency,
-    -- the configured local full-refresh times (the nightly time alone when
-    -- an older document names no list), the delta cadence (#465) and the
-    -- listed local quick times (#632).
-    SELECT coalesce(settings->>'nightly_time','02:00'),
-           coalesce(settings->>'full_refresh','daily'),
-           coalesce(settings->'full_refresh_times',
-                    jsonb_build_array(coalesce(settings->>'nightly_time','02:00'))),
-           coalesce(settings->>'delta_refresh','quarter_hour'),
-           settings->'quick_refresh_times',
-           stewardship_refresh_schedule_v1(settings)
-        INTO nightly, frequency, times, deltas, quick, schedule
-        FROM stewardship_applied_integration
-        WHERE configuration_id=NEW.configuration_id AND kind='parishsoft';
-    -- A full tick names the configured time it fell due at, which must be
-    -- the nightly time or one of the listed times; a delta tick carries the
-    -- nightly time, as it always has, and so does a catch-up tick.
-    IF NEW.timezone IS DISTINCT FROM zone
-       OR (command.cause IN ('delta','catch_up')
-           AND NEW.nightly_time IS DISTINCT FROM nightly)
-       OR (command.cause='nightly' AND NEW.nightly_time IS DISTINCT FROM nightly
-           AND NOT (jsonb_typeof(times)='array' AND times ? NEW.nightly_time::text))
-       OR NEW.due_at > clock_timestamp()
-       OR NEW.due_at <> date_trunc('second',NEW.due_at) THEN
-        RAISE EXCEPTION 'Refresh tick is not due under its applied cadence'
+    -- The slot's time, cadence and identity, checked exactly as for a slot
+    -- decision (#632): stewardship_refresh_slot_due_v1.
+    PERFORM stewardship_refresh_slot_due_v1('tick', NEW.configuration_id,
+        runtime.current_campaign_id, command.cause, NEW.due_at, NEW.timezone,
+        NEW.nightly_time, request.organization_id, request.window_digest,
+        NEW.slot_key);
+    -- At most one schedule-change catch-up per effective instant.
+    IF command.cause='catch_up' AND EXISTS (
+           SELECT 1 FROM stewardship_source_refresh_tick t
+           JOIN stewardship_source_refresh_command c ON c.id=t.command_id
+           WHERE c.cause='catch_up' AND t.due_at=NEW.due_at) THEN
+        RAISE EXCEPTION 'Catch-up tick must be due when its schedule took effect'
             USING ERRCODE='23514';
     END IF;
-    IF command.cause='delta' AND deltas='times' THEN
-        -- Listed quick times (#632) are parish-local wall times resolved
-        -- like the full times: the tick must fall at one of them on its
-        -- local day or the day before.
-        local_day := (NEW.due_at AT TIME ZONE
-                      public.stewardship_timezone_name_v1(zone))::date;
-        IF jsonb_typeof(quick) IS DISTINCT FROM 'array' OR NOT EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(quick) AS listed(value)
-               WHERE NEW.due_at IN (
-                   stewardship_resolve_local_v1(local_day+listed.value::time,zone),
-                   stewardship_resolve_local_v1((local_day-1)+listed.value::time,zone)))
-        THEN
-            RAISE EXCEPTION 'Delta tick must match its applied delta cadence'
-                USING ERRCODE='23514';
-        END IF;
-    ELSIF command.cause='delta' THEN
-        -- Deltas fall on UTC quarter hours or hours, or not at all.
-        IF deltas='off' OR extract(second FROM NEW.due_at) <> 0
-           OR mod(extract(minute FROM NEW.due_at AT TIME ZONE 'UTC')::int,
-                  CASE deltas WHEN 'hourly' THEN 60 ELSE 15 END) <> 0 THEN
-            RAISE EXCEPTION 'Delta tick must match its applied delta cadence'
-                USING ERRCODE='23514';
-        END IF;
-    ELSIF command.cause='catch_up' THEN
-        -- The schedule-change catch-up (#632) is due exactly when the
-        -- current schedule took effect: the activation of the earliest
-        -- configuration in the latest unbroken run of activations whose
-        -- schedule equals the current one (bootstrap configurations
-        -- ignored), as data_age.schedule_runs finds it. A schedule that
-        -- never changed has no catch-up, and there is at most one.
-        SELECT max(a.sequence) INTO boundary
-            FROM stewardship_config_activation a
-            JOIN stewardship_configuration_version v ON v.id=a.configuration_id
-            LEFT JOIN stewardship_applied_integration i
-                ON i.configuration_id=a.configuration_id AND i.kind='parishsoft'
-            WHERE v.validation_schema<>'bootstrap-policy-v1'
-              AND stewardship_refresh_schedule_v1(i.settings)
-                  IS DISTINCT FROM schedule;
-        SELECT date_trunc('second',min(a.created_at)) INTO effective
-            FROM stewardship_config_activation a
-            JOIN stewardship_configuration_version v ON v.id=a.configuration_id
-            WHERE v.validation_schema<>'bootstrap-policy-v1' AND a.sequence>boundary;
-        IF boundary IS NULL OR effective IS DISTINCT FROM NEW.due_at
-           OR EXISTS (SELECT 1 FROM stewardship_source_refresh_tick t
-                      JOIN stewardship_source_refresh_command c ON c.id=t.command_id
-                      WHERE c.cause='catch_up' AND t.due_at=NEW.due_at) THEN
-            RAISE EXCEPTION 'Catch-up tick must be due when its schedule took effect'
-                USING ERRCODE='23514';
-        END IF;
-    ELSIF frequency IN ('hourly','quarter_hour') THEN
-        -- A frequent full refresh uses UTC hour or quarter-hour boundaries.
-        IF extract(second FROM NEW.due_at) <> 0
-           OR mod(extract(minute FROM NEW.due_at AT TIME ZONE 'UTC')::int,
-                  CASE frequency WHEN 'hourly' THEN 60 ELSE 15 END) <> 0 THEN
-            RAISE EXCEPTION 'Full refresh tick must match its applied frequency'
-                USING ERRCODE='23514';
-        END IF;
-    ELSE
-        local_day := (NEW.due_at AT TIME ZONE
-                      public.stewardship_timezone_name_v1(zone))::date;
-        IF NEW.due_at <> stewardship_resolve_local_v1(
-               local_day+NEW.nightly_time::time,zone)
-           AND NEW.due_at <> stewardship_resolve_local_v1(
-               (local_day-1)+NEW.nightly_time::time,zone) THEN
-            RAISE EXCEPTION 'Nightly tick must use canonical local-time resolution'
-                USING ERRCODE='23514';
-        END IF;
-    END IF;
-    scope_digest := encode(sha256(convert_to(stewardship_source_canonical(
-        jsonb_build_object('organization_id',request.organization_id,
-                           'window_digest',request.window_digest)),'UTF8')),'hex');
-    expected_key := encode(sha256(convert_to(stewardship_source_canonical(
-        jsonb_build_object('schema','source-refresh-slot-v1',
-            'scope_fingerprint',scope_digest,'timezone',zone,
-            'nightly_time',CASE WHEN command.cause='nightly'
-                                THEN NEW.nightly_time::text ELSE NULL END,
-            'cause',command.cause,'due_at',
-            to_char(NEW.due_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS')||'+00:00')
-        ),'UTF8')),'hex');
-    IF NEW.slot_key IS DISTINCT FROM expected_key THEN
-        RAISE EXCEPTION 'Refresh tick identity does not match its exact inputs'
+    -- A slot recorded as skipped around a Family email never runs; a held
+    -- slot's tick is admitted (#632).
+    IF EXISTS (SELECT 1 FROM stewardship_source_slot_decision
+               WHERE slot_key=NEW.slot_key AND decision='skipped') THEN
+        RAISE EXCEPTION 'Refresh tick slot was recorded as skipped'
             USING ERRCODE='23514';
     END IF;
     RETURN NEW;
