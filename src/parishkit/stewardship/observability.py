@@ -203,6 +203,9 @@ TIMEOUT_LIMITS = frozenset(
         # ``pk-stewardship restore-check`` killed pg_restore while it read a
         # dump's migration records (#608); process log only.
         "restore_check_dump",
+        # ``pk-stewardship restore-compare`` killed pg_restore while it
+        # loaded a dump into its scratch database (#608); process log only.
+        "restore_compare_load",
     }
 )
 

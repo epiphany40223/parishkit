@@ -44,6 +44,14 @@ _COMMAND_OPTIONS = {
     "backup-prove": {"key", "input"},
     # Compares a backup set with this image before a restore (#608).
     "restore-check": {"manifest", "dump"},
+    # Compares a set's schema with this image's in a scratch database (#608).
+    "restore-compare": {
+        "dump",
+        "scratch_host",
+        "scratch_port",
+        "scratch_password_file",
+        "keep",
+    },
     "smoke": {
         "config",
         "target",
@@ -178,6 +186,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "due-at",
         "manifest",
         "dump",
+        "scratch-host",
+        "scratch-port",
+        "scratch-password-file",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -188,6 +199,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             "smoke only: post the one fixed Slack message, or copy the newest "
             "backup set to the Drive folder, after a valid check"
         ),
+    )
+    parser.add_argument(
+        "--keep",
+        action="store_true",
+        default=None,
+        help="restore-compare only: keep the scratch databases afterwards",
     )
     parser.add_argument(
         "--bind-all-interfaces",
@@ -261,6 +278,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .restore_check import execute_restore_check
 
         return execute_restore_check(args)
+    if args.command == "restore-compare":
+        from .restore_compare import execute_restore_compare
+
+        return execute_restore_compare(args)
     if args.command == "smoke":
         from .smoke import execute_smoke
 
