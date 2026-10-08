@@ -131,6 +131,9 @@ class Action(StrEnum):
     AUTOMATION_SESSION_ENDED = "automation_session_ended"
     AUTOMATION_SESSION_REFUSED = "automation_session_refused"
     AUTOMATION_NOTICES_ACKNOWLEDGED = "automation_notices_acknowledged"
+    # An automation session stood in for a recent Google sign-in on a
+    # fresh-gated action (ADM-11 PR 5), in that action's transaction.
+    AUTOMATION_FRESH_GATE = "automation_fresh_gate"
     # Admin automation commands that change state (ADM-11): one event per
     # change, admin_cmd_<area>_<verb>, whose subject is the automation
     # session (see the specification's "Audit attribution").

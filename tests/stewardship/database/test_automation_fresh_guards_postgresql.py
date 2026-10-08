@@ -534,7 +534,9 @@ def test_the_post_cleanup_check_accepts_only_an_automation_caller(
         confirmation_views.ProductionTransitionEvent, "objects", events, raising=False
     )
     before = completed - timedelta(minutes=1)
-    monkeypatch.setattr(confirmation_views, "require_fresh", lambda value: before)
+    monkeypatch.setattr(
+        confirmation_views, "require_fresh", lambda value, **options: before
+    )
     assert confirmation_views._fresh_after_cleanup(caller, uuid4()) is True
     browser = SimpleNamespace(portal_session=None)
     assert confirmation_views._fresh_after_cleanup(browser, uuid4()) is False

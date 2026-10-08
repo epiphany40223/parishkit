@@ -42,10 +42,12 @@
 # run), as the shell and docker report; 130 when interrupted.
 #
 # Standard input is forwarded to the command after the preamble only when
-# the command line has a `-` input, or from a terminal for a command that
-# prompts; otherwise it ends after the preamble, so a run never waits on a
-# terminal nobody is typing into and a prompt without a terminal fails at
-# once. No command of this release prompts.
+# the command line has a `-` input; a command that prompts gets exactly one
+# answer line typed at the terminal (at most 256 bytes). Otherwise input
+# ends after the preamble, so a run never waits on a terminal nobody is
+# typing into, a prompt without a terminal fails at once, and the wrapper
+# never waits for more typing once the command has finished. No command of
+# this release prompts.
 
 # Never trace: the session secret passes through this shell's variables.
 set +x
@@ -226,18 +228,20 @@ esac
 # None in this release; the fresh-gated commands add themselves here.
 PROMPTING=""
 
-# Forward this standard input after the preamble only for a `-` input, or
-# from a terminal for a prompting command (see the header).
+# Forward this standard input after the preamble only for a `-` input; a
+# prompting command run from a terminal gets one answer line (see the
+# header).
 forward=no
 for argument in "$@"; do
     if [ "$argument" = - ]; then
         forward=yes
     fi
 done
+prompt=no
 if [ -t 0 ]; then
     for command in $PROMPTING; do
         if [ "$command" = "$1${2:+_$2}" ]; then
-            forward=yes
+            prompt=yes
         fi
     done
 fi
@@ -245,20 +249,40 @@ fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/pk-admin.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
+# The command's input is written by a separate writer through a FIFO, so
+# the wrapper can stop it once the command exits: a writer still waiting at
+# the terminal for an answer the command no longer needs must not keep the
+# wrapper waiting until someone presses Enter. Standard input is passed to
+# the writer explicitly (descriptor 4), since an asynchronous list would
+# otherwise read /dev/null.
+mkfifo "$work/input"
+exec 4<&0
+{
+    printf '%s %s %s\n' "$TAG" "$secret" "$host_digest"
+    if [ "$forward" = yes ]; then
+        cat <&4
+    elif [ "$prompt" = yes ]; then
+        # One answer line, at most 256 bytes, sent after the preamble while
+        # the command waits at its prompt; nothing else is read.
+        if IFS= read -r answer <&4 && [ "${#answer}" -le 256 ]; then
+            printf '%s\n' "$answer"
+        fi
+    fi
+} >"$work/input" &
+writer=$!
+exec 4<&-
+
 # Stream the command's output as it comes, keeping a copy to decide whether
 # the session file must go; the command's own exit status is kept aside.
 {
-    {
-        printf '%s %s %s\n' "$TAG" "$secret" "$host_digest"
-        if [ "$forward" = yes ]; then
-            cat
-        fi
-    } | docker compose -f "$compose" -p "$project" exec -T web \
+    docker compose -f "$compose" -p "$project" exec -T web \
         pk-stewardship admin "$@" --config "$web_config" --session-stdin \
-        && status=0 || status=$?
+        <"$work/input" && status=0 || status=$?
     printf '%s\n' "$status" >"$work/status"
 } | tee "$work/output"
 status=$(cat "$work/status")
+kill "$writer" 2>/dev/null || true
+wait "$writer" 2>/dev/null || true
 secret=""
 
 remove_file() {
