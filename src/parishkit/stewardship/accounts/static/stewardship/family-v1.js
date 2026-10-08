@@ -188,6 +188,12 @@
     const previousRequests = requests, beforeRequests = initialRequests;
     const mailingDraft = separateMailing;
     form = next;
+    // Financial choices still open survive a refresh (carryFinancial): this
+    // tab's value is unchanged while one is open, but the refreshed records
+    // now equal the previous form's, so the ordinary merge below would see
+    // no competing change and keep this tab's value silently.
+    const openFinancial = preserve ? [...conflicts].filter(([path, conflict]) => path.startsWith("financial.") &&
+      path !== "financial.removed" && conflict.choice === undefined) : [];
     conflicts.clear();
     answers = {family: Object.fromEntries((next.household?.fields || []).map(
       (field) => [field.name, structuredClone(field.value)])),
@@ -304,7 +310,8 @@
         }
       }
     }
-    if (preserve) enforceLimitations(keptAside, true, before);
+    if (preserve) enforceLimitations(keptAside, true, before, previousFinancial);
+    if (preserve) carryFinancial(openFinancial);
     edit();
     // A refreshed form opens on the first page that needs the Family's choice.
     const conflict = preserve ? unresolvedConflict(root) : null;
@@ -361,6 +368,11 @@
       // A missing share method has no single field; point at the first choice.
       const input = id ? document.getElementById(id) :
         path === "financial.shares" ? root.querySelector('input[id^="financial-option-"]') : null;
+      // Otherwise, an error for one Member (members.<id>, proposed_members.<id>,
+      // or that Member's ministries.* or service.* answers) belongs to their section.
+      const owner = input ? null :
+        /^(?:(?:ministries|service)\.)?(?:members|proposed_members)\.([0-9a-f-]+)(?:\.|$)/.exec(path);
+      const section = owner ? document.getElementById("member-section-" + owner[1]) : null;
       const item = node("li", null, list);
       if (input) {
         first ||= input;
@@ -380,6 +392,32 @@
           input.setAttribute("aria-describedby", input.getAttribute("aria-describedby").split(" ").filter(
             (reference) => reference !== errorId).join(" "));
         }, {once: true});
+      } else if (section) {
+        // A Member's whole-record, Ministry or talents error has no single
+        // field (#384 L2): name the Member and link to their section. No
+        // custom validity is set on the section, which would keep the form
+        // invalid until some field in it was typed in.
+        first ||= section;
+        // The message also sits at the top of the section, which names it,
+        // so focus on the section reads the error too.
+        const errorId = section.id + "-error";
+        const error = document.getElementById(errorId) ||
+          section.insertBefore(node("p", null, null, {id: errorId, class: "error"}), section.firstChild.nextSibling);
+        error.textContent = [error.textContent, text].filter(Boolean).join(" ");
+        section.setAttribute("aria-describedby", [...new Set([...(section.getAttribute("aria-describedby") || "")
+          .split(" ").filter(Boolean), errorId])].join(" "));
+        // Any change in the section is the Family's correction: drop the line.
+        const resolved = () => {
+          error.remove();
+          const rest = (section.getAttribute("aria-describedby") || "").split(" ").filter((id) => id && id !== errorId);
+          if (rest.length) section.setAttribute("aria-describedby", rest.join(" "));
+          else section.removeAttribute("aria-describedby");
+        };
+        ["input", "change"].forEach((type) => section.addEventListener(type, resolved, {once: true}));
+        const link = node("a", sectionName(section) + ": " + text, item, {href: "#" + section.id});
+        link.addEventListener("click", (event) => {
+          event.preventDefault(); showPage(pageOf(section), {focus: false}); section.focus();
+        });
       } else item.textContent = text;
     });
     if (first) showPage(pageOf(first), {focus: false});
@@ -512,6 +550,12 @@
     const error = document.getElementById(input.id + "-inline-error");
     if (error) { error.textContent = input.validationMessage; error.hidden = input.checkValidity(); }
     return input.checkValidity();
+  }
+  function sectionName(section) {
+    // The name of the Member whose "member-section-<id>" this is.
+    const id = section.id.slice("member-section-".length);
+    const members = allMembers(), index = members.findIndex((member) => String(member.id) === id);
+    return index < 0 ? "Household member" : memberName(members[index], index);
   }
   function memberName(member, index) {
     const values = memberValues(member);
@@ -874,7 +918,7 @@
       setAside.set(talentsKey, freshLocked || !old || !fresh ? mine : rebaseTalents(mine, old.talents, fresh.talents));
     }
   }
-  function enforceLimitations(kept, preserve, before = null) {
+  function enforceLimitations(kept, preserve, before = null, previousForm = null) {
     // After every merge, a "cannot participate" Member stops every current
     // Ministry and joins none, and "cannot contribute" leaves no pledge, even
     // when another tab set the limitation while this one had other edits.
@@ -889,12 +933,96 @@
       lockMinistries(member);
     });
     if (!form.financial || !answers.financial) return;
-    if (kept.has("financial")) setAside.set("financial", kept.get("financial"));
+    // A kept-aside pledge belongs to a checked "cannot contribute" only. When
+    // the merged answer no longer has it checked (another device unchecked
+    // it), the visible pledge preserveFinancial merged is the Family's, with
+    // its own choices, and the old aside copy is dropped (#778 review).
+    if (kept.has("financial") && answers.financial.cannot_give) {
+      setAside.set("financial", before ? rebaseFinancial(kept.get("financial"), before, previousForm) : kept.get("financial"));
+    }
     if (answers.financial.cannot_give) {
       if (!setAside.has("financial")) setAside.set("financial", {annual_pledge: preserve ? answers.financial.annual_pledge : "",
         frequency: preserve ? answers.financial.frequency : "", shares: preserve ? {...answers.financial.shares} : {}});
       Object.assign(answers.financial, {annual_pledge: "", frequency: "", shares: {}});
     }
+  }
+  function rebaseFinancial(saved, before, previousForm) {
+    // The pledge "cannot contribute" set aside meets a refreshed form the way
+    // visible answers do in preserveFinancial (#784): a value this tab never
+    // changed takes the refreshed record, and one both this tab and another
+    // device changed becomes a changed-record choice. The choice is hidden
+    // (and skipped by Next and Review) while the box stays checked, and is
+    // shown with the restored pledge when it is unchecked. The conflicts
+    // preserveFinancial recorded for the emptied, hidden fields compare
+    // nothing the Family entered, so they are replaced.
+    if (!before.financial || !initial.financial) return saved;
+    const result = structuredClone(saved), offered = form.financial.options.map((option) => option.id);
+    const rebase = (path, kind, mine, old, fresh, set) => {
+      conflicts.delete(path);
+      if (canonical(mine, kind) === canonical(old, kind)) set(fresh);
+      else if (canonical(old, kind) !== canonical(fresh, kind) && canonical(mine, kind) !== canonical(fresh, kind)) {
+        conflicts.set(path, {edited: mine, refreshed: fresh});
+      }
+    };
+    for (const key of ["annual_pledge", "frequency"]) {
+      rebase("financial." + key, key, saved[key], before.financial[key], initial.financial[key],
+        (value) => { result[key] = value; });
+    }
+    const setShare = (id) => (value) => {
+      if (value === undefined) delete result.shares[id]; else result.shares[id] = value;
+    };
+    offered.forEach((id) => {
+      rebase("financial.shares." + id, "share", saved.shares[id], before.financial.shares[id],
+        initial.financial.shares[id], setShare(id));
+    });
+    // A method no longer offered takes the refreshed record when this tab
+    // never touched it; one it changed stays for the removed-method choice,
+    // which names it from the previous form's options, as preserveFinancial
+    // does for a visible one.
+    new Set([...Object.keys(saved.shares), ...Object.keys(before.financial.shares)]).forEach((id) => {
+      if (offered.includes(id)) return;
+      if (canonical(saved.shares[id], "share") === canonical(before.financial.shares[id], "share")) {
+        setShare(id)(initial.financial.shares[id]);
+        return;
+      }
+      const oldOption = previousForm && [...previousForm.options, ...previousForm.unavailable_options]
+        .find((option) => option.id === id);
+      if (oldOption && !form.financial.unavailable_options.some((option) => option.id === id)) {
+        form.financial.unavailable_options.push(structuredClone(oldOption));
+      }
+    });
+    // Another device's zero pledge would hide the frequency or way to give
+    // this tab changed in the set-aside pledge: ask on the amount, as
+    // preserveFinancial does for visible answers (#778 review walks).
+    const positive = (value) => (moneyCents(value ?? "") ?? 0) > 0;
+    if (!conflicts.has("financial.annual_pledge") && positive(saved.annual_pledge) &&
+        canonical(saved.annual_pledge, "annual_pledge") === canonical(before.financial.annual_pledge, "annual_pledge") &&
+        !positive(initial.financial.annual_pledge) &&
+        (canonical(saved.frequency, "frequency") !== canonical(before.financial.frequency, "frequency") ||
+         canonical(saved.shares, "shares") !== canonical(before.financial.shares, "shares"))) {
+      conflicts.set("financial.annual_pledge", {edited: saved.annual_pledge, refreshed: initial.financial.annual_pledge});
+    }
+    return result;
+  }
+  function carryFinancial(open) {
+    // Re-ask each financial choice that was still open before this refresh
+    // (#778 review): this tab's value (``edited``, which it could not change
+    // while the choice was open or hidden) against the newly refreshed
+    // record, unless they now agree. Two refreshes in a row could otherwise
+    // send a hidden 20 over another device's 30 without a choice.
+    if (!form.financial || !initial.financial) return;
+    open.forEach(([path, conflict]) => {
+      if (conflicts.has(path)) return;
+      const key = path.slice("financial.".length);
+      const share = key.startsWith("shares.") ? key.slice("shares.".length) : null;
+      const fresh = share ? initial.financial.shares[share] : initial.financial[key];
+      const kind = share ? "share" : key;
+      const same = key === "cannot_give" ? Boolean(conflict.edited) === Boolean(fresh) :
+        canonical(conflict.edited, kind) === canonical(fresh, kind);
+      // Everything else the choice carries (the pledge "Use my edit" restores)
+      // goes with it.
+      if (!same) conflicts.set(path, {...conflict, refreshed: fresh, choice: undefined});
+    });
   }
   function limitationEditor(member, parent) {
     // "Cannot participate", above the Ministry choices it locks.
@@ -1176,6 +1304,28 @@
         conflicts.set("financial.shares." + id, {edited, refreshed: fresh});
       }
     });
+    // Next and Review skip choices hidden with the pledge fields, which is
+    // right only when this tab hid them. When the refreshed record hides
+    // fields this tab changed (another device checked "cannot contribute",
+    // or set a zero pledge while this tab changed the frequency or a method),
+    // the choice is asked on the control that hides them instead, so this
+    // tab's edit is never dropped without one (#778 review).
+    const changed = (key) => canonical(previous.financial[key], key) !== canonical(before.financial[key], key);
+    const sharesChanged = canonical(previous.financial.shares, "shares") !== canonical(before.financial.shares, "shares");
+    const positive = (value) => (moneyCents(value ?? "") ?? 0) > 0;
+    if (initial.financial.cannot_give && !before.financial.cannot_give && !previous.financial.cannot_give &&
+        (changed("annual_pledge") || changed("frequency") || sharesChanged)) {
+      // "Use my edit" restores the pledge as this tab had it: amount,
+      // frequency and methods, all of which the other device's box emptied.
+      const {annual_pledge, frequency, shares} = previous.financial;
+      conflicts.set("financial.cannot_give", {edited: false, refreshed: true,
+        pledge: structuredClone({annual_pledge, frequency, shares})});
+    } else if (!initial.financial.cannot_give && !previous.financial.cannot_give && !changed("annual_pledge") &&
+        positive(before.financial.annual_pledge) && !positive(initial.financial.annual_pledge) &&
+        (changed("frequency") || sharesChanged)) {
+      conflicts.set("financial.annual_pledge", {edited: before.financial.annual_pledge,
+        refreshed: initial.financial.annual_pledge});
+    }
   }
   function periodYears(period) {
     // "2026", or "2026–2027" for a period that spans two calendar years.
@@ -1244,6 +1394,33 @@
     const unableBox = node("input", null, unable, {type: "checkbox", id: "financial-cannot-give"});
     unableBox.checked = answers.financial.cannot_give;
     unable.append(document.createTextNode(" Because of financial limitations, I/we cannot contribute financially at this time."));
+    const unableConflict = conflicts.get("financial.cannot_give");
+    if (unableConflict && unableConflict.choice === undefined) {
+      // Another device checked "cannot contribute" while this tab changed
+      // the pledge: keep this tab's pledge, or the updated record.
+      unableBox.disabled = true;
+      const choose = node("fieldset", null, group, {"data-conflict": "financial.cannot_give"});
+      node("legend", "Choose which value to keep before continuing", choose);
+      [["Use my edit: my pledge", false], ["Use updated records: cannot contribute", true]].forEach(([label, value], index) => {
+        const wrapper = node("label", null, choose);
+        const radio = node("input", null, wrapper, {type: "radio", name: "resolve-financial.cannot_give"});
+        wrapper.append(document.createTextNode(" " + label));
+        radio.addEventListener("change", () => {
+          unableConflict.choice = index;
+          // This choice decides the pledge; the hidden pledge choices it
+          // stood in for (this tab's pledge against the emptied record) go.
+          ["financial.annual_pledge", "financial.frequency", ...form.financial.options.map((option) => "financial.shares." + option.id)]
+            .forEach((path) => conflicts.delete(path));
+          if (!value) {
+            // Restore this tab's pledge as it had it before the refresh.
+            setAside.delete("financial");
+            Object.assign(answers.financial, structuredClone(unableConflict.pledge ||
+              {annual_pledge: "", frequency: "", shares: {}}), {cannot_give: false});
+          }
+          edit("financial-cannot-give");
+        });
+      });
+    }
     unableBox.addEventListener("change", () => {
       // Hide the pledge fields, keeping the Family's entries aside so that
       // unchecking the box brings them back.
@@ -1255,13 +1432,15 @@
         setAside.delete("financial");
         Object.assign(answers.financial, saved || {annual_pledge: "", frequency: "", shares: {}}, {cannot_give: false});
       }
-      ["financial.annual_pledge", "financial.frequency", ...form.financial.options.map((option) => "financial.shares." + option.id)]
-        .forEach((path) => conflicts.delete(path));
+      // Pledge choices still to make are kept: hidden (and skipped by Next
+      // and Review) while the box is checked, and shown again with the
+      // restored pledge when it is unchecked, so a value another device
+      // changed is never restored over without a choice (#784).
       edit("financial-cannot-give");
     });
     // A disabled fieldset takes its controls out of validation, so hidden
     // pledge fields never block a Family that cannot contribute.
-    const pledge = node("fieldset", null, group, {class: "financial-pledge"});
+    const pledge = node("fieldset", null, group, {class: "financial-pledge", "data-unsent-when-disabled": ""});
     node("legend", "Your pledge", pledge, {class: "visually-hidden"});
     pledge.hidden = pledge.disabled = answers.financial.cannot_give;
     // Inside the pledge fieldset, so it hides with the pledge it describes.
@@ -1273,7 +1452,8 @@
     const annualError = node("p", null, pledge, {id: "financial-annual-hint", class: "error"});
     // A disabled fieldset removes its controls from validation, so hidden
     // frequency and share fields can never block a zero pledge.
-    const conditional = node("fieldset", null, pledge, {class: "financial-conditional", "data-financial-conditional": ""});
+    const conditional = node("fieldset", null, pledge, {class: "financial-conditional", "data-financial-conditional": "",
+      "data-unsent-when-disabled": ""});
     node("legend", "Pledge details", conditional, {class: "visually-hidden"});
     // One function per share method that redraws its checkbox (and details
     // box) from the answers, so they can change without a rebuild.
@@ -1795,9 +1975,18 @@
     }
   }
   function unresolvedConflict(scope) {
+    // A choice for answers the form does not send while their fieldset is
+    // disabled does not apply then: the pledge fields "cannot contribute"
+    // hides, or the frequency and share fields a zero pledge disables
+    // (#384 M1). Next and Review must not stop on (and focus) a control the
+    // Family cannot see. The conflict itself is kept, so it is shown again
+    // with the fields: when "cannot contribute" is unchecked or a pledge is
+    // entered. Only fieldsets marked data-unsent-when-disabled qualify; a
+    // fieldset disabled for another reason still blocks.
     return [...scope.querySelectorAll("[data-conflict]")].find((element) => {
       const conflict = conflicts.get(element.dataset.conflict);
-      return conflict && conflict.choice === undefined && conflictApplies(element.dataset.conflict);
+      return conflict && conflict.choice === undefined && conflictApplies(element.dataset.conflict) &&
+        !element.parentElement?.closest("fieldset[data-unsent-when-disabled]:disabled");
     });
   }
   function navNote(text, target = null, quiet = false) {
@@ -2009,7 +2198,12 @@
       if (editor.checkValidity()) {
         // Keep hidden field conflicts through Review/Back. Returning a Member
         // to ordinary status must restore the unresolved choices, not erase them.
-        [...conflicts.keys()].filter(conflictApplies).forEach((path) => conflicts.delete(path));
+        // So must showing the pledge fields again: a choice Next and Review
+        // skipped while its fields are unsent stays open (#778 review).
+        const unsent = new Set([...editor.querySelectorAll("fieldset[data-unsent-when-disabled]:disabled [data-conflict]")]
+          .map((element) => element.dataset.conflict).filter((path) => conflicts.get(path)?.choice === undefined));
+        [...conflicts.keys()].filter((path) => conflictApplies(path) && !unsent.has(path))
+          .forEach((path) => conflicts.delete(path));
         review();
       } else {
         const invalid = editor.querySelector("input:invalid, select:invalid, textarea:invalid");
