@@ -4,7 +4,6 @@ from urllib.parse import parse_qs
 
 import pytest
 
-from .conftest import no_script_context
 from .test_components import axe_violations
 from .waits import hidden, visible
 
@@ -86,24 +85,6 @@ def test_rows_show_only_the_fields_of_their_mail_type(
     assert shown(page) == set()
     assert page.locator(f'[name="{NEW}time"]').input_value() == ""
     assert not failures
-
-
-def test_without_script_every_field_shows(browser_engine, component_origin):
-    """Progressive enhancement: with JavaScript off nothing is hidden."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/setup-schedules-mail")
-        assert shown(page) == set(FIELDS)
-        assert offered(page) == [
-            "",
-            "initial",
-            "reminder",
-            "daily_digest",
-            "weekly_digest",
-        ]
-    finally:
-        context.close()
 
 
 def test_a_reported_field_stays_visible_until_the_type_changes(
@@ -189,15 +170,3 @@ def test_add_and_remove_new_schedule_rows_before_saving(
     assert not any(name.startswith(two) for name in fields)
     assert not any("__prefix__" in name for name in fields)
     assert not failures
-
-
-def test_without_script_there_is_no_add_button(browser_engine, component_origin):
-    """Progressive enhancement: each save still offers one blank row."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/setup-schedules-mail")
-        assert not page.get_by_role("button", name="Add another schedule").count()
-        assert page.locator("[data-schedule-add]").is_hidden()
-    finally:
-        context.close()

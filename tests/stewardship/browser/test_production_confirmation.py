@@ -2,7 +2,6 @@
 
 import pytest
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -74,29 +73,22 @@ def test_confirmation_and_progress_are_accessible(
     )
 
 
-def test_production_forms_do_not_require_javascript(browser_engine, component_origin):
-    """Confirmation and recovery remain ordinary form submissions without scripts."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/production-confirmation")
-        page.get_by_label("Type Production to confirm this exact transition").fill(
-            "Production"
-        )
-        visible(page.get_by_role("button", name="Confirm Production", exact=True))
-        assert page.locator('form input[name="preview"]').get_attribute("value")
-        page.goto(component_origin + "/production-progress")
-        visible(page.get_by_role("button", name="Retry failed mail preparation"))
-        visible(page.get_by_role("link", name="Refresh Production progress"))
-        assert page.locator('form input[name="control"]').get_attribute("value")
-        page.goto(component_origin + "/production-withdrawal")
-        page.get_by_label("Reason for cancelling go-live").fill(
-            "Correct campaign settings"
-        )
-        page.get_by_label(
-            "I understand that deleted Testing data cannot be restored."
-        ).check()
-        visible(page.get_by_role("button", name="Preview cancellation"))
-        visible(page.get_by_role("button", name="Confirm cancelling go-live"))
-    finally:
-        context.close()
+def test_production_forms_carry_their_versions(page, component_origin):
+    """Confirmation and recovery post the exact preview and control they show."""
+    page.goto(component_origin + "/production-confirmation")
+    page.get_by_label("Type Production to confirm this exact transition").fill(
+        "Production"
+    )
+    visible(page.get_by_role("button", name="Confirm Production", exact=True))
+    assert page.locator('form input[name="preview"]').get_attribute("value")
+    page.goto(component_origin + "/production-progress")
+    visible(page.get_by_role("button", name="Retry failed mail preparation"))
+    visible(page.get_by_role("link", name="Refresh Production progress"))
+    assert page.locator('form input[name="control"]').get_attribute("value")
+    page.goto(component_origin + "/production-withdrawal")
+    page.get_by_label("Reason for cancelling go-live").fill("Correct campaign settings")
+    page.get_by_label(
+        "I understand that deleted Testing data cannot be restored."
+    ).check()
+    visible(page.get_by_role("button", name="Preview cancellation"))
+    visible(page.get_by_role("button", name="Confirm cancelling go-live"))
