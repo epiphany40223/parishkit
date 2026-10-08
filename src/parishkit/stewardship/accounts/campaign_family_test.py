@@ -38,6 +38,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.refusals import load_preview
 
 from .admin_editing import editable_configuration, principal
+from .campaign_mail import recipient_digest
 from .content_models import ContentVersion
 from .sessions import require_fresh
 
@@ -86,7 +87,11 @@ class FamilyTestPreview:
         return max(0, FAMILY_TEST_LIMIT - self.in_progress)
 
     def binding(self):
-        """A changed configuration, epoch, recipient or Family list needs review."""
+        """A changed configuration, epoch, recipient or Family list needs review.
+
+        The token is signed, not encrypted, so it binds the Testing recipient
+        by digest, never the address (as ``campaign_mail``'s sample does).
+        """
         return {
             "actor": str(self.actor_id),
             "key": str(self.request_key),
@@ -94,7 +99,7 @@ class FamilyTestPreview:
             "template": str(self.template.record_id),
             "digest": f"{self.configuration.digest}:{self.campaign.readiness_revision}",
             "epoch": str(self.epoch_id) if self.epoch_id is not None else "",
-            "recipient": self.testing_recipient,
+            "recipient": recipient_digest(self.testing_recipient),
             "families": [str(choice.duid) for choice in self.families],
         }
 
