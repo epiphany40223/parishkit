@@ -201,6 +201,14 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
                 name: queue_login(handler.queue)
                 for name, handler in runtime.handlers.items()
             }
+        else:
+            # The SQL map binds to the worker exactly the types the worker's
+            # own registry executes (#350), not only through the scheduler's.
+            assert set(runtime.handlers) == {
+                name
+                for name, login in sql_task_logins().items()
+                if login == "pk_stewardship_worker"
+            }
         assert runtime.handlers["source_refresh"].pulse is pulse
         assert runtime.handlers["operational_collect"].pulse is pulse
         assert runtime.handlers["operational_prepare"].pulse is pulse
@@ -354,6 +362,14 @@ def test_mail_runtime_requires_working_key_except_for_coherent_bootstrap(
         assert set(runtime.receipts) == set(secrets)
         # Family mail consumers keep their connection between messages (#365).
         assert connection_reuse._enabled is installed
+        if installed:
+            # The SQL map binds to mail dispatch exactly the types its own
+            # registry executes (#350).
+            assert set(runtime.handlers) == {
+                name
+                for name, login in sql_task_logins().items()
+                if login == "pk_stewardship_mail_dispatch"
+            }
     finally:
         runtime.broker.app.close()
 
