@@ -74,9 +74,10 @@ def test_page_data_starts_on_a_laptop_screen(page, component_origin, path):
     assert box["y"] + 40 <= LAPTOP_VIEWPORT["height"], (path, box)
 
 
-# Campaign email and schedule pages converted in #227 (help-ux-1), each with
-# the caution that must stay visible beside the data while its help is closed.
-CAMPAIGN_PAGES = {
+# Pages converted in #227 (campaign email and schedules in help-ux-1; keys,
+# refreshes and refusals in help-ux-2), each with the caution or data line
+# that must stay visible while its help is closed.
+CONVERTED_PAGES = {
     "/campaign-mail": "It is sent only to",
     "/live-family-tests-later": "never to the Family",
     "/schedule-preview": "Email already sent cannot be recalled.",
@@ -84,10 +85,15 @@ CAMPAIGN_PAGES = {
     "/clone-preview": "Copied content",
     "/presence": "Families with the Family form open",
     "/weekly-manual": "not a retry of a previous email",
+    "/credential-status": "Key replacement status",
+    "/credential-selection": "This integration is stopped until you finish",
+    "/source-refresh": "Refresh now",
+    "/backup-key": "Never give this server the private key.",
+    "/delivery-refusal": "Clearing removes only this refusal",
 }
 
 
-@pytest.mark.parametrize("path", sorted(CAMPAIGN_PAGES))
+@pytest.mark.parametrize("path", sorted(CONVERTED_PAGES))
 def test_converted_page_keeps_cautions_visible_and_help_closed(
     page, component_origin, path
 ):
@@ -98,7 +104,7 @@ def test_converted_page_keeps_cautions_visible_and_help_closed(
     panel = page.locator("details[data-about-page]")
     expect(panel).not_to_have_attribute("open", "")
     expect(panel.locator(".about-page-body")).to_be_hidden()
-    visible(page.locator("main").get_by_text(CAMPAIGN_PAGES[path]).first)
+    visible(page.locator("main").get_by_text(CONVERTED_PAGES[path]).first)
 
 
 def test_locked_campaign_dates_are_one_line_with_a_tip(page, component_origin):

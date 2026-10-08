@@ -4,7 +4,7 @@
 <h1>{% translate "Confirm Production" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="notice">{% translate "Testing data deleted by cleanup cannot be restored. The campaign stays in Testing mode until you confirm below, and the prepared Family links stay inactive until then." %}</p>
-<p>{% if state.target_state == 'active' %}{% translate "Confirmation will activate Family access immediately. Initial campaign mail will be prepared separately in the background." %}{% else %}{% translate "Confirmation will schedule the campaign for Production. Family access and ordinary scheduled mail remain closed until the campaign starts." %}{% endif %}</p>
+<p class="notice">{% if state.target_state == 'active' %}{% translate "Confirmation will activate Family access immediately. Initial campaign mail will be prepared separately in the background." %}{% else %}{% translate "Confirmation will schedule the campaign for Production. Family access and ordinary scheduled mail remain closed until the campaign starts." %}{% endif %}</p>
 <p>{% translate "Campaign starts" %}: <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time></p>
 <p>{% translate "Campaign closes" %}: <time data-local-instant datetime="{{ campaign.active_configuration.ends_at|instant }}">{{ campaign.active_configuration.ends_at|instant }}</time></p>
 {% if problems %}<section class="panel"><h2>{% translate "Readiness needs attention" %}</h2><ul>{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul></section>{% endif %}
