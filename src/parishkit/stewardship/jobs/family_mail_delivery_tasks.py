@@ -53,9 +53,9 @@ from .family_mail_dispatch import (
     cancel_unsent,
     disposition,
     failure_identity,
+    family_retry_seconds,
     finish_submission,
     over_daily_limit,
-    result_retry_seconds,
     retry_delay,
     sends_in_last_day,
 )
@@ -925,7 +925,8 @@ def _execute(
             # early (budget_spent spares it from the message's budget too).
             execution.progress(0, 0, phase=TaskPhase.RECONCILING)
         execution.transition(
-            "retryable_failure", retry_seconds=result_retry_seconds(result, attempt)
+            "retryable_failure",
+            retry_seconds=family_retry_seconds(message.pk, attempt, result),
         )
     else:
         execution.transition(

@@ -65,7 +65,11 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   starts a reply line, never by prose elsewhere in it: `5.4.5` on a 5xx
   reply (the daily user sending limit, at any stage), `421 4.7.x` (Gmail
   closing the connection for a sending rate) and `454 4.7.x` in reply to
-  AUTH (login rate). Other `4.7.x` refusals, for example to one RCPT, stay
+  AUTH (login rate). The one exception reads Gmail's wording: `454 4.7.0
+  Cannot authenticate due to a temporary system problem` in reply to AUTH
+  is Gmail's own login service failing, so it is a shared outage like any
+  other temporary handshake reply, not a limit, and it counts toward the
+  outage pause below (#382). Other `4.7.x` refusals, for example to one RCPT, stay
   ordinary per-address or per-message temporary refusals. A limit refusal
   blames no address and trips no outage circuit. The helper reports the
   limit on its output line only; the stored attempt is an ordinary definitive
@@ -96,7 +100,12 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   from the sending mailbox was accepted in the last 24 hours
   (`ACCEPTANCE_WINDOW`): recent acceptances mean the queue is still draining
   past a real but partial limit, so the message keeps its place. After 7
-  days (`LIMIT_GIVE_UP_ABSOLUTE`) it fails regardless. The failure log names
+  days (`LIMIT_GIVE_UP_ABSOLUTE`) it fails regardless, counted from the start
+  of the run and also from the message's first limit or outage outcome
+  since its last staff retry, so an outage that starts a new run cannot
+  stretch the wait to about two weeks (#382). An earlier ordinary failure
+  does not count, so it never fails a message at its first limit hold. The
+  failure log names
   the message id and Family DUID, never an address. Since stored evidence
   never names a limit, a limit refusal is recognized by its Task's
   RECONCILING-phase deferral for the same attempt, with healthy evidence.
@@ -116,6 +125,17 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   permanently refused address can be suppressed independently of accepted,
   retryable or uncertain DATA outcomes. Transient refusals do not suppress an
   address, and partial acceptance does not resend to the accepted recipients.
+  A message whose every address was refused temporarily (such as `450
+  4.2.1`, the receiving mailbox throttling) is retried after 15 minutes, 1
+  hour, 4 hours and then 12 hours (`RECIPIENT_RETRY_SECONDS`), so its five
+  attempts span about 17 hours instead of about 8 minutes (#382). The step
+  counts only attempts that count against the budget, so limit and outage
+  holds before it do not skip it ahead. Such a message shows on Outgoing
+  mail as waiting to retry, with no reason, for up to about 17 hours; that
+  is expected, and there is no control to hurry it. Administrator alerts, a
+  refusal of only some addresses, and a refusal that mixes permanent and
+  temporary codes keep the ordinary schedule (30 seconds, doubling, at most
+  10 minutes).
 - Current source, recipient selection, content and credentials are rechecked at
   the locked submission boundary. The mail process has no general-code key;
   it opens the prepared code/reference and decrypts only the corresponding

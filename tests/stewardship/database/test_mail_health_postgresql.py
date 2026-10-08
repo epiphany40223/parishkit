@@ -56,7 +56,7 @@ dispatch_worker = dispatch_worker_fixture
 
 @pytest.fixture
 def mail_run(dispatch_worker, monkeypatch):
-    """Reuse one setup; replace only external submission and retry delay."""
+    """Reuse one setup; replace only external submission and retry delays."""
     harness, path = dispatch_worker
     outcomes = []
 
@@ -72,6 +72,12 @@ def mail_run(dispatch_worker, monkeypatch):
         monkeypatch.setattr(
             f"parishkit.stewardship.jobs.{module}.retry_delay", lambda attempt: 1
         )
+    # A refusal of the one recipient is a throttled Family message, which
+    # backs off on its own hours-long schedule (#382); shorten it as well.
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_dispatch.RECIPIENT_RETRY_SECONDS",
+        (1, 1, 1, 1),
+    )
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         message = prepare(harness)
 

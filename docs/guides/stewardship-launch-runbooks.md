@@ -332,6 +332,14 @@ portal, and do not resolve a `delivery_unknown` message without evidence. The
 [gate round 3 ledger](stewardship-gate-round3-fixes-reviews.md) records how
 this procedure was checked against the code.
 
+**Not an outage: a message waiting hours to retry.** If one Family's message
+sits in `retry_wait` for hours while other mail is delivered, the receiving
+mailbox is probably throttling it (every address refused with a temporary
+code such as `450 4.2.1`). Such a message retries after 15 minutes, 1 hour,
+4 hours and 12 hours, about 17 hours in all, and then fails visibly like any
+exhausted retry ([Family mail dispatch](stewardship-family-mail-dispatch.md)).
+Nothing needs doing; Outgoing mail does not yet show the reason (#382).
+
 ## Backup encryption key changed
 
 **You see:** the `backup_key_changed` incident (CRITICAL), and in System

@@ -158,7 +158,7 @@ def test_outage_statistics_keep_the_prefix_inference(batch):  # noqa: F811
     assert stats_of(event)["conn_end"] == "connect_failed"
     assert family_mail_dispatch.shared_fault(event.reason, event.evidence_note)
     # limit_history reads the same stored notes: the outage is spared.
-    spared, _, _ = family_mail_dispatch.limit_history(message)
+    spared = family_mail_dispatch.limit_history(message).spared
     assert spared == 1
     assert OutboxEvent.objects.filter(
         pk=event.pk, evidence_note__startswith='{"health":"unavailable",'

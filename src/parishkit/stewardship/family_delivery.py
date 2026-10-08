@@ -78,6 +78,14 @@ class ProviderHealth(StrEnum):
 _DAILY_LIMIT = re.compile(rb"(?m)^[ \t]*5\.4\.5(?=\s|$)")
 _RATE_LIMIT = re.compile(rb"(?m)^[ \t]*4\.7\.[0-9]{1,3}(?=\s|$)")
 _PROVIDER_TROUBLE = re.compile(rb"(?m)^[ \t]*4\.[34]\.[0-9]{1,3}(?=\s|$)")
+# Gmail answers AUTH with "454 4.7.0 Cannot authenticate due to a temporary
+# system problem" when its own login service is failing, and with "454 4.7.0
+# Too many login attempts" at its login-rate limit. Both carry 4.7.0, so only
+# this documented wording tells them apart (#382). The first is a shared
+# outage, not a healthy rate limit: it must count toward the outage streak
+# that pauses sending and raises mail_provider_failed. If Gmail ever rewords
+# it, the reply falls back to being read as the login-rate limit, as before.
+_AUTH_TROUBLE = re.compile(rb"(?i)temporary system problem")
 SENDING_LIMITS = frozenset({"daily", "rate", "message"})
 # A batched helper (#284) replaces its SMTP connection after this long or this
 # many accepted messages, and refreshes its OAuth token (valid for an hour)
@@ -154,8 +162,10 @@ def sending_limit(reply, *, stage=""):
     ``stage`` is the SMTP command answered ("auth" admits the login-rate
     limit; "data" makes a rate limit "message"; "rcpt" and "data" admit
     provider trouble as "message"). Only the enhanced
-    status code at the start of a reply line is inspected; nothing from the
-    reply is kept.
+    status code at the start of a reply line is inspected, with one
+    exception: a 454 to AUTH also has its text read for Gmail's "temporary
+    system problem" wording (see _AUTH_TROUBLE). Nothing from the reply is
+    kept.
     """
     if type(reply) is not tuple or len(reply) != 2 or type(reply[0]) is not int:
         return None
@@ -167,7 +177,9 @@ def sending_limit(reply, *, stage=""):
     text = text[:1024]
     if 500 <= code <= 599 and _DAILY_LIMIT.search(text):
         return "daily"
-    rate = code == 421 or (code == 454 and stage == "auth")
+    rate = code == 421 or (
+        code == 454 and stage == "auth" and not _AUTH_TROUBLE.search(text)
+    )
     if rate and _RATE_LIMIT.search(text):
         return "message" if stage == "data" else "rate"
     if stage in {"rcpt", "data"} and (
