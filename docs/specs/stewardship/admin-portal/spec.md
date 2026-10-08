@@ -2829,7 +2829,16 @@ cancel them with exact counts and a reason. This does not reopen Family access
 or campaign schedules. Once every held or uncertain row is resolved, the same
 atomic workflow clears the durable pause control; closed campaigns do not use
 the ordinary Resume action. Reopen readiness is blocked until the prior pause
-and held-message state is resolved.
+and held-message state is resolved. The form offers only choices the server's
+rules accept (#563): a message type appears only while it has held messages;
+Release only after the provider and sender check has passed; Cancel only for
+types with no email still being handed to the mail service or not sure it
+arrived; Clear only when the pause would clear with no type selected; and the
+types only for Release or Cancel, which need at least one ticked. With no
+choice left, Preview is shown unavailable with the reason. Whether reports are
+still being prepared is checked only by the server, when the preview is built.
+Preview otherwise follows the
+[complete-before-submit rule](#bootstrap-and-first-admin-wizard).
 
 ### Family email progress
 

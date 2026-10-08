@@ -51,7 +51,25 @@ def components(context, admin):
         identity("consumer@workspace.example", login=None),
     ]
 
-    def page(rules, known, active=frozenset()):
+    # One suspended Chairperson assignment awaiting review, shaped as
+    # chair_review_rows.suspended_rows builds it (#563: its reason gate).
+    review = dict(
+        email="chair@example.org",
+        ministry_duid=9,
+        ministry_name="Choir",
+        member_duid=41,
+        reason="The Ministry is inactive in the applied activity.",
+        opened_at=moment,
+        generation=3,
+        latest_at=moment,
+        elsewhere=False,
+        manual=False,
+        granted=["Ministry leader"],
+        leading=False,
+        last_login=moment,
+    )
+
+    def page(rules, known, active=frozenset(), reviews=()):
         """Render exactly the context the view builds."""
         policy = AppliedPolicy(rules, known, active)
         return render_to_string(
@@ -65,7 +83,7 @@ def components(context, admin):
                         "domain_table": domain_rows(policy),
                         "address_table": address_rows(policy),
                         "assignment_table": domain_assignment_rows(policy),
-                        "review_table": [],
+                        "review_table": list(reviews),
                         "suggestion_table": [],
                     },
                 ),
@@ -103,6 +121,10 @@ def components(context, admin):
         ),
         # Only the mandatory Administrator: both optional tables are empty.
         "/portal-users-minimal": ("text/html", page([address()], [])),
+        "/portal-users-review": (
+            "text/html",
+            page(records, identities, reviews=[review]),
+        ),
         "/portal-users-preview": ("text/html", preview()),
         "/portal-users-preview-deny": (
             "text/html",

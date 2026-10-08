@@ -22,6 +22,10 @@ def test_pause_resume_and_resolution_accessibility(
         ("resolve", "Reason"),
     ):
         page.goto(component_origin + f"/delivery-{action}")
+        if action == "resolve":
+            # Release and Cancel need a type too (#563); here only the
+            # reason is under test.
+            page.get_by_label("Submission receipts", exact=False).check()
         reason = page.get_by_label(label, exact=True)
         reason.fill("")
         form = page.locator("form").filter(has=reason)
