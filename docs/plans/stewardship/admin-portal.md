@@ -401,6 +401,13 @@ of 2026-10-04 are recorded in the specification.
 
 PR 3 to PR 6 each add their command or its pending exemption.
 
+PR 2c (#684, frozen migration 0012) adds the 24-hour count's definer
+function and #382's L9 index. Showing the count in the "Why sends are
+waiting" panel needs the page from PR 2a (#670), which is not on 2c's
+base: whichever of #670 and #684 lands second adds the wiring
+(`daily_sends()` in `system_health.read_health` and its sentence), as
+tracked on #530.
+
 ## Review handoffs
 
 - Review Gate 1 covers ADM-01.

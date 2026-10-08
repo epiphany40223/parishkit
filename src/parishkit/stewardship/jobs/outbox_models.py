@@ -379,6 +379,11 @@ class OutboxEvent(ImmutableRecord, DeliveryCommand):
         db_table = "stewardship_outbox_event"
         indexes = [
             models.Index(fields=["message", "attempt"], name="outbox_attempt_history"),
+            # The 24-hour sending count and the acceptance check (#382 L9;
+            # schema/migrations/0012_daily_send_count.sql).
+            models.Index(
+                fields=["previous_state", "created_at"], name="outbox_event_daily"
+            ),
             models.Index(
                 fields=["provider_identity", "-created_at", "-id"],
                 name="outbox_provider_history",

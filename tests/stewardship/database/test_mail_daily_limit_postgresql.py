@@ -4,6 +4,7 @@ from datetime import UTC, timedelta
 from threading import Event
 
 import pytest
+from django.db import DatabaseError, connection, transaction
 from django.utils import timezone
 
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
@@ -22,6 +23,7 @@ from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
 )
 from parishkit.stewardship.jobs.family_mail_dispatch import (
     begin_submission,
+    daily_sends,
     finish_submission,
     over_daily_limit,
     sends_in_last_day,
@@ -43,6 +45,7 @@ from .test_operational_routing_postgresql import routing  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 TASKS = "parishkit.stewardship.jobs.family_mail_delivery_tasks"
+RENDERS = "stewardship_outbox_render"
 
 DAILY = FamilyDeliveryResult(
     Status.TRANSIENT, 1, health=ProviderHealth.HEALTHY, limit="daily"
@@ -316,6 +319,53 @@ def test_the_mail_role_counts_what_gmail_counts(
         submit(message, family_mail, result)
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
             assert sends_in_last_day() == counted
+        # System health shows the same count through the definer function
+        # (ADM-13 PR 2c), the web's only way to it: the web cannot read the
+        # routed recipients the count is made of, and no other login may run
+        # the function.
+        with task_login(ServiceRole.WEB, exact=True):
+            assert daily_sends() == counted
+            with (
+                pytest.raises(DatabaseError, match="permission denied"),
+                transaction.atomic(),
+                connection.cursor() as cursor,
+            ):
+                cursor.execute(f"SELECT routed_recipients FROM {RENDERS}")
+        with (
+            task_login(ServiceRole.SCHEDULER, exact=True),
+            pytest.raises(DatabaseError, match="permission denied"),
+            transaction.atomic(),
+        ):
+            daily_sends()
+
+
+@pytest.mark.parametrize("age,counted", [(23 * 60 + 59, 1), (24 * 60 + 1, 0)])
+def test_both_counts_use_the_same_24_hour_window(
+    family_mail,  # noqa: F811
+    age,
+    counted,
+):
+    """An acceptance just inside 24 hours counts in both; just outside, in neither.
+
+    The event is backdated as the schema owner with triggers paused for that
+    one statement (outbox events are otherwise immutable).
+    """
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(family_mail)
+        submit(message, family_mail, FamilyDeliveryResult(Status.ACCEPTED, 1))
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_outbox_event SET created_at="
+            "statement_timestamp()-make_interval(mins=>%s) "
+            "WHERE message_id=%s AND previous_state='submitting'",
+            [age, message.pk],
+        )
+        assert cursor.rowcount == 1
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+        assert sends_in_last_day() == counted
+    with task_login(ServiceRole.WEB, exact=True):
+        assert daily_sends() == counted
 
 
 def test_a_full_day_defers_after_the_claim_without_sending(
