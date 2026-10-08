@@ -253,8 +253,10 @@ def test_every_format_renders_from_one_document(format):
     assert body.startswith({"csv": b"Family,", "xlsx": b"PK", "pdf": b"%PDF"}[format])
     if format == "csv":
         text = body.decode()
-        assert "Example <Family>" in text and "$1,234.50" in text
-        assert "Financial stewardship detail" in text and "$1,200.00" in text
+        # CSV money is the canonical amount (#388 L5).
+        assert "Example <Family>" in text and ",1234.50," in text
+        assert "Financial stewardship detail" in text and ",1200.00," in text
+        assert "$" not in text
 
 
 def test_comparison_headings_match_the_page():
@@ -356,8 +358,8 @@ def test_xlsx_money_cells_are_exact_summable_numbers():
     book.close()
 
 
-def test_csv_and_pdf_money_keep_the_page_text():
-    """Only XLSX changed: CSV and PDF still write the page's money text."""
+def test_csv_money_is_the_canonical_amount_and_pdf_keeps_the_page_text():
+    """CSV writes plain signed decimals; PDF still writes the page's text."""
     from parishkit.stewardship.reports.information_rendering import (
         information_lines,
     )
@@ -368,22 +370,25 @@ def test_csv_and_pdf_money_keep_the_page_text():
     records = list(csv.reader(io.StringIO(output.getvalue().decode())))
     first, second, third = records[2:]
     assert first[3:9] == [
-        "$1,234.50",
+        "1234.50",
         "Monthly",
-        "$102.88",
+        "102.88",
         "Online giving; Another way: Stock gift",
-        "$1,200.00",
-        "$100.00",
+        "1200.00",
+        "100.00",
     ]
-    # A negative amount keeps its formula-neutralizing apostrophe (#388 L5).
+    # A negative amount is a plain signed decimal, with no apostrophe; an
+    # unavailable amount stays the word and an absent one blank (#388 L5).
     assert (second[3], second[5], second[7], second[8]) == (
-        "$0.00",
+        "0.00",
         "",
-        "'-$50.00",
+        "-50.00",
         "Unavailable",
     )
-    assert third[7] == "$123,456,789,012,345.67"
-    assert records[0].index("Total annual pledges") == first.index("$1,234.51")
+    # Beyond Excel's digits too: the exact amount, never rounded.
+    assert third[7] == "123456789012345.67"
+    # The report-total metadata trailer is a canonical amount too.
+    assert records[0].index("Total annual pledges") == first.index("1234.51")
     lines = list(information_lines(built))
     assert "Annual pledge: $1,234.50" in lines
     assert "ParishSoft pledged: -$50.00" in lines
