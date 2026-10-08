@@ -306,7 +306,15 @@ def scope_sign_ins(instants, transitions, current, mode, lifetime):
     ]
 
 
-def events(emails, submissions, *, skips=(), sign_ins=(), forms=(), engagement=None):
+def events(
+    emails,
+    submissions,
+    *,
+    skips=(),
+    sign_ins=(),
+    forms=(),
+    engagement=None,
+):
     """The Administrator's timeline: every line, oldest first.
 
     The page shows it newest first (``TIMELINE_SORTING``); this order is the
@@ -317,11 +325,24 @@ def events(emails, submissions, *, skips=(), sign_ins=(), forms=(), engagement=N
     steps read in the order it took them. ``skips`` are ``(instant,
     occurrence)`` pairs; a skip's line replaces the cancelled email of the
     same occurrence, so one planned invitation is not listed twice.
+
+    ``sign_ins`` are instants, or ``(instant, by_staff)`` pairs: a sign-in
+    Staff started through Open form (#795) reads "Staff opened the form",
+    since no link was followed, and never names who did.
     """
-    lines = [
-        Event(at, _("Signed in"), _("or a mail scanner checked the link"))
-        for at in sign_ins
-    ]
+
+    def sign_in(value):
+        """One sign-in line, from an instant or an (instant, by_staff) pair."""
+        at, by_staff = value if isinstance(value, tuple) else (value, False)
+        if by_staff:
+            return Event(
+                at,
+                _("Staff opened the form"),
+                _("through Open form, signed in as the Family"),
+            )
+        return Event(at, _("Signed in"), _("or a mail scanner checked the link"))
+
+    lines = [sign_in(value) for value in sign_ins]
     lines += [Event(at, _("Opened the form")) for at in forms]
     if engagement is not None and engagement.progress_at is not None:
         lines.append(Event(engagement.progress_at, _("Got past the first step")))
@@ -413,24 +434,42 @@ def lifetime(scope):
 
 
 def read_sign_ins(family_id, scope, current_mode, bounds):
-    """The Family's sign-ins in the scope's mode and lifetime, oldest first.
+    """The Family's sign-ins in the scope, oldest first, as (instant, by_staff).
 
-    Sign-in audit events carry no mode, so each one is attributed to the
-    runtime mode in force when it happened.
+    ``by_staff`` says the sign-in's Family session was started by Staff
+    through Open form; it is decided per session, so two sign-ins at the
+    same instant are never confused. Sign-in audit events carry no mode, so each one
+    is attributed to the runtime mode in force when it happened. A
+    ``family_login`` event's subject is the new Family session; an Open form
+    sign-in also records ``family_assisted_login`` with the same subject
+    (#529). That read uses the audit's ``(event_type, created_at)`` index
+    and filters by this Family's sessions, which is negligible at parish
+    scale.
     """
-    instants = list(
+    rows = list(
         AuditEvent.objects.filter(event_type="family_login", actor_id=family_id)
         .order_by("created_at")
-        .values_list("created_at", flat=True)
+        .values_list("created_at", "subject_id")
     )
-    if not instants:
+    if not rows:
         return []
     transitions = list(
         RuntimeTransition.objects.order_by("created_at", "id").values_list(
             "created_at", "before_mode", "after_mode"
         )
     )
-    return scope_sign_ins(instants, transitions, current_mode, scope.mode, bounds)
+    kept = set(
+        scope_sign_ins(
+            [at for at, _subject in rows], transitions, current_mode, scope.mode, bounds
+        )
+    )
+    assisted = set(
+        AuditEvent.objects.filter(
+            event_type="family_assisted_login",
+            subject_id__in=[subject for _at, subject in rows if subject],
+        ).values_list("subject_id", flat=True)
+    )
+    return [(at, subject in assisted) for at, subject in rows if at in kept]
 
 
 def read_engagement(family_id, scope):
@@ -490,13 +529,14 @@ def read_timeline(scope, family_id, *, full, current_mode="production"):
         rehearsal_epoch_id=scope.rehearsal_epoch_id,
     ).values_list("created_at", flat=True)
     engagement = read_engagement(family_id, scope)
+    sign_ins = read_sign_ins(family_id, scope, current_mode, bounds)
     return Timeline(
         summary(emails, submissions),
         events(
             emails,
             submissions,
             skips=skips,
-            sign_ins=read_sign_ins(family_id, scope, current_mode, bounds),
+            sign_ins=sign_ins,
             forms=sorted(forms),
             engagement=engagement,
         ),
