@@ -1,0 +1,348 @@
+-- Frozen forward migration file 0066 (the repository-wide file sequence):
+-- Financial stewardship detail says whether Staff entered each effective
+-- response (#794). This file is installed by its Django migration in the
+-- reports app and must never change once released;
+-- tests/stewardship/test_schema_migration_files.py pins its digest and
+-- checks that its copy of stewardship_financial_report_v1 still equals the
+-- fresh-install baseline's (schema/financial_reports.sql). A later change
+-- gets its own numbered file. A fresh install runs the baseline, the earlier
+-- files and then this; the baseline already carries the same body, so the
+-- install ends in the same catalog as an upgraded database.
+--
+-- #529's frozen 0065 records stewardship_submission.entered_by_id when
+-- Staff enter a response for a Family through Open form. The financial
+-- projection, which the page reads live and each export captures whole,
+-- did not carry it. Each row now has a boolean staff_entered for the
+-- effective response: a yes or no, never the Staff member's identity.
+-- Exports captured before this file have no such key and render the
+-- column blank.
+--
+-- Replaced function, copied whole from its latest definition (0045, which
+-- the baseline carries; no later file replaced it) with only this change:
+--   stewardship_financial_report_v1   the responses CTE projects
+--                                     s.entered_by_id IS NOT NULL AS
+--                                     staff_entered, and detail carries it
+-- No sort token, filter, table, column, grant or other function changes, so
+-- stewardship_safe_context_v1 is untouched. The function keeps its signature,
+-- attributes and grants: it is SECURITY INVOKER before and after, so there is
+-- no ALTER FUNCTION to repeat, and the DO block below checks prosecdef, the
+-- settings and the ACL recorded before the replacement. Reversing needs its
+-- own forward migration that restores the old body.
+SET LOCAL check_function_bodies = false;
+SET LOCAL search_path = public;
+
+-- The function's grants before the replacement (with how many definitions
+-- there are), compared in the DO block. A transaction-local setting holds
+-- them, not a temporary table: the migration login has no TEMP privilege.
+SELECT set_config('stewardship.migration_0066_acl', (
+    SELECT count(*)||':'||coalesce(string_agg(p.proname||'='||coalesce(p.proacl::text,'default'),';'
+        ORDER BY p.proname),'')
+    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname='public' AND p.proname='stewardship_financial_report_v1'), true);
+
+-- stewardship_financial_report_v1: the baseline body (financial_reports.sql).
+-- CREATE OR REPLACE resets every attribute it does not state; this states the
+-- baseline's own (invoker rights, STABLE, search_path and jit settings).
+CREATE OR REPLACE FUNCTION public.stewardship_financial_report_v1(
+    -- A NULL page number returns the complete, unpaged result. The caller owns
+    -- the page size and must state it, so its paging arithmetic cannot drift
+    -- from the rows returned here; it is ignored for a complete result.
+    campaign_uuid uuid, parameters jsonb, page_number integer, page_size integer
+) RETURNS jsonb LANGUAGE plpgsql STABLE
+-- JIT compilation costs seconds per call at parish size and saves nothing
+-- here, as in the directory report. search_path stays first so the proconfig
+-- order matches an ALTER FUNCTION ... SET jit TO off on an installed database.
+SET search_path TO pg_catalog,public,pg_temp
+SET jit TO off AS $$
+DECLARE f jsonb:=parameters->'filters'; proof jsonb:=parameters->'proof';
+    answer jsonb; bad boolean;
+    money_text constant text:='^(0|[1-9][0-9]{0,8})(\.[0-9]{2})?$';
+    -- Canonical lowercase text, so identities compare without a fallible cast.
+    uuid_text constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+BEGIN
+    -- Each step relies only on what an earlier statement established. PL/pgSQL
+    -- runs statements in order, which SQL does not promise for the terms of one
+    -- condition: a container operator or a cast placed beside its own guard could
+    -- run first and fail with its own error, echoing a filter value, instead of
+    -- this closed refusal. An undecidable step refuses.
+    bad:=jsonb_typeof(parameters) IS DISTINCT FROM 'object';
+    IF NOT bad THEN
+        bad:=coalesce(NOT parameters ?& ARRAY['filters','proof']
+            OR parameters-ARRAY['filters','proof']<>'{}'::jsonb
+            OR jsonb_typeof(f) IS DISTINCT FROM 'object'
+            OR jsonb_typeof(proof) NOT IN ('null','object')
+            OR (page_number IS NOT NULL AND page_number NOT BETWEEN 1 AND 10000)
+            OR (page_number IS NOT NULL
+                AND (page_size IS NULL OR page_size NOT BETWEEN 1 AND 200)),true);
+    END IF;
+    IF NOT bad AND jsonb_typeof(proof)='object' THEN
+        bad:=coalesce(NOT proof ?& ARRAY['snapshot','configuration']
+            OR proof-ARRAY['snapshot','configuration']<>'{}'::jsonb
+            OR jsonb_typeof(proof->'snapshot') IS DISTINCT FROM 'string'
+            OR jsonb_typeof(proof->'configuration') IS DISTINCT FROM 'string'
+            OR NOT proof->>'snapshot' ~ uuid_text
+            OR NOT proof->>'configuration' ~ uuid_text,true);
+    END IF;
+    IF NOT bad THEN
+        bad:=coalesce(NOT f ?& ARRAY['search','active','first_start','first_end',
+                'latest_start','latest_end','pledge_min','pledge_max','amount',
+                'frequency','share','sort']
+            OR f-ARRAY['search','active','first_start','first_end','latest_start',
+                'latest_end','pledge_min','pledge_max','amount','frequency','share',
+                'sort']<>'{}'::jsonb
+            OR EXISTS(SELECT 1 FROM jsonb_each(f) WHERE jsonb_typeof(value)<>'string')
+            OR length(f->>'search')>200
+            OR (f->>'share' NOT IN ('any','none') AND NOT f->>'share' ~ uuid_text)
+            OR f->>'active' NOT IN ('any','active','inactive','unavailable')
+            OR f->>'amount' NOT IN ('any','zero','nonzero','cannot_give')
+            OR f->>'frequency'
+                NOT IN ('any','none','weekly','monthly','quarterly','annual')
+            OR f->>'sort'
+                NOT IN ('name','name_desc','newest','oldest','pledge','pledge_desc',
+                    'duid','duid_desc')
+            OR EXISTS(SELECT 1 FROM jsonb_each_text(f) d
+                WHERE d.key IN ('first_start','first_end','latest_start','latest_end')
+                  AND d.value<>'' AND (NOT d.value ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                      OR NOT pg_input_is_valid(d.value,'date')))
+            OR EXISTS(SELECT 1 FROM jsonb_each_text(f) d
+                WHERE d.key IN ('pledge_min','pledge_max') AND d.value<>''
+                  AND NOT d.value ~ money_text),true);
+    END IF;
+    IF NOT bad THEN
+        -- Ranges, once every bound is known to be well formed. An absent bound
+        -- becomes NULL, so no term here depends on another to be safe.
+        bad:=coalesce(nullif(f->>'first_start','')>nullif(f->>'first_end',''),false)
+            OR coalesce(nullif(f->>'latest_start','')>nullif(f->>'latest_end',''),false)
+            OR coalesce(nullif(f->>'pledge_min','')::numeric
+                >nullif(f->>'pledge_max','')::numeric,false);
+    END IF;
+    IF bad THEN
+        RAISE EXCEPTION 'Invalid financial report parameters' USING ERRCODE='23514';
+    END IF;
+
+WITH selected AS MATERIALIZED (
+    -- The campaign configuration row the proof names. It is not a submission's
+    -- applied configuration version, which the response rows carry below.
+    SELECT c.id,cc.id AS active_configuration_id,cc.name,cc.timezone,cc.values,
+        CASE WHEN c.state='archived' THEN k.source_snapshot_id
+             ELSE sc.snapshot_id END AS source_id
+    FROM stewardship_campaign c
+    JOIN stewardship_campaign_configuration cc ON cc.id=c.active_configuration_id
+    LEFT JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id
+    LEFT JOIN stewardship_source_current sc ON sc.singleton
+    WHERE c.id=campaign_uuid
+), source AS MATERIALIZED (
+    SELECT x.*,s.generation AS source_generation,s.promoted_at AS source_as_of,
+        statement_timestamp() AS observed_at,
+        -- Source money is shown only with a completeness proof of exactly the
+        -- snapshot and configuration selected above; any other proof withholds.
+        CASE WHEN v.proven
+            AND pg_input_is_valid(s.cursor->'load'->>'giving_as_of_date','date')
+            THEN (s.cursor->'load'->>'giving_as_of_date')::date END AS giving_through,
+        CASE WHEN v.proven THEN s.cursor->>'full_started_at' END AS giving_observed_at
+    FROM selected x JOIN stewardship_source_snapshot s ON s.id=x.source_id
+    CROSS JOIN LATERAL (SELECT coalesce(
+        proof->>'snapshot'=x.source_id::text
+        AND proof->>'configuration'=x.active_configuration_id::text,false)
+        AS proven) v
+    WHERE s.state='promoted' AND s.compacted_at IS NULL
+        AND x.values->'modules' ? 'financial'
+), responses AS MATERIALIZED (
+    SELECT s.id,s.submitted_at,s.family_version,s.annual_pledge,s.configuration_id,
+        i.family_duid,first.submitted_at AS first_submitted_at,
+        s.answers->'financial' AS financial,
+        coalesce(nullif(btrim(p.canonical::jsonb->>'lastName'),''),
+            nullif(btrim(p.canonical::jsonb->>'mailingName'),''),
+            nullif(btrim(concat_ws(' ',
+                nullif(btrim(p.canonical::jsonb->>'firstName'),''),
+                nullif(btrim(p.canonical::jsonb->>'lastName'),''))),''),
+            'Unavailable Family') AS family_name,
+        -- The surname that leads the shown name, as Python names it
+        -- (migration 0045's shared functions); family_name above keeps its
+        -- own trim for the returned rows.
+        stewardship_family_surname_v1(p.canonical::jsonb,'Unavailable Family') AS surname,
+        CASE WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
+            THEN (p.canonical::jsonb->'active')::boolean END AS active,
+        CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
+            THEN p.canonical::jsonb->'active_head_duids' END AS head_duids,
+        -- Whether Staff entered this effective response for the Family
+        -- through Open form (#529, #794): a yes or no, never who.
+        s.entered_by_id IS NOT NULL AS staff_entered
+    FROM source x
+    JOIN stewardship_family_campaign i ON i.campaign_id=x.id
+    JOIN stewardship_submission s ON s.id=i.effective_submission_id
+        AND s.mode='live' AND s.campaign_id=x.id AND s.answers ? 'financial'
+    JOIN stewardship_submission first ON first.id=i.first_live_submission_id
+    LEFT JOIN stewardship_snapshot_family m
+        ON m.snapshot_id=x.source_id AND m.source_key=i.family_duid::text
+    LEFT JOIN stewardship_source_family p ON p.id=m.payload_id
+), head_names AS MATERIALIZED (
+    -- Each Family's active heads as the shown name lists them, in DUID order
+    -- (stewardship_family_head_part_v1), so search and sort match what the
+    -- page shows (#960). One set-based join over every head, as in the
+    -- directory selection, skipped when neither a search nor a name sort
+    -- reads the name.
+    SELECT r.family_duid,array_agg(
+            stewardship_family_head_part_v1(sm.canonical::jsonb,r.surname)
+            ORDER BY h.head::bigint) AS parts
+    FROM responses r CROSS JOIN source x
+    CROSS JOIN LATERAL jsonb_array_elements_text(r.head_duids) h(head)
+    JOIN stewardship_snapshot_member mm
+        ON mm.snapshot_id=x.source_id AND mm.source_key=h.head
+    JOIN stewardship_source_member sm ON sm.id=mm.payload_id
+    WHERE f->>'search'<>'' OR f->>'sort' IN ('name','name_desc')
+    GROUP BY r.family_duid
+), named AS MATERIALIZED (
+    -- "Surname, A and B" (family_names.family_heads_name).
+    SELECT r.*,stewardship_family_heads_name_v1(r.surname,n.parts) AS display_name
+    FROM responses r LEFT JOIN head_names n ON n.family_duid=r.family_duid
+), filtered AS MATERIALIZED (
+    SELECT r.*,nullif(r.financial->>'frequency','') AS frequency
+    FROM named r CROSS JOIN source x
+    WHERE (f->>'search'='' OR position(lower(f->>'search') IN lower(r.display_name))>0
+            OR position(f->>'search' IN r.family_duid::text)>0)
+        AND (f->>'active'='any' OR (f->>'active'='active' AND r.active IS TRUE)
+            OR (f->>'active'='inactive' AND r.active IS FALSE)
+            OR (f->>'active'='unavailable' AND r.active IS NULL))
+        AND (f->>'first_start'='' OR (r.first_submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
+            >=nullif(f->>'first_start','')::date)
+        AND (f->>'first_end'='' OR (r.first_submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
+            <=nullif(f->>'first_end','')::date)
+        AND (f->>'latest_start'='' OR (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
+            >=nullif(f->>'latest_start','')::date)
+        AND (f->>'latest_end'='' OR (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
+            <=nullif(f->>'latest_end','')::date)
+        AND (f->>'pledge_min'='' OR r.annual_pledge>=nullif(f->>'pledge_min','')::numeric)
+        AND (f->>'pledge_max'='' OR r.annual_pledge<=nullif(f->>'pledge_max','')::numeric)
+        -- "Zero" and "No frequency" mean a Family that pledged nothing, not one
+        -- that cannot contribute; that answer has its own filter and count.
+        AND (f->>'amount'='any' OR (f->>'amount'='zero' AND r.annual_pledge=0
+                AND r.financial->'cannot_give' IS DISTINCT FROM 'true'::jsonb)
+            OR (f->>'amount'='nonzero' AND r.annual_pledge>0)
+            -- "Cannot contribute financially" (a zero pledge with that answer).
+            OR (f->>'amount'='cannot_give' AND r.financial->'cannot_give'='true'::jsonb))
+        AND (f->>'frequency'='any'
+            OR (f->>'frequency'='none' AND nullif(r.financial->>'frequency','') IS NULL
+                AND r.financial->'cannot_give' IS DISTINCT FROM 'true'::jsonb)
+            OR r.financial->>'frequency'=f->>'frequency')
+        AND (f->>'share'='any'
+            OR (f->>'share'='none' AND r.financial->'shares'='{}'::jsonb)
+            OR r.financial->'shares' ? (f->>'share'))
+), page AS MATERIALIZED (
+    -- A name sort orders by surname, then the whole shown name, as the
+    -- directory does; the Family DUID is unique here, so it ends every order.
+    SELECT *,row_number() OVER (ORDER BY
+        CASE WHEN f->>'sort'='name' THEN lower(surname) END,
+        CASE WHEN f->>'sort'='name' THEN lower(display_name) END,
+        CASE WHEN f->>'sort'='name_desc' THEN lower(surname) END DESC,
+        CASE WHEN f->>'sort'='name_desc' THEN lower(display_name) END DESC,
+        CASE WHEN f->>'sort'='newest' THEN submitted_at END DESC,
+        CASE WHEN f->>'sort'='oldest' THEN submitted_at END,
+        CASE WHEN f->>'sort'='pledge' THEN annual_pledge END,
+        CASE WHEN f->>'sort'='pledge_desc' THEN annual_pledge END DESC,
+        CASE WHEN f->>'sort'='duid' THEN family_duid END,
+        CASE WHEN f->>'sort'='duid_desc' THEN family_duid END DESC,
+        lower(surname),lower(display_name),family_duid) AS ordinal
+    FROM filtered ORDER BY ordinal
+    LIMIT CASE WHEN page_number IS NULL THEN NULL ELSE page_size END
+    OFFSET CASE WHEN page_number IS NULL THEN 0 ELSE (page_number-1)*page_size END
+), detail AS (
+    SELECT r.ordinal,r.id,r.family_name,r.family_duid,r.active,r.submitted_at,
+        r.first_submitted_at,r.family_version,r.staff_entered,
+        -- Money crosses JSON only as canonical text: a JSON number would be
+        -- parsed as a binary float and lose exactness.
+        r.annual_pledge::numeric(24,2)::text AS annual_pledge,r.frequency,
+        -- Responses recorded before this answer existed read as false.
+        coalesce(r.financial->'cannot_give'='true'::jsonb,false) AS cannot_give,
+        r.financial->'shares' AS shares,
+        -- Option wording is versioned with the configuration the Family saw; the
+        -- application words it with the Family form's own rule.
+        r.configuration_id,
+        g.pledge_total::numeric(24,2)::text AS pledge_total,
+        g.contribution_total::numeric(24,2)::text AS contribution_total
+    FROM page r CROSS JOIN source x
+    LEFT JOIN LATERAL (
+        -- Unavailable, never zero, without a proven complete giving read. With
+        -- one, a Family with no matching source row really does total zero.
+        SELECT CASE WHEN x.giving_through IS NOT NULL THEN coalesce((
+                SELECT sum((p.canonical::jsonb->>'amount')::numeric)
+                FROM stewardship_snapshot_pledge m
+                JOIN stewardship_source_pledge p ON p.id=m.payload_id
+                WHERE m.snapshot_id=x.source_id AND p.family_key=r.family_duid::text
+                    AND x.values->'financial'->'comparison_fund_duids'
+                        @> to_jsonb(p.fund_key::bigint)
+                    AND (p.canonical::jsonb->>'effective_date')::date BETWEEN
+                        (x.values->'financial'->>'comparison_start')::date
+                        AND (x.values->'financial'->>'comparison_end')::date),0)
+            END AS pledge_total,
+            CASE WHEN x.giving_through IS NOT NULL THEN coalesce((
+                SELECT sum((p.canonical::jsonb->>'amount')::numeric)
+                FROM stewardship_snapshot_contribution m
+                JOIN stewardship_source_contribution p ON p.id=m.payload_id
+                WHERE m.snapshot_id=x.source_id AND p.family_key=r.family_duid::text
+                    AND x.values->'financial'->'comparison_fund_duids'
+                        @> to_jsonb(p.fund_key::bigint)
+                    AND (p.canonical::jsonb->>'effective_date')::date BETWEEN
+                        (x.values->'financial'->>'comparison_start')::date
+                        AND least((x.values->'financial'->>'comparison_end')::date,
+                            x.giving_through)),0)
+            END AS contribution_total
+    ) g ON true
+)
+SELECT CASE WHEN NOT z.values->'modules' ? 'financial'
+    THEN jsonb_build_object('disabled',true)
+    WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
+    ELSE jsonb_build_object(
+    'metadata',jsonb_build_object('id',x.id,'name',x.name,'timezone',x.timezone,
+        'source_id',x.source_id,'source_generation',x.source_generation,
+        'source_as_of',x.source_as_of,'observed_at',x.observed_at,
+        'comparison_start',x.values->'financial'->>'comparison_start',
+        'comparison_end',x.values->'financial'->>'comparison_end',
+        'giving_through',x.giving_through,'giving_observed_at',x.giving_observed_at),
+    'summary',(SELECT jsonb_build_object('families',count(*),
+        'annual_total',coalesce(sum(annual_pledge),0)::numeric(24,2)::text,
+        'frequencies',coalesce((SELECT jsonb_object_agg(k,n) FROM (
+            SELECT coalesce(frequency,'none') AS k,count(*) AS n FROM filtered
+            WHERE financial->'cannot_give' IS DISTINCT FROM 'true'::jsonb
+            GROUP BY 1) d),'{}'::jsonb),
+        'shares',coalesce((SELECT jsonb_object_agg(k,n) FROM (
+            SELECT s.key AS k,count(*) AS n FROM filtered q
+            CROSS JOIN LATERAL jsonb_object_keys(q.financial->'shares') s(key)
+            GROUP BY 1) d),'{}'::jsonb),
+        'no_share',count(*) FILTER (WHERE financial->'shares'='{}'::jsonb),
+        'cannot_give',count(*) FILTER (WHERE financial->'cannot_give'='true'::jsonb))
+        FROM filtered),
+    'total',(SELECT count(*) FROM filtered),
+    'rows',coalesce((SELECT jsonb_agg(to_jsonb(d)-'ordinal' ORDER BY ordinal)
+        FROM detail d),'[]'::jsonb)) END
+INTO answer FROM selected z LEFT JOIN source x ON true;
+    RETURN answer;
+END $$;
+
+DO $check$
+BEGIN
+    -- Installed once, as declared: invoker rights, STABLE, both settings,
+    -- the projected column and its carry through detail.
+    IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname='stewardship_financial_report_v1'
+          AND pg_get_function_identity_arguments(p.oid)=
+              'campaign_uuid uuid, parameters jsonb, page_number integer, page_size integer'
+          AND NOT p.prosecdef AND p.provolatile='s' AND p.prorettype='jsonb'::regtype
+          AND p.proconfig=ARRAY['search_path=pg_catalog, public, pg_temp','jit=off']
+          AND p.prosrc LIKE '%s.entered_by_id IS NOT NULL AS staff_entered%'
+          AND p.prosrc LIKE '%r.first_submitted_at,r.family_version,r.staff_entered,%')<>1
+       OR (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+           WHERE n.nspname='public' AND p.proname='stewardship_financial_report_v1')<>1
+    THEN
+        RAISE EXCEPTION 'Migration 0066 (financial projection with staff_entered) is not installed as declared';
+    END IF;
+    -- CREATE OR REPLACE keeps the owner and grants; prove it.
+    IF current_setting('stewardship.migration_0066_acl', true) IS DISTINCT FROM (
+        SELECT count(*)||':'||coalesce(string_agg(p.proname||'='||coalesce(p.proacl::text,'default'),';'
+            ORDER BY p.proname),'')
+        FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname='stewardship_financial_report_v1') THEN
+        RAISE EXCEPTION 'Migration 0066 changed stewardship_financial_report_v1''s grants';
+    END IF;
+END
+$check$;

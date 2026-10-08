@@ -135,7 +135,10 @@ WITH selected AS MATERIALIZED (
         CASE WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
             THEN (p.canonical::jsonb->'active')::boolean END AS active,
         CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
-            THEN p.canonical::jsonb->'active_head_duids' END AS head_duids
+            THEN p.canonical::jsonb->'active_head_duids' END AS head_duids,
+        -- Whether Staff entered this effective response for the Family
+        -- through Open form (#529, #794): a yes or no, never who.
+        s.entered_by_id IS NOT NULL AS staff_entered
     FROM source x
     JOIN stewardship_family_campaign i ON i.campaign_id=x.id
     JOIN stewardship_submission s ON s.id=i.effective_submission_id
@@ -216,7 +219,7 @@ WITH selected AS MATERIALIZED (
     OFFSET CASE WHEN page_number IS NULL THEN 0 ELSE (page_number-1)*page_size END
 ), detail AS (
     SELECT r.ordinal,r.id,r.family_name,r.family_duid,r.active,r.submitted_at,
-        r.first_submitted_at,r.family_version,
+        r.first_submitted_at,r.family_version,r.staff_entered,
         -- Money crosses JSON only as canonical text: a JSON number would be
         -- parsed as a binary float and lose exactness.
         r.annual_pledge::numeric(24,2)::text AS annual_pledge,r.frequency,

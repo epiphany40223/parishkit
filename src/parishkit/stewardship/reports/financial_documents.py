@@ -37,7 +37,12 @@ HEADINGS = (
     "ParishSoft contributed",
     "Latest response",
     "First response",
+    "Entered by Staff",
 )
+# Whether Staff entered the effective response for the Family through Open
+# form (#794). A capture made before migration 0066 has no marker (None):
+# blank, never "No".
+STAFF_ENTERED = {True: "Yes", False: "No", None: ""}
 UNPROVEN = (
     "Unavailable: the latest giving data read from ParishSoft is not confirmed "
     "complete for this campaign's comparison period. Unavailable does not mean "
@@ -205,6 +210,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 row["source_contributions"],
                 instant(row["submitted_at"]),
                 instant(row["first_submitted_at"]),
+                STAFF_ENTERED[row["staff_entered"]],
             )
         )
         # A continuation row names the Family it continues and carries
@@ -215,7 +221,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 (row["family_name"], str(row["family_duid"]))
                 + ("",) * 3
                 + (CONTINUED + cell,)
-                + ("",) * 4
+                + ("",) * 5
             )
     return FinancialDocument(
         metadata,
