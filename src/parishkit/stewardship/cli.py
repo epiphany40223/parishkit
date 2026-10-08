@@ -96,6 +96,19 @@ _COMMAND_OPTIONS = {
     },
     # The BG-12 rehearsal's offline report over the files `rehearse` collected.
     "local-rehearsal-report": {"input"},
+    # One shard of the launch-day spike check (#392 M3); LOCAL only.
+    "local-spike": {
+        "profile",
+        "shard",
+        "shards",
+        "families",
+        "concurrency",
+        "since",
+        "wait_seconds",
+        "ca_file",
+    },
+    # The spike check's offline report over the shard documents.
+    "local-spike-report": {"input"},
 }
 
 
@@ -189,6 +202,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "scratch-host",
         "scratch-port",
         "scratch-password-file",
+        "shard",
+        "shards",
+        "since",
+        "wait-seconds",
+        "ca-file",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -307,6 +325,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.input is None:
             parser.usage_error("local-rehearsal-report requires --input")
         return execute_rehearsal_report(args.input)
+    if args.command == "local-spike":
+        from .local.spike import execute_spike
+
+        return execute_spike(args)
+    if args.command == "local-spike-report":
+        from .local.spike import execute_spike_report
+
+        if args.input is None:
+            parser.usage_error("local-spike-report requires --input")
+        return execute_spike_report(args.input)
     if args.command == "collect-static":
         from .static_assets import collect_static
 

@@ -30,6 +30,11 @@
 #   rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]
 #                                    add a Reminder due in MIN minutes (default 5),
 #                                    measure its send and print the BG-12 report
+#   spike [--families N] [--sources S] [--during-send] [--wait MIN] [--label NAME]
+#                                    the launch-day spike check (#392 M3): N Families
+#                                    (default 200) open their emailed links and submit
+#                                    through Caddy from S sources (default 8), beside a
+#                                    new Reminder send with --during-send
 #   wizard                           complete the setup wizard unattended
 #   status                           VM, services, Docker and VM disk use
 #   down                             stop the services; never removes data
@@ -291,6 +296,35 @@ case "$command" in
         require_running
         mkdir -p "$state"
         run_remote rehearse "$due_in" "$send_only" "$limit" "$label" 2>&1 | tee -a "$state/rehearse.log" ;;
+    spike)
+        # The launch-day spike check on a seeded deployment (developer guide,
+        # "Checking the launch-day spike"): the VM half starts the shard
+        # containers, collects their documents and prints the report.
+        spike_families=200 sources=8 during_send=0 wait=20 label=spike
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --families) [ $# -ge 2 ] || usage; spike_families=$2; shift 2 ;;
+                --sources) [ $# -ge 2 ] || usage; sources=$2; shift 2 ;;
+                --wait) [ $# -ge 2 ] || usage; wait=$2; shift 2 ;;
+                --label) [ $# -ge 2 ] || usage; label=$2; shift 2 ;;
+                --during-send) during_send=1; shift ;;
+                *) usage ;;
+            esac
+        done
+        if ! [[ $spike_families =~ ^[0-9]{1,4}$ ]] || [ "$((10#$spike_families))" -lt 1 ] || [ "$((10#$spike_families))" -gt 5000 ]; then
+            refuse "--families must be a whole number from 1 to 5000."
+        fi
+        if ! [[ $sources =~ ^[0-9]{1,2}$ ]] || [ "$((10#$sources))" -lt 1 ] || [ "$((10#$sources))" -gt 32 ]; then
+            refuse "--sources must be a whole number from 1 to 32."
+        fi
+        if ! [[ $wait =~ ^[0-9]{1,3}$ ]] || [ "$((10#$wait))" -lt 1 ] || [ "$((10#$wait))" -gt 240 ]; then
+            refuse "--wait must be a whole number of minutes from 1 to 240."
+        fi
+        spike_families=$((10#$spike_families)) sources=$((10#$sources)) wait=$((10#$wait))
+        [[ $label =~ ^[A-Za-z0-9._-]{1,40}$ ]] || refuse "--label must be 1-40 letters, digits, '.', '_' or '-'."
+        require_running
+        mkdir -p "$state"
+        run_remote spike "$spike_families" "$sources" "$during_send" "$wait" "$label" 2>&1 | tee -a "$state/spike.log" ;;
     snapshot|reset)
         name=post-setup
         case "$command:$#:${1-}" in

@@ -247,6 +247,7 @@ sections:
     "Seeder tests": [OPS-10]
     "Local test sign-in": [OPS-10]
     "Operator script": [OPS-10]
+    "Launch-day spike check": [OPS-10]
     "Testing requirements": [OPS-10]
     "Non-goals and rejected alternatives": [OPS-10]
   hosted-files/spec.md:
