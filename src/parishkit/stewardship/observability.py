@@ -60,6 +60,11 @@ class Event(StrEnum):
     # line carries the Ministry's DUID only, never the name itself.
     SOURCE_MINISTRY_NAME_REPAIRED = "source_ministry_name_repaired"
     SOURCE_HELD = "source_refresh_held"
+    # A scheduled ParishSoft refresh waits for a go-live attempt (#462). Its
+    # own name, so the bulk-send hold's evidence never counts it.
+    GO_LIVE_REFRESH_HELD = "go_live_refresh_held"
+    # The go-live producer's request was refused by its owner (#462).
+    GO_LIVE_STEP_REFUSED = "go_live_step_refused"
     SOURCE_CREDENTIAL_FAILED = "source_credential_failed"
     SOURCE_PROVIDER_FAILED = "source_provider_failed"
     MAIL_PROVIDER_FAILED = "mail_provider_failed"

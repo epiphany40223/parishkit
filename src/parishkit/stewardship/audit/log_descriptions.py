@@ -364,6 +364,14 @@ DESCRIPTIONS = {
         "A ParishSoft refresh was held back instead of replacing the current "
         "data, usually because other work was running; it waits and tries again."
     ),
+    "go_live_refresh_held": _(
+        "A scheduled ParishSoft refresh waited while a go-live prepared the "
+        "Family links; it runs once that go-live's hold ends."
+    ),
+    "go_live_step_refused": _(
+        "The system could not take the next go-live step for the Administrator "
+        "who started it, so it changed nothing; it tries again on its next pass."
+    ),
     "source_credential_failed": _(
         "The ParishSoft key was refused or could not be read. If the detail "
         "says it will not be retried, replace the key on the Integrations page."

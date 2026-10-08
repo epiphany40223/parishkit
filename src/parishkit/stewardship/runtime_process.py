@@ -544,6 +544,7 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
     from .accounts.setup_staging import produce_setup_expiry
     from .campaigns.boundary_production import produce_boundaries
     from .campaigns.digest_schedule_planning import DigestScheduleProducer
+    from .campaigns.go_live_sequencing import GoLiveProducer
     from .campaigns.schedule_production import FamilyScheduleProducer
     from .jobs.loop_settings import LoopSettings
     from .jobs.operational_collection import produce_collection
@@ -565,6 +566,8 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
     from .source.setup_final_production import produce_finalization
 
     producer = SourceProducer(uuid4())
+    # Go-live sequencing (#462): idle unless a go-live attempt is open.
+    go_live = GoLiveProducer()
     # The bulk sweep only when the bulk Family send is on (#430); off,
     # the producer is built exactly as before.
     schedules = FamilyScheduleProducer(uuid4(), **({"bulk": True} if bulk else {}))
@@ -633,6 +636,7 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
             *independent_producer(guard, partial(weekly, settings=settings), guard),
             *independent_producer(guard, weekly_finalization, guard),
             *independent_producer(guard, partial(producer, settings=settings), guard),
+            *independent_producer(guard, go_live, guard),
             *independent_producer(guard, produce_cleanup, guard),
             *independent_producer(guard, produce_export_cleanup, guard),
             *independent_producer(

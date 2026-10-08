@@ -15,6 +15,7 @@ from parishkit.stewardship.accounts.configuration_models import (
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import ContextKind
 from parishkit.stewardship.audit.services import operational
+from parishkit.stewardship.campaigns.go_live_sequencing import refreshes_held
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.admission import WorkScope, require_source_refresh
 from parishkit.stewardship.jobs.loop_settings import LoopSettings
@@ -270,6 +271,10 @@ def produce_refreshes(guard, *, skipped=None, refused=None, settings=None):
     provenance commit atomically; a lost insertion hint is recovered by the
     ordinary Task scanner. Existing slots never retry terminal work implicitly.
 
+    While a go-live attempt holds refreshes (#462), every not yet created
+    slot, full or quick, is held the same way and logs
+    ``go_live_refresh_held`` once (``_log_go_live_hold``).
+
     While a bulk Family send is in progress a not yet created delta slot, or a
     daytime full slot (a configured time other than the nightly one, #465), is
     held (``send_hold``): it creates no command, task or failure, and every
@@ -313,6 +318,8 @@ def produce_refreshes(guard, *, skipped=None, refused=None, settings=None):
     with transaction.atomic():
         instant = database_now()
         held = delta_held(instant)
+        # A go-live attempt holds every scheduled slot, full or quick (#462).
+        go_live = refreshes_held(instant)
         effective_at = _catch_up_at()
         planning = _skip_planning(instant)
     guard.check()
@@ -394,6 +401,11 @@ def produce_refreshes(guard, *, skipped=None, refused=None, settings=None):
                 decisions is not None and decisions.get(slot.slot_key) == "skipped"
             ):
                 # Skipped around a Family email: never run, never replaced.
+                continue
+            if go_live:
+                if skipped is None or slot.slot_key not in skipped:
+                    _log_go_live_hold(slot)
+                waiting.add(slot.slot_key)
                 continue
             if held and _waits_for_send(slot, nightly_time):
                 if decisions is not None and slot.slot_key not in decisions:
@@ -746,3 +758,16 @@ def _log_skip(slot):
             else f"Full ParishSoft refresh at {slot.nightly_time}",
             slot.due_at.isoformat(),
         )
+
+
+def _log_go_live_hold(slot):
+    """Record a slot held for a go-live attempt, in the process log only.
+
+    ``go_live_refresh_held`` at INFO, correlated to the slot's would-be
+    command. Unlike the bulk-send hold it writes no durable entry: its
+    evidence is the go-live request and its attempts
+    (``campaigns.go_live_sequencing``), so the bulk-send health rules, which
+    read the durable ``source_refresh_held`` entries, never see a go-live.
+    """
+    with correlation(slot.command_id):
+        emit(Event.GO_LIVE_REFRESH_HELD, level=logging.INFO)

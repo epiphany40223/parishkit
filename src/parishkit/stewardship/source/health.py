@@ -20,6 +20,7 @@ from parishkit.stewardship.accounts.runtime_models import (
 from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.audit.schemas import ContextKind, Outcome
 from parishkit.stewardship.audit.services import operational
+from parishkit.stewardship.campaigns.go_live_sequencing import held_until
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.jobs.admission import require_source_refresh
 from parishkit.stewardship.jobs.operational_content import IncidentKind, IncidentLevel
@@ -139,6 +140,10 @@ def observe_source_health():
         after=last_full if last_full is not None else initial_source_at(organization),
         timezone=source_timezone(scope.runtime.active_configuration_id),
     )
+    # A full slot that fell due while a go-live held refreshes counts from the
+    # hold's end instead (#462), so the alarm waits out the hold plus the
+    # usual margin, never longer. Refresh failures still alert as they do.
+    overdue = held_until(overdue)
     if is_out_of_date(
         overdue, scope.instant, timedelta(seconds=policy.source_stale_seconds)
     ):

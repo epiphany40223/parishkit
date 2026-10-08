@@ -783,6 +783,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         return 0
 
     producer, matching = Mock(return_value=("source-receipt",)), Mock()
+    go_live = Mock(return_value=())
     schedules = Mock(return_value=("schedule-receipt",))
     digests = Mock(return_value=("digest-receipt",))
     daily = Mock(return_value=("daily-receipt",))
@@ -842,6 +843,10 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     monkeypatch.setattr(runtime_background, "matching_authority", matching)
     monkeypatch.setattr(
         "parishkit.stewardship.source.production.SourceProducer", lambda _: producer
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.campaigns.go_live_sequencing.GoLiveProducer",
+        lambda: go_live,
     )
     monkeypatch.setattr(
         "parishkit.stewardship.campaigns.schedule_production.FamilyScheduleProducer",
@@ -998,6 +1003,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 weekly,
                 weekly_finalization,
                 producer,
+                go_live,
                 cleanup,
                 export_cleanup,
                 facts,
@@ -1031,6 +1037,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         weekly.assert_called_once_with(guard, settings=settings)
         weekly_finalization.assert_called_once_with(guard)
         producer.assert_called_once_with(guard, settings=settings)
+        go_live.assert_called_once_with(guard)
         cleanup.assert_called_once_with(guard)
         export_cleanup.assert_called_once_with(guard)
         facts.assert_called_once_with(guard, settings=settings)
@@ -1041,8 +1048,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         family_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
         maintenance.assert_called_once_with(guard)
-        # Twenty-five independent producers, each bracketed by two checks.
-        assert guard.check.call_count == 50
+        # Twenty-six independent producers, each bracketed by two checks.
+        assert guard.check.call_count == 52
     else:
         operational.assert_not_called()
         operational_fanout.assert_not_called()
