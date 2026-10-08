@@ -63,6 +63,9 @@ FROZEN = {
     "0011_refresh_schedule.sql": (
         "5701c8cad983e9c1c1d7343f2e603f1a50fe4139cc35af0d4c04096ad9eb2b1b"
     ),
+    "0012_daily_send_count.sql": (
+        "5516ebaa6625d6e25e263a8541c40bf7c1ca670d36e3204a722bec6dc81793fa"
+    ),
 }
 
 

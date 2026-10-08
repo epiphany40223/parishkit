@@ -238,19 +238,23 @@ MINISTRY_CATALOG_FUNCTION = "stewardship_ministry_catalog_v1()"
 # The automation maintenance task's Django session purge for ended Admin
 # sessions (ADM-11): the worker never reads a session key itself.
 SESSION_PURGE_FUNCTION = "stewardship_admin_session_purge_v1(uuid[])"
+# The mail consumers' 24-hour Family mail count, for System health (ADM-13):
+# one number, without the web reading any routed recipient address.
+DAILY_SENDS_FUNCTION = "stewardship_family_daily_sends_v1()"
 
 
 def runtime_functions(role, *, target=None):
     """Return the definer routines this login may EXECUTE.
 
-    Web signs Families in; the configuration installer checks that a Ministry
+    Web signs Families in and reads the 24-hour Family mail count (System
+    health); the configuration installer checks that a Ministry
     added to a live campaign is in the promoted catalog, without source grants;
     the general worker purges the Django sessions of ended Admin sessions.
     """
     role = _identity_role(role, target)
     return frozenset(
         {
-            ServiceRole.WEB: {FAMILY_LOGIN_FUNCTION},
+            ServiceRole.WEB: {FAMILY_LOGIN_FUNCTION, DAILY_SENDS_FUNCTION},
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
             ServiceRole.WORKER: {SESSION_PURGE_FUNCTION},
         }.get(role, ())
