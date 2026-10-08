@@ -8,7 +8,10 @@ redirect from a route on every engine. Two more requests answer a save with
 the request closed (``RESOLVED``: no form comes back) and with follow-up
 edits unavailable (``GATED``: Save comes back disabled). The history's
 second page (``OLDER``) and first page by number (``NEWER``) serve the
-in-place history pager tests (#519 PR 6).
+in-place history pager tests (#519 PR 6). Save and next (#534) is served
+by a request whose save redirects to the next request (``ADVANCE_ITEM`` to
+``NEXT_ITEM``) and one whose save, the last in the list, redirects to the
+remembered queue view (``LAST_ITEM`` to ``QUEUE_VIEW``).
 """
 
 from datetime import UTC, datetime
@@ -46,11 +49,26 @@ RESOLVED = RESOLVE_ITEM + "?resolved=1"
 GATE_ITEM = reverse("admin:ministry_followup_item", args=[GATE_REQUEST])
 GATE_UPDATE = reverse("admin:ministry_followup_update", args=[GATE_REQUEST])
 GATED = GATE_ITEM + "?gated=1"
+# Save and next (#534): the remembered queue view's token, a request whose
+# save moves to the next one, and the last request, whose save returns to the
+# remembered queue view.
+TOKEN = "ab" * 16
+ADVANCE_REQUEST, NEXT_REQUEST, LAST_REQUEST = UUID(int=97), UUID(int=98), UUID(int=99)
+ADVANCE_ITEM = reverse("admin:ministry_followup_item", args=[ADVANCE_REQUEST])
+ADVANCE_UPDATE = reverse("admin:ministry_followup_update", args=[ADVANCE_REQUEST])
+NEXT_ITEM = (
+    reverse("admin:ministry_followup_item", args=[NEXT_REQUEST]) + f"?queue={TOKEN}"
+)
+LAST_ITEM = reverse("admin:ministry_followup_item", args=[LAST_REQUEST])
+LAST_UPDATE = reverse("admin:ministry_followup_update", args=[LAST_REQUEST])
+QUEUE_VIEW = reverse("admin:ministry_followup") + f"?queue={TOKEN}"
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
     RESOLVE_UPDATE: (303, RESOLVED, ""),
     GATE_UPDATE: (303, GATED, ""),
+    ADVANCE_UPDATE: (303, NEXT_ITEM, ""),
+    LAST_UPDATE: (303, QUEUE_VIEW, ""),
 }
 
 
@@ -252,6 +270,29 @@ def components(context, admin):
             history=[revision],
             mutable=False,
         ),
+        # Save and next: the next request follows; the last has none, so
+        # Save and next returns to the remembered queue view.
+        ADVANCE_ITEM: values
+        | dict(
+            item=row | dict(id=str(ADVANCE_REQUEST), member_name="First <Member>"),
+            form=form,
+            queue_token=TOKEN,
+            next_id=str(NEXT_REQUEST),
+        ),
+        NEXT_ITEM: values
+        | dict(
+            item=row | dict(id=str(NEXT_REQUEST), member_name="Second <Member>"),
+            form=form | dict(expected_version="3"),
+            queue_token=TOKEN,
+            next_id=str(LAST_REQUEST),
+        ),
+        LAST_ITEM: values
+        | dict(
+            item=row | dict(id=str(LAST_REQUEST), member_name="Last <Member>"),
+            form=form,
+            queue_token=TOKEN,
+        ),
+        QUEUE_VIEW: values | dict(queue_token=TOKEN),
         SAVED: values
         | dict(
             item=saved,

@@ -25,8 +25,8 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
-FOLLOWUP_SAVE = "#followup-item form[data-in-place] button[type=submit]"
-INFORMATION_SAVE = "#information-item form[data-in-place] button[type=submit]"
+FOLLOWUP_SAVE = "#followup-save"
+INFORMATION_SAVE = "#information-save"
 FOCUSED_SAVE = (
     "document.activeElement.matches(selector) && document.activeElement.isConnected"
 )

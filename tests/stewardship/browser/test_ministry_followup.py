@@ -8,12 +8,22 @@ from django.http import QueryDict
 from django.urls import reverse
 
 from parishkit.stewardship.reports.ministry_followup_views import change_values
+from parishkit.stewardship.reports.report_paging import pop_navigation
 
 from .conftest import no_script_context
 from .waits import has_text, visible
 
 # The instant every follow-up fixture shows (followup_components.py).
 FIXTURE = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
+
+
+def posted(body):
+    """The follow-up form as the update view reads it: Save and next's
+    fields (the queue token and next request, #534) split off first."""
+    form = QueryDict(body, mutable=True)
+    assert pop_navigation(form) == ("", False, None)
+    return form
+
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -289,7 +299,7 @@ def test_followup_edit_without_scripts(browser_engine, component_origin):
         # guessing its zone (#558).
         assert "contact_zone=&" in body
         with pytest.raises(ValueError):
-            change_values(QueryDict(body))
+            change_values(posted(body))
         assert "Private" not in sent.value.url and "?" not in sent.value.url
         assert "assignee" not in body
     finally:
@@ -332,7 +342,7 @@ def test_followup_contact_time_round_trips_in_browser_time(
         page.route("**/record/", lambda route: route.fulfill(body="Saved"))
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Save follow-up").click()
-        change = change_values(QueryDict(sent.value.post_data))["change"]
+        change = change_values(posted(sent.value.post_data))["change"]
         assert change.contact_at == FIXTURE
     finally:
         context.close()

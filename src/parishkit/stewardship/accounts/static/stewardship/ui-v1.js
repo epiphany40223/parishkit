@@ -771,6 +771,14 @@
   // A data-in-place link or form names the region it changes by its URL's
   // fragment, or else by the region it sits in. Its data-in-place-message
   // ("List refreshed.") is announced before the region's row count.
+  // A submit button marked data-in-place-moves (a follow-up item's Save and
+  // next, #534) may be answered by a redirect to another page that draws the
+  // same region (the next item): that page's regions are swapped in and the
+  // address becomes its own, focus moves to the region's first heading (the
+  // item now shown), and the button's data-in-place-message is announced
+  // with that heading. On the last item, whose answer is the queue, the
+  // button is marked data-in-place-native instead, so the browser submits
+  // it natively and loads the queue once.
   // A page script can follow an a[data-in-place] link on the reader's behalf
   // (the participation report applying this browser's time zone as it
   // loads, report-v1.js) by marking the link data-in-place-quiet. The regions
@@ -1305,8 +1313,13 @@
       leave(() => showAsReturned(text));
       return;
     }
+    // A data-in-place-moves submitter's redirect to another page with this
+    // region is that region's next content, not a page elsewhere.
+    const moved = !refused && !otherOrigin && response.redirected
+      && control instanceof Element && control.hasAttribute("data-in-place-moves")
+      && answered.pathname !== window.location.pathname && isRegion(fresh);
     const elsewhere = otherOrigin
-      || (owner && !anywhere && answered.pathname !== window.location.pathname);
+      || (owner && !anywhere && !moved && answered.pathname !== window.location.pathname);
     if (!refused && (elsewhere || !isRegion(fresh))) {
       if (response.redirected || init.method !== "POST") {
         leave(() => window.location.assign(withFragment(response.url, id)));
@@ -1349,6 +1362,11 @@
       if (href.origin === window.location.origin && href.pathname === window.location.pathname) {
         window.history.replaceState(window.history.state, "", keepHash(href.href));
       }
+    } else if (!anywhere && !refused) {
+      // A follow-up queue names its remembered view by an opaque token
+      // (#534), never its filters: a reload then shows the view now applied.
+      const view = parsed.querySelector("[data-queue-address]")?.getAttribute("data-queue-address");
+      if (view && sameOrigin(view)) window.history.replaceState(window.history.state, "", keepHash(view));
     }
     if (options.quiet && !refused) return;
     // A refusal's summary (now in the region) takes focus, as it does on an
@@ -1359,6 +1377,16 @@
     // region left empty (an acknowledged banner, the last security event)
     // has nothing to focus or say, so the page's own heading takes focus.
     const swapped = document.getElementById(id);
+    if (moved) {
+      // Another item is shown: its heading takes focus and is announced.
+      const heading = swapped.querySelector("h1, h2, h3, h4, h5, h6") || swapped;
+      heading.setAttribute("tabindex", "-1");
+      heading.focus({preventScroll: true});
+      heading.scrollIntoView({block: "nearest"});
+      announce([control.getAttribute("data-in-place-message"), squeeze(heading.textContent)]
+        .filter(Boolean).join(" "));
+      return;
+    }
     let target = summary || focus(swapped);
     if (!target || target.disabled) {
       target = swapped.querySelector("h1, h2, h3, h4, h5, h6")
@@ -1442,6 +1470,10 @@
       owner = event.submitter?.form || form;
     }
     if (!region || !sameOrigin(written || "")) return;
+    // A submitter marked data-in-place-native submits natively: Save and
+    // next on the last follow-up item, whose answer is the queue (#534),
+    // loads it once rather than fetching it and then loading it again.
+    if (event.submitter?.hasAttribute("data-in-place-native")) return;
     event.preventDefault();
     if (inFlight.has(form)) {
       // A box changed again while its request runs applies itself after.

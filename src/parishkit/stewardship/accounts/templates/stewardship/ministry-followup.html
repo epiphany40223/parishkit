@@ -19,6 +19,7 @@
 {% if item.open %}
 <form method="post" action="{% url 'admin:ministry_followup_update' item.id %}#followup-item" data-require-complete data-in-place="followup-save" data-in-place-message="{% translate 'Follow-up saved.' %}">{% csrf_token %}
 <input type="hidden" name="expected_version" value="{{ form.expected_version }}"><input type="hidden" name="request_key" value="{{ request_key }}">
+<input type="hidden" name="queue" value="{{ queue_token }}"><input type="hidden" name="next" value="{{ next_id|default:'' }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Follow-up" %}</legend>
 <p class="help" id="followup-state-help">{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself." %}</p>
 <label for="followup-state">{% translate "Status" %}</label><select id="followup-state" name="state" aria-describedby="followup-state-help">{% for key,label in staff_states %}<option value="{{ key }}"{% if form.state == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
@@ -34,7 +35,10 @@
 <label for="contact-time">{% translate "Time" %}</label><input id="contact-time" type="time" name="contact_time" value="{{ form.contact_time }}"{% if 'contact_time' in field_error.fields %} aria-invalid="true" aria-describedby="contact-zone-help contact-error"{% else %} aria-describedby="contact-zone-help"{% endif %} data-browser-zone-field>{% if 'contact_date' in field_error.fields or 'contact_time' in field_error.fields %}<ul class="errorlist" id="contact-error" data-source="{{ field_error.code }}"><li>{{ field_error.message }}</li></ul>{% else %}<ul class="errorlist" id="contact-error" hidden><li></li></ul>{% endif %}
 <label for="contact-notes">{% translate "What happened" %}</label><textarea id="contact-notes" name="contact_notes" maxlength="2000" rows="3">{{ form.contact_notes }}</textarea></div>
 </fieldset>
-{% button type="submit" aria-describedby="followup-save-hint" enabled=mutable %}{% translate "Save follow-up" %}{% endbutton %}
+<div class="actions">{% button type="submit" id="followup-save" aria-describedby="followup-save-hint" enabled=mutable %}{% translate "Save follow-up" %}{% endbutton %}
+{# Save and next answers with the next request's page, which replaces this panel in place (data-in-place-moves, #534). The two branches differ only in that attribute (the button tag takes no conditional attribute name). #}
+{% translate 'Follow-up saved.' as saved_message %}{% if next_id %}{% button type="submit" id="followup-save-next" variant="secondary" name="then" value="next" data-in-place-moves data-in-place-message=saved_message aria-describedby="followup-save-hint followup-next-help" enabled=mutable %}{% translate "Save and next" %}{% endbutton %}{% else %}{% button type="submit" id="followup-save-next" variant="secondary" name="then" value="next" data-in-place-native data-in-place-message=saved_message aria-describedby="followup-save-hint followup-next-help" enabled=mutable %}{% translate "Save and next" %}{% endbutton %}{% endif %}</div>
+<p class="help" id="followup-next-help">{% if next_id %}{% translate "Save and next saves this request and opens the next open request in your Ministry follow-up list." %}{% else %}{% translate "No open requests follow this one in your Ministry follow-up list, so Save and next saves it and returns to the list." %}{% endif %}</p>
 <p class="help" id="followup-save-hint" data-complete-hint hidden></p></form>
 {% else %}<p>{% translate "This request is closed. Closed outcomes are permanent." %}</p>{% if item.notes %}<div>{{ item.notes|linebreaksbr }}</div>{% endif %}{% endif %}
 {# The history pages in place by itself (data-in-place-only), so it never replaces the form above or what the reader has typed; a Save still refreshes the whole panel (#519). #}
@@ -46,11 +50,13 @@
 {% if revision.contact_at %}<p>{{ revision.channel_label }} {% translate "contact" %} <time datetime="{{ revision.contact_at|date:'c' }}" data-local-instant>{{ revision.contact_at|date:'c' }}</time>{% if revision.contact_notes %}: {{ revision.contact_notes|linebreaksbr }}{% endif %}</p>{% endif %}
 <div>{{ revision.notes|linebreaksbr }}</div></section>
 {% empty %}<p>{% translate "No follow-up edits yet." %}</p>{% endfor %}
-<nav aria-label="{% translate 'Follow-up history pages' %}">{% if previous_history %}<a href="{% url 'admin:ministry_followup_item' item.id %}?page={{ previous_history }}#followup-history" data-in-place="history-newer" data-in-place-fallback="history-older" data-in-place-only data-in-place-message="{% translate 'Newer history shown.' %}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="{% url 'admin:ministry_followup_item' item.id %}?page={{ next_history }}#followup-history" data-in-place="history-older" data-in-place-fallback="history-newer" data-in-place-only data-in-place-message="{% translate 'Older history shown.' %}">{% translate "Older history" %}</a>{% endif %}</nav>
+<nav aria-label="{% translate 'Follow-up history pages' %}">{% if previous_history %}<a href="{% url 'admin:ministry_followup_item' item.id %}?page={{ previous_history }}{% if queue_token %}&amp;queue={{ queue_token }}{% endif %}#followup-history" data-in-place="history-newer" data-in-place-fallback="history-older" data-in-place-only data-in-place-message="{% translate 'Newer history shown.' %}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="{% url 'admin:ministry_followup_item' item.id %}?page={{ next_history }}{% if queue_token %}&amp;queue={{ queue_token }}{% endif %}#followup-history" data-in-place="history-older" data-in-place-fallback="history-newer" data-in-place-only data-in-place-message="{% translate 'Older history shown.' %}">{% translate "Older history" %}</a>{% endif %}</nav>
 </div>
 </div>
-<p><a href="{% url 'admin:ministry_followup' %}">{% translate "Return to Ministry follow-up" %}</a></p>
+<p><a href="{% url 'admin:ministry_followup' %}{% if queue_token %}?queue={{ queue_token }}{% endif %}">{% translate "Return to Ministry follow-up" %}</a></p>
 {% else %}
+{# The remembered view's address, which ui-v1.js puts in the address bar after an in-place filter, sort or page change (#534). #}
+{% if queue_token %}<span hidden data-queue-address="{% url 'admin:ministry_followup' %}?queue={{ queue_token }}"></span>{% endif %}
 <form id="table-filters" data-table-sync method="post" action="{% url 'admin:ministry_followup' %}">{% csrf_token %}
 <label for="followup-search">{% translate "Search Member or Ministry name" %}</label><input id="followup-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="filter-ministry">{% translate "Ministry" %}</label><select id="filter-ministry" name="ministry"><option value="">{% translate "All my Ministries" %}</option>{% for ministry in ministries %}<option value="{{ ministry.duid }}"{% if query.ministry == ministry.duid|stringformat:'s' %} selected{% endif %}>{{ ministry.name }}{% if ministry.in_campaign is False %} ({% translate "no longer in this campaign" %}){% endif %}</option>{% endfor %}</select>
@@ -65,7 +71,7 @@
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministry follow-up results' %}"><table>
 <caption>{% translate "Ministry requests and current follow-up" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading table "member" heading %}{% translate "Ministry" as heading %}{% sort_heading table "ministry" heading %}{% translate "Request" as heading %}{% sort_heading table "request" heading %}<th scope="col">{% translate "Status" %}</th><th scope="col">{% translate "Last contact" %}</th></tr></thead><tbody>
 {% for row in rows %}<tr>
-<td><a href="{% url 'admin:ministry_followup_item' row.id %}">{{ row.member_name }}</a></td><td>{{ row.ministry_name }}{% if row.in_campaign is False %}<br>{% translate "No longer in this campaign" %}{% endif %}</td>
+<td><a href="{% url 'admin:ministry_followup_item' row.id %}{% if queue_token %}?queue={{ queue_token }}{% endif %}">{{ row.member_name }}</a></td><td>{{ row.ministry_name }}{% if row.in_campaign is False %}<br>{% translate "No longer in this campaign" %}{% endif %}</td>
 <td>{% if row.action == 'join' %}{% translate "Join" %}{% else %}{% translate "Leave" %}{% if row.cannot_serve %}<br>{% translate "Cannot participate in any ministries (physical limitations)" %}{% endif %}{% endif %}<br><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td>
 <td>{{ row.state_label }}{% if row.outcome_label %}<br>{{ row.outcome_label }}{% endif %}</td>
 <td>{% if row.last_contact_at %}<time datetime="{{ row.last_contact_at|date:'c' }}" data-local-instant>{{ row.last_contact_at|date:'c' }}</time>{% else %}{% translate "None recorded" %}{% endif %}</td></tr>

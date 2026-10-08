@@ -127,7 +127,7 @@ def test_follow_up_save_after_paging_refreshes_the_history(page, component_origi
         FOLLOWUP_OLDER,
     )
     posts = count_requests(page, "POST", "/record/")
-    page.locator("#followup-item form[data-in-place] button[type=submit]").click()
+    page.locator("#followup-save").click()
     visible(page.locator("#followup-history").get_by_text("Saved <note>", exact=True))
     assert page.evaluate(MARKED) == "kept"
     assert page.locator("#followup-history").get_by_text("Older <edit>").count() == 0
