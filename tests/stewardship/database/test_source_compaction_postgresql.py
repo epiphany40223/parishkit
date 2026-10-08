@@ -318,13 +318,12 @@ class _Execution:
     """The slice of a live execution that pre-refresh retention uses."""
 
     def __init__(self, task):
-        from types import SimpleNamespace
+        from parishkit.stewardship.jobs.lifetime import ExecutionControl
+        from parishkit.stewardship.jobs.ownership import TaskClaim
 
-        self.claim = SimpleNamespace(
-            run_id=task["task_id"],
-            fence=task["task_fence"],
-            worker_id=task["worker_id"],
-        )
+        self.claim = TaskClaim(task["task_id"], task["task_fence"], task["worker_id"])
+        # The lease release admits itself through the real control (#387).
+        self.control = ExecutionControl()
 
     def effect(self):
         """A plain transaction stands in for the handler's fenced effect scope."""
