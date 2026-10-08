@@ -65,8 +65,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "system health",
     }
     changes = {"schedule preview", "schedule confirm", "config request show"}
+    refresh = {"refresh start", "refresh status"}
     operations = {"task retry"}
-    assert set(entries) == session | reads | changes | operations
+    assert set(entries) == session | reads | changes | refresh | operations
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
         assert {"--config", "--session-stdin"} <= names
@@ -76,6 +77,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in session
             else 4
             if name in changes
+            else 6
+            if name in refresh
             else 9
             if name in operations
             else 3
@@ -137,6 +140,25 @@ def test_the_catalog_lists_every_command_with_its_flags():
     options = {option["name"]: option for option in retry["options"]}
     assert not options["--request-key"]["required"]
     assert retry["result_fields"] == ["created", "request_key", "task"]
+    # A refresh request is keyed as the page's form is and records its
+    # admin_cmd_* event; its status is any session's read with no event.
+    start, status = entries["refresh start"], entries["refresh status"]
+    assert start["scope"] == "full" and start["changes_state"]
+    assert start["request_key"] and not start["expected_version"]
+    assert start["audit_event"] == "admin_cmd_refresh_start"
+    assert start["arguments"] == [] and not start["watch"]
+    options = {option["name"]: option for option in start["options"]}
+    assert not options["--request-key"]["required"]
+    assert start["result_fields"] == ["created", "request_key", "refresh"]
+    assert status["scope"] == "read_only" and not status["changes_state"]
+    assert status["audit_event"] is None and not status["watch"]
+    assert status["result_fields"] == [
+        "as_of",
+        "running",
+        "waiting",
+        "lateness_minutes",
+        "source",
+    ]
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -149,7 +171,11 @@ def test_every_state_change_has_a_registered_described_event():
         for entry in admin_cli.catalog()
         if (entry["audit_event"] or "").startswith("admin_cmd_")
     ]
-    assert events == ["admin_cmd_schedule_confirm", "admin_cmd_task_retry"]
+    assert events == [
+        "admin_cmd_schedule_confirm",
+        "admin_cmd_refresh_start",
+        "admin_cmd_task_retry",
+    ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event
 
