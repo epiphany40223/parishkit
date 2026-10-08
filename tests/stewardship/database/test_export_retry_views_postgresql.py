@@ -5,6 +5,7 @@ import socket
 from uuid import uuid4
 
 import pytest
+from django.urls import reverse
 
 from .test_export_jobs_postgresql import run_export, scenario  # noqa: F401
 from .test_export_views_postgresql import create, http_scenario, post  # noqa: F401
@@ -14,31 +15,35 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.mark.parametrize(
-    "endpoint", ["create", "status", "cancel", "grant", "download", "cleanup"]
+    "endpoint", ["create", "status", "cancel", "download", "cleanup"]
 )
-def test_configuration_fault_is_uniform_denial_not_invalid_input(
+def test_configuration_fault_is_not_invalid_input(
     http_scenario,  # noqa: F811
     monkeypatch,
     endpoint,
 ):
-    """ConfigError is a ValueError subtype, but never a caller parse failure."""
-    from parishkit.config import ConfigError
-    from parishkit.stewardship.reports import export_views
+    """ConfigError is a ValueError subtype, but never a caller parse failure.
 
-    setup, browser = http_scenario
+    The export page's actions answer it with their safe "try again" page; the
+    Admin-only cleanup retry with the uniform denial. Neither shows the detail.
+    """
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.reports import export_ui, export_views
+
+    _, browser = http_scenario
 
     def unavailable(*args, **kwargs):
-        """A private configuration detail must not escape the shared denial."""
+        """A private configuration detail must not escape the shared answer."""
         raise ConfigError("synthetic-private-configuration-value")
 
     monkeypatch.setattr(export_views, "_principal", unavailable)
+    monkeypatch.setattr(export_ui, "_principal", unavailable)
     identifier = uuid4()
     paths = {
-        "create": f"/admin/campaign/{setup[2].campaign_id}/exports/participation",
-        "status": f"/admin/exports/{identifier}",
-        "cancel": f"/admin/exports/{identifier}/cancel",
-        "grant": f"/admin/exports/{identifier}/download-grant",
-        "download": "/admin/exports/download",
+        "create": reverse("admin:report_export_create"),
+        "status": reverse("admin:report_export", args=[identifier]),
+        "cancel": reverse("admin:report_export_cancel", args=[identifier]),
+        "download": reverse("admin:report_export_download", args=[identifier]),
         "cleanup": f"/admin/system/background/{identifier}/export-cleanup-retry/",
     }
     response = (
@@ -50,26 +55,25 @@ def test_configuration_fault_is_uniform_denial_not_invalid_input(
             {"request_key": str(uuid4())} if endpoint == "cleanup" else {},
         )
     )
-    assert response.status_code == 403
+    assert response.status_code == (403 if endpoint == "cleanup" else 503)
     assert b"synthetic-private" not in response.content
 
 
-def test_missing_artifact_root_is_denied_after_real_grant(http_scenario, settings):  # noqa: F811
-    """An authentic grant does not turn a storage fault into a caller error."""
+def test_missing_artifact_root_is_not_a_caller_error(http_scenario, settings):  # noqa: F811
+    """A storage fault after a real grant is never a 400 and shows no detail."""
     setup, browser = http_scenario
     request = create(http_scenario)
     run_export(setup, request)
-    grant = post(browser, f"/admin/exports/{request.pk}/download-grant").json()["grant"]
     settings.STEWARDSHIP_REPORTS_ROOT = None
     server, peer = socket.socketpair()
     try:
         response = post(
             browser,
-            "/admin/exports/download",
-            {"grant": grant},
+            reverse("admin:report_export_download", args=[request.pk]),
             **{"gunicorn.socket": server},
         )
-        assert response.status_code == 403
+        assert response.status_code in {403, 503}
+        assert b"not configured" not in response.content
     finally:
         server.close()
         peer.close()

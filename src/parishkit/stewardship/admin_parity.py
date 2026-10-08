@@ -215,7 +215,6 @@ LEDGER = {
     "family_timeline": pending("PR 8g", "export family-timeline"),
     # The header's Find a Family box (#561) runs the directory's search.
     "find_family": permanent(NAME_SEARCH),
-    "postal_directory": command("export postal"),
     # Creating a financial export is fresh-gated (#547): the command calls
     # the caller-aware require_fresh, as the page's view does.
     "financial_export": command("export financial"),
@@ -225,26 +224,16 @@ LEDGER = {
     "information_export": command("export information"),
     # Both directory exports are fresh-gated (#547), as above.
     "family_directory_export": command("export directory", "export postal"),
-    "postal_directory_export": command("export postal"),
-    # The export lifecycle (PR 8b): the status page and its buttons, the
-    # Participation page's export form, and the JSON routes behind them.
-    # The download's grant is issued and consumed inside ``export download``.
+    # The export lifecycle (PR 8b): the status page and its buttons, and the
+    # Participation page's export form. The download's grant is issued and
+    # consumed inside ``export download``.
     "report_export_create": command("export create"),
     "report_export": command("export status"),
     "report_export_cancel": command("export cancel"),
     "report_export_retry": command("export retry"),
     "report_export_regenerate": command("export regenerate"),
     "report_export_download": command("export download"),
-    "export_create": command("export create"),
-    "export_status": command("export status"),
-    "export_cancel": command("export cancel"),
-    "export_download": command("export download"),
-    "export_download_grant": command("export download"),
     "report_exact_create": pending("PR 8g", "export exact"),
-    "exact_export_create": pending("PR 8g", "export exact"),
-    "exact_export_status": pending("PR 8g", "export exact"),
-    "exact_export_cancel": pending("PR 8g", "export exact"),
-    "exact_export_retry": pending("PR 8g", "export exact"),
     # The digests (PR 8d): the retained reports an emailed digest links to,
     # and the manual weekly report.
     "daily_digest_snapshot": command("digest daily"),

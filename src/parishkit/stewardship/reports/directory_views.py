@@ -8,12 +8,11 @@ the selection's ``postal`` flag chooses columns and the export kind, never
 which Families are listed (#202).
 """
 
-from urllib.parse import urlencode
 from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
@@ -69,15 +68,14 @@ def _principal(request, store, *, read_only=False):
 LINK_PRESETS = frozenset({"reach", "mailing"})
 
 
-def mailing_option(parameters, *, default):
+def mailing_option(parameters):
     """Remove and return the mailing-columns choice from the submitted form.
 
     ``parameters`` is a mutable QueryDict. The checkbox sends ``mailing=yes``
-    only when checked; hidden fields carry ``yes`` or ``no``. ``default``
-    applies when the field is absent: the old postal route and forms rendered
-    before the pages merged default to mailing columns on.
+    only when checked; hidden fields carry ``yes`` or ``no``; an absent field
+    means off.
     """
-    values = parameters.pop("mailing", ["yes" if default else "no"])
+    values = parameters.pop("mailing", ["no"])
     if len(values) != 1 or values[0] not in {"yes", "no"}:
         raise ValueError("Invalid mailing-columns choice.")
     return values[0] == "yes"
@@ -121,24 +119,6 @@ def _error(campaign_id, *, status):
     return response
 
 
-def _legacy_postal_redirect(request, campaign_id):
-    """Send a bookmarked postal-outreach link to the merged page's preset.
-
-    The old page listed the Families that need postal mail, so the preset is
-    mailing columns with reach "By postal mail only" (the Families its mail
-    merge held) unless the link named another known reach. Anything else is
-    dropped, so no private value ever enters the new URL.
-    """
-    reach = request.GET.getlist("reach")
-    reach = reach[0] if len(reach) == 1 and reach[0] in REACH else "mail"
-    presets = {"reach": reach}
-    return HttpResponseRedirect(
-        reverse("admin:family_directory")
-        + "?"
-        + urlencode(presets | {"mailing": "yes"})
-    )
-
-
 def _mailing_rows(rows):
     """Add each row's mail-merge addressee, as the postal export names it.
 
@@ -152,15 +132,8 @@ def _mailing_rows(rows):
 
 
 @require_http_methods(["GET", "POST"])
-def directory(request, campaign_id, *, postal=False):
-    """Recheck roles/scope through rendering and streaming; audit after guard close.
-
-    ``postal`` is set only by the old postal-outreach route: a GET there
-    redirects to this page with mailing columns on, and a POST from a form
-    rendered before the pages merged is served here with mailing columns on.
-    """
-    if postal and request.method == "GET":
-        return _legacy_postal_redirect(request, campaign_id)
+def directory(request, campaign_id):
+    """Recheck roles/scope through rendering and streaming; audit after guard close."""
     finish, handed_off = None, False
     try:
         service = runtime()
@@ -175,7 +148,7 @@ def directory(request, campaign_id, *, postal=False):
             raise ValueError("Directory filters require private POST state.")
         parameters = (request.GET if request.GET else request.POST).copy()
         parameters.pop("csrfmiddlewaretoken", None)
-        postal = mailing_option(parameters, default=postal)
+        postal = mailing_option(parameters)
         # The selection pages 50 rows at a time, so that is the only size.
         pop_page_size(parameters, (PAGE_SIZE,), default=PAGE_SIZE)
         query = DirectoryQuery.parse(parameters)

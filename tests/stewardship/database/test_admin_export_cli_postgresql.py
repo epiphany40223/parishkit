@@ -17,6 +17,7 @@ import socket
 from uuid import UUID, uuid4
 
 import pytest
+from django.urls import reverse
 
 from parishkit.stewardship import admin_cli
 from parishkit.stewardship.accounts import automation_sessions as automation
@@ -94,18 +95,17 @@ def download(export_id, secret):
 
 
 def page_download(http_scenario, settings, request):  # noqa: F811
-    """The page's download of ``request``: its grant, then its streamed bytes."""
+    """The export page's download of ``request``: its streamed bytes.
+
+    The page's Download action issues and consumes its one-use grant in one
+    post, as ``export download`` does.
+    """
     _, browser = http_scenario
-    grant = post(browser, f"/admin/exports/{request.pk}/download-grant").json()["grant"]
+    download = reverse("admin:report_export_download", args=[request.pk])
     server, peer = socket.socketpair()
     try:
         with restricted_download_pool(settings):
-            response = post(
-                browser,
-                "/admin/exports/download",
-                {"grant": grant},
-                **{"gunicorn.socket": server},
-            )
+            response = post(browser, download, **{"gunicorn.socket": server})
             assert response.status_code == 200
             body = b"".join(response.streaming_content)
             response.close()

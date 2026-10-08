@@ -100,15 +100,10 @@ def test_every_moved_page_reverses_under_its_group(name):
 
 
 # Admin form actions and old bookmark routes that still name a campaign in
-# their address. None is a menu page; each is listed so a new route naming a
-# campaign fails below instead of slipping in (#865), and the list shrinks
-# as these move.
-CAMPAIGN_ROUTES = {
-    "export_create",
-    "exact_export_create",
-    "postal_directory",
-    "postal_directory_export",
-}
+# their address (#865). None is left: #758 retired the JSON export API and
+# the old postal routes, the last ones. A new route naming a campaign fails
+# below instead of slipping in.
+CAMPAIGN_ROUTES = set()
 
 
 def test_no_admin_page_names_a_campaign():
@@ -526,6 +521,29 @@ def test_the_go_live_chain_names_no_campaign():
     # One home per concept: Campaign Ministries runs through Ministries.
     assert reverse("admin:campaign_ministries").startswith(reverse("admin:ministries"))
     assert navigation.PAGES["campaign_ministries"].parent == "ministries"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        f"/admin/campaign/{T}/exports/participation",
+        "/admin/exports/download",
+        f"/admin/campaign/{T}/exports/exact-participation",
+        f"/admin/exact-exports/{T}",
+        f"/admin/exact-exports/{T}/cancel",
+        f"/admin/exact-exports/{T}/retry",
+        f"/admin/exports/{T}",
+        f"/admin/exports/{T}/cancel",
+        f"/admin/exports/{T}/download-grant",
+        # The old postal page and export: Admin-only, so no redirect (#864).
+        f"{R}/postal/",
+        f"{R}/postal/export",
+    ],
+)
+def test_the_retired_json_export_api_and_postal_routes_are_gone(path):
+    """No page, script or command line used the JSON export API (#758)."""
+    with pytest.raises(Resolver404):
+        resolve(path)
 
 
 def test_reports_root_keeps_its_old_meaning():

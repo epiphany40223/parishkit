@@ -193,21 +193,14 @@ def test_native_directory_code_filters_contacts_and_response(
 def test_mailing_columns_merge_postal_outreach_into_the_directory(
     live_response_service, google
 ):
-    """One page serves both uses; old postal links redirect to its preset (#202)."""
+    """One page serves both uses (#202); the old postal page is retired (#758)."""
     harness = live_response_service
     browser, _ = signed_in()
     route = reverse("admin:family_directory")
     legacy = f"/admin/reports/{harness.campaign.pk}/postal/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        # A bookmarked postal page opens the merged page with mailing columns
-        # and the Families that need postal mail, keeping only a known reach.
-        response = browser.get(legacy)
-        assert response.status_code == 302
-        assert response["Location"] == route + "?reach=mail&mailing=yes"
-        response = browser.get(legacy + "?reach=neither&search=private")
-        assert response["Location"] == route + "?reach=neither&mailing=yes"
-        response = browser.get(legacy + "?reach=private-text")
-        assert response["Location"] == route + "?reach=mail&mailing=yes"
+        # The old postal page is Admin-only and keeps no redirect (#864).
+        assert browser.get(legacy).status_code == 404
         # Mailing columns are independent of the filters: the one Family,
         # reachable by email, shows its addressee and mailing address.
         for response, body in (
@@ -233,10 +226,12 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
         assert b"<h1>Active parishioner family directory</h1>" in body
         assert b"those without deliverable email:" not in body
         assert b"Family codes are private:" not in body
-        # A form rendered before the merge still posts to the old route and
-        # keeps its mailing columns.
-        response, body = search(browser, legacy, {"reach": "any"})
-        assert response.status_code == 200 and b"Addressee" in body
+        moved = browser.post(
+            legacy,
+            {"reach": "any"},
+            HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
+        )
+        assert moved.status_code == 404
         for values in ({"mailing": "maybe"}, {"mailing": ["yes", "no"]}):
             response, body = search(browser, route, values)
             assert response.status_code == 400
