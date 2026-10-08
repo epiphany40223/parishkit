@@ -885,9 +885,11 @@ the `assigned` state and their database rules remain, unused, for requests
 assigned before that decision, which a same-intent Family resubmission still
 carries forward until the next Staff edit clears them.
 
-Manual census work uses proposed-change execution state and notes rather than a
-separate workflow. Admin and Staff may mark manual items resolved externally or
-ignored; only Admin may approve/edit/publish API-writable items.
+Manual census work uses proposed-change execution state rather than a separate
+workflow; each resolution's note, actor and time are an immutable resolution
+row ([Manual census resolution](../reports/spec.md#manual-census-resolution)).
+Admin and Staff may mark manual items resolved externally or ignored; only
+Admin may approve/edit/publish API-writable items.
 
 ### Content and email templates
 

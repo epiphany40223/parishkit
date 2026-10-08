@@ -10,10 +10,11 @@ audited as a count only.
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -26,14 +27,17 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
+from parishkit.stewardship.responses.census_resolution import resolve_census_change
+from parishkit.stewardship.responses.models import ProposedChange
 from parishkit.stewardship.schema_primitives import timezone_names
-from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.exports import download_headers
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from .census_changes import (
     KINDS,
+    LABELS,
     ROUTES,
     STATUS_CHOICES,
     STATUSES,
@@ -177,6 +181,95 @@ def _choices(parameters, *, export):
     return extra
 
 
+# The fields a row's resolution form adds to the page's own POST (#528, step 3).
+RESOLUTION_FIELDS = ("resolve", "proposal", "version", "request_key", "note")
+RESOLVED = {
+    "entered": "marked entered in ParishSoft.",
+    "ignored": "marked ignored.",
+    "reopened": "reopened.",
+}
+# PostgreSQL's SQLSTATE for a unique violation.
+UNIQUE_VIOLATION = "23505"
+STALE = (
+    "was updated by someone else, so nothing was recorded. "
+    "The list shows its current status."
+)
+
+
+def _resolution(parameters):
+    """Remove a row's resolution fields from the form; None when there are none.
+
+    A resolution is sent with the page's own filters and table choices, so
+    the answer is the same page, refreshed in place.
+    """
+    found = {name: parameters.pop(name, None) for name in RESOLUTION_FIELDS}
+    if all(value is None for value in found.values()):
+        return None
+    if any(value is None or len(value) != 1 for value in found.values()):
+        raise ValueError("A census change resolution needs every field once.")
+    values = {name: value[0] for name, value in found.items()}
+    return {
+        "action": values["resolve"],
+        "proposal_id": UUID(values["proposal"]),
+        "expected_version": int(values["version"]),
+        "request_key": UUID(values["request_key"]),
+        "note": values["note"].strip(),
+    }
+
+
+def _row_name(proposal):
+    """The changed row as the notice names it: what changed, and whose."""
+    who = (
+        "the Family"
+        if proposal.entity_kind == "family"
+        else "a new Member"
+        if proposal.entity_kind == "proposed_member"
+        else f"Member {proposal.entity_key}"
+    )
+    label = LABELS.get(proposal.field, proposal.field)
+    return f"{label} for {who} in Family {proposal.submission.family.family_duid}"
+
+
+def _resolve(service, principal, campaign_id, resolution):
+    """Record a resolution; the notice the page shows about it.
+
+    The proposal must belong to this page's campaign (otherwise it is denied,
+    as an unknown one is). A change someone else updated first is not an
+    error the reader caused: the page answers with its current state and
+    says so, whether the service saw the newer version or the database
+    refused a racing second write. Every other refusal (an action not allowed
+    from the row's state, a forged or rebound request) is a 400, as a bad
+    filter is.
+    """
+    action, proposal_id = resolution["action"], resolution.pop("proposal_id")
+    proposal = (
+        ProposedChange.objects.select_related("submission__family")
+        .filter(pk=proposal_id, submission__campaign_id=campaign_id)
+        .filter(submission__mode="live")
+        .first()
+    )
+    if proposal is None:
+        raise PermissionError("This census change is unavailable.")
+    name = _row_name(proposal)
+    try:
+        resolve_census_change(
+            service.store, principal.identity, proposal_id, **resolution
+        )
+    except StaleRecordError:
+        return f"{name} {STALE}"
+    except IntegrityError as error:
+        # A racing write normally surfaces as StaleRecordError above, under
+        # the row lock. Only the expected race (a second resolution of the
+        # same version: a unique violation) becomes the stale notice. Any
+        # other refusal (a guard or audit mismatch) is logged and fails the
+        # request, so a future bug is never hidden behind the race wording.
+        if getattr(error.__cause__, "sqlstate", None) == UNIQUE_VIOLATION:
+            return f"{name} {STALE}"
+        emit_failure(error, event=Event.TASK_FAILED)
+        raise
+    return f"{name} {RESOLVED[action]}"
+
+
 def _respond(request, campaign_id, *, export, render):
     """Shared admission, purge protection, audit and failure handling.
 
@@ -196,8 +289,13 @@ def _respond(request, campaign_id, *, export, render):
                 raise ValueError("Census change filters require private POST state.")
             parameters = request.POST.copy()
             parameters.pop("csrfmiddlewaretoken", None)
+            resolution = None if export else _resolution(parameters)
             extra = _choices(parameters, export=export)
             query = CensusQuery.parse(parameters)
+            if resolution is not None:
+                # Recorded in its own work transaction, before the page's
+                # read, so the page that answers shows the result.
+                extra["notice"] = _resolve(service, principal, campaign_id, resolution)
         except ValueError:
             return _error(campaign_id, status=400)
         finalized, count = False, 0
@@ -280,6 +378,10 @@ def report(request, campaign_id):
             carry=list(query.form_values().items()),
             sorting=SORTING,
         )
+        # A fresh key per drawn form makes a repeated submission of the same
+        # form a replay, never a second resolution.
+        for row in table.rows:
+            row["request_key"] = uuid4()
         return render_to_string(
             "stewardship/census-changes.html",
             result
@@ -292,6 +394,8 @@ def report(request, campaign_id):
                 "route_choices": ROUTE_LABELS.items(),
                 "kind_choices": KIND_LABELS.items(),
                 "export_timezones": sorted(timezone_names()),
+                "notice": extra.get("notice"),
+                "action": action,
             },
             request=request,
         ).encode()
