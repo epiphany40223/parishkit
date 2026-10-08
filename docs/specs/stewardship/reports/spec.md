@@ -631,7 +631,10 @@ with its outcome (including Not sent (cancelled)), linked to its Mail message pa
 the Family had already responded (the [funnel's](#funnel-stages) skip), which
 stands in for that invitation's cancelled email, so the one planned email is
 listed once; each sign-in, labelled as possibly a mail scanner checking the
-link; each form open; getting past the first step and the furthest step
+link, except one Staff started through [Open form](#family-timeline), which
+reads "Staff opened the form" and never names who
+([#795](https://github.com/epiphany40223/parishkit/issues/795)); each form
+open; getting past the first step and the furthest step
 reached; and each submission, noting when Staff entered it for the Family
 and when no receipt was sent because the Family had no email address. Staff
 get none of these, and the server does not read them for a Staff view.

@@ -398,3 +398,17 @@ def test_staff_entered_responses_are_marked_without_a_name():
     assert "entered by Staff" not in render(TIMELINE).replace(
         "marked as entered by Staff", ""
     )
+
+
+def test_a_staff_sign_in_reads_staff_opened_the_form():
+    """An Open form sign-in is not a link the Family followed (#795)."""
+    # Decided per sign-in, so two at the same instant are never confused.
+    same = START + 20 * MINUTE
+    lines = events([], [], sign_ins=[(same, True), (same, False)])
+    assert [(str(line.what), str(line.detail)) for line in lines] == [
+        ("Staff opened the form", "through Open form, signed in as the Family"),
+        ("Signed in", "or a mail scanner checked the link"),
+    ]
+    # Never names who: the line carries no actor.
+    page = render(Timeline(summary([], []), lines))
+    assert "Staff opened the form" in page and "admin@" not in page
