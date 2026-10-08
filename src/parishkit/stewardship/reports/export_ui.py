@@ -232,15 +232,15 @@ def detail(request, request_id):
             if job.report == "ministry":
                 title = "Ministry export"
                 source = "ministry_report"
-                report_url = reverse("admin:ministry_report", args=(campaign_id,))
+                report_url = reverse("admin:ministry_report")
             elif job.report == "additional_information":
                 title = "Additional-information export"
                 source = "information_queue"
-                report_url = reverse("admin:information_queue", args=(campaign_id,))
+                report_url = reverse("admin:information_queue")
             elif job.report == "financial":
                 title = "Financial stewardship export"
                 source = "financial_report"
-                report_url = reverse("admin:financial_report", args=(campaign_id,))
+                report_url = reverse("admin:financial_report")
             elif job.report in {"family_directory", "postal_outreach"}:
                 source = "family_directory"
                 title = (
@@ -248,7 +248,7 @@ def detail(request, request_id):
                     if job.parameters["postal"]
                     else "Family-directory export"
                 )
-                report_url = reverse("admin:family_directory", args=(campaign_id,))
+                report_url = reverse("admin:family_directory")
                 # Return with the closed link presets the export used: its reach
                 # filter and, for a mail merge, the mailing columns.
                 reach = job.parameters["filters"].get("reach", "any")
@@ -263,11 +263,10 @@ def detail(request, request_id):
                 report_url = ReportQuery(
                     scope=job.parameters["population_scope"],
                     timezone=job.browser_timezone,
-                ).url(campaign_id)
+                ).url()
             admin_navigation.place(
                 request,
                 parent=source,
-                arguments={"campaign_id": campaign_id},
                 flow="export",
                 step=_export_step(state["state"]),
             )

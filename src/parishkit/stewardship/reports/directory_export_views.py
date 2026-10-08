@@ -49,7 +49,7 @@ def create(request, campaign_id, *, postal=False):
         try:
             require_fresh(request)
         except FreshAuthenticationRequired:
-            page = reverse("admin:family_directory", args=(campaign_id,))
+            page = reverse("admin:family_directory")
             return step_up_response(
                 page + ("?mailing=yes" if postal else ""),
                 admin_navigation.PAGES["family_directory"].label,

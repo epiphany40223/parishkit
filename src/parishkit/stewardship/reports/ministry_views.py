@@ -4,10 +4,10 @@ from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.shortcuts import redirect, render
+from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.views.decorators.http import require_GET, require_http_methods
+from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.admin_navigation import PAGES
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -46,56 +46,6 @@ def _principal(request, store, *, read_only=False):
     if not can_report(actor):
         raise PermissionError("Ministry report access is unavailable.")
     return actor
-
-
-@require_GET
-def index(request):
-    """Discover only campaign identities; selected report admission owns all data."""
-    try:
-        service = runtime()
-        actor = _principal(request, service.store)
-        if request.GET:
-            raise ValueError("Invalid Ministry navigation.")
-        choices = campaign_ids(actor)
-        current = SystemConfiguration.objects.values_list(
-            "current_campaign_id", flat=True
-        ).get()
-        # Only the current campaign is reported until #145 (rule 10); with no
-        # current campaign the reader sees the "no campaign" page.
-        response = (
-            redirect("admin:ministry_report", campaign_id=current)
-            if current in choices
-            else render(
-                request,
-                "stewardship/report-empty.html",
-                # Named after the report the reader opened (one name per page).
-                {"page_name": PAGES["ministry_reports"].label},
-            )
-        )
-        response["Cache-Control"] = "no-store"
-        return response
-    except (PermissionError, ObjectDoesNotExist):
-        return denial()
-    except SAFE_FAILURES:
-        return report_unavailable()
-    except ValueError:
-        return private_response("Invalid Ministry filters.\n", status=400)
-
-
-@require_GET
-def picker(request):
-    """The retired Ministry campaign chooser: go to Ministry requests.
-
-    Reports show the current campaign only until the single-campaign change
-    (#145; navigation rule 10). The redirect reveals nothing, so it needs no
-    sign-in check of its own; Ministry requests checks access as before. It
-    is temporary (302) for the same reason as the report chooser's
-    (``campaign_picker``): NAV-11 moves its target and adds the permanent
-    redirects.
-    """
-    response = redirect("admin:ministry_reports")
-    response["Cache-Control"] = "no-store"
-    return response
 
 
 def _audit(actor, campaign_id, query, outcome, count=0, total=0, scope=()):
@@ -137,6 +87,19 @@ def report(request, campaign_id, *, action=None):
         actor = _principal(request, service.store)
         if request.GET:
             raise ValueError("Ministry filters require private POST state.")
+        if campaign_id is None or campaign_id not in campaign_ids(actor):
+            # Reports show the current campaign (rule 10). With none, or one
+            # this reader has no Ministry report in (no Ministry module, or
+            # none of the leader's Ministries), the reader sees the "no
+            # campaign" page named after this report, as the retired
+            # /admin/ministry-reports/ root showed (NAV-11).
+            response = render(
+                request,
+                "stewardship/report-empty.html",
+                {"page_name": PAGES["ministry_report"].label},
+            )
+            response["Cache-Control"] = "no-store"
+            return response
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
         ministry_id = None
@@ -232,7 +195,7 @@ def report(request, campaign_id, *, action=None):
                 "query": query,
                 "states": STATES,
                 "report_url": request.path_info,
-                "summary_url": reverse("admin:ministry_report", args=[campaign_id]),
+                "summary_url": reverse("admin:ministry_report"),
                 # One shared navigator and sortable headings for whichever
                 # list this page pages: the summary, or one Ministry's rows.
                 "table": report_table(

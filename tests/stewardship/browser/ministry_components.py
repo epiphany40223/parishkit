@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.reports.ministries import (
     DETAIL_SORTING,
@@ -33,7 +34,7 @@ def components(context, admin):
     """Detached authorized sample data exercises native controls and escaping."""
     campaign = UUID(int=90)
     moment = datetime(2026, 9, 19, tzinfo=UTC)
-    root = f"/admin/reports/{campaign}/ministries/"
+    root = reverse("admin:ministry_report")
     query = MinistryQuery(search="Example")
     values = dict(
         campaign_id=campaign,
@@ -46,7 +47,7 @@ def components(context, admin):
         export_fields=query.form_values(),
         export_timezones=["UTC", "America/Detroit"],
         states=STATES,
-        report_url=root + "join/",
+        report_url=reverse("admin:ministry_joiners"),
         summary_url=root,
         total=51,
         metadata=dict(
@@ -82,7 +83,9 @@ def components(context, admin):
             )
         ],
     )
-    detail = _table(values["rows"], query, 51, ministry=9, action=root + "join/")
+    detail = _table(
+        values["rows"], query, 51, ministry=9, action=reverse("admin:ministry_joiners")
+    )
     history = MinistryQuery(history="all")
     summary = values | dict(ministry_id=None, action=None, rows=[], report_url=root)
     # The summary by Ministry name the other way, with a second Ministry on
@@ -114,7 +117,9 @@ def components(context, admin):
             rows=[],
             summaries=[],
             total=0,
-            table=_table([], query, 0, ministry=9, action=root + "join/"),
+            table=_table(
+                [], query, 0, ministry=9, action=reverse("admin:ministry_joiners")
+            ),
         ),
         "/ministry-gated": values | dict(mutable=False, table=detail),
     }

@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 from django.contrib import messages
 from django.db import IntegrityError, transaction
+from django.urls import reverse
 from django.utils import timezone
 
 from parishkit.config import ConfigError
@@ -61,7 +62,7 @@ def report(auth_service, google, settings):
     assert response.status_code == 302
     server, client = socket.socketpair()
     try:
-        yield browser, f"/admin/campaign/{campaign.pk}/family-codes", server
+        yield browser, reverse("admin:family_codes"), server
     finally:
         server.close()
         client.close()

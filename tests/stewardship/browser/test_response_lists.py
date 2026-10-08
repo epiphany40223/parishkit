@@ -9,6 +9,7 @@ form sent, since the fixture server serves only GET pages.
 from urllib.parse import parse_qs
 
 import pytest
+from django.urls import reverse
 
 from .response_list_components import BY_FAMILY, DATA_QUALITY, SUBMITTED, UNINVITED
 from .test_charts import assert_clean, watch
@@ -117,7 +118,9 @@ def test_filter_applies_in_place_and_the_download_posts_it(page, component_origi
         posted.append((route.request.method, route.request.post_data))
         route.fulfill(status=204)
 
-    page.route("**/responses/submitted/csv/", download)
+    page.route(
+        "**" + reverse("admin:response_list_export", args=["submitted"]), download
+    )
     page.get_by_label("Time zone").select_option("America/Chicago")
     page.get_by_role("button", name="Download CSV").click()
     page.wait_for_timeout(500)

@@ -18,6 +18,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, connections, transaction
+from django.urls import reverse
 from django.utils import timezone
 
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
@@ -207,10 +208,9 @@ def test_export_post_is_admitted_while_another_session_holds_the_global_lock(
     live_response_service, google
 ):
     """The whole Admin POST, sign-in check included, completes during a hold."""
-    harness = live_response_service
     browser, login = signed_in()
     assert login.status_code == 302
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     fields = DirectoryQuery().form_values() | dict(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
@@ -222,7 +222,9 @@ def test_export_post_is_admitted_while_another_session_holds_the_global_lock(
         assert read(browser, route)[0].status_code == 200
         with work_transaction():
             future = pool.submit(
-                contender, ready, lambda: post(browser, route + "export", fields)
+                contender,
+                ready,
+                lambda: post(browser, reverse("admin:family_directory_export"), fields),
             )
             ready.get(timeout=5)
             assert future.result(timeout=60).status_code == 302

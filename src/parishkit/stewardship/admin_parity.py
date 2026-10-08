@@ -169,7 +169,6 @@ LEDGER = {
     ),
     # Reports and exports.
     "reports": pending("PR 8", "report list"),
-    "report_campaigns": pending("PR 8", "report list"),
     "participation": pending("PR 8", "report participation"),
     "participation_chart": permanent(IMAGES),
     "daily_digest_chart": permanent(IMAGES),
@@ -178,8 +177,6 @@ LEDGER = {
     "talents_report": pending("PR 8", "report talents"),
     "information_queue": pending("PR 8", "report information"),
     "information_item": pending("PR 8", "report information"),
-    "ministry_reports": pending("PR 8", "report ministry"),
-    "ministry_report_campaigns": pending("PR 8", "report ministry"),
     "ministry_report": pending("PR 8", "report ministry"),
     "ministry_joiners": pending("PR 8", "report ministry"),
     "ministry_leavers": pending("PR 8", "report ministry"),

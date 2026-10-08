@@ -113,7 +113,6 @@ def detail(request, request_id):
             admin_navigation.place(
                 request,
                 parent="participation",
-                arguments={"campaign_id": campaign_id},
                 flow="export",
                 step="download" if state.get("export_id") else "prepare",
             )
@@ -133,7 +132,7 @@ def detail(request, request_id):
                 else None,
                 "report_url": ReportQuery(
                     scope=job.population_scope, timezone=job.browser_timezone
-                ).url(campaign_id),
+                ).url(),
             }
             return iter(
                 (

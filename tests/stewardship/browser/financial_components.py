@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 from uuid import UUID
 
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.reports.financial import (
     FINANCIAL_SORTING,
@@ -69,7 +70,7 @@ def components(context, admin):
             ],
             sorting=FINANCIAL_SORTING,
             sort=query.sort,
-            action=f"/admin/reports/{campaign}/financial/",
+            action=reverse("admin:financial_report"),
             sizes=PAGE_SIZES,
         )
 

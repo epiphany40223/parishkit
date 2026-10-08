@@ -420,9 +420,9 @@ class ListQuery:
             values.append(("show", self.show))
         return values
 
-    def url(self, campaign_id, key, **extra):
+    def url(self, key, **extra):
         """A list's URL with these choices and the non-empty ``extra`` ones."""
-        path = reverse("admin:response_list", args=[campaign_id, key])
+        path = reverse("admin:response_list", args=[key])
         values = self.carried() + [(k, v) for k, v in extra.items() if v]
         return path + ("?" + urlencode(values) if values else "")
 

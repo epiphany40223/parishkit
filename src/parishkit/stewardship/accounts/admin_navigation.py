@@ -169,8 +169,8 @@ PAGES = {
     "family_portal": Page("mail", _("Family portal availability")),
     "presence": Page("mail", _("Families on the form now")),
     # Responses and reports. Every report is a menu entry of its own. The
-    # two report roots only redirect to the current campaign's report (or
-    # show that there is none), so they stand alone, outside the menu.
+    # reports root only redirects to the current campaign's report (or shows
+    # that there is none), so it stands alone, outside the menu.
     "reports": Page("reports", _("Participation")),
     "participation": Page("reports", _("Participation")),
     "financial_report": Page("reports", _("Financial stewardship")),
@@ -190,7 +190,6 @@ PAGES = {
         "reports", _("Weekly report item"), "weekly_digest_snapshot"
     ),
     "daily_digest_snapshot": Page("reports", _("Daily report")),
-    "ministry_reports": Page("reports", _("Ministry requests")),
     "ministry_report": Page("reports", _("Ministry requests")),
     "ministry_joiners": Page("reports", _("Members joining"), "ministry_report"),
     "ministry_leavers": Page("reports", _("Members leaving"), "ministry_report"),
@@ -447,28 +446,14 @@ MENU = (
     Entry("family_portal", _ADMIN),
     Entry("presence", _ADMIN),
     # Responses and reports
-    Entry("response_dashboard", Capability.CAMPAIGN_REPORT, _campaign, campaign=True),
-    Entry("participation", Capability.CAMPAIGN_REPORT, _campaign, campaign=True),
-    Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL, campaign=True),
-    Entry("talents_report", Capability.CAMPAIGN_REPORT, MINISTRY, campaign=True),
-    Entry(
-        "information_queue", Capability.ADDITIONAL_FOLLOWUP, _campaign, campaign=True
-    ),
-    Entry(
-        "ministry_report",
-        Capability.MINISTRY_REPORT,
-        MINISTRY,
-        campaign=True,
-        scoped=True,
-    ),
-    Entry(
-        "ministry_followup",
-        Capability.MINISTRY_FOLLOWUP,
-        MINISTRY,
-        campaign=True,
-        scoped=True,
-    ),
-    Entry("family_directory", Capability.FAMILY_CODES, _campaign, campaign=True),
+    Entry("response_dashboard", Capability.CAMPAIGN_REPORT, _campaign),
+    Entry("participation", Capability.CAMPAIGN_REPORT, _campaign),
+    Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL),
+    Entry("talents_report", Capability.CAMPAIGN_REPORT, MINISTRY),
+    Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _campaign),
+    Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
+    Entry("ministry_followup", Capability.MINISTRY_FOLLOWUP, MINISTRY, scoped=True),
+    Entry("family_directory", Capability.FAMILY_CODES, _campaign),
     # Moves to the Emailed reports page with NAV-14; until then it keeps its
     # menu entry so it stays reachable.
     Entry("weekly_digest_manual", _ADMIN, _campaign, campaign=True),
@@ -562,11 +547,10 @@ NON_PAGES = frozenset(
         "ministry_followup_update",
         "ministry_packet",
         "participation_chart",
-        # Retired multi-campaign addresses (navigation rule 10, decision 11):
-        # New campaign and the two campaign choosers only redirect.
+        # Retired multi-campaign address (navigation rule 10, decision 11):
+        # New campaign only redirects. The two campaign choosers are old
+        # addresses now (NAV-11).
         "campaign_new",
-        "report_campaigns",
-        "ministry_report_campaigns",
         # The old postal-outreach routes: a bookmark redirects to the Family
         # directory, and forms rendered before the merge still submit.
         "postal_directory",

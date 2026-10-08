@@ -327,7 +327,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                     ],
                     sorting=SORTING,
                     sort=query.sort,
-                    action=reverse("admin:ministry_followup", args=[campaign_id]),
+                    action=reverse("admin:ministry_followup"),
                 ),
                 mutable=mutable,
                 item=item,
@@ -490,7 +490,7 @@ def _mutation(request, campaign_id, request_id, work):
         if request.GET:
             raise ValueError("Follow-up edits require a POST body.")
         target = work(service.store, principal.identity)
-        response = redirect(target[0], campaign_id=campaign_id, **target[1])
+        response = redirect(target[0], **target[1])
         response["Cache-Control"] = "no-store"
         return response
     except StaleRecordError:

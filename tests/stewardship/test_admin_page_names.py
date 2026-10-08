@@ -120,10 +120,10 @@ OBJECT_NAMED = {
     "response_list",
     "report_export",
 }
-# Pages whose heading the view supplies. The two report roots render the
-# "no campaign" page named after the report opened (checked below), and a
-# daily report takes the title saved with the emailed report.
-VIEW_NAMED = {"reports", "ministry_reports", "daily_digest_snapshot"}
+# Pages whose heading the view supplies. The reports root renders the "no
+# campaign" page named after the report opened (checked below), and a daily
+# report takes the title saved with the emailed report.
+VIEW_NAMED = {"reports", "daily_digest_snapshot"}
 # A sign-in rule change's status answers JSON only (the spec: not a page).
 NOT_PAGES = {"rule_request"}
 # Pages whose new name waits for a later slice, with that slice. Portal users
@@ -508,11 +508,13 @@ def test_pending_names_match_the_spec_later():
     ("view", "name"),
     [
         ("parishkit.stewardship.reports.workspace_views", "reports"),
-        ("parishkit.stewardship.reports.ministry_views", "ministry_reports"),
+        # Ministry requests with no current campaign, as the retired
+        # /admin/ministry-reports/ root showed (NAV-11).
+        ("parishkit.stewardship.reports.ministry_views", "ministry_report"),
     ],
 )
 def test_empty_report_page_is_named_after_its_report(view, name):
-    """The "no campaign" page takes the name of the report root that shows it."""
+    """The "no campaign" page takes the name of the report that shows it."""
     source = Path(__import__(view, fromlist=["_"]).__file__).read_text(encoding="utf-8")
     assert f'{{"page_name": PAGES["{name}"].label}}' in source
     html = render_to_string(

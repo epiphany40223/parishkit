@@ -4,6 +4,7 @@ import json
 import socket
 
 import pytest
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.family_authentication import FamilyRuntime
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
@@ -63,7 +64,7 @@ def test_role_bound_code_report_and_safe_audit(
                 "parishkit.stewardship.accounts.code_reports.render_to_string", broken
             )
         response = browser.get(
-            f"/admin/campaign/{campaign.pk}/family-codes",
+            reverse("admin:family_codes"),
             data={"page": "invalid"} if failure == "query" else {},
             **{"gunicorn.socket": server},
         )
@@ -133,7 +134,7 @@ def test_code_report_sorts_by_duid_on_the_server(auth_service, google, settings)
         store, auth_service.limiter, ring.general, ring.mac, ring.public
     )
     browser, _ = signed_in()
-    path = f"/admin/campaign/{campaign.pk}/family-codes"
+    path = reverse("admin:family_codes")
 
     def duids(**query):
         """The DUIDs one page lists, in order."""
@@ -185,7 +186,7 @@ def test_code_report_needs_a_fresh_sign_in(auth_service, google, settings):
     family = FamilyCampaign.objects.get()
     code = ring.general.decrypt(family.code_ciphertext, context=code_context(family.pk))
     browser, _ = signed_in()
-    path = f"/admin/campaign/{campaign.pk}/family-codes"
+    path = reverse("admin:family_codes")
     stale_sign_in()
     refused = browser.get(
         path, data={"page": "1", "size": "25", "sort": "-duid"}, HTTP_ACCEPT="text/html"

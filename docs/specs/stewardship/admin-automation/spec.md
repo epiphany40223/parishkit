@@ -1742,11 +1742,11 @@ pause, and closing work is the closed-campaign resolution. See
 
 | URL names | Command or exemption |
 | --- | --- |
-| `reports`, `report_campaigns` | `report list` (PR 8) |
+| `reports` | `report list` (PR 8) |
 | `participation` | `report participation` (PR 8) |
 | `participation_chart`, `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
 | `financial_report`, `talents_report`, `information_queue`, `information_item` | Aggregate reads as `report …`; Family-level rows only as exports (PR 8) |
-| `ministry_reports`, `ministry_report_campaigns`, `ministry_report`, `ministry_joiners`, `ministry_leavers`, `ministry_packet` | `report ministry …`, counts; rows only as exports (PR 8) |
+| `ministry_report`, `ministry_joiners`, `ministry_leavers`, `ministry_packet` | `report ministry …`, counts; rows only as exports (PR 8) |
 | `family_directory`, `postal_directory`, `family_codes`, `find_family` | Export only: `export directory`, `export postal`, `export family-codes` (PR 8); Find a Family is the directory's search |
 | `financial_export`, `talents_export`, `ministry_export`, `information_export`, `family_directory_export`, `postal_directory_export` | `export …` (PR 8) |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download`, `export_create`, `export_status`, `export_cancel`, `export_download`, `export_download_grant` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8) |

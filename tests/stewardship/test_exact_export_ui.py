@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError
 from django.test import RequestFactory
+from django.urls import reverse
 
 from parishkit.stewardship.reports import exact_ui, export_ui
 from parishkit.stewardship.reports.export_services import ExportConflict
@@ -24,7 +25,7 @@ def test_native_exact_outage_has_safe_recovery_link(monkeypatch, action):
     factory = RequestFactory()
     if action == "create":
         response = exact_ui.create(factory.post("/"), identifier)
-        link = f"/admin/reports/{identifier}/participation/"
+        link = reverse("admin:participation")
     elif action == "detail":
         response = exact_ui.detail(factory.get("/"), identifier)
         link = f"/admin/reports/exact-exports/{identifier}/"

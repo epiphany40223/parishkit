@@ -1,6 +1,6 @@
 """What happened with one Family: its timeline and the Staff summary (#477, PR 6).
 
-``reports/<campaign>/families/<family>/`` answers "what happened with this
+``reports/families/<family>/`` answers "what happened with this
 Family?" for Administrators and "did you get my response?" for Staff. Both see
 a summary: whether the Family submitted and when, the last email sent to it
 (a cancelled email was never sent, so it is skipped) and whether that email

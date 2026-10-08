@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 from django.http import QueryDict
+from django.urls import reverse
 
 from parishkit.stewardship.reports.ministry_followup_views import change_values
 
@@ -117,7 +118,7 @@ def test_followup_form_shows_only_the_fields_that_apply(page, component_origin):
         assert not field.is_visible() and field.is_disabled()
     # Only the fields that apply are sent.
     status.select_option("in_progress")
-    page.route("**/update", lambda route: route.fulfill(body="Saved"))
+    page.route("**/record/", lambda route: route.fulfill(body="Saved"))
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Save follow-up").click()
     body = sent.value.post_data
@@ -177,9 +178,10 @@ def test_followup_history_links_name_the_request(page, component_origin):
     work on a page re-rendered at the update URL after a refused save."""
     page.goto(component_origin + "/followup-item")
     href = page.get_by_role("link", name="Older history").get_attribute("href")
+    request = "00000000-0000-0000-0000-00000000005d"
     assert href == (
-        "/admin/reports/00000000-0000-0000-0000-00000000005c/ministries/"
-        "follow-up/00000000-0000-0000-0000-00000000005d/?page=2#followup-history"
+        reverse("admin:ministry_followup_item", args=[request])
+        + "?page=2#followup-history"
     )
 
 
@@ -275,7 +277,7 @@ def test_followup_edit_without_scripts(browser_engine, component_origin):
         page.get_by_label("Date", exact=True).fill("2026-09-19")
         page.get_by_label("Time", exact=True).fill("15:04")
         page.get_by_label("What happened").fill("Private reply")
-        page.route("**/update", lambda route: route.fulfill(body="Saved"))
+        page.route("**/record/", lambda route: route.fulfill(body="Saved"))
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Save follow-up").click()
         body = sent.value.post_data
@@ -327,7 +329,7 @@ def test_followup_contact_time_round_trips_in_browser_time(
         assert date.get_attribute("aria-describedby") == "contact-zone-help"
         page.get_by_label("Date", exact=True).fill("2026-09-19")
         page.get_by_label("Time", exact=True).fill(typed)
-        page.route("**/update", lambda route: route.fulfill(body="Saved"))
+        page.route("**/record/", lambda route: route.fulfill(body="Saved"))
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Save follow-up").click()
         change = change_values(QueryDict(sent.value.post_data))["change"]

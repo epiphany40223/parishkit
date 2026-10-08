@@ -22,8 +22,8 @@ from parishkit.stewardship.web.dates import using
 from ..test_family_timeline import CAMPAIGN, FAMILY, IDENTITY, TIMELINE
 from ..test_response_metrics import START
 
-ADMIN = timeline_url(CAMPAIGN.pk, FAMILY)
-TESTING = timeline_url(CAMPAIGN.pk, FAMILY, "testing")
+ADMIN = timeline_url(FAMILY)
+TESTING = timeline_url(FAMILY, "testing")
 # The addresses the When heading leads to, as the shared table builds them:
 # oldest first, then back to newest first.
 OLDEST = ADMIN + "?size=all&sort=when"

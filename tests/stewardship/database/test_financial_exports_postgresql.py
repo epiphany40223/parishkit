@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, connection
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 from openpyxl import load_workbook
 
 from parishkit.stewardship.audit.models import AuditContext
@@ -185,7 +186,7 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
-    route = f"/admin/reports/{harness.campaign.pk}/financial/"
+    route = reverse("admin:financial_report")
     query = FinancialQuery()
     first = None
     for format in ("csv", "xlsx", "pdf"):
@@ -196,32 +197,39 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
             response, body = read(browser, route)
             assert response.status_code == 200 and b"Queue complete export" in body
             assert b'name="request_key"' in body and b"<fieldset disabled" not in body
-            assert browser.post(route + "export", fields).status_code == 403  # No CSRF.
+            assert (
+                browser.post(reverse("admin:financial_export"), fields).status_code
+                == 403
+            )  # No CSRF.
             if format == "csv":
-                assert browser.get(route + "export").status_code == 405
+                assert browser.get(reverse("admin:financial_export")).status_code == 405
                 for invalid in (
                     {"page": "2"},
                     {"extra": "x"},
                     {"sort": "random"},
                     {"format": ["csv", "pdf"]},
                 ):
-                    rejected = post(browser, route + "export", fields | invalid)
+                    rejected = post(
+                        browser, reverse("admin:financial_export"), fields | invalid
+                    )
                     assert rejected.status_code == 400
                     assert row not in rejected.content
                     assert rejected["Cache-Control"] == "no-store"
                 # Filters are refused where a query string sent them, and another
                 # campaign is indistinguishable from none.
-                queried = post(browser, route + "export?search=x", fields)
+                queried = post(
+                    browser, reverse("admin:financial_export") + "?search=x", fields
+                )
                 assert queried.status_code == 400
                 wrong = f"/admin/reports/{uuid4()}/financial/export"
                 # Until #145 any campaign but the current one is gone (410).
                 assert post(browser, wrong, fields).status_code == 410
-            response = post(browser, route + "export", fields)
+            response = post(browser, reverse("admin:financial_export"), fields)
             assert response.status_code == 302
             request = ExportRequest.objects.get(request_key=fields["request_key"])
             first = first or request
             assert (
-                post(browser, route + "export", fields)["Location"]
+                post(browser, reverse("admin:financial_export"), fields)["Location"]
                 == response["Location"]
             )
             job_route = response["Location"]
@@ -290,7 +298,7 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert post(other, route + "export", fields).status_code == 403
+        assert post(other, reverse("admin:financial_export"), fields).status_code == 403
         with pytest.raises(PermissionError):
             create_financial_export(
                 harness.service.store,
@@ -322,13 +330,14 @@ def test_financial_export_needs_a_fresh_sign_in(response_service, google):
     financial_source(harness, modules=["financial"], options=map(asdict, OPTIONS))
     harness = activate_response_service(harness)
     browser, _ = signed_in()
-    route = f"/admin/reports/{harness.campaign.pk}/financial/"
+    route = reverse("admin:financial_report")
+    export = reverse("admin:financial_export")
     fields = FinancialQuery().form_values() | dict(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
     stale_sign_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        refused = post(browser, route + "export", fields, HTTP_ACCEPT="text/html")
+        refused = post(browser, export, fields, HTTP_ACCEPT="text/html")
         assert refused.status_code == 403
         page = refused.content.decode()
         assert "Confirm with Google" in page and "Nothing was done" in page
@@ -337,11 +346,9 @@ def test_financial_export_needs_a_fresh_sign_in(response_service, google):
         assert not ExportRequest.objects.exists()
     signed_in(browser)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        created = post(browser, route + "export", fields)
+        created = post(browser, export, fields)
         assert created.status_code == 302
-        assert (
-            post(browser, route + "export", fields)["Location"] == created["Location"]
-        )
+        assert post(browser, export, fields)["Location"] == created["Location"]
         assert ExportRequest.objects.count() == 1
         request = ExportRequest.objects.get()
     # Regenerating a financial export asks for the same fresh sign-in and

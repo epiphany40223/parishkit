@@ -10,6 +10,7 @@ import pytest
 from django.db import DatabaseError, connection, transaction
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.audit.models import AuditEvent
@@ -188,7 +189,7 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     first = None
     for format in ("csv", "xlsx", "pdf"):
         fields = DirectoryQuery(exact_code=harness.code).form_values() | dict(
@@ -197,33 +198,51 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, route)
             assert response.status_code == 200 and b"Queue complete export" in body
-            assert browser.post(route + "export", fields).status_code == 403
+            assert (
+                browser.post(
+                    reverse("admin:family_directory_export"), fields
+                ).status_code
+                == 403
+            )
             if format == "csv":
-                assert browser.get(route + "export").status_code == 405
+                assert (
+                    browser.get(reverse("admin:family_directory_export")).status_code
+                    == 405
+                )
                 for invalid in (
                     {"page": "2"},
                     {"family_id": str(uuid4())},
                     {"format": ["csv", "pdf"]},
                 ):
-                    rejected = post(browser, route + "export", fields | invalid)
+                    rejected = post(
+                        browser,
+                        reverse("admin:family_directory_export"),
+                        fields | invalid,
+                    )
                     assert (
                         rejected.status_code == 400
                         and harness.code.encode() not in rejected.content
                     )
                     assert rejected["Cache-Control"] == "no-store"
-            response = post(browser, route + "export", fields)
+            response = post(browser, reverse("admin:family_directory_export"), fields)
             assert response.status_code == 302
             request = ExportRequest.objects.get(request_key=fields["request_key"])
             first = first or request
             assert (
-                post(browser, route + "export", fields)["Location"]
+                post(browser, reverse("admin:family_directory_export"), fields)[
+                    "Location"
+                ]
                 == response["Location"]
             )
             # The same one-time key reused for another format (a page back
             # from the browser cache) is refused clearly, and queues nothing.
             other = "pdf" if format != "pdf" else "csv"
             before = ExportRequest.objects.count()
-            reused = post(browser, route + "export", fields | {"format": other})
+            reused = post(
+                browser,
+                reverse("admin:family_directory_export"),
+                fields | {"format": other},
+            )
             assert reused.status_code == 409
             assert b"already used for a different export" in reused.content
             assert ExportRequest.objects.count() == before
@@ -367,7 +386,7 @@ def test_directory_export_staff_gates_and_service_boundaries(
         )
         cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
         cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         with pytest.raises(PermissionError):
             create_directory_export(store, actor, **(values | {"request_key": uuid4()}))
@@ -402,7 +421,10 @@ def test_directory_export_staff_gates_and_service_boundaries(
         "request_key": str(uuid4()),
     }
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert post(browser, route + "export", fields).status_code == 403
+        assert (
+            post(browser, reverse("admin:family_directory_export"), fields).status_code
+            == 403
+        )
         # Mailing columns (addresses) stay with the roles that could open the
         # old postal page; the old postal routes keep their checks too.
         assert read(browser, route + "?mailing=yes")[0].status_code == 403
@@ -458,7 +480,7 @@ def test_postal_mail_merge_blanks_families_without_a_mailing_address(
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     fields = DirectoryQuery().form_values() | dict(
         mailing="yes", format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
@@ -495,7 +517,7 @@ def test_postal_mail_merge_blanks_families_without_a_mailing_address(
             b"ParishSoft DUID, Family, Addressee, Family heads,",
         ):
             assert text in body
-        response = post(browser, route + "export", fields)
+        response = post(browser, reverse("admin:family_directory_export"), fields)
         assert response.status_code == 302
     request = ExportRequest.objects.get(request_key=fields["request_key"])
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
@@ -560,7 +582,7 @@ def test_mail_merge_covers_exactly_the_filtered_email_reachable_rows(
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     filters = DirectoryQuery(reach="email").form_values() | {"mailing": "yes"}
     fields = filters | dict(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
@@ -569,7 +591,7 @@ def test_mail_merge_covers_exactly_the_filtered_email_reachable_rows(
         response, body = search(browser, route, filters)
         assert response.status_code == 200 and b"Matching Families: 1." in body
         assert b"<td>1 Example Street<br>" in body
-        response = post(browser, route + "export", fields)
+        response = post(browser, reverse("admin:family_directory_export"), fields)
         assert response.status_code == 302
     request = ExportRequest.objects.get(request_key=fields["request_key"])
     assert request.report == "postal_outreach"
@@ -671,7 +693,6 @@ def test_regenerated_and_retried_exports_read_current_head_emails_after_compacti
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
     captured = SourceCurrent.objects.get().snapshot_id
 
     def queue():
@@ -680,7 +701,7 @@ def test_regenerated_and_retried_exports_read_current_head_emails_after_compacti
             format="xlsx", browser_timezone="UTC", request_key=str(uuid4())
         )
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            response = post(browser, route + "export", fields)
+            response = post(browser, reverse("admin:family_directory_export"), fields)
         assert response.status_code == 302
         request = ExportRequest.objects.get(request_key=fields["request_key"])
         assert request.directory_snapshot.source_id == captured
@@ -792,15 +813,16 @@ def test_directory_export_and_regenerate_need_a_fresh_sign_in(
     """
     harness = live_response_service
     browser, _ = signed_in()
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
+    export = reverse("admin:family_directory_export")
     fields = DirectoryQuery(exact_code=harness.code).form_values() | dict(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
     stale_sign_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         for path, mailing, back in (
-            (route + "export", "no", route),
-            (route + "export", "yes", route + "?mailing=yes"),
+            (export, "no", route),
+            (export, "yes", route + "?mailing=yes"),
             # The old postal route means the mail merge without a field.
             (f"/admin/reports/{harness.campaign.pk}/postal/export", None, None),
         ):
@@ -820,11 +842,9 @@ def test_directory_export_and_regenerate_need_a_fresh_sign_in(
         assert not ExportRequest.objects.exists()
     signed_in(browser)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        created = post(browser, route + "export", fields)
+        created = post(browser, export, fields)
         assert created.status_code == 302
-        assert (
-            post(browser, route + "export", fields)["Location"] == created["Location"]
-        )
+        assert post(browser, export, fields)["Location"] == created["Location"]
         assert ExportRequest.objects.count() == 1
         request = ExportRequest.objects.get()
     stale_sign_in()

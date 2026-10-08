@@ -21,7 +21,7 @@ from parishkit.stewardship.campaigns.production_models import (
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.web.admin_routes import current_campaign
 
-from ..policy_factory import address
+from ..policy_factory import address, assignment
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change
 from .test_clone_views_postgresql import setup
@@ -135,12 +135,16 @@ def test_old_system_addresses_redirect_through_the_middleware(auth_service, goog
 
 
 def test_empty_report_roots_are_named_after_their_report(auth_service, google):
-    """With no current campaign, each report root names its own report."""
+    """With no current campaign, each report root names its own report.
+
+    The retired Ministry reports root now redirects to Ministry requests,
+    which shows the same page (NAV-11).
+    """
     setup(auth_service.store)
     browser, _ = signed_in()
     for root, name in (
-        ("/admin/reports/", b"Participation"),
-        ("/admin/ministry-reports/", b"Ministry requests"),
+        (reverse("admin:reports"), b"Participation"),
+        (reverse("admin:ministry_report"), b"Ministry requests"),
     ):
         response = browser.get(root)
         assert response.status_code == 200, root
@@ -372,3 +376,202 @@ def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, goog
         response = browser.post(reverse(f"admin:{name}", args=args), values | csrf)
         assert 400 <= response.status_code < 500, (name, response.status_code)
     assert not ProductionTransitionRequest.objects.exists()
+
+
+# Old report addresses (NAV-11), each with its new page. The old address
+# named the campaign right after /admin/reports/ (Family campaign codes
+# after /admin/campaign/); a query string carries report filters.
+OLD_REPORTS = (
+    ("responses/", "response_dashboard", []),
+    ("responses/submitted/", "response_list", ["submitted"]),
+    ("participation/", "participation", []),
+    ("financial/", "financial_report", []),
+    ("talents/", "talents_report", []),
+    ("information/", "information_queue", []),
+    ("ministries/", "ministry_report", []),
+    ("ministries/follow-up/", "ministry_followup", []),
+    ("families/", "family_directory", []),
+)
+
+
+def test_old_report_addresses_redirect_only_the_current_campaign(auth_service, google):
+    """Bookmarks and links to an old report page reach the current campaign's."""
+    current = _current(auth_service.store)
+    browser, _ = signed_in()
+    item = uuid4()
+    for path, name, args in (
+        *OLD_REPORTS,
+        (f"information/{item}/", "information_item", [item]),
+        (f"ministries/follow-up/{item}/", "ministry_followup_item", [item]),
+        (f"families/{item}/", "family_timeline", [item]),
+    ):
+        new = reverse(f"admin:{name}", args=args)
+        moved = browser.get(f"/admin/reports/{current}/{path}?size=25")
+        assert moved.status_code == 301, path
+        assert moved["Location"] == f"{new}?size=25"
+        assert "no-store" in moved["Cache-Control"]
+        gone = browser.get(f"/admin/reports/{uuid4()}/{path}")
+        assert gone.status_code == 410, path
+        assert "no-store" in gone["Cache-Control"]
+        assert REFUSAL.encode() in gone.content
+    codes = browser.get(f"/admin/campaign/{current}/family-codes")
+    assert codes.status_code == 301
+    assert codes["Location"] == reverse("admin:family_codes")
+    assert browser.get(f"/admin/campaign/{uuid4()}/family-codes").status_code == 410
+    # The retired addresses that named no campaign open their reports.
+    for old, name in (
+        ("/admin/reports/campaigns/", "participation"),
+        ("/admin/ministry-reports/", "ministry_report"),
+        ("/admin/ministry-reports/campaigns/", "ministry_report"),
+    ):
+        moved = browser.get(old)
+        assert moved.status_code == 301, old
+        assert moved["Location"] == reverse(f"admin:{name}")
+
+
+def test_old_report_forms_never_act_before_their_page(auth_service, google):
+    """A report form left open on an old address starts nothing by itself.
+
+    Another campaign's address answers 410 before any effect; the current
+    one's answers a 308 that keeps the method and body, so the page's own
+    checks (its CSRF token first) decide; a missing token is refused.
+    """
+    from parishkit.stewardship.reports.exact_models import ExactExportRequest
+    from parishkit.stewardship.reports.export_models import ExportRequest
+
+    current = _current(auth_service.store)
+    browser, _ = signed_in()
+    browser.get(reverse("admin:logs"))
+    values = {
+        "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+        "request_key": str(uuid4()),
+        "format": "csv",
+        "browser_timezone": "UTC",
+    }
+    item = uuid4()
+    for path, name, args in (
+        ("participation/export", "report_export_create", []),
+        ("participation/exact-export", "report_exact_create", []),
+        ("financial/export", "financial_export", []),
+        ("information/export", "information_export", []),
+        (f"information/{item}/update", "information_update", [item]),
+        ("ministries/export/", "ministry_export", []),
+        ("ministries/packet/", "ministry_packet", []),
+        (f"ministries/follow-up/{item}/update", "ministry_followup_update", [item]),
+        ("families/export", "family_directory_export", []),
+        ("families/find", "find_family", []),
+        ("responses/submitted/csv/", "response_list_export", ["submitted"]),
+    ):
+        gone = browser.post(f"/admin/reports/{uuid4()}/{path}", values)
+        assert gone.status_code == 410 and "Location" not in gone, path
+        moved = browser.post(f"/admin/reports/{current}/{path}", values)
+        assert moved.status_code == 308, path
+        assert moved["Location"] == reverse(f"admin:{name}", args=args)
+        # Without its CSRF token the old address refuses the form outright.
+        refused = browser.post(f"/admin/reports/{current}/{path}", {"x": "1"})
+        assert refused.status_code == 403, path
+    assert not ExportRequest.objects.exists()
+    assert not ExactExportRequest.objects.exists()
+
+
+def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
+    auth_service, google
+):
+    """No current campaign: no moved report page or form is a server error.
+
+    The reports root, Ministry requests and Family campaign codes show the
+    "no campaign" page; the others refuse plainly, and no form starts an
+    export.
+    """
+    from parishkit.stewardship.reports.exact_models import ExactExportRequest
+    from parishkit.stewardship.reports.export_models import ExportRequest
+
+    setup(auth_service.store)
+    browser, _ = signed_in()
+    item = uuid4()
+    pages = (
+        ("reports", []),
+        ("response_dashboard", []),
+        ("response_list", ["submitted"]),
+        ("participation", []),
+        ("financial_report", []),
+        ("talents_report", []),
+        ("information_queue", []),
+        ("information_item", [item]),
+        ("ministry_report", []),
+        ("ministry_followup", []),
+        ("ministry_followup_item", [item]),
+        ("family_directory", []),
+        ("family_timeline", [item]),
+        ("family_codes", []),
+    )
+    for name, args in pages:
+        response = browser.get(reverse(f"admin:{name}", args=args))
+        assert response.status_code < 500, (name, response.status_code)
+        if name in {"reports", "ministry_report", "family_codes"}:
+            assert response.status_code == 200, name
+        else:
+            assert 400 <= response.status_code < 500, (name, response.status_code)
+    browser.get(reverse("admin:logs"))
+    values = {
+        "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+        "request_key": str(uuid4()),
+        "format": "csv",
+        "browser_timezone": "UTC",
+        "search": "examp",
+    }
+    for name, args in (
+        ("report_export_create", []),
+        ("report_exact_create", []),
+        ("financial_report", []),
+        ("financial_export", []),
+        ("talents_report", []),
+        ("talents_export", []),
+        ("information_queue", []),
+        ("information_export", []),
+        ("information_update", [item]),
+        ("ministry_report", []),
+        ("ministry_joiners", []),
+        ("ministry_leavers", []),
+        ("ministry_export", []),
+        ("ministry_packet", []),
+        ("ministry_followup", []),
+        ("ministry_followup_update", [item]),
+        ("family_directory_export", []),
+        ("find_family", []),
+        ("response_list_export", ["submitted"]),
+    ):
+        response = browser.post(reverse(f"admin:{name}", args=args), values)
+        assert response.status_code < 500, (name, response.status_code)
+    assert not ExportRequest.objects.exists()
+    assert not ExactExportRequest.objects.exists()
+
+
+def test_reports_root_takes_a_ministry_leader_to_ministry_requests(
+    auth_service, google
+):
+    """/admin/reports/ opens Ministry requests for a viewer without Participation."""
+    store = auth_service.store
+    _current(store)
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {"operation": "add", "section": "login_rules", **record}
+            for record in (
+                address("leader@example.org", roles=("ministry_leader",)),
+                assignment("leader@example.org", ministry=9),
+            )
+        ],
+    )
+    google[0]["email"] = "leader@example.org"
+    browser, _ = signed_in()
+    response = browser.get(reverse("admin:reports"))
+    assert response.status_code == 302
+    assert response["Location"] == reverse("admin:ministry_report")
+    assert "no-store" in response["Cache-Control"]
+    # The form without the slash redirects to the root first.
+    moved = browser.get(reverse("admin:reports").rstrip("/"))
+    assert moved.status_code == 301
+    assert moved["Location"] == reverse("admin:reports")

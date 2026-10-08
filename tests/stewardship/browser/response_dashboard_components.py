@@ -31,7 +31,7 @@ CAMPAIGN = SimpleNamespace(
     pk=UUID(int=477), active_configuration=SimpleNamespace(name="Sample campaign")
 )
 # The dashboard's own address, as its links name it.
-PATH = DashboardQuery().url(CAMPAIGN.pk)
+PATH = DashboardQuery().url()
 
 
 def dashboard_metrics():
@@ -75,7 +75,7 @@ def components(context, admin):
         DashboardQuery("testing", "day"),
     ):
         value = None if query.mode == "testing" else dashboard_metrics()
-        pages[query.url(CAMPAIGN.pk)] = (query, value)
+        pages[query.url()] = (query, value)
     responses = {}
     with using("us_long"):
         for path, (query, value) in pages.items():

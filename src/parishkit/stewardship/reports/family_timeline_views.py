@@ -1,6 +1,6 @@
 """The Family timeline page for Administrators and Staff (#477, PR 6).
 
-``reports/<campaign>/families/<family>/`` shows one Family of the campaign
+``reports/families/<family>/`` shows one Family of the current campaign
 (``family_timeline``): a summary for both roles, and the full timeline for
 Administrators only. ``<family>`` is the Family's campaign record id, an
 opaque random UUID that, like a Mail message's, names no person; the Family's
@@ -63,13 +63,13 @@ from .response_dashboard import rehearsal_epoch
 from .response_metrics import MODES, ResponseScope
 
 
-def timeline_url(campaign_id, family_id, mode="production", sort=None):
+def timeline_url(family_id, mode="production", sort=None):
     """A Family's timeline URL with the closed ``mode`` and ``sort`` choices.
 
     Defaults are left out; a sort other than the default is kept, so the
     mode switch keeps the order the reader chose.
     """
-    path = reverse("admin:family_timeline", args=[campaign_id, family_id])
+    path = reverse("admin:family_timeline", args=[family_id])
     values = [("mode", mode)] if mode != "production" else []
     if sort is not None and sort != TIMELINE_SORTING.default:
         values.append(("sort", sort))
@@ -165,9 +165,9 @@ def page_context(campaign, family_id, identity, mode, timeline, as_of, **options
         "open_form": available,
         "open_form_reason": reason,
         "family_test_url": options.get("family_test_url"),
-        "production_url": timeline_url(campaign.pk, family_id, sort=sort),
-        "testing_url": timeline_url(campaign.pk, family_id, "testing", sort),
-        "directory_url": reverse("admin:family_directory", args=[campaign.pk]),
+        "production_url": timeline_url(family_id, sort=sort),
+        "testing_url": timeline_url(family_id, "testing", sort),
+        "directory_url": reverse("admin:family_directory"),
     }
 
 

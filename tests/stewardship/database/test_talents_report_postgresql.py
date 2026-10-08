@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import transaction
+from django.urls import reverse
 from openpyxl import load_workbook
 
 from parishkit.stewardship.accounts.policy import Principal
@@ -109,7 +110,7 @@ def test_native_page_and_downloads(response_service, google, settings):
     start(harness)
     harness = activate_response_service(harness)
     submit_live(harness)
-    route = f"/admin/reports/{harness.campaign.pk}/talents/"
+    route = reverse("admin:talents_report")
     browser, login = signed_in()
     assert login.status_code == 302
     with restricted_download_pool(settings):
@@ -138,7 +139,7 @@ def test_native_page_and_downloads(response_service, google, settings):
             {"families_page": "x"},
         ):
             assert search(browser, route, invalid)[0].status_code == 400
-        export = route + "export"
+        export = reverse("admin:talents_export")
         response, body = search(
             browser, export, {"format": "csv", "timezone": "UTC", "talent": "any"}
         )
@@ -167,7 +168,7 @@ def test_native_page_and_downloads(response_service, google, settings):
             browser, export, {"format": "csv", "timezone": "UTC", "talent": removed}
         )
         assert response.status_code == 200 and b"Other: Organ" in body
-        _, body = get(browser, route.replace("talents", "participation"))
+        _, body = get(browser, reverse("admin:participation"))
         assert route.encode() in body
         # The campaign reports page links the response dashboard too (#477).
         assert route.replace("talents", "responses").encode() in body

@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.statistics import calculate_statistics
@@ -369,16 +370,14 @@ def test_archived_financial_observation_does_not_follow_a_new_global_source(
 
         browser, _ = signed_in()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            response, body = read(
-                browser, f"/admin/reports/{harness.campaign.pk}/participation/"
-            )
+            response, body = read(browser, reverse("admin:participation"))
             assert response.status_code == 200
             assert b"Archived campaign" in body and b"$11,199.00" in body
             # An archived campaign that is still current is reported; the
-            # retired chooser (rule 10) goes to the reports root instead.
+            # retired chooser (rule 10) opens Participation (NAV-11).
             response, _ = read(browser, "/admin/reports/campaigns/")
-            assert response.status_code == 302
-            assert response["Location"] == "/admin/reports/"
+            assert response.status_code == 301
+            assert response["Location"] == reverse("admin:participation")
     assert result.source_id == retained.pk
     assert result.comparison_pledge_all.canonical == "11199.00"
     assert result.giving is not None

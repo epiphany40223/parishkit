@@ -12,7 +12,6 @@ from .accounts import (
     campaign_views,
     chair_review_views,
     chair_views,
-    code_reports,
     content_views,
     critical_event_views,
     family_authentication,
@@ -42,10 +41,10 @@ from .admin_urls import campaign as admin_campaign
 from .admin_urls import legacy as admin_legacy
 from .admin_urls import mail as admin_mail
 from .admin_urls import parish as admin_parish
+from .admin_urls import reports as admin_reports
 from .admin_urls import system as admin_system
 from .jobs import views as job_views
 from .reports import (
-    campaign_picker,
     digest_views,
     directory_export_views,
     directory_views,
@@ -53,22 +52,8 @@ from .reports import (
     exact_views,
     export_ui,
     export_views,
-    family_timeline_views,
-    financial_export_views,
-    financial_views,
-    information_export_views,
-    information_views,
-    ministry_export_views,
-    ministry_followup_views,
-    response_dashboard,
-    response_list_views,
     weekly_manual_views,
     weekly_views,
-    workspace_views,
-)
-from .reports import ministry_views as ministry_report_views
-from .reports import (
-    talent_views as talent_report_views,
 )
 from .responses import views as response_views
 
@@ -99,95 +84,8 @@ admin_patterns = [
     *admin_mail.patterns,
     *admin_mail.polled_patterns,
     *admin_campaign.patterns,
+    *admin_reports.patterns,
     *admin_legacy.patterns,
-    path("ministry-reports/", ministry_report_views.index, name="ministry_reports"),
-    path(
-        "reports/<uuid:campaign_id>/ministries/export/",
-        ministry_export_views.create,
-        name="ministry_export",
-    ),
-    path(
-        "ministry-reports/campaigns/",
-        ministry_report_views.picker,
-        name="ministry_report_campaigns",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/ministries/",
-        ministry_report_views.report,
-        name="ministry_report",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/ministries/join/",
-        ministry_report_views.report,
-        {"action": "join"},
-        name="ministry_joiners",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/ministries/leave/",
-        ministry_report_views.report,
-        {"action": "leave"},
-        name="ministry_leavers",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/ministries/packet/",
-        ministry_export_views.create_packet,
-        name="ministry_packet",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/ministries/follow-up/",
-        ministry_followup_views.queue,
-        name="ministry_followup",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/ministries/follow-up/<uuid:request_id>/",
-        ministry_followup_views.detail,
-        name="ministry_followup_item",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/ministries/follow-up/<uuid:request_id>/update",
-        ministry_followup_views.update,
-        name="ministry_followup_update",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/financial/",
-        financial_views.report,
-        name="financial_report",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/financial/export",
-        financial_export_views.create,
-        name="financial_export",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/responses/",
-        response_dashboard.dashboard,
-        name="response_dashboard",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/responses/<slug:key>/",
-        response_list_views.response_list,
-        name="response_list",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/responses/<slug:key>/csv/",
-        response_list_views.response_list_export,
-        name="response_list_export",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/talents/",
-        talent_report_views.report,
-        name="talents_report",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/talents/export",
-        talent_report_views.export,
-        name="talents_export",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/families/export",
-        directory_export_views.create,
-        name="family_directory_export",
-    ),
     path(
         "reports/<uuid:campaign_id>/postal/export",
         directory_export_views.create,
@@ -195,50 +93,10 @@ admin_patterns = [
         name="postal_directory_export",
     ),
     path(
-        "reports/<uuid:campaign_id>/families/",
-        directory_views.directory,
-        name="family_directory",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/families/find",
-        directory_views.find_family,
-        name="find_family",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/families/<uuid:family_id>/",
-        family_timeline_views.family_timeline,
-        name="family_timeline",
-    ),
-    path(
         "reports/<uuid:campaign_id>/postal/",
         directory_views.directory,
         {"postal": True},
         name="postal_directory",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/information/export",
-        information_export_views.create,
-        name="information_export",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/information/",
-        information_views.queue,
-        name="information_queue",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/information/<uuid:item_id>/",
-        information_views.detail,
-        name="information_item",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/information/<uuid:item_id>/update",
-        information_views.update,
-        name="information_update",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/participation/exact-export",
-        exact_ui.create,
-        name="report_exact_create",
     ),
     path(
         "reports/exact-exports/<uuid:request_id>/", exact_ui.detail, name="report_exact"
@@ -261,11 +119,6 @@ admin_patterns = [
         {"action": "regenerate"},
         name="report_export_regenerate",
     ),
-    path(
-        "reports/<uuid:campaign_id>/participation/export",
-        export_ui.create,
-        name="report_export_create",
-    ),
     path("reports/exports/<uuid:request_id>/", export_ui.detail, name="report_export"),
     path(
         "reports/exports/<uuid:request_id>/cancel",
@@ -284,18 +137,6 @@ admin_patterns = [
         export_ui.command,
         {"action": "download"},
         name="report_export_download",
-    ),
-    path("reports/", workspace_views.index, name="reports"),
-    path("reports/campaigns/", campaign_picker.picker, name="report_campaigns"),
-    path(
-        "reports/<uuid:campaign_id>/participation/",
-        workspace_views.participation,
-        name="participation",
-    ),
-    path(
-        "reports/<uuid:campaign_id>/participation/<uuid:fact_set_id>.png",
-        workspace_views.participation,
-        name="participation_chart",
     ),
     path(
         "campaign/<uuid:campaign_id>/exports/participation",
@@ -488,11 +329,6 @@ admin_patterns = [
     ),
     path("setup/<str:step>", setup_views.setup_step, name="setup_step"),
     path("maintenance", access_gate.maintenance, name="maintenance"),
-    path(
-        "campaign/<uuid:campaign_id>/family-codes",
-        code_reports.family_codes,
-        name="family_codes",
-    ),
     path("", authentication.index, name="index"),
     path("login", authentication.login, name="login"),
     path("logout", authentication.logout, name="logout"),
