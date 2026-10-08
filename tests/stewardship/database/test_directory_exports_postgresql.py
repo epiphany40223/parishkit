@@ -81,6 +81,7 @@ def test_complete_directory_capture_is_private_immutable_and_source_pinned(
     )
     interactive = page(harness, sort="duid")
     assert interactive["total"] == 52 and len(interactive["rows"]) == 50
+    neither_page = page(harness, sort="duid", reach="neither")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         request = create_directory_export(harness.service.store, actor, **values)
         retained = DirectoryExportSnapshot.objects.get(pk=request.directory_snapshot_id)
@@ -90,6 +91,12 @@ def test_complete_directory_capture_is_private_immutable_and_source_pinned(
         ]
         assert harness.code not in json.dumps(retained.document)
         assert all("code" not in row for row in retained.document["rows"])
+        # The code list keeps no address, phones or envelope (#388 L6); the
+        # keys stay, emptied, so the document keeps its shape.
+        assert interactive["rows"][0]["address"]
+        for row in retained.document["rows"]:
+            assert (row["address"], row["phones"], row["envelope"]) == ({}, [], None)
+            assert row["heads"] is not None
         assert (
             create_directory_export(harness.service.store, actor, **values).pk
             == request.pk
@@ -105,6 +112,31 @@ def test_complete_directory_capture_is_private_immutable_and_source_pinned(
         ).directory_snapshot
         # Mailing columns do not narrow the capture (#202); reach does.
         assert postal.row_count == 52
+        # The mail merge keeps the address only (#388 L6).
+        rows = DirectoryExportSnapshot.objects.get(pk=postal.pk).document["rows"]
+        assert any(row["address"] for row in rows)
+        assert all(row["phones"] == [] and row["envelope"] is None for row in rows)
+        # The code list for reach "neither" keeps the phones it renders.
+        neither = create_directory_export(
+            harness.service.store,
+            actor,
+            **(
+                values
+                | {
+                    "query": DirectoryQuery(sort="duid", reach="neither"),
+                    "request_key": uuid4(),
+                }
+            ),
+        ).directory_snapshot
+        neither = DirectoryExportSnapshot.objects.get(pk=neither.pk)
+        assert neither.row_count == neither_page["total"] <= 50
+        assert {
+            row["family_id"]: row["phones"] for row in neither.document["rows"]
+        } == {row["family_id"]: row["phones"] for row in neither_page["rows"]}
+        assert all(
+            row["address"] == {} and row["envelope"] is None
+            for row in neither.document["rows"]
+        )
         assert (
             create_directory_export(
                 harness.service.store,
