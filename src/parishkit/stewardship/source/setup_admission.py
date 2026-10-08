@@ -95,7 +95,16 @@ def staged_result(status):
 
 
 def source_available():
-    """Neither a held lease nor a retained external read deadline permits overlap."""
+    """Neither a held lease nor a retained external read deadline permits overlap.
+
+    The lease is read without a row lock, so a caller holding the work order
+    never waits behind a source step (#147), which reserves the lease for a
+    request outside the work order. A step can only extend a lease that is
+    still live, so a stale read can at most miss a reservation committed as
+    the lease expired. That is safe: this answer is advisory, and
+    acquire_source locks the row and rechecks both deadlines before anyone
+    takes ownership.
+    """
     require_work_order()
     row = SourceMutationLease.objects.first()
     if row is None:

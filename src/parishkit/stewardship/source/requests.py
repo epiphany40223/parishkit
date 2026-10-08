@@ -70,14 +70,18 @@ def admit_refresh_request(action, status):
 
     This is domain admission, not Admin authorization. The compiled caller must
     enter work_transaction before its task lock. Completion and recovery need
-    additional manifest proof in the concrete refresh handler.
+    additional manifest proof in the concrete refresh handler. The
+    ``source_step`` action (attempts.source_step, #147) reads the scope
+    without row locks and outside the work order.
     """
     if status.task_type != TASK_TYPE or status.domain_request_id is None:
         raise PermissionError("The task does not own a source refresh request.")
     request = SourceRefreshRequest.objects.filter(pk=status.domain_request_id).first()
     if request is None or request.task_root_id != status.root_id:
         raise PermissionError("The source refresh task binding is unavailable.")
-    scope = require_source_refresh(campaign_id=request.campaign_id)
+    scope = require_source_refresh(
+        campaign_id=request.campaign_id, lock=action != "source_step"
+    )
     if (
         _organization(scope) != request.organization_id
         or _window(scope).digest != request.window_digest
