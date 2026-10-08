@@ -69,7 +69,20 @@ def components(context, admin):
         last_login=moment,
     )
 
-    def page(rules, known, active=frozenset(), reviews=()):
+    # One Chairperson suggestion, shaped as the view builds it (#563: the
+    # selection hint of its bulk Review).
+    suggestion = dict(
+        email="newchair@example.org",
+        ministry_duid=9,
+        ministry_name="Choir",
+        candidates=[dict(name="Sample Member", duid=41, publishable=True)],
+        ambiguous=False,
+        owners=1,
+        rule=dict(kind=None, roles=[], deny=False, suspended=False, domain=None),
+        assignments=[],
+    )
+
+    def page(rules, known, active=frozenset(), reviews=(), suggestions=()):
         """Render exactly the context the view builds."""
         policy = AppliedPolicy(rules, known, active)
         return render_to_string(
@@ -84,7 +97,7 @@ def components(context, admin):
                         "address_table": address_rows(policy),
                         "assignment_table": domain_assignment_rows(policy),
                         "review_table": list(reviews),
-                        "suggestion_table": [],
+                        "suggestion_table": list(suggestions),
                     },
                 ),
                 "base_digest": "0" * 64,
@@ -124,6 +137,10 @@ def components(context, admin):
         "/portal-users-review": (
             "text/html",
             page(records, identities, reviews=[review]),
+        ),
+        "/portal-users-suggestions": (
+            "text/html",
+            page(records, identities, suggestions=[suggestion]),
         ),
         "/portal-users-preview": ("text/html", preview()),
         "/portal-users-preview-deny": (

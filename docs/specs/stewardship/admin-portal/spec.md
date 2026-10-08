@@ -185,6 +185,11 @@ the page script; first used by
 some states are required only while shown. The Admin portal requires
 JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
 server validation is unchanged and still refuses an incomplete submission.
+A browser can restore a page from its history (Back or Forward) with the
+reader's values but without the events that set the page up, so these
+states (shown and hidden fields, unavailable buttons and their hints, a
+table's selection, the campaign modules and mail schedule rows) are worked
+out again when the page is shown (`pageshow`, #563).
 
 A field error is shown at that field: its message sits directly beside it,
 and the field is marked in error (`aria-invalid="true"`, described by the
@@ -1182,7 +1187,12 @@ a whole log.
 A table with bulk actions has a selection column. Its header checkbox and a
 Select all button choose every row on the current page; the bar above the
 table shows how many rows are selected and enables its action buttons only
-while at least one is. The server validates every submitted selection.
+while at least one is. While none is, the disabled action buttons are
+described by a short, visually hidden hint saying what to select (also shown
+as their tooltip). Ticking a row never moves a control under the pointer: no
+visible line appears or disappears, and the count and Select all button sit
+after the action buttons, so their changing text cannot push them (#563). The
+server validates every submitted selection.
 
 ### In-place controls
 
