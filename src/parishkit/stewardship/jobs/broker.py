@@ -8,6 +8,7 @@ the isolated runtime must first validate mounts, database grants and secrets.
 import functools
 import logging
 import os
+import sys
 from contextlib import suppress
 from dataclasses import dataclass, field
 from threading import Event, Lock
@@ -23,12 +24,95 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.authority import AuthorityChanging
 from parishkit.stewardship.deployment import ServiceRole, ValkeyConfiguration, _host
 from parishkit.stewardship.observability import emit_failure
+from parishkit.stewardship.provider_checks import (
+    ProviderCheckDrainFailure,
+    ProviderCheckOwnershipLost,
+)
 
 from .dispatch import Handler, WorkQueue, execute_hint, recover_hint
+from .lifetime import RenewalDrainFailure
 from .models import TaskRun
 from .queues import BROKER_PREFIX, HINT_TASK, ROLE_QUEUES, exchange
 from .scanning import ExecutionHint
 from .scheduler import HintPublicationUnavailable
+
+# Failures that leave this process unable to prove its last task's helpers or
+# lease renewal stopped (#386, M5). Each is a BaseException so that no task
+# code can absorb it. The consumer stops at its next loop step with this
+# status and a structured CRITICAL line, rather than relying on how a
+# Celery release's pool shuts down on one (5.6.3's solo loop stops with
+# status 1, its reason only in a suppressed unstructured line). The stop is
+# orderly, so the runtime still closes a sibling consumer (its own drain);
+# only then, if the undrained renewal thread is still alive, does the
+# process end at once (``exit_if_fatal``). Compose restarts the service; the
+# task's lease expires and the scheduler's recovery sweep takes it over.
+FATAL_FAILURES = (
+    RenewalDrainFailure,
+    ProviderCheckDrainFailure,
+    ProviderCheckOwnershipLost,
+)
+# EX_SOFTWARE, the status the export read guard's hard stop also uses.
+FATAL_EXIT_STATUS = 70
+# Set once a fatal failure stopped this process's consumer.
+_fatal = Event()
+
+
+def stop_consumer(error, args, stop):
+    """Log a fatal failure and stop this consumer after the current message.
+
+    The stop comes first, so a failing log line cannot leave the consumer
+    running: the fatal flag drops any further hint unrun, the runtime's stop
+    event refuses work, and Celery's own stop flag ends its loop with
+    FATAL_EXIT_STATUS at its next check, after at most one more drain cycle
+    (any hint delivered in that cycle is dropped, its task still queued),
+    which ``serve_consumer`` returns. Then one CRITICAL line names the
+    failure's category and class (never its text) and the hinted task.
+    """
+    from celery.worker import state
+
+    _fatal.set()
+    if stop is not None:
+        stop.set()
+    state.should_stop = FATAL_EXIT_STATUS
+    task_id = None
+    if len(args) == 1 and type(args[0]) is str:
+        with suppress(ValueError):
+            task_id = UUID(args[0])
+    emit_failure(error, level=logging.CRITICAL, name_class=True, task_id=task_id)
+
+
+def exit_if_fatal(status):
+    """At the runtime's top level, after its own cleanup: end at once if a
+    fatal failure stopped the consumer and a lease-renewal thread is still
+    alive (Python's own shutdown would run beside it); otherwise return.
+
+    If that cleanup itself raises (a sibling that cannot be stopped, say),
+    the runtime's ordinary refusal path runs instead and the process exits
+    2, not 70; the CRITICAL line already logged still says why it stopped.
+
+    Every logging handler and standard error are flushed first so the last
+    lines reach the log. Tests replace ``_exit`` (and so do not shut logging
+    down when they reach it).
+    """
+    import threading
+
+    if not _fatal.is_set():
+        return status
+    if any(
+        thread.name == "stewardship-lease-renewal" and thread.is_alive()
+        for thread in threading.enumerate()
+    ):
+        # Every logger's handlers (ours are not all on the root logger):
+        # flushed and closed, since the process ends next.
+        with suppress(Exception):
+            logging.shutdown()
+        with suppress(Exception):
+            sys.stderr.flush()
+        _exit(FATAL_EXIT_STATUS)
+    return FATAL_EXIT_STATUS
+
+
+_exit = os._exit
 
 
 class ClosedLoader(BaseLoader):
@@ -187,6 +271,11 @@ def build_broker(*, endpoint, password, service, handlers, stop=None, queues=Non
         # wording, export text) uses the active configuration's choice. The
         # lookup is cached for this one message: a digest formats a date per
         # row, and each uncached call would query the configuration again.
+        if _fatal.is_set():
+            # A fatal failure stopped this consumer; a hint delivered before
+            # its loop stops is dropped, never run. The task stays queued
+            # in PostgreSQL and the scheduler hints it again (#386, M5).
+            return None
         with busy:
             token = dates.use(functools.cache(active_date_format))
             # A failed hint closes every connection; a finished one may keep
@@ -203,6 +292,10 @@ def build_broker(*, endpoint, password, service, handlers, stop=None, queues=Non
                     queues=consumed,
                 )
                 failed = False
+            except FATAL_FAILURES as error:
+                # Not a task failure: this process can no longer prove that
+                # nothing of its last task still runs (#386, M5).
+                stop_consumer(error, args, stop)
             except AuthorityChanging as error:
                 # A configuration change still activating after the dispatcher
                 # waited for it (#429; its timeout line is already logged):
