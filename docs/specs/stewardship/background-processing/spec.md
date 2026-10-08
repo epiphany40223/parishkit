@@ -672,7 +672,15 @@ Every task that holds this lease runs on the worker's separate source process
 never delays exports or operational collection.
 
 The owner heartbeats throughout external work and revalidates its fence before
-each upstream write and immediately before snapshot promotion. Loss of ownership
+each upstream write and immediately before snapshot promotion. Just before the
+promotion's transaction it commits 300-second task and source leases, longer
+than the promotion's 120-second statement budget, and holds its control lock
+from then through the promotion, so no renewal comes between; later renewals
+never ask for less than that lease has left
+([#386](https://github.com/epiphany40223/parishkit/issues/386)). A worker
+that dies during or just after a promotion therefore leaves its task and the
+source lease held for up to 5 minutes before recovery takes them over,
+rather than about one; that delay is accepted. Loss of ownership
 stops further calls and prohibits promotion. Takeover is allowed only after both
 lease expiry and the configured maximum external-request timeout plus safety
 margin, limiting overlap with a request initiated by an abandoned owner. An
