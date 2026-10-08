@@ -60,6 +60,22 @@ def test_daily_slots_name_the_reported_day_and_include_the_final_day_after_close
     assert not any(slot.final_weekly for slot in page.slots)
 
 
+@pytest.mark.parametrize(
+    "now",
+    [
+        datetime(2054, 10, 8, 10, tzinfo=UTC),  # 6:00 AM EDT, on time
+        datetime(2054, 10, 8, 15, tzinfo=UTC),  # 11:00 AM EDT, five hours late
+        datetime(2054, 10, 9, 3, 59, tzinfo=UTC),  # 11:59 PM EDT, a late retry
+    ],
+)
+def test_daily_report_day_is_fixed_by_the_schedule_not_the_send_time(now):
+    """Any send on October 8 reports October 7, the previous campaign day (#721)."""
+    rule = plan(time="06:00:00")
+    last = rule.page(through=now).slots[-1]
+    assert (last.key, last.local_date) == ("2054-10-07", date(2054, 10, 7))
+    assert last.due_at == datetime(2054, 10, 8, 10, tzinfo=UTC)
+
+
 @pytest.mark.parametrize("limit", [1, 3, 10, 100])
 def test_stable_cursor_partitions_equal_whole_result_and_replay_is_pure(limit):
     """Changing batch sizes does not duplicate or lose any covered local date."""
