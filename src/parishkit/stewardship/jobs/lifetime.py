@@ -9,6 +9,7 @@ finish its current safe unit, but must not start another external operation.
 
 import json
 import logging
+import math
 from contextlib import contextmanager
 from threading import Event, RLock, Thread
 from time import monotonic
@@ -91,10 +92,18 @@ class ExecutionControl:
         # loop from the claim and each successful renewal. check() refuses
         # new work past it, whatever the renewal thread is doing (#386).
         self.lease_end = None
+        # When a longer lease committed by ``extend_lease`` runs out
+        # (monotonic), so the renewal loop's retry margin counts it.
+        self.lease_until = None
 
     def lease_expired(self):
-        """Whether monotonic time has passed the confirmed lease's end."""
-        return self.lease_end is not None and monotonic() >= self.lease_end
+        """Whether monotonic time has passed the confirmed lease's end: the
+        last renewal's, or a longer one extend_lease committed
+        (``lease_until``), whichever ends later."""
+        end = self.lease_end
+        if end is not None and self.lease_until is not None:
+            end = max(end, self.lease_until)
+        return end is not None and monotonic() >= end
 
     def check(self, *, allow_drain=False, inflight=False):
         """Reject lost ownership, or a new unit after a graceful-stop request
@@ -172,10 +181,65 @@ def renew_once(execution):
                 cursor.execute("SET LOCAL lock_timeout = '2s'")
                 cursor.execute("SET LOCAL statement_timeout = '5s'")
             with execution.handler.scope():
-                execution.heartbeat()
+                execution.heartbeat(seconds=_renewed_seconds(control))
                 if control.source_claim is not None:
                     renew_source(control.source_claim)
     return True
+
+
+def extend_lease(execution, seconds):
+    """Commit a longer task lease (and the attached source lease) at once.
+
+    For one long effect, such as a source promotion (#386, M4): the handler
+    holds the control lock through the effect, so the renewal thread cannot
+    confirm a lease until the effect ends. The caller holds that lock (an
+    RLock) across this call and the effect, so no renewal slips in between;
+    this commits ``seconds`` first, in its own transaction, and records the
+    deadline on the control. Later renewals never ask for less than what is
+    left of it (``renew_once``), and the renewal loop's timeout retries
+    count it (``_margin_left``). Like a transition, it runs outside any
+    transaction and waits out a configuration activation in progress
+    (#429). It never revives an expired claim: both renewals refuse lost
+    ownership.
+
+    Unlike ``renew_once`` it does not set the 2-second lock and 5-second
+    statement limits: it takes the work-order lock as any effect does, under
+    the deployment's ordinary statement limits, and a tight limit would turn
+    a busy moment into a failed refresh. Its wait, and an activation wait,
+    use up the lease it is extending; the local deadline in
+    ``ExecutionControl.check`` still bounds new work if that runs out first.
+    """
+    from parishkit.stewardship.activation_hold import wait_out_activation
+    from parishkit.stewardship.source.leases import renew_source
+
+    control = execution.control
+
+    def once():
+        """Both renewals in one transaction, repeatable until it commits."""
+        control.check()
+        with execution.handler.scope(), transaction.atomic():
+            execution._transition_once("heartbeat", {"lease_seconds": seconds})
+            if control.source_claim is not None:
+                renew_source(control.source_claim, lease_seconds=seconds)
+
+    with control.lock:
+        started = monotonic()
+        wait_out_activation(once, task_id=execution.claim.run_id)
+        control.lease_until = max(control.lease_until or started, started + seconds)
+
+
+def _renewed_seconds(control):
+    """The lease a renewal asks for: LEASE_SECONDS, or what is left of a
+    longer one ``extend_lease`` committed, so a renewal never shortens it.
+    Once that one is (nearly) over it is forgotten."""
+    until = control.lease_until
+    if until is None:
+        return LEASE_SECONDS
+    left = math.ceil(until - control.renewal_started)
+    if left <= LEASE_SECONDS:
+        control.lease_until = None
+        return LEASE_SECONDS
+    return left
 
 
 def pulse(execution):
@@ -255,7 +319,7 @@ def _renewal_loop(execution, done):
                 if sql_timeout_kind(error) is None:
                     raise
                 connections.close_all()
-                retry = _margin_left(confirmed)
+                retry = _margin_left(confirmed, control.lease_until)
                 if not retry:
                     # New work is refused before the entry is written; the
                     # failure path below does not write it again.
@@ -315,14 +379,15 @@ def _renewal_timing(started):
 RENEWAL_LIMITS = {"lock_timeout": 2, "statement_timeout": 5}
 
 
-def _margin_left(confirmed):
+def _margin_left(confirmed, lease_until=None):
     """Whether a retry decided now (its timeout entry, the pause, then the
-    renewal) keeps LEASE_MARGIN_SECONDS before the last confirmed lease (see
-    ``_renewal_loop``) runs out."""
-    return (
-        monotonic() + TIMEOUT_RETRY_SECONDS
-        <= confirmed + LEASE_SECONDS - LEASE_MARGIN_SECONDS
-    )
+    renewal) keeps LEASE_MARGIN_SECONDS before the confirmed lease runs out:
+    the last renewal's (see ``_renewal_loop``), or a longer one committed by
+    ``extend_lease`` (``lease_until``), whichever ends later."""
+    ends = confirmed + LEASE_SECONDS
+    if lease_until is not None:
+        ends = max(ends, lease_until)
+    return monotonic() + TIMEOUT_RETRY_SECONDS <= ends - LEASE_MARGIN_SECONDS
 
 
 def _record_renewal_timeout(execution, error, started, *, retry=False):
