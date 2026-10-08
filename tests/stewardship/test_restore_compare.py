@@ -395,6 +395,21 @@ touch '{state}/LOADED'
 """
 
 
+def skip_unless_runnable(*scripts):
+    """Skip the test unless PATH finds each stand-in script itself.
+
+    The Compose test container mounts /tmp noexec: a stand-in written there
+    is not executable, so PATH would find the image's real pg_dump or
+    pg_restore instead and the case would fail for the wrong reason. The
+    other CI jobs still run these tests.
+    """
+    for script in scripts:
+        if shutil.which(script.name) != str(script):
+            pytest.skip(
+                f"the temporary directory cannot run the stand-in {script.name}"
+            )
+
+
 @pytest.fixture
 def stand_in(tmp_path, monkeypatch):
     """The stand-in pg_restore on PATH; returns the dump path."""
@@ -406,11 +421,7 @@ def stand_in(tmp_path, monkeypatch):
     script.write_text(STAND_IN.format(dump=dump, state=tmp_path))
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("PATH", f"{directory}{os.pathsep}{os.environ['PATH']}")
-    # The Compose test container mounts /tmp noexec: the stand-in is not
-    # executable there, so PATH would find the image's real pg_restore. The
-    # other CI jobs still run these tests.
-    if shutil.which("pg_restore") != str(script):
-        pytest.skip("the temporary directory cannot run the stand-in pg_restore")
+    skip_unless_runnable(script)
     return dump
 
 
@@ -601,6 +612,7 @@ def pipe(tmp_path, monkeypatch):
         script.write_text(text.format(state=tmp_path))
         script.chmod(script.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("PATH", f"{directory}{os.pathsep}{os.environ['PATH']}")
+    skip_unless_runnable(directory / "pg_dump", directory / "pg_restore")
     return tmp_path
 
 
