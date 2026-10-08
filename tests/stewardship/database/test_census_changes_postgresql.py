@@ -4,7 +4,7 @@ import io
 from uuid import uuid4
 
 import pytest
-from django.db import transaction
+from django.db import connection, transaction
 from openpyxl import load_workbook
 
 from parishkit.stewardship.accounts.policy import Principal
@@ -136,6 +136,20 @@ def test_testing_responses_are_excluded(response_service):
     assert submission.mode != "live"
     assert ProposedChange.objects.filter(submission=submission).exists()
     assert worklist(harness, ADMIN, status="all", history="yes")["rows"] == []
+    # Positive control: the same rows appear once the response is live, so
+    # the exclusion above is the mode filter, not a query that reads nothing.
+    # Submissions are immutable, so the flip bypasses their triggers, as the
+    # migration owner only.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_submission SET mode='live', rehearsal_epoch_id=NULL"
+            " WHERE id=%s",
+            [submission.pk],
+        )
+        cursor.execute("SET LOCAL session_replication_role = origin")
+    rows = worklist(harness, ADMIN, status="all", history="yes")["rows"]
+    assert {row["label"] for row in rows} == {"First name", "Home address"}
 
 
 @pytest.mark.parametrize(
