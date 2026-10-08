@@ -380,6 +380,10 @@ FAILURES = frozenset(
         "mail_health_check",
         "due_work_health_check",
         "backup_health_check",
+        "web_health_check",
+        # Web did not answer its liveness check for several minutes in a row
+        # (#392 L1; jobs.web_health).
+        "web_unresponsive",
         # Background tasks that give up visibly.
         "export_cleanup",
         "fact_verification",
@@ -440,6 +444,9 @@ TIMEOUT_KINDS = frozenset(
         # Background work that stopped waiting for a configuration change
         # to finish activating (#429; activation_hold).
         "configuration_activation",
+        # The scheduler's web liveness probe ran out of time (#392 L1;
+        # jobs.web_health).
+        "web_probe",
     }
 )
 # The helper processes a deadline can kill (#293), by their entry point;

@@ -838,6 +838,7 @@ def serve_background(configuration, lease, *, source=False, mail=False):
         from .jobs.operational_slack_tasks import produce_slack
         from .jobs.processes import serve_consumer, serve_scheduler
         from .jobs.security_owner import SECURITY
+        from .jobs.web_health import WebHealthProducer, replica_hosts
         from .reports.digest_finalization import (
             DailyDigestFinalizeProducer,
             WeeklyDigestFinalizeProducer,
@@ -904,6 +905,11 @@ def serve_background(configuration, lease, *, source=False, mail=False):
         weekly = WeeklyDigestProducer(uuid4())
         weekly_finalization = WeeklyDigestFinalizeProducer(uuid4())
         maintenance = MaintenanceProducer()
+        # Probes web once a minute in its own thread (#392 L1); the loop only
+        # records finished results, so it never waits on HTTP.
+        web_health = WebHealthProducer(
+            replica_hosts(configuration.runtime_budget.replicas)
+        )
 
         def produce(guard):
             """Expire abandoned setup even while exact candidate recovery is pending.
@@ -913,6 +919,9 @@ def serve_background(configuration, lease, *, source=False, mail=False):
             source production and file cleanup still require matching authority.
             """
             operational = independent_producer(guard, produce_collection, guard)
+            # Like operational intake, the web probe runs through setup and
+            # activation holds: it reads no configuration or campaign data.
+            independent_producer(guard, web_health, guard)
             independent_producer(guard, produce_setup_expiry, guard)
             finalization = independent_producer(
                 guard, produce_finalization, assembled.store, guard

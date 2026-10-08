@@ -78,6 +78,12 @@ FAILURE_TEXT = {
         "The scheduled-work health check could not run."
     ),
     "backup_health_check": gettext_lazy("The backup health check could not run."),
+    "web_health_check": gettext_lazy("The web server health check could not run."),
+    "web_unresponsive": gettext_lazy(
+        "The web server did not answer its health check; ask the server "
+        "operator to restart web from the deployment's Compose directory "
+        "and to check its log."
+    ),
     "export_cleanup": gettext_lazy(
         "Removing an expired report download kept failing; use "
         "Retry export cleanup on its task page after fixing the cause."

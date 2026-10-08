@@ -228,3 +228,4 @@ from .recipient_models import (  # noqa: E402,F401
 )
 from .security_models import SecurityCohort, SecurityRecipient  # noqa: E402,F401
 from .service_status_models import ServiceStatus  # noqa: E402,F401
+from .web_health_models import WebHealth  # noqa: E402,F401

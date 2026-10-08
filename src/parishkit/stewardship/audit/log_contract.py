@@ -59,6 +59,9 @@ REQUIRED = {
         {"occurrence_id", "task_id", "lag_seconds", "limit_seconds"}
     ),
     Event.PRODUCTION_CLEANUP_FAILED: frozenset({"task_id", "count"}),
+    # Web stopped answering (jobs.web_health): how it failed, and for how
+    # many minutes in a row.
+    Event.WEB_UNHEALTHY: frozenset({"failure", "failure_kind", "count"}),
     # A backup sealed to a different key (backup_health); its outcome
     # ``changed`` selects the sentence that says what to check.
     Event.CONFIG_MISMATCH: frozenset({"outcome"}),

@@ -50,6 +50,8 @@ class IncidentKind(StrEnum):
     AUTOMATION_IRREVERSIBLE = "automation_irreversible"
     AUTOMATION_POLICY_CHANGE = "automation_policy_change"
     AUTOMATION_REFUSED = "automation_refused"
+    # Web stopped answering its liveness check (#392 L1; jobs.web_health).
+    WEB_UNHEALTHY = "web_unhealthy"
 
 
 class IncidentLevel(StrEnum):
@@ -145,6 +147,7 @@ TITLES = MappingProxyType(
         IncidentKind.AUTOMATION_REFUSED: gettext_noop(
             "An automation session was refused"
         ),
+        IncidentKind.WEB_UNHEALTHY: gettext_noop("Web server is not responding"),
     }
 )
 
@@ -184,6 +187,15 @@ INSTRUCTIONS = MappingProxyType(
             "refreshes, so the database keeps growing. Refreshes still "
             "work. Ask the server operator to check the worker log for "
             "the cause."
+        ),
+        # No apostrophe or other HTML-special character: the SQL twin
+        # (stewardship_ops_content_v1) inserts instructions unescaped.
+        IncidentKind.WEB_UNHEALTHY: (
+            "The web server has not answered three health checks in a row, a "
+            "minute apart, so the Admin and Family portals may not be "
+            "loading. Docker restarts web only if it stops running. Ask the "
+            "server operator to restart web from the Compose directory of the "
+            "deployment (docker compose ... restart web) and to check its log."
         ),
         **dict.fromkeys(AUTOMATION_KINDS, _AUTOMATION_INSTRUCTION),
     }

@@ -95,6 +95,14 @@ SAMPLES = {
         },
     ),
     Event.PRODUCTION_CLEANUP_FAILED: (ContextKind.TASK, {"task_id": TASK, "count": 4}),
+    Event.WEB_UNHEALTHY: (
+        ContextKind.FAILURE,
+        {
+            "failure": "web_unresponsive",
+            "failure_kind": FailureKind.WEB_PROBE_TIMEOUT,
+            "count": 3,
+        },
+    ),
     Event.CONFIG_MISMATCH: (ContextKind.EXCEPTION, {"outcome": Outcome.CHANGED}),
     Event.TASK_TIMED_OUT: (ContextKind.TIMEOUT, {"what": "lease"}),
     Event.HELPER_TIMED_OUT: (ContextKind.TIMEOUT, {"what": "mail_helper"}),
