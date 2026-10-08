@@ -86,12 +86,12 @@ INTRO_WORDS = 15
 # an entry when its page is converted; never raise one or add a page.
 INTRO_ALLOWED = {
     "setup-step.html": 214,
-    "user-rule-error.html": 164,
-    "chair-review-error.html": 155,
-    "assignment-error.html": 142,
+    "user-rule-error.html": 160,
+    "chair-review-error.html": 146,
+    "assignment-error.html": 136,
     "setup-confirmation.html": 132,
     "setup-credential.html": 111,
-    "chair-confirmation-error.html": 104,
+    "chair-confirmation-error.html": 103,
     "setup-cancel.html": 100,
     "logs-error.html": 73,
     "campaign-mail-families.html": 64,
