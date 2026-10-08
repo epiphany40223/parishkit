@@ -6,14 +6,18 @@ enablement here. Provider observation runs outside SQL transactions while the
 generic dispatcher maintains both independent ownership fences.
 """
 
+import json
+import logging
 from functools import partial
 from pathlib import Path
+from time import monotonic
 
 from django.db import connection
 
 from parishkit.parishsoft_changes import ChangeFeedIncomplete
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.dispatch import Handler
+from parishkit.stewardship.jobs.lifetime import extend_lease
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.queues import WorkQueue
@@ -39,6 +43,10 @@ from .refreshing import load_and_stage_attempt
 from .rejection import reject_snapshot
 from .snapshot_models import SourceCurrent, SourceSnapshot
 from .snapshots import promote_snapshot
+
+# The task and source leases committed before a promotion: longer than its
+# 120-second statement budget, as boundary work's 300 (#386, M4).
+PROMOTION_LEASE_SECONDS = 300
 
 
 def refresh_handler(*, credential_path, reconcile, unchanged=None):
@@ -180,6 +188,23 @@ def _observe(execution, claim, credential, reconcile, unchanged=None):
         return snapshot
     total = sum(snapshot.counts.values())
     execution.progress(total, total, phase=TaskPhase.PROMOTING)
+    # The promotion's statement budget (120 s) is longer than what is left of
+    # the 60-second task and source leases, and the renewal thread waits on
+    # the control lock this effect holds: commit leases that outlast the
+    # promotion first (#386, M4), as boundary work does. The lock (an RLock)
+    # is held from the extension through the effect, so no renewal can slip
+    # in between; later renewals never ask for less than the extension left.
+    lock = execution.control.lock
+    with lock:
+        extend_lease(execution, PROMOTION_LEASE_SECONDS)
+        started = monotonic()
+        promoted = _promote(execution, claim, snapshot, reconcile)
+    _promotion_timing(started)
+    return promoted
+
+
+def _promote(execution, claim, snapshot, reconcile):
+    """Promote the staged snapshot in one effect (see ``_observe``)."""
     with execution.effect():
         attempt = SourceRefreshAttempt.objects.get(snapshot=snapshot)
 
@@ -194,6 +219,24 @@ def _observe(execution, claim, credential, reconcile, unchanged=None):
             admit=admit,
             reconcile=lambda current: reconcile(current, execution, claim),
         )
+
+
+def _promotion_timing(started):
+    """Debug-log how long the promotion's transaction took, commit included.
+
+    Observation only, like the lease renewal's timing line: a DEBUG line,
+    built only when debug logging is enabled (as for a rollout check), and
+    any failure is swallowed.
+    """
+    try:
+        debug = logging.getLogger("parishkit.stewardship.debug")
+        if debug.isEnabledFor(logging.DEBUG):
+            debug.debug(
+                "source promotion timing: %s",
+                json.dumps({"elapsed_ms": round((monotonic() - started) * 1000)}),
+            )
+    except Exception:  # noqa: S110 - observation must never affect the task
+        pass
 
 
 def _retire_drained_staging(execution, claim, snapshot):

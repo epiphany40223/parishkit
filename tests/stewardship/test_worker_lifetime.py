@@ -453,3 +453,121 @@ def test_the_mail_helper_check_uses_the_inflight_bound(monkeypatch):
     clock["now"] = 160.5
     with pytest.raises(ExecutionInterrupted):
         tick()
+
+
+def test_a_committed_longer_lease_extends_the_retry_margin(monkeypatch):
+    """extend_lease's deadline counts: with a 300 s lease committed, a
+    renewal timeout 100 s after the last renewal is still retried (#386, M4)."""
+    from parishkit.stewardship.jobs import lifetime
+
+    monkeypatch.setattr(lifetime, "monotonic", lambda: 1100.0)
+    assert not lifetime._margin_left(1000.0)
+    assert lifetime._margin_left(1000.0, lease_until=1000.0 + 300)
+    assert not lifetime._margin_left(1000.0, lease_until=1000.0 + 120)
+
+
+def test_extend_lease_renews_task_and_attached_source_in_one_transaction(
+    monkeypatch,
+):
+    """Both leases get the longer time, under the control lock, in one
+    transaction, and the deadline is recorded; a stopped execution refuses
+    first."""
+    from contextlib import contextmanager
+
+    from parishkit.stewardship.jobs import lifetime
+    from parishkit.stewardship.source import leases
+
+    context = execution()
+    calls = []
+
+    @contextmanager
+    def atomic():
+        calls.append("begin")
+        yield
+        calls.append("commit")
+
+    monkeypatch.setattr(lifetime.transaction, "atomic", atomic)
+    monkeypatch.setattr(lifetime, "monotonic", lambda: 500.0)
+    claim = object()
+    context.control.source_claim = claim
+    monkeypatch.setattr(
+        type(context),
+        "_transition_once",
+        lambda self, action, options: calls.append((action, options)),
+    )
+    monkeypatch.setattr(
+        leases,
+        "renew_source",
+        lambda actual, *, lease_seconds: calls.append(
+            ("source", actual, lease_seconds)
+        ),
+    )
+    lifetime.extend_lease(context, 300)
+    assert calls == [
+        "begin",
+        ("heartbeat", {"lease_seconds": 300}),
+        ("source", claim, 300),
+        "commit",
+    ]
+    assert context.control.lease_until == 800.0
+    context.control.failed.set()
+    with pytest.raises(ExecutionInterrupted):
+        lifetime.extend_lease(context, 300)
+
+
+def test_extend_lease_waits_out_a_configuration_activation(monkeypatch):
+    """AuthorityChanging is waited out from outside the transaction, as a
+    transition does, instead of failing the refresh (#800 review)."""
+    from parishkit.stewardship import activation_hold
+    from parishkit.stewardship.accounts.authority import AuthorityChanging
+    from parishkit.stewardship.jobs import lifetime
+
+    monkeypatch.setattr(activation_hold, "POLL_SECONDS", 0)
+    monkeypatch.setattr(activation_hold, "installation_running", lambda: True)
+    context = execution()
+    attempts = []
+
+    def transition(self, action, options):
+        attempts.append(action)
+        if len(attempts) == 1:
+            raise AuthorityChanging("synthetic")
+
+    monkeypatch.setattr(type(context), "_transition_once", transition)
+    monkeypatch.setattr("django.db.transaction.Atomic.__enter__", lambda self: None)
+    monkeypatch.setattr(
+        "django.db.transaction.Atomic.__exit__", lambda self, *exc: False
+    )
+    lifetime.extend_lease(context, 300)
+    assert attempts == ["heartbeat", "heartbeat"]
+    assert context.control.lease_until is not None
+
+
+def test_a_renewal_never_shortens_a_longer_committed_lease(monkeypatch):
+    """With 200 s left of an extension the renewal asks for 200, not 60;
+    once 60 or less is left it asks for 60 and forgets the extension."""
+    from parishkit.stewardship.jobs import lifetime
+
+    control = execution().control
+    control.renewal_started = 1000.0
+    assert lifetime._renewed_seconds(control) == lifetime.LEASE_SECONDS
+    control.lease_until = 1200.0
+    assert lifetime._renewed_seconds(control) == 200
+    control.renewal_started = 1150.0
+    assert lifetime._renewed_seconds(control) == lifetime.LEASE_SECONDS
+    assert control.lease_until is None
+
+
+def test_the_local_deadline_counts_a_committed_extension(monkeypatch):
+    """With a 300 s extension committed, new work goes on past the 60 s
+    renewal lease and stops only once the extension too has run out."""
+    from parishkit.stewardship.jobs import lifetime
+
+    context = execution()
+    clock = {"now": 200.0}
+    monkeypatch.setattr(lifetime, "monotonic", lambda: clock["now"])
+    context.control.lease_end = 160.0
+    context.control.lease_until = 400.0
+    context.control.check()
+    clock["now"] = 400.0
+    with pytest.raises(ExecutionInterrupted):
+        context.control.check()
