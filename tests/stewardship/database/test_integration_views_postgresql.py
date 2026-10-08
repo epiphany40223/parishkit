@@ -621,3 +621,44 @@ def test_credential_status_follows_live_and_never_renews_idle(
     assert f'<a href="{URL}">Return to ParishSoft</a>'.encode() in progress.content
     session.refresh_from_db()
     assert session.last_activity_at == activity
+
+
+def test_settings_changes_need_a_fresh_sign_in(auth_service, google):
+    """A stale sign-in can neither review nor confirm an integration change (#547).
+
+    The step-up page returns to the settings page and nothing is queued. Once
+    fresh, the reviewed form confirms exactly one request, and posting it
+    again returns that same request.
+    """
+    browser, _ = signed_in()
+    review = post(browser, URL, edit(auth_service.store))
+    preview = hidden(review, "preview")
+    stale_sign_in()
+    for values in (edit(auth_service.store), {"action": "confirm", "preview": preview}):
+        refused = browser.post(
+            URL,
+            values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
+            HTTP_ACCEPT="text/html",
+        )
+        assert refused.status_code == 403
+        page = refused.content.decode()
+        assert "Confirm with Google" in page and "Nothing was done" in page
+        assert f'name="next" value="{URL}"' in page
+    # Removing an integration asks the same, before its review.
+    removed = browser.post(
+        INDEX + "slack/",
+        {
+            "action": "remove",
+            "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+        },
+        HTTP_ACCEPT="text/html",
+    )
+    assert removed.status_code == 403
+    assert f'name="next" value="{INDEX}slack/"' in removed.content.decode()
+    assert not ConfigurationChangeRequest.objects.exists()
+    signed_in(browser)
+    confirmed = post(browser, URL, {"action": "confirm", "preview": preview})
+    assert confirmed.status_code == 302
+    again = post(browser, URL, {"action": "confirm", "preview": preview})
+    assert again["Location"] == confirmed["Location"]
+    assert ConfigurationChangeRequest.objects.count() == 1

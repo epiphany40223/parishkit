@@ -32,13 +32,14 @@ from parishkit.stewardship.web.tables import (
     window_table,
 )
 
+from .admin_editing import step_up_response
 from .authentication import denial, runtime
 from .cryptography import CryptographicError
 from .family_authentication import runtime as family_runtime
 from .limiting import LimiterUnavailable
 from .models import SystemConfiguration
 from .policy import Capability, allows
-from .sessions import authenticated_admin
+from .sessions import FreshAuthenticationRequired, authenticated_admin, require_fresh
 
 # Family DUID sorts on the server through the family_campaign_duid unique
 # index (campaign_id, family_duid), which also makes it its own tiebreak.
@@ -52,13 +53,22 @@ CODE_SORTING = Sorting.by_column(
 
 @require_safe
 def family_codes(request, campaign_id):
-    """Audit intent before a read-only response; recheck roles under its read guard."""
+    """Audit intent before a read-only response; recheck roles under its read guard.
+
+    Every page decrypts live Family codes, so it needs a Google sign-in within
+    the last five minutes (#547); a stale one gets the step-up page, which
+    returns here with the same page, size and sort.
+    """
     finish, handed_off = None, False
     try:
         service, cryptographic = runtime(), family_runtime()
         principal = authenticated_admin(request, store=service.store, activity=True)
         if not allows(principal, Capability.FAMILY_CODES):
             return denial()
+        try:
+            require_fresh(request)
+        except FreshAuthenticationRequired:
+            return step_up_response()
         try:
             parsed = filters(request.GET, allowed={"page", "size", "sort"})
             sort = CODE_SORTING.parse(parsed)
@@ -85,7 +95,8 @@ def family_codes(request, campaign_id):
                 actor_id=principal.identity,
                 parish_id=configuration.active_configuration.parish.pk,
                 campaign_id=campaign_id,
-                context={"outcome": Outcome.STARTED},
+                # Which page of codes was opened (#547), never the codes.
+                context={"outcome": Outcome.STARTED, "page": window.page},
             )
         prepared_count, finalized = 0, False
 

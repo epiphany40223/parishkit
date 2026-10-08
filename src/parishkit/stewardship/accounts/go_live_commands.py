@@ -26,7 +26,7 @@ from parishkit.stewardship.storage import StaleRecordError, StorageInvariantErro
 
 from .admin_editing import editable_configuration, principal
 from .go_live_inputs import collect_inputs
-from .sessions import database_now
+from .sessions import database_now, require_fresh
 
 SALT = "stewardship-go-live-cleanup-preview-v1"
 PREVIEW_SECONDS = 300
@@ -73,9 +73,12 @@ def verify_preview(request, service, campaign_id):
 def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
     """Recheck one exact preview; retry returns its original durable receipt.
 
-    Authentication is current for every command. Initial acknowledgement records
-    that login's actual Google-authenticated timestamp; the later activation
-    owner independently requires fresh Google authentication and typed intent.
+    Starting cleanup needs a Google sign-in within the last five minutes
+    (#547), checked as soon as the session is admitted. The acknowledgement
+    records that fresh instant as ``reauthenticated_at``; the SQL guard
+    requires it to equal the live session's ``authenticated_at``, which is
+    exactly what ``require_fresh`` returns. The later activation owner
+    independently requires fresh Google authentication and typed intent.
     """
     if (
         acknowledge is not True
@@ -94,6 +97,7 @@ def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
         # Waiting for another operation's lock must not extend the DNS proof.
         signing.loads(preview_token, salt=SALT, max_age=PREVIEW_SECONDS)
         actor = principal(request, service)
+        reauthenticated_at = require_fresh(request)
         if binding["actor"] != str(actor.identity) or binding["campaign"] != str(
             campaign_id
         ):
@@ -147,6 +151,6 @@ def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
             correlation_id=current_correlation(),
             readiness_digest=inputs.digest,
             acknowledged_at=database_now(),
-            reauthenticated_at=request.portal_session.authenticated_at,
+            reauthenticated_at=reauthenticated_at,
             admit=admit,
         )

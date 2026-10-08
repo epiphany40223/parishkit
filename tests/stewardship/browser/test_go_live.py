@@ -55,3 +55,38 @@ def test_go_live_acknowledgement_and_status_are_accessible(
     visible(page.get_by_role("button", name="Retry failed preparation"))
     visible(page.get_by_role("button", name="Cancel and discard these inactive links"))
     visible(page.get_by_role("link", name="Refresh preparation progress"))
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_stale_sign_in_offers_the_step_up_instead_of_start(
+    page, component_origin, axe_source, width
+):
+    """Start is unavailable until the sign-in is fresh (#547).
+
+    The page offers "Confirm with Google", returning to readiness, in place
+    of the acknowledgement and Start; LOCAL names its own sign-in, not Google.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/go-live-stale")
+    main = page.locator("main")
+    assert "confirm it's you with Google before starting cleanup" in (main.inner_text())
+    visible(page.get_by_role("button", name="Confirm with Google"))
+    assert page.get_by_role("button", name="Start Testing cleanup").count() == 0
+    assert page.locator("input[data-acknowledgment]").count() == 0
+    step_up = page.locator("[data-cleanup-step-up] form")
+    assert step_up.get_attribute("action") == "/admin/login"
+    assert step_up.locator('input[name="next"]').get_attribute("value") == (
+        "/admin/campaign/go-live/"
+    )
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.evaluate(axe_source)
+    assert (
+        page.evaluate("""async () => (await axe.run(document, {
+        runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
+    })).violations.map(({id,impact}) => ({id,impact}))""")
+        == []
+    )
+    page.goto(component_origin + "/go-live-stale-local")
+    text = page.locator("[data-cleanup-step-up]").inner_text()
+    assert "confirm your sign-in before starting cleanup" in text
+    assert "Google" not in text

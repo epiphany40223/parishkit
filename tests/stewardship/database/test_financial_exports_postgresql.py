@@ -27,7 +27,7 @@ from parishkit.stewardship.reports.financial import FinancialQuery
 from parishkit.stewardship.reports.financial_exports import create_financial_export
 
 from ..test_financial_answers import CHECK, OPTIONS
-from .auth_builders import signed_in
+from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import campaign_clock
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
@@ -311,3 +311,50 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 parameters=first.parameters,
             )
     assert FinancialExportSnapshot.objects.count() == 3
+
+
+def test_financial_export_needs_a_fresh_sign_in(response_service, google):
+    """A stale sign-in queues nothing and returns to the report (#547).
+
+    After the step-up the same form queues exactly one export.
+    """
+    harness = response_service
+    financial_source(harness, modules=["financial"], options=map(asdict, OPTIONS))
+    harness = activate_response_service(harness)
+    browser, _ = signed_in()
+    route = f"/admin/reports/{harness.campaign.pk}/financial/"
+    fields = FinancialQuery().form_values() | dict(
+        format="csv", browser_timezone="UTC", request_key=str(uuid4())
+    )
+    stale_sign_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        refused = post(browser, route + "export", fields, HTTP_ACCEPT="text/html")
+        assert refused.status_code == 403
+        page = refused.content.decode()
+        assert "Confirm with Google" in page and "Nothing was done" in page
+        assert f'name="next" value="{route}"' in page
+        assert "You will then return to Financial stewardship." in page
+        assert not ExportRequest.objects.exists()
+    signed_in(browser)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        created = post(browser, route + "export", fields)
+        assert created.status_code == 302
+        assert (
+            post(browser, route + "export", fields)["Location"] == created["Location"]
+        )
+        assert ExportRequest.objects.count() == 1
+        request = ExportRequest.objects.get()
+    # Regenerating a financial export asks for the same fresh sign-in and
+    # returns to the export's status page.
+    stale_sign_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        refused = post(
+            browser,
+            f"/admin/reports/exports/{request.pk}/regenerate",
+            {"request_key": str(uuid4())},
+            HTTP_ACCEPT="text/html",
+        )
+        assert refused.status_code == 403
+        page = refused.content.decode()
+        assert f'name="next" value="/admin/reports/exports/{request.pk}/"' in page
+        assert ExportRequest.objects.count() == 1

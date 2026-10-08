@@ -600,6 +600,7 @@ def integration_settings(request, target=None):
             filters(request.GET, allowed=set())
             response = backup_key_page(request, service, actor)
         elif request.method == "POST" and request.POST.get("action") == "remove":
+            require_fresh(request)
             response = _remove(request, service, configuration, actor, target)
         elif (
             request.method == "POST"
@@ -608,6 +609,12 @@ def integration_settings(request, target=None):
         ):
             response = _test_access(request, configuration, actor)
         elif request.method == "POST":
+            # Changing where mail, backups, alerts or ParishSoft reads go, or
+            # removing an integration, needs a Google sign-in within five
+            # minutes (#547). It is asked before the review page as well as
+            # at Confirm, so a stale sign-in is caught before the change is
+            # reviewed; the step-up returns to this settings page.
+            require_fresh(request)
             _optional(configuration, target)
             fields = set(IntegrationForm(target).fields)
             if target in ROTATING_TARGETS:
@@ -628,6 +635,8 @@ def integration_settings(request, target=None):
                             editable_configuration(service),
                             None,
                         ),
+                        # Checked again under the work lock (#547).
+                        fresh=True,
                     )
                 )
         else:

@@ -757,7 +757,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/<campaign>/ministries/follow-up/` | `/admin/reports/ministries/follow-up/` | No assignee column, filter or bulk assignment (#552). |
 | `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/<campaign>/ministries/follow-up/<request>/` | `/admin/reports/ministries/follow-up/<request>/` | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
 | `family_directory` | Family directory | Menu: Family directory | Administrator, Staff | (same) | `/admin/reports/<campaign>/families/` | `/admin/reports/families/` |  |
-| `family_codes` | Family campaign codes | Family directory | Administrator, Staff | (same) | `/admin/campaign/<campaign>/family-codes` | `/admin/reports/family-codes/` |  |
+| `family_codes` | Family campaign codes | Family directory | Administrator, Staff | (same) | `/admin/campaign/<campaign>/family-codes` | `/admin/reports/family-codes/` | Needs a fresh sign-in (#547). |
 | `family_timeline` | Family timeline | Family directory | Administrator, Staff | (new, #477) | `/admin/reports/<campaign>/families/<family>/` | `/admin/reports/families/<family>/` | Opened from each Family directory and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `weekly_digest_manual` | Send a weekly report now | Emailed reports (new page) | Administrator | Request a manual information report; Manual information report | `/admin/reports/weekly-digests/request/<campaign>/` | `/admin/reports/emailed/weekly/new/` | Was the Manual information report menu entry; ends on Emailed reports, which links the report it produced. |
 | `weekly_digest_snapshot` | Weekly report | Emailed reports (new page) | Administrator | Weekly information report; Weekly summary | `/admin/reports/weekly-digests/<snapshot>/` | `/admin/reports/emailed/weekly/<snapshot>/` |  |
@@ -1664,7 +1664,12 @@ The page and its rules are defined by the
 Integration pages expose connection status, last check, safe fingerprint, and
 Replace/Test actions. Secret replacement requires fresh Google authentication
 (or a full-scope
-[automation session](../admin-automation/spec.md#secret-replacement)).
+[automation session](../admin-automation/spec.md#secret-replacement)), and
+so does reviewing, confirming or removing a settings change, such as the
+reply-to address, the backup folder or Slack
+([#547](https://github.com/epiphany40223/parishkit/issues/547)): a stale
+sign-in gets the step-up, which returns to the settings page with nothing
+saved, and the page says so beside Save.
 The UI seals the submitted value to its target-specific installer, shows
 staged/testing/installing/consumer-acknowledged progress, and never redisplays
 it. Failure or expiry destroys sealed staging and leaves the old working
@@ -2385,10 +2390,14 @@ Going live is a dedicated workflow, not a toggle. It requires:
 
 Testing deliveries do not count as live. After readiness and inventory, the
 Admin explicitly acknowledges that cleanup is irreversible and starts it on
-the [Go live page](#go-live-page). One transaction creates a durable
-ProductionTransitionRequest, acquires the campaign go-live gate, records the
-inventory/aggregate described below, queues an idempotent cleanup task and
-queues the go-live's own full ParishSoft refresh. The gate rejects new Testing submissions,
+the [Go live page](#go-live-page), which needs fresh Google authentication
+([#547](https://github.com/epiphany40223/parishkit/issues/547)): until the
+sign-in is fresh, the page offers **Confirm with Google** in place of the
+start button, and the request records that fresh sign-in instant. One
+transaction creates a durable ProductionTransitionRequest, acquires the
+campaign go-live gate, records the inventory/aggregate described below, queues
+an idempotent cleanup task and queues the go-live's own full ParishSoft
+refresh. The gate rejects new Testing submissions,
 test sends, campaign content/configuration changes, and Testing campaign work;
 existing authenticated pages explain that go-live is in progress. The same
 transaction invalidates the rehearsal epoch and its sessions; the cleanup

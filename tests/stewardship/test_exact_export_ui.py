@@ -93,6 +93,8 @@ def test_regeneration_conflict_retains_safe_native_link(monkeypatch):
     identifier = uuid4()
     monkeypatch.setattr(export_ui, "runtime", Mock())
     monkeypatch.setattr(export_ui, "_principal", Mock())
+    # Not a directory or financial export, so no fresh sign-in is needed.
+    monkeypatch.setattr(export_ui, "_regenerate_step_up", Mock(return_value=None))
     monkeypatch.setattr(
         export_ui,
         "regenerate_export",

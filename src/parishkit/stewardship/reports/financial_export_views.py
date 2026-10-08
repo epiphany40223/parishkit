@@ -3,9 +3,16 @@
 from uuid import UUID
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from parishkit.stewardship.accounts import admin_navigation
+from parishkit.stewardship.accounts.admin_editing import step_up_response
 from parishkit.stewardship.accounts.authentication import denial, runtime
+from parishkit.stewardship.accounts.sessions import (
+    FreshAuthenticationRequired,
+    require_fresh,
+)
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .export_services import ExportRequestBound
@@ -19,13 +26,25 @@ from .read_admission import admit_report_read
 
 @require_POST
 def create(request, campaign_id):
-    """Queue one complete capture of the applied filters; the page is not a pin."""
+    """Queue one complete capture of the applied filters; the page is not a pin.
+
+    The file is every matching Family's financial detail, so creating it
+    needs a Google sign-in within the last five minutes (#547). A stale one
+    gets the step-up page, which returns to the report and creates nothing.
+    """
     try:
         service = runtime()
         principal = _principal(request, service.store)
         # An unknown campaign is a denial, never a filter problem with a link
         # back to a page that would only deny again.
         admit_report_read(campaign_id)
+        try:
+            require_fresh(request)
+        except FreshAuthenticationRequired:
+            return step_up_response(
+                reverse("admin:financial_report", args=(campaign_id,)),
+                admin_navigation.PAGES["financial_report"].label,
+            )
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
         fields = {"format", "browser_timezone", "request_key"}

@@ -41,7 +41,7 @@ from .configuration_installation import coherent_configuration
 from .configuration_requests import record_request
 from .policy import Capability, allows
 from .request_models import ConfigurationChangeRequest
-from .sessions import FreshAuthenticationRequired, authenticated_admin
+from .sessions import FreshAuthenticationRequired, authenticated_admin, require_fresh
 
 
 def principal(
@@ -152,11 +152,13 @@ def confirm(
     request_schema=None,
     capability=Capability.CONFIGURE,
     attach=None,
+    fresh=False,
 ):
     """Admit one exact intent from the page; redirect to its request status.
 
     The page's form carries the signed preview; ``confirm_intent`` does the
-    rest. The status page leads back to this editor (#196).
+    rest. The status page leads back to this editor (#196). ``fresh`` asks
+    for a recent Google sign-in again under the work lock (#547).
     """
     receipt = confirm_intent(
         request,
@@ -169,6 +171,7 @@ def confirm(
         request_schema=request_schema,
         capability=capability,
         attach=attach,
+        fresh=fresh,
     )
     admin_navigation.remember_origin(request, receipt.request_id)
     return HttpResponseRedirect(
@@ -188,6 +191,7 @@ def confirm_intent(
     request_schema=None,
     capability=Capability.CONFIGURE,
     attach=None,
+    fresh=False,
 ):
     """Admit one exact intent; identical retries return the original receipt.
 
@@ -198,7 +202,10 @@ def confirm_intent(
     admitted with, so the two cannot diverge if the capability matrix
     changes. `attach(request, extra)` records an editor's companion rows from
     the signed preview inside the request's own durable transaction, and is
-    never called on a retry. Returns the request's ``RequestStatus``.
+    never called on a retry. With ``fresh``, the sign-in must also still be
+    fresh (``require_fresh``) when rechecked under the work lock, so a
+    sign-in that ages while waiting for the lock is refused. Returns the
+    request's ``RequestStatus``.
     """
     if len(token) > 256_000:
         raise ValueError("Invalid configuration preview.")
@@ -213,9 +220,11 @@ def confirm_intent(
     def admit():
         """The owning work lock persists until intake's durable transaction commits."""
         with work_transaction():
-            fresh = authenticated_admin(caller, store=service.store, read_only=True)
-            if not allows(fresh, capability) or fresh.identity != actor.identity:
+            current = authenticated_admin(caller, store=service.store, read_only=True)
+            if not allows(current, capability) or current.identity != actor.identity:
                 return False
+            if fresh:
+                require_fresh(caller)
             configuration, snapshot = current_scope(service)
             existing = ConfigurationChangeRequest.objects.filter(
                 actor_id=actor.identity, request_key=key
@@ -280,3 +289,21 @@ def error_response(error):
     return validation_response(
         [FieldError(code)], status=status, refusal=getattr(error, "refusal", None)
     )
+
+
+def step_up_response(return_path=None, return_label=None):
+    """Refuse a stale sign-in with the step-up page; nothing was done.
+
+    A browser sees "Confirm it's you" with the "Confirm with Google" step-up
+    (``web.error_pages``); a script gets the closed JSON denial. A POST-only
+    route names ``return_path``, the Admin page its form came from, so the
+    step-up returns there with a GET rather than to the POST URL, and names it
+    in ``return_label`` (the page's name) so the page says where it returns.
+    The page revalidates the path with ``admin_return_path``.
+    """
+    response = error_response(
+        FreshAuthenticationRequired("Please authenticate with Google again.")
+    )
+    response.stewardship_return_path = return_path
+    response.stewardship_return_label = return_label
+    return response

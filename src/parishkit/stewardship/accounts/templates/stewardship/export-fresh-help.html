@@ -1,0 +1,5 @@
+{% load i18n %}{% comment %}
+  The fresh sign-in hint for the export panels whose file holds Family codes
+  or financial detail (#547). It is always shown, since a sign-in can age
+  while the page is open. LOCAL has no Google sign-in (#649).
+{% endcomment %}<p class="help">{% if local_environment %}{% translate "For security, queuing this export needs a sign-in from the last five minutes. If yours is older, you are asked to confirm your sign-in first and nothing is queued: when you come back, apply your filters again and queue the export again." %}{% else %}{% translate "For security, queuing this export needs a Google sign-in from the last five minutes. If yours is older, you are asked to confirm it's you with Google first and nothing is queued: when you come back, apply your filters again and queue the export again." %}{% endif %}</p>

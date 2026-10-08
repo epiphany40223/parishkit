@@ -83,7 +83,7 @@ def test_report_decryption_failure_returns_503_before_headers(report, monkeypatc
     assert not response.streaming
     assert b"private key" not in response.content
     assert report_outcomes() == [
-        {"outcome": "started"},
+        {"outcome": "started", "page": 1},
         {"outcome": "failed", "count": 0},
     ]
 
@@ -96,7 +96,7 @@ def test_abandoned_report_records_server_failure_after_guard_release(report):
     response.close()
     response.close()
     assert report_outcomes() == [
-        {"outcome": "started"},
+        {"outcome": "started", "page": 1},
         {"outcome": "failed", "count": 2},
     ]
 
@@ -118,7 +118,7 @@ def test_report_reauthorizes_after_outer_admission(report, monkeypatch):
     assert response.status_code == 503
     assert PortalSession.objects.get().revoked_at is not None
     assert report_outcomes() == [
-        {"outcome": "started"},
+        {"outcome": "started", "page": 1},
         {"outcome": "failed", "count": 0},
     ]
 

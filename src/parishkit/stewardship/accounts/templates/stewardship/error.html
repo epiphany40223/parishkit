@@ -10,8 +10,8 @@
   <h1>{{ title }}</h1>
   {% if reauthenticate %}
   <p class="notice" role="alert">{% if local_environment %}{% translate "For your security, confirm your sign-in before this action." %}{% else %}{% translate "For your security, confirm it's you with Google before this action." %}{% endif %}</p>
-  {% if submitted or not local_environment %}<p>{% if not local_environment %}{% translate "Google may ask you to choose your account or sign in." %} {% translate "You will then return to this page." %}{% endif %}{% if submitted %} {% translate "Nothing was done or sent." %} {% if inputs_kept %}{% translate "What you chose is kept and will be shown again when you return, for you to confirm." %}{% else %}{% translate "Anything you entered on the form was not saved, so enter it again after you return." %}{% endif %}{% endif %}</p>{% endif %}
-  {% include 'stewardship/components/reauthenticate.html' with next=next %}
+  {% if submitted or not local_environment %}<p>{% if not local_environment %}{% translate "Google may ask you to choose your account or sign in." %} {% if next_label %}{% blocktranslate with page=next_label %}You will then return to {{ page }}.{% endblocktranslate %}{% else %}{% translate "You will then return to this page." %}{% endif %}{% endif %}{% if submitted %} {% translate "Nothing was done or sent." %} {% if inputs_kept %}{% translate "What you chose is kept and will be shown again when you return, for you to confirm." %}{% else %}{% translate "Anything you entered on the form was not saved, so enter it again after you return." %}{% endif %}{% endif %}</p>{% endif %}
+  {% include 'stewardship/components/reauthenticate.html' with next=next next_label=next_label %}
   {% else %}
   <div class="notice notice-error" role="alert"><ul>{% for message in error_messages %}<li>{{ message }}</li>{% endfor %}</ul></div>
   <p>{{ guidance }}</p>

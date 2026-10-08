@@ -784,9 +784,20 @@ the file's columns for the current filters and mailing-columns choice. Exports u
 pipeline, including its explicitly accepted plaintext storage and owner-only
 permissions under the
 [export retention policy](../operations/spec.md#temporary-retention-and-housekeeping).
-Interactive report execution and exports are audited at report,
-campaign, actor, filter, and row-count granularity without copying codes into
-the audit payload. Exact-code-search audit records omit the raw filter and store
+Opening the page needs no fresh sign-in, but queuing an export, or
+regenerating an expired one, needs a Google sign-in within the last five
+minutes, because the file holds every listed Family's code
+([#547](https://github.com/epiphany40223/parishkit/issues/547)). A stale
+sign-in gets the
+[step-up](../architecture/spec.md#identity-and-session-security), which
+queues nothing and returns to the directory (or the export's status page);
+the filters, being private form state, are applied again. The export panel
+says so before the Administrator or Staff member queues one. The code-only
+Family codes listing, which serves when no usable ParishSoft data exists,
+needs the same fresh sign-in on every page it shows, and its audit records
+the page number. Interactive report execution and exports are audited at
+report, campaign, actor, filter, and row-count granularity without copying
+codes into the audit payload. Exact-code-search audit records omit the raw filter and store
 only a keyed fingerprint when correlation is operationally necessary.
 
 ### Mailing columns
@@ -1019,7 +1030,9 @@ Filters include active/inactive, first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method. Summary shows
 Family count, annual total, frequency distribution, share-method counts and the
 number of Families that cannot contribute financially; such a Family's
-frequency reads "Cannot contribute". Exports are CSV, XLSX, and PDF. No
+frequency reads "Cannot contribute". Exports are CSV, XLSX, and PDF; queuing
+or regenerating one needs the same fresh sign-in as a
+[Family directory](#family-directory) export, returning to this report. No
 Ministry leader receives aggregate or Family financial detail.
 
 ## Talents and limitations
