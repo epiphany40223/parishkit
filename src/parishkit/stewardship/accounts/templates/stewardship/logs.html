@@ -18,7 +18,7 @@
 <datalist id="log-events">{% for key in events %}<option value="{{ key }}">{% endfor %}</datalist>
 <div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="log-start">{% translate "From" %}</label><input id="log-start" type="date" name="start" value="{{ query.start }}" aria-describedby="log-zone-help" data-browser-zone-field></div>
 <div class="short" data-missing-hint="{% translate 'Enter a whole Through date, or clear it.' %}"><label for="log-end">{% translate "Through" %}</label><input id="log-end" type="date" name="end" value="{{ query.end }}" aria-describedby="log-zone-help" data-browser-zone-field></div>
-<button type="submit" aria-describedby="log-filter-hint">{% translate "Apply filters" %}</button>
+{% button type="submit" aria-describedby="log-filter-hint" %}{% translate "Apply filters" %}{% endbutton %}
 </div>
 <p class="help" id="log-zone-help" data-browser-zone-note hidden>{% translate "From and Through are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
 <p class="help" id="log-filter-hint" data-complete-hint hidden></p>
@@ -34,7 +34,7 @@
 <form id="table-export" data-table-sync method="post" action="{% url 'admin:logs_export' %}" class="filter-bar" data-submit-repeatable>{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <div class="short"><label for="log-export-format">{% translate "File format" %}</label><select id="log-export-format" name="format"><option value="csv">{% translate "CSV (spreadsheet)" %}</option><option value="jsonl">{% translate "JSON Lines" %}</option></select></div>
 <div class="short"><label for="log-export-timezone">{% translate "Times in" %}</label><select id="log-export-timezone" name="timezone" data-browser-timezone><option value="UTC">UTC</option></select></div>
-<button type="submit">{% translate "Download" %}</button></form></details>
+{% button type="submit" %}{% translate "Download" %}{% endbutton %}</form></details>
 <p class="help">{% translate "Pages show the log as it was when you applied these filters; entries recorded since then appear when you apply the filters again." %}</p>
 <div id="log-depth-notice" data-table-sync>{% if depth_limited %}<p class="notice" data-depth-limited>{% translate "Paging reaches only the first 10,000 entries in this order, so the last of those pages is shown. Choose a narrower date range, or sort by Time the other way, to see the rest." %}</p>{% endif %}</div>
 <div id="{{ table.anchor }}" data-table-region>

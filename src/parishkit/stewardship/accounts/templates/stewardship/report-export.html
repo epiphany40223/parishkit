@@ -14,25 +14,25 @@
 <section class="panel export-live" aria-live="polite" data-live-status="export" data-export-state="{{ status.state }}"{% if status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %} data-live-pending{% endif %}>
 {% if status.state == 'ready' %}
   <p class="export-state export-state-ready" role="status">{% translate "Your file is ready." %}</p>
-  <form method="post" action="{% url 'admin:report_export_download' job.pk %}" data-live-autosubmit>{% csrf_token %}<button type="submit" class="button-large">{% translate "Download export" %}</button></form>
+  <form method="post" action="{% url 'admin:report_export_download' job.pk %}" data-live-autosubmit>{% csrf_token %}{% button type="submit" variant="large" %}{% translate "Download export" %}{% endbutton %}</form>
   <p class="help">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
 {% elif status.state == 'queued' or status.state == 'running' or status.state == 'retry_wait' %}
   <p class="export-state export-state-pending" role="status"><span class="spinner" aria-hidden="true"></span> {% if status.state == 'retry_wait' %}{% translate "Trying again in a moment…" %}{% elif wait %}{% include 'stewardship/queue-wait.html' %}{% else %}{% translate "Preparing your file…" %}{% endif %}</p>
   <p class="help">{% translate "This usually takes a few seconds. This page updates by itself and the download starts when the file is ready." %}</p>
 {% elif status.state == 'failed' or status.state == 'abandoned' %}
   <p class="notice notice-error export-state" role="alert">{% translate "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator." %}</p>
-  <form method="post" action="{% url 'admin:report_export_retry' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Retry export" %}</button></form>
+  <form method="post" action="{% url 'admin:report_export_retry' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable %}{% translate "Retry export" %}{% endbutton %}</form>
 {% elif status.state == 'cancelled' %}
   <p class="export-state" role="status">{% translate "This export was cancelled." %}</p>
 {% elif status.state == 'expired' %}
   <p class="export-state" role="status">{% translate "The generated file has expired." %}</p>
   <p>{% translate "Select Regenerate to make the file again from the same data, filters, format and time zone as the original, with the current parish logo. It does not pick up newer campaign data." %}</p>
   <p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
-  <form method="post" action="{% url 'admin:report_export_regenerate' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Regenerate expired file" %}</button></form>
+  <form method="post" action="{% url 'admin:report_export_regenerate' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable %}{% translate "Regenerate expired file" %}{% endbutton %}</form>
 {% else %}
   <p class="export-state" role="status">{{ status.state }}</p>
 {% endif %}
-{% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}">{% csrf_token %}<button type="submit" class="button-secondary"{% if not mutable %} disabled{% endif %}>{% translate "Cancel export" %}</button></form>{% endif %}
+{% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}">{% csrf_token %}{% button type="submit" variant="secondary" enabled=mutable %}{% translate "Cancel export" %}{% endbutton %}</form>{% endif %}
 {% if status.expires_at %}<p class="help">{% translate "File available until" %} <time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time>.</p>{% endif %}
 </section>
 {% if testing_codes %}<p class="notice" data-testing-codes>{% translate "These are the live codes; they work only after go-live. To try the Family form now, send yourself a test invitation." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}</p>{% endif %}

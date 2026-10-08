@@ -1,9 +1,9 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Share options" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Share options" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
 {% include 'stewardship/share-fields.html' %}
-<button type="submit">{% translate "Preview changes" %}</button></form>
+{% button type="submit" %}{% translate "Preview changes" %}{% endbutton %}</form>
 {% endblock %}

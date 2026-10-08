@@ -25,7 +25,7 @@
 <label><input type="checkbox" name="followed_up" value="yes"{% if item.followed_up_at %} checked{% endif %}> {% translate "Follow-up completed" %}</label>
 {% if item.followed_up_at %}<div data-show-when="followed_up!=yes" data-required-when-shown="confirm_clear" data-missing-hint="{% translate 'Tick the confirmation to reopen this follow-up.' %}"><label><input type="checkbox" name="confirm_clear" value="yes"> {% translate "If clearing completion, I confirm that this work should be reopened. The previous completion stays in history." %}</label></div>{% endif %}
 <label for="staff-notes">{% translate "Staff notes" %}</label><textarea id="staff-notes" name="notes" maxlength="5000" rows="6">{{ item.notes }}</textarea>
-<button type="submit" aria-describedby="information-save-hint">{% translate "Save follow-up" %}</button>
+{% button type="submit" aria-describedby="information-save-hint" %}{% translate "Save follow-up" %}{% endbutton %}
 <p class="help" id="information-save-hint" data-complete-hint hidden></p></fieldset></form>
 {# The history pages in place by itself (data-in-place-only), so it never replaces the form above or what the reader has typed; a Save still refreshes the whole panel (#519). #}
 <div id="information-history" data-in-place-region>
@@ -54,7 +54,7 @@
 <label for="start">{% translate "Submitted on or after" %}</label><input id="start" type="date" name="start" value="{{ query.start }}">
 <label for="end">{% translate "Submitted on or before" %}</label><input id="end" type="date" name="end" value="{{ query.end }}">
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-<button type="submit">{% translate "Apply filters" %}</button></form>
+{% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}</form>
 <p id="information-matching" data-table-sync>{% translate "Matching requests:" %} {{ total|number }}.</p>
 <section aria-labelledby="information-export-heading">
 <h2 id="information-export-heading">{% translate "Export complete results" %}</h2>
@@ -67,7 +67,7 @@
 <label for="information-format">{% translate "Export format" %}</label><select id="information-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
 <div class="label-row"><label for="information-export-timezone" id="information-export-timezone-label">{% translate "Export timezone" %}</label>{% translate "Your browser's time zone is selected when your browser allows it; otherwise UTC is selected. You can change it before exporting." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="information-export-timezone-tip" tip_label_id="information-export-timezone-label" tip_text=tip %}</div><select id="information-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 <label><input type="checkbox" name="history" value="yes"> {% translate "Include complete Staff workflow history" %}</label>
-<button type="submit">{% translate "Queue complete export" %}</button></fieldset></form></section>
+{% button type="submit" %}{% translate "Queue complete export" %}{% endbutton %}</fieldset></form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Information result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}

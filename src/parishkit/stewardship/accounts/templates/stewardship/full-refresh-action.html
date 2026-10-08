@@ -1,5 +1,5 @@
-{% load i18n %}{% comment %}
+{% load i18n stewardship %}{% comment %}
   The one-click manual full refresh. It posts to the refresh page's own action
   (same admission, Administrator capability and CSRF checks) and lands on the
   run's progress page. Shown once per status block, never on the refresh page.
-{% endcomment %}{% if can_refresh and refresh_key and not on_refresh_page %}<form method="post" action="{% url 'admin:source_refresh' %}" class="inline-action">{% csrf_token %}<input type="hidden" name="request_key" value="{{ refresh_key }}"><button type="submit" data-submit-waits>{% translate "Run a full refresh now" %}</button> <span class="help">{% translate "Re-reads everything from ParishSoft; usually a few minutes." %}</span></form>{% endif %}
+{% endcomment %}{% if can_refresh and refresh_key and not on_refresh_page %}<form method="post" action="{% url 'admin:source_refresh' %}" class="inline-action">{% csrf_token %}<input type="hidden" name="request_key" value="{{ refresh_key }}">{% button type="submit" data-submit-waits %}{% translate "Run a full refresh now" %}{% endbutton %} <span class="help">{% translate "Re-reads everything from ParishSoft; usually a few minutes." %}</span></form>{% endif %}

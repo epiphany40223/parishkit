@@ -21,7 +21,7 @@
 <div class="label-row"><label for="timezone" id="timezone-label">{% translate "Report and export timezone" %}</label>{% translate "Campaign dates stay in the campaign's time zone. Times on this page use your computer's time zone when your browser allows it, otherwise UTC. Exports use the time zone chosen here." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="timezone-tip" tip_label_id="timezone-label" tip_text=tip %}</div>
 <select id="timezone" name="timezone">{% for zone in timezones %}<option value="{{ zone }}"{% if zone == query.timezone %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 <input type="hidden" name="size" value="{{ query.size }}"><input type="hidden" name="sort" value="{{ query.sort }}">
-<button type="submit">{% translate "Apply report options" %}</button>
+{% button type="submit" %}{% translate "Apply report options" %}{% endbutton %}
 </form>
 <section class="panel" id="participation-statistics" data-in-place-region><h2>{% translate "Current active population statistics" %}</h2>
 <p>{% translate "Families eligible right now and their latest answers." %}</p>
@@ -62,7 +62,7 @@
 <form method="post" action="{% url 'admin:report_export_create' campaign.pk %}">{% csrf_token %}
 <input type="hidden" name="fact_set_id" value="{{ chart.fact_set_id }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ export_key }}">
 <label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="png">PNG</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
-<button type="submit"{% if not export_allowed %} disabled{% endif %}>{% translate "Generate export" %}</button></form>
+{% button type="submit" enabled=export_allowed %}{% translate "Generate export" %}{% endbutton %}</form>
 {% else %}<p>{% translate "Exports of the chart become available once a complete chart has been calculated." %}</p>{% endif %}
 <h3>{% translate "Export with the latest data" %}</h3>
 {% if selection.expected %}
@@ -72,7 +72,7 @@
 <form data-submit-waits method="post" action="{% url 'admin:report_exact_create' campaign.pk %}">{% csrf_token %}
 <input type="hidden" name="population_scope" value="{{ query.scope }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ exact_key }}">
 <label for="exact-format">{% translate "Latest-data export format" %}</label><select id="exact-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="png">PNG</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
-<button type="submit"{% if not export_allowed %} disabled{% endif %}>{% translate "Queue export with the latest data" %}</button></form>
+{% button type="submit" enabled=export_allowed %}{% translate "Queue export with the latest data" %}{% endbutton %}</form>
 {% else %}<p>{% translate "The data for a new export is not available right now, so no export can be queued yet." %}</p>{% endif %}
 <h3>{% translate "Your recent latest-data exports" %}</h3>
 <ul>{% for job in recent_exact_exports %}<li><a href="{% url 'admin:report_exact' job.pk %}">{{ job.format|upper }} — <time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></a></li>{% empty %}<li>{% translate "No latest-data exports yet. Queue one above." %}</li>{% endfor %}</ul>

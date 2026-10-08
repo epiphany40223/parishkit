@@ -23,7 +23,7 @@
 <label for="ministry-end">{% translate "Submitted on or before (parish date)" %}</label><input type="date" id="ministry-end" name="end" value="{{ query.end }}">
 {% endif %}
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-<button type="submit">{% translate "Apply filters" %}</button></form>
+{% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}</form>
 {% comment %}The summary is a paged, sortable shared table only in the campaign-wide
 view; one Ministry's view lists it plainly, so the wrapper is a region only then,
 and otherwise a summary that follows the filters (#484).{% endcomment %}
@@ -32,7 +32,7 @@ and otherwise a summary that follows the filters (#484).{% endcomment %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministry summary' %}"><table><caption>{% translate "Current Ministry request summary" %}</caption>
 <thead><tr>{% translate "Ministry" as heading %}{% if ministry_id %}<th scope="col">{{ heading }}</th>{% else %}{% sort_heading table "ministry" heading %}{% endif %}<th scope="col">{% translate "Joining" %}</th><th scope="col">{% translate "Leaving" %}</th><th scope="col">{% translate "Unresolved" %}</th><th scope="col">{% translate "Follow-up progress" %}</th></tr></thead>
 <tbody>{% for ministry in summaries %}<tr><td>{{ ministry.name }} — {% translate "DUID" %} {{ ministry.duid|duid }}<br>{% if ministry.active is None %}{% translate "Not in ParishSoft data" %}{% elif ministry.active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}{% if ministry.in_campaign is False %}<br>{% translate "No longer in this campaign" %}{% endif %}</td>
-<td><form method="post" action="{% url 'admin:ministry_joiners' campaign_id %}">{% csrf_token %}<input type="hidden" name="ministry" value="{{ ministry.duid }}"><button type="submit">{{ ministry.joining|number }} {% translate "join requests" %}</button></form></td><td><form method="post" action="{% url 'admin:ministry_leavers' campaign_id %}">{% csrf_token %}<input type="hidden" name="ministry" value="{{ ministry.duid }}"><button type="submit">{{ ministry.leaving|number }} {% translate "leave requests" %}</button></form></td><td>{{ ministry.unresolved|number }}</td><td>{{ ministry.progress }}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No matching authorized Ministries." %}</td></tr>{% endfor %}</tbody></table></div>
+<td><form method="post" action="{% url 'admin:ministry_joiners' campaign_id %}">{% csrf_token %}<input type="hidden" name="ministry" value="{{ ministry.duid }}">{% button type="submit" %}{{ ministry.joining|number }} {% translate "join requests" %}{% endbutton %}</form></td><td><form method="post" action="{% url 'admin:ministry_leavers' campaign_id %}">{% csrf_token %}<input type="hidden" name="ministry" value="{{ ministry.duid }}">{% button type="submit" %}{{ ministry.leaving|number }} {% translate "leave requests" %}{% endbutton %}</form></td><td>{{ ministry.unresolved|number }}</td><td>{{ ministry.progress }}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No matching authorized Ministries." %}</td></tr>{% endfor %}</tbody></table></div>
 {% if not ministry_id %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}{% endif %}
 </div>
 {% if ministry_id %}
@@ -60,7 +60,7 @@ and otherwise a summary that follows the filters (#484).{% endcomment %}
 <input type="hidden" name="ministry" value="{{ ministry_id|default_if_none:'' }}"><input type="hidden" name="action" value="{{ action|default:'summary' }}"><input type="hidden" name="request_key" value="{{ export_key }}">
 <label for="ministry-export-format">{% translate "Export format" %}</label><select id="ministry-export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}
 <label for="ministry-export-timezone">{% translate "Export timezone" %}</label><select id="ministry-export-timezone" name="browser_timezone" data-browser-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-<button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Queue complete export" %}</button></form></section>
+{% button type="submit" enabled=mutable %}{% translate "Queue complete export" %}{% endbutton %}</form></section>
 {% if not ministry_id %}<section aria-labelledby="ministry-packet-heading"><h2 id="ministry-packet-heading">{% translate "Follow-up packet" %}</h2>
 <p>{% translate "One printable packet with a section for each Ministry: its chairs, and one row for each latest join or leave request with recorded email and phone contact dates and the outcome. Blank cells are left for completion by hand." %}</p>
 <p class="notice">{% translate "Sensitive parish information. Download only to a trusted device and share only with authorized recipients. Ministry leaders receive only published email and phone values." %}</p>
@@ -75,5 +75,5 @@ and otherwise a summary that follows the filters (#484).{% endcomment %}
 <label for="ministry-packet-format">{% translate "Packet format" %}</label><select id="ministry-packet-format" name="format"><option value="pdf">PDF</option><option value="xlsx">XLSX</option><option value="csv">CSV</option></select>{% include 'stewardship/export-dates-help.html' %}
 <label for="ministry-packet-timezone">{% translate "Packet timezone" %}</label><select id="ministry-packet-timezone" name="browser_timezone" data-browser-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 </fieldset>
-<button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Queue follow-up packet" %}</button></form></section>{% endif %}
+{% button type="submit" enabled=mutable %}{% translate "Queue follow-up packet" %}{% endbutton %}</form></section>{% endif %}
 {% endblock %}

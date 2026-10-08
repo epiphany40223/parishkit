@@ -15,7 +15,7 @@
 </section>
 <form method="post" action="{% url 'admin:source_refresh' %}">
   {% csrf_token %}<input type="hidden" name="request_key" value="{{ request_key }}">
-  <button type="submit">{% translate "Refresh now" %}</button>
+  {% button type="submit" %}{% translate "Refresh now" %}{% endbutton %}
   <a href="{% url 'admin:index' %}">{% translate "Cancel" %}</a>
 </form>
 {% endblock %}

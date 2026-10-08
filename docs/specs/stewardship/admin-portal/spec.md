@@ -1490,6 +1490,33 @@ a phone-width page scroll sideways; a table cell grows to fit its buttons,
 and a wide table scrolls inside its own region. A browser test checks the
 buttons and headings on representative pages at 320 px and 1280 px.
 
+### Shared visual style
+
+The portal and the emails share one visual style
+([#732](https://github.com/epiphany40223/parishkit/issues/732)):
+
+- **Design tokens:** `web/design_tokens.py` is the one source of the
+  colours, corner radii, fonts and button shape. The portal stylesheet
+  declares them as CSS custom properties, and a unit test fails if the two
+  disagree, including any `var()` fallback in another stylesheet. Email
+  components read the same module and inline the values, because mail
+  programs cannot load the stylesheet.
+- **Buttons:** templates draw every button, and every link styled as one,
+  with the `{% button %}` tag. Its variants are primary (the default),
+  secondary, large and link. It renders the stylesheet's classes and keeps
+  each attribute in the order the template gives it, so in-place controls
+  keep their `data-` attributes. A guard test counts raw button markup in
+  every template against a list of reviewed exceptions that may only
+  shrink.
+- **Email buttons:** `email_button()` renders the same primary and
+  secondary buttons for email: a one-cell table with inline styles from the
+  tokens, `bgcolor`, and Outlook padding. The label is real text, so the
+  button reads with images off and in an inverted dark mode. It links only
+  to absolute http(s) addresses.
+
+Notices, cards and headings, and each email's move to the shared
+components, follow in later slices of #732.
+
 ## Background indicators
 
 Admins have two always-visible indicators:

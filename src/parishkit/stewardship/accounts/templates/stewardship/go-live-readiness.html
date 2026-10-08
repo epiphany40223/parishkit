@@ -44,14 +44,14 @@
 <section class="panel"><h2>{% translate "Public web address check" %}</h2>
 <p>{% translate "Checks that the site's configured public web address (URL) and its DNS record are correct. It sends no email and does not start cleanup." %}</p>
 {% if origin_verified is True %}<p role="status">{% translate "The public web address passed the URL and DNS checks. Still check separately that the site's HTTPS certificate works and that the site opens in a browser." %}</p>{% elif origin_verified is False %}<p role="alert">{% translate "The public web address check failed or timed out. Check the site's configured URL and its DNS record, then try again." %}</p>{% endif %}
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="verify"><button type="submit">{% translate "Check readiness and public web address" %}</button></form>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="verify">{% button type="submit" %}{% translate "Check readiness and public web address" %}{% endbutton %}</form>
 </section>
 {% if cleanup_token %}
 <section class="panel"><h2>{% translate "Start irreversible Testing cleanup" %}</h2>
 <p>{% translate "Starting cleanup ends Testing access to the Family form (test links and codes stop working) and blocks new Testing work. Deleted data cannot be restored; cancelling later lets Testing work start again but does not bring deleted data back. This does not take the campaign live." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="cleanup"><input type="hidden" name="preview_token" value="{{ cleanup_token }}">
 <label><input type="checkbox" name="acknowledge" value="yes" required data-acknowledgment> {% translate "I acknowledge that deleting the inventoried Testing data is irreversible." %}</label>
-<button type="submit">{% translate "Start Testing cleanup" %}</button></form>
+{% button type="submit" %}{% translate "Start Testing cleanup" %}{% endbutton %}</form>
 </section>
 {% endif %}
 <p><a href="">{% translate "Refresh readiness preview" %}</a></p>

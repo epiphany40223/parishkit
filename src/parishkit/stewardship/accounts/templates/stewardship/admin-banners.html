@@ -28,8 +28,8 @@
   <strong id="critical-events-title">{% if admin_chrome.critical_all_ended %}{% translate "Critical problems in the past 24 hours (all have ended)" %}{% else %}{% translate "Critical problems in the past 24 hours" %}{% endif %}</strong>
   <ul>{% for group in admin_chrome.critical_events %}<li>{{ group.label }}{% if group.count > 1 %} ({{ group.count|number }}×){% endif %}{% if group.ended_at %} <span class="critical-ended">{% blocktranslate with when=group.ended_at|instant %}— ended <time data-local-instant datetime="{{ when }}">{{ when }}</time>{% endblocktranslate %}</span>{% endif %}</li>{% endfor %}</ul>
   <div class="actions">
-    <form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="critical" value="yes">{% if admin_chrome.critical_since_day %}<input type="hidden" name="start" value="{{ admin_chrome.critical_since_day }}" data-zone-dependent><input type="hidden" name="zone" value="" data-browser-zone>{% endif %}<button type="submit" class="button-secondary">{% translate "View these events in System logs" %}</button></form>
-    <form method="post" action="{% url 'admin:critical_events_acknowledge' %}#critical-events" data-in-place="critical-acknowledge" data-in-place-anywhere data-in-place-message="{% translate 'Critical problems acknowledged.' %}">{% csrf_token %}<input type="hidden" name="shown" value="{{ admin_chrome.critical_shown }}"><button type="submit">{% translate "Acknowledge" %}</button></form>
+    <form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="critical" value="yes">{% if admin_chrome.critical_since_day %}<input type="hidden" name="start" value="{{ admin_chrome.critical_since_day }}" data-zone-dependent><input type="hidden" name="zone" value="" data-browser-zone>{% endif %}{% button type="submit" variant="secondary" %}{% translate "View these events in System logs" %}{% endbutton %}</form>
+    <form method="post" action="{% url 'admin:critical_events_acknowledge' %}#critical-events" data-in-place="critical-acknowledge" data-in-place-anywhere data-in-place-message="{% translate 'Critical problems acknowledged.' %}">{% csrf_token %}<input type="hidden" name="shown" value="{{ admin_chrome.critical_shown }}">{% button type="submit" %}{% translate "Acknowledge" %}{% endbutton %}</form>
   </div>
   <p><a href="{% url 'admin:system_health' %}">{% translate "See what needs attention now in System health" %}</a></p>
   <p class="help">{% translate "Acknowledging hides the problems listed here for every Administrator; a critical problem recorded after this page was shown still appears. It is recorded in the audit log." %}{% if admin_chrome.critical_count > admin_chrome.critical_limit %} {% blocktranslate with limit=admin_chrome.critical_limit|number %}Only the oldest {{ limit }} are acknowledged at a time, so this notice stays for the rest; acknowledge again to clear them.{% endblocktranslate %}{% endif %}</p>
@@ -55,14 +55,14 @@
         <p class="session-dialog-countdown" aria-hidden="true" data-session-countdown></p>
         <p class="session-dialog-error" role="alert" data-session-error hidden>{% translate "The server could not be reached. Check your connection and try again." %}</p>
         <div class="session-dialog-actions">
-          <button type="button" data-session-stay>{% translate "Stay signed in" %}</button>
-          <a class="button button-secondary" href="{% url 'admin:login' %}" data-session-signin hidden>{% translate "Sign in again" %}</a>
+          {% button type="button" data-session-stay %}{% translate "Stay signed in" %}{% endbutton %}
+          {% url 'admin:login' as button_href %}{% button variant="secondary" href=button_href data-session-signin hidden %}{% translate "Sign in again" %}{% endbutton %}
         </div>
       </div>
       <div id="session-expired" hidden>
         <h2 id="session-expired-title">{% translate "You've been signed out" %}</h2>
         <p>{% translate "For security, you were signed out after a period of inactivity. Any change you had not saved was not kept." %}</p>
-        <div class="session-dialog-actions"><a class="button" href="{% url 'admin:login' %}">{% translate "Sign in again" %}</a></div>
+        <div class="session-dialog-actions">{% url 'admin:login' as button_href %}{% button variant="primary" href=button_href %}{% translate "Sign in again" %}{% endbutton %}</div>
       </div>
     </form>
     {% comment %}Inside the modal: a modal dialog makes the rest of the page inert, so a live region outside it would go unannounced.{% endcomment %}

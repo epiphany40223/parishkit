@@ -9,5 +9,5 @@ __prefix__ names become the next index) and reveals the button, so several new
 schedules can be saved in one submission. Without JavaScript the button stays
 hidden and each save offers one blank row, as before.{% endcomment %}
 <template data-schedule-template>{% include 'stewardship/schedule-row.html' with form=schedules.empty_form number=0 %}</template>
-<p class="schedule-add" data-schedule-add-row hidden><button type="button" class="button-secondary" data-schedule-add>{% translate "Add another schedule" %}</button></p>
+<p class="schedule-add" data-schedule-add-row hidden>{% button type="button" variant="secondary" data-schedule-add %}{% translate "Add another schedule" %}{% endbutton %}</p>
 <p class="visually-hidden" role="status" data-schedule-status></p>

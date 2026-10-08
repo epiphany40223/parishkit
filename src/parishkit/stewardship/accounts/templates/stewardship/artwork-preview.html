@@ -6,6 +6,6 @@
 <section class="panel"><figure><img src="{% url 'admin:branding_asset' asset.pk %}" alt="" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview artwork-{{ asset.label }}"><figcaption>{{ asset.width|number }} × {{ asset.height|number }} {% translate "pixels" %}</figcaption></figure></section>
 <p>{% translate "Uploads that are never confirmed are discarded after a day." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
-<button type="submit">{% translate "Use this image" %}</button></form>
+{% button type="submit" %}{% translate "Use this image" %}{% endbutton %}</form>
 <p><a href="{% url 'admin:artwork_settings' %}">{% translate "Return to Campaign images" %}</a></p>
 {% endblock %}

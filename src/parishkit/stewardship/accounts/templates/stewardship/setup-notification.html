@@ -16,7 +16,7 @@
 {{ form.non_field_errors }}{{ form.preview_token.errors }}{{ form.request_key.errors }}
 <p data-mail-uncertain {% if not unknown %}hidden{% endif %}>
 {{ form.acknowledge_unknown }}<label for="{{ form.acknowledge_unknown.id_for_label }}">{{ form.acknowledge_unknown.label }}</label>{{ form.acknowledge_unknown.errors }}</p>
-{% if tested %}<p><button class="button-secondary" data-mail-send type="submit" {% if pending %}disabled{% endif %}>{% translate "Send another test" %}</button></p>{% endif %}
+{% if tested %}<p>{% button variant="secondary" data-mail-send type="submit" disabled=pending %}{% translate "Send another test" %}{% endbutton %}</p>{% endif %}
 </form>
 <p data-mail-status-error hidden role="status">{% translate "Status is unavailable or setup changed. Reload this page to check the current test before sending another." %}</p>
 <h2>{% translate "Recent tests" %}</h2>

@@ -20,7 +20,7 @@
 <div class="short"><div class="label-row"><label for="directory-reach" id="directory-reach-label">{% translate "Campaign mail can reach" %}</label>{% translate "By email: the Family can get campaign email. By postal mail only: no deliverable email, but a usable mailing address. Neither: campaign mail cannot reach the Family at all." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="directory-reach-tip" tip_label_id="directory-reach-label" tip_text=tip %}</div><select id="directory-reach" name="reach"><option value="any">{% translate "Any" %}</option>{% for key,label in reaches.items %}<option value="{{ key }}"{% if query.reach == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 <div class="short"><label for="directory-mailing"><input type="checkbox" id="directory-mailing" aria-describedby="directory-mailing-help" name="mailing" value="yes"{% if mailing %} checked{% endif %}> {% translate "Include mailing columns" %}</label><p class="help" id="directory-mailing-help">{% translate "Adds addressee and mailing address columns and makes the export a mail-merge file. It does not change which Families are listed." %}</p></div>
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-<button type="submit">{% translate "Apply filters" %}</button></form>
+{% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}</form>
 <div id="directory-summary" data-table-sync>{% if mailing and unreachable_total and query.reach != 'neither' %}<p class="notice" data-unreachable-notice>{% blocktranslate count counter=unreachable_total %}Across all active Families, {{ counter }} Family has neither a deliverable email nor a usable mailing address, so no campaign mail can reach it.{% plural %}Across all active Families, {{ counter }} Families have neither a deliverable email nor a usable mailing address, so no campaign mail can reach them.{% endblocktranslate %} <a href="{{ unreachable_url }}">{% translate "View them" %}</a></p>{% endif %}
 <p>{% translate "Matching Families:" %} {{ total|number }}.</p></div>
 <details class="export-panel"><summary id="directory-export-heading">{% translate "Export complete results (CSV, XLSX or PDF)" %}</summary>
@@ -36,7 +36,7 @@
 <div><label for="directory-export-timezone">{% translate "Export timezone" %}</label><select id="directory-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select></div></div>
 <p class="help">{% translate "Your browser timezone is selected when available; without scripts, UTC is selected. You can change this selection before exporting." %}</p>
 <p class="help" id="directory-export-mailing-help" data-table-sync{% if not mailing %} hidden{% endif %}>{% translate "The CSV has one header row and then one row per Family, ready for a word processor's mail merge." %}</p>
-<button type="submit">{% translate "Queue complete export" %}</button></fieldset></form></details>
+{% button type="submit" %}{% translate "Queue complete export" %}{% endbutton %}</fieldset></form></details>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Family directory pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}

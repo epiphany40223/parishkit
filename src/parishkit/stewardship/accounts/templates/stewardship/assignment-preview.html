@@ -19,7 +19,7 @@
 <form method="post" action="{% url 'admin:assignments' %}">
   {% csrf_token %}<input type="hidden" name="action" value="confirm">
   <input type="hidden" name="preview" value="{{ preview }}">
-  <button type="submit">{% translate "Apply assignment change" %}</button>
+  {% button type="submit" %}{% translate "Apply assignment change" %}{% endbutton %}
   <a href="{% url 'admin:users' %}">{% translate "Cancel" %}</a>
 </form>
 {% endblock %}

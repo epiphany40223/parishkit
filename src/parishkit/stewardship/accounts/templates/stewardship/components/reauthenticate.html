@@ -1,4 +1,4 @@
-{% load i18n %}{% comment %}
+{% load i18n stewardship %}{% comment %}
   Step-up for fresh-authentication actions. The ordinary sign-in refreshes the
   current session in place and returns to `next`, a same-origin Admin path the
   server revalidates. Include with: next=<Admin page path to return to>,
@@ -14,5 +14,5 @@
   {% if local_environment %} ... {% else %} branch.
 {% endcomment %}{% if local_environment %}<p class="local-environment-step-up" data-local-step-up="{{ next }}">{% translate "To confirm, run" %} <code>tools/stewardship-local.sh sign-in --email you@example.org</code> {% translate "on the laptop again and open the printed link in this browser." %} {% if next_label %}{% blocktranslate with page=next_label %}It refreshes this sign-in in place and takes you to {{ page }}.{% endblocktranslate %}{% else %}{% translate "It refreshes this sign-in in place and brings you back to this page." %}{% endif %}</p>{% else %}<form method="post" action="{% url 'admin:login' %}">
   {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
-  <button type="submit">{% translate "Confirm with Google" %}</button>
+  {% button type="submit" %}{% translate "Confirm with Google" %}{% endbutton %}
 </form>{% endif %}
