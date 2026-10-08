@@ -23,12 +23,17 @@ TEMPLATES = (
     Path(__file__).parents[2]
     / "src/parishkit/stewardship/accounts/templates/stewardship"
 )
-# Family-facing pages have their own help rules; every other page is Admin
-# (including the setup wizard and the Admin's Family portal maintenance page).
+# Family-facing and public pages have their own help rules; every other page
+# is Admin (including the setup wizard). The maintenance page is what
+# parishioners see while an Administrator has closed the Family portal, and
+# the unavailable-file page is what anyone opening a deleted hosted file
+# sees; neither is an Admin page (the same list as test_admin_javascript_gate).
 FAMILY_PAGES = {
     "family.html",
     "family-login.html",
+    "family-maintenance.html",
     "family-unavailable.html",
+    "hosted-file-unavailable.html",
 }
 ADMIN_TEMPLATES = sorted(
     path.name for path in TEMPLATES.glob("*.html") if path.name not in FAMILY_PAGES
@@ -109,29 +114,18 @@ INTRO_ALLOWED = {
     "setup-preview.html": 52,
     "setup-mail.html": 50,
     "setup.html": 46,
-    "delivery-refusal.html": 43,
-    "credential-selection.html": 41,
-    "backup-key.html": 39,
     "setup-notification.html": 38,
     "ministries.html": 38,
-    "production-confirmation.html": 35,
     "setup-campaign.html": 34,
     "setup-shares.html": 33,
     "export-cleanup-error.html": 31,
     "denied.html": 31,
     "go-live-families.html": 26,
-    "login.html": 25,
-    "hosted-file-delete.html": 24,
     "go-live-readiness.html": 24,
     "delivery-control.html": 24,
-    "hosted-file-unavailable.html": 22,
     "setup-content-edit.html": 21,
-    "family-maintenance.html": 21,
     "availability.html": 21,
     "go-live-links.html": 20,
-    "credential-status.html": 18,
-    "source-refresh.html": 17,
-    "artwork-remove.html": 17,
     "talents-report-error.html": 16,
     "setup-branding.html": 16,
     "delivery-error.html": 16,

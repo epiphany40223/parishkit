@@ -355,7 +355,10 @@ def test_login_page_hides_google_sign_in_only_in_local():
     assert "Sign in with Google" not in local
     assert 'action="/admin/login"' not in local
     assert "not available in the local laptop environment" in local
-    assert "<code>tools/stewardship-local.sh sign-in --email E</code>" in local
+    assert (
+        "<code>tools/stewardship-local.sh sign-in --email you@example.org</code>"
+        in local
+    )
     assert "works once, within two minutes" in local
     assert "Family campaign portal" in local
     other = render_to_string("stewardship/login.html", {})

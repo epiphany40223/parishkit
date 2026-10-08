@@ -11,7 +11,8 @@
 {% block content %}
 <p><a href="{% url 'admin:integrations' %}">{% translate "Integrations" %}</a></p>
 <h1>{{ label }}</h1>
-<p>{% translate "Every backup is encrypted with a public key before it is written. Only the matching private key, which your parish keeps off this server, can open it. This server never has, and must never be given, the private key." %}</p>
+{% aboutpage "backup-key" %}<p>{% translate "Every backup is encrypted with a public key before it is written. Only the matching private key, which your parish keeps off this server, can open it." %}</p>{% endaboutpage %}
+<p class="notice">{% translate "Never give this server the private key." %}</p>
 <section class="panel" aria-labelledby="current-key">
 <h2 id="current-key">{% translate "Key in use" %}</h2>
 {% if current.source == 'configured' %}<p>{% translate "Fingerprint:" %} <code>{{ current.fingerprint }}</code>. {% translate "Set on this page. The next backup uses it." %}</p>
