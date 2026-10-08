@@ -282,18 +282,20 @@ def test_the_limit_run_resets_on_other_outcomes_and_staff_retry():
         ("retry_failed", "permanent_failure", None, None, t[5], False),  # staff
         ("retry_unaccepted", "submitting", "r", 7, t[6], True),  # outage
     ]
-    assert limit_run(outcome[:2], limited) == (2, t[0], t[0])
-    assert limit_run(outcome[:3], limited) == (2, None, t[0])
-    assert limit_run(outcome[:4], limited) == (3, t[3], t[0])
-    assert limit_run(outcome[:5], limited) == (3, None, t[0])
+    assert limit_run(outcome[:2], limited) == (2, t[0], t[0], t[0])
+    assert limit_run(outcome[:3], limited) == (2, None, t[0], t[0])
+    assert limit_run(outcome[:4], limited) == (3, t[3], t[0], t[0])
+    assert limit_run(outcome[:5], limited) == (3, None, t[0], t[0])
     # A staff retry also restarts the outage clock (the 7-day cap).
-    assert limit_run(outcome[:4] + outcome[5:6], limited) == (3, None, None)
-    assert limit_run(outcome[:4] + outcome[5:7], limited) == (4, None, t[6])
+    assert limit_run(outcome[:4] + outcome[5:6], limited) == (3, None, None, None)
+    assert limit_run(outcome[:4] + outcome[5:7], limited) == (4, None, t[6], t[6])
     # An outage is spared from the budget and ends a limit run.
-    assert limit_run(outcome[3:4] + outcome[6:], limited) == (2, None, t[3])
+    assert limit_run(outcome[3:4] + outcome[6:], limited) == (2, None, t[3], t[3])
+    # "held" starts at the first limit or outage outcome, not any outcome.
+    assert limit_run(outcome[2:4], limited) == (1, t[3], t[2], t[3])
     # Submit events themselves (previous state pending) are not outcomes.
     pending = [("submit", "pending", "r", 1, t[0], False)]
-    assert limit_run(pending, limited) == (0, None, None)
+    assert limit_run(pending, limited) == (0, None, None, None)
 
 
 @pytest.mark.parametrize(
@@ -569,3 +571,37 @@ def test_a_long_outage_fails_no_message(dispatch_worker, monkeypatch):  # noqa: 
         deliver(harness, path, message)
     message.refresh_from_db()
     assert len(calls) == 4 and message.state == "permanent_failure"
+
+
+def test_a_throttled_alert_keeps_the_ordinary_retry_schedule(routing):  # noqa: F811
+    """Only Family mail backs off for hours when every address is throttled (#382)."""
+    from parishkit.stewardship.jobs import operational_dispatch
+
+    from .test_operational_dispatch_postgresql import allocated, begin
+    from .test_operational_dispatch_postgresql import claim as claim_alert
+
+    store = routing[0]
+    message = allocated(routing)[0].outbox
+    throttled = FamilyDeliveryResult(Status.TRANSIENT, 1, transient=(0,))
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim_alert(message, store)
+        begin(message, execution, store)
+        status = operational_dispatch.finish_submission(
+            message.pk, execution.claim, throttled
+        )
+    message.refresh_from_db()
+    assert status.state.value == "retry_wait"
+    # The ordinary first retry (30 s), not the Family throttle step (15 min).
+    assert message.not_before - timezone.now() <= timedelta(seconds=31)
+
+
+def test_a_throttled_family_message_waits_fifteen_minutes(family_mail):  # noqa: F811
+    """A Family message whose every address was throttled starts at 15 minutes."""
+    throttled = FamilyDeliveryResult(Status.TRANSIENT, 1, transient=(0,))
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(family_mail)
+        status = submit(message, family_mail, throttled)
+    message.refresh_from_db()
+    assert status.state.value == "retry_wait"
+    wait = message.not_before - timezone.now()
+    assert timedelta(minutes=14) < wait <= timedelta(minutes=15, seconds=5)

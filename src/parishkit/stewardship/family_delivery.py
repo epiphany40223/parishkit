@@ -83,7 +83,8 @@ _PROVIDER_TROUBLE = re.compile(rb"(?m)^[ \t]*4\.[34]\.[0-9]{1,3}(?=\s|$)")
 # Too many login attempts" at its login-rate limit. Both carry 4.7.0, so only
 # this documented wording tells them apart (#382). The first is a shared
 # outage, not a healthy rate limit: it must count toward the outage streak
-# that pauses sending and raises mail_provider_failed.
+# that pauses sending and raises mail_provider_failed. If Gmail ever rewords
+# it, the reply falls back to being read as the login-rate limit, as before.
 _AUTH_TROUBLE = re.compile(rb"(?i)temporary system problem")
 SENDING_LIMITS = frozenset({"daily", "rate", "message"})
 # A batched helper (#284) replaces its SMTP connection after this long or this
@@ -161,8 +162,10 @@ def sending_limit(reply, *, stage=""):
     ``stage`` is the SMTP command answered ("auth" admits the login-rate
     limit; "data" makes a rate limit "message"; "rcpt" and "data" admit
     provider trouble as "message"). Only the enhanced
-    status code at the start of a reply line is inspected; nothing from the
-    reply is kept.
+    status code at the start of a reply line is inspected, with one
+    exception: a 454 to AUTH also has its text read for Gmail's "temporary
+    system problem" wording (see _AUTH_TROUBLE). Nothing from the reply is
+    kept.
     """
     if type(reply) is not tuple or len(reply) != 2 or type(reply[0]) is not int:
         return None

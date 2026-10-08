@@ -607,8 +607,8 @@ def delivery_bulk(
         begin_submission,
         bound_dispatch,
         disposition,
+        family_retry_seconds,
         finish_submission,
-        result_retry_seconds,
     )
     from .outbox_models import OutboxMessage
 
@@ -875,7 +875,7 @@ def delivery_bulk(
                 "retryable_failure",
                 retry_seconds=item.retry_seconds
                 if held
-                else result_retry_seconds(result, item.attempt),
+                else family_retry_seconds(item.message_id, item.attempt, result),
             )
         else:
             _transition(
