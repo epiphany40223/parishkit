@@ -128,6 +128,9 @@ FROZEN = {
     "0032_load_budget_timeout.sql": (
         "d6d55496b9a36cebe8c6e795effbe55787d5c47c47d6ffeff5d1a49404871513"
     ),
+    "0033_retention_stall_wording.sql": (
+        "70188504c3ba33124f3ab0a8f495c946b3b568181da1fb0f71401e6f7fcc1e3a"
+    ),
 }
 
 

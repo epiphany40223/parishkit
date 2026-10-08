@@ -3821,7 +3821,13 @@ might be held back:
   linking the
   [ParishSoft outage runbook](../../../guides/stewardship-launch-runbooks.md#parishsoft-outage).
 - **Old copies not being removed** (`source_retention_failing`), linking the
-  same runbook section.
+  same runbook section. It opens when the last three refreshes skipped their
+  retention, or when the last 12 all ended it at a lock, statement or time
+  limit, removed nothing, and old work was left undone: a compacted copy
+  not reclaimed, or a report generation superseded by one created more than
+  two days earlier and still not removed
+  ([#833](https://github.com/epiphany40223/parishkit/issues/833)). It
+  resolves on the first refresh that is neither.
 - **An unknown Reminder WorkGroup** (#861): the newest refresh found no
   ParishSoft Family WorkGroup with the campaign's
   [Reminder WorkGroup](#parish-and-integration-configuration) name, so no
