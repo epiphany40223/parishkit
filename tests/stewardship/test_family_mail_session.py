@@ -602,14 +602,29 @@ def wait_until(condition, seconds=10):
         time.sleep(0.05)
 
 
+# What a Family mail helper's timeout records: the only records these tests
+# own (#549).
+OWN_TIMEOUT = {"what": "mail_helper", "helper": "family_delivery_worker"}
+
+
 @pytest.fixture
 def timeouts(monkeypatch):
-    """Capture every record_timeout call the real recorder makes."""
+    """Capture the Family mail helper's record_timeout calls, and only those.
+
+    The patch is process-wide and production callers import the recorder
+    lazily, so a daemon thread an earlier test left behind (a lease renewal,
+    a liveness thread) could record its own timeout into it while these
+    tests wait on helpers and the reaper (#542, #549). Keeping only the mail
+    helper's records makes "nothing recorded" mean "no record of this kind".
+    """
     calls = []
-    monkeypatch.setattr(
-        "parishkit.stewardship.audit.timeouts.record_timeout",
-        lambda event, **facts: calls.append((str(event), facts)),
-    )
+
+    def record(event, **facts):
+        """Keep the call when it is a Family mail helper's timeout."""
+        if all(facts.get(key) == value for key, value in OWN_TIMEOUT.items()):
+            calls.append((str(event), facts))
+
+    monkeypatch.setattr("parishkit.stewardship.audit.timeouts.record_timeout", record)
     return calls
 
 

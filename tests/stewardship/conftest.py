@@ -1,7 +1,9 @@
 """Shared Stewardship test hygiene."""
 
 import sys
+import threading
 from threading import Thread
+from time import monotonic
 
 import pytest
 
@@ -58,4 +60,46 @@ def _close_family_mail_sessions(monkeypatch):
     if leaked:
         pytest.fail(
             f"{leaked} FamilyMailSession(s) left a helper running after close()."
+        )
+
+
+# Background threads that record timeouts through the lazily imported
+# ``audit.timeouts.record_timeout`` (#549): a worker's lease renewal
+# (jobs/lifetime.py) and a web worker's authentication-health liveness
+# observer (runtime_auth_health.py, started by runtime_process.py). One left
+# running after its test can write into a later test's process-wide patch.
+# Family mail reapers are covered by the session fixture above.
+WATCHED_THREADS = frozenset({"stewardship-lease-renewal", "stewardship-auth-health"})
+# How long a thread that is already stopping gets to finish after its test.
+THREAD_GRACE_SECONDS = 2
+
+
+def _watched_threads():
+    """The live lease-renewal and liveness threads, by object."""
+    return {
+        thread for thread in threading.enumerate() if thread.name in WATCHED_THREADS
+    }
+
+
+@pytest.fixture(autouse=True)
+def _no_leaked_background_threads():
+    """Error a test that leaves a lease-renewal or liveness thread running.
+
+    Compares the watched threads alive before and after the test, so a
+    thread an earlier test leaked is blamed on that test only. Threads that
+    are already stopping get ``THREAD_GRACE_SECONDS`` in total to finish.
+    Autouse with no dependencies, this is set up before and torn down after
+    the test's own fixtures, so their cleanup has run when it judges.
+    """
+    before = _watched_threads()
+    yield
+    deadline = monotonic() + THREAD_GRACE_SECONDS
+    leaked = []
+    for thread in _watched_threads() - before:
+        thread.join(max(0, deadline - monotonic()))
+        if thread.is_alive():
+            leaked.append(thread.name)
+    if leaked:
+        pytest.fail(
+            f"Test left background thread(s) running: {', '.join(sorted(leaked))}."
         )
