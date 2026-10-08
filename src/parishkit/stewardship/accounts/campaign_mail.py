@@ -1,5 +1,6 @@
 """Current-preview test-mail intake, independently journalled from live schedules."""
 
+import hashlib
 from dataclasses import dataclass
 from uuid import UUID, uuid4, uuid5
 
@@ -40,7 +41,12 @@ class MailPreview:
     families_url: str | None = None
 
     def binding(self):
-        """A changed configuration, recipient or key invalidates an unsent preview."""
+        """A changed configuration, recipient or key invalidates an unsent preview.
+
+        The token is signed, not encrypted: anyone holding it can read it. So
+        it binds the Testing recipient by ``recipient_digest``, never the
+        address itself (ADM-11 PR 6b prints the token on the command line).
+        """
         row = self.row
         return {
             "actor": str(row.requested_by_id),
@@ -50,8 +56,18 @@ class MailPreview:
             "campaign": str(row.campaign_id),
             "template": str(row.template_id),
             "fingerprint": row.fingerprint,
-            "recipient": self.sample.recipient,
+            "recipient": recipient_digest(self.sample.recipient),
         }
+
+
+def recipient_digest(address):
+    """The SHA-256 of a normalized address, so a token never carries it.
+
+    Normalized as the address is compared elsewhere: surrounding spaces
+    removed and lower case, so the same configured recipient always binds
+    the same digest.
+    """
+    return hashlib.sha256((address or "").strip().lower().encode()).hexdigest()
 
 
 def live(row):
