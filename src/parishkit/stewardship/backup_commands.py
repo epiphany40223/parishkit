@@ -174,6 +174,11 @@ def _backup(config):
 
         _admit_backup_identity()
         require_current_schema()
+        from django.db import connection
+        from django.db.migrations.recorder import MigrationRecorder
+
+        # The set the schema check just admitted, for the manifest (#608).
+        applied = MigrationRecorder(connection).applied_migrations()
         recorded = {}
 
         def record(**facts):
@@ -187,7 +192,9 @@ def _backup(config):
         # Read before the run starts, so the recorded start time follows the
         # configuration the key came from (see backup_health.key_changed).
         configured = configured_recipient()
-        manifest = run_backup(configuration, record=record, recipient=configured)
+        manifest = run_backup(
+            configuration, record=record, migrations=applied, recipient=configured
+        )
     # The off-site copy runs after the lease: it reads only the finished set
     # and appends its outcome, so a slow upload never holds offline work back.
     offsite = _copy_offsite(configuration)

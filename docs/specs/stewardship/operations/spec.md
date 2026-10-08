@@ -740,7 +740,11 @@ secret-escrow bundle.
 Backup creation uses PostgreSQL-supported consistency; copying a live data
 directory is prohibited. A manifest has application version, schema migration,
 database-snapshot instant, files, and cryptographic digests. Partial uploads
-never appear as successful backup references.
+never appear as successful backup references. In v1 the manifest records the
+application version, the provisioning record's image reference and the
+applied `(app, name)` migration set, read in the backup's own session under
+the shared startup lease
+([#608](https://github.com/epiphany40223/parishkit/issues/608)).
 
 The purge web action can enqueue this service only for an Admin-owned
 PurgeRequest that has reached quiescence. The web process never receives backup
@@ -766,6 +770,14 @@ Before either restore mode begins, the operator restores the manifest-matching
 credential set from independently held secret escrow and verifies fingerprints
 without printing values. Missing escrow, recovery material, or a required
 historical data-backup key blocks restore with a sanitized diagnostic.
+
+In v1 the application/schema compatibility check is the read-only
+`pk-stewardship restore-check`, run in the target image with no database
+before anything is restored: it compares the set's migration set (from its
+manifest, or for older sets from its decrypted dump's `django_migrations`
+rows) with the image's migration files, exits 0 on an exact match and 3 on
+a mismatch, and names the set's own image to use (see the backup runbook's
+[Restore for real](../../../guides/stewardship-backup-runbook.md#restore-for-real)).
 
 Both modes verify manifest/digests, application/schema compatibility, credential
 availability, and the target-mode precondition before writing. They restore

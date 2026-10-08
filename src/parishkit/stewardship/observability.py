@@ -200,6 +200,9 @@ TIMEOUT_LIMITS = frozenset(
         # A ``pk-stewardship admin`` ``--watch`` reached its ``--timeout``
         # before the read finished (ADM-11); process log only.
         "automation_watch",
+        # ``pk-stewardship restore-check`` killed pg_restore while it read a
+        # dump's migration records (#608); process log only.
+        "restore_check_dump",
     }
 )
 
