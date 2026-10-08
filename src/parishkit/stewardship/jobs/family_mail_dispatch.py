@@ -62,6 +62,9 @@ UNSCHEDULED_PURPOSES = frozenset(
 MAX_ATTEMPTS = 5
 PROVIDER_SECONDS = 30
 RETRY_BASE_SECONDS = 30
+# Retry delays, by attempt, after every recipient was refused temporarily
+# (see result_retry_seconds): MAX_ATTEMPTS then span about 17 hours.
+RECIPIENT_RETRY_SECONDS = (900, 3600, 14400, 43200)
 DAY = timedelta(hours=24)
 
 
@@ -105,10 +108,30 @@ def retry_delay(attempt):
 
 
 def result_retry_seconds(result, attempt):
-    """A sending-limit refusal waits for the limit; other retries back off."""
+    """A sending-limit refusal waits for the limit; other retries back off.
+
+    A Family message whose every recipient was refused with a per-address
+    temporary code (such as ``450 4.2.1``, the receiving side throttling)
+    backs off on RECIPIENT_RETRY_SECONDS instead (#382): the ordinary
+    schedule spends all MAX_ATTEMPTS in about 8 minutes, too soon for the
+    receiving mailbox to recover, which mattered most for one-address
+    Families. Alert mail keeps the ordinary schedule.
+    """
     if result.limit is not None:
         return LIMIT_RETRY_SECONDS[result.limit]
+    if recipient_throttled(result):
+        return RECIPIENT_RETRY_SECONDS[min(attempt, len(RECIPIENT_RETRY_SECONDS)) - 1]
     return retry_delay(attempt)
+
+
+def recipient_throttled(result):
+    """Whether a Family result is a temporary refusal of every one of its recipients."""
+    return (
+        isinstance(result, FamilyDeliveryResult)
+        and result.status is FamilyDeliveryStatus.TRANSIENT
+        and result.recipient_count > 0
+        and len(set(result.transient)) == result.recipient_count
+    )
 
 
 def sends_in_last_day():
@@ -276,6 +299,12 @@ def budget_spent(message, result):
         return message.attempt - spared >= MAX_ATTEMPTS
     if started is None:
         return False
+    if first is not None and now - first > LIMIT_GIVE_UP_ABSOLUTE:
+        # An outage between limit refusals restarts the limit run, so the
+        # run alone could keep a message waiting about twice the absolute
+        # cap (#382); the cap also counts from the first provider outcome.
+        _log_give_up(message, now - first, "Google refused it at a sending limit")
+        return True
     waited = now - started
     if waited <= LIMIT_GIVE_UP or (
         waited <= LIMIT_GIVE_UP_ABSOLUTE
