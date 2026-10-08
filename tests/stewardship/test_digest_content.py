@@ -144,8 +144,8 @@ def test_public_digest_prose_is_supported_by_editor_and_configuration(slot):
         {"subject": ""},
         {"subject": "bad\nheader"},
         {"subject": "x" * 255},
-        {"html": '<img src="https://elsewhere/">'},
-        {"html": "<script>steal()</script>"},
+        # Unsafe stored HTML is cleaned at render, not refused (#385); see
+        # tests/stewardship/test_content_render_trust.py.
     ],
 )
 def test_invalid_authored_templates_are_rejected(changes):
