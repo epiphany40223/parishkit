@@ -83,7 +83,8 @@ SORTING = Sorting.by_column(
         "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
         "who": lambda row: _text(row["who"]),
         "what": lambda row: _text(row["label"]),
-        "route": lambda row: row["route_label"],
+        # Automatic first, then By hand, whatever the labels say.
+        "route": lambda row: not row["automatic"],
         "status": lambda row: list(STATUSES).index(row["status"]),
         "submitted": lambda row: row["submitted_at"],
     },

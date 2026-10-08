@@ -168,8 +168,11 @@ def test_filters_narrow_the_rows():
     found = CensusQuery(status="all", search="7001")
     assert len(ids(select(rows(), found, administrator=True))) == 5
     assert ids(select(rows(), CensusQuery(search="nobody"), administrator=True)) == []
+    # The summary counts history only when it is shown.
     summary = dict(select(rows(), every, administrator=True)["summary"])
-    assert summary["To do"] == 2 and summary["Superseded"] == 1
+    assert summary["To do"] == 2 and "Superseded" not in summary
+    summary = dict(select(rows(), history, administrator=True)["summary"])
+    assert summary["Superseded"] == 1
 
 
 def test_dates_are_days_in_the_browser_zone():

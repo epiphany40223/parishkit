@@ -27,6 +27,7 @@ from django.utils.datastructures import MultiValueDict
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.census import FAMILY_FIELDS
+from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
 from parishkit.stewardship.responses.member_requests import REQUEST_FIELDS
 from parishkit.stewardship.schema_primitives import timezone_names
@@ -45,7 +46,6 @@ LABELS = {
     "new_member": "New Member",
 }
 MEMBER_LABELS = {field.name: field.label for field in MEMBER_FIELDS}
-ADDRESS_PARTS = ("line1", "line2", "city", "region", "postal_code", "country")
 
 # Statuses in the order the filter lists them; the first three are the work
 # still open. History rows (superseded or cancelled) appear only on request.
@@ -157,7 +157,7 @@ class CensusQuery:
 
 # One row per proposal of this campaign's live responses. Family names come
 # from the current ParishSoft source, as in the talents report; a Member's
-# name from the source too, since a proposed Member has none there.
+# name is the Family's own corrected one first, then the parish record's.
 ROWS = """
 SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
     p.baseline_available, p.baseline_value::text, p.submitted_value::text,
@@ -167,9 +167,12 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
     coalesce(nullif(btrim(fp.canonical::jsonb->>'lastName'),''),
         nullif(btrim(fp.canonical::jsonb->>'mailingName'),''),
         'Unavailable Family') AS family_name,
-    nullif(btrim(concat_ws(' ',
-        nullif(btrim(sm.canonical::jsonb->>'firstName'),''),
-        nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),'') AS member_name
+    coalesce(nullif(btrim(concat_ws(' ',
+            nullif(btrim(s.answers->'members'->p.entity_key->>'first_name'),''),
+            nullif(btrim(s.answers->'members'->p.entity_key->>'last_name'),''))),''),
+        nullif(btrim(concat_ws(' ',
+            nullif(btrim(sm.canonical::jsonb->>'firstName'),''),
+            nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),'')) AS member_name
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -286,9 +289,9 @@ def display(value):
     if "display" in value:
         # A phone keeps its own display alongside its comparison key.
         return display(value["display"])
-    if set(value) <= set(ADDRESS_PARTS):
+    if set(value) <= set(ADDRESS_COMPONENTS):
         return ", ".join(
-            display(value[part]) for part in ADDRESS_PARTS if value.get(part)
+            display(value[part]) for part in ADDRESS_COMPONENTS if value.get(part)
         )
     if set(value) <= set(MEMBER_LABELS):
         name = " ".join(
@@ -376,9 +379,11 @@ def select(rows, query, *, administrator):
             or needle in str(row["family_duid"])
         )
     ]
+    # The summary counts every status, and history only when it is shown.
     counts = {key: 0 for key in STATUSES}
     for row in rows:
-        counts[row["status"]] += 1
+        if row["status"] not in HISTORY or query.history:
+            counts[row["status"]] += 1
     return {
         "rows": kept,
         "summary": [
