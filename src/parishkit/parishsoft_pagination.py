@@ -29,7 +29,16 @@ class SourceLoadBudgetExceeded(IncompleteSourceCollection):
     A slow provider, not invalid data: a later read may finish in time.
     Request-count and byte bounds stay IncompleteSourceCollection, since
     runaway paging or an oversized corpus does not fix itself by retrying.
+
+    ``limit_seconds`` and ``elapsed_seconds`` are the load's bound and how
+    long it had run, in whole seconds, for the caller's timeout record; the
+    message names neither and is never logged.
     """
+
+    def __init__(self, message, *, limit_seconds=None, elapsed_seconds=None):
+        super().__init__(message)
+        self.limit_seconds = limit_seconds
+        self.elapsed_seconds = elapsed_seconds
 
 
 @dataclass(frozen=True)

@@ -56,6 +56,7 @@
 !src/parishkit/stewardship/schema/migrations/0029_log_writer_allowlist.sql
 !src/parishkit/stewardship/schema/migrations/0030_portal_user_insert_guard.sql
 !src/parishkit/stewardship/schema/migrations/0031_critical_ack_guard.sql
+!src/parishkit/stewardship/schema/migrations/0032_load_budget_timeout.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

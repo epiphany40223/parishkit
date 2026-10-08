@@ -206,6 +206,51 @@ def failure_context(decision, result, *, attempt, action):
     return context
 
 
+# The reviewed timeout word for a full load stopped at its own time bound
+# (#834; audit.schemas.TIMEOUT_KINDS and stewardship_safe_context_v1).
+LOAD_BUDGET = "source_load_budget"
+
+
+def load_budget_error(error):
+    """The SourceLoadBudgetExceeded behind ``error`` (directly, through
+    RetryError's last attempt, or as a cause), or None."""
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        if isinstance(error, SourceLoadBudgetExceeded):
+            return error
+        error = (
+            error.last_exception
+            if isinstance(error, RetryError)
+            else error.__cause__ or error.__context__
+        )
+    return None
+
+
+def record_load_budget(error, task_id):
+    """Write the timeout entry for a load stopped at its time bound (#834).
+
+    What stopped (``source_load_budget``), its limit and how long the load
+    ran, as the client measured them, at WARNING with the task: the same
+    shape as every other self-imposed limit (#287). Called before the
+    settlement, so a settlement that fails still leaves the entry; does
+    nothing for any other failure. Recording never raises.
+    """
+    from parishkit.stewardship.audit.timeouts import record_timeout
+
+    stopped = load_budget_error(error)
+    if stopped is None:
+        return
+    record_timeout(
+        Event.TASK_TIMED_OUT,
+        what=LOAD_BUDGET,
+        level="WARNING",
+        task_id=task_id,
+        limit_seconds=stopped.limit_seconds,
+        elapsed_seconds=stopped.elapsed_seconds,
+    )
+
+
 def settle_failed_read(execution, error, *, source_claim=None):
     """Commit rejection, release, Task disposition and safe diagnostic as one unit.
 
@@ -226,6 +271,7 @@ def settle_failed_read(execution, error, *, source_claim=None):
     if source_claim is not None:
         _bindings(execution, source_claim)
     with execution.control.lock, correlation(execution.correlation_id):
+        record_load_budget(error, execution.claim.run_id)
         execution.control.check(allow_drain=True)
         with work_transaction():
             row = lock_task_claim(execution.claim)

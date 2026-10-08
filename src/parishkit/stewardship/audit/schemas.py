@@ -466,6 +466,9 @@ TIMEOUT_KINDS = frozenset(
         # The scheduler's web liveness probe ran out of time (#392 L1;
         # jobs.web_health).
         "web_probe",
+        # A full ParishSoft load stopped at its own time bound (#834;
+        # source.failures.record_load_budget).
+        "source_load_budget",
     }
 )
 # The helper processes a deadline can kill (#293), by their entry point;
