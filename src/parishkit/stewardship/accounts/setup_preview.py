@@ -10,7 +10,7 @@ from parishkit.stewardship.web.refusals import load_preview
 from .branding_staging import staged_bundle
 from .configuration_requests import policy_operation_id
 from .request_patch import PatchedConfiguration
-from .setup_campaign import admit_campaign_values
+from .setup_campaign import admit_campaign_values, campaign_catalog
 from .setup_candidate import CandidateCredential, compile_candidate
 from .setup_drafts import DraftView, view_draft
 from .setup_secret_models import SetupSealedCredential
@@ -45,20 +45,20 @@ def prepare_preview(request, service):
         draft = view_draft(request, service)
         if draft is None or draft.status.state != "collecting":
             raise LookupError("An original collecting setup draft is required.")
-        required = {
-            "parish",
-            "access",
-            "branding",
-            "mail",
-            "slack",
-            "testing",
-            "campaign",
-            "schedules",
-        }
+        required = {"parish", "access", "branding", "mail", "slack", "testing"}
         if not required <= draft.sections.keys():
             raise ConfigError("Complete the setup sections before final preview.")
         identifier = draft.status.attempt_id
-        admit_campaign_values(request, service, identifier, draft.sections["campaign"])
+        if "campaign" in draft.sections:
+            # A first campaign staged before #142 must still match the catalog.
+            if "schedules" not in draft.sections:
+                raise ConfigError("Complete the setup sections before final preview.")
+            admit_campaign_values(
+                request, service, identifier, draft.sections["campaign"]
+            )
+        else:
+            # System setup (#142) still needs its exact, current source load.
+            campaign_catalog(request, service, identifier)
         _, assets = staged_bundle(
             request,
             service,

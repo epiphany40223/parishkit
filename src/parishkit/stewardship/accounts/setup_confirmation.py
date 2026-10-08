@@ -19,6 +19,7 @@ from parishkit.stewardship.web.refusals import load_preview
 from .configuration_requests import _status, check_historical_additions
 from .models import ConfigurationChangeRequest
 from .sessions import authenticated_admin, database_now
+from .setup_campaign import staged_source_result
 from .setup_delivery_models import SetupMailDelivery
 from .setup_drafts import _owned
 from .setup_models import SetupAttempt, SetupConfigurationIntent
@@ -41,8 +42,13 @@ def ready_inputs(preview):
     """Require accepted tests for this exact revision, not merely valid credentials."""
     selected = {}
     draft = preview.draft
-    schedules = preview.compiled.candidate.document()["sections"].get("schedules", [])
-    if sum(row["values"]["kind"] == "initial" for row in schedules) != 1:
+    sections = preview.compiled.candidate.document()["sections"]
+    if sections.get("campaigns") and (
+        sum(row["values"]["kind"] == "initial" for row in sections.get("schedules", []))
+        != 1
+    ):
+        # Only a first campaign staged before #142 has schedules to check;
+        # Create the campaign's own go-live readiness checks them now.
         raise ValueError(
             "Save one initial invitation schedule before final confirmation."
         )
@@ -73,7 +79,9 @@ def ready_inputs(preview):
                     "A successful test of the exact setup preview is required."
                 )
     return ReadyInputs(
-        UUID(draft.sections["campaign"]["source_result"]),
+        UUID(draft.sections["campaign"]["source_result"])
+        if "campaign" in draft.sections
+        else staged_source_result(draft.status.attempt_id),
         selected["mail"],
         selected["slack"],
     )
