@@ -1979,7 +1979,8 @@ requests. Use the ordinary changed-baseline reconfirmation flow for stale forms.
 
 A Ministry's name never affects its visibility. ParishSoft names are stored as
 loaded and repaired only where they are shown: on the Family form, this screen,
-Campaign settings and first-campaign setup. A name the form can already show
+Campaign settings, Create the campaign and (before #142) first-campaign setup.
+A name the form can already show
 is used exactly as before, only trimmed, so valid labels and Family form
 digests never change because of this rule. An unusable name is repaired:
 whitespace (including tabs, newlines and non-breaking spaces) becomes single
@@ -1995,7 +1996,8 @@ the process log, once per process for each Ministry and name. The warning
 carries only the Ministry DUID. It does not appear on the System logs page.
 Catalog changes themselves are reported on the Admin home page (see
 [ParishSoft Ministry catalog changes](#parishsoft-ministry-catalog-changes)). Fund names on
-Campaign settings and first-campaign setup follow the same cleaning, with
+Campaign settings, Create the campaign and (before #142) first-campaign setup
+follow the same cleaning, with
 "Fund" and its DUID as the fallback, and are not logged.
 
 Local activity may be changed during a campaign without editing its
