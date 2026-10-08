@@ -102,6 +102,8 @@ from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .response_list_components import components as response_list_components
+from .roster_components import POSTS as ROSTER_POSTS
+from .roster_components import components as roster_components
 from .security_components import POSTS as SECURITY_POSTS
 from .security_components import components as security_components
 from .send_history_components import components as send_history_components
@@ -1868,6 +1870,7 @@ def component_origin():
     responses.update(directory_components(context, admin))
     responses.update(ministry_components(context, admin))
     responses.update(followup_components(context, admin))
+    responses.update(roster_components(context, admin))
     responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(chart_components(context, admin))
@@ -1899,6 +1902,7 @@ def component_origin():
         IN_PLACE_POSTS
         | AUTOMATION_POSTS
         | FOLLOWUP_POSTS
+        | ROSTER_POSTS
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS
         | SECURITY_POSTS

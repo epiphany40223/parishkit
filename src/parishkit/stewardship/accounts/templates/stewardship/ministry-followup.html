@@ -6,7 +6,7 @@
 <p>{% translate "Names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone." %}</p>
 <p>{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself. When a later ParishSoft refresh shows the change, the request can close automatically." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
-<p><a href="{% url 'admin:ministry_report' campaign_id %}">{% translate "Ministry reports, including authorized Member contact details" %}</a></p>
+<p><a href="{% url 'admin:ministry_report' campaign_id %}">{% translate "Ministry reports, including authorized Member contact details" %}</a>{% if can_tick %} · <a href="{% url 'admin:ministry_roster' campaign_id %}">{% translate "Roster changes to enter" %}</a>{% endif %}</p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
 <div id="followup-item" data-in-place-region>
@@ -15,6 +15,7 @@
 <p>{% if item.action == 'join' %}{% translate "Asked to join" %}{% else %}{% translate "Asked to leave" %}{% endif %}; {% translate "submitted" %} <time datetime="{{ item.submitted_at|date:'c' }}" data-local-instant>{{ item.submitted_at|date:'c' }}</time></p>
 <p>{% translate "Status:" %} {{ item.state_label }}{% if item.outcome_label %} — {{ item.outcome_label }}{% endif %}</p>
 {% if item.source_resolved %}<p>{% translate "Resolved automatically: the current ParishSoft roster already shows this change." %}</p>{% endif %}
+{% if item.roster_eligible %}<div id="followup-roster">{% include "stewardship/roster-tick.html" with row=item return_to="item" %}</div>{% endif %}
 {% if not item.latest %}<p class="notice">{% translate "The Family has since replaced or withdrawn this request. It is shown for history only." %}</p>{% endif %}
 {% if item.open %}
 <form method="post" action="{% url 'admin:ministry_followup_update' campaign_id item.id %}#followup-item" data-require-complete data-in-place="followup-save" data-in-place-message="{% translate 'Follow-up saved.' %}">{% csrf_token %}
@@ -67,7 +68,7 @@
 {% for row in rows %}<tr>
 <td><a href="{% url 'admin:ministry_followup_item' campaign_id row.id %}">{{ row.member_name }}</a></td><td>{{ row.ministry_name }}{% if row.in_campaign is False %}<br>{% translate "No longer in this campaign" %}{% endif %}</td>
 <td>{% if row.action == 'join' %}{% translate "Join" %}{% else %}{% translate "Leave" %}{% if row.cannot_serve %}<br>{% translate "Cannot participate in any ministries (physical limitations)" %}{% endif %}{% endif %}<br><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td>
-<td>{{ row.state_label }}{% if row.outcome_label %}<br>{{ row.outcome_label }}{% endif %}</td>
+<td>{{ row.state_label }}{% if row.outcome_label %}<br>{{ row.outcome_label }}{% endif %}{% if row.roster_eligible %}{% include "stewardship/roster-tick.html" with row=row can_tick=False %}{% endif %}</td>
 <td>{% if row.last_contact_at %}<time datetime="{{ row.last_contact_at|date:'c' }}" data-local-instant>{{ row.last_contact_at|date:'c' }}</time>{% else %}{% translate "None recorded" %}{% endif %}</td></tr>
 {% empty %}<tr><td colspan="5">{% translate "No matching requests. Try Any status, or clear the search and Ministry filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}

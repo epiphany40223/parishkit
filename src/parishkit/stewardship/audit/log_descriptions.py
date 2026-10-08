@@ -381,6 +381,14 @@ DESCRIPTIONS = {
     ),
     "census_changes_viewed": _("Someone opened the Census changes worklist."),
     "census_changes_exported": _("Someone downloaded the Census changes worklist."),
+    "ministry_roster_entered": _(
+        "Someone marked a Ministry join or leave entered in ParishSoft, or "
+        "cleared that mark."
+    ),
+    "roster_changes_viewed": _("Someone opened the Roster changes to enter list."),
+    "roster_changes_exported": _(
+        "Someone downloaded the Roster changes to enter list."
+    ),
     "census_change_updated": _(
         "Someone marked a census change entered in ParishSoft, ignored it, "
         "or reopened it."

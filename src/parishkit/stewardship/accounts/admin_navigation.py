@@ -199,6 +199,9 @@ PAGES = {
     "ministry_followup_item": Page(
         "reports", _("Follow-up request"), "ministry_followup"
     ),
+    "ministry_roster": Page(
+        "reports", _("Roster changes to enter"), "ministry_followup"
+    ),
     "family_directory": Page("reports", _("Family directory")),
     "family_codes": Page("reports", _("Family campaign codes"), "family_directory"),
     # One Family's summary and timeline (#477), opened from its directory row.
@@ -564,6 +567,8 @@ NON_PAGES = frozenset(
         "maintenance",
         "ministry_export",
         "ministry_followup_update",
+        "ministry_followup_roster",
+        "ministry_roster_export",
         "ministry_packet",
         "participation_chart",
         # Retired multi-campaign addresses (navigation rule 10, decision 11):

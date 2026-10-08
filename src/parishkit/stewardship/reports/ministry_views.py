@@ -22,6 +22,8 @@ from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.tables import report_table
+from parishkit.stewardship.workflows.models import MinistryRequest
+from parishkit.stewardship.workflows.roster import mark, roster_marks
 
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
@@ -215,6 +217,23 @@ def report(request, campaign_id, *, action=None):
                 if ministry_id is not None
                 else tuple(row["duid"] for row in result["summaries"])
             )
+            # The roster tick (#528), read-only here, for the shown rows only:
+            # the frozen selection and its stored export are unchanged.
+            # The selection's rows do not say whether a refresh resolved a
+            # request, so that comes from one query for the shown rows; then
+            # each row reads Entered, Not yet entered or Already in
+            # ParishSoft, as on the follow-up queue.
+            shown = [row["id"] for row in result["rows"]]
+            from_source = {
+                str(pk)
+                for pk in MinistryRequest.objects.filter(
+                    pk__in=shown, resolution_source__isnull=False
+                ).values_list("pk", flat=True)
+            }
+            marks = roster_marks(shown)
+            for row in result["rows"]:
+                row["source_resolved"] = str(row["id"]) in from_source
+                mark(row, marks)
             mutable = True
             try:
                 admit_campaign(campaign_id, mutating=True)

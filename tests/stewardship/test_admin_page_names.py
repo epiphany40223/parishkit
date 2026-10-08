@@ -106,6 +106,7 @@ TEMPLATES = {
     "ministry_leavers": "ministry-report.html",
     "ministry_followup": "ministry-followup.html",
     "ministry_followup_item": "ministry-followup.html",
+    "ministry_roster": "ministry-roster.html",
     "family_directory": "directory.html",
     "family_codes": "codes.html",
     "family_timeline": "family-timeline.html",

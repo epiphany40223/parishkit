@@ -733,6 +733,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_joiners` | Members joining | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining | `/admin/reports/<campaign>/ministries/join/` | `/admin/reports/ministries/joining/` | Becomes a bookmarkable view of Ministry requests (#521). |
 | `ministry_leavers` | Members leaving | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving | `/admin/reports/<campaign>/ministries/leave/` | `/admin/reports/ministries/leaving/` | Becomes a bookmarkable view of Ministry requests (#521). |
 | `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/<campaign>/ministries/follow-up/` | `/admin/reports/ministries/follow-up/` | No assignee column, filter or bulk assignment (#552). |
+| `ministry_roster` | Roster changes to enter | Ministry follow-up | Administrator, Staff | (new, #528) Roster changes to enter | `/admin/reports/<campaign>/ministries/roster/` | `/admin/reports/ministries/roster/` | Its CSV/XLSX download (`roster/export`) and the tick (`follow-up/<request>/roster`) are non-page actions. |
 | `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/<campaign>/ministries/follow-up/<request>/` | `/admin/reports/ministries/follow-up/<request>/` | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
 | `family_directory` | Family directory | Menu: Family directory | Administrator, Staff | (same) | `/admin/reports/<campaign>/families/` | `/admin/reports/families/` |  |
 | `family_codes` | Family campaign codes | Family directory | Administrator, Staff | (same) | `/admin/campaign/<campaign>/family-codes` | `/admin/reports/family-codes/` |  |
@@ -3196,18 +3197,32 @@ The ParishSoft API cannot change Ministry rosters, so a join or leave is
 always entered in ParishSoft by hand
 ([#528](https://github.com/epiphany40223/parishkit/issues/528), gap G28). A
 request resolved by a person as *joined* or *leave confirmed* carries an
-**Entered in ParishSoft** tick that Staff and Admin set or clear in place;
-who and when are kept as history. A request resolved because the ParishSoft
-roster already shows the change (it has a resolution source) needs no tick
-and shows *Already in ParishSoft*. Ministry leaders see the tick, read-only,
-on their own Ministries' requests. The follow-up queue offers a *Roster
-changes to enter* filter (resolved joins and leaves with no resolution
-source and not yet ticked), and the
-[Ministry change summary](../reports/spec.md#ministry-change-summary)'s
-joiner and leaver lists and their export show the tick, so staff can work
-through the roster changes in one list. The tick is a new field on the
-request and ships with its forward migration. Marking a request resolved
-never changes ParishSoft, and this tick only records that a person did.
+**Entered in ParishSoft** tick that Staff and Admin set or clear in place,
+on the request's page and on **Roster changes to enter**; who and when are
+kept as history. A request resolved because the ParishSoft roster already
+shows the change (it has a resolution source) needs no tick and shows
+*Already in ParishSoft*. Ministry leaders see the tick, read-only, on their
+own Ministries' requests, and never see Roster changes to enter. A resolved
+request is a closed outcome that a later Family response never replaces (a
+new request for the same change is a separate request), so the tick stays
+with the request it was made on. **Roster changes to enter**, reached from
+the follow-up queue, lists the resolved joins and leaves with no resolution
+source that are not yet ticked (or all of them, to find and clear a mistaken
+mark), with Member, Family and Ministry DUIDs, sorted and paged in place,
+with who resolved each one. A resolved change stays listed after the Family
+answers again (marked as replaced by a later response), since it still has
+to be entered. A tick there keeps the list's Show, sort and page; a tick
+someone else changed first leaves the list as it is with a notice. Its
+CSV/XLSX download, in the browser's time zone, is the file staff work from,
+and the view and each download are audited as counts. The follow-up queue
+and the [Ministry change
+summary](../reports/spec.md#ministry-change-summary)'s joiner and leaver
+lists show the tick on screen; the stored Ministry change summary export is
+unchanged (a default the Administrator may override, #528). The tick is not
+a field on the request: each set or clear is an immutable row of its own
+history table, added by forward migration 0033, and the request row never
+changes. Marking a request resolved never changes ParishSoft, and this tick
+only records that a person did.
 
 ## System health
 

@@ -200,3 +200,37 @@ class MinistryWorkflowRevision(ImmutableRecord):
                 name="ministry_revision_contact",
             ),
         ]
+
+
+class MinistryRosterEntry(ImmutableRecord):
+    """One set or clear of a resolved request's Entered in ParishSoft tick (#528).
+
+    The ParishSoft API cannot change Ministry rosters, so a join or leave a
+    person resolved is entered in ParishSoft by hand. Staff and Admin record
+    that here; the current state is the latest row (none means not entered).
+    The request itself is a closed outcome and never changes. SQL checks the
+    actor, the request, the sequence and the audit
+    (schema/migrations/0033_roster_entries.sql).
+    """
+
+    request = models.ForeignKey(
+        MinistryRequest, on_delete=models.PROTECT, related_name="roster_entries"
+    )
+    sequence = models.PositiveBigIntegerField()
+    entered = models.BooleanField()
+    request_key = models.UUIDField()
+
+    class Meta:
+        db_table = "stewardship_ministry_roster_entry"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("request", "sequence"), name="ministry_roster_sequence"
+            ),
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"), name="ministry_roster_replay"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=False, sequence__gte=1),
+                name="ministry_roster_identity",
+            ),
+        ]

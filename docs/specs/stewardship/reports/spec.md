@@ -845,6 +845,10 @@ Each Ministry links to:
 - requested leavers: Member name/DUID, current role where known, request date,
   status/outcome.
 
+Both lists show a resolved request's **Entered in ParishSoft** tick on screen
+([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows)); the
+stored export does not carry it.
+
 Follow-up has no assignee, so neither list nor its exports show one; see
 [Follow-up workflows](../admin-portal/spec.md#follow-up-workflows).
 

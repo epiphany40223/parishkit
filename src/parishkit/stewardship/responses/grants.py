@@ -52,6 +52,8 @@ def add_response_web_grants(tables, columns):
         "UPDATE": {"state", "superseded_by_id", "version", "outcome", "assignee_id"}
     }
     tables["stewardship_ministry_revision"] = {"SELECT", "INSERT"}
+    # The roster Entered in ParishSoft tick's history (#528, step 4).
+    tables["stewardship_ministry_roster_entry"] = {"SELECT", "INSERT"}
     columns["stewardship_additional_information"] = {
         "UPDATE": {
             "disposition",

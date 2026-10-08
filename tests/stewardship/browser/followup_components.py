@@ -43,11 +43,16 @@ RESOLVE_ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{RESOLVE_REQUEST
 RESOLVED = RESOLVE_ITEM + "?resolved=1"
 GATE_ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{GATE_REQUEST}/"
 GATED = GATE_ITEM + "?gated=1"
+# A resolved join that takes the roster tick (#528), before and after it.
+TICK_REQUEST = UUID(int=97)
+TICK_ITEM = f"/admin/reports/{CAMPAIGN}/ministries/follow-up/{TICK_REQUEST}/"
+TICKED = TICK_ITEM + "?ticked=1"
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
     RESOLVE_ITEM + "update": (303, RESOLVED, ""),
     GATE_ITEM + "update": (303, GATED, ""),
+    TICK_ITEM + "roster": (303, TICKED, ""),
 }
 
 
@@ -248,6 +253,29 @@ def components(context, admin):
             form=form,
             history=[revision],
             mutable=False,
+        ),
+        TICK_ITEM: values
+        | dict(
+            item=closed
+            | dict(id=str(TICK_REQUEST), roster_eligible=True, roster_sequence=0),
+            can_tick=True,
+            roster_key=UUID(int=98),
+            history=[],
+        ),
+        TICKED: values
+        | dict(
+            item=closed
+            | dict(
+                id=str(TICK_REQUEST),
+                roster_eligible=True,
+                roster_entered=True,
+                roster_sequence=1,
+                roster_by="staff@example.org",
+                roster_at=moment,
+            ),
+            can_tick=True,
+            roster_key=UUID(int=99),
+            history=[],
         ),
         SAVED: values
         | dict(

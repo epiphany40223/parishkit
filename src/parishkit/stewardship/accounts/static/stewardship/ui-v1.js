@@ -1288,7 +1288,13 @@
     // POST's Post/Redirect/Get answer, so a reload repeats only the GET).
     // An answer from anywhere leaves the address this page's.
     if (!anywhere && response.redirected) {
-      window.history.replaceState(window.history.state, "", withFragment(response.url, id));
+      // A form may name one-time answer parameters (data-in-place-forget,
+      // space-separated) that say what just happened, such as a notice; they
+      // are dropped from the address, so a reload does not repeat them.
+      const address = new URL(withFragment(response.url, id), document.baseURI);
+      (owner?.getAttribute("data-in-place-forget") || "").split(/\s+/).filter(Boolean)
+        .forEach((name) => address.searchParams.delete(name));
+      window.history.replaceState(window.history.state, "", address.href);
     } else if (!anywhere && init.method !== "POST") {
       window.history.replaceState(window.history.state, "", options.quiet ? keepHash(url) : url);
     }

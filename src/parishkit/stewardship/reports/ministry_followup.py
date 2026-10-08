@@ -138,12 +138,14 @@ def can_follow_up(principal):
     )
 
 
-def followup_page(campaign_id, query, principal, *, request_id=None):
+def followup_page(campaign_id, query, principal, *, request_id=None, whole=False):
     """Read one coherent page under the response guard's freshly resolved actor.
 
     SQL intersects the current role scope with the campaign's Ministries before
     reading any request, so an out-of-scope request UUID yields no row rather
     than a different error. No contact, address or financial column is selected.
+    ``whole`` reads every matching row (no LIMIT), for a list that is filtered
+    and paged in memory (Roster changes to enter, #528).
     """
     if not can_follow_up(principal):
         raise PermissionError("Ministry follow-up access is unavailable.")
@@ -163,8 +165,8 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
                 sorted(value for value in principal.ministries if value < 2**31),
                 principal.identity,
                 request_id,
-                query.page_size,
-                (query.page - 1) * query.page_size,
+                None if whole else query.page_size,
+                0 if whole else (query.page - 1) * query.page_size,
             ],
         )
         value = cursor.fetchone()
