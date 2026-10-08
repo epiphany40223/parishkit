@@ -71,7 +71,7 @@ def _confirmation(give_online):
 
 PAGES = {
     "welcome": (
-        "<h2>Welcome to {{ parish_name }}'s {{ campaign_year }} stewardship "
+        "<h2>Welcome to {{ parish_name }}’s {{ campaign_year }} stewardship "
         "renewal</h2>"
         "<p>Time is a limited resource. People often say that they “don’t have "
         "enough time” – but God gives us all the time we need. We must ask "
@@ -321,6 +321,21 @@ def _older_salutation(email):
     )
 
 
+# Earlier page defaults, so a page saved untouched from one still counts as
+# the default (matches_default). The Welcome heading had a straight
+# apostrophe before #385.
+#
+# Frozen value: each entry must stay exactly the text that was once shipped.
+# The Welcome entry is derived from today's default only for brevity; when
+# PAGES["welcome"] next changes, replace this with the literal pre-#385 text
+# (test_the_retired_welcome_default_is_frozen pins its digest).
+RETIRED_PAGES = {
+    "welcome": (
+        PAGES["welcome"].replace("{{ parish_name }}’s", "{{ parish_name }}'s", 1),
+    ),
+}
+
+
 RETIRED_EMAILS = {
     "initial": (_older_salutation(EMAILS["initial"]),),
     "reminder": (_older_salutation(EMAILS["reminder"]),),
@@ -369,7 +384,15 @@ def _email_data(email):
 
 
 def retired_data(kind, slot):
-    """Editor form data for each earlier default of one slot (RETIRED_EMAILS)."""
+    """Editor form data for each earlier default of one slot.
+
+    Emails come from RETIRED_EMAILS, pages from RETIRED_PAGES.
+    """
+    if kind == "page":
+        return [
+            {"html": html, "generate_text": "on", "text": ""}
+            for html in RETIRED_PAGES.get(slot, ())
+        ]
     if kind != "email":
         return []
     return [_email_data(email) for email in RETIRED_EMAILS.get(slot, ())]

@@ -11,6 +11,7 @@ from parishkit.stewardship.web.content import (
     MAX_TEXT_BYTES,
     PLACEHOLDERS,
     family_email_problems,
+    generated_text_matches,
     prepare_content,
     render_template,
     validate_admin_digest_content,
@@ -577,4 +578,4 @@ def text_is_generated(values):
     hand-written plain text opens with it unchecked, so a save never replaces
     it without the Admin choosing to.
     """
-    return values is None or prepare_content(values["html"]).text == values["text"]
+    return values is None or generated_text_matches(values["html"], values["text"])
