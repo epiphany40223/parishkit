@@ -81,8 +81,7 @@ def _validate_rules_schedule(settings):
     15 minutes apart around the clock. Whether the lists are what the rules
     produce, and the quarter-hour rule for new times, are the settings form's
     and the command line's shared check (``refresh_rules.check_schedule``);
-    a stored document is never re-derived. Until the scheduler can skip
-    refreshes around Family emails, a schedule asking it to is refused.
+    a stored document is never re-derived.
     """
     rules = settings["refresh_rules"]
     full = settings.get("full_refresh_times")
@@ -90,7 +89,6 @@ def _validate_rules_schedule(settings):
     delta = settings.get("delta_refresh")
     if (
         not valid_shape(rules)
-        or rules["skip_around_family_emails"]
         or settings.get("full_refresh", "daily") != "daily"
         or full is None
         or "nightly_time" not in settings

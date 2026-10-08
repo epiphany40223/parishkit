@@ -213,7 +213,7 @@ class Problem:
     """One reason a schedule cannot be saved, with the times it names.
 
     ``code`` is one of "no_full", "too_many", "too_close", "off_quarter",
-    "unmatched_skip", "rules_mismatch" or "skip_not_available"; ``times``
+    "unmatched_skip" or "rules_mismatch"; ``times``
     are the ``HH:MM`` times involved, and ``index`` the skip row, if any.
     """
 
@@ -257,7 +257,7 @@ def stored_settings(refresh_rules):
     return settings
 
 
-def check_schedule(settings, *, kept=(), skip_available=False):
+def check_schedule(settings, *, kept=()):
     """Every reason the schedule in ``settings`` cannot be saved; empty if none.
 
     The one validator the settings form and the command line share (#632).
@@ -265,10 +265,8 @@ def check_schedule(settings, *, kept=(), skip_available=False):
     ``refresh_rules`` of the closed shape (``ValueError`` otherwise).
     ``kept`` are full times already stored off the quarter hour, which an
     Administrator may keep as full times but not add; they excuse only a
-    full time, never a quick time at the same wall time. ``skip_available``
-    says whether the deployed scheduler honors "skip refreshes around Family
-    emails"; until it does, turning it on is refused. The stored lists must
-    be exactly what the rules produce; a stored document is never
+    full time, never a quick time at the same wall time. The stored lists
+    must be exactly what the rules produce; a stored document is never
     re-derived.
     """
     rules = settings.get("refresh_rules")
@@ -286,8 +284,6 @@ def check_schedule(settings, *, kept=(), skip_available=False):
             problems.append(Problem("off_quarter", (value,)))
     for index in result.unmatched_skips:
         problems.append(Problem("unmatched_skip", index=index))
-    if rules["skip_around_family_emails"] and not skip_available:
-        problems.append(Problem("skip_not_available"))
     if result.full and {
         name: value for name, value in settings.items() if name in _STORED
     } != {

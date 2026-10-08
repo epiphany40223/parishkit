@@ -14,7 +14,9 @@ transactions:
   (``role_lost``, ``user_removed``, ``recovery``) with their notices;
 - resolves the automation incident episodes quiet for an hour.
 - removes the service status records of processes that have not reported
-  for a day (ADM-13; ``service_status.prune_service_status``).
+  for a day (ADM-13; ``service_status.prune_service_status``);
+- removes refresh slot decisions eight days after their due time (#632;
+  ``source.slot_decisions.prune_slot_decisions``).
 
 Every step is repeat-safe, so an interrupted run is simply retried.
 """
@@ -125,6 +127,7 @@ def admit_maintenance(action, status):
 def _execute(execution):
     """Run one maintenance pass, each step in its own fenced effect."""
     from parishkit.stewardship.service_status import prune_service_status
+    from parishkit.stewardship.source.slot_decisions import prune_slot_decisions
 
     from .automation_sessions import maintain
 
@@ -136,6 +139,10 @@ def _execute(execution):
     execution.check()
     with execution.effect():
         prune_service_status()
+    # ...and the refresh slot decisions due more than eight days ago (#632).
+    execution.check()
+    with execution.effect():
+        prune_slot_decisions()
     execution.transition("complete")
 
 

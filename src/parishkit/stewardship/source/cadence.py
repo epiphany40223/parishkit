@@ -106,6 +106,16 @@ def refresh_settings(settings):
     }
 
 
+def skips_around_emails(settings):
+    """Whether applied settings ask to skip refreshes around Family emails.
+
+    Only a schedule saved with its rules has the setting (#632); every other
+    schedule never skips and never records a slot decision.
+    """
+    rules = settings.get("refresh_rules")
+    return type(rules) is dict and rules.get("skip_around_family_emails") is True
+
+
 def _validate(
     *,
     nightly_time,
@@ -279,6 +289,60 @@ def due_slots(
         _slot(cause, due, value, timezone=timezone, scope_fingerprint=scope_fingerprint)
         for cause, due, value in slots
     )
+
+
+def listed_due_slots(
+    *,
+    now,
+    timezone,
+    nightly_time,
+    scope_fingerprint,
+    full_refresh_times,
+    quick_refresh_times=(),
+):
+    """Every listed full and quick slot due today or yesterday, oldest first.
+
+    For a schedule saved with its rules (#632) that skips refreshes around
+    Family emails: the scheduler decides each due, undecided slot, not only
+    the latest of each kind (see ``production``). Each listed time is
+    resolved on the local day and the day before through the shared
+    daylight-saving resolver, exactly as ``due_slots`` resolves the latest
+    one, so the latest slot of each kind here is the one ``due_slots``
+    returns. Slots with the same identity (a repeated wall time) appear once.
+    On the spring-forward day two full times in the missing hour resolve to
+    the same instant with different identities (each names its own time):
+    both appear, ``due_slots`` picks one as the latest (the nightly wins,
+    then the later wall time), and the other may be decided on its own, a
+    harmless twin.
+    """
+    if type(now) is not datetime or now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("Refresh scheduling requires canonical scope and time inputs.")
+    _check_scope(timezone, scope_fingerprint)
+    times = _validate(
+        nightly_time=nightly_time,
+        frequency="daily",
+        full_refresh_times=full_refresh_times,
+        delta_refresh="times" if quick_refresh_times else "off",
+        quick_refresh_times=quick_refresh_times,
+        rules=True,
+    )
+    now = now.astimezone(UTC)
+    day = now.astimezone(ZoneInfo(timezone)).date()
+    slots = {}
+    for cause, values in (("nightly", times), ("delta", tuple(quick_refresh_times))):
+        for value in values:
+            for due in _occurrences(day, time.fromisoformat(value), timezone)[:2]:
+                if due > now:
+                    continue
+                slot = _slot(
+                    cause,
+                    due,
+                    value if cause == "nightly" else None,
+                    timezone=timezone,
+                    scope_fingerprint=scope_fingerprint,
+                )
+                slots[slot.slot_key] = slot
+    return tuple(sorted(slots.values(), key=lambda slot: (slot.due_at, slot.cause)))
 
 
 def catch_up_slot(*, effective_at, timezone, scope_fingerprint):

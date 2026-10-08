@@ -33,7 +33,13 @@ from django.db import connection
 from parishkit.stewardship.accounts.bootstrap_schema import BOOTSTRAP_SCHEMA
 from parishkit.stewardship.campaigns.intervals import resolve_local
 
-from .cadence import HOUR, QUARTER_HOUR, longest_gap, refresh_settings
+from .cadence import (
+    HOUR,
+    QUARTER_HOUR,
+    longest_gap,
+    refresh_settings,
+    skips_around_emails,
+)
 
 # The scheduler's durable record of a held full slot (``production._log_skip``)
 # uses this event with the task-free ``schedule`` context schema; a refresh
@@ -120,7 +126,7 @@ def full_due_after(settings, timezone, after, until):
     return None
 
 
-def first_overdue(runs, timezone, after, now):
+def first_overdue(runs, timezone, after, now, skipped=frozenset()):
     """The overdue full slot: the first counted full due time after ``after``.
 
     ``runs`` lists each schedule in effect, oldest first, as ``(start,
@@ -128,7 +134,9 @@ def first_overdue(runs, timezone, after, now):
     start (the last run until ``now``); ``None`` settings schedule nothing.
     A due time counts only if it falls after its own schedule took effect, so
     a new schedule's earlier times are ignored, while an earlier schedule's
-    slot that was already due stays overdue.
+    slot that was already due stays overdue. A due instant in ``skipped``
+    (full slots recorded as skipped around a Family email, #632) was never
+    due and does not count.
     """
     for index, (start, settings) in enumerate(runs):
         end = runs[index + 1][0] if index + 1 < len(runs) else now
@@ -136,6 +144,8 @@ def first_overdue(runs, timezone, after, now):
         if settings is None or end <= lower:
             continue
         due = full_due_after(settings, timezone, lower, min(end, now))
+        while due is not None and due in skipped:
+            due = full_due_after(settings, timezone, due, min(end, now))
         if due is not None:
             return due
     return None
@@ -305,6 +315,44 @@ def schedule_runs(after):
     return runs
 
 
+def skip_setting_since():
+    """When "skip refreshes around Family emails" last took effect, or None.
+
+    The activation of the earliest configuration in the latest unbroken run
+    of activations whose ParishSoft schedule skips around Family emails
+    (bootstrap configurations ignored), found the way ``schedule_runs``
+    finds a schedule's start (#632). None when the active configuration does
+    not skip. Slots due before it are never decided as skipped, so turning
+    the setting on cannot turn an already overdue slot into a skip.
+    """
+    from django.db.models import OuterRef, Subquery
+
+    from parishkit.stewardship.accounts.configuration_models import (
+        AppliedIntegration,
+    )
+    from parishkit.stewardship.accounts.runtime_models import (
+        ConfigurationActivation,
+    )
+
+    settings = AppliedIntegration.objects.filter(
+        configuration_id=OuterRef("configuration_id"), kind="parishsoft"
+    ).values("settings")[:1]
+    rows = (
+        ConfigurationActivation.objects.exclude(
+            configuration__validation_schema=BOOTSTRAP_SCHEMA
+        )
+        .annotate(settings=Subquery(settings))
+        .order_by("-sequence")
+        .values_list("created_at", "settings")
+    )
+    since = None
+    for created_at, value in rows.iterator(chunk_size=50):
+        if not (type(value) is dict and skips_around_emails(value)):
+            break
+        since = created_at
+    return since
+
+
 def source_timezone(active_configuration_id):
     """The zone refresh times resolve in: the current campaign's, else the parish's.
 
@@ -325,9 +373,26 @@ def source_timezone(active_configuration_id):
     )
 
 
+def skipped_full_after(after):
+    """The due instants of full slots recorded as skipped after ``after`` (#632).
+
+    Read from the slot decision record; a recorded skip was never due, so
+    the alarm ignores it even if the windows have changed since.
+    """
+    from .refresh_models import SourceSlotDecision
+
+    return frozenset(
+        SourceSlotDecision.objects.filter(
+            cause="nightly", decision="skipped", due_at__gt=after
+        ).values_list("due_at", flat=True)
+    )
+
+
 def overdue_full_slot(now, *, after, timezone):
     """The overdue full slot after ``after`` under the recorded schedules."""
-    return first_overdue(schedule_runs(after), timezone, after, now)
+    return first_overdue(
+        schedule_runs(after), timezone, after, now, skipped_full_after(after)
+    )
 
 
 def current_overdue(now):
@@ -362,7 +427,7 @@ def catch_up_at(timezone):
     instead. None when no full refresh has promoted yet, when the schedule
     has not changed since the last one started, or when nothing was overdue
     as it changed. Once a full refresh promotes after the overdue slot, this
-    returns None again. ``timezone`` is the zone the slots resolve in. Four
+    returns None again. ``timezone`` is the zone the slots resolve in. Five
     queries.
     """
     last_full = last_full_started_at()
@@ -372,7 +437,8 @@ def catch_up_at(timezone):
     if len(runs) < 2 or runs[-1][1] is None:
         return None
     start = runs[-1][0]
-    if first_overdue(runs[:-1], timezone, last_full, start) is None:
+    skipped = skipped_full_after(last_full)
+    if first_overdue(runs[:-1], timezone, last_full, start, skipped) is None:
         return None
     return start
 
