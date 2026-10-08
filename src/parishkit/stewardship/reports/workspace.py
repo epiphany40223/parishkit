@@ -113,8 +113,8 @@ class ReportQuery:
             values.append(("timezone", self.timezone))
         return values
 
-    def url(self, campaign_id, *, page=None):
-        """Preserve validated state and the explicit campaign on every link."""
+    def url(self, *, page=None):
+        """Preserve validated state on every link to the current campaign's report."""
         values = {
             "scope": self.scope,
             "page": self.page if page is None else page,
@@ -125,9 +125,7 @@ class ReportQuery:
             values["size"] = self.size
         if self.timezone_explicit:
             values["timezone"] = self.timezone
-        return (
-            reverse("admin:participation", args=[campaign_id]) + "?" + urlencode(values)
-        )
+        return reverse("admin:participation") + "?" + urlencode(values)
 
 
 class RenderedReport:

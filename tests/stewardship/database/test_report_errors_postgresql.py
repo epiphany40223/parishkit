@@ -1,8 +1,7 @@
 """A report outage shows Admins a report error page, not sign-in trouble (#132)."""
 
-from uuid import uuid4
-
 import pytest
+from django.urls import reverse
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.reports import ministry_views
@@ -24,7 +23,7 @@ def test_ministry_report_outage_renders_the_admin_report_page(
 
     monkeypatch.setattr(ministry_views, "runtime", unavailable)
     response = browser.get(
-        f"/admin/reports/{uuid4()}/ministries/",
+        reverse("admin:ministry_report"),
         HTTP_ACCEPT="text/html,*/*;q=0.8",
         HTTP_SEC_FETCH_MODE="navigate",
     )

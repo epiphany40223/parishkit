@@ -42,7 +42,7 @@ def create(request, campaign_id):
             require_fresh(request)
         except FreshAuthenticationRequired:
             return step_up_response(
-                reverse("admin:financial_report", args=(campaign_id,)),
+                reverse("admin:financial_report"),
                 admin_navigation.PAGES["financial_report"].label,
             )
         parameters = request.POST.copy()

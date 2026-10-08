@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, transaction
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.models import AuditContext
@@ -222,7 +223,7 @@ def test_native_packet_request_form(response_service, google):
     """A leader queues packets only for its own Ministries through a CSRF form."""
     harness = setup(response_service)
     browser, head, _, _ = leader(harness, google)
-    route = f"/admin/reports/{harness.campaign.pk}/ministries/packet/"
+    route = reverse("admin:ministry_packet")
 
     def form(**values):
         """A complete valid request; each case changes only what it tests."""

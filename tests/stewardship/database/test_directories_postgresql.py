@@ -9,6 +9,7 @@ import pytest
 from django.db import connection, transaction
 from django.http import QueryDict
 from django.test import Client
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditContext
@@ -87,7 +88,7 @@ def test_native_directory_code_filters_contacts_and_response(
     respond(harness, "Do not show this private text in the directory")
     assert page(harness, response="yes")["total"] == 1
     browser, _ = signed_in()
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route)
         assert response.status_code == 200 and harness.code.encode() in body
@@ -183,7 +184,7 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
     """One page serves both uses; old postal links redirect to its preset (#202)."""
     harness = live_response_service
     browser, _ = signed_in()
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     legacy = f"/admin/reports/{harness.campaign.pk}/postal/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         # A bookmarked postal page opens the merged page with mailing columns
@@ -394,9 +395,9 @@ def test_staff_directories_survive_limiter_outage_but_not_revocation(
     # namespace during teardown; report assertions still run fully offline.
     request.addfinalizer(monkeypatch.undo)
     # The directory without and with its mailing columns (once postal outreach).
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     routes = [route, route + "?mailing=yes"]
-    find = f"/admin/reports/{harness.campaign.pk}/families/find"
+    find = reverse("admin:find_family")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         for route in routes:
             assert read(browser, route)[0].status_code == 200
@@ -488,9 +489,7 @@ def test_archived_directory_keeps_its_retained_source(response_service, google):
         assert page(harness) == retained
         browser, _ = signed_in()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            response, body = read(
-                browser, f"/admin/reports/{harness.campaign.pk}/families/"
-            )
+            response, body = read(browser, reverse("admin:family_directory"))
         assert response.status_code == 200
         assert b">Example, Member</a></td>" in body and b"Successor" not in body
 
@@ -504,7 +503,7 @@ def test_directory_unavailability_and_invalid_filters_are_private(
 
     harness = live_response_service
     browser, _ = signed_in()
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(browser, route, {"exact_code": "private!invalid"})
         assert response.status_code == 400 and b"private!invalid" not in body
@@ -520,7 +519,7 @@ def test_directory_unavailability_and_invalid_filters_are_private(
         assert b"private source" not in body and harness.code.encode() not in body
         assert response["Cache-Control"] == "no-store"
         assert response["Retry-After"] == "5"
-        recovery = f"/admin/campaign/{harness.campaign.pk}/family-codes"
+        recovery = reverse("admin:family_codes")
         assert f'href="{recovery}"'.encode() in body
         recovered, codes = read(browser, recovery)
         assert recovered.status_code == 200 and harness.code.encode() in codes
@@ -568,7 +567,7 @@ def test_reach_preset_link_and_dashboard_readiness(live_response_service, google
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
     browser, _ = signed_in()
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route + "?reach=neither")
         assert response.status_code == 200 and b">Example, Member</a></td>" in body
@@ -760,7 +759,7 @@ def test_contact_details_show_head_emails_in_one_batched_read(
     assert len(headless) == len(statements) - 1
 
     browser, _ = signed_in()
-    route = f"/admin/reports/{harness.campaign.pk}/families/"
+    route = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route)
     assert response.status_code == 200
@@ -861,8 +860,8 @@ def test_find_a_family_runs_the_directory_search_privately(
     """
     harness = live_response_service
     browser, _ = signed_in()
-    find = f"/admin/reports/{harness.campaign.pk}/families/find"
-    timeline = f"/admin/reports/{harness.campaign.pk}/families/"
+    find = reverse("admin:find_family")
+    timeline = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         home = read(browser, "/admin/")[1]
         assert f'<form method="post" action="{find}" role="search"'.encode() in home
@@ -892,11 +891,11 @@ def test_find_a_family_runs_the_directory_search_privately(
         )
         assert read(browser, find)[0].status_code == 405
         assert browser.post(find, {"search": "examp"}).status_code == 403
-        # Another campaign's address (not the current one) and a signed-out
-        # browser both get the bare refusal the box's script words itself.
+        # Another campaign's old address is gone (NAV-11), before any search;
+        # a signed-out browser gets the bare refusal the box's script words.
         other = f"/admin/reports/{uuid4()}/families/find"
         response, body = search(browser, other, {"search": "examp"})
-        assert response.status_code == 403 and body == b""
+        assert response.status_code == 410 and b"examp" not in body
         anonymous = Client()
         response = anonymous.post(find, {"search": "examp"})
         assert response.status_code == 403 and response.content == b""

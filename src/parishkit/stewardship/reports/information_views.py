@@ -206,7 +206,7 @@ def _page_response(request, campaign_id, *, item_id=None):
                     carry=carried_filters(query),
                     sorting=INFORMATION_SORTING,
                     sort=query.sort,
-                    action=reverse("admin:information_queue", args=(campaign_id,)),
+                    action=reverse("admin:information_queue"),
                     sizes=PAGE_SIZES,
                 ),
             )
@@ -286,9 +286,7 @@ def update(request, campaign_id, item_id):
         ).exists():
             raise PermissionError("This item is unavailable.")
         update_information(service.store, principal.identity, item_id, **values)
-        response = redirect(
-            "admin:information_item", campaign_id=campaign_id, item_id=item_id
-        )
+        response = redirect("admin:information_item", item_id=item_id)
         response["Cache-Control"] = "no-store"
         return response
     except StaleRecordError:

@@ -1,6 +1,7 @@
 """Mobile, keyboard, no-script and accessibility checks for staff follow-up."""
 
 import pytest
+from django.urls import reverse
 
 from .conftest import no_script_context
 from .waits import hidden, visible
@@ -94,7 +95,10 @@ def export_post(page, component_origin):
     page.get_by_label("Export format", exact=True).select_option("xlsx")
     page.get_by_label("Export timezone", exact=True).select_option("UTC")
     page.get_by_label("Include complete Staff workflow history").check()
-    page.route("**/information/export", lambda route: route.fulfill(body="Queued"))
+    page.route(
+        "**" + reverse("admin:information_export"),
+        lambda route: route.fulfill(body="Queued"),
+    )
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Queue complete export").click()
     assert "search=Sample" in sent.value.post_data
@@ -123,7 +127,7 @@ def test_staff_native_workflow_without_scripts(browser_engine, component_origin)
         page.get_by_label("Staff notes", exact=True).fill("Reopened")
         assert page.get_by_role("button", name="Save follow-up").is_enabled()
         assert page.locator("input[name=expected_version]").input_value() == "2"
-        page.route("**/update", lambda route: route.fulfill(body="Saved"))
+        page.route("**/record/", lambda route: route.fulfill(body="Saved"))
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Save follow-up").click()
         assert "notes=Reopened" in sent.value.post_data

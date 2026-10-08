@@ -13,6 +13,7 @@ import re
 from uuid import uuid4
 
 import pytest
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy import Capability
 from parishkit.stewardship.audit.models import AuditEvent
@@ -63,8 +64,10 @@ def test_timeline_for_administrators_and_staff(
     """Full timeline in both modes for Admins; the reduced view for Staff."""
     harness, _epoch = request.getfixturevalue("funnel")
     families = dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
-    base = f"/admin/reports/{harness.campaign.pk}/families/"
-    corpus, invited = base + f"{families[1]}/", base + f"{families[11]}/"
+    corpus, invited = (
+        reverse("admin:family_timeline", args=[families[1]]),
+        reverse("admin:family_timeline", args=[families[11]]),
+    )
     due = ScheduleDefinition.objects.get(kind="initial").current_revision.due_at
 
     # Testing: the corpus Family opens the form, gets past the first step
@@ -142,7 +145,10 @@ def test_timeline_for_administrators_and_staff(
     # is gone (410) until the single-campaign change (#145), since reports show
     # the current campaign only. Neither leaves an audit row (checked below).
     unknown, elsewhere = uuid4(), uuid4()
-    assert as_web(admin, base + f"{unknown}/")[0].status_code == 403
+    assert (
+        as_web(admin, reverse("admin:family_timeline", args=[unknown]))[0].status_code
+        == 403
+    )
     other = f"/admin/reports/{elsewhere}/families/{families[1]}/"
     assert as_web(admin, other)[0].status_code == 410
     # A role without Family codes gets no code and no Open form. No real role
@@ -282,16 +288,17 @@ def test_a_family_is_refused_under_another_real_campaign(
             store, store.active(), actor, campaign_record(name="Successor")
         )
         assert result.state == "applied" and Campaign.objects.count() == 2
-        successor = row["id"]
+        # The successor is the current campaign, which reports now show.
+        current = SystemConfiguration.objects.get().current_campaign_id
+        assert str(current) == str(row["id"])
         admin, login = signed_in()
         assert login.status_code == 302
-        assert (
-            as_web(admin, f"/admin/reports/{successor}/responses/")[0].status_code
-            == 200
-        )
+        assert as_web(admin, reverse("admin:response_dashboard"))[0].status_code == 200
+        # The retained campaign's old address is gone; the Family's address
+        # (which now means the current campaign, the successor) is refused.
         own = f"/admin/reports/{harness.campaign.pk}/families/{family.pk}/"
         assert as_web(admin, own)[0].status_code == 410
-        other = f"/admin/reports/{successor}/families/{family.pk}/"
+        other = reverse("admin:family_timeline", args=[family.pk])
         assert as_web(admin, other)[0].status_code == 403
         # Neither refusal leaves an audit row.
         events = AuditEvent.objects.filter(event_type="family_timeline_viewed")

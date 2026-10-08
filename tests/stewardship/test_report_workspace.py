@@ -111,17 +111,13 @@ def test_campaign_links_preserve_only_validated_state():
             "scope=current&timezone=America%2FDetroit&inactive=yes&page=2&sort=date_desc"
         )
     )
-    url = value.url(document().participation.campaign_id, page=3)
+    url = value.url(page=3)
     assert "scope=current" in url and "page=3" in url
     assert "timezone=America%2FDetroit" in url and "sort=date_desc" in url
     # The removed inactive subtotal's parameter still loads, and is dropped.
     assert "inactive" not in url
-    assert "timezone=" not in ReportQuery.parse(QueryDict()).url(
-        document().participation.campaign_id
-    )
-    assert "timezone=UTC" in ReportQuery.parse(QueryDict("timezone=UTC")).url(
-        document().participation.campaign_id
-    )
+    assert "timezone=" not in ReportQuery.parse(QueryDict()).url()
+    assert "timezone=UTC" in ReportQuery.parse(QueryDict("timezone=UTC")).url()
 
 
 @pytest.mark.parametrize("consume", [False, True])
@@ -281,11 +277,10 @@ def test_zero_pledge_total_is_a_number_not_text():
 
 def test_daily_table_size_is_carried_only_when_not_default():
     """Existing report links stay unchanged; a chosen size survives navigation."""
-    campaign = document().participation.campaign_id
-    assert "size=" not in ReportQuery.parse(QueryDict()).url(campaign)
+    assert "size=" not in ReportQuery.parse(QueryDict()).url()
     chosen = ReportQuery.parse(QueryDict("size=all&sort=date_desc"))
-    assert chosen.size == "all" and "size=all" in chosen.url(campaign, page=1)
-    assert chosen.sort == "date_desc" and "sort=date_desc" in chosen.url(campaign)
+    assert chosen.size == "all" and "size=all" in chosen.url(page=1)
+    assert chosen.sort == "date_desc" and "sort=date_desc" in chosen.url()
     # The shared table carries the sort itself, so the filters leave it out.
     assert all(name != "sort" for name, _ in chosen.carried())
 

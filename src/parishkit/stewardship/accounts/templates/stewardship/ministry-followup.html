@@ -6,7 +6,7 @@
 <p>{% translate "Names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Times use your computer's time zone." %}</p>
 <p>{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself. When a later ParishSoft refresh shows the change, the request can close automatically." %}</p>{% endaboutpage %}
 <p>{{ metadata.name }}</p>
-<p><a href="{% url 'admin:ministry_report' campaign_id %}">{% translate "Ministry reports, including authorized Member contact details" %}</a></p>
+<p><a href="{% url 'admin:ministry_report' %}">{% translate "Ministry reports, including authorized Member contact details" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
 <div id="followup-item" data-in-place-region>
@@ -17,7 +17,7 @@
 {% if item.source_resolved %}<p>{% translate "Resolved automatically: the current ParishSoft roster already shows this change." %}</p>{% endif %}
 {% if not item.latest %}<p class="notice">{% translate "The Family has since replaced or withdrawn this request. It is shown for history only." %}</p>{% endif %}
 {% if item.open %}
-<form method="post" action="{% url 'admin:ministry_followup_update' campaign_id item.id %}#followup-item" data-require-complete data-in-place="followup-save" data-in-place-message="{% translate 'Follow-up saved.' %}">{% csrf_token %}
+<form method="post" action="{% url 'admin:ministry_followup_update' item.id %}#followup-item" data-require-complete data-in-place="followup-save" data-in-place-message="{% translate 'Follow-up saved.' %}">{% csrf_token %}
 <input type="hidden" name="expected_version" value="{{ form.expected_version }}"><input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Follow-up" %}</legend>
 <p class="help" id="followup-state-help">{% translate "Recording a request as done here does not change the ParishSoft roster; update ParishSoft yourself." %}</p>
@@ -46,12 +46,12 @@
 {% if revision.contact_at %}<p>{{ revision.channel_label }} {% translate "contact" %} <time datetime="{{ revision.contact_at|date:'c' }}" data-local-instant>{{ revision.contact_at|date:'c' }}</time>{% if revision.contact_notes %}: {{ revision.contact_notes|linebreaksbr }}{% endif %}</p>{% endif %}
 <div>{{ revision.notes|linebreaksbr }}</div></section>
 {% empty %}<p>{% translate "No follow-up edits yet." %}</p>{% endfor %}
-<nav aria-label="{% translate 'Follow-up history pages' %}">{% if previous_history %}<a href="{% url 'admin:ministry_followup_item' campaign_id item.id %}?page={{ previous_history }}#followup-history" data-in-place="history-newer" data-in-place-fallback="history-older" data-in-place-only data-in-place-message="{% translate 'Newer history shown.' %}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="{% url 'admin:ministry_followup_item' campaign_id item.id %}?page={{ next_history }}#followup-history" data-in-place="history-older" data-in-place-fallback="history-newer" data-in-place-only data-in-place-message="{% translate 'Older history shown.' %}">{% translate "Older history" %}</a>{% endif %}</nav>
+<nav aria-label="{% translate 'Follow-up history pages' %}">{% if previous_history %}<a href="{% url 'admin:ministry_followup_item' item.id %}?page={{ previous_history }}#followup-history" data-in-place="history-newer" data-in-place-fallback="history-older" data-in-place-only data-in-place-message="{% translate 'Newer history shown.' %}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="{% url 'admin:ministry_followup_item' item.id %}?page={{ next_history }}#followup-history" data-in-place="history-older" data-in-place-fallback="history-newer" data-in-place-only data-in-place-message="{% translate 'Older history shown.' %}">{% translate "Older history" %}</a>{% endif %}</nav>
 </div>
 </div>
-<p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Return to Ministry follow-up" %}</a></p>
+<p><a href="{% url 'admin:ministry_followup' %}">{% translate "Return to Ministry follow-up" %}</a></p>
 {% else %}
-<form id="table-filters" data-table-sync method="post" action="{% url 'admin:ministry_followup' campaign_id %}">{% csrf_token %}
+<form id="table-filters" data-table-sync method="post" action="{% url 'admin:ministry_followup' %}">{% csrf_token %}
 <label for="followup-search">{% translate "Search Member or Ministry name" %}</label><input id="followup-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="filter-ministry">{% translate "Ministry" %}</label><select id="filter-ministry" name="ministry"><option value="">{% translate "All my Ministries" %}</option>{% for ministry in ministries %}<option value="{{ ministry.duid }}"{% if query.ministry == ministry.duid|stringformat:'s' %} selected{% endif %}>{{ ministry.name }}{% if ministry.in_campaign is False %} ({% translate "no longer in this campaign" %}){% endif %}</option>{% endfor %}</select>
 <label for="filter-action">{% translate "Request" %}</label><select id="filter-action" name="action"><option value="any">{% translate "Join or leave" %}</option><option value="join"{% if query.action == 'join' %} selected{% endif %}>{% translate "Join" %}</option><option value="leave"{% if query.action == 'leave' %} selected{% endif %}>{% translate "Leave" %}</option></select>
@@ -65,7 +65,7 @@
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministry follow-up results' %}"><table>
 <caption>{% translate "Ministry requests and current follow-up" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading table "member" heading %}{% translate "Ministry" as heading %}{% sort_heading table "ministry" heading %}{% translate "Request" as heading %}{% sort_heading table "request" heading %}<th scope="col">{% translate "Status" %}</th><th scope="col">{% translate "Last contact" %}</th></tr></thead><tbody>
 {% for row in rows %}<tr>
-<td><a href="{% url 'admin:ministry_followup_item' campaign_id row.id %}">{{ row.member_name }}</a></td><td>{{ row.ministry_name }}{% if row.in_campaign is False %}<br>{% translate "No longer in this campaign" %}{% endif %}</td>
+<td><a href="{% url 'admin:ministry_followup_item' row.id %}">{{ row.member_name }}</a></td><td>{{ row.ministry_name }}{% if row.in_campaign is False %}<br>{% translate "No longer in this campaign" %}{% endif %}</td>
 <td>{% if row.action == 'join' %}{% translate "Join" %}{% else %}{% translate "Leave" %}{% if row.cannot_serve %}<br>{% translate "Cannot participate in any ministries (physical limitations)" %}{% endif %}{% endif %}<br><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td>
 <td>{{ row.state_label }}{% if row.outcome_label %}<br>{{ row.outcome_label }}{% endif %}</td>
 <td>{% if row.last_contact_at %}<time datetime="{{ row.last_contact_at|date:'c' }}" data-local-instant>{{ row.last_contact_at|date:'c' }}</time>{% else %}{% translate "None recorded" %}{% endif %}</td></tr>

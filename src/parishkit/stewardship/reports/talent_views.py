@@ -286,7 +286,7 @@ def report(request, campaign_id):
             result,
             query,
             extra["paging"],
-            reverse("admin:talents_report", args=[campaign_id]),
+            reverse("admin:talents_report"),
         )
         return render_to_string(
             "stewardship/talents-report.html",

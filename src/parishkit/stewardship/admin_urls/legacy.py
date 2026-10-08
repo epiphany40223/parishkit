@@ -4,8 +4,8 @@ Each table row is ``(old route, new URL name)``; the old route keeps its own
 converters so its arguments are passed to the new one unchanged. A row whose
 old route names a campaign uses ``legacy(…, campaign=True)``. Route names are
 ``legacy_<new name>`` (``_slashless`` for the form without the trailing
-slash), so
-the navigation registry can tell them from pages. The table only grows: an
+slash, ``_chooser`` or ``_root`` for a retired address), so the navigation
+registry can tell them from pages. The table only grows: an
 old address is never dropped while bookmarks, sent digest emails or the
 runbooks may still name it.
 """
@@ -69,6 +69,8 @@ MAIL = (
 
 # (old route naming a campaign, new URL name): these redirect only for the
 # current campaign and answer 410 for any other (``legacy(campaign=True)``).
+# Each names its campaign as ``campaign_id``, under /admin/campaign/ or, for
+# reports, /admin/reports/.
 _C = "campaign/<uuid:campaign_id>"
 CAMPAIGN = (
     (f"{_C}/delivery", "delivery_control"),
@@ -107,6 +109,56 @@ CAMPAIGN = (
     (f"{_C}/production/withdraw", "production_withdrawal"),
     # Campaign Ministries now sits under Parish data's Ministries.
     (f"{_C}/ministries", "campaign_ministries"),
+    # Family campaign codes now sits under the Family directory (NAV-11).
+    (f"{_C}/family-codes", "family_codes"),
+    *(
+        # Responses and reports (NAV-11). Each report's form actions move
+        # with it, so a form left open on an old address is re-posted (308)
+        # only for the current campaign, and the report still checks it.
+        (f"reports/<uuid:campaign_id>/{old}", new)
+        for old, new in (
+            ("responses/", "response_dashboard"),
+            ("responses/<slug:key>/", "response_list"),
+            ("responses/<slug:key>/csv/", "response_list_export"),
+            ("participation/", "participation"),
+            ("participation/<uuid:fact_set_id>.png", "participation_chart"),
+            ("participation/export", "report_export_create"),
+            ("participation/exact-export", "report_exact_create"),
+            ("financial/", "financial_report"),
+            ("financial/export", "financial_export"),
+            ("talents/", "talents_report"),
+            ("talents/export", "talents_export"),
+            ("information/", "information_queue"),
+            ("information/export", "information_export"),
+            ("information/<uuid:item_id>/", "information_item"),
+            ("information/<uuid:item_id>/update", "information_update"),
+            ("ministries/", "ministry_report"),
+            ("ministries/join/", "ministry_joiners"),
+            ("ministries/leave/", "ministry_leavers"),
+            ("ministries/export/", "ministry_export"),
+            ("ministries/packet/", "ministry_packet"),
+            ("ministries/follow-up/", "ministry_followup"),
+            ("ministries/follow-up/<uuid:request_id>/", "ministry_followup_item"),
+            (
+                "ministries/follow-up/<uuid:request_id>/update",
+                "ministry_followup_update",
+            ),
+            ("families/", "family_directory"),
+            ("families/export", "family_directory_export"),
+            ("families/find", "find_family"),
+            ("families/<uuid:family_id>/", "family_timeline"),
+        )
+    ),
+)
+
+# (old route, new URL name, name suffix): retired addresses that named no
+# campaign (NAV-11). The two campaign choosers (decisions 10 and 19) and the
+# old Ministry reports root open the report they stood for; the suffix keeps
+# each route name distinct from the old campaign address of the same page.
+RETIRED = (
+    ("reports/campaigns/", "participation", "_chooser"),
+    ("ministry-reports/", "ministry_report", "_root"),
+    ("ministry-reports/campaigns/", "ministry_report", "_chooser"),
 )
 
 # Each page already in the scheme without its trailing slash (the one
@@ -164,6 +216,22 @@ SLASHLESS = (
     ("campaign/production", "production_progress"),
     ("campaign/production/cancellation", "production_withdrawal"),
     ("parish/ministries/campaign", "campaign_ministries"),
+    ("reports", "reports"),
+    ("reports/responses", "response_dashboard"),
+    ("reports/responses/<slug:key>", "response_list"),
+    ("reports/participation", "participation"),
+    ("reports/financial", "financial_report"),
+    ("reports/talents", "talents_report"),
+    ("reports/information", "information_queue"),
+    ("reports/information/<uuid:item_id>", "information_item"),
+    ("reports/ministries", "ministry_report"),
+    ("reports/ministries/joining", "ministry_joiners"),
+    ("reports/ministries/leaving", "ministry_leavers"),
+    ("reports/ministries/follow-up", "ministry_followup"),
+    ("reports/ministries/follow-up/<uuid:request_id>", "ministry_followup_item"),
+    ("reports/families", "family_directory"),
+    ("reports/families/<uuid:family_id>", "family_timeline"),
+    ("reports/family-codes", "family_codes"),
     ("mail/controls", "delivery_control"),
     ("mail/family-progress", "family_email_progress"),
     ("mail/family-history", "family_email_sends"),
@@ -182,6 +250,7 @@ ROWS = (
     tuple((old, new, False, "") for old, new in SYSTEM + PARISH + MAIL)
     + tuple((old, new, True, "") for old, new in CAMPAIGN)
     + tuple((old, new, False, "_slashless") for old, new in SLASHLESS)
+    + tuple((old, new, False, suffix) for old, new, suffix in RETIRED)
 )
 
 PREFIX = "legacy_"

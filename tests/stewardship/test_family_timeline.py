@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 import pytest
 from django.http import QueryDict
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.reports.family_timeline import (
     Email,
@@ -192,14 +193,12 @@ def test_scope_values_name_one_family_in_one_mode():
 
 def test_the_url_carries_only_closed_choices():
     """No name, DUID or code: the opaque record id, the mode and the sort."""
-    path = f"/admin/reports/{CAMPAIGN.pk}/families/{FAMILY}/"
-    assert timeline_url(CAMPAIGN.pk, FAMILY) == path
-    assert timeline_url(CAMPAIGN.pk, FAMILY, "testing") == path + "?mode=testing"
+    path = reverse("admin:family_timeline", args=[FAMILY])
+    assert timeline_url(FAMILY) == path
+    assert timeline_url(FAMILY, "testing") == path + "?mode=testing"
     # The default order (newest first) is left out; the other one is kept.
-    assert timeline_url(CAMPAIGN.pk, FAMILY, sort="-when") == path
-    assert timeline_url(CAMPAIGN.pk, FAMILY, "testing", "when") == (
-        path + "?mode=testing&sort=when"
-    )
+    assert timeline_url(FAMILY, sort="-when") == path
+    assert timeline_url(FAMILY, "testing", "when") == (path + "?mode=testing&sort=when")
     assert parse_query(QueryDict("")) == ("production", {})
     assert parse_query(QueryDict("mode=testing&sort=when&size=all")) == (
         "testing",
@@ -264,7 +263,7 @@ def test_administrator_page_shows_summary_and_timeline():
     # refresh it in place.
     assert '<div id="table" data-table-region>' in page
     assert (
-        f'href="/admin/reports/{CAMPAIGN.pk}/families/{FAMILY}/?mode=testing'
+        f'href="{reverse("admin:family_timeline", args=[FAMILY])}?mode=testing'
         '#table" data-in-place="mode-testing"'
     ) in page
     # When is a sort heading, newest first by default; choosing it reverses.
@@ -309,7 +308,7 @@ def test_an_empty_testing_view_keeps_the_chosen_sort():
     page = render(None, mode="testing", values={"sort": "when", "size": "all"})
     assert "no Testing rehearsal now" in page
     assert (
-        f'href="/admin/reports/{CAMPAIGN.pk}/families/{FAMILY}/?sort=when'
+        f'href="{reverse("admin:family_timeline", args=[FAMILY])}?sort=when'
         '#table" data-in-place="mode-production"'
     ) in page
 

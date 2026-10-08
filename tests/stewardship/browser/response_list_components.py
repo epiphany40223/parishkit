@@ -20,14 +20,14 @@ from parishkit.stewardship.web.tables import paginate
 from ..test_response_lists import CAMPAIGN, rows_of
 from ..test_response_metrics import START
 
-SUBMITTED = ListQuery().url(CAMPAIGN.pk, "submitted")
-DATA_QUALITY = ListQuery().url(CAMPAIGN.pk, "data-quality")
+SUBMITTED = ListQuery().url("submitted")
+DATA_QUALITY = ListQuery().url("data-quality")
 # The addresses the submitted list's controls lead to, as the browser builds
 # them: the Family heading, the filter form (show, then its hidden size and
 # sort) and the Testing switch.
 BY_FAMILY = SUBMITTED + "?size=50&sort=family"
 UNINVITED = SUBMITTED + "?show=uninvited&size=50&sort=submitted"
-TESTING = ListQuery("testing").url(CAMPAIGN.pk, "submitted")
+TESTING = ListQuery("testing").url("submitted")
 
 
 def render(context, admin, key, query, values=None, *, rows=True, paused=False):

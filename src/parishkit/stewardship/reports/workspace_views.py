@@ -14,7 +14,9 @@ from django.views.decorators.http import require_GET
 
 from parishkit.stewardship.accounts.admin_navigation import PAGES
 from parishkit.stewardship.accounts.authentication import denial, runtime
+from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
@@ -35,6 +37,7 @@ from .export_models import ExportRequest
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable, read_fact_set
+from .ministries import can_report
 from .read_admission import admit_report_read
 from .selection import guarded_participation
 from .statistics import StatisticsUnavailable, calculate_statistics
@@ -55,10 +58,23 @@ def campaign_ids():
 
 @require_GET
 def index(request):
-    """Default navigation is per request, never a mutation of the current pointer."""
+    """Open the current campaign's Participation, or Ministry requests.
+
+    ``/admin/reports/`` keeps its old meaning rather than opening the group's
+    first entry (admin-portal spec, "Menu groups"): Participation, or Ministry
+    requests for a viewer who may not open Participation (a Ministry leader),
+    which checks its own access. Default navigation is per request, never a
+    mutation of the current pointer.
+    """
     try:
         service = runtime()
-        _principal(request, service.store)
+        actor = authenticated_admin(request, store=service.store, activity=True)
+        if not allows(actor, Capability.CAMPAIGN_REPORT):
+            if not can_report(actor):
+                raise PermissionError("Campaign reporting is unavailable.")
+            response = redirect("admin:ministry_report")
+            response["Cache-Control"] = "no-store"
+            return response
         query = ReportQuery.parse(request.GET)
         choices = campaign_ids()
         current = SystemConfiguration.objects.values_list(
@@ -75,7 +91,7 @@ def index(request):
             )
         else:
             admit_report_read(current)
-            response = redirect(query.url(current))
+            response = redirect(query.url())
         response["Cache-Control"] = "no-store"
         return response
     except (PermissionError, ObjectDoesNotExist):
@@ -286,7 +302,7 @@ def _page_context(campaign_id, query, selected, principal):
         context["chart_url"] = (
             reverse(
                 "admin:participation_chart",
-                args=[campaign_id, selected.document.fact_set_id],
+                args=[selected.document.fact_set_id],
             )
             + "?"
             + urlencode({"scope": query.scope, "timezone": query.timezone})

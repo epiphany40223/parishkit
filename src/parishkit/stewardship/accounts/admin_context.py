@@ -221,7 +221,7 @@ def _find_family(actor, items, campaign):
     directory = any(item.url for item in items if item.name == "family_directory")
     if not directory or not allows(actor, Capability.CAMPAIGN_REPORT):
         return None
-    return {"url": reverse("admin:find_family", args=[campaign.pk])}
+    return {"url": reverse("admin:find_family")}
 
 
 def _current_campaign(configuration):

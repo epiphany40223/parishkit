@@ -3,6 +3,7 @@
 import pytest
 from django.http import QueryDict
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 from parishkit.stewardship.reports.directories import (
@@ -180,7 +181,7 @@ def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(test
     # A Family's name opens its timeline by its opaque campaign record id;
     # a row without one (none in practice) stays plain text.
     assert (
-        f'<td><a href="/admin/reports/{UUID(int=80)}/families/{UUID(int=81)}/">'
+        f'<td><a href="{reverse("admin:family_timeline", args=[UUID(int=81)])}">'
         "Example, Anna and John</a></td>"
     ) in html
     assert "<td>Codeless</td>" in html

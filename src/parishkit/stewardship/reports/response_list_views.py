@@ -1,6 +1,6 @@
 """Admin/Staff pages and CSV downloads of the response lists (#477, PR 5).
 
-``reports/<campaign>/responses/<list>/`` shows one list of Families behind
+``reports/responses/<list>/`` shows one list of Families behind
 the response funnel (``response_lists``) at the database's current instant,
 as a shared Admin table (web/tables.py) that sorts, filters and pages in
 place. ``.../csv/`` downloads the complete filtered list, in the page's order,
@@ -140,15 +140,13 @@ def page_context(campaign, spec, query, table, as_of, **options):
         "as_of": as_of,
         "table": replace(table, rows=[(row, cells(spec, row)) for row in table.rows]),
         "breadcrumb_label": spec.title,
-        "dashboard_url": DashboardQuery(query.mode).url(campaign.pk),
+        "dashboard_url": DashboardQuery(query.mode).url(),
         "production_url": ListQuery("production", query.show).url(
-            campaign.pk, key, size=size, sort=sort
+            key, size=size, sort=sort
         ),
-        "testing_url": ListQuery("testing", query.show).url(
-            campaign.pk, key, size=size, sort=sort
-        ),
-        "filter_action": reverse("admin:response_list", args=[campaign.pk, key]),
-        "export_action": reverse("admin:response_list_export", args=[campaign.pk, key]),
+        "testing_url": ListQuery("testing", query.show).url(key, size=size, sort=sort),
+        "filter_action": reverse("admin:response_list", args=[key]),
+        "export_action": reverse("admin:response_list_export", args=[key]),
         "export_timezones": sorted(timezone_names()),
         "show_choices": spec.choices if len(spec.choices) > 1 else (),
         # The download keeps the page's filter and order; refreshed in place,

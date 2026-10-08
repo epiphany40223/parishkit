@@ -3,6 +3,7 @@
 from uuid import UUID
 
 import pytest
+from django.urls import reverse
 
 from .conftest import no_script_context
 from .waits import visible
@@ -109,7 +110,8 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         )
         page.get_by_label("Export format").select_option("xlsx")
         page.route(
-            "**/families/export", lambda route: route.fulfill(body="Export queued")
+            "**" + reverse("admin:family_directory_export"),
+            lambda route: route.fulfill(body="Export queued"),
         )
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Queue complete export").click()

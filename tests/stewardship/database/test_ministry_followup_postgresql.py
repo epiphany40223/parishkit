@@ -9,6 +9,7 @@ import pytest
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, connection, transaction
 from django.db.models import F
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.accounts.policy_models import PortalUser
@@ -476,7 +477,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
     browser, head, _, _ = leader(harness, google)
     admin = user("admin@example.org").pk
     join, leave = requests()
-    route = f"/admin/reports/{harness.campaign.pk}/ministries/follow-up/"
+    route = reverse("admin:ministry_followup")
     absent = (
         b'name="selected"',
         b"Assign selected",
@@ -523,13 +524,19 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             assert search(browser, route, invalid)[0].status_code == 400
         _, hidden = search(browser, route, {"ministry": "4"})
         assert b"@example.org" not in hidden
-        detail = route + f"{join.pk}/"
+        detail = reverse("admin:ministry_followup_item", args=[join.pk])
+        update = reverse("admin:ministry_followup_update", args=[join.pk])
         response, body = get(browser, detail)
         assert response.status_code == 200 and b"No follow-up edits yet." in body
         assert not [marker for marker in absent if marker in body]
         assert b'<option value="assigned"' not in body
         # Another Ministry's or campaign's request is indistinguishable from none.
-        assert get(browser, route + f"{leave.pk}/")[0].status_code == 403
+        assert (
+            get(browser, reverse("admin:ministry_followup_item", args=[leave.pk]))[
+                0
+            ].status_code
+            == 403
+        )
         wrong = f"/admin/reports/{uuid4()}/ministries/follow-up/{join.pk}/"
         # Until #145 any campaign but the current one is gone (410).
         assert get(browser, wrong)[0].status_code == 410
@@ -546,12 +553,12 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             "contact_zone": "America/Los_Angeles",
             "contact_notes": "No answer",
         }
-        assert browser.post(detail + "update", form).status_code == 403  # No CSRF.
-        assert post(browser, wrong + "update", form).status_code == 403
-        assert post(browser, detail + "update", form).status_code == 302
-        assert post(browser, detail + "update", form).status_code == 302  # Replay.
+        assert browser.post(update, form).status_code == 403  # No CSRF.
+        assert post(browser, wrong + "update", form).status_code == 410
+        assert post(browser, update, form).status_code == 302
+        assert post(browser, update, form).status_code == 302  # Replay.
         stale = form | {"request_key": str(uuid4())}
-        assert post(browser, detail + "update", stale).status_code == 409
+        assert post(browser, update, stale).status_code == 409
         for invalid in (
             form | {"request_key": str(uuid4()), "expected_version": "2", **change}
             for change in (
@@ -570,7 +577,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             )
         ):
             # The response-owned transport an in-place refusal streams through.
-            assert search(browser, detail + "update", invalid)[0].status_code == 400
+            assert search(browser, update, invalid)[0].status_code == 400
         # A correctable refusal comes back in place (#553): the same request
         # page, an error summary naming the one problem, the values kept.
         mismatch = form | {
@@ -581,7 +588,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             "notes": "PRIVATE-NOTE kept <script>alert(1)</script>",
         }
         before = MinistryWorkflowRevision.objects.count()
-        response, body = search(browser, detail + "update", mismatch)
+        response, body = search(browser, update, mismatch)
         assert MinistryWorkflowRevision.objects.count() == before
         assert response.status_code == 400 and b"data-error-summary" in body
         assert b"Left ministry doesn&#x27;t apply to a request to join." in body
@@ -603,7 +610,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             "expected_version": "2",
             "contact_date": "2999-01-01",
         }
-        response, body = search(browser, detail + "update", future)
+        response, body = search(browser, update, future)
         assert response.status_code == 400
         assert b"date and time can&#x27;t be in the future." in body
         # Local-time entry (#558): a contact time without a usable zone (a
@@ -616,14 +623,14 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
                 "expected_version": "2",
                 "contact_zone": zone,
             }
-            response, body = search(browser, detail + "update", zoneless)
+            response, body = search(browser, update, zoneless)
             assert response.status_code == 400 and b"data-error-summary" in body
             assert b"came without your computer&#x27;s time zone" in body
             assert b'value="2026-01-02"' in body and b'value="15:04"' in body
-        response, body = search(browser, detail + "update", mismatch)
+        response, body = search(browser, update, mismatch)
         assert b'name="contact_zone" value="America/Los_Angeles"' in body
         # A malformed form still gets the plain error page.
-        response, body = search(browser, detail + "update", form | {"unexpected": "x"})
+        response, body = search(browser, update, form | {"unexpected": "x"})
         assert response.status_code == 400 and b"could not be read" in body
         response, body = get(browser, detail)
         assert b"PRIVATE-NOTE left a message" in body and b"No answer" in body
@@ -674,7 +681,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             "contact_zone": "Asia/Tokyo",
             "contact_notes": "",
         }
-        assert post(browser, detail + "update", keep).status_code == 302
+        assert post(browser, update, keep).status_code == 302
     join.refresh_from_db()
     assert (join.state, join.assignee_id, join.version) == ("new", None, 4)
     assert contacts.order_by("expected_version").last().contact_at == datetime(
@@ -692,7 +699,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             "notes": "",
             "contact_channel": "",
         }
-        assert post(browser, detail + "update", minimal).status_code == 302
+        assert post(browser, update, minimal).status_code == 302
         stray = minimal | {
             "expected_version": "5",
             "request_key": str(uuid4()),
@@ -702,18 +709,18 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             "contact_time": "10:00",
             "contact_notes": "Typed, then chose no contact attempt",
         }
-        assert post(browser, detail + "update", stray).status_code == 302
+        assert post(browser, update, stray).status_code == 302
         unresolved = minimal | {
             "expected_version": "6",
             "request_key": str(uuid4()),
             "state": "resolved",
         }
-        assert search(browser, detail + "update", unresolved)[0].status_code == 400
+        assert search(browser, update, unresolved)[0].status_code == 400
         closing = unresolved | {
             "request_key": str(uuid4()),
             "state": "closed_no_response",
         }
-        assert post(browser, detail + "update", closing).status_code == 302
+        assert post(browser, update, closing).status_code == 302
     latest = MinistryWorkflowRevision.objects.filter(request=join).order_by(
         "-expected_version"
     )
@@ -795,7 +802,7 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
     browser, head, _, _ = leader(harness, google)
     admin = user("admin@example.org").pk
     join, _ = requests()
-    detail = f"/admin/reports/{harness.campaign.pk}/ministries/follow-up/{join.pk}/"
+    update = reverse("admin:ministry_followup_update", args=[join.pk])
     refused = {
         "expected_version": "1",
         "request_key": str(uuid4()),
@@ -804,7 +811,7 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
         "contact_channel": "",
     }
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(browser, detail + "update", refused)
+        response, body = search(browser, update, refused)
         assert response.status_code == 400
         assert b"Choose an outcome for Resolved." in body
         assert b'name="expected_version" value="1"' in body
@@ -821,7 +828,7 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
     # Someone else saves; A's refused form is now stale.
     edit(harness, admin, join, notes="B's notes")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(browser, detail + "update", refused)
+        response, body = search(browser, update, refused)
         assert response.status_code == 409 and b"This request changed" in body
     assert [row.notes for row in MinistryWorkflowRevision.objects.all()] == [
         "B's notes"
@@ -830,7 +837,7 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(
             browser,
-            detail + "update",
+            update,
             refused | {"expected_version": "2", "request_key": str(uuid4())},
         )
         assert response.status_code == 400
@@ -846,14 +853,14 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
             "contact_channel": "",
         }
         # The form's own token, not the API header the other posts use.
-        assert browser.post(detail + "update", fixed).status_code == 302
+        assert browser.post(update, fixed).status_code == 302
     join.refresh_from_db()
     assert (join.state, join.outcome, join.version) == ("resolved", "joined", 3)
     # A request closed meanwhile is a conflict too, never a dangling form.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(
             browser,
-            detail + "update",
+            update,
             refused | {"expected_version": "3", "request_key": str(uuid4())},
         )
         assert response.status_code == 409 and b"followup-outcome" not in body
@@ -867,7 +874,7 @@ def test_contact_refusals_mark_their_fields(response_service, google):
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     join, _ = requests()
-    detail = f"/admin/reports/{harness.campaign.pk}/ministries/follow-up/{join.pk}/"
+    update = reverse("admin:ministry_followup_update", args=[join.pk])
     contact = {
         "expected_version": "1",
         "state": "in_progress",
@@ -894,7 +901,7 @@ def test_contact_refusals_mark_their_fields(response_service, google):
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = search(
                 browser,
-                detail + "update",
+                update,
                 values | {"request_key": str(uuid4())},
             )
         assert response.status_code == 400
@@ -925,7 +932,6 @@ def test_refusal_outside_scope_is_denied_not_a_conflict(response_service, google
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     _, leave = requests()  # Ministry 4, outside the leader's Ministry 9.
-    route = f"/admin/reports/{harness.campaign.pk}/ministries/follow-up/"
     refused = {
         "request_key": str(uuid4()),
         "state": "resolved",
@@ -935,7 +941,9 @@ def test_refusal_outside_scope_is_denied_not_a_conflict(response_service, google
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         answers = [
             search(
-                browser, route + f"{target}/update", refused | {"expected_version": v}
+                browser,
+                reverse("admin:ministry_followup_update", args=[target]),
+                refused | {"expected_version": v},
             )
             for target, v in ((leave.pk, "1"), (leave.pk, "7"), (uuid4(), "1"))
         ]

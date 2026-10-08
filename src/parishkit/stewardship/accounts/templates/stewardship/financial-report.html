@@ -8,7 +8,7 @@
 <p>{{ metadata.name }}</p>
 {% if metadata.giving_through %}<p>{% blocktranslate with start=metadata.comparison_start|parish_date end=metadata.comparison_end|parish_date through=metadata.giving_through|parish_date %}ParishSoft pledges and contributions cover the comparison period {{ start }} — {{ end }}, with contributions through {{ through }}.{% endblocktranslate %}</p>
 {% else %}<p class="notice">{% translate "ParishSoft pledges and contributions are unavailable: the latest giving data read from ParishSoft is not confirmed complete for this campaign's comparison period. Unavailable does not mean zero. A later full ParishSoft refresh may fill it in." %}</p>{% endif %}
-<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Participation" %}</a></p>
+<p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
 <div id="financial-summary" data-table-sync><h2>{% translate "Summary of matching pledges" %}</h2>
 <dl>
 <dt>{% translate "Families" %}</dt><dd data-summary="families">{{ summary.families|number }}</dd>
@@ -18,7 +18,7 @@
 <dt>{% translate "No share method chosen" %}</dt><dd>{{ summary.no_share|number }}</dd>
 <dt>{% translate "Cannot contribute financially" %}</dt><dd>{{ summary.cannot_give|default:0|number }}</dd>
 </dl></div>
-<form id="table-filters" data-table-sync method="post" action="{% url 'admin:financial_report' campaign_id %}">{% csrf_token %}
+<form id="table-filters" data-table-sync method="post" action="{% url 'admin:financial_report' %}">{% csrf_token %}
 <label for="financial-search">{% translate "Search Family name or Family DUID" %}</label><input id="financial-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="filter-active">{% translate "Family status" %}</label><select id="filter-active" name="active"><option value="any">{% translate "Any status" %}</option><option value="active"{% if query.active == 'active' %} selected{% endif %}>{% translate "Active" %}</option><option value="inactive"{% if query.active == 'inactive' %} selected{% endif %}>{% translate "Inactive" %}</option><option value="unavailable"{% if query.active == 'unavailable' %} selected{% endif %}>{% translate "Status unavailable" %}</option></select>
 <fieldset><legend>{% translate "First response date (campaign timezone)" %}</legend>
@@ -40,7 +40,7 @@
 <h2 id="financial-export-heading">{% translate "Export complete results" %}</h2>
 <p id="financial-export-count" data-table-sync>{% blocktranslate with shown=total|number count counter=total %}{{ shown }} matching Family, using the applied filters and sort above—not just this page. The file uses every matching pledge and its ParishSoft comparison totals as they are when you queue the export; later submissions or ParishSoft refreshes are not included.{% plural %}{{ shown }} matching Families, using the applied filters and sort above—not just this page. The file uses every matching pledge and its ParishSoft comparison totals as they are when you queue the export; later submissions or ParishSoft refreshes are not included.{% endblocktranslate %}</p>
 <p class="notice">{% translate "Sensitive parish financial information: download only to a trusted device and share only with authorized recipients." %}</p>
-<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:financial_export' campaign_id %}">{% csrf_token %}
+<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:financial_export' %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>

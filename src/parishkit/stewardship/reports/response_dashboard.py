@@ -1,6 +1,6 @@
 """Admin/Staff response dashboard: the funnel, its figures and charts (#477).
 
-One page per campaign (``reports/<campaign>/responses/``) shows the response
+One page (``reports/responses/``, the current campaign) shows the response
 funnel (``response_metrics``) as it stands at the database's current instant:
 a tile per stage with its share of Invited, the three figures reported beside
 the funnel, and the funnel and activity charts (``chart_specs``), which the
@@ -84,7 +84,7 @@ class DashboardQuery:
             raise ValueError("Invalid response dashboard options.")
         return cls(mode, grain)
 
-    def url(self, campaign_id, **changes):
+    def url(self, **changes):
         """This page's URL with ``changes`` applied, leaving defaults out."""
         chosen = replace(self, **changes)
         values = {}
@@ -92,7 +92,7 @@ class DashboardQuery:
             values["mode"] = chosen.mode
         if chosen.grain != AUTO:
             values["grain"] = chosen.grain
-        path = reverse("admin:response_dashboard", args=[campaign_id])
+        path = reverse("admin:response_dashboard")
         return path + ("?" + urlencode(values) if values else "")
 
 
@@ -158,7 +158,7 @@ def untitled(chart):
     return replace(chart, spec=spec)
 
 
-def family_lists(campaign_id, query, metrics):
+def family_lists(query, metrics):
     """The panel linking to each list of Families, with its length when known.
 
     The lengths come from the same funnel rows as the tiles; the data-quality
@@ -170,7 +170,7 @@ def family_lists(campaign_id, query, metrics):
             "title": spec.title,
             # Only the list without a length says what it holds.
             "description": spec.description if spec.needs_facts else "",
-            "url": ListQuery(query.mode).url(campaign_id, key),
+            "url": ListQuery(query.mode).url(key),
             "count": counts.get(key),
         }
         for key, spec in LISTS.items()
@@ -198,8 +198,8 @@ def page_context(campaign, query, metrics, *, can_test=False):
         "query": query,
         "testing": query.mode == "testing",
         "can_test": can_test,
-        "production_url": query.url(campaign.pk, mode="production"),
-        "testing_url": query.url(campaign.pk, mode="testing"),
+        "production_url": query.url(mode="production"),
+        "testing_url": query.url(mode="testing"),
         "metrics": None,
     }
     if metrics is None:
@@ -211,9 +211,9 @@ def page_context(campaign, query, metrics, *, can_test=False):
         "figures": figures(metrics),
         "charts": [untitled(funnel_chart(metrics)), untitled(activity_chart(metrics))],
         "invited": metrics.stage("invited"),
-        "lists": family_lists(campaign.pk, query, metrics),
-        "hour_url": query.url(campaign.pk, grain="hour"),
-        "day_url": query.url(campaign.pk, grain="day"),
+        "lists": family_lists(query, metrics),
+        "hour_url": query.url(grain="hour"),
+        "day_url": query.url(grain="day"),
     }
 
 

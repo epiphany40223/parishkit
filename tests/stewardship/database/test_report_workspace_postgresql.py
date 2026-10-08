@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.db import connection
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -58,9 +59,9 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     campaign_id = setup[2].campaign_id
     pointer(setup[2])
     before = SystemConfiguration.objects.get().current_campaign_id
-    path = f"/admin/reports/{campaign_id}/participation/"
+    path = reverse("admin:participation")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        redirected = browser.get("/admin/reports/?scope=historical")
+        redirected = browser.get(reverse("admin:reports") + "?scope=historical")
         assert redirected.status_code == 302
         assert (
             path in redirected["Location"]
@@ -135,7 +136,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     with monkeypatch.context() as patch:
         patch.setattr(read_admission, "admit_campaign", closed_admission)
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            for endpoint in ("/admin/reports/", path, chart_path):
+            for endpoint in (reverse("admin:reports"), path, chart_path):
                 response, body = read(browser, endpoint)
                 assert response.status_code == 503, endpoint
                 assert response["Retry-After"] == "5"
@@ -149,7 +150,8 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
     ):
         for endpoint in (
-            "/admin/reports/",
+            reverse("admin:reports"),
+            # The retired chooser's old address (NAV-11).
             "/admin/reports/campaigns/",
             path,
             chart_path,
@@ -169,10 +171,10 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     monkeypatch.setattr(tables, "PAGE_SIZES", (2, *tables.PAGE_SIZES))
     monkeypatch.setattr(workspace, "PAGE_SIZES", (2, *tables.PAGE_SIZES))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        # The retired chooser (rule 10) goes to the reports root, filters kept.
+        # The retired chooser (rule 10) opens Participation, filters kept.
         response, _ = read(browser, "/admin/reports/campaigns/?scope=current")
-        assert response.status_code == 302
-        assert response["Location"] == "/admin/reports/?scope=current"
+        assert response.status_code == 301
+        assert response["Location"] == path + "?scope=current"
         options = "?sort=date_desc&inactive=yes&size=2"
         # A bookmark from before #728 removed the inactive subtotal still
         # loads: the parameter is ignored and no subtotal is shown.
@@ -216,7 +218,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         patch.setattr(export_ui, "runtime", unavailable)
         for method, endpoint in (
             (browser.get, f"/admin/reports/exports/{uuid4()}/"),
-            (lambda url: post(browser, url), path + "export"),
+            (lambda url: post(browser, url), reverse("admin:report_export_create")),
             (
                 lambda url: post(browser, url),
                 f"/admin/reports/exports/{uuid4()}/cancel",
@@ -234,7 +236,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     monkeypatch.setattr(export_ui, "create_export", compacted)
     response = post(
         browser,
-        path + "export",
+        reverse("admin:report_export_create"),
         {
             "fact_set_id": str(setup[2].pk),
             "format": "csv",
@@ -259,7 +261,7 @@ def test_native_export_creation_status_cancel_and_restricted_download(
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
-    path = f"/admin/reports/{facts.campaign_id}/participation/export"
+    path = reverse("admin:report_export_create")
     values = {
         "fact_set_id": str(facts.pk),
         "format": "xlsx",
@@ -402,13 +404,13 @@ def test_staff_report_access_then_ministry_role_and_revocation(http_scenario, go
     )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
-    path = f"/admin/reports/{facts.campaign_id}/participation/"
+    path = reverse("admin:participation")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, _ = read(browser, path)
         assert response.status_code == 200
         response = post(
             browser,
-            path + "export",
+            reverse("admin:report_export_create"),
             {
                 "fact_set_id": str(facts.pk),
                 "format": "csv",
@@ -437,7 +439,7 @@ def test_staff_report_access_then_ministry_role_and_revocation(http_scenario, go
         ],
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for url in ("/admin/reports/", path, f"{path}{facts.pk}.png", job_path):
+        for url in (reverse("admin:reports"), path, f"{path}{facts.pk}.png", job_path):
             response, _ = read(browser, url)
             assert response.status_code == 403
         assert post(browser, job_path + "cancel").status_code == 403

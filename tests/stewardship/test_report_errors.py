@@ -4,6 +4,7 @@ import json
 import logging
 
 from django.test import RequestFactory
+from django.urls import reverse
 
 from parishkit.stewardship.observability import (
     DEBUG_LOGGING_VARIABLE,
@@ -37,7 +38,7 @@ def test_scripts_receive_a_typed_503_with_retry_and_the_report_refusal():
 def test_people_see_an_admin_page_not_the_family_sign_in_denial():
     """The browser page names the report outage, never sign-in trouble."""
     request = RequestFactory().get(
-        "/admin/reports/ministry-reports/", HTTP_SEC_FETCH_MODE="navigate"
+        reverse("admin:ministry_report"), HTTP_SEC_FETCH_MODE="navigate"
     )
     page = error_page(request, _unavailable_inside_except())
     assert page.status_code == 503

@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.models import AuditContext
@@ -411,14 +412,14 @@ def test_campaign_without_the_module_is_denied_and_unlinked(response_service, go
     """No financial module means no entry, no report and no empty financial page."""
     harness = response_service
     assert "financial" not in harness.campaign.active_configuration.values["modules"]
-    route = f"/admin/reports/{harness.campaign.pk}/financial/"
+    route = reverse("admin:financial_report")
     with pytest.raises(PermissionError, match="not enabled"):
         report(harness)
     browser, login = signed_in()
     assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert get(browser, route)[0].status_code == 403
-        response, body = get(browser, route.replace("financial", "participation"))
+        response, body = get(browser, reverse("admin:participation"))
         assert response.status_code == 200 and route.encode() not in body
 
 
@@ -622,7 +623,7 @@ def test_native_page_filters_privately_and_denies_leaders(
     # The surname alone ("Example") also appears in unrelated page text, so
     # match the Family's row header rather than the bare name.
     name = b'<th scope="row">' + name + b"<br>"
-    route = f"/admin/reports/{harness.campaign.pk}/financial/"
+    route = reverse("admin:financial_report")
     browser, login = signed_in()
     assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -667,7 +668,7 @@ def test_native_page_filters_privately_and_denies_leaders(
         # back could only lead to a refusal.
         assert search(browser, wrong, {"sort": "random"})[0].status_code == 410
         # The campaign reports page offers the entry only with the module enabled.
-        _, body = get(browser, route.replace("financial", "participation"))
+        _, body = get(browser, reverse("admin:participation"))
         assert route.encode() in body
 
     # Two different routes to the same recovery page. The shared guard answers

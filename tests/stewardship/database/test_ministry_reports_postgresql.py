@@ -6,6 +6,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 from django.db import connection, transaction
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.models import AuditContext
@@ -34,6 +35,11 @@ from .test_response_http_postgresql import answers_for, load_form
 from .test_source_families_postgresql import prepare, promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+# The "no campaign" page Ministry requests shows when there is nothing to
+# report for this reader.
+EMPTY = b"There is no current campaign report for you to view."
 
 
 def setup(harness):
@@ -130,8 +136,8 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
     )
     google[0]["email"] = "leader@example.org"
     browser, _ = signed_in()
-    root = f"/admin/reports/{harness.campaign.pk}/ministries/"
-    route = root + "join/"
+    root = reverse("admin:ministry_report")
+    route = reverse("admin:ministry_joiners")
     from parishkit.stewardship.reports import ministry_views
 
     real_principal = ministry_views._principal
@@ -162,7 +168,12 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         assert b'name="ministry" value="9"' in body
         assert b"Not published" in body and b"valid@example.org" not in body
         assert b"+1 (202) 555-0123" in body and b"1960-01-01" not in body
-        assert search(browser, root + "leave/", {"ministry": "4"})[0].status_code == 403
+        assert (
+            search(browser, reverse("admin:ministry_leavers"), {"ministry": "4"})[
+                0
+            ].status_code
+            == 403
+        )
         assert browser.post(route, {"search": "Private"}).status_code == 403
         response, body = search(browser, route, {"ministry": "9", "search": "Example"})
         assert response.status_code == 200 and b"Member Middle Example" in body
@@ -363,8 +374,8 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
 
     Until the single-campaign change (#145) reports show the current campaign
     only (navigation rule 10). A leader whose assignment covers only the
-    archived campaign now sees the "no campaign" page rather than that
-    campaign, and the retired chooser redirects.
+    archived campaign is refused the current campaign's Ministry requests,
+    and the retired root and chooser redirect there (NAV-11).
     """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.lifecycle import Action
@@ -420,23 +431,26 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
     )
     google[0]["email"] = "leader@example.org"
     browser, _ = signed_in()
+    # The archived campaign's old address, and Ministry requests, which now
+    # always means the current campaign (the successor).
     archived = f"/admin/reports/{harness.campaign.pk}/ministries/"
-    current = f"/admin/reports/{successor['id']}/ministries/"
+    current = reverse("admin:ministry_report")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # The retired root and chooser open Ministry requests (NAV-11).
+        for old in ("/admin/ministry-reports/", "/admin/ministry-reports/campaigns/"):
+            response = browser.get(old)
+            assert response.status_code == 301 and response["Location"] == current
         # The leader's only assigned Ministry is in the archived campaign.
-        response, body = read(browser, "/admin/ministry-reports/")
-        assert response.status_code == 200 and b"Unassigned campaign" not in body
-        response = browser.get("/admin/ministry-reports/campaigns/")
-        assert response.status_code == 302
-        assert response["Location"] == "/admin/ministry-reports/"
         assert read(browser, archived)[0].status_code == 410
+        # The current campaign holds none of the leader's Ministries, so
+        # Ministry requests shows the "no campaign" page (NAV-11).
         response, body = read(browser, current)
-        assert response.status_code == 403 and b"Unassigned campaign" not in body
+        assert response.status_code == 200 and EMPTY in body
+        assert b"Unassigned campaign" not in body
     google[0]["email"] = "admin@example.org"
     google[0]["sub"] = "synthetic-admin-subject"
     admin, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert admin.get("/admin/ministry-reports/")["Location"] == current
         response, body = read(admin, current)
         assert response.status_code == 200 and b"Choir" in body
         assert b"2,147,483,648" not in body and b"9,223,372,036,854,775,807" not in body
@@ -465,14 +479,12 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
             == "applied"
         )
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            assert admin.get("/admin/ministry-reports/")["Location"] == current
-            assert browser.get("/admin/ministry-reports/").status_code == 200
             response, body = read(admin, current)
             assert (
                 response.status_code == 200
                 and b"No matching authorized Ministries" in body
             )
-            assert read(browser, current)[0].status_code == 403
+            assert EMPTY in read(browser, current)[1]
     assert (
         change(
             store,
@@ -490,12 +502,10 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
         == "applied"
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        # The current campaign has no Ministry step: no campaign to report.
-        response, body = read(admin, "/admin/ministry-reports/")
-        assert response.status_code == 200 and b"Unassigned campaign" not in body
+        # The current campaign has no Ministry step: nothing to report.
         response, body = read(admin, current)
-        assert response.status_code == 403 and "Retry-After" not in response
-        assert b"Unassigned campaign" not in body
+        assert response.status_code == 200 and "Retry-After" not in response
+        assert EMPTY in body and b"Unassigned campaign" not in body
 
 
 def test_legacy_timezone_alias_submits_and_reports(monkeypatch, request):
@@ -520,7 +530,7 @@ def test_report_pages_never_wait_behind_the_work_lock(response_service, google):
     the work-order lock throughout, and the short statement timeout turns any
     regression into a fast failure instead of a hang.
     """
-    harness = setup(response_service)
+    setup(response_service)
     browser, _ = signed_in()
     settings = connection.settings_dict
     before = AuditContext.objects.count()
@@ -536,9 +546,7 @@ def test_report_pages_never_wait_behind_the_work_lock(response_service, google):
         with connection.cursor() as cursor:
             cursor.execute("SET statement_timeout = '3s'")
         try:
-            response, body = read(
-                browser, f"/admin/reports/{harness.campaign.pk}/ministries/"
-            )
+            response, body = read(browser, reverse("admin:ministry_report"))
             assert response.status_code == 200 and b"Food pantry" in body
         finally:
             with connection.cursor() as cursor:
