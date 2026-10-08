@@ -122,6 +122,9 @@
     separateMailing = null;
     requests = initialRequests = {};
     conflicts.clear();
+    // The expired screen empties the form without heading(); drop any height
+    // an anchored edit() kept (#384 L5).
+    root.style.minHeight = "";
     root.replaceChildren();
   }
   function expired() {
@@ -346,6 +349,10 @@
     element?.focus({preventScroll: true});
   }
   function heading(text, section) {
+    // Every screen but the expired one (clear()) starts here, so a
+    // height an anchored edit() kept for the form never carries over; edit()
+    // re-applies it after this call (#384 L5).
+    root.style.minHeight = "";
     root.replaceChildren();
     session.dataset.presenceSection = section;
     const title = node("h2", text, root, {tabindex: "-1"});
@@ -590,7 +597,7 @@
       }
       requests[member.id] = selected === "current" ? null : {[selected]: true, confirmed: true,
         ...(selected === "deceased_status" ? {death_date: ""} : {})};
-      edit(); document.getElementById(id)?.focus();
+      edit(id, {anchor: id});
     });
     if (request) node("p", "Your household change will be sent for parish review. Other census edits for this person will not be submitted.", group, {class: "changed"});
     if (request?.deceased_status) {
@@ -1039,7 +1046,7 @@
     lock.addEventListener("change", () => {
       entry.cannot_serve = lock.checked;
       if (lock.checked) lockMinistries(member); else unlockMinistries(member);
-      edit(lockId);
+      edit(lockId, {anchor: lockId});
     });
   }
   function offersTalents() {
@@ -1068,7 +1075,7 @@
       checkbox.addEventListener("change", () => {
         if (checkbox.checked) entry.talents[option.id] = "";
         else delete entry.talents[option.id];
-        if (option.free_text) edit(checkbox.checked ? id + "-text" : id);
+        if (option.free_text) edit(checkbox.checked ? id + "-text" : id, {anchor: id});
       });
       if (option.free_text && checkbox.checked) {
         node("label", "Please describe your talent", talents, {for: id + "-text"});
@@ -1939,6 +1946,8 @@
     // Unknown keys (a removed Member, a disabled module) fall back to the
     // first page rather than leaving an empty screen.
     const page = pages.find((entry) => entry.key === key) || pages[0];
+    // Space an anchored edit() kept below the form belongs to that page only.
+    if (page.key !== currentPage) root.style.minHeight = "";
     currentPage = page.key;
     navNote("");
     const lastSubmitted = root.querySelector(".family-submitted");
@@ -2052,8 +2061,23 @@
     navNote("");
     return true;
   }
-  function edit(target = null) {
+  function edit(target = null, {anchor = null} = {}) {
+    // ``anchor`` (an element id) keeps the page still around a control that
+    // changed the form's shape (#384 L5). The rebuild below starts by
+    // scrolling to the top (heading), and focusing the target afterwards
+    // scrolls again wherever the browser likes, so on a phone the page
+    // jumped. With an anchor, the rebuilt anchor is scrolled back to where
+    // it was on screen and the target is focused without scrolling, all in
+    // this one task, so nothing moves between frames. The form also keeps at
+    // least its old height: when the change removes content below the
+    // anchor near the end of the page, a shorter page would cap the scroll
+    // and the anchor would still move. That extra space lasts until the
+    // Family moves to another page (showPage).
+    const anchored = anchor ? document.getElementById(anchor) : null;
+    const anchorTop = anchored?.getBoundingClientRect().top;
+    const keptHeight = anchored ? root.offsetHeight + "px" : "";
     heading(familyTitle(), "welcome");
+    root.style.minHeight = keptHeight;
     // The "last submitted" notice sits above the Family heading (below the
     // Testing banner, which is outside the form) and shows on Welcome only.
     const lastSubmitted = submittedBanner(root);
@@ -2222,7 +2246,10 @@
     });
     const targetElement = target ? document.getElementById(target) : null;
     showPage(pageOf(targetElement) || currentPage || "intro", {focus: !targetElement});
-    targetElement?.focus();
+    if (!anchored) { targetElement?.focus(); return; }
+    targetElement?.focus({preventScroll: true});
+    const moved = document.getElementById(anchor) || targetElement;
+    if (moved) window.scrollBy(0, moved.getBoundingClientRect().top - anchorTop);
   }
   function addMemberButton(parent) {
     const add = node("button", "Add a household member", parent, {type: "button", class: "button-secondary"});
@@ -2232,7 +2259,11 @@
       answers.proposed_members[id] = Object.fromEntries(form.new_member_fields.map((field) => [field.name, field.value]));
       currentPage = "member-" + id;
       pushPage({familyPage: currentPage}, "");
+      // A new page: show it from its top, as Next does, with the first name
+      // focused, rather than wherever focusing scrolls on the rebuilt page
+      // (#384 L5).
       edit("member-" + id + "-first_name");
+      focusTop(document.getElementById("member-" + id + "-first_name"));
     });
   }
   function conflictApplies(path) {
