@@ -712,18 +712,30 @@ layout; where the deployment YAML overrides a path, use that path instead.
    `run --rm admin-recovery revoke-automation-sessions --config RECOVERY_CONFIG --reason restore`
    (see the [Admin automation guide](stewardship-admin-automation.md#restore-and-ending-every-session)).
    A set taken under a release without automation sessions has none, and
-   its image has no such command; skip it then.
+   its image has no such command; skip it then. Then close the site for
+   review, giving the set's name (its directory, the backup's start in UTC):
+   `run --rm admin-recovery restore-begin --config RECOVERY_CONFIG --backup-at SET_NAME`.
+   It prints the review's id. Families cannot sign in and no Family email is
+   sent until an Administrator releases the site in step 8; no Family code or
+   link changes. Never run it on a disposable drill host. Run it once per
+   restore: never re-run it while a review is open (for example after a
+   restart), because a re-run moves the restore's cutoff and holds reminders
+   that came due while the site was closed (#799). A set taken under a
+   release without the restore review has no such command; follow
+   [the limitations](#restore-limitations-in-v1) instead.
 8. **Start web alone and review.** **Disposable drill host: start `web` alone, stop
    after web's health check and go straight to step 10.** Starting the
    installers there would let the Google Workspace installer answer pending
    **Test access** checks, which write into the live Drive folder. Otherwise,
-   start `web` and `caddy` only, and run the health command. An Administrator pauses delivery on the campaign's
-   **Pause and resume mail** page if it is not already paused, then compares the
-   restored deliveries with the mail provider's own sent log for the period
-   after the backup, and notes every message the provider sent that the
-   restored state does not show as delivered (see the limitations below).
-   Then start `scheduler`, `worker`, `mail-dispatch`, `config-installer` and
-   the credential installers, and resume delivery deliberately.
+   start `web` and `caddy` only, and run the health command. An
+   Administrator signs in and lands on the **Restore review** page. There
+   they find the emails that may have gone out, compare each send with the
+   mail provider's own sent log for the time since the backup, and choose
+   "Assume these were sent" or "Send these again" for each. Then they
+   release the site, which opens it again as restored; emails nobody decided
+   on stay held and are never sent. Only after the release, start
+   `scheduler`, `worker`, `mail-dispatch`, `config-installer` and the
+   credential installers.
 9. **Take a fresh backup.** Never on a disposable drill host: skip this
    step there (see the warning under [Restore drill](#restore-drill)). On the
    deployment's own host, run the backup at once, then re-enable the backup
@@ -738,24 +750,36 @@ layout; where the deployment YAML overrides a path, use that path instead.
 
 ## Restore limitations in v1
 
-A restore returns the deployment to the backup's moment. v1 has no
-restore-review workflow, so the operator and the Administrator must plan for
-the following, and the pre-launch gate approves them as known limitations:
+A restore returns the deployment to the backup's moment. With the restore
+review (`restore-begin` and the Restore review page), the site stays closed
+until an Administrator releases it, and no email that may have gone out after
+the backup is sent again unless they choose "Send these again". These
+limitations remain:
 
-- **Family access stays open during the review.** v1 has no control that
-  closes the Family portal. From step 8, Families can sign in to the restored
-  state and submit.
 - **Work after the backup is lost.** Submissions, Admin edits and deliveries
   recorded after the backup are not in the restored database. A Family whose
   submission was lost must submit again.
-- **Mail sent after the backup can be sent again.** The restored database
-  does not know about messages the provider accepted after the backup, and v1
-  has no control to mark such a message sent or to cancel it on an active
-  campaign. When delivery resumes, the invitations and reminders that the
-  restored state still considers due are sent, coalesced by the ordinary
-  overdue plan, so those Families can receive a second copy. To keep this
-  window small, run a backup by hand right after each large send (the initial
-  invitations and each reminder wave) as well as nightly.
+- **A link emailed after the backup may be unknown.** A restore never changes
+  a Family's code or link, but a link created after the backup was taken is
+  not in the restored database. "Send these again" sends that Family the link
+  the backup holds. To keep this window small, run a backup by hand right
+  after each large send as well as nightly.
+- **An undecided invitation keeps the Family's reminders back.** After
+  release, emails nobody decided on stay held, and the Restore review page is
+  gone; settling them later is #757. The release preview says how many
+  Families this affects.
+- **Mid-hand-off emails are not held.** An email the provider was being given
+  at the backup is settled from the delivery warning on Background work after
+  release.
+- **A backup taken in Testing.** Restored after go-live, it releases into
+  Testing, and the next go-live invites every Family again.
+
+A set taken under a release without the restore review (before migration 0019)
+cannot be closed for review. Then, at step 8, an Administrator pauses
+delivery on the campaign's **Pause and resume mail** page before the
+background services start, compares the restored deliveries with the
+provider's sent log, and resumes delivery deliberately. Families can sign in during that review, and mail the provider
+accepted after the backup can be sent again.
 
 ## Known v1 limitations
 

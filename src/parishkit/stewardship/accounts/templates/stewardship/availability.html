@@ -5,7 +5,9 @@
   <h1>{% translate "The system is not configured yet" %}</h1>
   <p>{% translate "The parish must complete setup before this portal is available." %}</p>
   {% else %}
-  <h1>{% translate "The system is temporarily unavailable" %}</h1>
+  {# Staff and Ministry leaders during a restore review are told so (#537); #}
+  {# Families keep the neutral wording. #}
+  <h1>{% if admin %}{% translate "The site is being restored" %}{% else %}{% translate "The system is temporarily unavailable" %}{% endif %}</h1>
   <p>{% translate "The parish must finish its maintenance review before normal access resumes." %}</p>
   {% endif %}
   {% if admin %}

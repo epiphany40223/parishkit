@@ -5,7 +5,6 @@ import re
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.utils.deprecation import MiddlewareMixin
-from django.views.decorators.http import require_safe
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.web.namespaces import is_admin
@@ -148,9 +147,3 @@ BACKGROUND_READS = re.compile(
 def _setup_path(path):
     """Match the exact setup namespace, never a similarly prefixed Admin route."""
     return path == "/admin/setup" or path.startswith("/admin/setup/")
-
-
-@require_safe
-def maintenance(request):
-    """ADM-06 owns restore controls; authentication alone never releases this gate."""
-    return status_page(request, kind="maintenance", admin=True)
