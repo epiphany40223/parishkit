@@ -1081,6 +1081,7 @@ section is the contract.
 | `seed [--response-scale m]` | Seed the current deployment at the current time (below) |
 | `reseed` | Restore the post-setup snapshot, then `seed` |
 | `rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]` | Measure one scheduled Family send on a seeded deployment ([bulk-send rehearsal](#operator-script)) |
+| `spike [--families N] [--sources S] [--during-send] [--wait MIN] [--label NAME]` | Measure Families opening their emailed links and submitting through Caddy on a seeded deployment ([launch-day spike check](#launch-day-spike-check)) |
 | `status` | Show the VM, service health, Docker disk use and VM disk use |
 | `down` | Stop the services; never removes data |
 | `start` | Start a stopped deployment's services in the recorded clock mode |
@@ -1266,6 +1267,69 @@ is the how-to. The contract:
 - `reset` without a snapshot, and any other deletion of the root, requires the
   operator to type the instance name (`parishkit-local`) to confirm.
 - The script never targets a host other than the Lima alias.
+
+### Launch-day spike check
+
+On launch day the initial email lands in about a thousand inboxes over tens
+of minutes, and Families click while the send is still going (#392 M3).
+`pk-stewardship load-check` runs read-only reads inside the web container on
+the validation and Production hosts, so it never exercises that path:
+Caddy's TLS, gunicorn's slots, the per-source access bucket, Family
+sessions, the baseline and submission writes, or any of it beside mail
+dispatch. A check that submits real responses can run only here, against
+seeded data. The
+[developer guide](../../../guides/stewardship-local-environment.md#checking-the-launch-day-spike)
+is the how-to. The contract:
+
+- `spike` refuses unless the deployment is seeded (normal clock mode) and
+  set up, and Caddy has written its local root certificate. `local-spike`
+  refuses unless given `--profile local`. It talks only to its fixed
+  endpoints: Caddy by its Compose name with the TLS server name `localhost`,
+  verified against that certificate, and Mailpit.
+- With `--during-send` it first adds one Reminder due three minutes ahead
+  through the seeder's `reminder` step, exactly as `rehearse` does, and the
+  Families read only mail that arrives after that. Without it they use the
+  mail already in Mailpit.
+- It starts `--sources` one-off containers (default 8) on the `ingress`
+  network, each its own source address, as Families on different networks
+  are, so the per-source limiter applies to each as in Production. The
+  containers carry the run's label, and the script removes any left over
+  when it ends or is interrupted.
+- The containers share one count without talking to each other: every one
+  reads the same Mailpit (sending a Host its `MP_ALLOWED_HOSTS` admits),
+  takes the distinct Families (by link token) in the order their mail
+  arrived, and runs the first `--families` (default 200) of them, each on
+  the one container that owns its token. A Family with two emails (an
+  invitation and a reminder) runs once. Each container reads each message
+  once and stops paging at the first message older than the run. A Family
+  starts a random 0 to 20 seconds after its mail was seen, on at most four
+  threads per container. A container stops when it has started every
+  Family it owns, or at `--wait` minutes (default 20), which it logs with
+  the limit and elapsed time and records; Families still queued then are
+  cancelled, so `--wait` bounds the run. Without `--during-send` the mail is
+  all there already, so each container lists Mailpit once.
+- Each Family runs the page's own five requests with its own cookies and
+  the portal's CSRF token: the emailed link (`access`), the portal shell
+  (`portal`), the form baseline (`form`), one presence heartbeat
+  (`presence`) and the form submitted unchanged, as the page script builds
+  it (`submit`, sent again once if review is required). Only a GET is ever
+  resent on a dropped connection, never a POST. A step that does not answer
+  as expected ends that Family's run and is counted as limited (429),
+  unavailable (503), refused (any other answer), error (no answer) or
+  timeout (30 seconds, logged with the limit and elapsed time).
+- A container prints one document of fixed keys, counts and seconds: never a
+  token, URL, cookie, address or name, which the document check refuses.
+  The report (`local-spike-report`) runs offline over the shard documents and
+  a run record (the `pg_stat_database` deadlock count before and after, and
+  how many containers failed).
+- A container that fails, or leaves a document that cannot be read or none
+  at all, is counted once; the report still reads the others. The report
+  also shows how many database deadlocks the run added.
+- It exits non-zero unless every container reported, as many Families ran
+  as were asked for, no deadlock occurred, every step of every Family answered as expected, and
+  each step's p95 is within the
+  [architecture](../architecture/spec.md) reference targets: 2 seconds for
+  the pages and 3 seconds for the submission.
 
 ## Testing requirements
 

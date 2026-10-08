@@ -80,6 +80,7 @@ never needs a copy of the repository.
 | `seed [--response-scale M]` | Seed a campaign in progress under the fake clock ([below](#seeding-a-campaign)); refuses on a seeded deployment. Takes a lock and keeps `~/.parishkit-local/seed.log`. |
 | `reseed` | `reset` to the post-setup snapshot, then `seed`. |
 | `rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]` | Add a Reminder due in `MIN` minutes (default 5), measure its send and print the report ([below](#rehearsing-a-bulk-send)). Seeded deployments only. Keeps `~/.parishkit-local/rehearse.log`. |
+| `spike [--families N] [--sources S] [--during-send] [--wait MIN] [--label NAME]` | Have `N` Families (default 200) open their emailed links and submit through Caddy from `S` sources (default 8), and print the report ([below](#checking-the-launch-day-spike)). Seeded deployments only. Keeps `~/.parishkit-local/spike.log`. |
 | `status` | The VM, every service's state and health, Docker disk use, VM disk use, snapshots. |
 | `down` | Stop the services (90-second grace per container; a container Docker had to kill is named). Data is never removed. |
 | `sign-in --email E` | Print a one-time local test sign-in link for an Administrator address. |
@@ -397,6 +398,45 @@ minutes ahead. `rehearse` measures a Reminder on a seeded deployment, and
 the seeder only activates a campaign under the fake clock, so that run is
 deferred to a later BG-12 pull request, before PR 4's acceptance run. The
 Reminder runs work at any parish size `up --families` gave the deployment.
+
+## Checking the launch-day spike
+
+`spike` measures what Families do when the launch email arrives: open the
+link, load the form and submit, through Caddy and gunicorn, while mail
+dispatch is still sending (#392 M3). The
+[specification](../specs/stewardship/local-environment/spec.md#launch-day-spike-check)
+is the contract. It writes real submissions, so it runs only on this local
+deployment, never against Production.
+
+1. Start from a seeded deployment (`reset --seeded`, or `seed` then
+   `snapshot --seeded`) with the parish size you want to check (`up
+   --families N`).
+2. Run it beside a send, which is the launch-day case:
+
+   ```text
+   tools/stewardship-local.sh spike --families 1000 --during-send --wait 60
+   ```
+
+   It adds a Reminder due three minutes ahead, and as each Family's email
+   lands in Mailpit, a shard container opens it. Without `--during-send` it
+   uses the mail already in Mailpit (for example after a `rehearse`).
+3. Read the report: each step's p50, p95 and maximum against its target,
+   and any Family that was limited, refused or got no answer. It passes only
+   when all `N` Families ran (a Family with two emails counts once), every
+   shard reported, every Family's every step answered as expected and each
+   p95 is within target. Fewer Families than asked before `--wait` fails the
+   run; the log names the shard that waited. The files (each shard's document, the run record and the
+   report) are in `/var/log/stewardship-spike-LABEL-TIME` in the VM.
+
+Each submission is the Family's form returned unchanged, so the seeded
+response pattern changes: take a snapshot first, and `reset --seeded`
+afterwards when you want the seeded data back.
+
+`--sources` is how many distinct addresses the Families come from (default
+8). The access bucket allows a burst of 30 sign-ins per address and then 2
+a second, so with very few sources the check measures the limiter rather
+than the server; a launch-day crowd behind one parish Wi-Fi network is that
+case.
 
 ## Day-to-day
 
