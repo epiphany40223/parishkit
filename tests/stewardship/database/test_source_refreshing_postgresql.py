@@ -423,3 +423,48 @@ def test_refresh_compares_eligibility_with_the_current_snapshot(tmp_path, cause,
     assert expected["portal_eligible_families"] > 0
     assert expected["valid_email_contacts"] > 0
     assert (inputs.base is None) == (phase == "full")
+
+
+def test_refresh_inputs_compare_with_the_full_refresh_trend(tmp_path, monkeypatch):
+    """#387: both baselines come from the trend of recent full refreshes.
+
+    An older full in the trend with larger counts raises both the record and
+    the derived baseline; the newest full's own kinds are kept.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.source.loading import derived_counts
+    from parishkit.stewardship.source.snapshots import reconstruct_snapshot
+
+    credential, execution, lease, *_ = setup(tmp_path)
+    first = seed_full(credential, execution, lease)
+    recorded = derived_counts(reconstruct_snapshot(first.pk))
+    older = SimpleNamespace(
+        counts={kind: value + 50 for kind, value in first.counts.items()},
+        cursor={"load": {"derived_counts": {k: v + 7 for k, v in recorded.items()}}},
+    )
+    seen = []
+
+    def trend(full, since):
+        """The real newest full, plus a larger older one from the same week."""
+        seen.append((full.pk, since))
+        return [full, older]
+
+    monkeypatch.setattr(refreshing, "_trend", trend)
+    execution = claim_request(command(cause="manual"))
+    with execution.effect():
+        lease = acquire_source(
+            task_id=execution.claim.run_id,
+            task_fence=execution.claim.fence,
+            worker_id=execution.claim.worker_id,
+            phase="full",
+        )
+    attempt = begin_refresh_attempt(execution, lease, credential)
+    inputs = _inputs(attempt.pk, execution, lease)
+    ((full_id, since),) = seen
+    assert full_id == first.pk
+    assert attempt.snapshot.started_at - since == refreshing.timedelta(
+        days=refreshing.TREND_DAYS
+    )
+    assert inputs.previous_full_counts == older.counts
+    assert inputs.previous_derived_counts == older.cursor["load"]["derived_counts"]

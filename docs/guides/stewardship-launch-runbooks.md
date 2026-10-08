@@ -400,13 +400,18 @@ stored against the snapshot and reconciled on the next refresh.
 
 ### Accepting a large ParishSoft change
 
-A refresh is refused with `source_destructive_change` when, compared with the
-last full refresh or the current data (whichever is larger), a record count
+A refresh is refused with `source_destructive_change` when a record count
 (Families, Members, Ministries, roster rows, funds) or an eligibility count
 (portal-eligible Families, email-eligible Families, Families with an active
 head, contacts with a valid email) falls by more than 25%, or falls to zero
-from any number, however small. Every later refresh is refused the same way
-until the drop is explained.
+from any number, however small. "Before" is the count's highest value over
+the full refreshes of the past week (and, for the eligibility counts, the
+current data), not only the last full refresh. A drop that built up
+gradually, each full refresh a little below the one before, can therefore be
+refused even though no single refresh fell by 25%. A full refresh accepted
+with a raised limit starts that week again. Every later refresh is refused
+the same way until the drop is explained. Accepting a change works as
+before.
 
 1. Find what fell. The worker's log line for the refusal, a CRITICAL
    `source_destructive_change`, carries `source_loss` with the count's name
@@ -430,7 +435,8 @@ until the drop is explained.
    and on `/admin/parish/parishsoft-refresh/` the "last full refresh" time ("ParishSoft
    data as of", when no quick update brought newer changes) moves past the
    moment you clicked, with no "A full refresh is running now". A 15-minute update that completes first is not enough: later
-   refreshes also compare with the last full refresh, so removing the
+   refreshes also compare with the recent full refreshes, and only the
+   accepted full refresh starts that comparison again, so removing the
    override before the full one completes gets the next refresh refused
    again. Only then recreate the worker without the variable, so the 25%
    limit applies again:
