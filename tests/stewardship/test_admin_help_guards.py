@@ -66,10 +66,7 @@ LONG_PARAGRAPH_ALLOWED = {
     "chair-confirmation-preview.html": 51,
     "chair-review-preview.html": 55,
     "setup-content.html": 60,
-    "setup-credential.html": 53,
-    "setup-preview.html": 52,
     "setup-source-progress.html": 67,
-    "setup-source.html": 61,
     "users.html": 99,
 }
 
@@ -90,44 +87,29 @@ NOTICE_BLOCK = re.compile(r"<div\b[^>]*" + NOTICE_CLASS + r"[^>]*>.*?</div>", re
 LINK = re.compile(r"<a\b.*?</a>", re.S)
 # About one line of visible introductory help.
 INTRO_WORDS = 15
-# Pages whose introduction is not yet converted (#227 follow-up PRs: the setup
-# wizard and go-live pages, then the remaining settings, preview and error
-# pages), with the visible introductory words each may keep. Lower or remove
-# an entry when its page is converted; never raise one or add a page.
+# Pages whose introduction is not yet converted (#227 follow-up PRs: the error
+# pages, and the pages other work was changing when the rest were converted),
+# with the visible introductory words each may keep. Lower or remove an entry
+# when its page is converted; never raise one or add a page.
 INTRO_ALLOWED = {
-    "setup-step.html": 214,
     "user-rule-error.html": 164,
     "chair-review-error.html": 155,
     "assignment-error.html": 142,
-    "setup-confirmation.html": 132,
-    # 125 since the scan stopped hiding text after a notice block (#227).
-    "setup-credential.html": 125,
     "chair-confirmation-error.html": 104,
-    "setup-cancel.html": 100,
     "logs-error.html": 73,
-    "setup-schedules.html": 63,
-    "setup-source.html": 61,
     "ministry-followup-error.html": 38,
     "setup-content.html": 60,
     # The step-up names its return page when it is another page (#547).
     "error.html": 61,
-    "setup-preview.html": 52,
-    "setup-mail.html": 50,
     "setup.html": 46,
-    "setup-notification.html": 38,
     "ministries.html": 38,
-    "setup-campaign.html": 34,
-    "setup-shares.html": 33,
     "export-cleanup-error.html": 31,
     "denied.html": 31,
-    "go-live-families.html": 26,
     "go-live-readiness.html": 24,
     "delivery-control.html": 24,
-    "setup-content-edit.html": 21,
     "availability.html": 21,
     "go-live-links.html": 20,
     "talents-report-error.html": 16,
-    "setup-branding.html": 16,
     "delivery-error.html": 16,
 }
 
