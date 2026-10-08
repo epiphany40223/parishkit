@@ -418,7 +418,19 @@ unknown outcome), `tests/stewardship/test_admin_cli.py`,
 `tests/stewardship/database/test_admin_refresh_cli_postgresql.py` (keys
 crossing between the page and the command line, joining a waiting refresh,
 running and waiting status, scopes and ended sessions) and the unchanged
-refresh view suite. 6b adds `test sample`, and 6c chosen-Family tests.
+refresh view suite. 6b adds
+`test sample-preview` and `test sample` (`parishkit.stewardship.admin_tests`),
+with the sample test page's list moved into `campaign_mail.recent_tests`;
+proven by `tests/stewardship/test_admin_tests.py` (golden documents and
+allowlists with no address or message body, and the conditional prompt),
+`tests/stewardship/test_admin_cli.py`, `tests/stewardship/test_pk_admin.py`
+(the wrapper's `PROMPTING` list against the catalog),
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_test_sample_cli_postgresql.py` (tokens
+crossing between the page and the command line, one send per key, a pending
+test, the unknown-outcome prompt refused and answered, one activity write,
+scopes and ended sessions) and the unchanged campaign mail suite. 6c adds
+chosen-Family tests.
 ADM-11.10 lands in two pull requests. 9a adds `task retry`
 (`parishkit.stewardship.admin_operations`), with the retry pages' bodies,
 the delivery views' admission and their command scope moved into

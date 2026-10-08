@@ -359,8 +359,8 @@ def test_a_dash_input_forwards_standard_input_after_the_preamble(host):
 def test_an_interactive_run_with_no_input_never_waits_on_the_terminal(host):
     """A terminal is not forwarded to a command that does not prompt.
 
-    No command of this release prompts, so an interactive ``whoami`` with
-    nothing typed must finish at once rather than wait for end of input.
+    ``whoami`` does not prompt, so an interactive run with nothing typed
+    must finish at once rather than wait for end of input.
     """
     host.answer({"ok": True})
     host.session()
@@ -540,11 +540,11 @@ def test_the_wrapper_never_traces_the_secret(host):
 
 
 def prompting(tmp_path):
-    """A copy of the wrapper whose PROMPTING list names ``test act``."""
+    """A copy of the wrapper whose PROMPTING list also names ``test act``."""
     text = WRAPPER.read_text()
-    assert text.count('PROMPTING=""') == 1
+    assert text.count('PROMPTING="') == 1
     copy = tmp_path / "pk-admin-prompting"
-    copy.write_text(text.replace('PROMPTING=""', 'PROMPTING="test_act"'))
+    copy.write_text(text.replace('PROMPTING="', 'PROMPTING="test_act ', 1))
     copy.chmod(0o755)
     return copy
 
@@ -585,3 +585,26 @@ def test_the_wrapper_never_waits_for_an_answer_no_longer_needed(host, tmp_path):
     assert run_at_terminal(host, prompting(tmp_path), FAKE_DOCKER_LINES="1") == 1
     preamble = f"pk-admin-session/1 {'a' * 43} {host_digest()}\n".encode()
     assert host.stdin() == preamble
+
+
+# Prompting commands that accept only --yes, by catalog name, so the wrapper
+# never forwards a terminal's answer to them: none on this branch.
+YES_ONLY = frozenset()
+
+
+def test_the_prompting_list_names_every_prompting_command():
+    """PROMPTING is the catalog's prompting commands, less the --yes-only ones.
+
+    The wrapper matches ``AREA_VERB`` (the first two words), so a prompting
+    command missing from the list could never be answered at a terminal.
+    """
+    from parishkit.stewardship import admin_cli
+
+    [listed] = re.findall(r'^PROMPTING="([^"]*)"$', WRAPPER.read_text(), re.M)
+    prompting = {
+        "_".join(spec.name.split()[:2])
+        for spec in admin_cli.COMMANDS
+        if spec.prompts and spec.name not in YES_ONLY
+    }
+    assert set(listed.split()) == prompting
+    assert "test_sample" in prompting

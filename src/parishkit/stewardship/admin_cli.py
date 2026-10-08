@@ -831,6 +831,49 @@ def refresh_start(args, preamble, runtime, context):
     return start_refresh(context["caller"], runtime, request_key=key, context=context)
 
 
+def sample_preview(args, preamble, runtime, context):
+    """Review a sample test email, as its page does (PR 6b)."""
+    from uuid import uuid4
+
+    from .admin_tests import preview_sample
+
+    return preview_sample(
+        context["caller"],
+        runtime,
+        args.revision_id,
+        request_key=args.request_key or uuid4(),
+    )
+
+
+def sample_test(args, preamble, runtime, context):
+    """Send a reviewed sample test email, as its page's button does (PR 6b).
+
+    The page's acknowledgement is asked only while an earlier test's outcome
+    is unknown, as the page shows its checkbox only then, and before any
+    transaction opens.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_tests import UNKNOWN_ACKNOWLEDGEMENT, send_sample, unknown_outcome
+
+    token = _input(args.token, context, TOKEN_LIMIT)
+    unknown = unknown_outcome(context["caller"], runtime)
+    if unknown:
+        confirm(
+            context,
+            (
+                "An earlier test email's outcome is unknown.",
+                UNKNOWN_ACKNOWLEDGEMENT,
+            ),
+        )
+    return send_sample(
+        context["caller"],
+        runtime,
+        token=token,
+        acknowledge_unknown=unknown,
+        context=context,
+    )
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -962,7 +1005,7 @@ def _task_retry_options(parser):
 
 
 def _uuid4(value):
-    """A canonical version 4 UUID, as the page's request key must be."""
+    """A canonical version 4 UUID, as the pages' request keys must be."""
     parsed = _uuid(value)
     if parsed.version != 4:
         raise argparse.ArgumentTypeError("not a version 4 UUID")
@@ -976,6 +1019,27 @@ def _refresh_start_options(parser):
         type=_uuid4,
         help="a UUID that makes a repeat safe (default: a new one, "
         "written to standard error)",
+    )
+
+
+def _sample_preview_options(parser):
+    """Options of ``test sample-preview``: the email revision and the key."""
+    parser.add_argument("revision_id", type=_uuid, metavar="REVISION_ID")
+    parser.add_argument(
+        "--request-key",
+        type=_uuid4,
+        help="a version 4 UUID the token binds, so a send is safe to repeat "
+        "(default: a new one)",
+    )
+
+
+def _sample_test_options(parser):
+    """Options of ``test sample``: the reviewed token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from test sample-preview, or - to read it from "
+        "standard input (needs --yes)",
     )
 
 
@@ -1309,8 +1373,43 @@ def _refresh_specs():
     )
 
 
+def _test_specs():
+    """The sample test email commands (PR 6b)."""
+    from .admin_tests import SamplePreview, SampleTest
+
+    return (
+        CommandSpec(
+            "test sample-preview",
+            "Review a sample test email for one email revision.",
+            sample_preview,
+            "full",
+            False,
+            SamplePreview.field_names(),
+            6,
+            options=(_sample_preview_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "test sample",
+            "Send a reviewed sample test email to the Testing recipient.",
+            sample_test,
+            "full",
+            True,
+            SampleTest.field_names(),
+            6,
+            options=(_sample_test_options,),
+            prompts=True,
+        ),
+    )
+
+
 COMMANDS = (
-    COMMANDS + _read_specs() + _change_specs() + _refresh_specs() + _operation_specs()
+    COMMANDS
+    + _read_specs()
+    + _change_specs()
+    + _refresh_specs()
+    + _test_specs()
+    + _operation_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 
