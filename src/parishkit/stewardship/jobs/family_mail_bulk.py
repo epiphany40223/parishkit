@@ -42,7 +42,7 @@ from random import randint
 from time import monotonic, sleep
 from uuid import uuid4
 
-from django.db import connection, connections, transaction
+from django.db import connection, transaction
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.family_delivery import (
@@ -53,6 +53,7 @@ from parishkit.stewardship.family_delivery import (
 )
 
 from .admission import remembered_scopes
+from .connection_reuse import drop_unusable, release
 from .dispatch import _CLAIMABLE
 from .models import TaskRun
 from .ownership import TaskClaim, database_now, lock_task_claim
@@ -542,7 +543,7 @@ def preparation_bulk(handler, *, general, mac, public, public_origin, settings):
         finally:
             # Builds hold no plaintext, but none outlives its drain.
             builds.clear()
-            connections.close_all()
+            release()
 
     return run
 
@@ -896,6 +897,9 @@ def delivery_bulk(
         transaction itself fails, each of its outcomes is tried in its own.
         """
         left = list(items)
+        # A PostgreSQL restart during the sends ends the drain's session:
+        # replace it before recording outcomes (#365).
+        drop_unusable()
         while left:
             chunk = []
             try:
@@ -974,7 +978,7 @@ def delivery_bulk(
                 return 0
             return _drain(step, stop, pulse)
         finally:
-            connections.close_all()
+            release()
 
     return run
 

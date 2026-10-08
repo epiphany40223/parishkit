@@ -240,6 +240,9 @@ private timeout-log connection, so the worker login's limit is three times
 the rollout overlap; because Compose stops a container before starting its
 replacement, the overlap's slots serve the second process. The main
 process's idle credential-acknowledgement pass runs only between messages.
+A mail-dispatch consumer keeps its task connection between messages instead
+of closing it after each one; see
+[kept mail connections](../operations/spec.md#kept-mail-connections).
 A runtime budget whose worker limit is
 below six keeps one process on all three queues. The source queue shares the
 general queue's broker exchange and name prefix, so the Valkey ACL generated

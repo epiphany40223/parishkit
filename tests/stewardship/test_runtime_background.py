@@ -9,6 +9,7 @@ import pytest
 from parishkit.config import ConfigError
 from parishkit.stewardship import runtime_background as background
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.jobs import connection_reuse
 
 from .test_runtime_topology import configuration_at
 
@@ -160,6 +161,7 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
     try:
         assert calls == ["mounts", "lifecycle", "django", "grants", "coherence"]
         assert runtime.broker.service is role and runtime.broker.stop is stop
+        assert not connection_reuse._enabled  # Only mail dispatch keeps (#365).
         expected = {
             "operational_collect",
             "operational_prepare",
@@ -350,6 +352,8 @@ def test_mail_runtime_requires_working_key_except_for_coherent_bootstrap(
         )
         assert runtime.broker.service is ServiceRole.MAIL_DISPATCH
         assert set(runtime.receipts) == set(secrets)
+        # Family mail consumers keep their connection between messages (#365).
+        assert connection_reuse._enabled is installed
     finally:
         runtime.broker.app.close()
 
