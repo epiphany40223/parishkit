@@ -196,21 +196,30 @@ def test_exception_stops_background_renewal_and_preserves_claim(monkeypatch):
     assert TaskRun.objects.get(pk=task.run_id).state == "running"
 
 
-def test_renewal_stopped_by_its_lock_limit_is_logged_before_the_task_ends(
+def test_renewal_stopped_by_its_lock_limit_is_retried_then_ends_the_task(
     monkeypatch,
 ):
-    """The heartbeat's 2 s lock limit names the task and limit (#293)."""
+    """The heartbeat's 2 s lock limit names the task and limit (#293). While
+    the last confirmed lease keeps its margin, the timeout is a WARNING with
+    outcome retry and the renewal tries again (#386); once it does not, one
+    ERROR entry is written and new work is refused, the task still running.
+
+    The lease is shortened so the margin runs out after one retry: claim at
+    0, first renewal times out at about 2 s (retry decided at 2 + 2 <= 5),
+    the second at about 6 s (not retried).
+    """
     from django.db import connections
 
     from parishkit.stewardship.audit.models import OperationalLog
 
     task = queued()
     monkeypatch.setattr(lifetime, "PULSE_SECONDS", 0.02)
+    monkeypatch.setattr(lifetime, "LEASE_SECONDS", 25)
     blocker = connections["default"].copy(alias="renewal-blocker")
     logged_first = []
 
     def execute(context):
-        """Hold the task row so renewal waits past its lock limit."""
+        """Hold the task row so every renewal waits past its lock limit."""
         with blocker.cursor() as cursor:
             cursor.execute("BEGIN")
             cursor.execute(
@@ -218,12 +227,14 @@ def test_renewal_stopped_by_its_lock_limit_is_logged_before_the_task_ends(
                 [task.run_id],
             )
             try:
-                assert context.control.failed.wait(10)
+                assert context.control.failed.wait(40)
                 # New work is refused first; the entry follows while the task
                 # is still running.
-                deadline = monotonic() + 5
+                deadline = monotonic() + 15
                 while monotonic() < deadline and not logged_first:
-                    if OperationalLog.objects.filter(event="task_timed_out").exists():
+                    if OperationalLog.objects.filter(
+                        event="task_timed_out", level="ERROR"
+                    ).exists():
                         logged_first.append(True)
                     sleep(0.05)
             finally:
@@ -234,11 +245,115 @@ def test_renewal_stopped_by_its_lock_limit_is_logged_before_the_task_ends(
     finally:
         blocker.close()
     assert logged_first == [True]
-    entry = OperationalLog.objects.get(event="task_timed_out")
-    assert entry.context["what"] == "lock_timeout"
-    assert entry.context["task_id"] == str(task.run_id)
-    assert entry.context["limit_seconds"] == 2
-    assert entry.context["elapsed_seconds"] >= 2
+    entries = list(
+        OperationalLog.objects.filter(event="task_timed_out").order_by("created_at")
+    )
+    assert [(e.level, e.context["outcome"]) for e in entries] == [
+        ("WARNING", "retry"),
+        ("ERROR", "failed"),
+    ]
+    for entry in entries:
+        assert entry.context["what"] == "lock_timeout"
+        assert entry.context["task_id"] == str(task.run_id)
+        assert entry.context["limit_seconds"] == 2
+        assert entry.context["elapsed_seconds"] >= 2
+    assert TaskRun.objects.get(pk=task.run_id).state == "running"
+
+
+def test_a_renewal_that_times_out_once_keeps_the_execution(monkeypatch):
+    """The work-order lock held past one renewal's limit, then released: the
+    timeout is logged as a retry, the next renewal commits, and the handler
+    completes its work (#386, M2)."""
+    from django.db import connections
+
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    task = queued()
+    notice, _ = pulse_notice(monkeypatch)
+    blocker = connections["default"].copy(alias="renewal-blocker")
+    before = []
+
+    def execute(context):
+        """Block renewal until it times out once, then let it through."""
+        assert notice.wait(15)
+        before.append(TaskRun.objects.get(pk=task.run_id).lease_expires_at)
+        with blocker.cursor() as cursor:
+            cursor.execute("BEGIN")
+            cursor.execute(
+                "SELECT id FROM stewardship_task_run WHERE id=%s FOR UPDATE",
+                [task.run_id],
+            )
+            try:
+                deadline = monotonic() + 30
+                while (
+                    monotonic() < deadline
+                    and not OperationalLog.objects.filter(
+                        event="task_timed_out"
+                    ).exists()
+                ):
+                    sleep(0.05)
+            finally:
+                cursor.execute("ROLLBACK")
+        notice.clear()
+        assert notice.wait(30)
+        # The renewal after the timeout committed: the lease moved on.
+        assert TaskRun.objects.get(pk=task.run_id).lease_expires_at > before[0]
+        context.check()
+        context.transition("complete")
+
+    try:
+        assert run(task, execute)
+    finally:
+        blocker.close()
+    [entry] = OperationalLog.objects.filter(event="task_timed_out")
+    assert (entry.level, entry.context["outcome"]) == ("WARNING", "retry")
+    assert TaskRun.objects.get(pk=task.run_id).state == "succeeded"
+
+
+def test_a_renewal_stopped_by_its_statement_limit_is_retried(monkeypatch):
+    """A real PostgreSQL statement timeout (SQLSTATE 57014) in the renewal's
+    transaction is recognized and retried like a lock timeout (#386, M2).
+    The first renewal provokes one with a 1-second limit and a 2-second
+    sleep; the next renewal is the production one. The entry names the
+    renewal's own 5-second statement limit, which it reports."""
+    from django.db import connection as renewal_connection
+    from django.db import transaction
+
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    task = queued()
+    monkeypatch.setattr(lifetime, "PULSE_SECONDS", 0.02)
+    original = lifetime.renew_once
+    provoked, renewed = [], Event()
+
+    def renew(execution):
+        """Time out once on the renewal's own connection, then renew."""
+        if not provoked:
+            provoked.append(True)
+            with transaction.atomic(), renewal_connection.cursor() as cursor:
+                cursor.execute("SET LOCAL statement_timeout = '1s'")
+                cursor.execute("SELECT pg_sleep(2)")
+        result = original(execution)
+        renewed.set()
+        return result
+
+    monkeypatch.setattr(lifetime, "renew_once", renew)
+
+    def execute(context):
+        """Wait for the retried renewal to commit, then complete."""
+        assert renewed.wait(30)
+        context.check()
+        context.transition("complete")
+
+    assert run(task, execute)
+    [entry] = OperationalLog.objects.filter(event="task_timed_out")
+    assert entry.level == "WARNING"
+    assert (entry.context["what"], entry.context["outcome"]) == (
+        "statement_timeout",
+        "retry",
+    )
+    assert entry.context["limit_seconds"] == 5
+    assert TaskRun.objects.get(pk=task.run_id).state == "succeeded"
 
 
 def test_renewal_outliving_its_drain_limit_is_logged(monkeypatch):

@@ -657,8 +657,10 @@ def _inflight_check(execution):
     verified = [monotonic()]
 
     def check():
-        """Check local state now and, when due, ownership in SQL."""
-        execution.control.check(allow_drain=True)
+        """Check local state now (a failed renewal, a finished execution, or
+        a lease that has run out locally, #797) and, when due, ownership in
+        SQL."""
+        execution.control.check(allow_drain=True, inflight=True)
         if monotonic() - verified[0] < INFLIGHT_VERIFY_SECONDS:
             return
         if _check(execution):
