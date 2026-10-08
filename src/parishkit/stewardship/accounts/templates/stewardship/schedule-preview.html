@@ -1,8 +1,10 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Review schedule changes" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Review schedule changes" %}</h1><p>{{ campaign.active_configuration.name }}</p>
-<p>{% translate "Email already sent cannot be recalled, and a schedule that already sent still counts as sent after this change. Unsent or failed email from the old schedule is replaced by the new one. All of these changes apply together, or none do." %}</p>
+<h1>{% translate "Review schedule changes" %}</h1>
+{% aboutpage "schedule-preview" %}<p>{% translate "A schedule that already sent still counts as sent after this change. Unsent or failed email from the old schedule is replaced by the new one. All of these changes apply together, or none do." %}</p>{% endaboutpage %}
+<p>{{ campaign.active_configuration.name }}</p>
+<p class="notice">{% translate "Email already sent cannot be recalled." %}</p>
 {% if window_changes %}<section class="panel"><h2>{% translate "Campaign window" %}</h2><p>{% translate "Current:" %} {{ before_window.start_date|parish_date }} – {{ before_window.end_date|parish_date }} ({{ before_window.timezone }})</p><p>{% translate "Proposed:" %} {{ after_window.start_date|parish_date }} – {{ after_window.end_date|parish_date }} ({{ after_window.timezone }})</p></section>{% endif %}
 {% if 'financial' in window_changes %}<section class="panel"><h2>{% translate "Financial overlap acknowledgment" %}</h2><p>{% translate "Current:" %} {{ before_window.financial.overlap_confirmed|yesno }}</p><p>{% translate "Proposed:" %} {{ after_window.financial.overlap_confirmed|yesno }}</p></section>{% endif %}
 {% for change in changes %}<section class="panel"><h2>{{ change.label }} — {{ change.operation|capfirst }}</h2>

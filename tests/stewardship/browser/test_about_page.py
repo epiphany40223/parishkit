@@ -56,7 +56,7 @@ def test_about_panel_clears_the_old_closed_marker(page, component_origin):
 # (sidebar, breadcrumbs, the Testing banner and the delivery warning) by the
 # component fixtures. The report pages with long filter and export forms join
 # this list when their filters are collapsed (#227 follow-up).
-LAPTOP_PAGES = ["/background", "/deliveries", "/delivery-refusals"]
+LAPTOP_PAGES = ["/background", "/deliveries", "/delivery-refusals", "/presence"]
 # A typical laptop browser viewport: a 1366x768 screen less the browser's
 # own toolbars. Fonts differ between platforms (Linux CI's are wider), so the
 # check asks only that the first row's top edge, with some room, is on screen.
@@ -72,6 +72,49 @@ def test_page_data_starts_on_a_laptop_screen(page, component_origin, path):
     box = page.locator("main table tbody tr").first.bounding_box()
     assert box is not None
     assert box["y"] + 40 <= LAPTOP_VIEWPORT["height"], (path, box)
+
+
+# Campaign email and schedule pages converted in #227 (help-ux-1), each with
+# the caution that must stay visible beside the data while its help is closed.
+CAMPAIGN_PAGES = {
+    "/campaign-mail": "It is sent only to",
+    "/live-family-tests-later": "never to the Family",
+    "/schedule-preview": "Email already sent cannot be recalled.",
+    "/clone-settings": "It never copies Family codes",
+    "/clone-preview": "Copied content",
+    "/presence": "Families with the Family form open",
+    "/weekly-manual": "not a retry of a previous email",
+}
+
+
+@pytest.mark.parametrize("path", sorted(CAMPAIGN_PAGES))
+def test_converted_page_keeps_cautions_visible_and_help_closed(
+    page, component_origin, path
+):
+    """The page's help starts closed; its caution or data line stays visible."""
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + path)
+    panel = page.locator("details[data-about-page]")
+    expect(panel).not_to_have_attribute("open", "")
+    expect(panel.locator(".about-page-body")).to_be_hidden()
+    visible(page.locator("main").get_by_text(CAMPAIGN_PAGES[path]).first)
+
+
+def test_locked_campaign_dates_are_one_line_with_a_tip(page, component_origin):
+    """Locked dates show one line; why they lock opens from its "i" tip (#227)."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": 1366, "height": 768})
+    page.goto(component_origin + "/schedule-settings-locked")
+    line = page.locator("#window-locked")
+    visible(line)
+    assert line.bounding_box()["height"] < 40
+    bubble = page.locator("#window-locked-tip")
+    expect(bubble).to_be_hidden()
+    page.locator('button[aria-controls="window-locked-tip"]').click()
+    visible(bubble)
+    expect(bubble).to_contain_text("lock once the campaign goes live")
 
 
 def test_every_about_control_sits_beside_its_heading(page, component_origin):

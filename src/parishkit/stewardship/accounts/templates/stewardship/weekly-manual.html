@@ -2,6 +2,8 @@
 {% block title %}{% translate "Send a weekly report now" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Send a weekly report now" %}</h1>
+{% aboutpage "weekly-manual" %}<p>{% translate "The report lists every current live request that needs action, plus corrections to requests that earlier reports already included. Each current Administrator receives their own email. When there is nothing to report, the report is recorded but no email is sent." %}</p>
+<p>{% translate "Normal campaign, pause and restore protections still apply. If the campaign settings change after you open this page, open it again to get a fresh form." %}</p>{% endaboutpage %}
 {% if campaign %}<p>{{ campaign.active_configuration.name }}</p>{% endif %}
 {% if blocker == "no_schedule" %}
 <div class="notice" role="alert"><p>{% translate "This campaign has no Weekly Admin digest schedule. Send a weekly report now sends an extra Weekly Admin digest, so the weekly digest schedule must exist first." %}</p>
@@ -11,9 +13,8 @@
 <p>{% translate "Check Background work and Outgoing mail, then open this page again." %}</p></div>
 {% endif %}
 {% if form %}
-<p class="notice">{% translate "This is a new, separately audited report—not a retry of a previous email. It may repeat previously reported information and does not replace the regularly scheduled weekly digest." %}</p>
-<p>{% translate "The background worker will capture all current actionable live requests and corrections to previously delivered requests. Each current Administrator receives an individual email. Empty reports are recorded without sending mail." %}</p>
-<p>{% translate "Resolve any unfinished weekly delivery first. Normal campaign, pause and restore protections still apply. A configuration change after opening this form requires you to review a fresh form." %}</p>
+<p class="notice">{% translate "This is a new, separately audited report—not a retry of a previous email. It may repeat previously reported information and does not replace the regularly scheduled weekly digest." %} {% translate "Each current Administrator receives their own email." %}</p>
+<p class="help">{% translate "Resolve any unfinished weekly delivery first." %}</p>
 {% if mode == 'testing' %}<p class="notice">{% translate "Testing mode: live-only request selection excludes rehearsal answers. Any resulting email is routed only to the configured Testing recipient." %}</p>{% endif %}
 <form method="post" class="panel">{% csrf_token %}
 {{ form.command_id }}{{ form.configuration_id }}{{ form.command_id.errors }}{{ form.configuration_id.errors }}{{ form.non_field_errors }}

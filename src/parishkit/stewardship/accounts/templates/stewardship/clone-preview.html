@@ -1,12 +1,13 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Review new campaign clone" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Review new campaign clone" %}</h1><p>{{ source.active_configuration.name }}</p>
-<p>{% translate "Only the configuration below is copied into a fresh draft. No Family credentials, responses, deliveries or workflow state are copied. No mail is sent. All changes apply together after installation." %}</p>
+<h1>{% translate "Review new campaign clone" %}</h1>
+{% aboutpage "clone-preview" %}<p>{% translate "Only the settings below are copied into a new draft campaign. No Family codes, responses or sent email are copied, and no mail is sent. All of it is created together when you confirm." %}</p>{% endaboutpage %}
+<p>{{ source.active_configuration.name }}</p>
 {% for change in changes %}<section class="panel"><h2>{{ change.label }}</h2><p>{{ change.after|default_if_none:'—'|linebreaksbr }}</p></section>{% endfor %}
 <h2>{% translate "New schedules" %}</h2>{% for schedule in schedules %}<section class="panel">{% include 'stewardship/schedule-summary.html' with value=schedule %}</section>{% empty %}<p>{% translate "No schedules selected." %}</p>{% endfor %}
 <h2>{% translate "Copied content — fictional Family preview" %}</h2>
-{% for item in content_previews %}<section class="panel"><h3>{{ item.label }}</h3>{% if item.rendered.subject %}<p>{{ item.rendered.subject }}</p>{% endif %}<div>{{ item.rendered.html|safe }}</div><h4>{% translate "Plain text" %}</h4><pre>{{ item.rendered.text }}</pre></section>{% empty %}<p>{% translate "No configured content to copy. Unresolved legacy references are not readiness evidence." %}</p>{% endfor %}
+{% for item in content_previews %}<section class="panel"><h3>{{ item.label }}</h3>{% if item.rendered.subject %}<p>{{ item.rendered.subject }}</p>{% endif %}<div>{{ item.rendered.html|safe }}</div><h4>{% translate "Plain text" %}</h4><pre>{{ item.rendered.text }}</pre></section>{% empty %}<p>{% translate "No pages or emails to copy. Edit them under Pages and emails after the new campaign is created." %}</p>{% endfor %}
 <p>{% translate "Confirm to create the new campaign." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">{% button type="submit" %}{% translate "Create reviewed draft" %}{% endbutton %}</form>
 <p><a href="{% url 'admin:campaign_clone' %}">{% translate "Return to Copy campaign" %}</a></p>

@@ -60,7 +60,6 @@ LONG_PARAGRAPH_WORDS = 50
 LONG_PARAGRAPH_ALLOWED = {
     "chair-confirmation-preview.html": 51,
     "chair-review-preview.html": 55,
-    "schedule-settings.html": 53,
     "setup-content.html": 60,
     "setup-credential.html": 53,
     "setup-preview.html": 52,
@@ -76,7 +75,13 @@ LONG_PARAGRAPH_ALLOWED = {
 HEADER_END = re.compile(
     r"<(?:form|table|section|dl|ul|ol|div|fieldset|aside)\b|{% include "
 )
-NOTICE = re.compile(r'<p\b[^>]*\bclass="[^"]*\bnotice\b[^"]*"[^>]*>.*?</p>', re.S)
+# The notice class as a whole class name: "notice-error" alone is not one.
+NOTICE_CLASS = r'\bclass="(?:[^"]*\s)?notice(?=[\s"])[^"]*"'
+NOTICE = re.compile(r"<p\b[^>]*" + NOTICE_CLASS + r"[^>]*>.*?</p>", re.S)
+# A notice block (a <div class="notice"> holding paragraphs) is skipped like
+# a notice paragraph. It must not end the introduction: a page that opens with
+# one would otherwise hide every help paragraph after it from this scan.
+NOTICE_BLOCK = re.compile(r"<div\b[^>]*" + NOTICE_CLASS + r"[^>]*>.*?</div>", re.S)
 LINK = re.compile(r"<a\b.*?</a>", re.S)
 # About one line of visible introductory help.
 INTRO_WORDS = 15
@@ -90,11 +95,11 @@ INTRO_ALLOWED = {
     "chair-review-error.html": 155,
     "assignment-error.html": 142,
     "setup-confirmation.html": 132,
-    "setup-credential.html": 111,
+    # 125 since the scan stopped hiding text after a notice block (#227).
+    "setup-credential.html": 125,
     "chair-confirmation-error.html": 104,
     "setup-cancel.html": 100,
     "logs-error.html": 73,
-    "campaign-mail-families.html": 64,
     "setup-schedules.html": 63,
     "setup-source.html": 61,
     "ministry-followup-error.html": 38,
@@ -105,20 +110,15 @@ INTRO_ALLOWED = {
     "setup-mail.html": 50,
     "setup.html": 46,
     "delivery-refusal.html": 43,
-    "schedule-preview.html": 42,
-    "presence.html": 41,
     "credential-selection.html": 41,
     "backup-key.html": 39,
     "setup-notification.html": 38,
     "ministries.html": 38,
-    "clone-settings.html": 36,
     "production-confirmation.html": 35,
     "setup-campaign.html": 34,
     "setup-shares.html": 33,
     "export-cleanup-error.html": 31,
     "denied.html": 31,
-    "content-catalog.html": 30,
-    "clone-preview.html": 30,
     "go-live-families.html": 26,
     "login.html": 25,
     "hosted-file-delete.html": 24,
@@ -127,10 +127,8 @@ INTRO_ALLOWED = {
     "hosted-file-unavailable.html": 22,
     "setup-content-edit.html": 21,
     "family-maintenance.html": 21,
-    "campaign-mail.html": 21,
     "availability.html": 21,
     "go-live-links.html": 20,
-    "campaign-ministries.html": 19,
     "credential-status.html": 18,
     "source-refresh.html": 17,
     "artwork-remove.html": 17,
@@ -223,13 +221,14 @@ def visible_intro_words(name):
     """Words of help sentences shown between a page's heading and its data.
 
     The About panel and any other disclosure are one deliberate click away,
-    so they are left out, as are safety notices (``<p class="notice">``) and
+    so they are left out, as are safety notices (``<p class="notice">``, and
+    ``<div class="notice">`` blocks, which do not end the introduction) and
     link text. Only messages that read as sentences (ending in ``.``, ``!``
     or ``?``) count, so labels such as "Status:" do not; inside a counted
     message, the values it shows (``{{ ... }}``) are not words of help.
 
     Limits, by design of a text scan: the introduction ends at the first
-    form, table, list, section, panel, ``<div>`` or ``{% include %}``, so help
+    form, table, list, section, panel, other ``<div>`` or ``{% include %}``, so help
     placed after that, or inside an included template, is not checked here
     (the long-paragraph guard still applies); help in a ``<p class="help">``
     hint counts like any paragraph; and text outside ``<p>`` elements, or not
@@ -238,7 +237,9 @@ def visible_intro_words(name):
     source = read(name)
     if "</h1>" not in source:
         return 0
-    after = DETAILS.sub("", ABOUT.sub("", source.split("</h1>", 1)[1]))
+    after = NOTICE_BLOCK.sub(
+        "", DETAILS.sub("", ABOUT.sub("", source.split("</h1>", 1)[1]))
+    )
     end = HEADER_END.search(after)
     intro = LINK.sub("", NOTICE.sub("", after[: end.start()] if end else after))
     return sum(
@@ -351,12 +352,32 @@ def test_the_intro_guard_catches_what_it_describes(tmp_path, monkeypatch):
         "notice.html": '<h1>T</h1><p class="notice">'
         + lead[3:-4]
         + "</p><form></form>",
+        "notice-block.html": '<h1>T</h1><div class="notice" role="alert">'
+        + lead
+        + "</div><form></form>",
+        "not-a-notice.html": '<h1>T</h1><p class="notice-error">'
+        + lead[3:-4]
+        + "</p><form></form>",
+        "after-notice-block.html": '<h1>T</h1><div class="notice">'
+        + lead
+        + "</div>"
+        + lead
+        + "<form></form>",
     }
     for page, source in pages.items():
         (tmp_path / page).write_text(source)
     monkeypatch.setitem(globals(), "TEMPLATES", tmp_path)
     assert visible_intro_words("flagged.html") > INTRO_WORDS
-    for page in ("in-panel.html", "below-data.html", "notice.html"):
+    for page in (
+        "in-panel.html",
+        "below-data.html",
+        "notice.html",
+        "notice-block.html",
+    ):
         assert visible_intro_words(page) == 0, page
+    # A notice block is skipped, but does not end the introduction.
+    assert visible_intro_words("after-notice-block.html") > INTRO_WORDS
+    # Only the whole class name "notice" marks a notice.
+    assert visible_intro_words("not-a-notice.html") > INTRO_WORDS
     # A value is not words of help; the words around it still count.
     assert visible_intro_words("data-line.html") == 2
