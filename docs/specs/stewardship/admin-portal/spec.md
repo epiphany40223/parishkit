@@ -350,7 +350,10 @@ in append-only rows with one audit event, hides those entries for every Admin,
 and changes no log entry. The banner's form carries a signed list of those
 entries' ids (at most 500, oldest first; any beyond stay counted and remain
 after the acknowledgement), and an altered list is refused, so Acknowledge
-never hides an entry the Administrator was not shown. Any other CRITICAL
+never hides an entry the Administrator was not shown. A SQL guard (#389)
+admits an acknowledgement only from the web login, only for an existing
+CRITICAL entry and with the acknowledging Administrator named, so none can
+be recorded in advance for an entry that does not exist yet. Any other CRITICAL
 entry, including one recorded after the page was shown or one a long-running
 transaction commits after the acknowledgement, brings the banner back. A
 problem that has ended reads "ended" with its browser-local end time, and the

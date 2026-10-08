@@ -292,3 +292,52 @@ def test_more_than_the_limit_acknowledges_the_oldest_and_keeps_the_rest(
     assert "Only the oldest" not in page
     assert acknowledge(browser, shown(page)).status_code == 302
     assert BANNER not in home(browser)
+
+
+def test_an_acknowledgement_names_an_existing_critical_entry():
+    """SQL refuses an acknowledgement of a missing, non-CRITICAL or
+    unattributed entry, and one from any login but web (#389 L8)."""
+    from uuid import uuid4
+
+    from django.db import DatabaseError, connection
+
+    from parishkit.stewardship.deployment import ServiceRole
+
+    from .test_background_grants_postgresql import task_login
+
+    critical(Event.SOURCE_INVALID)
+    target = OperationalLog.objects.get(level="CRITICAL")
+    with transaction.atomic():
+        warning = operational(
+            Event.SOURCE_INVALID, level="WARNING", **log_sample(Event.SOURCE_INVALID)
+        )
+
+    def insert(log_id, actor_id):
+        """One plain insert, as a buggy web path could make."""
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO stewardship_critical_event_ack "
+                "(id, correlation_id, log_id, actor_id) VALUES (%s, %s, %s, %s)",
+                [uuid4(), uuid4(), log_id, actor_id],
+            )
+
+    with task_login(ServiceRole.WEB):
+        for log_id, actor_id in (
+            (uuid4(), uuid4()),
+            (warning.pk, uuid4()),
+            (target.pk, None),
+        ):
+            with pytest.raises(DatabaseError, match="existing CRITICAL entry"):
+                insert(log_id, actor_id)
+        insert(target.pk, uuid4())
+    assert CriticalEventAcknowledgement.objects.filter(log_id=target.pk).exists()
+    critical(Event.TASK_FAILED)
+    other = OperationalLog.objects.get(level="CRITICAL", event="task_failed")
+    with task_login(ServiceRole.WORKER), connection.cursor() as cursor:
+        cursor.execute("RESET SESSION AUTHORIZATION")
+        cursor.execute(
+            "GRANT INSERT ON stewardship_critical_event_ack TO pk_stewardship_worker"
+        )
+        cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_worker")
+        with pytest.raises(DatabaseError, match="Only the web login"):
+            insert(other.pk, uuid4())
