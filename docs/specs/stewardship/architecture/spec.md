@@ -884,6 +884,12 @@ schema change. An idle loop takes no work-order lock; the [Family schedule
 sweep](../background-processing/spec.md#family-schedule-sweep) spec
 describes it.
 
+The other scheduler producers also take the work-order lock only when a
+read without it finds something to do (#715), with no schema change. The
+[durable
+scheduling](../background-processing/spec.md#durable-scheduling-and-task-execution)
+spec describes those reads and why each covers its locked pass.
+
 **Changes 6–9** need schema changes, which the v1 schema freeze defers. The
 SQL functions to change are:
 

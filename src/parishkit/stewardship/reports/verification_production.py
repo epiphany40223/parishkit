@@ -29,8 +29,43 @@ INPUT_FIELDS = (
 )
 
 
+def _candidates(today):
+    """Ready, admitted, kept fact sets with no request today and none in flight.
+
+    The admission and disposal functions are plain SQL reads, so the
+    same query can run with or without the work-order lock.
+    """
+    requests = FactVerificationRequest.objects.filter(fact_set_id=OuterRef("pk"))
+    return (
+        CampaignDailyFactSet.objects.alias(
+            admitted=Func(
+                "campaign_id",
+                Value(True),
+                function="stewardship_export_admitted_v1",
+                output_field=BooleanField(),
+            ),
+            disposable=Func(
+                "pk",
+                function="stewardship_fact_disposable",
+                output_field=BooleanField(),
+            ),
+        )
+        .filter(state="ready", admitted=True, disposable=False)
+        .filter(~Exists(requests.filter(scheduled_day__gte=today)))
+        .filter(
+            ~Exists(requests.filter(task__chain_runs__state__in=NONTERMINAL_STATES))
+        )
+        .order_by("created_at", "pk")
+    )
+
+
 def produce_verifications(guard, *, limit=20):
-    """One owner per generation/day, never reset a nonterminal owner's retry budget."""
+    """One owner per generation/day, never reset a nonterminal owner's retry budget.
+
+    The locked path verifies only the fact sets _candidates() returns, so
+    when the same query (on the same clock day) finds none, the work-order
+    lock is skipped (#715).
+    """
     if (
         not isinstance(guard, SchedulerGuard)
         or type(limit) is not int
@@ -42,30 +77,11 @@ def produce_verifications(guard, *, limit=20):
             "Fact verification production owns its transaction."
         )
     guard.check()
+    if not _candidates(_now().astimezone(UTC).date()).exists():
+        return ()
     with work_transaction():
         today = _now().astimezone(UTC).date()
-        requests = FactVerificationRequest.objects.filter(fact_set_id=OuterRef("pk"))
-        candidates = (
-            CampaignDailyFactSet.objects.alias(
-                admitted=Func(
-                    "campaign_id",
-                    Value(True),
-                    function="stewardship_export_admitted_v1",
-                    output_field=BooleanField(),
-                ),
-                disposable=Func(
-                    "pk",
-                    function="stewardship_fact_disposable",
-                    output_field=BooleanField(),
-                ),
-            )
-            .filter(state="ready", admitted=True, disposable=False)
-            .filter(~Exists(requests.filter(scheduled_day__gte=today)))
-            .filter(
-                ~Exists(requests.filter(task__chain_runs__state__in=NONTERMINAL_STATES))
-            )
-            .order_by("created_at", "pk")[:limit]
-        )
+        candidates = _candidates(today)[:limit]
         result = []
         for facts in candidates:
             guard.check()

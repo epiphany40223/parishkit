@@ -284,3 +284,60 @@ def test_exhausted_cleanup_alerts_once_and_admin_can_retry(
         OperationalLog.objects.filter(event="task_failed", level="CRITICAL").count()
         == 1
     )
+
+
+def counted_work_locks(monkeypatch):
+    """Count global work-order lock takes, keeping the real lock."""
+    from parishkit.stewardship.campaigns import work_locks
+
+    calls, real = [], work_locks.lock_work_order
+
+    def counting():
+        """Record one take, then take the real lock."""
+        calls.append(1)
+        return real()
+
+    monkeypatch.setattr(work_locks, "lock_work_order", counting)
+    return calls
+
+
+def test_more_unowned_attempts_than_listed_go_to_the_locked_pass(
+    scenario,  # noqa: F811
+    monkeypatch,
+):
+    """Past UNOWNED_LIMIT the read before the lock decides nothing (#715).
+
+    Three unowned attempts with a limit of two: the producer goes straight
+    to the locked query, which still finds the newest, the only disposable
+    one. The listing has no order, so the newest is normally the row a
+    two-row listing leaves out; a read that judged only the listed rows
+    would miss it.
+    """
+    from parishkit.stewardship.reports import export_cleanup
+
+    monkeypatch.setattr(export_cleanup, "UNOWNED_LIMIT", 2)
+    requests = [request_export(scenario) for _ in range(3)]
+    for request in requests:
+        run_export(scenario, request)
+    newest = expire_publication(requests[-1])
+    locks = counted_work_locks(monkeypatch)
+    with task_login(ServiceRole.SCHEDULER), scheduler_session() as guard:
+        (task,) = produce_cleanup(guard)
+    assert task.domain_request_id == newest.attempt_id
+    assert locks == [1]
+
+
+def test_listed_attempts_none_disposable_take_no_lock(
+    scenario,  # noqa: F811
+    monkeypatch,
+):
+    """Within UNOWNED_LIMIT, no disposable attempt means no work-order lock."""
+    from parishkit.stewardship.reports import export_cleanup
+
+    monkeypatch.setattr(export_cleanup, "UNOWNED_LIMIT", 2)
+    for _ in range(2):
+        run_export(scenario, request_export(scenario))
+    locks = counted_work_locks(monkeypatch)
+    with task_login(ServiceRole.SCHEDULER), scheduler_session() as guard:
+        assert produce_cleanup(guard) == ()
+    assert locks == []

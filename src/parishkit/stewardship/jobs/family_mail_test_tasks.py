@@ -366,6 +366,23 @@ def family_test_handler(
     )
 
 
+# What this sweep recovers, locked FOR UPDATE (#715 cross-checks it
+# against RECOVERABLE_STATES, the read before the lock).
+RECOVERABLE = (
+    "SELECT q.id,live.in_scope,task.state "
+    "FROM public.stewardship_family_mail_test q "
+    "JOIN public.stewardship_task_run task ON task.id=q.task_id "
+    "JOIN LATERAL (SELECT public.stewardship_family_test_scope_v1("
+    "q.configuration_id,q.campaign_id,q.template_id,q.requested_by_id,"
+    "q.rehearsal_epoch_id) AS in_scope) live ON true "
+    "WHERE q.state='queued' AND (NOT live.in_scope "
+    "OR task.state IN ('failed','cancelled')) "
+    "ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q"
+)
+# Every row RECOVERABLE can select is in one of these states.
+RECOVERABLE_STATES = ("queued",)
+
+
 def recover_pending():
     """Scheduler sweep: settle queued tickets whose task ended or scope was lost.
 
@@ -375,22 +392,19 @@ def recover_pending():
     without a message is marked failed. Temporary gates leave a queued ticket
     waiting. The Family link is scrubbed either way. Prepared tickets belong
     to the outbox.
+
+    Only a queued ticket is settled here, so when none exists the work-order
+    lock is skipped (#715).
     """
     from parishkit.stewardship.accounts.credential_database import _identity
 
     _identity("pk_stewardship_scheduler")
+    if not FamilyMailTest.objects.filter(state__in=RECOVERABLE_STATES).exists():
+        return 0
     with work_transaction():
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT q.id,live.in_scope,task.state "
-                "FROM public.stewardship_family_mail_test q "
-                "JOIN public.stewardship_task_run task ON task.id=q.task_id "
-                "JOIN LATERAL (SELECT public.stewardship_family_test_scope_v1("
-                "q.configuration_id,q.campaign_id,q.template_id,q.requested_by_id,"
-                "q.rehearsal_epoch_id) AS in_scope) live ON true "
-                "WHERE q.state='queued' AND (NOT live.in_scope "
-                "OR task.state IN ('failed','cancelled')) "
-                "ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q"
+                RECOVERABLE,
             )
             found = cursor.fetchall()
         for identifier, in_scope, task_state in found:

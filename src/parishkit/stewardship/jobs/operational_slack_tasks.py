@@ -43,13 +43,21 @@ def produce_slack(guard):
     Optional channel absence holds intent rather than silently expiring alerts.
     Drain at most 25 oldest notices per pass; both opening and resolution retain
     their original timestamps. Reconfiguration never replays allocated notices.
+    The locked path enqueues only unowned notices, and nothing while no
+    channel is configured, so when the same reads find no notice or no
+    channel the work-order lock is skipped (#715).
     """
     if not isinstance(guard, SchedulerGuard):
         raise PermissionError("Operational Slack requires its scheduler.")
     guard.check()
-    with work_transaction():
-        from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 
+    if not unowned_notices(TASK_TYPE).exists():
+        return ()
+    runtime = SystemConfiguration.objects.first()
+    if runtime is None or not configured_channel(runtime):
+        return ()
+    with work_transaction():
         runtime = SystemConfiguration.objects.first()
         if runtime is None or not configured_channel(runtime):
             return ()

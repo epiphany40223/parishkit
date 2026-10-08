@@ -247,37 +247,50 @@ def finish_submission(identifier, claim, outcome):
         return settle_result(outcome, deadline=row.deadline_at, write=write)
 
 
+# What this sweep recovers, locked FOR UPDATE (#715 cross-checks it
+# against RECOVERABLE_STATES, the read before the lock).
+RECOVERABLE = (
+    "SELECT delivery.id,delivery.state "
+    "FROM public.stewardship_setup_mail_delivery delivery "
+    "WHERE (delivery.state='queued' "
+    "AND (NOT public.stewardship_setup_mail_live_v1("
+    "delivery.attempt_id,delivery.attempt_version,delivery.credential_id,"
+    "delivery.credential_version,delivery.fingerprint) "
+    "OR EXISTS (SELECT 1 FROM public.stewardship_task_run original "
+    "WHERE original.id=delivery.task_id "
+    "AND original.state IN ('failed','cancelled')))) OR "
+    "(delivery.state='submitting' "
+    "AND delivery.deadline_at<=clock_timestamp() "
+    "AND NOT EXISTS (SELECT 1 FROM public.stewardship_task_run task "
+    "WHERE task.id=delivery.run_id AND task.state='running' "
+    "AND task.fence=delivery.task_fence "
+    "AND task.worker_id=delivery.worker_id "
+    "AND task.lease_expires_at>clock_timestamp())) "
+    "ORDER BY delivery.created_at,delivery.id "
+    "LIMIT %s FOR UPDATE OF delivery"
+)
+# Every row RECOVERABLE can select is in one of these states.
+RECOVERABLE_STATES = ("queued", "submitting")
+
+
 def recover_pending(*, limit=100):
     """Cancel stale unsent work or retain expired in-flight uncertainty, never retry.
 
     A dead helper's possible provider effect cannot be inferred from a Task
     failure. Recovery waits for both the original claim and the helper's hard
     deadline to expire. It changes no Task history and sends no message.
+    Only a queued or submitting delivery can be recovered, so when none
+    exists the work-order lock is skipped (#715).
     """
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError("Invalid setup delivery recovery batch.")
     _identity("pk_stewardship_scheduler")
+    if not SetupMailDelivery.objects.filter(state__in=RECOVERABLE_STATES).exists():
+        return 0
     with work_transaction():
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT delivery.id,delivery.state "
-                "FROM public.stewardship_setup_mail_delivery delivery "
-                "WHERE (delivery.state='queued' "
-                "AND (NOT public.stewardship_setup_mail_live_v1("
-                "delivery.attempt_id,delivery.attempt_version,delivery.credential_id,"
-                "delivery.credential_version,delivery.fingerprint) "
-                "OR EXISTS (SELECT 1 FROM public.stewardship_task_run original "
-                "WHERE original.id=delivery.task_id "
-                "AND original.state IN ('failed','cancelled')))) OR "
-                "(delivery.state='submitting' "
-                "AND delivery.deadline_at<=clock_timestamp() "
-                "AND NOT EXISTS (SELECT 1 FROM public.stewardship_task_run task "
-                "WHERE task.id=delivery.run_id AND task.state='running' "
-                "AND task.fence=delivery.task_fence "
-                "AND task.worker_id=delivery.worker_id "
-                "AND task.lease_expires_at>clock_timestamp())) "
-                "ORDER BY delivery.created_at,delivery.id "
-                "LIMIT %s FOR UPDATE OF delivery",
+                RECOVERABLE,
                 [limit],
             )
             found = cursor.fetchall()

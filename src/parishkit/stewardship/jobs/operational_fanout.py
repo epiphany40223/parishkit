@@ -39,12 +39,20 @@ BATCH_SIZE = 25
 
 
 def produce_fanout(guard, owner=OPERATIONAL):
-    """Allocate only bounded opaque work; no recipient body or provider is loaded."""
+    """Allocate only bounded opaque work; no recipient body or provider is loaded.
+
+    The locked path enqueues only the owner's pending sources, and nothing
+    at all while the owner is not configured, so when the same reads find
+    no pending source or no configured owner the work-order lock is skipped
+    (#715).
+    """
     if not isinstance(guard, SchedulerGuard):
         raise PermissionError(
             f"{owner.label} preparation requires the owned scheduler."
         )
     guard.check()
+    if not owner.pending_sources(1) or not owner.configured():
+        return ()
     with work_transaction():
         if not owner.configured():
             return ()

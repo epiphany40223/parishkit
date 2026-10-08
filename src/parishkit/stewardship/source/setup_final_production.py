@@ -17,20 +17,21 @@ def produce_finalization(store, guard):
 
     One frozen setup is allowed globally. The query remains explicitly bounded
     and historical preparations do not induce an unbounded scan each tick.
+    The locked path acts only on a frozen attempt's receipt, so the same
+    filter read first skips the work-order lock when there is none (#715).
     """
     if not isinstance(guard, SchedulerGuard):
         raise TypeError("Final setup production requires actual scheduler ownership.")
     if connection.in_atomic_block:
         raise StorageInvariantError("Final setup production owns its transaction.")
     guard.check()
+    frozen = SetupPreparationReceipt.objects.filter(
+        readiness__intent__attempt__state="frozen"
+    )
+    if not frozen.exists():
+        return ()
     with work_transaction():
-        receipt = (
-            SetupPreparationReceipt.objects.filter(
-                readiness__intent__attempt__state="frozen"
-            )
-            .order_by("created_at", "id")
-            .first()
-        )
+        receipt = frozen.order_by("created_at", "id").first()
         if receipt is None:
             return ()
         try:
