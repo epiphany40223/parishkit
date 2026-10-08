@@ -213,6 +213,9 @@ FROZEN = {
     "0060_census_resolution.sql": (
         "8495f4ab2534f79a3b509858f31a0c0168170a9d868a53cf1ea7baa1443b257b"
     ),
+    "0061_roster_entries.sql": (
+        "ce960c4fd262d96c3afafffe12fce98b6e1308b48c48ddd33fd077c3d7cf09dd"
+    ),
 }
 
 

@@ -267,14 +267,16 @@ def member_duids(rows):
         row["member_duid"] = int(key) if key else None
 
 
-def followup_page(campaign_id, query, principal, *, request_id=None):
+def followup_page(campaign_id, query, principal, *, request_id=None, whole=False):
     """Read one coherent page under the response guard's freshly resolved actor.
 
     SQL derives the actor's current role scope (stewardship_ministry_followup_v2,
     #389 L3) and intersects it with the campaign's Ministries before reading
     any request, so an out-of-scope request UUID yields no row rather than a
     different error. Python's scope is a pre-check and a cross-check. No
-    contact, address or financial column is selected.
+    contact, address or financial column is selected. ``whole`` reads every
+    matching row (no LIMIT), for a list that is filtered and paged in memory
+    (Roster changes to enter, #528).
     """
     if not can_follow_up(principal):
         raise PermissionError("Ministry follow-up access is unavailable.")
@@ -283,8 +285,8 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
         query,
         principal,
         request_id=request_id,
-        limit=query.page_size,
-        offset=(query.page - 1) * query.page_size,
+        limit=None if whole else query.page_size,
+        offset=0 if whole else (query.page - 1) * query.page_size,
     )
     if result is None:
         raise ReadUnavailable("Ministry follow-up inputs are unavailable.")

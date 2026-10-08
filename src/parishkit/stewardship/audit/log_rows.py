@@ -278,6 +278,7 @@ ACTIVITY_TYPES = {
         "response_repeat_list_exported",
         "response_started_list_exported",
         "response_submitted_list_exported",
+        "roster_changes_exported",
         "talents_report_exported",
         "system_logs_exported",
     ),
@@ -342,6 +343,7 @@ UNGROUPED_REASONS = {
         "response_repeat_list_viewed",
         "response_started_list_viewed",
         "response_submitted_list_viewed",
+        "roster_changes_viewed",
         "source_form_viewed",
         "system_health_viewed",
         "system_logs_viewed",
@@ -355,6 +357,7 @@ UNGROUPED_REASONS = {
         "chair_review_decided",
         "information_updated",
         "ministry_request_updated",
+        "ministry_roster_entered",
     ),
     "The campaign's lifecycle and going live; no group covers them yet": (
         *built_types(

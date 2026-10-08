@@ -1391,6 +1391,10 @@ carries no Ministry selection, so it answers with a 303 redirect to the
 summary rather than an invalid-request error
 ([#867](https://github.com/epiphany40223/parishkit/issues/867)).
 
+Neither list nor its export shows a resolved request's **Entered in
+ParishSoft** tick; it is read and set on
+[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter).
+
 Follow-up has no assignee, so neither list nor its exports show one; see
 [Follow-up workflows](../admin-portal/spec.md#follow-up-workflows).
 
