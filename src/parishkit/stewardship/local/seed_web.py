@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from importlib import import_module
 from ipaddress import ip_address
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from parishkit.config import ConfigError
 
@@ -369,6 +369,38 @@ class FamilyWebDriver:
         raise SeedWebRefused(f"Family {family_id}'s submission kept needing review.")
 
 
+# A proposed new household Member's invented first names (#498); the
+# surname follows the household's.
+NEW_MEMBER_NAMES = ("Avery", "Jordan", "Riley", "Quinn", "Rowan", "Emerson")
+
+
+def proposed_member(inputs, members):
+    """One invented new household Member: (its local id, its form answers).
+
+    The id is a UUID derived from the Family's DUID, so a resubmission after a
+    refreshed baseline proposes the same person, not a second one. Every
+    ordinary Member field is answered, as the form requires: a first name,
+    the household's surname, an adult's birth date (a new Member may join
+    a Ministry), a gender and a language.
+    """
+    from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
+
+    duid = inputs.family_duid
+    identity = str(uuid5(NAMESPACE_URL, f"parishkit-local-seed:member:{duid}"))
+    surname = next(
+        (m["last_name"] for _, m in sorted(members.items()) if m.get("last_name")),
+        "Sample",
+    )
+    answers = {field.name: "" for field in MEMBER_FIELDS} | {
+        "first_name": NEW_MEMBER_NAMES[duid % len(NEW_MEMBER_NAMES)],
+        "last_name": surname,
+        "birth_date": "1994-03-15",
+        "gender": ("Female", "Male")[duid % 2],
+        "language": "English",
+    }
+    return identity, answers
+
+
 def build_answers(form, answers):
     """The browser's complete answer payload for a form, from its projection.
 
@@ -376,8 +408,9 @@ def build_answers(form, answers):
     ``browser_value``), the household with blank addresses, and the timeline's
     abstract answers map onto the modules the campaign enabled: a pledge onto
     the financial section, Ministry interest onto one adult's join choices, a
-    census edit onto a changed email, an opt-out onto the household flag and
-    free text onto additional information.
+    census edit onto a changed email or a proposed new Member (who joins the
+    first offered Ministry), an opt-out onto the household flag and free text
+    onto additional information.
     """
     from parishkit.stewardship.responses.member_census import (
         MEMBER_FIELDS,
@@ -400,6 +433,10 @@ def build_answers(form, answers):
             if "email" in members[key]:
                 members[key]["email"] = f"family{key}@example.test"
                 break
+    proposed = {}
+    if census and answers.get("census_edit") == "proposed_member":
+        identity, member = proposed_member(inputs, members)
+        proposed[identity] = member
     blank = {
         "line1": "",
         "line2": "",
@@ -418,7 +455,7 @@ def build_answers(form, answers):
         if census
         else {},
         "members": members if census else {key: {} for key in members},
-        "proposed_members": {},
+        "proposed_members": proposed,
         "ministries": {},
         "additional_information": answers.get("information", "") or "",
     }
@@ -434,7 +471,13 @@ def build_answers(form, answers):
                 [duid for duid in joins if duid not in current] if not entries else []
             )
             entries[str(member)] = {"join": join, "leave": []}
-        payload["ministries"] = {"members": entries, "proposed_members": {}}
+        # A proposed Member may only join; every one needs an entry.
+        payload["ministries"] = {
+            "members": entries,
+            "proposed_members": {
+                identity: {"join": offered[:1]} for identity in proposed
+            },
+        }
     if "financial" in inputs.modules:
         pledge = answers.get("pledge")
         if pledge is None:
