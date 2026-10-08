@@ -1,4 +1,4 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Change placeholder name" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Change placeholder name" %}</h1>
@@ -10,6 +10,6 @@
 {% else %}
 <p>{% translate "The file's link stays the same; only the name used in placeholders changes." %}</p>
 <form method="post" class="panel">{% csrf_token %}{{ form.as_div }}
-<button type="submit">{% translate "Change name" %}</button> <a href="{% url 'admin:hosted_files' %}">{% translate "Cancel" %}</a></form>
+{% button type="submit" %}{% translate "Change name" %}{% endbutton %} <a href="{% url 'admin:hosted_files' %}">{% translate "Cancel" %}</a></form>
 {% endif %}
 {% endblock %}

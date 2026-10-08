@@ -7,7 +7,7 @@
   <div class="short"><label for="family-duid">{% translate "Exact Family DUID" %}</label>
   <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25"></div>
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-  <button type="submit">{% translate "Show refusals" %}</button>
+  {% button type="submit" %}{% translate "Show refusals" %}{% endbutton %}
 </form>
 {% translate "Refused address pages" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>

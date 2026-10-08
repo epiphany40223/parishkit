@@ -32,7 +32,7 @@
     <select id="automation-scope" name="scope">{% for value, label in scope_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
     <label for="automation-days">{% translate "Days until it expires" %}</label>
     <input id="automation-days" name="days" type="number" min="1" max="{{ pending.days }}" value="{{ pending.days }}" required>
-    <button type="submit">{% translate "Approve" %}</button>
+    {% button type="submit" %}{% translate "Approve" %}{% endbutton %}
   </form>
   <p><a href="{{ back }}">{% translate "Cancel" %}</a></p>
 </section>
@@ -48,7 +48,7 @@
     <input type="hidden" name="action" value="lookup">
     <label for="automation-code">{% translate "User code" %}</label>
     <input id="automation-code" name="code" autocomplete="off" spellcheck="false" maxlength="16" required{% if not fresh %} disabled{% endif %}>
-    <button type="submit"{% if not fresh %} disabled{% endif %}>{% translate "Continue" %}</button>
+    {% button type="submit" enabled=fresh %}{% translate "Continue" %}{% endbutton %}
   </form>
   <p><a href="{{ back }}">{{ back_label }}</a></p>
 </section>

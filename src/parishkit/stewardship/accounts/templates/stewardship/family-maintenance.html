@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n %}
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
 {% comment %}
   Shown for every Family page while an Administrator has closed the Family
   portal for maintenance (family_maintenance.py). It reads nothing about the
@@ -10,5 +10,5 @@
   <p>{% translate "The parish is doing some maintenance on this site. Please try again a little later." %}</p>
   {% if message %}<p class="notice">{{ message }}</p>{% endif %}
   <p>{% translate "Anything you already submitted is safe." %}</p>
-  <p><a class="button" href="{{ retry|default:'/' }}">{% translate "Try again" %}</a></p>
+  <p>{% button variant="primary" href=retry|default:'/' %}{% translate "Try again" %}{% endbutton %}</p>
 </section>{% endblock %}

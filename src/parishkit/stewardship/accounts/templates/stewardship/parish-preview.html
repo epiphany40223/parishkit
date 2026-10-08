@@ -1,4 +1,4 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Review Parish changes" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Review Parish changes" %}</h1>
@@ -12,7 +12,7 @@
 <p>{% translate "Confirm to save these settings." %}</p>
 <form method="post">
   {% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
-  <button type="submit">{% translate "Apply changes" %}</button>
+  {% button type="submit" %}{% translate "Apply changes" %}{% endbutton %}
   <a href="{% url 'admin:parish_settings' %}">{% translate "Cancel" %}</a>
 </form>
 {% endblock %}

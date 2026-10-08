@@ -1,4 +1,4 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Parish settings" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Parish settings" %}</h1>
@@ -10,6 +10,6 @@
 <form method="post" class="panel">
   {% csrf_token %}<input type="hidden" name="action" value="preview">
   {{ form.as_div }}
-  <button type="submit">{% translate "Preview changes" %}</button>
+  {% button type="submit" %}{% translate "Preview changes" %}{% endbutton %}
 </form>
 {% endblock %}

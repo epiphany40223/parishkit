@@ -1,4 +1,4 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Review integration changes" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Review integration changes" %}: {{ label }}</h1>
@@ -8,6 +8,6 @@
 {% if removing and target == 'slack' %}<p>{% translate "After you confirm, Slack alerts stop. To set Slack up again later, open this page and save the channel ID with the app's bot token." %}</p>{% endif %}
 {% if target == 'backup_key' %}<p>{% translate "You proved you hold the new private key. After you confirm, the next backup is encrypted with the new key. Backups already made still need the old private key: keep it until they have all been deleted by retention." %}</p>{% else %}<p>{% translate "Confirm to save these settings. Saving does not test the connection." %}</p>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
-<button type="submit">{% translate "Confirm changes" %}</button></form>
+{% button type="submit" %}{% translate "Confirm changes" %}{% endbutton %}</form>
 <p><a href="{% url 'admin:integration_settings' target %}">{% blocktranslate %}Return to {{ label }}{% endblocktranslate %}</a></p>
 {% endblock %}

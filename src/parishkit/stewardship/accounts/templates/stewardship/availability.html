@@ -1,4 +1,4 @@
-{% extends admin|yesno:'stewardship/admin-base.html,stewardship/base.html' %}{% load i18n %}
+{% extends admin|yesno:'stewardship/admin-base.html,stewardship/base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Portal unavailable" %}{% endblock %}
 {% block content %}<section class="flow panel">
   {% if setup %}
@@ -10,6 +10,6 @@
   {% endif %}
   {% if admin %}
   <p><a href="/admin/login">{% translate "Try signing in again" %}</a></p>
-  <form method="post" action="/admin/logout">{% csrf_token %}<button type="submit">{% translate "Sign out" %}</button></form>
+  <form method="post" action="/admin/logout">{% csrf_token %}{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form>
   {% else %}<p><a href="/">{% translate "Try again" %}</a></p>{% endif %}
 </section>{% endblock %}

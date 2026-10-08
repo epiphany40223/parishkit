@@ -15,7 +15,7 @@
     {% if dashboard.full_refresh %}{% include "stewardship/full-refresh-status.html" with status=dashboard.full_refresh can_view_task=dashboard.can_view_task can_refresh=dashboard.can_refresh refresh_key=dashboard.refresh_key %}{% endif %}
     {% if dashboard.can_refresh %}<p><a href="{% url 'admin:source_refresh' %}">{% translate "Refresh now" %}</a></p>{% endif %}
     {% if dashboard.offsite %}<p{% if dashboard.offsite.kind == 'failed' %} class="notice notice-error"{% endif %}>{% translate "Off-site backups:" %} {{ dashboard.offsite.message }}{% if dashboard.offsite.last_copy_at %} {% translate "Last copied:" %} <time datetime="{{ dashboard.offsite.last_copy_at|instant }}" data-local-instant>{{ dashboard.offsite.last_copy_at|instant }}</time>{% endif %} <a href="{% url 'admin:integration_settings' 'backup' %}">{% translate "Off-site backup settings" %}</a></p>{% elif dashboard.offsite_unset %}<p>{% translate "Off-site backups are not set up. Encrypted copies of every backup can also be kept in a Google Drive folder, so a lost server does not lose them." %} <a href="{% url 'admin:integration_settings' 'backup' %}">{% translate "Set up off-site backups" %}</a></p>{% endif %}
-    {% for key in dashboard.unfinished_keys %}<p class="notice notice-error" role="alert">{% blocktranslate with name=key.label stopped=key.stopped %}{{ name }}: a new key is installed, but switching to it did not finish, so {{ stopped }}.{% endblocktranslate %} <a class="button" href="{% url 'admin:integration_settings' key.target %}">{% translate "Finish switching" %}</a></p>{% endfor %}
+    {% for key in dashboard.unfinished_keys %}<p class="notice notice-error" role="alert">{% blocktranslate with name=key.label stopped=key.stopped %}{{ name }}: a new key is installed, but switching to it did not finish, so {{ stopped }}.{% endblocktranslate %} {% url 'admin:integration_settings' key.target as button_href %}{% button variant="primary" href=button_href %}{% translate "Finish switching" %}{% endbutton %}</p>{% endfor %}
     {% if dashboard.next_mail %}<p>{% translate "Next planned Family mailing:" %} <time datetime="{{ dashboard.next_mail.due_at|instant }}" data-local-instant>{{ dashboard.next_mail.due_at|instant }}</time></p>{% endif %}
   </section>
   {# Each Acknowledge acts in place (#519): the region is always drawn, empty once nothing awaits, so the answer after the last one still carries it. #}
@@ -28,7 +28,7 @@
       <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Key before" %}</dt><dd><code>{{ event.key_ids.0|default:_("not known") }}</code></dd><dt>{% translate "Key after" %}</dt><dd><code>{{ event.key_ids.1 }}</code></dd></dl></details>
       {% else %}<p>{% translate "Roles before:" %} {% if event.before %}{{ event.before|join:", " }}{% else %}{% translate "none" %}{% endif %}. {% translate "Roles after:" %} {% if event.after %}{{ event.after|join:", " }}{% else %}{% translate "none" %}{% endif %}.</p>{% endif %}
       <form method="post" action="{% url 'admin:security_event_acknowledge' event.id %}#security-events" data-in-place="security-acknowledge-{{ event.id }}" data-in-place-message="{% translate 'Security event acknowledged.' %}">
-        {% csrf_token %}<button type="submit">{% translate "Acknowledge" %}</button>
+        {% csrf_token %}{% button type="submit" %}{% translate "Acknowledge" %}{% endbutton %}
       </form>
     </li>{% endfor %}</ul>
   </section>{% endif %}</div>

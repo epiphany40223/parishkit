@@ -27,7 +27,7 @@
 {% if show_codes %}<dt>{% translate "Family code" %}</dt>
 <dd>{% if identity.code %}<code>{{ identity.code }}</code>{% else %}{% translate "Unavailable for this campaign" %}{% endif %}
 {% if open_form %}<a class="button" href="{% url 'public:entry' %}#code={{ identity.code|urlencode }}" target="_blank" rel="noopener" data-open-form>{% translate "Open form" %}<span class="visually-hidden"> {% translate "in a new tab" %}</span></a>
-{% else %}<button type="button" disabled aria-describedby="open-form-reason">{% translate "Open form" %}</button> <span id="open-form-reason" class="help">{% if open_form_reason == 'testing' %}{% translate "Not available in Testing mode: the Family form accepts only Testing codes." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}{% else %}{% translate "Not available: this Family has no code for this campaign." %}{% endif %}</span>{% endif %}</dd>{% endif %}
+{% else %}{% button type="button" disabled aria-describedby="open-form-reason" %}{% translate "Open form" %}{% endbutton %} <span id="open-form-reason" class="help">{% if open_form_reason == 'testing' %}{% translate "Not available in Testing mode: the Family form accepts only Testing codes." %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}{% else %}{% translate "Not available: this Family has no code for this campaign." %}{% endif %}</span>{% endif %}</dd>{% endif %}
 {% if full %}<dt>{% translate "Campaign email can reach this Family" %}</dt>
 <dd>{{ identity.reach_label }}</dd>
 <dt>{% translate "Furthest step reached" %}</dt>

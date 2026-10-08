@@ -1,4 +1,4 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Review campaign changes" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Review campaign changes" %}</h1>
@@ -8,5 +8,5 @@
 <p>{% translate "Proposed:" %} {{ change.after|default_if_none:'—'|linebreaksbr }}</p></section>{% endfor %}
 <p>{% translate "Confirm to save these settings." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
-<button type="submit">{% translate "Apply changes" %}</button></form>
+{% button type="submit" %}{% translate "Apply changes" %}{% endbutton %}</form>
 {% endblock %}

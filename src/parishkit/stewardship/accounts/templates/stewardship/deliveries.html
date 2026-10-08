@@ -15,7 +15,7 @@
   <input id="delivery-query" name="q" value="{{ query }}" maxlength="64"></div>
   {% if send %}<input type="hidden" name="send" value="{{ send.key.token }}">{% endif %}
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-  <button type="submit">{% translate "Show deliveries" %}</button>
+  {% button type="submit" %}{% translate "Show deliveries" %}{% endbutton %}
 </form>
 {% translate "Outgoing mail pages" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>

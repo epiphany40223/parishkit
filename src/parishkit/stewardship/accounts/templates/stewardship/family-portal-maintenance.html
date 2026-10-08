@@ -16,7 +16,7 @@
   <p>{% translate "Closed" %} <time data-local-instant datetime="{{ state.since|instant }}">{{ state.since|instant }}</time>{% if closed_by %} {% translate "by" %} {{ closed_by }}{% endif %}.</p>
   {% if state.message %}<p>{% translate "Families see this message:" %} {{ state.message }}</p>{% endif %}
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="open"><input type="hidden" name="message" value="">
-    <button type="submit">{% translate "Reopen the Family portal" %}</button>
+    {% button type="submit" %}{% translate "Reopen the Family portal" %}{% endbutton %}
   </form>
 </section>
 {% else %}
@@ -26,7 +26,7 @@
     <label for="maintenance-message">{% translate "Message for Families (optional)" %}</label>
     <textarea id="maintenance-message" name="message" maxlength="{{ message_limit }}" rows="3" aria-describedby="maintenance-message-help"></textarea>
     <p class="help" id="maintenance-message-help">{% translate "For example: “We expect to be back by 3 PM.” It is also kept in the audit log, so leave out personal details such as names, phone numbers or addresses. Up to 500 characters; no email addresses." %}</p>
-    <button type="submit">{% translate "Close the Family portal for maintenance" %}</button>
+    {% button type="submit" %}{% translate "Close the Family portal for maintenance" %}{% endbutton %}
   </form>
 </section>
 {% endif %}

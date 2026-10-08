@@ -48,8 +48,8 @@
 <p>{% translate "This will permanently end your initial setup attempt. Your original Administrator access will be preserved. This cannot undo a completed setup." %}</p>
 <form method="post">{% csrf_token %}
 <input type="hidden" name="attempt" value="{{ attempt.attempt_id }}">
-<button type="submit">{% translate "Cancel initial setup" %}</button>
+{% button type="submit" %}{% translate "Cancel initial setup" %}{% endbutton %}
 </form>
 {% endif %}
-<form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button type="submit">{% translate "Sign out" %}</button></form>
+<form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form>
 {% endblock %}

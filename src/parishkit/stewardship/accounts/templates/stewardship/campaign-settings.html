@@ -7,7 +7,7 @@
 {% comment %}Copy campaign is greyed out until the single-campaign change (#145) removes it (navigation rule 10); the server refuses it too.{% endcomment %}<p>{% multi_campaign_control "copy-campaign" _("Copy campaign") %}</p>
 {% if campaign.state != 'archived' %}<p><a href="{% url 'admin:content_catalog' %}">{% translate "Edit Pages and emails" %}</a></p>{% endif %}<p><a href="{% url 'admin:content_history' %}">{% translate "See Content history" %}</a></p>
 <p><a href="{% url 'admin:schedule_settings' %}">{% translate "Edit Dates and mail schedules" %}</a></p>
-{% if family_test_url %}<p><a class="button button-secondary" href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a> <span class="help">{% translate "Sends chosen Families' invitations to the Testing recipient; their links work now." %}</span></p>{% endif %}
+{% if family_test_url %}<p>{% button variant="secondary" href=family_test_url %}{% translate "Try the Family form as a chosen Family" %}{% endbutton %} <span class="help">{% translate "Sends chosen Families' invitations to the Testing recipient; their links work now." %}</span></p>{% endif %}
 {% if campaign.state == 'draft' %}<p><a href="{% url 'admin:go_live' %}">{% translate "Check Go-live readiness" %}</a></p>{% endif %}
 {% if production_progress_available %}<p><a href="{% url 'admin:production_progress' %}">{% translate "Follow Production activation" %}</a></p>{% endif %}
 <p class="notice">{% translate "These settings lock when the campaign goes live or is scheduled for Production. Dates and mail schedules use this campaign's time zone, not your computer's." %}</p>
@@ -17,13 +17,13 @@
 <form method="post" class="panel" data-campaign-form>
 {% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/campaign-fields.html' %}
-<button type="submit">{% translate "Preview changes" %}</button>
+{% button type="submit" %}{% translate "Preview changes" %}{% endbutton %}
 </form>
 {% else %}
 <p role="status">{% translate "These settings can't be changed now. They can change only on the current Testing-mode draft, before it has ever been live, and not while background work or going live is under way. Background work usually finishes in minutes; going live holds them until it completes or is cancelled." %}</p>
 {% if ministries_live %}<section class="panel" id="ministry-selections"><h2>{% translate "Ministry selections" %}</h2>
 <p>{% translate "This campaign is live, but its Ministries can still be added or removed while it is open. Answers Families already gave are never deleted." %}</p>
-<p><a class="button" href="{% url 'admin:campaign_ministries' %}">{% translate "Change Campaign Ministries" %}</a></p></section>{% endif %}
+<p>{% url 'admin:campaign_ministries' as button_href %}{% button variant="primary" href=button_href %}{% translate "Change Campaign Ministries" %}{% endbutton %}</p></section>{% endif %}
 <div class="panel"><fieldset disabled><legend>{% translate "Saved campaign settings (read-only)" %}</legend>{{ form.as_div }}</fieldset></div>
 {% endif %}
 {% endblock %}
