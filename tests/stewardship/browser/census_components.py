@@ -53,6 +53,7 @@ def components(context, admin):
                 "family_duid": 1000 + index,
                 "family_name": f"Family {index:02d}",
                 "member_name": f"Member {index:02d}",
+                "version": 1,
             }
         )
         for index in range(ROWS)
@@ -60,8 +61,9 @@ def components(context, admin):
     query = CensusQuery()
     result = select(rows, query, administrator=True)
 
-    def page(paging):
-        """Render the page with the table paged and sorted as ``paging`` says."""
+    def page(paging, notice=None):
+        """Render the page with the table paged and sorted as ``paging`` says,
+        and ``notice`` (a resolution's answer) above it."""
         table = paginate(
             result["rows"],
             paging,
@@ -84,12 +86,29 @@ def components(context, admin):
                     "route_choices": ROUTE_LABELS.items(),
                     "kind_choices": KIND_LABELS.items(),
                     "export_timezones": ["UTC", "America/Detroit"],
+                    "notice": notice,
+                    "action": PATH,
                 },
             ),
         )
 
     return {
         "/census-changes": page({"size": "25"}),
+        # The page at its own address, which its row forms post back to, so
+        # an in-place answer from there is this same page.
+        PATH: page({"size": "25"}),
         "/census-changes-page-2": page({"size": "25", "page": "2"}),
         "/census-changes-newest": page({"size": "25", "sort": "-submitted"}),
+        "/census-changes-resolved": page(
+            {"size": "25"},
+            notice="Mobile phone for Member 129 in Family 1029 marked entered "
+            "in ParishSoft.",
+        ),
+        # A row someone else changed first: the page says so, nothing saved.
+        "/census-changes-stale": page(
+            {"size": "25"},
+            notice="Mobile phone for Member 129 in Family 1029 was updated by "
+            "someone else, so nothing was recorded. The list shows its "
+            "current status.",
+        ),
     }

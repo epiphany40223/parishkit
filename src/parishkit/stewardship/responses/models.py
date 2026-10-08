@@ -357,6 +357,50 @@ class AdditionalInformationRevision(ImmutableRecord):
         ]
 
 
+RESOLUTION_ACTIONS = ("entered", "ignored", "reopened")
+
+
+class ProposalResolution(ImmutableRecord):
+    """One Staff or Admin resolution of a census change, kept as history (#528).
+
+    ``entered`` records that a person entered a By-hand change in ParishSoft
+    (the proposal's execution becomes ``resolved_external``), ``ignored``
+    that it will not be entered (its decision becomes ``ignored``), and
+    ``reopened`` an Administrator's undoing of an Ignore (its decision is
+    ``unreviewed`` again). Who, when and the optional note live here; the
+    proposal carries only the resulting state, which SQL pairs with this row
+    (schema/migrations/0026_census_resolution.sql).
+    """
+
+    proposal = models.ForeignKey(
+        ProposedChange, on_delete=models.PROTECT, related_name="resolutions"
+    )
+    expected_version = models.PositiveBigIntegerField()
+    request_key = models.UUIDField()
+    action = models.CharField(max_length=12)
+    note = models.TextField(default="", blank=True)
+
+    class Meta:
+        db_table = "stewardship_proposal_resolution"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("proposal", "expected_version"),
+                name="proposal_resolution_version",
+            ),
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"), name="proposal_resolution_replay"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=False, expected_version__gte=1),
+                name="proposal_resolution_identity",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(action__in=RESOLUTION_ACTIONS),
+                name="proposal_resolution_action",
+            ),
+        ]
+
+
 class SubmissionReceiptOccurrence(ImmutableRecord):
     """One atomic receipt or proven no-recipient outcome per accepted submission.
 

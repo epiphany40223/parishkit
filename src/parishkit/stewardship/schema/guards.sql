@@ -4897,7 +4897,32 @@ BEGIN
                     RAISE EXCEPTION 'Proposal reconciliation requires fenced protected source' USING ERRCODE='23514';
                 END IF;
             ELSIF current_user='pk_stewardship_web' THEN
-                IF NEW.execution NOT IN ('superseded','cancelled','resolved_upstream')
+                -- A Staff or Administrator resolution (#528) is admitted only
+                -- with its paired history row, whose own guard checked the
+                -- actor, the campaign and the starting state: it changes the
+                -- execution (entered) or the decision (ignored, reopened),
+                -- nothing else, and advances the version by one. Any other
+                -- web change must be a replacement by a later Family response,
+                -- which never changes the decision.
+                IF NOT EXISTS (
+                    SELECT 1 FROM public.stewardship_proposal_resolution r
+                    WHERE r.proposal_id=OLD.id AND r.expected_version=OLD.version
+                      AND NEW.version=OLD.version+1
+                      AND ROW(NEW.current_available,NEW.current_value,NEW.current_source_id,
+                              NEW.admin_value_set,NEW.admin_value,NEW.superseded_by_id)
+                          IS NOT DISTINCT FROM
+                          ROW(OLD.current_available,OLD.current_value,OLD.current_source_id,
+                              OLD.admin_value_set,OLD.admin_value,OLD.superseded_by_id)
+                      AND CASE r.action
+                          WHEN 'entered' THEN NEW.execution='resolved_external'
+                              AND NEW.decision=OLD.decision
+                          WHEN 'ignored' THEN NEW.decision='ignored'
+                              AND NEW.execution=OLD.execution
+                          WHEN 'reopened' THEN NEW.decision='unreviewed'
+                              AND NEW.execution=OLD.execution
+                          ELSE false END)
+                   AND (NEW.decision<>OLD.decision
+                   OR NEW.execution NOT IN ('superseded','cancelled','resolved_upstream')
                    OR NOT EXISTS (
                        SELECT 1 FROM public.stewardship_submission later
                        JOIN public.stewardship_family_form_baseline baseline ON baseline.id=later.baseline_id
@@ -4925,7 +4950,7 @@ BEGIN
                          AND (NEW.execution <> 'superseded' OR EXISTS (
                              SELECT 1 FROM public.stewardship_proposed_change successor
                              WHERE successor.id=NEW.superseded_by_id AND successor.submission_id=later.id))
-                   )
+                   ))
                 THEN
                     RAISE EXCEPTION 'Proposal replacement requires a new final Family response' USING ERRCODE='23514';
                 END IF;

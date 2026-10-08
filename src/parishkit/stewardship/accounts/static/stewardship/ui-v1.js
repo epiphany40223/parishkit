@@ -875,6 +875,12 @@
         const said = control.getAttribute(shown ? "data-message-on" : "data-message-off");
         if (said) return said;
       }
+      // A form whose answer says itself what happened (a saved change or a
+      // refusal, #528) names the element of the fresh page that says it;
+      // that text is announced instead of a fixed message.
+      const from = owner.getAttribute("data-in-place-message-from");
+      const told = from && squeeze(document.getElementById(from)?.textContent || "");
+      if (told) return told;
       const message = owner.getAttribute("data-in-place-message");
       if (message) return [message, tableCount(fresh)].filter(Boolean).join(" ");
       // A form without a message names what was done by its button's text

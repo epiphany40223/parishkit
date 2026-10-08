@@ -42,6 +42,11 @@ def row(**values):
         "family_duid": 7001,
         "family_name": "Sample",
         "member_name": "Pat Sample",
+        "version": 1,
+        "resolution_action": None,
+        "resolution_note": None,
+        "resolution_at": None,
+        "resolution_by": None,
     } | values
 
 
@@ -212,5 +217,90 @@ def test_csv_has_the_page_columns_in_the_chosen_zone():
     text = census_csv(result, ZoneInfo("America/Chicago")).decode()
     table = list(csv.reader(io.StringIO(text)))
     assert tuple(table[0]) == HEADINGS
-    assert table[1][2] == "Pat Sample" and table[1][-1] == "2054-10-05T09:30:00-05:00"
+    assert table[1][2] == "Pat Sample" and table[1][9] == "2054-10-05T09:30:00-05:00"
+    # No resolution yet: its three columns are blank.
+    assert table[1][10:] == ["", "", ""]
     assert len(table) == 4
+
+
+@pytest.mark.parametrize(
+    ("values", "resolve", "reopen"),
+    [
+        # A By-hand change still to do, or in conflict, takes the tick and Ignore.
+        ({"handling": "manual", "field": "suffix"}, True, False),
+        ({"handling": "manual", "execution": "conflict"}, True, False),
+        ({"entity_kind": "family", "field": "home_address"}, True, False),
+        # An automatic change is the Administrator's to publish.
+        ({}, False, False),
+        # Ignored: only reopen (offered to Administrators by the page).
+        ({"handling": "manual", "decision": "ignored"}, False, True),
+        # Final outcomes take nothing.
+        ({"handling": "manual", "execution": "resolved_external"}, False, False),
+        ({"handling": "manual", "execution": "superseded"}, False, False),
+    ],
+)
+def test_shape_offers_only_the_actions_the_row_allows(values, resolve, reopen):
+    """The page draws exactly the actions the service would accept."""
+    shown = shape(row(**values))
+    assert (shown["can_resolve"], shown["can_reopen"]) == (resolve, reopen)
+
+
+def test_shape_reads_the_latest_resolution():
+    """The latest resolution's who, when and note reach the page and file."""
+    when = datetime(2054, 10, 6, 15, tzinfo=UTC)
+    shown = shape(
+        row(
+            handling="manual",
+            execution="resolved_external",
+            resolution_action="entered",
+            resolution_note="Typed it in",
+            resolution_at=when.isoformat(),
+            resolution_by="staff@example.org",
+        )
+    )
+    assert shown["status_label"] == "Entered by hand"
+    assert shown["resolution_at"] == when
+    text = census_csv({"rows": [shown]}, ZoneInfo("UTC")).decode()
+    line = list(csv.reader(io.StringIO(text)))[1]
+    assert line[10:] == [
+        "staff@example.org",
+        "2054-10-06T15:00:00+00:00",
+        "Typed it in",
+    ]
+
+
+def test_resolution_form_parsing():
+    """A row's form is all five fields once, or none (a filter POST)."""
+    from django.http import QueryDict
+
+    from parishkit.stewardship.reports.census_change_views import _resolution
+
+    proposal, key = (
+        "00000000-0000-4000-8000-000000000001",
+        ("00000000-0000-4000-8000-000000000002"),
+    )
+    form = QueryDict(mutable=True)
+    form.update(
+        {
+            "resolve": "ignored",
+            "proposal": proposal,
+            "version": "3",
+            "request_key": key,
+            "note": "  Duplicate  ",
+            "status": "open",
+        }
+    )
+    parsed = _resolution(form)
+    assert parsed["action"] == "ignored" and parsed["expected_version"] == 3
+    assert parsed["note"] == "Duplicate" and str(parsed["proposal_id"]) == proposal
+    assert dict(form) == {"status": ["open"]}
+    assert _resolution(QueryDict("status=open", mutable=True)) is None
+    for broken in (
+        "resolve=entered",
+        f"resolve=entered&proposal={proposal}&version=x&request_key={key}&note=",
+        f"resolve=entered&proposal=bad&version=1&request_key={key}&note=",
+        f"resolve=entered&resolve=ignored&proposal={proposal}&version=1"
+        f"&request_key={key}&note=",
+    ):
+        with pytest.raises(ValueError):
+            _resolution(QueryDict(broken, mutable=True))

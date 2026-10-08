@@ -20,6 +20,7 @@ import io
 import json
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 
 from django.db import connection
 from django.utils.datastructures import MultiValueDict
@@ -27,6 +28,7 @@ from django.utils.datastructures import MultiValueDict
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.census import FAMILY_FIELDS
+from parishkit.stewardship.responses.census_resolution import allowed
 from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
 from parishkit.stewardship.responses.member_requests import REQUEST_FIELDS
@@ -85,6 +87,9 @@ HEADINGS = (
     "How it reaches ParishSoft",
     "Status",
     "Submitted",
+    "Resolved by",
+    "Resolved at",
+    "Resolution note",
 )
 
 
@@ -172,7 +177,8 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
             nullif(btrim(s.answers->'members'->p.entity_key->>'last_name'),''))),''),
         nullif(btrim(concat_ws(' ',
             nullif(btrim(sm.canonical::jsonb->>'firstName'),''),
-            nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),'')) AS member_name
+            nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),'')) AS member_name,
+    p.version, latest.action, latest.note, latest.created_at, latest.email
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -184,6 +190,13 @@ LEFT JOIN stewardship_source_family fp ON fp.id=fm.payload_id
 LEFT JOIN stewardship_snapshot_member mm ON p.entity_kind='member'
     AND mm.snapshot_id=sc.snapshot_id AND mm.source_key=p.entity_key
 LEFT JOIN stewardship_source_member sm ON sm.id=mm.payload_id
+-- The latest Staff or Admin resolution (#528, step 3), with who made it.
+LEFT JOIN LATERAL (
+    SELECT r.action, r.note, r.created_at, u.email
+    FROM stewardship_proposal_resolution r
+    LEFT JOIN stewardship_portal_user u ON u.id=r.actor_id
+    WHERE r.proposal_id=p.id ORDER BY r.expected_version DESC LIMIT 1
+) latest ON true
 WHERE c.id=%s AND p.handling<>'report-only'
 ORDER BY f.family_duid, s.submitted_at, p.entity_kind,
     p.entity_key, p.field
@@ -207,6 +220,11 @@ COLUMNS = (
     "family_duid",
     "family_name",
     "member_name",
+    "version",
+    "resolution_action",
+    "resolution_note",
+    "resolution_at",
+    "resolution_by",
 )
 
 JSON_COLUMNS = ("baseline_value", "submitted_value", "current_value", "admin_value")
@@ -237,7 +255,8 @@ def automatic(row):
     Only fields the handling registry marks API-writable, and never a Family
     address: no verified ParishSoft address read exists, so publication could
     neither detect a conflict nor confirm the write (reports spec, "Manual
-    census resolution"). Those are worked by hand until one does.
+    census resolution"). Those are worked by hand until one does. The
+    resolution service applies the same rule (``census_resolution.by_hand``).
     """
     return row["handling"] == "api" and row["entity_kind"] != "family"
 
@@ -341,6 +360,19 @@ def shape(row):
     else:
         shown["who"] = row["member_name"] or "Unavailable name"
     shown["status_label"] = STATUSES[shown["status"]]
+    # What a person may record on this row now (#528, step 3): the page
+    # offers only these, and the service and SQL check them again. Reopen is
+    # the Administrator's; the page shows it only to them.
+    state = SimpleNamespace(
+        handling=row["handling"],
+        entity_kind=row["entity_kind"],
+        execution=row["execution"],
+        decision=row["decision"],
+    )
+    shown["can_resolve"] = allowed(state, "entered")
+    shown["can_reopen"] = allowed(state, "reopened")
+    if isinstance(shown.get("resolution_at"), str):
+        shown["resolution_at"] = datetime.fromisoformat(shown["resolution_at"])
     shown["route_label"] = "Automatic" if shown["automatic"] else "By hand"
     if isinstance(shown["submitted_at"], str):
         shown["submitted_at"] = datetime.fromisoformat(shown["submitted_at"])
@@ -407,6 +439,12 @@ def export_rows(result, zone):
             row["route_label"],
             row["status_label"],
             row["submitted_at"].astimezone(zone).isoformat(timespec="seconds"),
+            # The latest Staff or Admin resolution (#528, step 3).
+            row.get("resolution_by") or "",
+            row["resolution_at"].astimezone(zone).isoformat(timespec="seconds")
+            if row.get("resolution_at")
+            else "",
+            row.get("resolution_note") or "",
         )
         for row in result["rows"]
     ]

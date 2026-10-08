@@ -35,6 +35,7 @@
 !src/parishkit/stewardship/schema/migrations/0008_log_detail.sql
 !src/parishkit/stewardship/schema/migrations/0009_unchanged_snapshots.sql
 !src/parishkit/stewardship/schema/migrations/0010_task_type_index.sql
+!src/parishkit/stewardship/schema/migrations/0026_census_resolution.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

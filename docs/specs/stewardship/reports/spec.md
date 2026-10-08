@@ -964,6 +964,7 @@ hand), kind of change (contact details, moved, deceased, new Member), a
 Family name or DUID search, and submitted date. Sorting, paging and filters
 act [in place](../admin-portal/spec.md#in-place-controls). The filtered list
 downloads as CSV or XLSX (PDF later) with the page's columns and values,
+plus the latest resolution's who, when and note,
 audited with a count like the other report downloads.
 
 The read-only page and its downloads are enough for staff to apply every
@@ -978,18 +979,28 @@ On *By hand* rows in *To do* or *Conflict*, Staff and Admin may mark
 checks ParishSoft before ticking it. *Entered in ParishSoft* is final, as
 every resolved outcome is: a mistaken tick is corrected in ParishSoft, and a
 later Family answer creates new rows. An Administrator may reopen an
-*Ignored* row (decision back to *unreviewed*) with a note. Who, when and the
+*Ignored* row (decision back to *unreviewed*) with a note saying why, which
+is required. Who, when and the
 note are kept as history. Automatic rows are view-only for Staff. Admin
 review/publish actions are defined by the
 [data](../data/spec.md#review-and-publication) and
 [Admin](../admin-portal/spec.md#follow-up-workflows) specifications.
 
-Today the web role may change a proposal only after a later Family
-response, to *superseded*, *cancelled* or *resolved_upstream*, and the
-database guard refuses *resolved_external* from it, so the tick, Ignore and
-reopen ship with a forward migration that lets the web role make exactly
-these changes, following the
-[post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
+Before #528 the web role could change a proposal only after a later Family
+response, to *superseded*, *cancelled* or *resolved_upstream*, so the tick,
+Ignore and reopen ship with forward migration 0026, following the
+[post-launch schema
+policy](../operations/spec.md#post-launch-schema-policy). Each tick, Ignore
+and reopen is one immutable resolution row (who, when, the note), which the
+database pairs with the proposal's result and a `census_change_updated`
+audit event naming only the versions. The web role may set
+*resolved_external* or change a proposal's decision only with such a row,
+and the row's own guard checks the actor (an Administrator for reopen), the
+campaign, the proposal's version and its starting state again. The latest
+resolution, with who and when, is shown under the row's status. A row's form
+posts with the page's own filters and table choices, so the answer is the
+same page, refreshed [in place](../admin-portal/spec.md#in-place-controls);
+a row someone else changed first is left as it is, and the page says so.
 
 Since Family addresses are not yet written by publication (see the
 [data workflow](../data/spec.md#review-and-publication)), an address entered
