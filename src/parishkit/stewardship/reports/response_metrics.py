@@ -108,7 +108,8 @@ _FAMILIES = (
       AND t.created_at<=%(as_of)s
 ), responded AS (
     SELECT s.family_id, min(s.submitted_at) AS at, count(*) AS submissions,
-        max(s.submitted_at) AS last_at
+        max(s.submitted_at) AS last_at,
+        count(*) FILTER (WHERE s.entered_by_id IS NOT NULL) AS staff_entered
     FROM stewardship_submission s
     WHERE s.campaign_id=%(campaign)s AND s.mode=%(response_mode)s
       AND s.rehearsal_epoch_id IS NOT DISTINCT FROM %(epoch)s
@@ -119,7 +120,7 @@ SELECT f.id, f.family_duid, i.at, k.target IS NOT NULL,
     CASE WHEN e.first_link_at<=%(as_of)s THEN e.first_link_at END,
     CASE WHEN e.first_form_at<=%(as_of)s THEN e.first_form_at END,
     CASE WHEN e.first_progress_at<=%(as_of)s THEN e.first_progress_at END,
-    r.at, coalesce(r.submissions, 0), r.last_at
+    r.at, coalesce(r.submissions, 0), r.last_at, coalesce(r.staff_entered, 0)
 FROM stewardship_family_campaign f
 LEFT JOIN invited i ON i.family_id=f.id
 LEFT JOIN skipped k ON k.target='family:'||f.id::text
@@ -231,8 +232,9 @@ class FamilyResponse:
     planned has no occurrence to skip, and is seen in ``submitted_uninvited``);
     ``link_at``, ``form_at`` and ``progress_at`` are the engagement record's
     first instants as recorded; ``submitted_at`` is the Family's first
-    submission, ``submissions`` how many it had made and
-    ``last_submitted_at`` its latest. The funnel counts ``form_opened_at``
+    submission, ``submissions`` how many it had made,
+    ``last_submitted_at`` its latest and ``staff_entered`` how many of them
+    Staff entered for it through Open form. The funnel counts ``form_opened_at``
     and ``progressed_at``, which a submission implies.
     """
 
@@ -246,6 +248,8 @@ class FamilyResponse:
     submitted_at: datetime | None
     submissions: int
     last_submitted_at: datetime | None = None
+    # How many of the submissions Staff entered through Open form (#529).
+    staff_entered: int = 0
 
     @property
     def form_opened_at(self):

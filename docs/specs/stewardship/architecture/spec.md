@@ -15,8 +15,10 @@ latest supported security patch release. Celery and its Python client retain
 their Redis-named transport/URL scheme because that is the protocol adapter's
 name. PostgreSQL, not Valkey, remains authoritative for schedules, outbox
 messages, job state, every Admin and Family session, and application data.
-Valkey holds only broker, cache, and rate-limiter state; its restart or eviction
-never invalidates an authenticated session.
+Valkey holds only broker, cache, and rate-limiter state, plus the single-use,
+one-minute [Open form](../reports/spec.md#family-timeline) hand-off; its
+restart or eviction never invalidates an authenticated session (a lost
+hand-off only means choosing Open form again).
 Valkey is selected for its BSD-3-Clause licensing and Redis-protocol
 compatibility. Upgrades may advance only after the broker, result-independent
 task dispatch, cache, atomic limiter scripts, expiry, restart, and outage
@@ -259,6 +261,10 @@ only active/lookup-only keys and cannot authenticate using a reservation.
 
 ## Identity and session security
 
+Staff entering a response for a Family sign in to the Family form through
+the [Open form](../reports/spec.md#family-timeline) hand-off at
+`/family/assisted`, never with an Admin session in the Family namespace.
+
 Administration authentication uses Google through django-allauth with OAuth
 authorization code flow, state, nonce, and PKCE. Only a Google-verified email is
 accepted. The stable Google `sub` identifies the external account; normalized
@@ -450,6 +456,10 @@ scoped, and rotated at login/privilege transition. Family and administration
 sessions are separate namespaces; acquiring one never grants the other.
 
 ## Family credential security
+
+[Open form](../reports/spec.md#family-timeline)'s hand-off at
+`/family/assisted` signs in through the ordinary code sign-in below; it
+creates, replaces and cancels no code or link.
 
 Each participating Family receives one Production eight-character code per
 campaign. Code

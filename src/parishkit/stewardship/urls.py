@@ -8,6 +8,7 @@ from .accounts import (
     activation_views,
     artwork_views,
     assignment_views,
+    assisted_entry,
     authentication,
     automation_views,
     branding_views,
@@ -107,6 +108,8 @@ family_patterns = [
     path("presence", presence.heartbeat, name="presence"),
     path("", family_authentication.portal, name="entry"),
     path("keepalive", family_authentication.keepalive, name="keepalive"),
+    # Open form's hand-off from the Admin portal (#529).
+    path("assisted", assisted_entry.assisted, name="assisted"),
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
@@ -218,6 +221,11 @@ admin_patterns = [
         "reports/<uuid:campaign_id>/families/<uuid:family_id>/",
         family_timeline_views.family_timeline,
         name="family_timeline",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/families/<uuid:family_id>/open-form",
+        assisted_entry.open_form,
+        name="family_open_form",
     ),
     path(
         "reports/<uuid:campaign_id>/postal/",

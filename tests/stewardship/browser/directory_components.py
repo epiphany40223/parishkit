@@ -62,6 +62,8 @@ def components(context, admin):
                 "family_name": "Example <Family>",
                 "display_name": family_heads_name("Example <Family>", heads),
                 "family_duid": 12345,
+                # Open form posts its hand-off for this Family (#529).
+                "family_id": UUID(int=81),
                 "code": "ABCDEFGH",
                 "reason_label": REASONS["provider_refused"],
                 "email_eligible": True,

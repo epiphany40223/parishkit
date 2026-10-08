@@ -106,9 +106,10 @@ WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s
 """
 # The Family's submissions in the mode, oldest first, each with its receipt
 # outcome: queued (the receipt email is among _EMAILS) or no deliverable
-# recipient (no receipt was sent).
+# recipient (no receipt was sent), and whether Staff entered it (#529).
 _SUBMISSIONS = """
-SELECT s.id, s.submitted_at, r.disposition, r.outbox_id
+SELECT s.id, s.submitted_at, r.disposition, r.outbox_id,
+    s.entered_by_id IS NOT NULL
 FROM stewardship_submission s
 LEFT JOIN stewardship_submission_receipt r ON r.submission_id=s.id
 WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s
@@ -170,13 +171,16 @@ class Submitted:
     """One submission and its receipt.
 
     ``receipt`` is the receipt email when one was queued; ``no_receipt`` says
-    the Family had no email address to send one to.
+    the Family had no email address to send one to; ``by_staff`` that Staff
+    entered it for the Family through Open form (#529). Who did is in the
+    System logs, not here.
     """
 
     id: UUID
     at: datetime
     receipt: Email | None = None
     no_receipt: bool = False
+    by_staff: bool = False
 
 
 @dataclass(frozen=True)
@@ -234,6 +238,11 @@ class Summary:
     def last_at(self):
         """When the Family last submitted, or None."""
         return self.submissions[-1].at if self.submissions else None
+
+    @property
+    def by_staff(self):
+        """How many of the submissions Staff entered for the Family (#529)."""
+        return sum(1 for submission in self.submissions if submission.by_staff)
 
 
 def email_name(purpose, number=None):
@@ -325,8 +334,14 @@ def events(emails, submissions, *, skips=(), sign_ins=(), forms=(), engagement=N
             )
         )
     for submission in submissions:
-        detail = _("No receipt: no email address") if submission.no_receipt else ""
-        lines.append(Event(submission.at, _("Submitted a response"), detail))
+        details = []
+        if submission.by_staff:
+            details.append(str(_("Entered by Staff for the Family")))
+        if submission.no_receipt:
+            details.append(str(_("No receipt: no email address")))
+        lines.append(
+            Event(submission.at, _("Submitted a response"), "; ".join(details))
+        )
     lines += [
         Event(at, _("Invitation not sent"), _("already responded"))
         for at, _occurrence in skips
@@ -381,8 +396,9 @@ def read_submissions(cursor, values, emails):
             at,
             by_id.get(outbox),
             disposition == "no_deliverable_recipient",
+            by_staff,
         )
-        for submission, at, disposition, outbox in cursor.fetchall()
+        for submission, at, disposition, outbox, by_staff in cursor.fetchall()
     ]
 
 

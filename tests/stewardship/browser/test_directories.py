@@ -135,19 +135,23 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         context.close()
 
 
-def test_open_form_link_prefills_the_family_code(page, component_origin):
-    """The link opens the sign-in in a new tab with the code in the fragment.
+def test_open_form_posts_a_hand_off(page, component_origin):
+    """Open form is a CSRF-protected POST to a new tab, never a code link (#529).
 
-    The sign-in page copies the code into its field and drops the fragment
-    without submitting anything, so staff review it and press Continue.
+    The code stays out of every URL. The sign-in page still copies a code
+    from its fragment into its field and drops the fragment without
+    submitting anything.
     """
     from playwright.sync_api import expect
 
     page.goto(component_origin + "/family-directory")
-    link = page.locator("[data-open-form]")
-    assert link.get_attribute("href") == "/#code=ABCDEFGH"
-    assert link.get_attribute("target") == "_blank"
-    assert link.get_attribute("rel") == "noopener"
+    form = page.locator("form[data-open-form]")
+    assert form.get_attribute("method") == "post"
+    assert form.get_attribute("action").endswith(f"/families/{UUID(int=81)}/open-form")
+    assert form.get_attribute("target") == "_blank"
+    assert form.get_attribute("rel") == "noopener"
+    assert form.locator("input[name=csrfmiddlewaretoken]").count() == 1
+    assert page.locator("a[href*='#code=']").count() == 0
     posts = []
     page.on("request", lambda sent: sent.method == "POST" and posts.append(sent.url))
     page.goto(component_origin + "/family-login#code=ABCDEFGH")

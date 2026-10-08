@@ -799,8 +799,12 @@ Every final click creates an immutable `Submission` version containing:
   form-baseline/projection version, and prior effective submission, if any;
 - submitted UTC time and date derived from the Campaign's immutable timezone;
 - complete normalized answers for all enabled sections;
-- validation/content/schema versions; and
-- request/session correlation without storing credentials.
+- validation/content/schema versions;
+- request/session correlation without storing credentials; and
+- `entered_by_id`, the portal user who entered it for the Family through
+  [Open form](../reports/spec.md#family-timeline), or null when the Family
+  entered it (a soft reference with no foreign key, added by frozen migration
+  0021).
 
 The current effective live response points to the latest accepted live version.
 Test versions are isolated from live calculations, response prefilling,

@@ -1,0 +1,11 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% comment %}
+  Open form refused on the Family side (#529): one page for every reason (a
+  used, expired or unknown hand-off, another browser or site, an Admin session
+  or role that has ended), so it reveals none.
+{% endcomment %}
+{% block title %}{% translate "Open form not available" %}{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{% translate "Open form not available" %}</h1>
+  <p>{% translate "This request expired or was already used. Choose Open form again in the Admin portal." %}</p>
+</section>{% endblock %}

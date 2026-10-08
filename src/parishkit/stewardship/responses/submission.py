@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from django.db.models import F, Max
 
+from parishkit.stewardship.accounts.assisted_entry import entered_by
 from parishkit.stewardship.accounts.sessions import database_now, revoke_family_sessions
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.audit.schemas import ContextKind, sanitize
@@ -150,6 +151,8 @@ def submit_family(request, service, *, baseline_id, payload):
             if "financial" in answers
             else None,
             actor_id=family.pk,
+            # Staff entered it for the Family through Open form (#529).
+            entered_by_id=entered_by(request, session),
         )
         submission.refresh_from_db(fields=["submitted_at", "submitted_on"])
         for source_id in sorted(

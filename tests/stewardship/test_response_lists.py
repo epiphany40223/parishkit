@@ -173,9 +173,11 @@ def test_csv_is_complete_neutralized_and_in_the_chosen_zone():
         "Family DUID",
         "Envelope number",
         "Submissions",
+        "Entered by Staff",
     ]
     first = ROWS[0].submitted_at.astimezone(NEW_YORK).isoformat(" ", "seconds")
-    assert table[1] == [first, "Adams, Ann", "1", "101", "2"]
+    # None of these responses was entered by Staff through Open form (#529).
+    assert table[1] == [first, "Adams, Ann", "1", "101", "2", "0"]
     assert first.endswith("-04:00")
     # A name starting with "=" can never run as a formula.
     assert table[2][1] == "'=Baker, Bob"
