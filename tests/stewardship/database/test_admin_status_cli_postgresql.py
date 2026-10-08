@@ -291,6 +291,9 @@ def test_a_watch_times_out_with_the_last_state_and_audits_once(
         == "automation_watch"
     ]
     assert logged["limit_seconds"] == 12 and logged["elapsed_seconds"] >= 12
+    # ... and which command and record it was following (#807).
+    assert logged["watched_command"] == "task show"
+    assert logged["subject_id"] == task.run_id
 
 
 def test_a_session_revoked_during_a_watch_stops_it_with_exit_5(

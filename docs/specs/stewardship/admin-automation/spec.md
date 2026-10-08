@@ -943,7 +943,14 @@ inside the command session's 60-minute idle limit. A watch stops when:
 
 - the read reaches a terminal state (exit 0);
 - `--timeout` passes (default and maximum three hours, matching the progress
-  page's give-up limit; exit 7, `watch_timeout`, with the last state);
+  page's give-up limit; exit 7, `watch_timeout`, with the last state). The
+  process log's `task_timed_out` WARNING (`timeout=automation_watch`, with
+  the limit and elapsed seconds) also names the watched command
+  (`watched_command`, its catalog name) and, for a watch that follows one
+  record, that record's UUID (`subject_id`)
+  ([#807](https://github.com/epiphany40223/parishkit/issues/807); the
+  timeout-logging rule is the operations specification's
+  [observability and health](../operations/spec.md#observability-and-health) section);
 - the process receives SIGINT (exit 7, `watch_interrupted`, with the last
   state and no traceback); through the host wrapper, Ctrl-C ends only the
   client, because `docker exec` forwards no signal, and the watch in the
