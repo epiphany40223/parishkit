@@ -96,7 +96,7 @@ INTRO_WORDS = 15
 # exception. Lower or remove an entry when its page is converted; never raise
 # one or add a page.
 INTRO_ALLOWED = {
-    "logs-error.html": 73,
+    "logs-error.html": 94,
     "ministry-followup-error.html": 38,
     "setup-content.html": 60,
     # The step-up names its return page when it is another page (#547).

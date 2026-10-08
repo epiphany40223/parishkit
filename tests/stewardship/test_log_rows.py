@@ -125,7 +125,19 @@ def test_query_accepts_only_the_closed_bounded_grammar():
         {"size": "7"},
         {"sort": "created_at"},
         {"sort": "time"},
-        {"text": "anything"},
+        # Search text is short and printable, and never an address (#536).
+        {"text": "admin@example.org"},
+        {"text": "a" * 65},
+        {"text": "tab\there"},
+        {"ministry": "0"},
+        {"ministry": "042"},
+        {"ministry": "2147483648"},
+        {"ministry": "-1"},
+        {"ministry": "4 2"},
+        {"ministry": "٣"},
+        {"subject": "not-a-uuid"},
+        {"subject": IDENTIFIER.upper()},
+        {"q": "anything"},
         {"source": 5},
     ):
         with pytest.raises(ValueError):

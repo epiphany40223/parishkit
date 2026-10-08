@@ -24,12 +24,13 @@ icon with its word as screen-reader text and a tooltip
 excluded until chosen.
 
 Filters cover the kinds of entry (levels and audit records), type, actor, task
-or request correlation, campaign and a date range. The specification's text
-and JSONL export, its full-text search, entity and Ministry filtering including
-the retained export result scope, and an export time-zone choice are **not** in
-this increment. They follow
-with [RPT-09](../plans/stewardship/reports.md#rpt-09-logs-and-daily-email-parity)
-on the shared export pipeline, so ADM-08.04 stays unchecked.
+or request correlation, campaign and a date range. Later increments added CSV
+and JSON Lines export with a time-zone choice, and
+[#536](https://github.com/epiphany40223/parishkit/issues/536) added text
+search, the Ministry and subject (entity) filters, and bookmarkable links, so
+ADM-08.04 is complete. Moving log exports onto the asynchronous export-job
+pipeline remains deferred, as the
+[specification](../specs/stewardship/admin-portal/spec.md#logs) says.
 
 The specification's before/after detail for audit events is met only as far as
 the stored evidence goes: the recorded-detail column shows the reviewed
@@ -42,9 +43,24 @@ there is nothing richer to show.
 ### A closed grammar, without hiding real types
 
 Every filter is an exact value from a closed shape: a canonical identifier, a
-canonical calendar day, or a level or audit-record tick. Identifiers travel
-only in CSRF POST bodies; a query string is refused, so none reaches a URL or a
-log.
+canonical calendar day, a Ministry DUID, a level or audit-record tick, or short
+search text without an address. The search text and identifiers travel only
+in CSRF POST bodies. A web address may carry only the other filters (#536),
+so a filtered view can be bookmarked; a query string with search text, an
+identifier or a page position is refused. The application never builds an
+address holding one (its links and address-bar updates carry only the other
+filters), so it never puts one in the browser's history.
+
+Text search matches the stored type, the explanation the page shows and each
+recorded detail value the page shows, on its own, never key names or a value
+too long to show. It has no index: it reads the entries in the date range,
+about one to three seconds per million entries on a laptop when nothing
+matches, so a narrower range answers faster. Every read runs under the
+60-second interactive statement limit, and a stopped read is recorded as a
+timeout; a trigram index is
+[#765](https://github.com/epiphany40223/parishkit/issues/765). The Ministry filter matches a single Ministry
+DUID or any Ministry list in the detail, which includes the retained result
+scope of a Ministry report download.
 
 The type filter is an exact identifier, the same shape the audit table's own
 check constraint enforces, not a fixed list. Many audit types are written
@@ -196,4 +212,4 @@ run cancelled by the ready-state run at the same head is not counted as
 acceptance.
 
 The read-only system logs screen of ADM-08.04 is delivered; its export, search
-and scope filters follow with RPT-09. M5 and Gate 3 remain open.
+and scope filters followed after launch (#536). M5 and Gate 3 remain open.

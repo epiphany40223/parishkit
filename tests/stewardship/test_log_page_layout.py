@@ -59,7 +59,7 @@ def _audit():
     return row
 
 
-def _render(query=None, rows=None):
+def _render(query=None, rows=None, *, linked=False):
     """Render the page from the production context builder."""
     rows = (
         rows
@@ -76,6 +76,7 @@ def _render(query=None, rows=None):
             log_table(
                 query or LogQuery(), rows, through=NOW, action="/admin/system/logs/"
             ),
+            linked=linked,
         ),
     )
 
@@ -241,13 +242,14 @@ def test_the_choices_gate_apply_until_one_is_ticked():
         ({"applied": "yes", "info": "yes", "campaign": str(UUID(int=5))}, True),
         ({"applied": "yes", "audit": "yes", "campaign": str(UUID(int=5))}, False),
         ({"applied": "yes", "info": "yes"}, False),
+        ({"applied": "yes", "info": "yes", "subject": str(UUID(int=5))}, True),
     ],
 )
 def test_an_empty_campaign_filter_without_audit_says_why(values, campaign_note):
     """A campaign matches only audit records, so with Audit record unticked
     the empty table says to tick it instead of the general advice."""
     html = _render(LogQuery.parse(values), rows=[])
-    note = "Campaign filters list audit records only; tick Audit record."
+    note = "Campaign and subject filters list audit records only; tick Audit record."
     assert (note in html) is campaign_note
     assert ("Try a wider date range" in html) is not campaign_note
 
@@ -333,3 +335,51 @@ def test_every_log_reader_can_open_the_linked_task_page(roles):
             assert allows(
                 principal, Capability.BACKGROUND_WORK, ministry_id=ministry_id
             )
+
+
+def test_the_link_to_these_filters_leaves_identifiers_out():
+    """The page draws its own address for bookmarks (#536): the link filters
+    only, which ui-v1.js puts in the address bar; search text and identifiers
+    stay out, and a note says so while one is applied."""
+    query = LogQuery.parse(
+        {"text": "lag", "ministry": "42", "correlation": str(UUID(int=5))}
+    )
+    html = _render(query)
+    link = re.search(r'<a href="([^"]*)" data-page-address>', html).group(1)
+    assert link == "/admin/system/logs/?ministry=42"
+    assert str(UUID(int=5)) not in link and "lag" not in link
+    note = "search and identifier filters are left out of links"
+    assert note in html
+    assert note in _render(LogQuery.parse({"text": "lag"}))
+    assert note not in _render(LogQuery.parse({"ministry": "42"}))
+    region = re.search(r'<div id="log-link" data-table-sync>', html)
+    assert region is not None
+
+
+def test_a_followed_links_zone_is_noted_for_the_script_to_show():
+    """Only a followed link with days names its zone; the note starts hidden
+    and ui-v1.js shows it when the browser's zone differs."""
+    query = LogQuery.parse({"start": "2026-09-01", "zone": "Asia/Tokyo"})
+    note = re.search(
+        r'<p class="notice" data-link-zone="([^"]+)" hidden>',
+        _render(query, linked=True),
+    )
+    assert note and note.group(1) == "Asia/Tokyo"
+    assert "data-link-zone" not in _render(query)
+    assert "data-link-zone" not in _render(LogQuery.parse({"text": "x"}), linked=True)
+
+
+def test_search_and_ministry_fields_gate_apply_with_their_own_hints():
+    """Search refuses an address and Ministry takes digits, each with a hint
+    the complete gate shows instead of the browser's bubble."""
+    html = _render(LogQuery.parse({"text": "lag", "ministry": "42"}))
+    search = re.search(r'<input id="log-text"[^>]*>', html).group(0)
+    assert 'pattern="[^@]*"' in search and 'value="lag"' in search
+    assert 'name="text"' in search and 'maxlength="64"' in search
+    ministry = re.search(r'<input id="log-ministry"[^>]*>', html).group(0)
+    assert 'pattern="[1-9][0-9]{0,9}"' in ministry and 'value="42"' in ministry
+    assert "Search text cannot hold an email address" in html
+    assert "Type a Ministry DUID as digits only, or clear it." in html
+    # The subject filter sits with the other identifiers, opened when used.
+    subject = _render(LogQuery.parse({"subject": str(UUID(int=5))}))
+    assert re.search(r'<details id="log-identifier-filters"[^>]* open>', subject)
