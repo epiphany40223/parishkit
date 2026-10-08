@@ -573,12 +573,39 @@ def prepare_content(html, *, text=None, origin=None):
     clean = sanitize_html(html, origin=origin)
     parser = _PlainText()
     parser.feed(clean)
-    plain = (
-        bounded_text(text)
-        if text is not None
-        else re.sub(r"\n{3,}", "\n\n", "".join(parser.parts)).strip()
-    )
+    plain = bounded_text(text) if text is not None else _generated(parser.parts)
     return SafeContent(clean, plain)
+
+
+def _generated(parts):
+    """The plain text generated from sanitized HTML's extracted parts.
+
+    Lines holding only spaces or tabs come from the source's own indentation
+    (an indented list, say), so they are dropped, and trailing whitespace is
+    stripped from the rest (#385); then runs of blank lines collapse to one.
+    Empty lines are kept: they are the generator's own paragraph breaks.
+    """
+    lines = "\n".join(
+        line.rstrip() for line in "".join(parts).split("\n") if not line or line.strip()
+    )
+    return re.sub(r"\n{3,}", "\n\n", lines).strip()
+
+
+def _legacy_generated(parts):
+    """The plain text the generator wrote before #385 kept whitespace-only lines."""
+    return re.sub(r"\n{3,}", "\n\n", "".join(parts)).strip()
+
+
+def generated_text_matches(html, text):
+    """Whether ``text`` is what ``html`` generates, now or before #385.
+
+    Content saved with generated plain text before the generator stopped
+    keeping whitespace-only lines still counts as generated, so it does not
+    suddenly look hand-edited.
+    """
+    parser = _PlainText()
+    parser.feed(sanitize_html(html))
+    return text in {_generated(parser.parts), _legacy_generated(parser.parts)}
 
 
 def file_references(value):

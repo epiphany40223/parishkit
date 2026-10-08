@@ -346,4 +346,12 @@ def test_content_saved_from_a_retired_default_still_matches_the_default():
     assert retired != current
     assert matches_default(retired) and matches_default(current)
     assert not matches_default(retired | {"subject": "Edited"})
-    assert retired_data("page", "welcome") == []
+    # A page saved from the earlier Welcome heading (straight apostrophe,
+    # before #385) still counts as the default too.
+    (page_data,) = retired_data("page", "welcome")
+    page_form = _DefaultForm(page_data, kind="page", slot="welcome")
+    assert page_form.is_valid()
+    old_page = page_form.values(campaign_id=owner, slot="welcome")
+    assert old_page != default_values("page", "welcome", campaign_id=owner)
+    assert matches_default(old_page)
+    assert retired_data("page", "login_help") == []

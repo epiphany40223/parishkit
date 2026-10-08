@@ -9,6 +9,7 @@ from parishkit.stewardship.web.content import (
     PLACEHOLDERS,
     SafeContent,
     bounded_text,
+    generated_text_matches,
     prepare_content,
     render_template,
     text_html,
@@ -62,9 +63,8 @@ def fold_parts(html, text, note_html, note_text):
     text is joined after a blank line instead, and kept word for word.
     """
     joined = html + note_html
-    if (
-        prepare_content(html).text == text
-        and prepare_content(note_html).text == note_text
+    if generated_text_matches(html, text) and generated_text_matches(
+        note_html, note_text
     ):
         return joined, prepare_content(joined).text
     return joined, text + ("\n\n" + note_text if note_text else "")
