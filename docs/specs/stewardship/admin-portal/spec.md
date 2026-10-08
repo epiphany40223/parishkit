@@ -2380,6 +2380,17 @@ customized or empty, and
 Each default passes the normal content validation described under
 [content and email templates](../data/spec.md#content-and-email-templates).
 
+On Pages and emails, each mail type's emails are a short Admin table shown
+whole ([#446](https://github.com/epiphany40223/parishkit/issues/446)): the
+subject (linking to its editor, with the start of its ID when two of that
+type share a subject), the start of its plain text, the saved schedules that
+send it, named as on Dates and mail schedules ("No schedule" when none
+does), default or customized text, and its test page. An email no schedule
+sends also offers Remove, which opens its editor at the existing "Remove
+this selected content" control, so removal goes through the same review and
+confirmation; an email a schedule sends still can't be removed. The
+confirmation email has no schedules and stays a single entry.
+
 ### Create the campaign
 
 System setup ends without a campaign

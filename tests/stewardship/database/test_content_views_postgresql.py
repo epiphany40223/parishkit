@@ -1,5 +1,6 @@
 """Real-session content editing, sanitization, immutable revisions and mail impacts."""
 
+from html import unescape
 from uuid import uuid4
 
 import pytest
@@ -761,3 +762,47 @@ def test_folded_confirmation_with_a_stale_note_resaves_clean(
         "<p>Thanks.</p><p>Call.</p>"
     )
     assert browser.get(path).context["stale"] is None
+
+
+def test_catalog_lists_who_sends_each_email_and_offers_remove_when_unused(
+    auth_service, google
+):
+    """The invitation sent by a schedule names it; an unused one offers Remove.
+
+    Two invitation emails share a subject, so each also shows the start of
+    its ID (#446).
+    """
+    store = auth_service.store
+    campaign, catalog, schedule = setup(store)
+    used = content(str(campaign.pk), kind="email", slot="initial", subject="Same")
+    spare = content(str(campaign.pk), kind="email", slot="initial", subject="Same")
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {"operation": "add", "section": "content", **used},
+                {"operation": "add", "section": "content", **spare},
+                {
+                    "operation": "update",
+                    "section": "schedules",
+                    "id": schedule["id"],
+                    "values": {"template_version": used["id"], "subject": "Same"},
+                },
+            ],
+        ).state
+        == "applied"
+    )
+    browser, _ = signed_in()
+    page = unescape(browser.get(catalog).content.decode())
+    rows = {
+        identifier: page[page.index(f"/email/initial/{identifier}/") :][:2000]
+        for identifier in (used["id"], spare["id"])
+    }
+    assert f"({used['id'][:8]})" in page and f"({spare['id'][:8]})" in page
+    assert "Initial invitation" in rows[used["id"]].split("</tr>")[0]
+    assert "#id_clear" not in rows[used["id"]].split("</tr>")[0]
+    spare_row = rows[spare["id"]].split("</tr>")[0]
+    assert "No schedule" in spare_row
+    assert f"/email/initial/{spare['id']}/#id_clear" in spare_row
