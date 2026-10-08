@@ -1,0 +1,50 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block title %}{% translate "Census changes" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Census changes" %}</h1>
+{% aboutpage "census-changes" %}<p>{% translate "Every census change Families reported that someone must carry into ParishSoft. Automatic changes can be published by an Administrator; every other change is entered in ParishSoft by hand. Each Family's live responses are used, and Testing responses are excluded. Values are shown in full so you can type them into ParishSoft; opening this page and every download is recorded." %}</p>
+<p>{% translate "ParishSoft now is blank where ParishSoft's current value cannot be read, which today includes every Family address. Status To review means an Administrator has not yet decided an automatic change; To do means the change still has to reach ParishSoft." %}</p>{% endaboutpage %}
+<div id="census-summary" data-table-sync><h2>{% translate "Summary" %}</h2>
+<dl>{% for label,count in summary %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% empty %}<dt>{% translate "Census changes" %}</dt><dd>0</dd>{% endfor %}</dl></div>
+<form id="table-filters" data-table-sync method="post" action="{% url 'admin:census_changes' campaign_id %}" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">{% csrf_token %}
+{% comment %}The browser's time zone, filled by ui-v1.js (#558): the server places From and Through in it, as on System logs.{% endcomment %}<input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear From and Through, or check your computer's time zone setting." %}">
+{% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+<div class="filter-bar">
+<div><label for="census-search">{% translate "Search name or Family DUID" %}</label><input id="census-search" name="search" maxlength="200" value="{{ query.search }}"></div>
+<div><label for="census-status">{% translate "Status" %}</label><select id="census-status" name="status">{% for key,label in status_choices %}<option value="{{ key }}"{% if query.status == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div><label><input type="checkbox" name="history" value="yes"{% if query.history %} checked{% endif %}> {% translate "Include history" %}</label></div>
+<div><label for="census-route">{% translate "How it reaches ParishSoft" %}</label><select id="census-route" name="route">{% for key,label in route_choices %}<option value="{{ key }}"{% if query.route == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div><label for="census-kind">{% translate "Kind of change" %}</label><select id="census-kind" name="kind">{% for key,label in kind_choices %}<option value="{{ key }}"{% if query.kind == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="census-start">{% translate "Submitted from" %}</label><input id="census-start" type="date" name="start" value="{{ query.start }}" aria-describedby="census-zone-help" data-browser-zone-field></div>
+<div class="short" data-missing-hint="{% translate 'Enter a whole Through date, or clear it.' %}"><label for="census-end">{% translate "Through" %}</label><input id="census-end" type="date" name="end" value="{{ query.end }}" aria-describedby="census-zone-help" data-browser-zone-field></div>
+<button type="submit">{% translate "Apply filters" %}</button>
+</div>
+<p class="help" id="census-zone-help" data-browser-zone-note hidden>{% translate "From and Through are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
+<p class="help" data-complete-hint hidden></p>
+</form>
+<section aria-labelledby="census-export-heading">
+<h2 id="census-export-heading">{% translate "Download" %}</h2>
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:census_changes_export' campaign_id %}">{% csrf_token %}
+{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<label for="census-format">{% translate "Format" %}</label><select id="census-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option></select>
+<label for="census-timezone">{% translate "Timezone" %}</label><select id="census-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+{% comment %}Plain markup until the shared button component (#746) lands.{% endcomment %}<button type="submit">{% translate "Download with these filters" %}</button></form></section>
+<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
+<div id="{{ table.anchor }}" data-table-region>
+{% translate "Census change pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Census changes' %}"><table>
+<caption>{% translate "Census changes" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Who" as heading %}{% sort_heading table "who" heading %}{% translate "What changed" as heading %}{% sort_heading table "what" heading %}<th scope="col">{% translate "ParishSoft now" %}</th><th scope="col">{% translate "Family's answer" %}</th><th scope="col">{% translate "Edited value" %}</th>{% translate "How it reaches ParishSoft" as heading %}{% sort_heading table "route" heading %}{% translate "Status" as heading %}{% sort_heading table "status" heading %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}</tr></thead><tbody>
+{% for row in table.rows %}<tr>
+<td>{{ row.family_name }}<br>{% translate "DUID" %} {{ row.family_duid }}</td>
+<th scope="row">{{ row.who }}</th>
+<td>{{ row.label }}</td>
+<td>{{ row.parishsoft_now }}{% if row.status == 'conflict' and row.baseline %}<br>{% translate "When the Family answered:" %} {{ row.baseline }}{% endif %}</td>
+<td>{{ row.family_answer }}</td>
+<td>{{ row.edited }}</td>
+<td>{{ row.route_label }}</td>
+<td>{{ row.status_label }}</td>
+<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
+{% empty %}<tr><td colspan="9">{% translate "No matching census changes." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
+</div>
+{% endblock %}

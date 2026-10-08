@@ -134,6 +134,7 @@ INTRO_ALLOWED = {
     "source-refresh.html": 17,
     "artwork-remove.html": 17,
     "talents-report-error.html": 16,
+    "census-changes-error.html": 16,
     "setup-branding.html": 16,
     "delivery-error.html": 16,
 }

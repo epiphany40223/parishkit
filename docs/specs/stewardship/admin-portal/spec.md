@@ -454,6 +454,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Responses and reports | Participation | `/admin/reports/participation/` | Administrator, Staff | No current campaign |
 | Responses and reports | Financial stewardship | `/admin/reports/financial/` | Administrator, Staff | The campaign has no financial module |
 | Responses and reports | Talents and limitations | `/admin/reports/talents/` | Administrator, Staff | The campaign has no Ministry module |
+| Responses and reports | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
 | Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign |
 | Responses and reports | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
 | Responses and reports | Ministry follow-up | `/admin/reports/ministries/follow-up/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
@@ -480,6 +481,7 @@ Notes on the groups:
   [participation](../reports/spec.md#campaign-statistics),
   [Financial stewardship](../reports/spec.md#financial-stewardship-detail),
   [Talents and limitations](../reports/spec.md#talents-and-limitations),
+  [Census changes](../reports/spec.md#pending-census-changes),
   [Additional information](../reports/spec.md#additional-information), the
   Ministry report and its [follow-up](#follow-up-workflows) queue, and the
   [Family directory](../reports/spec.md#family-directory) (with Family
@@ -723,6 +725,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `report_exact` | Latest-data export | Participation | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exact-exports/<request>/` | `/admin/reports/exports/<request>/` (the shared export page) | Decision 8: folds into the shared export page; old addresses redirect there. |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/<campaign>/financial/` | `/admin/reports/financial/` |  |
 | `talents_report` | Talents and limitations | Menu: Talents and limitations | Administrator, Staff | (same) | `/admin/reports/<campaign>/talents/` | `/admin/reports/talents/` |  |
+| `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/<campaign>/census/` | `/admin/reports/census/` | Its CSV/XLSX download (`census/export`) is a non-page action. |
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/<campaign>/information/` | `/admin/reports/information/` |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/<campaign>/information/<item>/` | `/admin/reports/information/<item>/` | Return to the queue keeps its filters and page. |
 | `ministry_reports` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | (redirects) Ministry requests; Ministry reports | `/admin/ministry-reports/` | (redirect only, to the current campaign's Ministry requests) | Address kept as a redirect. |

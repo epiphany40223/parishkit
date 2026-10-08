@@ -46,6 +46,7 @@ from .admin_urls import system as admin_system
 from .jobs import views as job_views
 from .reports import (
     campaign_picker,
+    census_change_views,
     digest_views,
     directory_export_views,
     directory_views,
@@ -182,6 +183,16 @@ admin_patterns = [
         "reports/<uuid:campaign_id>/talents/export",
         talent_report_views.export,
         name="talents_export",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/census/",
+        census_change_views.report,
+        name="census_changes",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/census/export",
+        census_change_views.export,
+        name="census_changes_export",
     ),
     path(
         "reports/<uuid:campaign_id>/families/export",

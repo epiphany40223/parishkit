@@ -1,0 +1,8 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% block title %}{% translate "Census changes unavailable" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Census changes unavailable" %}</h1>
+{% if status == 503 %}<p role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
+{% else %}<p role="alert">{% translate "Check the search and filters, then try again." %}</p>{% endif %}
+<p><a href="{% url 'admin:census_changes' campaign_id %}">{% translate "Return to Census changes" %}</a></p>
+{% endblock %}
