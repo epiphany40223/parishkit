@@ -78,6 +78,11 @@ PROBLEMS = {
         "Verify the current Google Workspace credential and sender settings."
     ),
     "slack_check_required": _("Verify the current Slack credential and channel."),
+    "family_email_unsendable": _(
+        "Fix the invitation or reminder that Pages and emails marks “Can't be "
+        "sent until fixed”: its Family code or link is only inside markup that "
+        "sending removes."
+    ),
     "family_test_mail_required": _(
         "Preview and successfully send a selected Family email "
         "using the current configuration."

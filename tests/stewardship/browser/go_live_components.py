@@ -9,6 +9,24 @@ from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import window_table
 
+# Rows as content_views.resave_recommended builds them; the long subject
+# checks wrapping at phone width.
+RESAVE = (
+    {
+        "label": "Family welcome",
+        "subject": None,
+        "url": "/admin/campaign/content/page/welcome/",
+        "blocked": False,
+    },
+    {
+        "label": "Initial invitation",
+        "subject": "Your annual census and stewardship renewal for the coming year",
+        "url": "/admin/campaign/content/email/initial/"
+        "00000000-0000-0000-0000-000000000061/",
+        "blocked": True,
+    },
+)
+
 
 def components(context, admin):
     """Keep acknowledgement and durable status browser tests free of infrastructure."""
@@ -39,6 +57,8 @@ def components(context, admin):
             empty_weekly_reports=1,
             blocked_groups=0,
         ),
+        # Saved content to re-save (#838): a page and a blocked invitation.
+        resave=RESAVE,
     )
     ready = {
         "campaign": campaign,
