@@ -151,12 +151,36 @@ def _validate(
     return tuple(full_refresh_times)
 
 
-def _occurrences(day, wall, timezone):
+def local_instant(day, value, timezone):
+    """The instant the ``HH:MM`` wall time ``value`` falls at on local ``day``.
+
+    The one place every daily time, full or quick, is resolved through the
+    shared daylight-saving resolver: a repeated time (clocks go back) at its
+    earlier instant, a time in the missing hour (clocks go forward) at the
+    first real instant after the gap. The scheduler's slots and the settings
+    page's preview (``schedule_preview``) both use it.
+    """
+    return resolve_local(datetime.combine(day, time.fromisoformat(value)), timezone)
+
+
+def _occurrences(day, value, timezone):
     """The instants a wall time falls at on ``day`` and the days either side."""
     return [
-        resolve_local(datetime.combine(day + timedelta(days=offset), wall), timezone)
+        local_instant(day + timedelta(days=offset), value, timezone)
         for offset in (-1, 0, 1)
     ]
+
+
+def precedence(due, value, nightly_time):
+    """How the scheduler ranks configured times due at or before now.
+
+    The latest instant wins. Times inside a spring-forward gap all resolve to
+    the first real instant, so they tie; the nightly time wins a tie (its
+    tick must still exist, and it is the refresh a Family send never holds),
+    then the later wall time, so the choice is deterministic. Shared by
+    ``_latest`` and the preview, which must name the same winner.
+    """
+    return (due, value == nightly_time, value)
 
 
 def _floor(now, step):
@@ -180,18 +204,15 @@ def _latest(now, timezone, times, nightly_time):
     """The latest configured local time due at or before ``now`` and that time.
 
     Every configured time is resolved for the local day and the day before,
-    through the shared DST resolver, and the latest instant not after ``now``
-    wins. Times inside a spring-forward gap all resolve to the first real
-    instant, so they tie; the nightly time wins a tie (its tick must still
-    exist, and it is the refresh a Family send never holds), then the later
-    wall time, so the choice is deterministic. Listed quick times use the
-    same rule with no nightly time.
+    through the shared DST resolver, and the latest by ``precedence`` among
+    those not after ``now`` wins. Listed quick times use the same rule with
+    no nightly time.
     """
     day = now.astimezone(ZoneInfo(timezone)).date()
     candidates = [
-        (due, value == nightly_time, value)
+        precedence(due, value, nightly_time)
         for value in times
-        for due in _occurrences(day, time.fromisoformat(value), timezone)[:2]
+        for due in _occurrences(day, value, timezone)[:2]
         if due <= now
     ]
     due, _, value = max(candidates)
@@ -331,7 +352,7 @@ def listed_due_slots(
     slots = {}
     for cause, values in (("nightly", times), ("delta", tuple(quick_refresh_times))):
         for value in values:
-            for due in _occurrences(day, time.fromisoformat(value), timezone)[:2]:
+            for due in _occurrences(day, value, timezone)[:2]:
                 if due > now:
                     continue
                 slot = _slot(
@@ -399,7 +420,7 @@ def next_full_at(
     return min(
         due
         for value in times
-        for due in _occurrences(day, time.fromisoformat(value), timezone)[1:]
+        for due in _occurrences(day, value, timezone)[1:]
         if due > now
     )
 
