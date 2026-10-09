@@ -111,6 +111,8 @@ from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .response_list_components import components as response_list_components
+from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
+from .schedule_list_components import components as schedule_list_components
 from .security_components import POSTS as SECURITY_POSTS
 from .security_components import components as security_components
 from .send_history_components import components as send_history_components
@@ -780,14 +782,14 @@ def component_origin():
         ),
         (
             "/schedule-settings",
-            "schedule-settings",
+            "schedule-reconcile",
             schedule_page(mail_campaign, [mail], now=datetime(2054, 9, 1, tzinfo=UTC)),
         ),
         (
             # The scheduled emails table (#448): a sent invitation, two
             # upcoming reminders out of order, and a weekly digest.
             "/schedule-table",
-            "schedule-settings",
+            "schedule-reconcile",
             schedule_page(
                 mail_campaign,
                 table_rows,
@@ -812,7 +814,7 @@ def component_origin():
             # The same page after a refused preview: Reminder 2's date is
             # outside the campaign, so its editor starts open with the error.
             "/schedule-table-error",
-            "schedule-settings",
+            "schedule-reconcile",
             schedule_page(
                 mail_campaign,
                 table_rows,
@@ -824,7 +826,7 @@ def component_origin():
         # The campaign dates locked: one line of notice with a field tip (#227).
         (
             "/schedule-settings-locked",
-            "schedule-settings",
+            "schedule-reconcile",
             {
                 "campaign": {
                     "pk": mail_campaign["id"],
@@ -2131,6 +2133,7 @@ def component_origin():
     responses.update(talent_components(context, admin))
     responses.update(census_components(context, admin))
     responses.update(workgroup_components(context, admin))
+    responses.update(schedule_list_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
     responses.update(settings_components(context, admin))
@@ -2152,6 +2155,7 @@ def component_origin():
         | SECURITY_POSTS
         | LIVE_STATUS_POSTS
         | SETTINGS_POSTS
+        | SCHEDULE_LIST_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),

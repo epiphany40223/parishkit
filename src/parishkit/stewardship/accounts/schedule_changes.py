@@ -27,6 +27,10 @@ from .request_patch import build_candidate
 from .schedule_forms import WEEKDAYS
 from .schedule_preview import fingerprint, work_summary
 
+# A preview that changes nothing is refused with this, not with the catch-all
+# rule text, which would wrongly suggest a schedule breaks a rule (#878).
+NO_CHANGES = _("Nothing has changed.")
+
 
 def preview_salt(campaign_id):
     """The signing salt of one campaign's schedule previews.
@@ -116,9 +120,10 @@ def build_preview(
     base = service.store.active()
     if base is None or base.digest != digest:
         raise StaleRecordError("The applied configuration changed.")
+    if not patch:
+        window.add_error(None, NO_CHANGES)
+        return None
     try:
-        if not patch:
-            raise ValueError("No changes.")
         build_candidate(base, patch, candidate_id=uuid4())
     except (ConfigError, ValueError):
         window.add_error(

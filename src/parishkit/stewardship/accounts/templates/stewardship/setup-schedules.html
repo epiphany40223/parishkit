@@ -5,7 +5,7 @@
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Dates and mail schedules" %}</h1>
 {% aboutpage "setup-schedules" %}<p>{% translate "When the system sends each email: one initial invitation, any reminders, and optional daily or weekly summary emails for administrators. You can also adjust the campaign dates here together with the schedules." %}</p>
-{% include 'stewardship/schedule-guide.html' %}{% endaboutpage %}
+{% include 'stewardship/schedule-guide.html' with window_text=schedules.window_text campaign_timezone=schedules.timezone %}{% endaboutpage %}
 <p>{{ campaign_name }}</p>
 <p class="notice">{% translate "Testing mode. Saving changes only this temporary wizard draft. No email is sent or queued." %}</p>
 <p><a href="{% url 'admin:setup_content' %}">{% translate "Prepare email templates and subjects" %}</a></p>

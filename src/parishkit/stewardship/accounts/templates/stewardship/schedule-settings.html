@@ -1,17 +1,57 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Dates and mail schedules" %}{% endblock %}
-{% block content %}
+{% block content %}{% comment %}
+The scheduled emails list (#878; schedule_views._list). The campaign dates take
+one line; New scheduled email opens schedule-entry.html. The table is an action
+table (admin-portal spec, "Row actions and confirmation", #879): its region
+(id table.anchor) holds the selection form, the bulk bar, the table and the
+confirmation dialog, and is what ui-v1.js redraws, from data-refresh-url (this
+page's address, sort included), once a deletion is applied. A read-only row
+(it has run, or has work prepared) has no selection box and no actions; the
+server refuses to change or delete one anyway (schedule_entry_views).
+{% endcomment %}
 <h1>{% translate "Dates and mail schedules" %}</h1>
-{% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' %}
-<p>{% translate "Preview checks all schedules together and shows what would change; nothing takes effect until you confirm and the status says Applied." %}</p>{% endaboutpage %}
+{% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' with browser_times=True %}
+<p>{% translate "New scheduled email adds a schedule; Edit changes one that has not run yet. Either shows what would change before you apply it, and nothing takes effect until the status says Applied. Delete asks first, then removes the schedule; email already sent is never recalled." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
-{% if window.proposed %}<p class="notice">{% translate "The proposed dates below have not been saved. Resolve the schedules and review the complete change before confirming." %}</p>{% endif %}
-<p><a href="{% url 'admin:content_catalog' %}">{% translate "Create or edit email templates and their subjects" %}</a></p>
-<form method="post" action="{{ post_url }}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
-<fieldset class="panel"><legend>{% translate "Campaign window" %}</legend>
-<p class="help">{% translate "If you change the campaign dates, change or delete every mailing that would fall outside the new dates." %}</p>{% if not editable %}{% translate "They lock once the campaign goes live, and while other campaign work is running. You can still change schedules that have not sent yet. Ending a live campaign early or extending it is a separate step, not done on this page." as locked_tip %}<div class="label-row notice"><span id="window-locked">{% translate "The campaign dates and time zone can't be changed here right now." %}</span>{% include "stewardship/components/toggletip.html" with tip_id="window-locked-tip" tip_label_id="window-locked" tip_text=locked_tip %}</div>{% endif %}{{ window.as_div }}</fieldset>
-{% include 'stewardship/schedule-table.html' %}
-{% include 'stewardship/schedule-fields.html' %}
-{% button type="submit" %}{% translate "Preview changes and affected work" %}{% endbutton %}</form>
+<p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}{% if editable %} · <a href="{% url 'admin:campaign_settings' %}">{% translate "Change the dates in Campaign settings" %}</a>{% endif %}</p>
+<p>{% button href=new_url %}{% translate "New scheduled email" %}{% endbutton %}</p>
+{% translate "Scheduled emails" as caption %}
+<section id="{{ table.anchor }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="schedule-table-title">
+<h2 id="schedule-table-title" tabindex="-1">{{ caption }}</h2>
+{% if table.rows %}<form method="post" action="{{ delete_url }}" id="schedule-actions" data-select-table data-row-actions data-missing-hint="{% translate 'Select at least one scheduled email to delete.' %}">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}">
+<div class="bulk-bar">{% button type="button" variant="secondary" data-bulk-action data-confirm-open="schedule-delete" %}{% translate "Delete selected" %}{% endbutton %}{% include "stewardship/table-selection.html" %}</div>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="schedule-table-caption">
+<table class="data-table schedule-table">
+  <caption id="schedule-table-caption" class="visually-hidden">{{ caption }}</caption>
+  <thead><tr>
+    <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every scheduled email that can be deleted' %}"></th>
+    <th scope="col">{% translate "Schedule" %}</th>
+    {% translate "When" as heading %}{% sort_heading table "when" heading %}
+    <th scope="col">{% translate "Email to send" %}</th>
+    <th scope="col">{% translate "Status" %}</th>
+    <th scope="col">{% translate "Last send" %}</th>
+    <th scope="col">{% translate "Actions" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for row in table.rows %}<tr data-schedule-state="{{ row.status }}"{% if row.read_only %} class="schedule-past"{% endif %}>
+    <td class="select-col">{% if not row.read_only %}<input type="checkbox" name="schedule_id" value="{{ row.id }}" data-select-row data-confirm-name="{{ row.label }}" aria-label="{% blocktranslate with name=row.label %}Select {{ name }}{% endblocktranslate %}">{% endif %}</td>
+    <th scope="row">{{ row.label }}</th>
+    <td>{% if row.due %}<time datetime="{{ row.due|instant }}" data-local-instant>{{ row.due|instant }}</time>{% else %}{% if row.weekday %}{% blocktranslate trimmed with day=row.weekday %}Every {{ day }}{% endblocktranslate %}{% else %}{% translate "Every day" %}{% endif %}<br>{% if row.next_due %}{% translate "Next:" %} <time datetime="{{ row.next_due|instant }}" data-local-instant>{{ row.next_due|instant }}</time>{% else %}{% translate "No more this campaign" %}{% endif %}{% endif %}</td>
+    <td>{{ row.email }}</td>
+    <td><span class="status-badge{% if row.status == 'upcoming' %} status-badge-on{% endif %}">{{ row.status_label }}</span></td>
+    <td>{% if row.last_send %}{% blocktranslate trimmed with shown=row.delivered|number count delivered=row.delivered %}{{ shown }} email delivered{% plural %}{{ shown }} emails delivered{% endblocktranslate %}{% if row.failed %}, {% blocktranslate trimmed with shown=row.failed|number count failed=row.failed %}{{ shown }} send failed{% plural %}{{ shown }} sends failed{% endblocktranslate %}{% endif %}<br><a href="{% url 'admin:family_email_sends' %}">{% translate "Family email history" %}</a>{% else %}{% translate "None yet" %}{% endif %}</td>
+    {% if row.read_only %}{% table_actions name=row.label %}{% else %}{% table_actions name=row.label edit=row.edit_url delete=row.id confirm="schedule-delete" field="schedule_id" %}{% endif %}
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+</form>
+{% translate "Email already sent is never recalled, and Family codes and links already emailed keep working." as caution %}
+{% translate "Delete {name}?" as title_one %}{% translate "Delete {count} scheduled emails?" as title_many %}{% translate "Deleting cancels the sends of these schedules that have not started. A schedule that starts sending first can't be deleted." as body %}{% translate "Delete" as accept %}
+{% include "stewardship/components/confirm-dialog.html" with dialog_id="schedule-delete" form_id="schedule-actions" fallback="schedule-table-title" title_one=title_one title_many=title_many body=body caution=caution accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} scheduled emails.") %}
+{% else %}<p>{% translate "No emails are scheduled yet. Choose New scheduled email to add the Initial invitation first." %}</p>{% endif %}
+<p class="help">{% translate "Every reminder sends after the Initial invitation, no two Family emails share a date and time, and there is at most one Daily and one Weekly Admin digest." %}</p>
+</section>
 <p><a href="{% url 'admin:campaign_settings' %}">{% translate "Return to Campaign settings" %}</a></p>
 {% endblock %}

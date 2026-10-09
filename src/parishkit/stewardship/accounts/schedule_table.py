@@ -1,10 +1,13 @@
-"""The scheduled emails table on Dates and mail schedules (#448).
+"""The scheduled emails table on Dates and mail schedules (#448, #878).
 
-The page lists every saved schedule in one short table, in the order the
-schedule forms already use (``schedule_forms.schedule_order``), and pairs each
-table row with its form so a click opens that schedule's editor in place. This
-module only describes the saved schedules for display: what each one is,
-when it sends, its status and its last send. It never changes what the forms
+The page lists every saved schedule in one short table, opening in the order
+the schedule forms already use (``schedule_forms.schedule_order``); its When
+heading sorts it the other way round (``SORTING``). On the list, an editable
+row links to its Edit scheduled email page and offers Delete; on the
+date-change review each table row is paired with its form, so a click opens
+that schedule's editor in place. This module only describes the saved
+schedules for display: what each one is, when it sends, its status and its
+last send, and which of them are read-only. It never changes what the forms
 post or how the server validates, previews and applies a schedule change.
 
 Status comes from the counts-only ``schedule_preview.work_summary`` (the
@@ -16,9 +19,11 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 
 from django.core.exceptions import ValidationError
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
+from parishkit.stewardship.web.tables import Sorting
 
 from .schedule_forms import WEEKDAYS, schedule_labels
 
@@ -53,7 +58,9 @@ class ScheduleRow:
     reminder; ``next_due`` is a digest's next UTC send time (None once the
     campaign has no more). ``open`` says whether the schedule's editor starts
     open: after a refused preview, an editor with an error or an unsaved
-    change stays open so the reader sees it.
+    change stays open so the reader sees it. ``email`` is the readable name
+    of the email it sends (``schedule_forms.email_names``), and ``position``
+    its place in sending order, which the When heading sorts by.
     """
 
     id: str
@@ -61,6 +68,8 @@ class ScheduleRow:
     kind: str
     subject: str
     status: str
+    position: int = 0
+    email: str = ""
     due: datetime | None = None
     next_due: datetime | None = None
     weekday: str | None = None
@@ -92,6 +101,18 @@ class ScheduleRow:
     def anchor(self):
         """The id of this schedule's editor, which its table row controls."""
         return f"schedule-editor-{self.id}"
+
+    @property
+    def edit_url(self):
+        """This schedule's Edit scheduled email page, or None when read-only."""
+        return (
+            None if self.read_only else reverse("admin:schedule_edit", args=[self.id])
+        )
+
+
+# The When heading sorts by sending order (the rows' own order) or its
+# reverse. Sending order is the default and the first click.
+SORTING = Sorting.by_column({"when": lambda row: row.position}, default="when")
 
 
 def status(kind, due, counts, now):
@@ -128,16 +149,20 @@ def status(kind, due, counts, now):
     return "missed"
 
 
-def schedule_rows(previous, campaign, summary, now):
+def schedule_rows(previous, campaign, summary, now, names=None):
     """Describe each saved schedule, in the given (sending) order.
 
     ``previous`` is the formset's sorted saved records, ``campaign`` the
     applied campaign values whose time zone resolves each send time, and
     ``summary`` the work counts by schedule ID. Reminders are numbered in
-    sending order, as Family email history numbers them.
+    sending order, as Family email history numbers them. ``names`` maps an
+    email's ID to its readable name; a schedule whose email is not in it
+    (an unresolved legacy reference) shows its saved subject.
     """
     rows = []
-    for record, label in zip(previous, schedule_labels(previous), strict=True):
+    for position, (record, label) in enumerate(
+        zip(previous, schedule_labels(previous), strict=True)
+    ):
         values = record["values"]
         kind = values["kind"]
         plan = SchedulePlan.from_values(values, campaign)
@@ -150,6 +175,8 @@ def schedule_rows(previous, campaign, summary, now):
                 kind=kind,
                 subject=values["subject"],
                 status=status(kind, plan.one_time_due, counts, now),
+                position=position,
+                email=(names or {}).get(values["template_version"], values["subject"]),
                 due=plan.one_time_due,
                 next_due=slot.due_at if slot else None,
                 weekday=str(_(WEEKDAYS[values["weekday"]]))
