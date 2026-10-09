@@ -38,9 +38,10 @@ from parishkit.stewardship.source.errors import (
     SourceCredentialChanged,
     SourceScopeChanged,
 )
-from parishkit.stewardship.source.leases import SourceFenceLost
+from parishkit.stewardship.source.leases import SourceFenceLost, acquire_source
 from parishkit.stewardship.source.models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.source.outcomes import admit_refresh_metadata
+from parishkit.stewardship.source.refreshing import _inputs
 from parishkit.stewardship.source.snapshots import snapshot_manifest
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -51,9 +52,11 @@ from .test_source_refreshing_postgresql import (  # noqa: F401
     fake_provider,
     pages,
     run,
+    seed_full,
     source_singletons,
     with_extra_funds,
 )
+from .test_source_requests_postgresql import claim as claim_request
 from .test_source_requests_postgresql import command
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -205,6 +208,71 @@ def test_a_staging_batch_never_holds_the_work_order(tmp_path, monkeypatch, holde
     seen = observe(monkeypatch, holder)
     assert run(credential, execution, lease).state == "ready"
     assert seen and not any(own for _, _, own in seen)
+
+
+@pytest.mark.parametrize("cause,phase", [("delta", "delta"), ("manual", "full")])
+def test_refresh_inputs_read_the_base_corpus_outside_the_work_order(
+    tmp_path, monkeypatch, holder, cause, phase
+):
+    """The current snapshot's corpus is read after the inputs' effect.
+
+    A quick update reads the whole current corpus as its base, and a refresh
+    whose current snapshot predates recorded derived counts (as the seeded
+    one does) counts them from its rows. Both reads used to run inside the
+    work-order effect, about 200 ms at 1,100 Families. Here each read
+    starts without the lock and runs while a competing session holds it
+    exclusively, so it neither holds nor waits for it; the inputs are
+    unchanged.
+    """
+    from parishkit.stewardship.source.loading import derived_counts
+    from parishkit.stewardship.source.snapshots import reconstruct_snapshot
+
+    credential, execution, lease, *_ = setup(tmp_path)
+    first = seed_full(credential, execution, lease)
+    execution = claim_request(
+        command(cause=cause)
+        if cause == "manual"
+        else command(cause=cause, actor_id=None)
+    )
+    with execution.effect():
+        lease = acquire_source(
+            task_id=execution.claim.run_id,
+            task_fence=execution.claim.fence,
+            worker_id=execution.claim.worker_id,
+            phase=phase,
+        )
+    attempt = begin_refresh_attempt(execution, lease, credential)
+    seen = []
+
+    def read(snapshot_id, kinds=None):
+        """The real read, while the competing session holds the lock."""
+        # A read still inside the effect holds the lock, so the competing
+        # session could never take it: fail here rather than deadlock.
+        assert not holds_work_order(own_pid()), "base read inside the work order"
+        outside = not connection.in_atomic_block
+        holder.take()
+        started = monotonic()
+        try:
+            corpus = reconstruct_snapshot(snapshot_id, kinds)
+        finally:
+            elapsed = monotonic() - started
+            competing = holds_work_order(holder.pid)
+            holder.give()
+        seen.append((snapshot_id, kinds, outside, competing, elapsed))
+        return corpus
+
+    monkeypatch.setattr(refreshing, "reconstruct_snapshot", read)
+    inputs = _inputs(attempt.pk, execution, lease)
+    # One read each: the whole base for a quick update (which also yields its
+    # counts), only the counted kinds for a full refresh.
+    expected_kinds = None if phase == "delta" else ("family", "contact")
+    ((snapshot_id, kinds, outside, competing, elapsed),) = seen
+    assert snapshot_id == first.pk and kinds == expected_kinds
+    assert outside and competing and elapsed < 10
+    assert not holds_work_order(own_pid())
+    whole = reconstruct_snapshot(first.pk)
+    assert inputs.previous_derived_counts == derived_counts(whole)
+    assert inputs.base == (whole if phase == "delta" else None)
 
 
 def separate_session():
