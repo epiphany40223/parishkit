@@ -38,6 +38,7 @@ BEGIN
       WHEN 'automation_irreversible' THEN 'An automation session took an irreversible action'
       WHEN 'automation_policy_change' THEN 'An automation session changed user access, integration keys or notification settings'
       WHEN 'automation_refused' THEN 'An automation session was refused'
+      WHEN 'web_unhealthy' THEN 'Web server is not responding'
     END;
     IF title IS NULL THEN RAISE EXCEPTION 'Operational kind is invalid' USING ERRCODE='23514'; END IF;
     status:=CASE n.phase WHEN 'resolved' THEN 'RESOLVED' ELSE n.level END;
@@ -53,6 +54,7 @@ BEGIN
         'automation_policy_change','automation_refused')
       THEN 'Review the automation notices on the Admin dashboard. They name the automation session and what it did.'
       WHEN kind='source_retention_failing' THEN 'Removing old ParishSoft copies was skipped by the last three refreshes, so the database keeps growing. Refreshes still work. Ask the server operator to check the worker log for the cause.'
+      WHEN kind='web_unhealthy' THEN 'The web server has not answered three health checks in a row, a minute apart, so the Admin and Family portals may not be loading. Docker restarts web only if it stops running. Ask the server operator to restart web from the Compose directory of the deployment (docker compose ... restart web) and to check its log.'
       ELSE 'Administrator attention is required. Review the operational log for details.' END;
     labels:=ARRAY['Status','Notification','Deployment mode','First observed',
       'Latest observation','Occurrences','Incident reference'];

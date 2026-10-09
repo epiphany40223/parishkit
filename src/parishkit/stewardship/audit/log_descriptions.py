@@ -242,6 +242,14 @@ DESCRIPTIONS = {
         "it is back on time. If it does not recover, check that "
         "the worker and mail services are running."
     ),
+    "web_unhealthy": _(
+        "The web server has not answered three health checks in a row, a "
+        "minute apart, so the Admin and Family portals may not be loading. "
+        "Ask the server operator to restart web from the deployment's "
+        "Compose directory (docker compose ... restart web) and to check its "
+        "log. A Recovered entry follows once it has answered for five "
+        "minutes."
+    ),
     "incident_recovered": _(
         "A problem the system had detected has ended. The detail names it "
         "and how long it lasted, and says what to check when its end still "

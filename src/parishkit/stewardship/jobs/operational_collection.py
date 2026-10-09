@@ -30,6 +30,7 @@ from .phases import TaskPhase
 from .queues import WorkQueue
 from .scheduler import SchedulerGuard
 from .storage import enqueue
+from .web_health import needs_web_observation, observe_web_health
 
 TASK_TYPE = "operational_collect"
 NAMESPACE = UUID("66b36d0c-07e5-4f86-956e-91e589973b36")
@@ -43,6 +44,7 @@ HEALTH_CHECKS = {
     "mail_health_check": (Event.TASK_FAILED, "ERROR"),
     "due_work_health_check": (Event.TASK_FAILED, "ERROR"),
     "backup_health_check": (Event.TASK_FAILED, "ERROR"),
+    "web_health_check": (Event.TASK_FAILED, "ERROR"),
 }
 
 
@@ -65,6 +67,7 @@ def produce_collection(guard):
             and not needs_mail_observation()
             and not needs_due_work_observation()
             and not needs_backup_observation()
+            and not needs_web_observation()
         ):
             return ()
         key = uuid5(NAMESPACE, str(int(database_now().timestamp()) // 60))
@@ -172,6 +175,7 @@ def _execute(execution):
             ("mail_health_check", observe_mail_health),
             ("due_work_health_check", observe_due_work_health),
             ("backup_health_check", observe_backup_health),
+            ("web_health_check", observe_web_health),
         ):
             event, level = HEALTH_CHECKS[check]
             try:

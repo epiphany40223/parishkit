@@ -690,6 +690,7 @@ def test_configuration_service_restores_on_an_idle_pass(tmp_path, monkeypatch):
         "operational_fanout",
         "operational_slack",
         "maintenance",
+        "web_health",
     ],
 )
 def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
@@ -798,6 +799,13 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.automation_maintenance.MaintenanceProducer",
         lambda: maintenance,
+    )
+    # The web probe returns no task ids (#392 L1); it is built for the
+    # configured replicas and runs even while setup is held.
+    web_health, hosts = Mock(return_value=()), []
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.web_health.WebHealthProducer",
+        lambda replicas: hosts.append(replicas) or web_health,
     )
 
     def fanout(guard, owner=None):
@@ -933,6 +941,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "operational_fanout": operational_fanout,
             "operational_slack": operational_slack,
             "maintenance": maintenance,
+            "web_health": web_health,
         }[failing_producer].side_effect = RuntimeError("synthetic-owner-failure")
     rotations = Mock(return_value=[])
     monkeypatch.setattr(
@@ -974,6 +983,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         finalization.assert_called_once_with(assembled.store, guard)
         expiry.assert_called_once_with(guard)
         operational.assert_called_once_with(guard)
+        web_health.assert_called_once_with(guard)
+        assert hosts == [("web",)]
         if held:
             operational_fanout.assert_not_called()
             operational_slack.assert_not_called()
@@ -1025,8 +1036,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         family_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
         maintenance.assert_called_once_with(guard)
-        # Twenty-four independent producers, each bracketed by two checks.
-        assert guard.check.call_count == 48
+        # Twenty-five independent producers, each bracketed by two checks.
+        assert guard.check.call_count == 50
     else:
         operational.assert_not_called()
         operational_fanout.assert_not_called()
@@ -1043,6 +1054,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         verification.assert_not_called()
         expiry.assert_not_called()
         maintenance.assert_not_called()
+        web_health.assert_not_called()
 
 
 def test_background_failed_admission_restores_signals_without_publishing_receipts(

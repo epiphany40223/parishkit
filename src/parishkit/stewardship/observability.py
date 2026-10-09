@@ -82,11 +82,23 @@ class Event(StrEnum):
     # written by the database when the incident resolves, linking back to the
     # entry that opened it. Durable log only.
     INCIDENT_RECOVERED = "incident_recovered"
+    # Web has not answered three liveness checks in a row, a minute apart
+    # (#392 L1): written by the web health trigger from the scheduler's
+    # probe, CRITICAL, once per failed minute; opens the web_unhealthy
+    # incident.
+    WEB_UNHEALTHY = "web_unhealthy"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 
 class FailureKind(StrEnum):
     """Safe operational categories, never exception text or credential values."""
+
+    # How a web liveness probe failed (#392 L1, jobs.web_health): no answer
+    # in time, no connection (or no such host), or an answer other than 200
+    # "ok".
+    WEB_PROBE_TIMEOUT = "web_probe_timeout"
+    WEB_UNREACHABLE = "web_unreachable"
+    WEB_BAD_RESPONSE = "web_bad_response"
 
     DATABASE = "database_unavailable"
     # The database answered but a constraint or guard refused the statement
@@ -236,6 +248,10 @@ TIMEOUT_LIMITS = frozenset(
         # ``pk-stewardship restore-compare`` killed pg_restore while it
         # loaded a dump into its scratch database (#608); process log only.
         "restore_compare_load",
+        # The scheduler's web liveness probe (#392 L1, jobs.web_health): one
+        # request's socket timeout, or a probe thread still running past
+        # its limit.
+        "web_probe",
     }
 )
 

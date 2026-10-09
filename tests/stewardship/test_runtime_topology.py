@@ -155,6 +155,8 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
             else:
                 assert configuration.paths[path] not in mounts
         assert selected["deployment"]["service_role"] == name
+        # The scheduler stays off application-egress: its web probe relies on
+        # "web" resolving only to web's backend address (jobs.web_health).
         assert set(background["networks"]) == (
             {"backend", "application-egress"} if name != "scheduler" else {"backend"}
         )
