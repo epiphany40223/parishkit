@@ -905,7 +905,14 @@ globally treat unknown delivery as provider success.
 Quarterly restore drills restore to an isolated environment, run integrity and
 application checks, and record success/failure metadata. The target recovery
 point objective is 24 hours; recovery time is documented/measured rather than
-promised as HA.
+promised as HA. Between drills, CI rehearses a restore whenever its
+operational job runs (a manual dispatch, or a non-draft pull request whose
+changed paths can affect the operational scenarios): a backup taken by the
+backup profile of the image CI builds from the release image's Dockerfile is
+opened, checked and compared by that image's own tools and restored into a
+fresh PostgreSQL, as the backup runbook's
+[restore drill](../../../guides/stewardship-backup-runbook.md#restore-drill)
+describes ([#305](https://github.com/epiphany40223/parishkit/issues/305)).
 
 Campaign purge accepts only the verified, post-quiescence backup created for
 that PurgeRequest. Ordinary scheduled backup references never satisfy purge

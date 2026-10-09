@@ -19,6 +19,28 @@ from .test_setup_forms import VALUES
 from .test_source_giving import contribution, pledge
 from .test_source_loading import provider_pages
 
+# The completed setup's private integration invariants, read with operator
+# SQL; the restore test (runtime_backup_restore) checks they survive a restore.
+SETUP_PROOF = (
+    "SELECT s.state,t.state,s.counts->>'pledge',s.counts->>'contribution',"
+    "(SELECT count(*) FROM stewardship_family_campaign WHERE portal_eligible),"
+    "(SELECT count(*) FROM stewardship_family_campaign "
+    "WHERE portal_eligible AND code_ciphertext IS NULL),"
+    "EXISTS (SELECT 1 FROM stewardship_campaign_credentials p "
+    "JOIN stewardship_source_current c ON c.snapshot_id=p.source_snapshot_id "
+    "WHERE NOT p.population_dirty),"
+    "(SELECT count(*) FROM stewardship_setup_sealed_credential "
+    "WHERE scrubbed_at IS NULL OR ciphertext IS NOT NULL),"
+    "(SELECT count(*) FROM stewardship_setup_draft_section "
+    "WHERE scrubbed_at IS NULL),"
+    "(SELECT count(*) FROM stewardship_schedule_definition),"
+    "(SELECT count(*) FROM stewardship_schedule_occurrence),"
+    "(SELECT count(*) FROM stewardship_schedule_fulfillment) "
+    "FROM stewardship_setup_completion f "
+    "JOIN stewardship_source_snapshot s ON s.id=f.snapshot_id "
+    "JOIN stewardship_task_run t ON t.id=f.task_id"
+)
+
 
 def inject_providers(compose):
     """Test entrypoints cannot give the web Docker or installer filesystem access."""
@@ -209,23 +231,7 @@ def complete_setup(file, project, configuration, mountpoint, *, abort=False):
         "-d",
         configuration.postgres.name,
         "-Atc",
-        "SELECT s.state,t.state,s.counts->>'pledge',s.counts->>'contribution',"
-        "(SELECT count(*) FROM stewardship_family_campaign WHERE portal_eligible),"
-        "(SELECT count(*) FROM stewardship_family_campaign "
-        "WHERE portal_eligible AND code_ciphertext IS NULL),"
-        "EXISTS (SELECT 1 FROM stewardship_campaign_credentials p "
-        "JOIN stewardship_source_current c ON c.snapshot_id=p.source_snapshot_id "
-        "WHERE NOT p.population_dirty),"
-        "(SELECT count(*) FROM stewardship_setup_sealed_credential "
-        "WHERE scrubbed_at IS NULL OR ciphertext IS NOT NULL),"
-        "(SELECT count(*) FROM stewardship_setup_draft_section "
-        "WHERE scrubbed_at IS NULL),"
-        "(SELECT count(*) FROM stewardship_schedule_definition),"
-        "(SELECT count(*) FROM stewardship_schedule_occurrence),"
-        "(SELECT count(*) FROM stewardship_schedule_fulfillment) "
-        "FROM stewardship_setup_completion f "
-        "JOIN stewardship_source_snapshot s ON s.id=f.snapshot_id "
-        "JOIN stewardship_task_run t ON t.id=f.task_id",
+        SETUP_PROOF,
     ).stdout.strip()
     assert proof == "promoted|succeeded|1|1|1|0|t|0|0|1|0|0", proof
 
