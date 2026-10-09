@@ -508,7 +508,20 @@ personal-data pattern and the acknowledgement),
 `tests/stewardship/database/test_admin_digest_cli_postgresql.py` (each
 report against its page, the pages' events, read-only sessions, a failed
 read, the database's refusal of unresolved prior work, keyed repeats) and
-the unchanged digest view suites. 8e (Family-level exports) follows.
+the unchanged digest view suites. 8e adds the Family-level exports that
+create an export record without the Family keys (`export financial`,
+`export information`, `export ministry`, `export ministry-packet`),
+through the export forms' own services; proven by
+`tests/stewardship/test_admin_family_exports.py` (the filter grammar
+without search, the parser, the catalog),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_exports.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_family_export_cli_postgresql.py`
+(the page's record and `export_requested` event, the worker's file
+streamed byte for byte as the page's download, keyed repeats, a bound
+key, refused filters, a read-only session). 8f (the exports that need the
+Family keys, the in-memory downloads and the exact exports) follows.
 
 ## ADM-12: Admin navigation overhaul
 

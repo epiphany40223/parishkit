@@ -150,6 +150,10 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_RETRY = "admin_cmd_export_retry"
     ADMIN_CMD_EXPORT_REGENERATE = "admin_cmd_export_regenerate"
     ADMIN_CMD_DIGEST_WEEKLY_REQUEST = "admin_cmd_digest_weekly_request"
+    ADMIN_CMD_EXPORT_FINANCIAL = "admin_cmd_export_financial"
+    ADMIN_CMD_EXPORT_INFORMATION = "admin_cmd_export_information"
+    ADMIN_CMD_EXPORT_MINISTRY = "admin_cmd_export_ministry"
+    ADMIN_CMD_EXPORT_MINISTRY_PACKET = "admin_cmd_export_ministry_packet"
 
 
 # Closed field identifiers are operational metadata, never census values.

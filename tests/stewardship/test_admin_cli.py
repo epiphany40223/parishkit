@@ -100,6 +100,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "digest daily",
         "digest weekly",
         "digest weekly-request",
+        "export financial",
+        "export information",
+        "export ministry",
+        "export ministry-packet",
     }
     assert set(entries) == (
         session | reads | changes | refresh | tests | operations | reports
@@ -121,10 +125,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in reports
             else 3
         )
-        # Only the chosen-Family send and some regenerations need a recent
-        # sign-in on their pages.
+        # Only the chosen-Family send, the financial export and some
+        # regenerations need a recent sign-in on their pages.
         assert entry["fresh_gated"] == (
-            name in {"test families", "export regenerate"}
+            name in {"test families", "export regenerate", "export financial"}
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
         # their own prompting commands, so this is not a closed list.
@@ -311,6 +315,21 @@ def test_the_catalog_lists_every_command_with_its_flags():
         entry = entries[name]
         assert entry["scope"] == "read_only" and not entry["changes_state"], name
         assert entry["audit_event"] == event and entry["arguments"] == ["SNAPSHOT_ID"]
+    # The Family-level exports: full-scope, keyed changes that create an
+    # export record (fetched with export fetch), never a search option.
+    for name in (
+        "export financial",
+        "export information",
+        "export ministry",
+        "export ministry-packet",
+    ):
+        entry = entries[name]
+        assert entry["scope"] == "full" and entry["changes_state"], name
+        assert entry["request_key"] and not entry["streams"], name
+        assert entry["result_fields"] == ["created", "request_key", "export"]
+        options = {option["name"]: option for option in entry["options"]}
+        assert options["--format"]["choices"] == ["csv", "xlsx", "pdf"], name
+        assert options["--timezone"]["required"] and "--search" not in options
     manual = entries["digest weekly-request"]
     assert manual["scope"] == "full" and manual["changes_state"]
     assert manual["request_key"] and manual["prompts"]
@@ -340,6 +359,10 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_cancel",
         "admin_cmd_export_retry",
         "admin_cmd_export_regenerate",
+        "admin_cmd_export_financial",
+        "admin_cmd_export_information",
+        "admin_cmd_export_ministry",
+        "admin_cmd_export_ministry_packet",
         "admin_cmd_digest_weekly_request",
     ]
     for event in events:

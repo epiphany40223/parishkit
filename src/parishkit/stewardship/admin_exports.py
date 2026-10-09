@@ -271,14 +271,18 @@ def _same(current, actor):
         raise PermissionError("The command's Administrator changed.")
 
 
-def _change(caller, service, actor, step, *, context):
+def _change(caller, service, actor, step, *, context, conflicts=True):
     """Run a state-changing step and classify what its failure means.
 
     ``step(written)`` runs inside ``_command_scope`` and appends to
     ``written`` once its effect and event are written: a database error
     after that may have struck the commit (exit 6, with the request key);
     before it, the transaction rolled back and nothing changed. A refusal
-    is reported through ``_refusal``.
+    is reported through ``_refusal``. With ``conflicts`` false (the
+    Family-level export forms, whose pages answer every database refusal
+    with 503), a database refusal that did not commit is ``unavailable``
+    instead of ``stale_version``: their guards refuse inputs or a capture
+    that are not available now, never a concurrent change to read again.
     """
     from .observability import _guard_refusal
 
@@ -296,6 +300,11 @@ def _change(caller, service, actor, step, *, context):
     except DatabaseError as error:
         if written and not _guard_refusal(error):
             context["committed"] = True
+        if not conflicts:
+            if context.get("committed"):
+                raise
+            _recheck(caller, service.store, actor)
+            raise Unavailable("The export cannot be requested now; retry.") from None
         # A check or uniqueness conflict a concurrent change caused is the
         # page's 409, as for the delivery commands: stale_version.
         _raise_stale_on_conflict(error)

@@ -616,8 +616,9 @@ the answer came from the prompt or from `--yes`.
 
 No command of this release does an action that needs a recent Google
 sign-in; they arrive in later releases. When a session stands in for one
-(pausing or resuming mail, a chosen-Family test, the Family portal switch,
-confirming Production, withdrawal, key changes), System logs record an
+(pausing or resuming mail, a chosen-Family test, a financial export, the
+Family portal switch, confirming Production, withdrawal, key changes),
+System logs record an
 `automation_fresh_gate` event beside the action, and the dashboard shows an
 automation notice; confirming Production and withdrawal are marked
 irreversible and also email and post to Slack.
@@ -917,6 +918,60 @@ for each change, `admin_cmd_export_create`, `admin_cmd_export_cancel`,
 `admin_cmd_export_retry` or `admin_cmd_export_regenerate`, attributed to
 the approving Administrator with the automation session as its subject.
 
+### Family-level exports
+
+The exports whose rows name Families and Members are requested like
+`export create`, then followed and fetched the same way. Each needs a
+full-scope session, does what the page's export form does and records the
+same events, plus `admin_cmd_export_financial`,
+`admin_cmd_export_information`, `admin_cmd_export_ministry` or
+`admin_cmd_export_ministry_packet`. Each prints `created`, `request_key`
+and `export`, the export's `export status` fields; the rows themselves
+are only in the file `export fetch` saves.
+
+```sh
+pk-admin export financial --format csv --timezone America/New_York \
+  --filter amount=nonzero
+pk-admin export information --format xlsx --timezone America/New_York \
+  --history
+pk-admin export ministry --format pdf --timezone America/New_York \
+  --ministry 9 --requests join
+pk-admin export ministry-packet --format pdf --timezone America/New_York \
+  --ministry 9 --ministry 12
+pk-admin export fetch EXPORT_ID
+```
+
+- `export financial` is the Financial report's export; `export
+  information` the Additional information page's, with `--history` for
+  each item's workflow history; `export ministry` the Ministry report's,
+  for the summary or, with `--ministry DUID --requests join|leave`, one
+  Ministry's list; `export ministry-packet` its follow-up packet, for the
+  Ministries `--ministry` names (repeat it; none means every Ministry you
+  may report on) and `--history` for earlier versions.
+- `export financial` needs a recent Google sign-in on its page, so it asks
+  at the [confirmation prompt](#confirmations) (or takes `--yes`); the
+  session stands in for the sign-in, and System logs show
+  `automation_fresh_gate` beside it. A read-only session is exit 1
+  (`denied`).
+- `--format` is `csv`, `xlsx` or `pdf`; `--timezone` the time zone of the
+  file's times. Each takes `--request-key`, as `export create` does.
+- `--filter NAME=VALUE` (repeat for more) is one of the page's filters,
+  named as its form names it, for example `amount=nonzero`, `active=active`
+  or `frequency=monthly` for the financial export, `disposition=all` or
+  `needed=yes` for the information export, and `activity=active` (or,
+  with `--ministry`, `state=unresolved`) for the Ministry export. A filter
+  the page would refuse is exit 1 (`invalid`), and so are `page` and
+  `size`, which the page's export form never sends. A search is refused:
+  what you type there names a Family, and it would stay in your shell's
+  history.
+- A Ministry the campaign does not offer is exit 1 (`invalid`). When an
+  export cannot be requested right now (its inputs are being refreshed,
+  for example), the command exits 3 (`unavailable`): try again.
+
+The Family directory and mail-merge exports, the
+one-Family timeline, the talents and response list downloads and the exact
+daily exports are not on the command line yet; use the pages.
+
 ### Fetching an export's file
 
 `pk-admin export fetch EXPORT_ID` reads `export status`, then downloads the
@@ -1030,3 +1085,5 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
 - `pk-admin/1` (ADM-11 PR 8d): additive. `digest daily`,
   `digest weekly` and `digest weekly-request`, which prompts (or takes
   `--yes`).
+- `pk-admin/1` (ADM-11 PR 8e): additive. `export financial`,
+  `export information`, `export ministry` and `export ministry-packet`.

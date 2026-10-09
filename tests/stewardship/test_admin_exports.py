@@ -163,6 +163,11 @@ def test_every_export_command_has_a_golden_document():
         "export retry",
         "export regenerate",
         "export download",
+        # The Family-level exports (PR 8e) print the same change document.
+        "export financial",
+        "export information",
+        "export ministry",
+        "export ministry-packet",
     }
     models = {
         "export status": admin_exports.ExportStatus,
