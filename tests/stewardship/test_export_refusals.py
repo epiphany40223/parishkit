@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 from django.test import RequestFactory
+from django.urls import reverse
 
 from parishkit.stewardship.reports import (
     directory_export_views,
@@ -66,7 +67,8 @@ def test_regeneration_form_reuse_is_a_conflict(monkeypatch):
         RequestFactory().post("/"), identifier, action="regenerate"
     )
     assert response.status_code == 409 and BOUND in response.content
-    assert f"/admin/reports/exports/{identifier}/".encode() in response.content
+    page = reverse("admin:report_export", args=[identifier])
+    assert page.encode() in response.content
 
 
 def test_native_expired_download_points_to_regeneration(monkeypatch):
@@ -79,7 +81,8 @@ def test_native_expired_download_points_to_regeneration(monkeypatch):
     assert response.status_code == 410
     assert response.stewardship_safe_error
     assert b"file has expired" in response.content
-    assert f"/admin/reports/exports/{identifier}/".encode() in response.content
+    page = reverse("admin:report_export", args=[identifier])
+    assert page.encode() in response.content
 
 
 @pytest.mark.parametrize(

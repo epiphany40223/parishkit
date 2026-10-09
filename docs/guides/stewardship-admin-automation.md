@@ -849,8 +849,8 @@ the rows it showed, the command's counts 0: it shows none.
 ## Digests
 
 Each emailed daily or weekly report links to a saved copy on the portal,
-`/admin/reports/daily-digests/SNAPSHOT_ID/` or
-`/admin/reports/weekly-digests/SNAPSHOT_ID/`. The `digest` commands read
+`/admin/reports/emailed/daily/SNAPSHOT_ID/` or
+`/admin/reports/emailed/weekly/SNAPSHOT_ID/`. The `digest` commands read
 that saved copy, which never changes, and record the same "viewed" events
 as opening it. A session of any scope (read-only included) may read them;
 a weekly report needs an Administrator, as its page does.

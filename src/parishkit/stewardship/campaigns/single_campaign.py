@@ -51,6 +51,18 @@ def not_current_refused():
     )
 
 
+def no_current_refused():
+    """The refusal for a report when there is no current campaign at all.
+
+    A report's address names no campaign, so a bookmark opened with none
+    current is told so plainly, not that "this" campaign stopped being it.
+    """
+    return UserFacingGone(
+        _("There is no current campaign."),
+        fix=_("Reports show the current campaign once there is one."),
+    )
+
+
 def refuse_campaign_creation(patch):
     """Refuse a configuration change that adds a campaign record.
 

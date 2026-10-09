@@ -6,12 +6,13 @@ from uuid import UUID, uuid4
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.http import HttpResponse
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from parishkit.stewardship.accounts.admin_navigation import PAGES
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
@@ -274,6 +275,16 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
         service = runtime()
         principal = _principal(request, service.store)
         if request_id is None:
+            if campaign_id is None:
+                # No current campaign: the "no campaign" page, as Ministry
+                # requests shows (NAV-11 review).
+                response = render(
+                    request,
+                    "stewardship/report-empty.html",
+                    {"page_name": PAGES["ministry_followup"].label},
+                )
+                response["Cache-Control"] = "no-store"
+                return response
             if request.GET:
                 # A query string carries either the token of a remembered
                 # view ("Return to Ministry follow-up", #534) or, from Home's

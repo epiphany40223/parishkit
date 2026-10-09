@@ -48,7 +48,7 @@ def test_a_retained_daily_report(family_mail, google, cli):  # noqa: F811
         snapshot = str(ready.snapshot_id)
         parity(
             "daily_digest_viewed",
-            lambda: read(browser, f"/admin/reports/daily-digests/{snapshot}/"),
+            lambda: read(browser, f"/admin/reports/emailed/daily/{snapshot}/"),
             lambda: run("digest", "daily", snapshot),
         )
         code, document = run("digest", "daily", snapshot)
@@ -106,7 +106,7 @@ def test_a_retained_weekly_report_and_a_manual_request(
         snapshot = str(retained.pk)
         parity(
             "weekly_digest_viewed",
-            lambda: read(browser, f"/admin/reports/weekly-digests/{snapshot}/"),
+            lambda: read(browser, f"/admin/reports/emailed/weekly/{snapshot}/"),
             lambda: run("digest", "weekly", snapshot),
         )
         code, document = run("digest", "weekly", snapshot)

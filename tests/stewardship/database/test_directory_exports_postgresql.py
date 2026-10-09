@@ -33,6 +33,7 @@ from parishkit.stewardship.reports.export_services import (
 )
 from parishkit.stewardship.reports.export_tasks import export_handler
 
+from ..export_urls import export_action
 from ..policy_factory import address
 from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
@@ -308,7 +309,7 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
                 == "ready"
             )
         with restricted_download_pool(settings):
-            response, body = search(browser, job_route + "download", {})
+            response, body = search(browser, export_action(job_route, "download"), {})
             assert response.status_code == 200
             assert body.startswith(
                 {
@@ -338,7 +339,7 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         fields = {"request_key": str(uuid4())}
         response = post(
-            browser, f"/admin/reports/exports/{first.pk}/regenerate", fields
+            browser, reverse("admin:report_export_regenerate", args=[first.pk]), fields
         )
         assert response.status_code == 302
         regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
@@ -426,7 +427,10 @@ def test_directory_export_staff_gates_and_service_boundaries(
         assert response.status_code == 200 and b"<fieldset disabled>" in body
         assert b"Other campaign work" in body
         assert (
-            read(browser, f"/admin/reports/exports/{request.pk}/")[0].status_code == 200
+            read(browser, reverse("admin:report_export", args=[request.pk]))[
+                0
+            ].status_code
+            == 200
         )
     change(
         store,
@@ -477,7 +481,10 @@ def test_directory_export_staff_gates_and_service_boundaries(
         assert post(browser, legacy, {}).status_code == 403
         assert post(browser, legacy + "export", fields).status_code == 403
         assert (
-            read(browser, f"/admin/reports/exports/{request.pk}/")[0].status_code == 403
+            read(browser, reverse("admin:report_export", args=[request.pk]))[
+                0
+            ].status_code
+            == 403
         )
 
 
@@ -566,7 +573,9 @@ def test_postal_mail_merge_blanks_families_without_a_mailing_address(
             },
         )
     with restricted_download_pool(settings):
-        response, body = search(browser, response["Location"] + "download", {})
+        response, body = search(
+            browser, export_action(response["Location"], "download"), {}
+        )
     assert response.status_code == 200
     rows = list(csv.reader(io.StringIO(body.decode())))
     assert rows[0][:4] == ["ParishSoft DUID", "Family", "Addressee", "Family heads"]
@@ -651,7 +660,9 @@ def test_mail_merge_covers_exactly_the_filtered_email_reachable_rows(
             },
         )
     with restricted_download_pool(settings):
-        response, body = search(browser, response["Location"] + "download", {})
+        response, body = search(
+            browser, export_action(response["Location"], "download"), {}
+        )
     assert response.status_code == 200
     lines = body.decode().splitlines()
     assert lines[0].startswith("ParishSoft DUID,Family,Addressee,Family heads,")
@@ -758,7 +769,7 @@ def test_regenerated_and_retried_exports_read_current_head_emails_after_compacti
     def download(job_route):
         """The file's Families sheet rows and its report details."""
         with restricted_download_pool(settings):
-            response, body = search(browser, job_route + "download", {})
+            response, body = search(browser, export_action(job_route, "download"), {})
         assert response.status_code == 200
         book = load_workbook(io.BytesIO(body))
         rows = [list(row) for row in book["Families"].iter_rows(values_only=True)]
@@ -821,7 +832,7 @@ def test_regenerated_and_retried_exports_read_current_head_emails_after_compacti
         )
         fields = {"request_key": str(uuid4())}
         response = post(
-            browser, f"/admin/reports/exports/{first.pk}/regenerate", fields
+            browser, reverse("admin:report_export_regenerate", args=[first.pk]), fields
         )
     assert response.status_code == 302
     regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
@@ -885,7 +896,7 @@ def test_directory_export_and_regenerate_need_a_fresh_sign_in(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         refused = post(
             browser,
-            f"/admin/reports/exports/{request.pk}/regenerate",
+            reverse("admin:report_export_regenerate", args=[request.pk]),
             {"request_key": str(uuid4())},
             HTTP_ACCEPT="text/html",
         )
@@ -923,7 +934,7 @@ def test_directory_export_and_regenerate_need_a_fresh_sign_in(
         key = str(uuid4())
         regenerated = post(
             browser,
-            f"/admin/reports/exports/{request.pk}/regenerate",
+            reverse("admin:report_export_regenerate", args=[request.pk]),
             {"request_key": key},
         )
         assert regenerated.status_code == 302
