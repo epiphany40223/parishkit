@@ -247,6 +247,61 @@ def revoke_automation_command(configuration, *, reason):
     return {"automation_sessions_revoked": count, "end_reason": reason}
 
 
+def parse_backup_time(value):
+    """Read the restored backup's time: its set's name or an ISO 8601 instant.
+
+    A set is named for its start in UTC (``20261007T020000Z``); an ISO 8601
+    value must carry its offset, so a local time is never guessed.
+    """
+    from datetime import UTC, datetime
+
+    if not isinstance(value, str):
+        raise ConfigError("--backup-at is required (the backup set's name).")
+    try:
+        if len(value) == 16 and value.endswith("Z") and value[8] == "T":
+            return datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+        instant = datetime.fromisoformat(value)
+    except ValueError:
+        raise ConfigError("--backup-at must be a set name or ISO 8601 time.") from None
+    if instant.tzinfo is None:
+        raise ConfigError("--backup-at needs a UTC offset or a trailing Z.")
+    return instant
+
+
+def restore_begin_command(configuration, *, backup_at, reason):
+    """Close the site for a restore review (#537), as the admin-recovery login.
+
+    Run after the database is restored and before web starts. Family access,
+    Family mail and ordinary background work stay stopped until an
+    Administrator releases the site from the Restore review page. No Family
+    code or link changes. Prints the new review's id and the backup time.
+    """
+    instant = parse_backup_time(backup_at)
+    if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
+        raise ConfigError("A restore review starts from the admin-recovery profile.")
+    with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
+        configure_operator_database(configuration)
+        from django.db import connection
+
+        from .campaigns.restore_review import begin_review
+        from .runtime_database import admit_offline_database
+
+        try:
+            admit_offline_database(configuration)
+            transition = begin_review(
+                backup_at=instant,
+                reason=reason or "restore",
+                correlation_id=uuid4(),
+            )
+        finally:
+            connection.close()
+    return {
+        "restore_review_started": True,
+        "restore_id": str(transition.restore_id),
+        "backup_at": instant.isoformat(),
+    }
+
+
 def execute_operator(args):
     """Report reviewed status fields only; arbitrary exception messages stay private."""
     import sys
@@ -290,6 +345,10 @@ def execute_operator(args):
             )
         elif args.command == "revoke-automation-sessions":
             result = revoke_automation_command(configuration, reason=args.reason)
+        elif args.command == "restore-begin":
+            result = restore_begin_command(
+                configuration, backup_at=args.backup_at, reason=args.reason
+            )
         elif args.command == "recover-admin":
             result = recover_admin_command(
                 configuration,

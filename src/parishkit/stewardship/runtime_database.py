@@ -381,6 +381,9 @@ def offline_grants(role):
         grants["stewardship_portal_session"] = {"SELECT", "UPDATE"}
         # The restore's revocation of every automation session (ADM-11).
         add_automation_recovery_grants(grants, {})
+        # restore-begin (#537): the transition that closes the site for a
+        # restore review; its guard admits this login and the schema owner.
+        grants["stewardship_runtime_transition"] = {"SELECT", "INSERT"}
     else:
         raise ConfigError("This role has no offline configuration grants.")
     return grants

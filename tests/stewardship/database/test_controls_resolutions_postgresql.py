@@ -264,7 +264,7 @@ def test_restore_assumption_never_becomes_fulfillment(tmp_path):
     with pytest.raises(StaleRecordError, match="reload"):
         resolve_restore_hold(**(arguments | {"actor_id": uuid4()}))
     with pytest.raises(StaleRecordError, match="reload"):
-        resolve_restore_hold(**(arguments | {"state": "not_applicable"}))
+        resolve_restore_hold(**(arguments | {"state": "resend_authorized"}))
     hold.refresh_from_db()
     assert (
         hold.state == "assumed_delivered" and not ScheduleFulfillment.objects.exists()

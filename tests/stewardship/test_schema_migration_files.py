@@ -78,6 +78,9 @@ FROZEN = {
     "0016_log_events.sql": (
         "89d6ab97ae5f64e948de393a58076f2fe7440086de42d231a173b99ef383a2ef"
     ),
+    "0017_restore_review.sql": (
+        "a57fd0f1b954b3eb4fb181a7f8a1eacdc4417d4332898ed7d98d1a12ce241c19"
+    ),
 }
 
 
