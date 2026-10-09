@@ -659,3 +659,212 @@ def test_a_throttled_family_message_waits_fifteen_minutes(family_mail):  # noqa:
     assert status.state.value == "retry_wait"
     wait = message.not_before - timezone.now()
     assert timedelta(minutes=14) < wait <= timedelta(minutes=15, seconds=5)
+
+
+def test_a_crash_after_a_limit_refusal_keeps_its_hold_marking(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """The RECONCILING phase commits with the outcome, not after it (#382 L3).
+
+    The worker dies right after the limit refusal's outcome commits, at the
+    first step after settlement (where the phase used to be written in a
+    transaction of its own). After lease expiry and recovery the refusal
+    must still read as a limit hold: it starts the limit run and is spared
+    from the attempt budget, so one later ordinary transient does not fail
+    the message.
+    """
+    from uuid import uuid4
+
+    from parishkit.stewardship.jobs.dispatch import recover_hint
+    from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE
+    from parishkit.stewardship.jobs.queues import WorkQueue
+
+    from .test_family_mail_worker_postgresql import family_owner, wait_until_due
+    from .test_taskrun_postgresql import act, expire
+
+    harness, path = dispatch_worker
+    results = [DAILY, FamilyDeliveryResult(Status.TRANSIENT, 1)]
+    calls = []
+
+    def provider(value, settings, mail, **kwargs):
+        calls.append(mail.semantic_key)
+        return results[len(calls) - 1]
+
+    monkeypatch.setattr(f"{TASKS}.submit_family", provider)
+    monkeypatch.setattr(family_mail_dispatch, "MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(family_mail_dispatch, "RETRY_BASE_SECONDS", 1)
+    monkeypatch.setattr(f"{TASKS}.RECOVERY_RETRY_SECONDS", 1)
+    fast = {"daily": 1, "rate": 1}
+    monkeypatch.setattr(family_mail_dispatch, "LIMIT_RETRY_SECONDS", fast)
+    monkeypatch.setattr(f"{TASKS}.LIMIT_RETRY_SECONDS", fast)
+
+    def crash(self, health):
+        """Die once the outcome is settled, before anything else is written."""
+        raise RuntimeError("synthetic crash after settlement")
+
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        owner = family_owner(harness, path)
+        with monkeypatch.context() as patch:
+            patch.setattr(DeliveryCircuit, "observe", crash)
+            with pytest.raises(RuntimeError, match="synthetic crash"):
+                deliver(harness, path, message, owner)
+        message.refresh_from_db()
+        task = TaskRun.objects.get(pk=message.task_id)
+        # The outcome committed, the retry transition never did.
+        assert message.state == "retry_wait" and task.state == "running"
+        attempt = (task.pk, task.fence)
+        assert TaskPhase(task.phase) is TaskPhase.RECONCILING
+        assert not TaskRunEvent.objects.filter(
+            run_id=task.pk, fence=task.fence, action="retryable_failure"
+        ).exists()
+        assert TaskRunEvent.objects.filter(
+            run_id=task.pk,
+            fence=task.fence,
+            action="progress",
+            phase=TaskPhase.RECONCILING,
+        ).exists()
+        expire(act(_status(task), "heartbeat", lease_seconds=1))
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            assert recover_hint(
+                task.pk,
+                queue=WorkQueue.MAIL,
+                worker_id=uuid4(),
+                handlers={TASK_TYPE: owner},
+            )
+        task.refresh_from_db()
+        # Recovery retried the Task under a later fence, still as a hold.
+        assert task.state == "retry_wait" and (task.pk, task.fence) != attempt
+        assert preparation_attempts(_status(task)) == 0
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+            spared, started, *_ = family_mail_dispatch.limit_history(message)
+        assert spared == 1 and started is not None
+        # Budget 2, attempt 2, one spared: an ordinary transient still retries.
+        wait_until_due(message)
+        deliver(harness, path, message, owner)
+    message.refresh_from_db()
+    assert len(calls) == 2 and message.attempt == 2
+    assert message.state == "retry_wait"
+    assert TaskRun.objects.get(pk=message.task_id).state == "retry_wait"
+
+
+def _fail_after(module, execution, patch):
+    """Mark the worker's renewal failed right after the outcome is recorded.
+
+    Wraps ``module.finish_submission`` so the process-local ``failed`` flag
+    is set between the outcome and the hold's RECONCILING marking, while the
+    SQL lease is still valid (a renewal thread whose connection died).
+    """
+    real = module.finish_submission
+
+    def finish(*args, **kwargs):
+        status = real(*args, **kwargs)
+        execution.control.failed.set()
+        return status
+
+    patch.setattr(module, "finish_submission", finish)
+
+
+def _assert_hold_committed(message_id, task_id):
+    """The refusal stayed a retry_wait hold, marked RECONCILING, not submitting."""
+    from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+
+    message = OutboxMessage.objects.get(pk=message_id)
+    task = TaskRun.objects.get(pk=task_id)
+    assert message.state == "retry_wait"
+    assert task.state == "running"
+    assert TaskPhase(task.phase) is TaskPhase.RECONCILING
+    assert TaskRunEvent.objects.filter(
+        run_id=task.pk,
+        fence=task.fence,
+        action="progress",
+        phase=TaskPhase.RECONCILING,
+    ).exists()
+
+
+def test_a_failed_renewal_never_rolls_back_a_family_limit_outcome(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """A definitely-unsent limit refusal commits even if renewal fails (#382 L3).
+
+    The hold's marking shares the outcome's transaction. Written through
+    Execution.progress(), the process-local failed flag raised there and
+    rolled the outcome back, leaving the message submitting until recovery
+    called it delivery_unknown. Only the later retry transition stops.
+    """
+    from uuid import uuid4
+
+    from parishkit.stewardship.jobs import family_mail_delivery_tasks
+    from parishkit.stewardship.jobs.dispatch import claim_hint
+    from parishkit.stewardship.jobs.family_mail_dispatch import TASK_TYPE
+    from parishkit.stewardship.jobs.lifetime import (
+        ExecutionInterrupted,
+        maintain_execution,
+    )
+    from parishkit.stewardship.jobs.queues import WorkQueue
+
+    from .test_family_mail_worker_postgresql import family_owner
+
+    harness, path = dispatch_worker
+    monkeypatch.setattr(f"{TASKS}.submit_family", lambda *args, **kwargs: DAILY)
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        owner = family_owner(harness, path)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
+            execution = claim_hint(
+                message.task_id,
+                queue=WorkQueue.MAIL,
+                worker_id=uuid4(),
+                handlers={TASK_TYPE: owner},
+            )
+            _fail_after(family_mail_delivery_tasks, execution, monkeypatch)
+            with pytest.raises(ExecutionInterrupted), maintain_execution(execution):
+                owner.execute(execution)
+    _assert_hold_committed(message.pk, message.task_id)
+
+
+def test_a_failed_renewal_never_rolls_back_an_alert_limit_outcome(
+    routing,  # noqa: F811
+    tmp_path,
+    monkeypatch,
+):
+    """Operational mail settles a limit hold the same way (#382 L3).
+
+    Its RECONCILING marking commits with the outcome, and a failed renewal
+    between the two writes cannot roll the outcome back.
+    """
+    from uuid import uuid4
+
+    from parishkit.stewardship.accounts.key_files import write_private
+    from parishkit.stewardship.jobs import operational_mail_tasks
+    from parishkit.stewardship.jobs.dispatch import claim_hint
+    from parishkit.stewardship.jobs.lifetime import (
+        ExecutionInterrupted,
+        maintain_execution,
+    )
+    from parishkit.stewardship.jobs.outbox_dispatch import delivery_handler
+    from parishkit.stewardship.jobs.queues import WorkQueue
+
+    from .test_operational_dispatch_postgresql import allocated
+
+    store = routing[0]
+    message = allocated(routing)[0].outbox
+    path = tmp_path / "workspace"
+    write_private(path, b"synthetic-workspace")
+    monkeypatch.setattr(
+        operational_mail_tasks, "submit_operational_mail", lambda *a, **k: DAILY
+    )
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
+        handler = delivery_handler(store, credential_path=path)
+        execution = claim_hint(
+            message.task_id,
+            queue=WorkQueue.MAIL,
+            worker_id=uuid4(),
+            handlers={"outbox_delivery": handler},
+        )
+        _fail_after(operational_mail_tasks, execution, monkeypatch)
+        with pytest.raises(ExecutionInterrupted), maintain_execution(execution):
+            execution.handler.execute(execution)
+    _assert_hold_committed(message.pk, message.task_id)
