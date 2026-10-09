@@ -164,7 +164,7 @@ LEDGER = {
         "PR 7", "portal maintenance show", "portal maintenance set"
     ),
     # Testing sends.
-    "campaign_mail": pending("PR 6", "test sample"),
+    "campaign_mail": command("test sample-preview", "test sample"),
     "campaign_mail_families": pending(
         "PR 6", "test families-preview", "test families", "test status"
     ),

@@ -135,9 +135,10 @@ def test_each_documents_members_are_exactly_its_allowlist(command):
 
 
 def test_every_refresh_command_has_a_golden_document():
-    """The PR 6 commands, and the catalog lists each model's fields."""
+    """The PR 6 refresh commands, and the catalog lists each model's fields."""
     entries = {entry["name"]: entry for entry in admin_cli.catalog()}
-    assert {spec.name for spec in admin_cli.COMMANDS if spec.pr == 6} == set(GOLDEN)
+    pr6 = {spec.name for spec in admin_cli.COMMANDS if spec.pr == 6}
+    assert {name for name in pr6 if name.split()[0] == "refresh"} == set(GOLDEN)
     for command, (build, _) in GOLDEN.items():
         assert entries[command]["result_fields"] == list(build().field_names())
 
