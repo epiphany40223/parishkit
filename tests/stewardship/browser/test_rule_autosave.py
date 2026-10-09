@@ -5,8 +5,12 @@ import json
 from urllib.parse import parse_qs
 
 import pytest
+from django.urls import reverse
 
 from .waits import hidden, visible
+
+# The placeholder the page's template resolves the status route with.
+PLACEHOLDER = "00000000-0000-4000-8000-000000000000"
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -113,7 +117,7 @@ def serve(
 
     def status(route, request):
         """Answer each poll from the scripted states for that request."""
-        request_id = request.url.rsplit("/", 1)[-1]
+        request_id = request.url.rstrip("/").rsplit("/", 1)[-1]
         polled.append(request_id)
         if len(polled) <= poll_failures:
             route.abort()
@@ -145,9 +149,10 @@ def serve(
             body=json.dumps({"digest": CURRENT, "rules": rules}),
         )
 
-    page.route("**/users/rules/apply", apply)
-    page.route("**/users/rules/requests/*", status)
-    page.route("**/users/rules/base", base)
+    page.route("**" + reverse("admin:rule_apply"), apply)
+    status_glob = reverse("admin:rule_request", args=[PLACEHOLDER])
+    page.route("**" + status_glob.replace(PLACEHOLDER, "*"), status)
+    page.route("**" + reverse("admin:rule_base"), base)
     return sent, polled, rules
 
 

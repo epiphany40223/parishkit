@@ -78,6 +78,8 @@ TEMPLATES = {
     "hosted_file_rename": "hosted-file-rename.html",
     "source_refresh": "source-refresh.html",
     "users": "users.html",
+    "ministry_assignments": "ministry-assignments.html",
+    "chairpersons": "chairpersons.html",
     "user_rules": "user-rule-preview.html",
     "assignments": "assignment-preview.html",
     "chair_confirmations": "chair-confirmation-preview.html",
@@ -126,12 +128,12 @@ OBJECT_NAMED = {
 # campaign" page named after the report opened (checked below), and a daily
 # report takes the title saved with the emailed report.
 VIEW_NAMED = {"reports", "daily_digest_snapshot"}
-# A sign-in rule change's status answers JSON only (the spec: not a page).
-NOT_PAGES = {"rule_request"}
-# Pages whose new name waits for a later slice, with that slice. Portal users
-# becomes Sign-in rules when NAV-15 splits it; renaming the combined page now
-# would mislabel its Ministry assignment and Chairperson tables.
-PENDING = {"users": "NAV-15"}
+# Registered pages that answer no HTML (none since NAV-15 reclassified a
+# sign-in rule change's JSON status as a non-page).
+NOT_PAGES = set()
+# Pages whose new name waits for a later slice, with that slice (none since
+# NAV-15 split Portal users).
+PENDING = {}
 
 # Each setup wizard step's template, by stepper key: its heading is the
 # stepper's label. The data-entry and connection steps share templates whose

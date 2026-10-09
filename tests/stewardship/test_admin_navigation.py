@@ -582,6 +582,8 @@ SPEC_ORDER = [
     "source_refresh",
     # Users and access
     "users",
+    "ministry_assignments",
+    "chairpersons",
     "automation_access",
     # System
     "system_health",

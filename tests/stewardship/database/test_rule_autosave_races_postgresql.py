@@ -28,7 +28,7 @@ from .test_configuration_service_postgresql import (
     as_config_installer,
     config_role,  # noqa: F401
 )
-from .test_rule_autosave_postgresql import APPLY, REQUESTS, apply, intent, state
+from .test_rule_autosave_postgresql import APPLY, apply, intent, state, status_url
 from .test_user_views_postgresql import add_rules
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -134,7 +134,7 @@ def test_another_administrators_activation_fails_the_second_intent_as_stale(
     receipt = installed(store, theirs["request_id"])
     assert (receipt.state, receipt.failure_code) == ("failed", "stale_base")
     with web():
-        reported = second.get(REQUESTS + theirs["request_id"]).json()
+        reported = second.get(status_url(theirs["request_id"])).json()
         assert (reported["state"], reported["failure_code"]) == ("failed", "stale_base")
         # The retry the conflict view makes: a new key against the new digest.
         again = state(apply(second, intent(store, role="administrator")).json())
@@ -175,6 +175,6 @@ def test_an_ended_session_stops_the_queue_and_records_nothing(
     before = ConfigurationChangeRequest.objects.count()
     with web():
         assert apply(browser, intent(store, role="administrator")).status_code == 403
-        assert browser.get(REQUESTS + receipt["request_id"]).status_code == 403
+        assert browser.get(status_url(receipt["request_id"])).status_code == 403
         assert browser.post(APPLY, intent(store)).status_code == 403
     assert ConfigurationChangeRequest.objects.count() == before

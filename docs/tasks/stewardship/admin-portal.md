@@ -578,7 +578,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.15 — NAV-12: move export and digest URLs and fold the latest-data export into the shared export page.
 - [ ] ADM-12.16 — NAV-13 (optional): add trailing slashes to sign-in, setup and maintenance URLs.
 - [x] ADM-12.17 — NAV-14: add the Emailed reports page.
-- [ ] ADM-12.18 — NAV-15: split Portal users into Sign-in rules, Ministry assignments and Chairpersons (#535).
+- [x] ADM-12.18 — NAV-15: split Portal users into Sign-in rules, Ministry assignments and Chairpersons (#535).
 - [ ] ADM-12.19 — NAV-16: add the ways back (#521), including the test-email origin kept in the session.
 - [ ] ADM-12.20 — NAV-17: add the reachability and no-UUID crawl test.
 - [ ] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
@@ -855,6 +855,24 @@ role's menu), `tests/stewardship/test_admin_page_names.py`,
 `tests/stewardship/test_admin_url_scheme.py` and
 `tests/stewardship/database/test_emailed_reports_postgresql.py` (the list for
 each role, the request notice, the manual form returning to the page).
+
+ADM-12.18 (NAV-15, #535) splits Portal users into three Users and access
+entries drawn from the same observation: Sign-in rules
+(`/admin/users/sign-in-rules/`: hosted-domain and exact-address rules, their
+roles and the role autosave), Ministry assignments
+(`/admin/users/ministry-assignments/`: every assignment, with exact-address
+rules and with domain rules, and its editor) and Chairpersons
+(`/admin/users/chairpersons/`: suspended Chairperson assignments, Ministry
+leaders only through a Chairperson, and the source's suggestions). Each
+review sits under, and returns to, the page it is started on; its Cancel and
+error-page links lead there too. The Users routes move to the URL scheme
+(`/admin/users/` opens the first entry; the old Users addresses are gone
+under #864), and the autosave's status poll is a non-page whose address the
+script fills from a placeholder. It is proven by
+`tests/stewardship/test_admin_url_scheme.py`,
+`tests/stewardship/test_admin_navigation.py`,
+`tests/stewardship/test_admin_page_names.py` and the updated user-rule,
+autosave, assignment, Chairperson and user-view PostgreSQL suites.
 
 ## ADM-13: System health page
 

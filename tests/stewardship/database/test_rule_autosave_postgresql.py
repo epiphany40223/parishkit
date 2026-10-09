@@ -3,6 +3,7 @@
 from uuid import UUID, uuid4
 
 import pytest
+from django.urls import reverse
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts import rule_autosave_views
@@ -26,9 +27,13 @@ from .test_user_views_postgresql import URL as PAGE
 from .test_user_views_postgresql import add_rules
 
 pytestmark = pytest.mark.django_db(transaction=True)
-APPLY = "/admin/users/rules/apply"
-REQUESTS = "/admin/users/rules/requests/"
-BASE = "/admin/users/rules/base"
+APPLY = reverse("admin:rule_apply")
+BASE = reverse("admin:rule_base")
+
+
+def status_url(request_id):
+    """The role autosave's status address for one request."""
+    return reverse("admin:rule_request", args=[request_id])
 
 
 def web():
@@ -101,12 +106,12 @@ def test_an_intent_is_recorded_once_and_reported_applied_with_its_digest(
         rebound = apply(browser, values | {"role": "administrator"})
         assert rebound.status_code == 202 and state(rebound.json()) == receipt
         assert ConfigurationChangeRequest.objects.count() == before + 1
-        pending = browser.get(REQUESTS + receipt["request_id"])
+        pending = browser.get(status_url(receipt["request_id"]))
         assert pending.status_code == 200 and pending.json()["state"] == "staged"
-        assert browser.get(REQUESTS + str(uuid4())).status_code == 404
+        assert browser.get(status_url(uuid4())).status_code == 404
     installed(store, receipt["request_id"])
     with web():
-        applied = state(browser.get(REQUESTS + receipt["request_id"]).json())
+        applied = state(browser.get(status_url(receipt["request_id"])).json())
         # A lost answer recovered after activation reads the applied receipt,
         # although the digest the intent named is no longer the applied one.
         recovered = apply(browser, values)
@@ -133,7 +138,7 @@ def test_an_intent_is_recorded_once_and_reported_applied_with_its_digest(
     other, login = signed_in()
     assert login.status_code == 302
     with web():
-        assert other.get(REQUESTS + receipt["request_id"]).status_code == 404
+        assert other.get(status_url(receipt["request_id"])).status_code == 404
 
 
 @pytest.mark.usefixtures("config_role")

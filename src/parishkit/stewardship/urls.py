@@ -5,19 +5,14 @@ from django.urls import include, path
 from . import views
 from .accounts import (
     access_gate,
-    assignment_views,
     authentication,
-    automation_views,
     branding_views,
     campaign_views,
-    chair_review_views,
-    chair_views,
     content_views,
     critical_event_views,
     family_authentication,
     hosted_file_serving,
     presence,
-    rule_autosave_views,
     security_event_views,
     session_views,
     setup_branding_views,
@@ -35,8 +30,6 @@ from .accounts import (
     setup_views,
     source_form_views,
     system_health_views,
-    user_rule_views,
-    user_views,
 )
 from .admin_urls import campaign as admin_campaign
 from .admin_urls import legacy as admin_legacy
@@ -44,6 +37,7 @@ from .admin_urls import mail as admin_mail
 from .admin_urls import parish as admin_parish
 from .admin_urls import reports as admin_reports
 from .admin_urls import system as admin_system
+from .admin_urls import users as admin_users
 from .jobs import views as job_views
 from .reports import (
     directory_export_views,
@@ -81,6 +75,7 @@ admin_patterns = [
     *admin_mail.polled_patterns,
     *admin_campaign.patterns,
     *admin_reports.patterns,
+    *admin_users.patterns,
     *admin_legacy.patterns,
     path(
         "reports/<uuid:campaign_id>/postal/export",
@@ -144,22 +139,6 @@ admin_patterns = [
     ),
     # Retired (decision 11): redirects to the current campaign's settings.
     path("campaign/new", campaign_views.retired_new, name="campaign_new"),
-    path("users", user_views.users, name="users"),
-    path("users/rules", user_rule_views.user_rules, name="user_rules"),
-    path("users/rules/apply", rule_autosave_views.rule_apply, name="rule_apply"),
-    path("users/rules/base", rule_autosave_views.rule_base, name="rule_base"),
-    path(
-        "users/rules/requests/<uuid:request_id>",
-        rule_autosave_views.rule_request,
-        name="rule_request",
-    ),
-    path(
-        "users/suggestions",
-        chair_views.chair_confirmations,
-        name="chair_confirmations",
-    ),
-    path("users/reviews", chair_review_views.chair_reviews, name="chair_reviews"),
-    path("users/assignments", assignment_views.assignments, name="assignments"),
     path(
         "security-events/<uuid:event_id>/acknowledge",
         security_event_views.acknowledge_event,
@@ -169,25 +148,6 @@ admin_patterns = [
         "critical-events/acknowledge",
         critical_event_views.acknowledge_critical_events,
         name="critical_events_acknowledge",
-    ),
-    # The browser side of the Admin automation command line (ADM-11), under
-    # Users and access in the #525 URL scheme: nouns, trailing slashes, and
-    # actions posted to the collection or item they change.
-    path("users/automation/", automation_views.access_view, name="automation_access"),
-    path(
-        "users/automation/approval/",
-        automation_views.approval_view,
-        name="automation_approval",
-    ),
-    path(
-        "users/automation/sessions/<uuid:session_id>/",
-        automation_views.session_view,
-        name="automation_session",
-    ),
-    path(
-        "users/automation/notices/",
-        automation_views.notices_view,
-        name="automation_notices",
     ),
     # System health (ADM-13): the System group's first entry, which
     # /admin/system/ opens, and the status fragment the open page polls.

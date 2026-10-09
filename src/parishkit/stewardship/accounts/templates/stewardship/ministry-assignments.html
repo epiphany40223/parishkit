@@ -1,0 +1,47 @@
+{% extends 'stewardship/admin-base.html' %}{% load static i18n stewardship %}
+{% block title %}{% translate "Ministry assignments" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Ministry assignments" %}</h1>
+{% aboutpage "ministry-assignments" %}<p>{% translate "Which Ministries each Ministry leader leads. An assignment takes effect only through a rule granting Ministry leader: the address's exact-address rule, or its hosted-domain rule when the Google account presents that claim. Change who may sign in on" %} <a href="{% url 'admin:users' %}">{% translate "Sign-in rules" %}</a>.</p>{% endaboutpage %}
+{% if assignable %}<form method="post" action="{% url 'admin:assignments' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="add">
+<fieldset><legend>{% translate "Add a Ministry assignment" %}</legend>
+<p>{% translate "An assignment is an Administrator entry the parish source never rewrites. It takes effect only through a rule granting Ministry leader: the address's exact-address rule, or its hosted-domain rule when the Google account presents that claim. The review states which applies." %}</p>
+<label for="new-assignment-address">{% translate "Email address" %}</label> <input id="new-assignment-address" name="identity" type="email" maxlength="254" required autocomplete="off">
+<label>{% translate "Ministry" %} <select name="ministry_duid" required><option value="">{% translate "Choose" %}</option>{% for duid, name in assignable %}<option value="{{ duid }}">{{ name }} ({{ duid }})</option>{% endfor %}</select></label>
+{% button type="submit" %}{% translate "Review new assignment" %}{% endbutton %}</fieldset></form>{% endif %}
+
+<h2 id="address-assignments">{% translate "Ministry assignments for exact-address rules" %}</h2>
+<p>{% translate "Addresses with their own sign-in rule that hold a Ministry assignment. An assignment is an Administrator entry the parish source never rewrites; it takes effect only through a rule granting Ministry leader." %}</p>
+<div id="{{ assigned_table.anchor }}">
+{% translate "Exact-address assignment pages" as assigned_label %}{% include "stewardship/table-navigator.html" with table=assigned_table label=assigned_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="address-assignments"><table class="data-table">
+<caption>{% translate "Assignments with an exact-address rule" %}</caption><thead><tr>{% translate "Address" as heading %}{% sort_heading assigned_table "email" heading %}{% translate "Ministry assignments" as heading %}{% sort_heading assigned_table "assignments" heading %}{% translate "Roles granted now" as heading %}{% sort_heading assigned_table "granted" heading %}{% translate "Last successful sign-in" as heading %}{% sort_heading assigned_table "last_login" heading %}{% translate "Warnings" as heading %}{% sort_heading assigned_table "warnings" heading %}<th scope="col">{% translate "Change" %}</th></tr></thead><tbody>
+{% for row in assigned_table.rows %}<tr>
+<th scope="row">{{ row.email }}</th>
+<td>{% for item in row.assignments %}{% if item.ministry_name %}{{ item.ministry_name }} ({% translate "Ministry DUID" %} {{ item.ministry_duid }}){% else %}{% translate "Ministry DUID" %} {{ item.ministry_duid }}{% endif %} ({{ item.source }}{% if not item.active %}; {% translate "suspended" %}{% endif %}){% if item.manual %} <form method="post" action="{% url 'admin:assignments' %}" class="inline">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="remove"><input type="hidden" name="identity" value="{{ row.email }}"><input type="hidden" name="ministry_duid" value="{{ item.ministry_duid }}">{% button type="submit" %}{% translate "Review assignment removal" %}{% endbutton %}</form>{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>
+<td>{% for role in row.granted %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>
+<td>{% if row.last_login %}<time datetime="{{ row.last_login|date:'c' }}" data-local-instant>{{ row.last_login|date:'c' }}</time>{% else %}{% translate "None on record" %}{% endif %}</td>
+<td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td>
+<td>{% if assignable %}<form method="post" action="{% url 'admin:assignments' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="add"><input type="hidden" name="identity" value="{{ row.email }}"><label>{% translate "Assign to Ministry" %} <select name="ministry_duid" required><option value="">{% translate "Choose" %}</option>{% for duid, name in assignable %}<option value="{{ duid }}">{{ name }} ({{ duid }})</option>{% endfor %}</select></label> {% button type="submit" %}{% translate "Review assignment" %}{% endbutton %}</form>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="6">{% translate "No exact-address rule holds a Ministry assignment." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=assigned_table label=assigned_label %}
+</div>
+
+{% if assignment_table.count %}
+<h2 id="domain-assignments">{% translate "Ministry assignments for people authorized by a domain rule" %}</h2>
+<p>{% translate "These people have no exact-address rule. An assignment takes effect only when a Google identity for that address presents a hosted-domain claim whose rule grants Ministry leader. A recorded identity is judged by the claim it really presented, never by its email ending." %}</p>
+<div id="{{ assignment_table.anchor }}">
+{% translate "Domain-authorized assignment pages" as assignment_label %}{% include "stewardship/table-navigator.html" with table=assignment_table label=assignment_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="domain-assignments"><table class="data-table">
+<caption>{% translate "Assignments without an exact-address rule" %}</caption><thead><tr>{% translate "Address" as heading %}{% sort_heading assignment_table "email" heading %}{% translate "Ministry assignments" as heading %}{% sort_heading assignment_table "assignments" heading %}{% translate "In effect now" as heading %}{% sort_heading assignment_table "leading" heading %}{% translate "Last successful sign-in" as heading %}{% sort_heading assignment_table "last_login" heading %}{% translate "Warnings" as heading %}{% sort_heading assignment_table "warnings" heading %}</tr></thead><tbody>
+{% for row in assignment_table.rows %}<tr>
+<th scope="row">{{ row.email }}</th>
+<td>{% for item in row.assignments %}{% if item.ministry_name %}{{ item.ministry_name }} ({% translate "Ministry DUID" %} {{ item.ministry_duid }}){% else %}{% translate "Ministry DUID" %} {{ item.ministry_duid }}{% endif %} ({{ item.source }}{% if not item.active %}; {% translate "suspended" %}{% endif %}){% if item.manual %} <form method="post" action="{% url 'admin:assignments' %}" class="inline">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="remove"><input type="hidden" name="identity" value="{{ row.email }}"><input type="hidden" name="ministry_duid" value="{{ item.ministry_duid }}">{% button type="submit" %}{% translate "Review assignment removal" %}{% endbutton %}</form>{% endif %}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+<td>{% if row.leading %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td>
+<td>{% if row.last_login %}<time datetime="{{ row.last_login|date:'c' }}" data-local-instant>{{ row.last_login|date:'c' }}</time>{% else %}{% translate "None on record" %}{% endif %}</td>
+<td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td></tr>
+{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=assignment_table label=assignment_label %}
+</div>
+{% endif %}
+{% endblock %}

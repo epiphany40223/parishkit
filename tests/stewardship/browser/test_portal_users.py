@@ -1,6 +1,7 @@
 """Administrator review and reviewed edits of login rules and assignments."""
 
 import pytest
+from django.urls import reverse
 
 from .waits import visible
 
@@ -10,6 +11,8 @@ pytestmark = pytest.mark.parametrize(
 
 PAGES = (
     "/portal-users",
+    "/ministry-assignments",
+    "/chairpersons",
     "/portal-users-confirmed",
     "/portal-users-minimal",
     "/portal-users-preview",
@@ -62,14 +65,6 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     # Policy still grants the address; the warning says this identity cannot use it.
     assert leader.get_by_text("is disabled and cannot sign in", exact=False).count()
     assert leader.get_by_role("cell", name="Staff, Ministry leader", exact=True).count()
-    stray = page.get_by_role("row", name="stray@elsewhere.example", exact=False)
-    assert stray.get_by_text("No login rule gives this person", exact=False).count()
-    # Judged by the hosted-domain claim really presented, never the email ending.
-    helper = page.get_by_role("row", name="helper@workspace.example", exact=False)
-    assert helper.get_by_role("cell", name="Yes", exact=True).count() == 1
-    consumer = page.get_by_role("row", name="consumer@workspace.example", exact=False)
-    assert consumer.get_by_role("cell", name="No", exact=True).count() == 1
-    assert consumer.get_by_text("No usable Google identity", exact=False).count()
     # Scrollable table regions are keyboard reachable and named by their heading.
     region = page.get_by_role("region", name="Exact-address rules")
     region.focus()
@@ -93,6 +88,22 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     assert not leader.get_by_label("Administrator").is_checked()
     assert page.get_by_label("Email address").count() == 1
     assert page.get_by_label("Hosted domain").count() == 1
+    # Assignments live on Ministry assignments (NAV-15), which this page links.
+    assert page.get_by_role("button", name="Review assignment removal").count() == 0
+    visible(page.get_by_role("link", name="Ministry assignments", exact=True).first)
+
+    # Ministry assignments: domain-authorized people, judged by the claim
+    # really presented, never the email ending; each removal is reviewed.
+    page.goto(component_origin + "/ministry-assignments")
+    stray = page.get_by_role("row", name="stray@elsewhere.example", exact=False)
+    assert stray.get_by_text("No login rule gives this person", exact=False).count()
+    helper = page.get_by_role("row", name="helper@workspace.example", exact=False)
+    assert helper.get_by_role("cell", name="Yes", exact=True).count() == 1
+    consumer = page.get_by_role("row", name="consumer@workspace.example", exact=False)
+    assert consumer.get_by_role("cell", name="No", exact=True).count() == 1
+    assert consumer.get_by_text("No usable Google identity", exact=False).count()
+    leader = page.get_by_role("row", name="leader@workspace.example", exact=False)
+    assert leader.get_by_role("button", name="Review assignment removal").count()
 
     # The review page states before and after, the expansion and the reach.
     page.goto(component_origin + "/portal-users-preview")
@@ -116,7 +127,7 @@ def test_portal_users_mobile_keyboard_and_accessibility(
         .get_by_text("consumer email domain", exact=False)
         .count()
     )
-    assert page.get_by_role("link", name="Return to Portal users").count() == 1
+    assert page.get_by_role("link", name="Return to Sign-in rules").count() == 1
 
     page.goto(component_origin + "/portal-users-confirmed")
     chair = page.get_by_role("row", name="chair@example.org", exact=False)
@@ -139,7 +150,9 @@ def _review_request(page, button):
     # Let the routed answer finish loading before the next navigation,
     # which it would otherwise interrupt (#623).
     visible(page.get_by_text("Reviewed", exact=True))
-    assert "?" not in sent.value.url and sent.value.url.endswith("/users/rules")
+    assert "?" not in sent.value.url and sent.value.url.endswith(
+        reverse("admin:user_rules")
+    )
     return sent.value.post_data
 
 
@@ -152,7 +165,9 @@ def test_rule_review_forms_post_to_the_rules_route(page, component_origin):
     crypto.randomUUID); otherwise row ticks autosave
     (test_rule_autosave.py).
     """
-    page.route("**/users/rules", lambda route: route.fulfill(body="Reviewed"))
+    page.route(
+        "**" + reverse("admin:user_rules"), lambda route: route.fulfill(body="Reviewed")
+    )
     page.goto(component_origin + "/portal-users")
     leader = page.get_by_role("row", name="leader@workspace.example", exact=False)
     body = _review_request(page, leader.get_by_role("button", name="Review removal"))

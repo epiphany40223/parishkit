@@ -1,4 +1,9 @@
-"""The portal users review reuses the shared browser server and real row builders."""
+"""The Users and access pages reuse the shared browser server and real row builders.
+
+Sign-in rules, Ministry assignments and Chairpersons (NAV-15) each render
+their own template from the same sample policy, so the pages and their rows
+agree.
+"""
 
 from datetime import UTC, datetime
 
@@ -12,7 +17,7 @@ from parishkit.stewardship.accounts.user_rows import (
     domain_rows,
 )
 from parishkit.stewardship.accounts.user_rules import ROLE_ORDER
-from parishkit.stewardship.accounts.user_views import user_tables
+from parishkit.stewardship.accounts.user_views import PAGES, user_tables
 
 from ..policy_factory import address, assignment, domain
 
@@ -82,26 +87,34 @@ def components(context, admin):
         assignments=[],
     )
 
-    def page(rules, known, active=frozenset(), reviews=(), suggestions=()):
-        """Render exactly the context the view builds."""
+    def page(
+        rules, known, active=frozenset(), reviews=(), suggestions=(), *, section="rules"
+    ):
+        """Render exactly the context the view builds for one of the pages."""
         policy = AppliedPolicy(rules, known, active)
+        template, names = PAGES[section]
+        rows = {
+            "domain_table": lambda: domain_rows(policy),
+            "address_table": lambda: address_rows(policy),
+            "assigned_table": lambda: [
+                row for row in address_rows(policy) if row["assignments"]
+            ],
+            "assignment_table": lambda: domain_assignment_rows(policy),
+            "review_table": lambda: list(reviews),
+            "kept_table": lambda: [
+                row for row in address_rows(policy) if row["seed_only"]
+            ],
+            "suggestion_table": lambda: list(suggestions),
+        }
         return render_to_string(
-            "stewardship/users.html",
+            template,
             context
             | {"admin_chrome": admin}
             | {
-                **user_tables(
-                    {},
-                    {
-                        "domain_table": domain_rows(policy),
-                        "address_table": address_rows(policy),
-                        "assignment_table": domain_assignment_rows(policy),
-                        "review_table": list(reviews),
-                        "suggestion_table": list(suggestions),
-                    },
-                ),
+                **user_tables({}, {name: rows[name]() for name in names}),
                 "base_digest": "0" * 64,
                 "roles": [(role, ROLE_LABELS[role]) for role in ROLE_ORDER],
+                "assignable": [(4, "Choir"), (9, "Lectors")],
             },
         )
 
@@ -128,6 +141,14 @@ def components(context, admin):
 
     return {
         "/portal-users": ("text/html", page(records, identities)),
+        "/ministry-assignments": (
+            "text/html",
+            page(records, identities, section="assignments"),
+        ),
+        "/chairpersons": (
+            "text/html",
+            page(records, identities, section="chairpersons"),
+        ),
         "/portal-users-confirmed": (
             "text/html",
             page(records, identities, frozenset({seeded["id"]})),
@@ -136,11 +157,11 @@ def components(context, admin):
         "/portal-users-minimal": ("text/html", page([address()], [])),
         "/portal-users-review": (
             "text/html",
-            page(records, identities, reviews=[review]),
+            page(records, identities, reviews=[review], section="chairpersons"),
         ),
         "/portal-users-suggestions": (
             "text/html",
-            page(records, identities, suggestions=[suggestion]),
+            page(records, identities, suggestions=[suggestion], section="chairpersons"),
         ),
         "/portal-users-preview": ("text/html", preview()),
         "/portal-users-preview-deny": (

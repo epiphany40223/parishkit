@@ -14,6 +14,6 @@
   {% csrf_token %}<input type="hidden" name="action" value="confirm">
   <input type="hidden" name="preview" value="{{ preview }}">
   {% button type="submit" %}{% translate "Apply decision" %}{% endbutton %}
-  <a href="{% url 'admin:users' %}">{% translate "Cancel" %}</a>
+  <a href="{% url 'admin:chairpersons' %}">{% translate "Cancel" %}</a>
 </form>
 {% endblock %}

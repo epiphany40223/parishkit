@@ -8,6 +8,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 from django.db import connection
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import schedule_views
 from parishkit.stewardship.accounts.policy_models import PortalUser
@@ -386,7 +387,7 @@ def test_read_pages_never_wait_behind_the_work_lock(auth_service, google):
         try:
             for url in (
                 "/admin/",
-                "/admin/users",
+                reverse("admin:users"),
                 path,
                 "/admin/campaign/settings/",
                 "/admin/campaign/content/",

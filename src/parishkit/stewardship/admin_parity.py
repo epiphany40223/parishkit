@@ -261,6 +261,7 @@ LEDGER = {
     # and /admin/system/, which only redirects to the page.
     "system": command("system health"),
     "campaign_root": permanent(GROUP_ROOT),
+    "users_root": permanent(GROUP_ROOT),
     "mail_root": permanent(GROUP_ROOT),
     "parish_root": permanent(GROUP_ROOT),
     "system_health": command("system health"),
@@ -286,6 +287,8 @@ LEDGER = {
     "delivery_refusal_clear": command("delivery refusal-clear"),
     # Users and follow-up.
     "users": pending("PR 11", "users list"),
+    "ministry_assignments": pending("PR 11", "assignments"),
+    "chairpersons": pending("PR 11", "chairs"),
     "user_rules": pending("PR 11", "rules show"),
     "rule_apply": pending("PR 11", "rules apply"),
     "rule_base": pending("PR 11", "rules show"),

@@ -8,6 +8,7 @@ import psycopg
 import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.models import F
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import configuration_installation as installer
 from parishkit.stewardship.accounts.configuration_installation import install_request
@@ -36,8 +37,8 @@ from .test_configuration_service_postgresql import (
 from .test_user_views_postgresql import add_rules, row
 
 pytestmark = pytest.mark.django_db(transaction=True)
-PAGE = "/admin/users"
-URL = "/admin/users/rules"
+PAGE = reverse("admin:users")
+URL = reverse("admin:user_rules")
 
 
 def web():
@@ -85,7 +86,7 @@ def applied(store, browser, values):
 
 
 def page(browser):
-    """The Portal users page as the Administrator sees it now."""
+    """The Sign-in rules page as the Administrator sees it now."""
     with web():
         response = browser.get(PAGE)
     assert response.status_code == 200
@@ -664,7 +665,7 @@ def test_refusals_explain_without_echoing_and_guards_hold(auth_service, google):
             refusal = re.search(
                 r'<section class="flow panel">.*?</section>', body, flags=re.S
             ).group(0)
-            assert expected in refusal and "Return to Portal users" in refusal
+            assert expected in refusal and "Return to Sign-in rules" in refusal
             assert values["identity"] not in refusal and "gmail" not in refusal.lower()
             assert response["Cache-Control"] == "no-store"
         # A preview drawn from an older policy is stale, never applied to a newer one.
@@ -674,7 +675,7 @@ def test_refusals_explain_without_echoing_and_guards_hold(auth_service, google):
         stale["base_digest"] = "0" * 64
         old = post(browser, stale)
         assert old.status_code == 409 and b"changed since" in old.content
-        assert b"Return to Portal users" in old.content
+        assert b"Return to Sign-in rules" in old.content
         # A review signed against the applied policy is refused at confirmation
         # once another change has activated: the shared admission checks the
         # digest again under the work transaction, and nothing is requested.

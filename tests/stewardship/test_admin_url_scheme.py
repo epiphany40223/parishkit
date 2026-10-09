@@ -22,18 +22,20 @@ from parishkit.stewardship.admin_urls import (
     parish,
     reports,
     system,
+    users,
 )
 from parishkit.stewardship.reports.daily_digest import DailyDigestDocument
 from parishkit.stewardship.reports.weekly_digest import WeeklyDigestDocument
 
 # Menu groups whose URLs follow the scheme so far, by URL segment.
-MOVED = {"system", "parish", "mail", "campaign", "reports"}
+MOVED = {"system", "parish", "mail", "campaign", "reports", "users"}
 GROUPS = (
     system.patterns
     + parish.patterns
     + mail.patterns
     + campaign.patterns
     + reports.patterns
+    + users.patterns
 )
 # Route segments that would be a GET target naming an action.
 VERBS = {
@@ -311,6 +313,19 @@ EXPECTED = {
     f"/admin/mail/refusals/{T}": f"/admin/mail/refusals/{T}/",
     "/admin/mail/family-portal": "/admin/mail/family-portal/",
     "/admin/mail/presence": "/admin/mail/presence/",
+    # Users and access (NAV-15): Portal users became three pages. The old
+    # Users addresses are gone (#864); /admin/users is the group root's
+    # slashless form.
+    "/admin/users": "/admin/users/",
+    "/admin/users/sign-in-rules": "/admin/users/sign-in-rules/",
+    "/admin/users/sign-in-rules/review": "/admin/users/sign-in-rules/review/",
+    "/admin/users/ministry-assignments": "/admin/users/ministry-assignments/",
+    "/admin/users/ministry-assignments/review": (
+        "/admin/users/ministry-assignments/review/"
+    ),
+    "/admin/users/chairpersons": "/admin/users/chairpersons/",
+    "/admin/users/chairpersons/suggestions": "/admin/users/chairpersons/suggestions/",
+    "/admin/users/chairpersons/reviews": "/admin/users/chairpersons/reviews/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
     # Responses and reports pages without their trailing slash (NAV-11).
@@ -626,6 +641,35 @@ def test_every_export_shares_one_page():
         f"/admin/reports/exact-exports/{T}/",
         f"/admin/reports/exports/{T}/cancel",
         f"/admin/reports/weekly-digests/request/{T}/",
+    ):
+        with pytest.raises(Resolver404):
+            resolve(old)
+
+
+def test_users_pages_and_their_reviews():
+    """The Users group root, and each review under the page it starts on.
+
+    Portal users became Sign-in rules, Ministry assignments and Chairpersons
+    (NAV-15). The old Users addresses are gone (#864), not redirected.
+    """
+    assert reverse("admin:users_root") == "/admin/users/"
+    assert resolve("/admin/users/").func.group_root == "users"
+    assert resolve("/admin/users").func.legacy_target == "users_root"
+    for review, page in (
+        ("user_rules", "users"),
+        ("assignments", "ministry_assignments"),
+        ("chair_confirmations", "chairpersons"),
+        ("chair_reviews", "chairpersons"),
+    ):
+        assert reverse(f"admin:{review}").startswith(reverse(f"admin:{page}"))
+        assert navigation.PAGES[review].parent == page
+    status = reverse("admin:rule_request", args=[TASK])
+    assert status.startswith(reverse("admin:users")) and status.endswith("/")
+    assert "rule_request" in navigation.NON_PAGES
+    for old in (
+        "/admin/users/rules",
+        "/admin/users/assignments",
+        "/admin/users/reviews",
     ):
         with pytest.raises(Resolver404):
             resolve(old)

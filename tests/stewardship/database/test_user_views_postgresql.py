@@ -7,6 +7,7 @@ import psycopg
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import user_views
 from parishkit.stewardship.accounts.authentication import AuthRuntime
@@ -22,7 +23,7 @@ from .role_grants import seed_user
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/users"
+URL = reverse("admin:users")
 
 
 def add_rules(store, *records):
@@ -122,16 +123,24 @@ def test_administrator_reviews_rules_provenance_and_warnings(auth_service, googl
     idle = row(body, "idle@example.org")
     assert "Ministry leader with no active Ministry assignment." in idle
     assert "is disabled and cannot sign in" in idle
-    helper = row(body, "helper@workspace.example")
-    assert "Ministry DUID 4" in helper
-    assert "No login rule gives this person the Ministry leader role." in helper
-    assert 'href="/admin/users"' in body
+    assert f'href="{URL}"' in body
     contexts = views()
     # One audit row for the one successful view, and none for the refused query
-    # string or POST. It counts every row of all three tables, naming none.
-    listed = sum(record["values"]["kind"] != "assignment" for record in rules) + 1
-    assert contexts == [{"outcome": "succeeded", "count": listed}] and listed >= 7
+    # string or POST. It counts every row of the page's two tables, naming none.
+    listed = sum(record["values"]["kind"] != "assignment" for record in rules)
+    assert contexts == [{"outcome": "succeeded", "count": listed}] and listed >= 6
     assert "@" not in str(contexts) and "example" not in str(contexts)
+    # A domain-authorized assignment is on Ministry assignments (NAV-15).
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assignments = browser.get(reverse("admin:ministry_assignments"))
+    page = assignments.content.decode()
+    helper = row(page, "helper@workspace.example")
+    assert "Ministry DUID 4" in helper
+    assert "No login rule gives this person the Ministry leader role." in helper
+    # Its own audit row counts only the rows Ministry assignments rendered.
+    shown = len(re.findall(r'<tr>\s*<th scope="row">', page))
+    assert views() == [*contexts, {"outcome": "succeeded", "count": shown}]
+    assert shown >= 2
 
 
 @pytest.fixture
@@ -354,8 +363,8 @@ def test_long_tables_page_independently(auth_service, google):
     browser, _ = signed_in()
     body = browser.get(URL + "?addresses_size=25&addresses_page=2").content.decode()
     assert "Showing 26–31 of 31" in body
-    # The address navigator keeps the suggestion table's place.
-    assert 'type="hidden" name="suggestions_page" value="1"' in body
+    # The address navigator keeps the domain table's place.
+    assert 'type="hidden" name="domains_page" value="1"' in body
     assert "person29@example.org" in body and "person00@example.org" not in body
     assert browser.get(URL + "?addresses_size=7").status_code == 400
 

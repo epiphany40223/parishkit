@@ -64,7 +64,8 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     assert (b"test@example.org" in body) == (role == "administrator")
     assert (b'href="/admin/parish/ministries/"' in body) == (role == "administrator")
     # Who else holds access is offered to Administrators only.
-    assert (b'href="/admin/users"' in body) == (role == "administrator")
+    menu = f'href="{reverse("admin:users")}"'.encode()
+    assert (menu in body) == (role == "administrator")
     assert (b"Parish settings" in body) == (role == "administrator")
     # The combined logs are offered to Administrators only.
     assert (b'href="/admin/system/logs/"' in body) == (role == "administrator")

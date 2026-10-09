@@ -5,6 +5,7 @@ from copy import deepcopy
 
 import pytest
 from django.db import DatabaseError, connection
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy_models import AssignmentOverlay
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -24,7 +25,7 @@ from .test_source_families_postgresql import (
     source_singletons,  # noqa: F401
 )
 from .test_source_snapshots_postgresql import permit
-from .test_user_views_postgresql import URL, views
+from .test_user_views_postgresql import views
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -97,7 +98,7 @@ def page():
     browser, login = signed_in()
     assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response = browser.get(URL)
+        response = browser.get(reverse("admin:chairpersons"))
     assert response.status_code == 200
     return response.content.decode()
 
@@ -113,9 +114,10 @@ def test_administrator_sees_current_chairpersons_with_names_only(auth_service, g
     assert "Member Middle Example (DUID 3)" in suggestion
     assert suggestion.count("<td>None</td>") == 3  # rule, assignment, ambiguity
     assert "<td>No</td>" in suggestion  # contact not publishable
-    # Four tables now; the audit counts every rendered row and no address.
+    # Chairpersons' tables only (NAV-15): the audit counts every rendered row
+    # (the one suggestion) and no address.
     (context,) = views()
-    assert context["count"] == 2 and "valid@example.org" not in str(context)
+    assert context["count"] == 1 and "valid@example.org" not in str(context)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         with work_transaction(), connection.cursor() as cursor:
             cursor.execute(
