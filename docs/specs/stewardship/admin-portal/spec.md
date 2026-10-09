@@ -2417,6 +2417,14 @@ Going live is a dedicated workflow, not a toggle. It requires:
   [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)
   stands in for the fresh authentication).
 
+The Admin-only Family list (the **Testing submissions** page) opens only
+while the campaign is the current Testing draft, as does Go-live readiness,
+the only page that links to it. Afterwards the list answers with a plain
+notice, "Testing submissions are only available before go-live.", as a 410
+refusal: signing in again cannot help, so it never shows the generic
+sign-in-again refusal
+([#867](https://github.com/epiphany40223/parishkit/issues/867)).
+
 Testing deliveries do not count as live. After readiness and inventory, the
 Admin explicitly acknowledges that cleanup is irreversible and starts it on
 the [Go live page](#go-live-page), which needs fresh Google authentication
