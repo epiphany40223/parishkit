@@ -239,7 +239,8 @@ unselected for 15 minutes the consumer holding for it logs
 `installer_request_failed` at ERROR with `failure_kind`
 `credential_switch_unfinished`, at most hourly per key in each process. That
 is the structured process log: the mail-dispatch login may write only timeout
-events to the operational log table, and widening that is a schema change.
+events to the operational log table, and widening that is a schema change
+(each login's list is in the operations specification).
 ParishSoft refreshes are refused (`SOURCE_CREDENTIAL_FAILED`) and run
 again on schedule after the switch. There is no stand-alone "replace
 credential" page any more: it staged a key with nothing to select it, which

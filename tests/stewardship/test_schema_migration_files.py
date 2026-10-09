@@ -116,6 +116,9 @@ FROZEN = {
     "0028_drop_initial_invitation_state.sql": (
         "f6c6745536014cf67ccffdbaadd42282e331f98b1358afad5843747831259111"
     ),
+    "0029_log_writer_allowlist.sql": (
+        "2f09aae27a7e3f92336c55fd72594f0740f08e0575947571955f8b999aab7398"
+    ),
 }
 
 
