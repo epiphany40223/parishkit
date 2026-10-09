@@ -18,6 +18,7 @@ from parishkit.stewardship.family_delivery import FamilyDeliveryResult, Provider
 from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
 from parishkit.stewardship.jobs import operational_collection
 from parishkit.stewardship.jobs.mail_health import observe_mail_health
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.operational_models import (
     OperationalIncident,
     OperationalNotice,
@@ -336,7 +337,16 @@ def test_scheduler_stops_mail_only_sampling_after_recovery(
     collect()
     send(FamilyDeliveryResult(Status.ACCEPTED, 1))
     collect()
+    # Move to a minute with no intake task yet, so the producer's read before
+    # the lock cannot find collect()'s own task (#715): only the locked
+    # decision can now return (), and it must allocate nothing.
+    last = operational_collection.database_now
+    monkeypatch.setattr(
+        operational_collection, "database_now", lambda: last() + timedelta(minutes=1)
+    )
+    tasks = TaskRun.objects.filter(task_type="operational_collect").count()
     assert schedule() == ()
+    assert TaskRun.objects.filter(task_type="operational_collect").count() == tasks
 
 
 def test_mail_role_cannot_forge_or_read_operational_logs(mail_run):

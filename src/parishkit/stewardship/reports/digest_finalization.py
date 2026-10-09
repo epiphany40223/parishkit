@@ -170,28 +170,41 @@ class DigestFinalizeProducer:
         self.task_type = task_type
         _, self.kind = _BINDINGS[task_type]
 
+    def _ready(self, cursor, limit):
+        """Up to ``limit`` ready preparations that have no finalizer root yet."""
+        cursor.execute(
+            f"""SELECT p.id
+            FROM stewardship_{self.kind}_digest_completion_ready ready
+            JOIN stewardship_{self.kind}_digest_preparation p
+                ON p.id=ready.preparation_id
+            JOIN stewardship_schedule_occurrence o ON o.id=p.occurrence_id
+            WHERE o.state='pending' AND NOT EXISTS(
+                SELECT 1 FROM stewardship_task_run t
+                WHERE t.task_type=%s AND t.domain_request_id=p.id)
+            ORDER BY p.id LIMIT %s""",
+            [self.task_type, limit],
+        )
+        return cursor.fetchall()
+
     def __call__(self, guard):
-        """One root per preparation; retry stays with the existing durable root."""
+        """One root per preparation; retry stays with the existing durable root.
+
+        The locked path enqueues only the preparations this query returns,
+        so when the same query finds none the work-order lock is skipped
+        (#715).
+        """
         if not isinstance(guard, SchedulerGuard) or connection.in_atomic_block:
             raise StorageInvariantError(
                 "Digest finalization requires scheduler ownership."
             )
         guard.check()
+        with connection.cursor() as cursor:
+            if not self._ready(cursor, 1):
+                return ()
         with work_transaction(), connection.cursor() as cursor:
-            cursor.execute(
-                f"""SELECT p.id
-                FROM stewardship_{self.kind}_digest_completion_ready ready
-                JOIN stewardship_{self.kind}_digest_preparation p
-                    ON p.id=ready.preparation_id
-                JOIN stewardship_schedule_occurrence o ON o.id=p.occurrence_id
-                WHERE o.state='pending' AND NOT EXISTS(
-                    SELECT 1 FROM stewardship_task_run t
-                    WHERE t.task_type=%s AND t.domain_request_id=p.id)
-                ORDER BY p.id LIMIT 25""",
-                [self.task_type],
-            )
+            ready = self._ready(cursor, 25)
             tasks = []
-            for (identifier,) in cursor.fetchall():
+            for (identifier,) in ready:
                 guard.check()
                 tasks.append(
                     enqueue(

@@ -60,6 +60,27 @@ guards that need scheduler ownership check its lock in the caller's own
 session, and the only exposure is a duplicate hint, which a consumer's
 claim ignores under the task's row lock.
 
+Each scheduler loop, every two seconds, runs about twenty producers. A
+producer first asks "is there anything to do?" with plain reads that take no
+lock, and joins the global work-order lock only when the answer is yes
+(#715). Each such read covers every condition its locked pass acts on: it
+is the locked pass's own decision (the same query, or the same shared
+predicate) or a wider one, never a narrower one, so a skipped pass would
+have written nothing. The runtime singletons it needs (the system
+configuration row, the current campaign with its configuration, the
+campaign's credential row, its work gate and catch-up state) are read at
+most once per loop, without locks, and only when a producer asks; the clock
+is read afresh by every producer, so work that falls due (a reminder, a
+boundary, a refresh slot, a digest day) starts on the loop it falls due, as
+before. These reads are hints only. A producer that finds work reads
+everything again under the lock with its usual row locks and admission
+checks, and the SQL guards, pause and withdrawal checks included, stay
+authoritative. A change another session commits after a loop's read (a
+configuration change, a pause, new work) is seen by the next loop, the same
+bound as a change committed just after a locked read. Export cleanup lists
+the attempts no cleanup task owns yet with a plain indexed query and
+evaluates the export admission functions only for those.
+
 Ordinary Production campaign occurrences are created and claimed only when
 global mode is Production and lifecycle/date/admission predicates permit them.
 Testing rehearsal work is separately and immutably classified, never satisfies

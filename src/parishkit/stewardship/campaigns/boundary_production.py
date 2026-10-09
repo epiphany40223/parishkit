@@ -14,6 +14,7 @@ from django.db import connection
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.jobs.admission import _scope
+from parishkit.stewardship.jobs.loop_settings import LoopSettings
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.storage import StorageInvariantError
@@ -21,7 +22,8 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .boundary_health import record_lag
 from .boundary_revisions import current_boundary
 from .credential_models import CampaignCredentialState
-from .models import CampaignWorkGate
+from .models import CampaignBoundaryOccurrence, CampaignWorkGate
+from .runtime import _now
 from .work_locks import work_transaction
 
 TASK_TYPE = "campaign_boundary"
@@ -63,19 +65,61 @@ def boundary_scope(campaign_id):
     return scope
 
 
-def produce_boundaries(guard):
+def _settled(settings):
+    """Whether the locked pass below would find no boundary to act on (#715).
+
+    That pass acts only on a due boundary (start or close at or before now)
+    whose latest occurrence is missing, is for another due time, was
+    replaced, or is still pending; with no current campaign, or a closed one,
+    it acts on nothing. This checks the same conditions on the loop's
+    snapshot rows and a fresh clock. A held scope (mode, restore, gate,
+    go-live) is not checked: the locked pass refuses those itself, so this
+    can only send it more work, never less.
+    """
+    campaign = settings.campaign
+    if campaign is None or campaign.state == "closed":
+        return True
+    projection, instant = campaign.active_configuration, _now()
+    for kind, due_at in (
+        ("start", projection.starts_at),
+        ("close", projection.ends_at),
+    ):
+        if due_at > instant:
+            continue
+        previous = (
+            CampaignBoundaryOccurrence.objects.filter(
+                campaign_id=campaign.pk, kind=kind
+            )
+            .order_by("-execution_revision")
+            .first()
+        )
+        if (
+            previous is None
+            or previous.due_at != due_at
+            or previous.reason == "boundary_replaced"
+            or previous.state == "pending"
+        ):
+            return False
+    return True
+
+
+def produce_boundaries(guard, *, settings=None):
     """Materialize at most two due occurrences and roots in one owned transaction.
 
     No queue publication or lifecycle transition occurs here. Creation and its
     execution key commit together, so a restart or lost hint cannot strand an
     occurrence. Repeated scans retain the original root and never implicitly
     retry terminal failure. The ordinary task scanner owns replay publication.
+    ``settings`` is the scheduler loop's LoopSettings; when _settled() finds
+    nothing to act on, the work-order lock is skipped (#715).
     """
     if not isinstance(guard, SchedulerGuard):
         raise TypeError("Boundary production requires actual scheduler ownership.")
     if connection.in_atomic_block:
         raise StorageInvariantError("Boundary production must own its transaction.")
     guard.check()
+    if _settled(LoopSettings() if settings is None else settings):
+        return ()
     with work_transaction():
         campaign_id = SystemConfiguration.objects.values_list(
             "current_campaign_id", flat=True

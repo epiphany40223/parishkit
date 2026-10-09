@@ -523,6 +523,129 @@ def independent_producer(guard, operation, *args):
     return result
 
 
+def scheduler_producer(store, *, bulk=False, web_health=None):
+    """Compile the scheduler's producers into one ``produce(guard)`` pass.
+
+    The stateful producers (cursors, last-plan fingerprints, cached clocks)
+    are built once here and kept for the process's lifetime. ``bulk`` builds
+    the Family sweep for the bulk Family send (#430). ``web_health`` is the
+    web probe producer (#392 L1), built by the caller from its replica count;
+    None runs no probe (tests of the compiled producer). Model-dependent owners
+    are imported only now: a fresh process must have configured Django and
+    admitted its SQL identity first.
+    """
+    from functools import partial
+    from uuid import uuid4
+
+    from .accounts.automation_maintenance import MaintenanceProducer
+    from .accounts.branding_cleanup import produce_cleanup
+    from .accounts.setup_mail import recover_pending as recover_setup_mail
+    from .accounts.setup_notifications import recover_pending as recover_setup_slack
+    from .accounts.setup_staging import produce_setup_expiry
+    from .campaigns.boundary_production import produce_boundaries
+    from .campaigns.digest_schedule_planning import DigestScheduleProducer
+    from .campaigns.schedule_production import FamilyScheduleProducer
+    from .jobs.loop_settings import LoopSettings
+    from .jobs.operational_collection import produce_collection
+    from .jobs.operational_fanout import produce_fanout
+    from .jobs.operational_slack_tasks import produce_slack
+    from .jobs.security_owner import SECURITY
+    from .reports.digest_finalization import (
+        DailyDigestFinalizeProducer,
+        WeeklyDigestFinalizeProducer,
+    )
+    from .reports.digest_ownership import DailyDigestProducer
+    from .reports.export_cleanup import produce_cleanup as produce_export_cleanup
+    from .reports.fact_production import produce_facts
+    from .reports.verification_production import produce_verifications
+    from .reports.weekly_ownership import WeeklyDigestProducer
+    from .runtime_background import matching_authority
+    from .source.production import SourceProducer
+    from .source.setup_cleanup import produce_setup_cleanup
+    from .source.setup_final_production import produce_finalization
+
+    producer = SourceProducer(uuid4())
+    # The bulk sweep only when the bulk Family send is on (#430); off,
+    # the producer is built exactly as before.
+    schedules = FamilyScheduleProducer(uuid4(), **({"bulk": True} if bulk else {}))
+    digests = DigestScheduleProducer(uuid4())
+    daily = DailyDigestProducer(uuid4())
+    daily_finalization = DailyDigestFinalizeProducer(uuid4())
+    weekly = WeeklyDigestProducer(uuid4())
+    weekly_finalization = WeeklyDigestFinalizeProducer(uuid4())
+    maintenance = MaintenanceProducer()
+
+    def produce(guard):
+        """Expire abandoned setup even while exact candidate recovery is pending.
+
+        Expiry uses its original SQL-bound login, never selects configuration,
+        and is needed to unblock a selected-but-unapplied setup abort. Normal
+        source production and file cleanup still require matching authority.
+        """
+        operational = independent_producer(guard, produce_collection, guard)
+        if web_health is not None:
+            # Like operational intake, the web probe runs through setup and
+            # activation holds: it reads no configuration or campaign data.
+            independent_producer(guard, web_health, guard)
+        independent_producer(guard, produce_setup_expiry, guard)
+        finalization = independent_producer(guard, produce_finalization, store, guard)
+        try:
+            matching_authority(store)
+        except ConfigError as error:
+            # Imported here: this process admits itself before Django
+            # models (and so the installer lock module) may load.
+            from .activation_hold import activating
+
+            if activating(error):
+                # A change is activating (#429): not a setup hold, and
+                # the next pass, seconds away, runs the ordinary producers.
+                return (*operational, *finalization)
+            from .accounts.setup_startup import initial_setup_hold
+
+            # A dead original session can still be expired above. While
+            # awaiting installer rollback, no ordinary producer is admitted.
+            initial_setup_hold(store)
+            return (*operational, *finalization)
+        operational += independent_producer(guard, produce_fanout, guard)
+        operational += independent_producer(guard, produce_fanout, guard, SECURITY)
+        operational += independent_producer(guard, produce_slack, guard)
+        independent_producer(guard, recover_setup_mail)
+        independent_producer(guard, recover_setup_slack)
+        from .accounts.campaign_mail_delivery import recover_pending
+        from .jobs.family_mail_test_tasks import recover_pending as recover_family_tests
+
+        independent_producer(guard, recover_pending)
+        independent_producer(guard, recover_family_tests)
+        # The runtime singletons for this loop's "anything to do?" reads,
+        # each read at most once and only if asked for (#715). A producer
+        # that finds work reads them again under the work-order lock.
+        settings = LoopSettings()
+        return (
+            *operational,
+            *finalization,
+            *independent_producer(
+                guard, partial(produce_boundaries, settings=settings), guard
+            ),
+            *independent_producer(guard, schedules, guard),
+            *independent_producer(guard, partial(digests, settings=settings), guard),
+            *independent_producer(guard, partial(daily, settings=settings), guard),
+            *independent_producer(guard, daily_finalization, guard),
+            *independent_producer(guard, partial(weekly, settings=settings), guard),
+            *independent_producer(guard, weekly_finalization, guard),
+            *independent_producer(guard, partial(producer, settings=settings), guard),
+            *independent_producer(guard, produce_cleanup, guard),
+            *independent_producer(guard, produce_export_cleanup, guard),
+            *independent_producer(
+                guard, partial(produce_facts, settings=settings), guard
+            ),
+            *independent_producer(guard, produce_verifications, guard),
+            *independent_producer(guard, produce_setup_cleanup, guard),
+            *independent_producer(guard, maintenance, guard),
+        )
+
+    return produce
+
+
 def sibling_command(queue, argv=None):
     """This process's own invocation, marked as its ``queue`` sibling.
 
@@ -749,12 +872,11 @@ def serve_background(configuration, lease, *, source=False, mail=False):
     worker's main process starts (see SourceConsumer); ``mail`` selects mail
     dispatch's second mail consumer (see MailConsumer).
     """
-    from uuid import uuid4
 
     from .consumer_runtime import publish_single_process_receipts
     from .installer_health import publish_heartbeat
     from .jobs.queues import ROLE_QUEUES, SOURCE_QUEUES
-    from .runtime_background import configure_background, matching_authority
+    from .runtime_background import configure_background
 
     role = configuration.service_role
     if source and role is not ServiceRole.WORKER:
@@ -825,32 +947,8 @@ def serve_background(configuration, lease, *, source=False, mail=False):
         status.report(connect=True)
         # Model-dependent runtime owners may be imported only after the fresh
         # process has configured Django and admitted its SQL identity.
-        from .accounts.automation_maintenance import MaintenanceProducer
-        from .accounts.branding_cleanup import produce_cleanup
-        from .accounts.setup_mail import recover_pending as recover_setup_mail
-        from .accounts.setup_notifications import recover_pending as recover_setup_slack
-        from .accounts.setup_staging import produce_setup_expiry
-        from .campaigns.boundary_production import produce_boundaries
-        from .campaigns.digest_schedule_planning import DigestScheduleProducer
-        from .campaigns.schedule_production import FamilyScheduleProducer
-        from .jobs.operational_collection import produce_collection
-        from .jobs.operational_fanout import produce_fanout
-        from .jobs.operational_slack_tasks import produce_slack
         from .jobs.processes import serve_consumer, serve_scheduler
-        from .jobs.security_owner import SECURITY
         from .jobs.web_health import WebHealthProducer, replica_hosts
-        from .reports.digest_finalization import (
-            DailyDigestFinalizeProducer,
-            WeeklyDigestFinalizeProducer,
-        )
-        from .reports.digest_ownership import DailyDigestProducer
-        from .reports.export_cleanup import produce_cleanup as produce_export_cleanup
-        from .reports.fact_production import produce_facts
-        from .reports.verification_production import produce_verifications
-        from .reports.weekly_ownership import WeeklyDigestProducer
-        from .source.production import SourceProducer
-        from .source.setup_cleanup import produce_setup_cleanup
-        from .source.setup_final_production import produce_finalization
 
         if this_sibling is not None:
             # The main process owns the container's receipts and rotation
@@ -893,86 +991,15 @@ def serve_background(configuration, lease, *, source=False, mail=False):
                 idle=idle,
                 companion=companion,
             )
-        producer = SourceProducer(uuid4())
-        # The bulk sweep only when the bulk Family send is on (#430); off,
-        # the producer is built exactly as before.
-        schedules = FamilyScheduleProducer(
-            uuid4(), **({"bulk": True} if configuration.bulk_family_send else {})
-        )
-        digests = DigestScheduleProducer(uuid4())
-        daily = DailyDigestProducer(uuid4())
-        daily_finalization = DailyDigestFinalizeProducer(uuid4())
-        weekly = WeeklyDigestProducer(uuid4())
-        weekly_finalization = WeeklyDigestFinalizeProducer(uuid4())
-        maintenance = MaintenanceProducer()
         # Probes web once a minute in its own thread (#392 L1); the loop only
         # records finished results, so it never waits on HTTP.
-        web_health = WebHealthProducer(
-            replica_hosts(configuration.runtime_budget.replicas)
+        produce = scheduler_producer(
+            assembled.store,
+            bulk=configuration.bulk_family_send,
+            web_health=WebHealthProducer(
+                replica_hosts(configuration.runtime_budget.replicas)
+            ),
         )
-
-        def produce(guard):
-            """Expire abandoned setup even while exact candidate recovery is pending.
-
-            Expiry uses its original SQL-bound login, never selects configuration,
-            and is needed to unblock a selected-but-unapplied setup abort. Normal
-            source production and file cleanup still require matching authority.
-            """
-            operational = independent_producer(guard, produce_collection, guard)
-            # Like operational intake, the web probe runs through setup and
-            # activation holds: it reads no configuration or campaign data.
-            independent_producer(guard, web_health, guard)
-            independent_producer(guard, produce_setup_expiry, guard)
-            finalization = independent_producer(
-                guard, produce_finalization, assembled.store, guard
-            )
-            try:
-                matching_authority(assembled.store)
-            except ConfigError as error:
-                # Imported here: this process admits itself before Django
-                # models (and so the installer lock module) may load.
-                from .activation_hold import activating
-
-                if activating(error):
-                    # A change is activating (#429): not a setup hold, and
-                    # the next pass, seconds away, runs the ordinary producers.
-                    return (*operational, *finalization)
-                from .accounts.setup_startup import initial_setup_hold
-
-                # A dead original session can still be expired above. While
-                # awaiting installer rollback, no ordinary producer is admitted.
-                initial_setup_hold(assembled.store)
-                return (*operational, *finalization)
-            operational += independent_producer(guard, produce_fanout, guard)
-            operational += independent_producer(guard, produce_fanout, guard, SECURITY)
-            operational += independent_producer(guard, produce_slack, guard)
-            independent_producer(guard, recover_setup_mail)
-            independent_producer(guard, recover_setup_slack)
-            from .accounts.campaign_mail_delivery import recover_pending
-            from .jobs.family_mail_test_tasks import (
-                recover_pending as recover_family_tests,
-            )
-
-            independent_producer(guard, recover_pending)
-            independent_producer(guard, recover_family_tests)
-            return (
-                *operational,
-                *finalization,
-                *independent_producer(guard, produce_boundaries, guard),
-                *independent_producer(guard, schedules, guard),
-                *independent_producer(guard, digests, guard),
-                *independent_producer(guard, daily, guard),
-                *independent_producer(guard, daily_finalization, guard),
-                *independent_producer(guard, weekly, guard),
-                *independent_producer(guard, weekly_finalization, guard),
-                *independent_producer(guard, producer, guard),
-                *independent_producer(guard, produce_cleanup, guard),
-                *independent_producer(guard, produce_export_cleanup, guard),
-                *independent_producer(guard, produce_facts, guard),
-                *independent_producer(guard, produce_verifications, guard),
-                *independent_producer(guard, produce_setup_cleanup, guard),
-                *independent_producer(guard, maintenance, guard),
-            )
 
         return serve_scheduler(
             assembled.broker,

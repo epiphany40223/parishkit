@@ -15,6 +15,7 @@ import pytest
 from django.db import IntegrityError, connection, transaction
 
 from parishkit.stewardship.audit.models import OperationalLog
+from parishkit.stewardship.campaigns import work_locks
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.scheduler import scheduler_session
@@ -192,6 +193,67 @@ def test_a_schedule_that_does_not_skip_records_nothing(tmp_path, monkeypatch):
     loop(monkeypatch, at(13, 40), windows=sending(at(8), at(14)))
     assert decided() == {}
     assert ticked() == {("nightly", at(12)), ("delta", at(13))}
+
+
+def counted_locks(monkeypatch):
+    """A list that grows by one each time a loop takes the work-order lock."""
+    taken, real = [], work_locks.lock_work_order
+
+    def counting():
+        """Count the lock, then take the real one."""
+        taken.append(True)
+        return real()
+
+    monkeypatch.setattr(work_locks, "lock_work_order", counting)
+    return taken
+
+
+@pytest.mark.parametrize(
+    ("windows", "held", "decision"),
+    [(sending(at(7, 30), at(11, 30)), False, "skipped"), ((), True, "held")],
+    ids=["window", "hold"],
+)
+def test_an_idle_loop_still_records_older_decisions(
+    tmp_path, monkeypatch, windows, held, decision
+):
+    """Every current slot has its refresh, yet an older slot must be decided.
+
+    The 13:23 loop runs 12:00 and 13:00 and leaves the older quick updates
+    undecided (no window, no hold). At 13:40 a window now covers 08:00 to
+    11:00, or a send holds them: the idle shortcut must not return early,
+    so the locked pass records the decisions (#715). Once nothing is left
+    to decide, the next loop takes no work-order lock.
+    """
+    with_schedule(tmp_path, **schedule())
+    first = loop(monkeypatch, at(13, 23))
+    assert decided() == {}
+    assert ticked() == {("nightly", at(12)), ("delta", at(13))}
+    taken = counted_locks(monkeypatch)
+    assert loop(monkeypatch, at(13, 40), windows=windows, held=held) == first
+    assert taken
+    recorded = decided(decision)
+    if decision == "skipped":
+        assert set(recorded) == {("delta", at(hour)) for hour in (8, 9, 10, 11)}
+    else:
+        assert {("delta", at(hour)) for hour in range(1, 12)} <= set(recorded)
+    taken.clear()
+    assert loop(monkeypatch, at(13, 45), windows=windows, held=held) == first
+    assert taken == []
+    assert decided(decision) == recorded
+
+
+def test_an_idle_loop_with_nothing_to_decide_takes_no_lock(tmp_path, monkeypatch):
+    """Undecided older slots outside every window, with no hold, write nothing.
+
+    The locked pass would only return the current receipts, so the idle
+    shortcut returns them without the work-order lock (#715).
+    """
+    with_schedule(tmp_path, **schedule())
+    first = loop(monkeypatch, at(13, 23), windows=sending(at(2, 30), at(3, 30)))
+    taken = counted_locks(monkeypatch)
+    assert loop(monkeypatch, at(13, 40), windows=sending(at(2, 30), at(3, 30))) == first
+    assert taken == []
+    assert decided() == {("delta", at(3)): "skipped"}
 
 
 def test_the_scheduler_login_records_and_reads_decisions(tmp_path, monkeypatch):
