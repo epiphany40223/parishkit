@@ -134,6 +134,46 @@ def test_background_task_polls_its_passive_fragment_not_the_page():
     assert 'data-live-url="/admin/system/background/x/status/"' in region(html, "task")
 
 
+FOLLOW = re.compile(r"<a hidden data-live-follow data-in-place data-in-place-quiet ")
+
+
+@pytest.mark.parametrize(
+    ("state", "ended"),
+    [
+        ("queued", False),
+        ("running", False),
+        ("retry_wait", False),
+        ("abandoned", False),
+        ("succeeded", True),
+        ("failed", True),
+        ("cancelled", True),
+    ],
+)
+def test_ended_task_brings_the_rest_of_its_page_up_to_date(state, ended):
+    """An ended task's status asks for the page's other regions in place (#869).
+
+    The polled fragment only holds the status line and bar; the Task history
+    table and Retry panels are in-place regions the follow-up refreshes, so
+    the table shows the final steps once the bar says the task ended.
+    """
+    fragment = render_to_string(
+        "stewardship/background-task-status.html", {"task": task(state)}
+    )
+    assert bool(FOLLOW.search(fragment)) is ended
+    page = render_to_string("stewardship/background-task.html", {"task": task(state)})
+    # Retry panels sit in a region that is always drawn, so the fetched page
+    # always has one to swap in.
+    assert '<div id="task-actions" data-in-place-region>' in page
+
+
+def test_script_follows_an_in_place_link_without_navigating():
+    """An in-place follow-up naming only a fragment re-reads this page (#869)."""
+    source = SCRIPT.read_text()
+    assert 'follow.getAttribute("href").startsWith("#")' in source
+    assert "const here = new URL(window.location.href);" in source
+    assert "link.click();" in source
+
+
 @pytest.mark.parametrize(
     ("item", "unsettled"),
     [
