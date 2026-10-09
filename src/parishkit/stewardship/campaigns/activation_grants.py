@@ -21,6 +21,15 @@ def add_token_preparation_grants(tables, columns, *, worker):
         "SELECT", set()
     ).update({"id", "generation_id", "destroyed_at"})
     if not worker:
+        # The scheduler's go-live producer records and discards preparation
+        # for the Administrator who started go-live (#462). Its intake
+        # trigger admits it only for that Administrator while the request is
+        # cleanup_complete (frozen migration 0025).
+        for table in (
+            "stewardship_production_tokens",
+            "stewardship_production_token_cancel",
+        ):
+            tables[table].add("INSERT")
         return
     tables["stewardship_family_token_generation"].add("INSERT")
     columns.setdefault("stewardship_family_token_generation", {}).setdefault(
