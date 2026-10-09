@@ -1681,8 +1681,9 @@ failure for one Family records an error and does not block others.
 
 Mail dispatch respects the sending mailbox's daily limits. It sends nothing
 more once the recipients of the last 24 hours' accepted or uncertain
-submissions reach the deployment limit, stopping bulk invitations and
-reminders earlier so receipts, digests and alerts keep a reserve; capped mail
+submissions reach a fixed 1,800 (a little under Google Workspace's 2,000
+unique external recipients), stopping invitations, reminders and Family test
+mail 200 earlier so receipts, digests and alerts keep a reserve; capped mail
 waits as a hold, not a failed attempt. A provider refusal at Gmail's own
 daily or rate limit defers the message without spending its attempt budget,
 suppressing an address, or counting as a provider outage; a rate limit in
@@ -1721,8 +1722,9 @@ destroy the primary ciphertext; primary token rotation/closure follows the
 
 Each semantic delivery has a stable application idempotency key. The dispatch
 adapter supplies it as the provider idempotency key when the provider offers a
-contractual idempotent-send facility, and every safe retry reuses it. Provider
-acceptance marks success. A failure known to have occurred before acceptance is
+contractual idempotent-send facility, and every safe retry reuses it. Gmail
+SMTP offers none: the key appears only in the `Message-ID` header, for
+correlation. Provider acceptance marks success. A failure known to have occurred before acceptance is
 transient and retries with shared backoff.
 
 A timeout, connection loss, or malformed response after submission begins is
@@ -1731,13 +1733,17 @@ worker first queries provider status by the stable key or returned message ID
 when that capability exists. Confirmed acceptance succeeds; confirmed
 non-acceptance follows normal retry/failure handling. An unresolved result may
 be retried automatically only when the provider contract guarantees that reuse
-of the same key cannot create a second delivery. Otherwise the outbox row and
+of the same key cannot create a second delivery. Gmail SMTP has neither
+capability, so today every such result takes the next path: the outbox row and
 occurrence enter `delivery_unknown`, automatic retry stops, a deduplicated
 WARNING is recorded, and Admins are notified in the portal.
 
-The Admin delivery-resolution screen may re-run provider reconciliation, mark
-the occurrence delivered when external evidence supports that result, or
+The Admin delivery-resolution screen may save an evidence note, mark the
+occurrence delivered when external evidence supports that result, or
 explicitly authorize a resend after acknowledging that a duplicate is possible.
+It offers no provider re-query, since Gmail SMTP has none. The same screen
+retries a permanent failure, or an attempt the provider definitely did not
+accept, without that acknowledgement.
 The latter creates a numbered attempt under the same semantic occurrence; it
 does not silently turn the unknown attempt into a failure. When the provider's
 own record shows the attempt was not sent, the Admin may instead record that
@@ -1757,8 +1763,13 @@ normalized address until its source value changes or an Admin clears the
 refusal after verification, and continues. A Family whose every otherwise
 eligible address is suppressed is included in the
 [active parishioner family directory's mailing columns](../reports/spec.md#mailing-columns).
-A systemic provider/authentication failure stops further sending for that run
-and becomes CRITICAL to avoid a flood of identical failures.
+A systemic provider, configuration or credential failure stops new sending in
+every mail consumer of the `mail-dispatch` container until it restarts, and
+three consecutive shared outages pause a consumer (ten minutes for Family
+mail, five for Administrator alert and security mail) and then
+admit one probe; both raise the CRITICAL `mail_provider_failed` incident
+rather than a flood of identical failures (see the
+[Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)).
 
 ### Bulk send work outside the lock
 
@@ -1979,11 +1990,11 @@ revisited only if a measured send on this path still takes more than about
 
 ## Submission confirmation
 
-When at least one deliverable eligible-head address exists, the live submission
-transaction creates one receipt outbox row addressed to those heads. If none
-exists, it creates no outbox row and records the non-error audit action
-`submission_receipt_skipped` with reason `no_deliverable_recipient`; the
-submission still commits.
+When at least one deliverable eligible-head address exists, the final
+submission transaction (live, or Testing) creates one receipt outbox row
+addressed to those heads. If none exists, it creates no outbox row and records
+the non-error audit action `submission_receipt_skipped` with reason
+`no_deliverable_recipient`; the submission still commits.
 
 A receipt contains no sensitive answers or credentials. Its stored UTC
 submission instant is rendered in the immutable campaign timezone with timezone
