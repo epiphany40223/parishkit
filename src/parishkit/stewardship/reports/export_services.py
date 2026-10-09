@@ -75,6 +75,10 @@ def authorize(store, user_id, *, request=None):
         # Codes need the directory page's own capability too, so a requester
         # who loses it can no longer download or regenerate an earlier export.
         permitted = permitted and allows(principal, Capability.FAMILY_CODES)
+    elif isinstance(request, ExportRequest) and request.report == "family_test_names":
+        # Real Family names from a chosen-Family test review (#817) need that
+        # page's own capability, which only an Administrator holds.
+        permitted = permitted and allows(principal, Capability.CONFIGURE)
     if not permitted or (
         request is not None
         and principal.identity != request.requester_id
@@ -251,12 +255,16 @@ def regenerate_export(store, user_id, request_id, *, request_key):
     with export_transaction(campaign_id):
         original = (
             ExportRequest.objects.select_related(
-                "directory_snapshot", "ministry_snapshot", "financial_snapshot"
+                "directory_snapshot",
+                "ministry_snapshot",
+                "financial_snapshot",
+                "family_test_names_snapshot",
             )
             .defer(
                 "directory_snapshot__document",
                 "ministry_snapshot__document",
                 "financial_snapshot__document",
+                "family_test_names_snapshot__document",
             )
             .get(pk=request_id)
         )
@@ -315,6 +323,19 @@ def regenerate_export(store, user_id, request_id, *, request_key):
                 browser_timezone=original.browser_timezone,
                 request_key=request_key,
                 snapshot=original.financial_snapshot,
+            )
+        if original.report == "family_test_names":
+            from .family_test_names import create_family_test_names_export
+
+            return create_family_test_names_export(
+                store,
+                user_id,
+                campaign_id=original.campaign_id,
+                revision_id=UUID(original.parameters["revision"]),
+                families=None,
+                browser_timezone=original.browser_timezone,
+                request_key=request_key,
+                snapshot=original.family_test_names_snapshot,
             )
         return create_export(
             store,

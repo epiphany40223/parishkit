@@ -139,6 +139,42 @@ class FinancialExportSnapshot(ImmutableRecord):
         ]
 
 
+class FamilyTestNamesSnapshot(ImmutableRecord):
+    """The names behind one chosen-Family test review, for its export only (#817).
+
+    The Send to chosen Families page shows each DUID with its Family's name;
+    ``pk-admin test families-preview --names`` keeps those names off the
+    terminal by capturing them here, in the review's own transaction, for an
+    export file. ``parameters`` holds the email revision and the DUIDs in the
+    review's order; ``document`` holds one ``{"duid", "name"}`` row per DUID
+    in that order. SQL checks that shape and who may capture it.
+    """
+
+    campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign", on_delete=models.PROTECT, db_index=False
+    )
+    configuration = models.ForeignKey(
+        "stewardship_accounts.AppliedConfigurationVersion",
+        on_delete=models.PROTECT,
+        db_index=False,
+    )
+    actor_id = models.UUIDField(editable=False)
+    correlation_id = models.UUIDField(editable=False)
+    parameters = models.JSONField()
+    document = models.JSONField()
+    row_count = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = "stewardship_family_test_names_export_snapshot"
+        indexes = [
+            models.Index(
+                fields=("correlation_id",), name="family_test_names_correlation"
+            ),
+            models.Index(fields=("campaign",), name="family_test_names_campaign"),
+            models.Index(fields=("configuration",), name="family_test_names_config"),
+        ]
+
+
 class ExportRequest(ImmutableRecord):
     """One canonical report request and its exact retained calculation generation."""
 
@@ -163,6 +199,9 @@ class ExportRequest(ImmutableRecord):
     financial_snapshot = models.ForeignKey(
         FinancialExportSnapshot, on_delete=models.PROTECT, null=True, db_index=False
     )
+    family_test_names_snapshot = models.ForeignKey(
+        FamilyTestNamesSnapshot, on_delete=models.PROTECT, null=True, db_index=False
+    )
     configuration = models.ForeignKey(
         "stewardship_accounts.AppliedConfigurationVersion", on_delete=models.PROTECT
     )
@@ -186,6 +225,7 @@ class ExportRequest(ImmutableRecord):
                     ministry_snapshot__isnull=True,
                     directory_snapshot__isnull=True,
                     financial_snapshot__isnull=True,
+                    family_test_names_snapshot__isnull=True,
                 )
                 | models.Q(
                     report="additional_information",
@@ -194,6 +234,7 @@ class ExportRequest(ImmutableRecord):
                     ministry_snapshot__isnull=True,
                     directory_snapshot__isnull=True,
                     financial_snapshot__isnull=True,
+                    family_test_names_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -203,6 +244,7 @@ class ExportRequest(ImmutableRecord):
                     ministry_snapshot__isnull=True,
                     directory_snapshot__isnull=False,
                     financial_snapshot__isnull=True,
+                    family_test_names_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -212,6 +254,7 @@ class ExportRequest(ImmutableRecord):
                     directory_snapshot__isnull=True,
                     ministry_snapshot__isnull=False,
                     financial_snapshot__isnull=True,
+                    family_test_names_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -221,7 +264,20 @@ class ExportRequest(ImmutableRecord):
                     directory_snapshot__isnull=True,
                     ministry_snapshot__isnull=True,
                     financial_snapshot__isnull=False,
+                    family_test_names_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
+                )
+                # The names behind a chosen-Family test review (#817): a CSV
+                # file only, from its own capture.
+                | models.Q(
+                    report="family_test_names",
+                    fact_set__isnull=True,
+                    information_snapshot__isnull=True,
+                    directory_snapshot__isnull=True,
+                    ministry_snapshot__isnull=True,
+                    financial_snapshot__isnull=True,
+                    family_test_names_snapshot__isnull=False,
+                    format="csv",
                 ),
                 name="export_report_known",
             ),
@@ -245,6 +301,10 @@ class ExportRequest(ImmutableRecord):
             ),
             models.Index(
                 fields=("financial_snapshot",), name="export_financial_snapshot"
+            ),
+            models.Index(
+                fields=("family_test_names_snapshot",),
+                name="export_family_test_names",
             ),
         ]
 

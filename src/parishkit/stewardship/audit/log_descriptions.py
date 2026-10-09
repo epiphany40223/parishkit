@@ -181,6 +181,11 @@ DESCRIPTIONS = {
         "An automation session requested a postal mail-merge export, as the "
         "Family directory's export form does with mailing columns."
     ),
+    "admin_cmd_export_family_test_names": _(
+        "An automation session requested an export of the names behind a "
+        "chosen-Family test review, which the Send to chosen Families page "
+        "shows."
+    ),
     "admin_cmd_digest_weekly_request": _(
         "An automation session requested a manual weekly report, as the "
         "Send a weekly report now page does."

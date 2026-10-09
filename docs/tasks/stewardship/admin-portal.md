@@ -440,7 +440,12 @@ entry and the page's acknowledgement), `tests/stewardship/test_pk_admin.py`,
 (refused prompts change nothing, one ticket per Family with one fresh-gate
 event and notice, a repeat from either channel, the page's review sent from
 the command line, an ineligible Family, scopes and ended sessions). The
-preview's `--names` export follows PR 8b (#817).
+preview's `--names` export (#817, migration 0037) is proven by
+`tests/stewardship/test_family_test_names.py` (the CSV and its access),
+`tests/stewardship/test_admin_tests.py` (the document carries only the
+export's status) and the same database suite (names only in the fetched
+file, one trail, a repeat, a bound key, regeneration and the SQL capture
+guards).
 ADM-11.10 lands in three pull requests. 9a adds `task retry`
 (`parishkit.stewardship.admin_operations`), with the retry pages' bodies,
 the delivery views' admission and their command scope moved into

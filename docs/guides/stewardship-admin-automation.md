@@ -554,10 +554,25 @@ pk-admin test status
 | `available`, `in_progress` | `test families-preview`: how many more tests may start, and how many are in progress (at most ten) |
 | `held`, `credentials_ready` | `test families-preview`: campaign work or a restore review holds sending; the Testing codes exist |
 | `preview` | `test families-preview`: `token`, which `test families` takes |
+| `export` | `test families-preview --names`: the names export's `export status` document (null without `--names`) |
 | `created`, `request_key`, `tickets` | `test families`: false when this token was sent before; the key; each ticket's `id`, `sequence` (the order of your DUIDs), `state` and `task_id` |
 | `tickets` | `test status`: recent tickets' `id`, `created_at`, `request_key`, `sequence`, `state` and `message_state`, without DUIDs |
 
-The preview never shows Family names; check them on the page. `test
+The preview never shows Family names. To check them, add `--names` with
+`--timezone`: the preview also requests a CSV export of each DUID with the
+name the page shows, and `export fetch` downloads it. Delete the file once
+used.
+
+```sh
+pk-admin test families-preview REVISION_ID --family 1234 --family 5678 \
+    --names --timezone America/New_York > preview.json
+export_id="$(jq -r .result.export.id preview.json)"
+pk-admin export status "$export_id" --watch 5
+pk-admin export fetch "$export_id"
+```
+
+Repeating it with the same `--request-key` returns the same export; System
+logs show `export_requested` and `admin_cmd_export_family_test_names`. `test
 families` always shows the page's words, "I understand that these real
 Families' names and codes will be sent to the Testing recipient.", and
 waits for `yes` (or takes `--yes`). The session stands in for the page's
@@ -1152,6 +1167,8 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   `export information`, `export ministry` and `export ministry-packet`.
 - `pk-admin/1` (ADM-11 PR 8f): additive. `export directory` and
   `export postal`.
+- `pk-admin/1` (#817): additive. `test families-preview --names` with
+  `--timezone`, and its `export` field (null without `--names`).
 - `pk-admin/1` (ADM-11 PR 9c): additive. `delivery resend` and
   `delivery refusal-clear`, which prompt. `delivery show`'s `actions` may
   now include `resend` (it listed only `delivery resolve` actions); an
