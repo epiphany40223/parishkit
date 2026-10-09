@@ -60,7 +60,9 @@
 # an export that is not ready; 3 when a fetched file does not match its
 # size and digest (it is deleted; fetch again); 127 when docker, or
 # pk-stewardship inside the web container, is not found (126 when it cannot
-# run), as the shell and docker report; 130 when interrupted.
+# run), as the shell and docker report; 130, 143 or 129 when interrupted by
+# INT (Ctrl-C), TERM or HUP. An interrupted `--watch` is stopped inside the
+# web container too; any other command there runs to its end.
 #
 # Standard input is forwarded to the command after the preamble only when
 # the command line has a `-` input; a command that prompts gets exactly one
@@ -118,6 +120,17 @@ valid_name() {
         '' | *[!"$LOWER$DIGITS"-]*) return 1 ;;
     esac
     [ "${#1}" -le 32 ]
+}
+
+# Stop a process and its descendants, deepest first; without pgrep, only the
+# process itself. Called only from the traps, so shellcheck sees it as unused
+# (SC2329) or, before 0.10, unreachable (SC2317).
+# shellcheck disable=SC2317,SC2329
+stop_tree() {
+    for child in $(pgrep -P "$1" 2>/dev/null); do
+        stop_tree "$child"
+    done
+    kill "$1" 2>/dev/null || true
 }
 
 session_dir=""
@@ -282,15 +295,6 @@ if [ "$1" = export ] && [ "${2:-}" = fetch ]; then
     # pgrep exists, every process under it) is stopped first.
     fetching=no
     download=""
-    # Stop a process and its descendants, deepest first (from the traps,
-    # through stop_fetch, so older shellcheck calls it unreachable).
-    # shellcheck disable=SC2317,SC2329
-    stop_tree() {
-        for child in $(pgrep -P "$1" 2>/dev/null); do
-            stop_tree "$child"
-        done
-        kill "$1" 2>/dev/null || true
-    }
     # Called only from the traps below, so shellcheck sees it as unused
     # (SC2329) or, before 0.10, unreachable (SC2317).
     # shellcheck disable=SC2317,SC2329
@@ -402,11 +406,127 @@ valid_name "$session" || refuse "a name is 1 to 32 of a-z, 0-9 and -"
 file="$session_dir/$session.session"
 
 # Set while this run's new session file is not yet a started pairing, so an
-# interruption or a failed start removes it. The handler is written inline
-# in the trap rather than as a function, which shellcheck would report as
-# unreachable.
+# interruption or a failed start removes it.
 created=no
-trap 'if [ "$created" = yes ]; then rm -f "$file"; fi; exit 130' INT TERM
+# Set just before the run starts; its last process; for a watch, the token
+# that finds the watch's process in the web container (see `interrupted`);
+# the stop command's process; and the input writer (see below).
+started=no
+running=""
+writer=""
+token=""
+stopper=""
+
+# Run inside the web container with the token as $1: SIGINT to every process
+# whose environment holds PK_ADMIN_RUN=TOKEN, which is this run's watch
+# alone (the container has no pgrep). Exit 3 when none was found (docker
+# itself fails with 1 or 125 to 127). Expanded only in the container.
+# shellcheck disable=SC2016
+STOP_WATCH='found=3
+for process in /proc/[0-9]*; do
+    if tr "\000" "\n" <"$process/environ" 2>/dev/null | grep -qxF "PK_ADMIN_RUN=$1"; then
+        kill -INT "${process#/proc/}" 2>/dev/null && found=0
+    fi
+done
+exit "$found"'
+
+# Whether file $1 has content within $2 tenths of a second. Called only from
+# the traps, so shellcheck sees it as unused or unreachable.
+# shellcheck disable=SC2317,SC2329
+await() {
+    ticks=0
+    while [ ! -s "$1" ]; do
+        [ "$ticks" -lt "$2" ] || return 1
+        sleep 0.1
+        ticks=$((ticks + 1))
+    done
+}
+
+# Ctrl-C, TERM, or a closed terminal or SSH session (HUP): exit 130, 143 or
+# 129 at once. `docker exec` forwards no signal, so for a watch the stop
+# command is started first, before anything that could fail (a write to a
+# terminal that has hung up fails, and `set -e` would end the handler): it
+# sends the watch SIGINT inside the web container, which ends it its own
+# way (exit 7, watch_interrupted, its session closed and its events
+# logged). Its outcome is reported, waiting at most 10 seconds for it; then,
+# after Ctrl-C (INT) only, at most 5 seconds for the watch's last document,
+# so it is shown: after HUP there is no terminal to show it on, and TERM to
+# the whole process group has already ended the processes relaying it.
+# Other commands run on in the container, as an interrupted write would
+# leave an unknown outcome. Then every process this run started (the docker
+# client included) is stopped, and the input writer by name, since without
+# pgrep the process tree cannot be walked: a writer left waiting at the
+# terminal would swallow the operator's next line. Every message here
+# tolerates a failed write. Further signals meanwhile are caught and
+# ignored; a caught signal, unlike an ignored one, is reset to its default
+# in the children started here. A signal in the instant after the run
+# starts but before the watch exists in the container finds nothing, and
+# says so. Called only from the traps below.
+# shellcheck disable=SC2317,SC2329
+interrupted() {
+    trap : HUP INT TERM
+    # A closed standard error pipe (`2>&1 | jq`) must fail a write, not end
+    # the wrapper before its cleanup.
+    trap '' PIPE
+    if [ "$started" = yes ] && [ -n "$token" ]; then
+        {
+            # Its own session too, where the watch's is: a second Ctrl-C
+            # would otherwise end this docker client (Go restores SIGINT).
+            # shellcheck disable=SC2086
+            $launch docker compose -f "$compose" -p "$project" exec -T web \
+                sh -c "$STOP_WATCH" sh "$token" </dev/null >"$work/stop" 2>&1 \
+                && stop=0 || stop=$?
+            printf '%s\n' "$stop" >"$work/stop-status"
+        } &
+        stopper=$!
+    fi
+    if [ "$created" = yes ]; then
+        rm -f "$file" || :
+    fi
+    if [ -n "$stopper" ]; then
+        printf 'pk-admin: interrupted; stopping the watch in the web container\n' >&2 || :
+        stop=none
+        if await "$work/stop-status" 100; then
+            stop=$(cat "$work/stop-status")
+        fi
+        case $stop in
+            0) ;;
+            3)
+                printf 'pk-admin: no running watch was found in the web container (it had ended, or had not yet started)\n' >&2 || :
+                ;;
+            none)
+                printf 'pk-admin: the stop command did not finish within 10 seconds; the watch ends at its timeout, or revoke the session in Automation access\n' >&2 || :
+                ;;
+            *)
+                printf 'pk-admin: the watch could not be stopped (exit %s); it ends at its timeout, or revoke the session in Automation access:\n' "$stop" >&2 || :
+                sed 's/^/pk-admin:   /' "$work/stop" >&2 || :
+                ;;
+        esac
+        if [ "$stop" = 0 ] && [ "$1" -eq 130 ]; then
+            # The status file appears once the docker client has ended (a
+            # finished background process can linger unreaped, so it is
+            # not polled); tee then ends once it has shown what was left.
+            if await "$work/status" 50; then
+                wait "$running" || :
+            else
+                printf "pk-admin: the watch's last document did not arrive within 5 seconds\n" >&2 || :
+            fi
+        fi
+    fi
+    for child in $(pgrep -P "$$" 2>/dev/null); do
+        stop_tree "$child"
+    done
+    if [ -n "$running" ]; then
+        kill "$running" 2>/dev/null || :
+    fi
+    if [ -n "$writer" ]; then
+        kill "$writer" 2>/dev/null || :
+    fi
+    exit "$1"
+}
+trap 'interrupted 129' HUP
+trap 'interrupted 130' INT
+trap 'interrupted 143' TERM
 
 if [ "$1" = login ] && [ "${2:-}" = start ]; then
     # Exclusive create with umask 077: never overwrite an existing session.
@@ -459,8 +579,10 @@ if [ "$documents" = errors ]; then
     # Its standard error, which carries its document last, is shown as it
     # comes and kept in the work directory for `reports`, so an interrupted
     # run has already shown what arrived. The pipeline's status is tee's,
-    # so the command's own is passed through a file.
+    # so the command's own is passed through a file. The run below calls it
+    # after an optional `setsid` word, which shellcheck cannot follow.
     exec 6>&1
+    # shellcheck disable=SC2317,SC2329
     docker() {
         {
             command docker "$@" 2>&1 >&6 6>&-
@@ -499,14 +621,55 @@ fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/pk-admin.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
+# A watch (`--watch SECONDS` or `--watch=SECONDS`, the number optionally
+# signed with `+`, before any `--`) gets a
+# random token in its environment, so an interruption can find and stop it
+# inside the web container (see `interrupted`). It is hex, so the unquoted
+# option below splits into exactly `-e PK_ADMIN_RUN=TOKEN`.
+previous=""
+for argument in "$@"; do
+    [ "$argument" != -- ] || break
+    case $previous/$argument in
+        --watch/[0-9]* | --watch/+[0-9]* | */--watch=[0-9]* | */--watch=+[0-9]*)
+            token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+            [ "${#token}" -eq 32 ] || refuse "no random token could be made"
+            ;;
+    esac
+    previous=$argument
+done
+# The watch's docker client, and the stop command (see `interrupted`), run in
+# their own sessions where `setsid -w` works (util-linux, on a Linux host;
+# busybox's setsid has no -w). `docker compose` exits at once on SIGINT, so
+# if Ctrl-C reached the watch's client, its last document would be lost, and
+# a second Ctrl-C would end the stop command. The forwarded stop ends the
+# watch, and with it the client. Without `setsid -w` both run as usual
+# (`command docker`). A streaming command's `docker` is the function above,
+# which setsid cannot run; none of them watches. Isolation also needs pgrep:
+# an isolated client no longer gets the terminal's SIGINT, so if the stop
+# fails only the process-tree walk can end it.
+isolate=""
+launch="command"
+if [ -n "$token" ] && [ "$documents" = output ] \
+    && command -v pgrep >/dev/null 2>&1 \
+    && setsid -w true </dev/null >/dev/null 2>&1; then
+    isolate=yes
+    launch="setsid -w"
+fi
+
 # The command's input is written by a separate writer through a FIFO, so
 # the wrapper can stop it once the command exits: a writer still waiting at
 # the terminal for an answer the command no longer needs must not keep the
 # wrapper waiting until someone presses Enter. Standard input is passed to
 # the writer explicitly (descriptor 4), since an asynchronous list would
-# otherwise read /dev/null.
+# otherwise read /dev/null; when standard input is closed it is /dev/null
+# (a failed `exec` redirection would end the shell, so it is tried in a
+# subshell first).
 mkfifo "$work/input"
-exec 4<&0
+if (exec 3<&0) 2>/dev/null; then
+    exec 4<&0
+else
+    exec 4</dev/null
+fi
 {
     printf '%s %s %s\n' "$TAG" "$secret" "$host_digest"
     if [ "$forward" = yes ]; then
@@ -524,12 +687,19 @@ exec 4<&-
 
 # Stream the command's output as it comes, keeping a copy to decide whether
 # the session file must go; the command's own exit status is kept aside.
+# The run is a background job so a signal's trap runs at once rather than
+# when the run ends; its input is the writer's FIFO.
+started=yes
 {
-    docker compose -f "$compose" -p "$project" exec -T web \
+    ${isolate:+setsid -w} docker compose -f "$compose" -p "$project" \
+        exec -T ${token:+-e PK_ADMIN_RUN=$token} web \
         pk-stewardship admin "$@" --config "$web_config" --session-stdin \
         <"$work/input" && status=0 || status=$?
     printf '%s\n' "$status" >"$work/status"
-} | tee "$work/output"
+} | tee "$work/output" &
+running=$!
+wait "$running" || true
+running=""
 status=$(cat "$work/status")
 kill "$writer" 2>/dev/null || true
 wait "$writer" 2>/dev/null || true

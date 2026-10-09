@@ -331,12 +331,19 @@ absent or its task has stopped (a failed task waits for the page's retry,
 and `retry_available` says so). It stops with exit 7 and the last state
 after `--timeout` seconds (default and maximum three hours;
 `watch_timeout`), and with exit 5 if the session ends.
-Ctrl-C stops `pk-admin` at once, but `docker exec` does not pass the signal
-on, so the watch inside the web container keeps polling until its timeout,
-until the read finishes, or until you revoke the session in Automation
-access ([#598](https://github.com/epiphany40223/parishkit/issues/598)); it
-changes nothing meanwhile. Run in the container directly, it stops with
-exit 7 (`watch_interrupted`) and the last state. `--timeout` without
+Ctrl-C (or TERM, or a closed terminal or SSH session) stops the watch inside
+the web container too: `pk-admin` sends it SIGINT there, waits up to 10
+seconds for that stop and reports it if it fails or finds no watch, shows
+the watch's last document (`watch_interrupted`, the last state) if it
+arrives within 5 seconds (after Ctrl-C only), and exits 130 (143 for
+TERM, 129 for HUP). A second Ctrl-C meanwhile changes nothing. On a host
+without util-linux `setsid -w`, Ctrl-C also ends the docker client at once,
+so the watch still stops but its last document is not shown, and a second
+Ctrl-C can cut the stop off. If the stop fails, the watch runs until its timeout
+or until you revoke the session in Automation access; it changes nothing
+meanwhile. Run in the container directly, Ctrl-C stops it with exit 7.
+Ctrl-C on any other command ends only `pk-admin`; the command in the
+container runs to its end. `--timeout` without
 `--watch` is refused. For commands that record a view event, only the first
 poll is recorded in System logs. An unknown task or campaign is exit 1
 (`not_available`). A restore under review, or a configuration change being
