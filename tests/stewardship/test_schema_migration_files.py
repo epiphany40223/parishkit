@@ -87,6 +87,9 @@ FROZEN = {
     "0019_web_health.sql": (
         "9a7d1a330ccf8b19f0d57a1abcb3ada39d997cf392d6ea83931211c3cbdd7c1e"
     ),
+    "0020_directory_reach.sql": (
+        "cb505df5c8d4cd58da53244b805d8d01d0d9394883915ac9aea784189ca44f45"
+    ),
 }
 
 

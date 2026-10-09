@@ -276,6 +276,7 @@ FIELDS = {
         "directory_phone",
         "directory_response",
         "directory_sort",
+        "directory_reach",
         "search_used",
         "exact_code_used",
         "ministry_duid",
@@ -583,6 +584,8 @@ def sanitize(kind, values):
                 "directory_phone": {"any", "yes", "no"},
                 "directory_response": {"any", "yes", "no"},
                 "directory_sort": {"name", "name_desc", "duid"},
+                # reports.directories.REACH plus "any" (#388 L1).
+                "directory_reach": {"any", "email", "mail", "neither"},
             }
             valid = type(value) is str and value in choices[key]
             safe[key] = value

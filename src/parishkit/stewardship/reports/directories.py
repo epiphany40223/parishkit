@@ -120,6 +120,8 @@ class DirectoryQuery:
             "directory_phone": self.phone,
             "directory_response": self.response,
             "directory_sort": self.sort,
+            # How mail can reach the listed Families (#388 L1).
+            "directory_reach": self.reach,
             "page": self.page,
             "search_used": bool(self.search),
             "exact_code_used": bool(self.exact_code),

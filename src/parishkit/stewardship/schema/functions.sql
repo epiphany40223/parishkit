@@ -5606,7 +5606,7 @@ BEGIN
         WHEN 'provider' THEN ARRAY['status','provider_fingerprint','outcome']
         WHEN 'exception' THEN ARRAY['outcome','retryable']
         WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count',
-            'matching_count','page','directory_reason','directory_phone','directory_response','directory_sort','search_used','exact_code_used','ministry_duid','ministry_duids','ministry_operational',
+            'matching_count','page','directory_reason','directory_phone','directory_response','directory_sort','directory_reach','search_used','exact_code_used','ministry_duid','ministry_duids','ministry_operational',
             'previous_ministry_duids','added_ministry_duids','removed_ministry_duids',
             'decision','review_reason','file_slug','previous_file_slug','file_kind','file_size','file_fingerprint',
             'report_mode','report_filter','talent_option_id','snapshot_id']
@@ -5727,6 +5727,9 @@ BEGIN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','yes','no') THEN RETURN false; END IF;
         ELSIF key='directory_sort' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('name','name_desc','duid') THEN RETURN false; END IF;
+        -- How campaign mail can reach the listed Families (#388 L1).
+        ELSIF key='directory_reach' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','email','mail','neither') THEN RETURN false; END IF;
         ELSE
             IF jsonb_typeof(value)<>'number' OR text_value!~'^[0-9]{1,19}$' THEN RETURN false; END IF;
             IF text_value::numeric>9223372036854775807 THEN RETURN false; END IF;

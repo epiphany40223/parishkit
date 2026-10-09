@@ -159,6 +159,13 @@ def test_native_directory_code_filters_contacts_and_response(
     assert "Example" not in json.dumps(contexts)
     assert any(context["exact_code_used"] for context in contexts)
     assert {context["directory_sort"] for context in contexts} == {"name", "duid"}
+    # The reach filter is audited too (#388 L1); with mailing columns the
+    # page is the postal outreach view, audited under its own event.
+    assert {context["directory_reach"] for context in contexts} == {"any"}
+    postal = AuditContext.objects.filter(
+        event__event_type="postal_outreach_viewed"
+    ).values_list("context", flat=True)
+    assert {context["directory_reach"] for context in postal} == {"mail"}
     assert any(
         context["matching_count"] == context["count"] == 1 for context in contexts
     )
@@ -168,6 +175,7 @@ def test_native_directory_code_filters_contacts_and_response(
             "directory_phone",
             "directory_response",
             "directory_sort",
+            "directory_reach",
             "search_used",
             "exact_code_used",
         ):
