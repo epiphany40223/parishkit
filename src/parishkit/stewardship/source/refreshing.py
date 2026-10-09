@@ -193,6 +193,14 @@ def _inputs(attempt_id, execution, claim):
     Record counts are compared with each count's largest value over the
     recent full refreshes (``_trend``), and derived counts with those
     refreshes and the current snapshot (#320, #387).
+
+    Only the scope and pointer checks run in the work-order effect. Reading
+    the base corpus (a quick update's whole current snapshot, about 200 ms
+    at 1,100 Families) runs after it, outside the global lock (#147): that
+    snapshot is promoted, so its rows are immutable, and
+    ``reconstruct_snapshot`` keeps it from compaction while it reads, or
+    refuses. Nothing here can go stale unseen, because promotion and an
+    unchanged update require this snapshot's base to still be the current one.
     """
     with execution.effect():
         attempt = verify_refresh_attempt(attempt_id, execution, claim)
@@ -201,10 +209,10 @@ def _inputs(attempt_id, execution, claim):
         current = SourceCurrent.objects.get(singleton=True)
         if snapshot.state != "staging" or snapshot.base_id != current.snapshot_id:
             raise InvalidSourcePayload("Refresh requires its unchanged current base.")
-        base = None
         cursor = None
         counts = None
-        derived = None
+        counted = None
+        recorded_trend = None
         base_workgroup = None
         if current.snapshot_id is not None:
             full = (
@@ -221,8 +229,8 @@ def _inputs(attempt_id, execution, claim):
                 raise InvalidSourcePayload("Refresh has no complete full baseline.")
             trend = _trend(full, snapshot.started_at - timedelta(days=TREND_DAYS))
             counts = _largest_counts(trend)
+            recorded_trend = [_recorded_derived(each) for each in trend]
             if snapshot.kind == "delta":
-                base = reconstruct_snapshot(current.snapshot_id)
                 cursor = _base_cursor(current.snapshot_id)
             # Eligibility is compared with both the last full and the current
             # snapshot (#320), from the derived counts each load records in its
@@ -230,19 +238,6 @@ def _inputs(attempt_id, execution, claim):
             current_row = SourceSnapshot.objects.get(pk=current.snapshot_id)
             base_workgroup = recorded(current_row.cursor)
             counted = _recorded_derived(current_row)
-            if counted is None:
-                # A snapshot promoted before these counts were recorded: count
-                # it once from its Family and contact rows (or the delta base).
-                counted = derived_counts(
-                    base
-                    if base is not None
-                    else reconstruct_snapshot(
-                        current.snapshot_id, kinds=("family", "contact")
-                    )
-                )
-            derived = derived_baseline(
-                *(_recorded_derived(each) for each in trend), counted
-            )
         zone = (
             scope.campaign.active_configuration.timezone
             if scope.campaign is not None
@@ -253,18 +248,40 @@ def _inputs(attempt_id, execution, claim):
         # Only a campaign still taking responses skips Reminders; a refresh
         # with no campaign, or for an archived one, reads no WorkGroup.
         live = scope.campaign is not None and scope.campaign.state != "archived"
-        return RefreshInputs(
-            _window(scope),
-            snapshot.started_at.astimezone(ZoneInfo(zone)).date(),
-            counts,
-            derived,
-            cursor,
-            base,
+        window = _window(scope)
+        as_of = snapshot.started_at.astimezone(ZoneInfo(zone)).date()
+        workgroup_name = (
             configured_name(scope.campaign.active_configuration.values)
             if live
-            else None,
-            base_workgroup,
+            else None
         )
+    # The corpus reads, outside the work order (see above).
+    base = None
+    derived = None
+    if current.snapshot_id is not None:
+        if snapshot.kind == "delta":
+            base = reconstruct_snapshot(current.snapshot_id)
+        if counted is None:
+            # A snapshot promoted before these counts were recorded: count
+            # it once from its Family and contact rows (or the delta base).
+            counted = derived_counts(
+                base
+                if base is not None
+                else reconstruct_snapshot(
+                    current.snapshot_id, kinds=("family", "contact")
+                )
+            )
+        derived = derived_baseline(*recorded_trend, counted)
+    return RefreshInputs(
+        window,
+        as_of,
+        counts,
+        derived,
+        cursor,
+        base,
+        workgroup_name,
+        base_workgroup,
+    )
 
 
 def same_corpus(corpus, base):
