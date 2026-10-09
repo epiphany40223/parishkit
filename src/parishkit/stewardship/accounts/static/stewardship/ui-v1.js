@@ -2415,6 +2415,11 @@
         && periodStart <= end && periodEnd >= start);
       group.hidden = !needed;
       if (!needed) box.checked = false;
+      // Under the complete gate (Campaign settings, First campaign) a shown
+      // confirmation must be ticked before Review (#563). Only there: the
+      // schedule pages share this group without the gate, and a required
+      // box would bring the browser's own popup to them instead.
+      if (form.hasAttribute("data-require-complete")) box.required = needed;
       gateComplete(form); // As for campaign modules above.
     };
     form.addEventListener("input", update);

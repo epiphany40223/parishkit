@@ -6,7 +6,11 @@ import pytest
 from django.http import QueryDict
 
 from parishkit.stewardship.accounts.admin_editing import form_action
-from parishkit.stewardship.accounts.campaign_forms import CampaignForm, initial_fields
+from parishkit.stewardship.accounts.campaign_forms import (
+    FINANCIAL_REQUIRED,
+    CampaignForm,
+    initial_fields,
+)
 from parishkit.stewardship.accounts.campaign_preview import (
     describe_changes,
     display_value,
@@ -214,6 +218,48 @@ def test_confirmation_values_use_names_not_storage_repr():
 def test_form_groups_do_not_duplicate_hidden_or_module_controls():
     """The progressive template has one accessible control for each saved value."""
     form = CampaignForm()
-    fields = [field.name for field in form.general_fields + form.financial_fields]
+    groups = form.general_fields + form.module_fields + form.financial_fields
+    fields = [field.name for field in groups]
     assert len(fields) == len(set(fields))
-    assert set(fields) == set(form.fields) - {"ministry_duids", "base_digest"}
+    assert set(fields) == set(form.fields) - {
+        "ministry_duids",
+        "base_digest",
+        "additional_information",
+    }
+    assert [field.name for field in form.module_fields] == [
+        "census",
+        "ministry",
+        "financial_enabled",
+    ]
+
+
+def test_financial_fields_are_required_in_the_page_only_while_financial_is_on():
+    """Every field clean() requires for Financial stewardship tells the page's
+    complete gate the same (#563); the overlap box is the overlap script's."""
+    form = CampaignForm()
+    marked = {
+        name
+        for name, field in form.fields.items()
+        if field.widget.attrs.get("data-required-when") == "financial_enabled=on"
+    }
+    assert marked == set(FINANCIAL_REQUIRED)
+    assert "data-required-when" not in form.fields["overlap_confirmed"].widget.attrs
+    # Not required in the markup: hidden, the module's fields are not sent.
+    assert not any(form.fields[name].required for name in FINANCIAL_REQUIRED)
+    # A prefixed form names its own module box.
+    prefixed = CampaignForm(prefix="draft")
+    assert (
+        prefixed.fields["fund_duids"].widget.attrs["data-required-when"]
+        == "draft-financial_enabled=on"
+    )
+
+
+def test_the_page_requires_what_clean_requires_for_financial_stewardship():
+    """Leaving out any field the page marks is refused by the server too."""
+    values = campaign(modules=["financial"], financial=financial())["values"]
+    complete = initial_fields(values, digest="a" * 64)
+    assert form_for(complete).is_valid()
+    for name in FINANCIAL_REQUIRED:
+        form = form_for(complete | {name: [] if name.endswith("duids") else ""})
+        assert not form.is_valid()
+        assert name in form.errors
