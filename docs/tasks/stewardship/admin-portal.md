@@ -497,8 +497,18 @@ personal-data pattern), `tests/stewardship/test_admin_cli.py`,
 `tests/stewardship/database/test_admin_report_cli_postgresql.py` (each
 read against its page, the pages' events and context members, a
 read-only session, an ended session, no current campaign and the pages'
-filter refusals) and the unchanged report view suites. 8d (digests) and 8e
-(Family-level exports) follow.
+filter refusals) and the unchanged report view suites. 8d adds the digests
+(`digest daily`, `digest weekly` and `digest weekly-request`), read from
+the stored snapshots through the pages' own functions, with the manual
+request through the page's `request_manual_report`; proven by
+`tests/stewardship/test_admin_digests.py` (golden documents, the
+personal-data pattern and the acknowledgement),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_digest_cli_postgresql.py` (each
+report against its page, the pages' events, read-only sessions, a failed
+read, the database's refusal of unresolved prior work, keyed repeats) and
+the unchanged digest view suites. 8e (Family-level exports) follows.
 
 ## ADM-12: Admin navigation overhaul
 

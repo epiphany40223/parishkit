@@ -35,6 +35,44 @@ def _principal(request, store, *, read_only=False):
     return principal
 
 
+def record_view(principal, snapshot_id, campaign_id, outcome):
+    """Journal opaque access, never Family text or recipient addresses.
+
+    The page and the command line's ``digest weekly`` record the same event.
+    """
+    # An audit append takes no row locks, so it need not join the writers'
+    # work order; waiting there stalled report pages behind every source
+    # promotion and installer.
+    with transaction.atomic():
+        current = SystemConfiguration.objects.select_related(
+            "active_configuration__parish"
+        ).get()
+        record_action(
+            Action.WEEKLY_DIGEST_VIEWED,
+            actor_kind=ActorKind.PORTAL_USER,
+            actor_id=principal.identity,
+            subject_id=snapshot_id,
+            parish_id=current.active_configuration.parish.pk,
+            campaign_id=campaign_id,
+            context={"outcome": outcome},
+        )
+
+
+def check_retained(snapshot_id, campaign_id):
+    """Inside the read barrier: the snapshot is still retained for its campaign."""
+    admit_campaign(campaign_id, mutating=False)
+    if not WeeklyDigestSnapshot.objects.filter(
+        pk=snapshot_id, campaign_id=campaign_id
+    ).exists():
+        raise ReadUnavailable("Retained weekly report is unavailable.")
+
+
+def retained_context(snapshot_id, *, page=1, item_id=None):
+    """The page's context for the retained snapshot, read under the barrier."""
+    selected = WeeklyDigestSnapshot.objects.only(*REPORT_FIELDS).get(pk=snapshot_id)
+    return snapshot_context(selected, page=page, item_id=item_id)
+
+
 @require_GET
 def snapshot(request, snapshot_id, *, item_id=None):
     """Authorize opaque snapshot/item selections before any private response bytes."""
@@ -53,23 +91,8 @@ def snapshot(request, snapshot_id, *, item_id=None):
         finalized = False
 
         def audit(outcome):
-            """Journal opaque access, never Family text or recipient addresses."""
-            # An audit append takes no row locks, so it need not join the
-            # writers' work order; waiting there stalled report pages behind
-            # every source promotion and installer.
-            with transaction.atomic():
-                current = SystemConfiguration.objects.select_related(
-                    "active_configuration__parish"
-                ).get()
-                record_action(
-                    Action.WEEKLY_DIGEST_VIEWED,
-                    actor_kind=ActorKind.PORTAL_USER,
-                    actor_id=principal.identity,
-                    subject_id=snapshot_id,
-                    parish_id=current.active_configuration.parish.pk,
-                    campaign_id=retained.campaign_id,
-                    context={"outcome": outcome},
-                )
+            """The page's view event for this snapshot."""
+            record_view(principal, snapshot_id, retained.campaign_id, outcome)
 
         def finish(completed):
             """Audit server-side completion after the read barrier has closed."""
@@ -91,18 +114,11 @@ def snapshot(request, snapshot_id, *, item_id=None):
         def authorize(guard):
             """Recheck session and campaign after acquiring the purge/read barrier."""
             _principal(request, service.store, read_only=True)
-            admit_campaign(retained.campaign_id, mutating=False)
-            if not WeeklyDigestSnapshot.objects.filter(
-                pk=snapshot_id, campaign_id=retained.campaign_id
-            ).exists():
-                raise ReadUnavailable("Retained weekly report is unavailable.")
+            check_retained(snapshot_id, retained.campaign_id)
 
         def content():
             """Render only the requested bounded subset inside the response guard."""
-            selected = WeeklyDigestSnapshot.objects.only(*REPORT_FIELDS).get(
-                pk=snapshot_id
-            )
-            context = snapshot_context(selected, page=page, item_id=item_id)
+            context = retained_context(snapshot_id, page=page, item_id=item_id)
             return iter(
                 (
                     render_to_string(

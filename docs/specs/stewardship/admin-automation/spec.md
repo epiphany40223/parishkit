@@ -1898,7 +1898,9 @@ the page.
 | `financial_export`, `talents_export`, `ministry_export`, `information_export`, `family_directory_export`, `postal_directory_export` | `export …` (PR 8e) |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download`, `export_create`, `export_status`, `export_cancel`, `export_download`, `export_download_grant` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b) |
 | `report_exact_create`, `report_exact`, `report_exact_cancel`, `report_exact_retry`, `exact_export_create`, `exact_export_status`, `exact_export_cancel`, `exact_export_retry` | `export exact …` (PR 8e) |
-| `daily_digest_snapshot`, `weekly_digest_snapshot`, `weekly_digest_item`, `weekly_digest_manual` | `digest show`, `digest weekly-request` (PR 8d) |
+| `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
+| `weekly_digest_snapshot`, `weekly_digest_item` | `digest weekly SNAPSHOT_ID`: each item's identifier and states; an item's text stays on the page (PR 8d) |
+| `weekly_digest_manual` | `digest weekly-request` (PR 8d) |
 | `logs`, `logs_export` | `logs list`, `logs export` (PR 8a) |
 
 `logs list` and `logs export` read through `audit.log_reads`, the functions
@@ -1942,6 +1944,26 @@ and the stored keys for share options and talents are defaults, pending
 Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#reports)
 lists the fields and options.
+
+The digest commands (PR 8d) read a retained report an emailed digest
+links to from its stored snapshot, through its page's own functions
+(`digest_views.retained_document`, `weekly_views.retained_context`), never
+the email's markup, inside the same campaign read guard, and record the
+page's `daily_digest_viewed` or `weekly_digest_viewed`. `digest daily`
+admits as the daily report page (report readers) and `digest weekly` as
+the weekly one (Administrators); both are any-scope reads. `digest weekly`
+prints each selected item's identifier and captured and current
+disposition, never a Family's text. `digest weekly-request` is the Send a
+weekly report now page's form (`request_manual_report`) in the page's
+command scope, keyed by its `command_id`: the same database rules (a
+digest still in progress or awaiting review is `stale_version`, as the
+page's 409), the same `weekly_manual_requested` event and task, and
+`admin_cmd_digest_weekly_request` when it creates the request. The page's
+ticked acknowledgement is asked at the
+[prompt](#command-line-confirmation) (or given by `--yes`); without it the
+command exits 4 (`confirmation_required`). The
+[operator guide](../../../guides/stewardship-admin-automation.md#digests)
+lists the fields.
 
 The export lifecycle commands work on any report export the Administrator
 may see, through the functions the export pages use
@@ -2437,7 +2459,8 @@ Administrator's approval of that deploy.
 - **PR 8, reports and exports,** in five parts. **PR 8a:** the log commands.
   **PR 8b:** the export lifecycle with streamed fetch (including the
   wrapper's `export fetch` and its tests). **PR 8c:** the aggregate report
-  reads. **PR 8d:** digests. **PR 8e:** the Family-level exports.
+  reads. **PR 8d:** digests (`digest daily`, `digest weekly`,
+  `digest weekly-request`). **PR 8e:** the Family-level exports.
 - **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.

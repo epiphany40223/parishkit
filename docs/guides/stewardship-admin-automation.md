@@ -798,6 +798,48 @@ not include (Financial or Ministry stewardship), or no current campaign, is
 exit 1 (`not_available`). In System logs, where the page's event counts
 the rows it showed, the command's counts 0: it shows none.
 
+## Digests
+
+Each emailed daily or weekly report links to a saved copy on the portal,
+`/admin/reports/daily-digests/SNAPSHOT_ID/` or
+`/admin/reports/weekly-digests/SNAPSHOT_ID/`. The `digest` commands read
+that saved copy, which never changes, and record the same "viewed" events
+as opening it. A session of any scope (read-only included) may read them;
+a weekly report needs an Administrator, as its page does.
+
+```sh
+pk-admin digest daily SNAPSHOT_ID
+pk-admin digest weekly SNAPSHOT_ID --page 2
+pk-admin digest weekly-request --yes
+```
+
+- `digest daily` prints the saved figures: `participation` (the figures'
+  `fact_set_id`, source and dates), `statistics` (the active Families,
+  Members, email, responses and, with Financial stewardship, pledge
+  totals) and `days`, the daily table.
+- `digest weekly` prints the report's `information_count`,
+  `correction_count` and `total`, whether it was `manual`, and `items`, 50
+  to a page (`--page`): each item's `item_id`, whether it is new
+  `information` or a correction, its `captured` and `current` state
+  (`current_actionable`, `superseded` or `withdrawn`) and whether it
+  `changed`. It never prints what a Family wrote; open the page for that.
+- `digest weekly-request` asks for a manual weekly report now, as the
+  Send a weekly report now page does, for the current campaign. A manual
+  report may repeat items already reported, which the page asks you to
+  tick; the command asks the same at the
+  [confirmation prompt](#confirmations), or takes `--yes` (otherwise
+  nothing happens, exit 4). It
+  takes `--request-key`, as [task retries](#task-retries) do, and prints
+  `created`, `request_key` and `task`; follow the task with
+  `task show --watch`. Without a weekly report schedule it is exit 1
+  (`not_available`); while an earlier report is still being sent or
+  awaits review, exit 1 (`stale_version`): try again once it is resolved.
+  System logs show the page's `weekly_manual_requested` and
+  `admin_cmd_digest_weekly_request`.
+
+An unknown `SNAPSHOT_ID`, or a daily report's id given to `digest weekly`,
+is exit 1 (`not_available`).
+
 ## Report exports
 
 A report export (the Participation page's **Export**, and the export of
@@ -985,3 +1027,6 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
 - `pk-admin/1` (ADM-11 PR 8c): additive. `report list`,
   `report participation`, `report responses`, `report financial`,
   `report talents`, `report information` and `report ministry`.
+- `pk-admin/1` (ADM-11 PR 8d): additive. `digest daily`,
+  `digest weekly` and `digest weekly-request`, which prompts (or takes
+  `--yes`).

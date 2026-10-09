@@ -476,7 +476,7 @@ fi
 # Every catalog command with `prompts` is listed, except one that accepts
 # only `--yes` (YES_ONLY in tests/stewardship/test_pk_admin.py, which checks
 # this list).
-PROMPTING="test_sample test_families export_regenerate"
+PROMPTING="test_sample test_families export_regenerate digest_weekly-request"
 
 # Forward this standard input after the preamble only for a `-` input; a
 # prompting command run from a terminal gets one answer line (see the

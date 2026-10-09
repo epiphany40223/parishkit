@@ -232,10 +232,14 @@ LEDGER = {
     "exact_export_status": pending("PR 8e", "export exact"),
     "exact_export_cancel": pending("PR 8e", "export exact"),
     "exact_export_retry": pending("PR 8e", "export exact"),
-    "daily_digest_snapshot": pending("PR 8d", "digest show"),
-    "weekly_digest_snapshot": pending("PR 8d", "digest show"),
-    "weekly_digest_item": pending("PR 8d", "digest show"),
-    "weekly_digest_manual": pending("PR 8d", "digest weekly-request"),
+    # The digests (PR 8d): the retained reports an emailed digest links to,
+    # and the manual weekly report.
+    "daily_digest_snapshot": command("digest daily"),
+    "weekly_digest_snapshot": command("digest weekly"),
+    # One item of a weekly report: its states are in ``digest weekly``'s
+    # items; the Family's text is Family-level and stays on the page.
+    "weekly_digest_item": command("digest weekly"),
+    "weekly_digest_manual": command("digest weekly-request"),
     "logs": command("logs list"),
     "logs_export": command("logs export"),
     # System health (ADM-13): the page, its polled fragment (``--watch``)
