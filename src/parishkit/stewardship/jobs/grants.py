@@ -33,6 +33,9 @@ def task_runtime_grants(role):
         raise ConfigError("This service has no general task SQL authority.")
     tables = {table: {"SELECT"} for table in READ_TABLES}
     tables["stewardship_due_work_health"] = {"SELECT"}
+    # The scheduler records its web probe's result (#392 L1); the worker's
+    # operational collection reads it to resolve the web_unhealthy incident.
+    tables["stewardship_web_health"] = {"SELECT"}
     # The operational collection judges whether the required backup is overdue
     # from the newest completed run; the row holds sizes and digests only.
     tables["stewardship_backup_run"] = {"SELECT"}
@@ -40,6 +43,7 @@ def task_runtime_grants(role):
     tables["stewardship_backup_upload"] = {"SELECT"}
     if role is ServiceRole.SCHEDULER:
         tables["stewardship_due_work_health"].add("INSERT")
+        tables["stewardship_web_health"].add("INSERT")
     tables["stewardship_task_run"].add("INSERT")
     tables["stewardship_task_event"].add("INSERT")
     for table in (
@@ -87,6 +91,8 @@ def task_runtime_grants(role):
         columns["stewardship_due_work_health"] = {
             "UPDATE": {"signal", "scan_started_at", "escalation_seconds"}
         }
+        # Only the verdict; the web health trigger derives every other column.
+        columns["stewardship_web_health"] = {"UPDATE": {"healthy"}}
     # The ACK trigger takes FOR SHARE on its target-scoped receipt. Id-only
     # UPDATE permits that lock; RLS and mutation guards reject actual edits.
     columns["stewardship_secret_request"] = {"UPDATE": {"id"}}

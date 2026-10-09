@@ -2185,6 +2185,50 @@ Slack delivery failure is logged and cannot mask the original error. If email
 itself is failing, the system does not recursively create email-failure alerts;
 Slack/logs remain. Sensitive values and full free text never enter Slack.
 
+### Unresponsive web server
+
+Docker restarts a container only when its process exits, and a failing
+container health check alone restarts nothing
+([observability and health](../operations/spec.md#observability-and-health)).
+A web server that keeps running but stops answering would otherwise go
+unnoticed (#392 L1). The application has no Docker socket, by design, so it
+cannot restart web itself; it raises the alarm instead.
+
+Once a minute the owned scheduler asks each web replica (`web`, `web-1`, …)
+for `/health/live` over the backend network, with a 3-second socket timeout,
+`Host: 127.0.0.1`, no proxy and no redirects. The scheduler joins only the
+backend network, so `web` always resolves to the address web's
+internal-request rule admits. The request runs in one background thread, so
+the scheduling loop never waits on HTTP; a later pass records the finished
+result in the singleton `stewardship_web_health` row. A minute fails when
+any replica times out, cannot be reached, or answers anything but 200 `ok`.
+Only one probe thread exists, even if one hangs. A probe still running when
+the next minute starts, at least 10 seconds per replica (at most 50) after
+it began, fails that minute, and each later minute until it ends; a hung
+probe thread is cleared by restarting the scheduler, not web. Every timeout
+records a `task_timed_out` entry naming `web_probe`, its limit and the
+elapsed time.
+
+The row's trigger counts consecutive failed minutes. A second result within
+30 seconds is dropped, so the scheduler waits to start a minute's probe until
+30 seconds after the last result; after a slow pass, that minute's probe
+starts later in the minute. A result more than 150 seconds after the
+previous one, or before it (the database clock stepped back), starts a new
+run. From the third failed check in a row, a minute apart, each failed check
+writes one CRITICAL `web_unhealthy` entry saying how web failed, its HTTP
+status if it answered, and how many checks in a row. Operational intake maps
+it to the `web_unhealthy` incident ("Web server is not responding"), which
+follows the [critical error and notification](#critical-errors-and-notification)
+path: the Admin critical-events banner ([logs](../admin-portal/spec.md#logs)),
+the alert email and Slack. The alert tells the Administrator to ask the
+server operator to restart web from the Compose directory of the
+deployment (`docker compose ... restart web`) and to check its log. While the incident
+is open, intake resolves it after five minutes of passing probes, unless a
+`web_unhealthy` entry is newer than the first of those passes or has not
+been taken in yet. A web server that keeps failing and recovering opens and
+alerts again each time; there is no cooldown unless the Administrator asks
+for one.
+
 ### Late work during a bulk Family send
 
 The scheduler's due-work check (`SCHEDULER_LAG`) calls a task late when it is

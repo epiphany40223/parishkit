@@ -1031,7 +1031,11 @@ readiness additionally requires the critical credential references and durable
 configuration for normal operation. Worker/scheduler health uses heartbeats and
 queue-lag records.
 
-Container restart health checks use `/health/live`, not `/health/ready`.
+Container health checks use `/health/live`, not `/health/ready`. A failing
+check marks the container unhealthy but restarts nothing; Docker restarts a
+container only when its process exits. A web server that stays unhealthy
+raises the CRITICAL web alert instead
+([unresponsive web server](../background-processing/spec.md#unresponsive-web-server)).
 Readiness is an operator and alerting signal only; no proxy or orchestrator
 removes this single application instance from traffic when it fails. Admission
 middleware independently fails closed for guessable-credential authentication

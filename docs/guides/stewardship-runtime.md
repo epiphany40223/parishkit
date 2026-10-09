@@ -199,7 +199,13 @@ Long-running production services use `unless-stopped`; one-shot offline profiles
 and development services do not automatically restart. Explicitly stop online
 services for maintenance so a crash restart cannot keep competing with offline
 exclusion. Docker health status does not itself restart a live-but-unhealthy
-service or authorize ingress. See the [Compose service reference](https://docs.docker.com/reference/compose-file/services/).
+service or authorize ingress. A web server that misses three health checks in
+a row, a minute apart, raises the CRITICAL "Web server is not responding"
+alert instead
+([unresponsive web server](../specs/stewardship/background-processing/spec.md#unresponsive-web-server));
+from the deployment's Compose directory, restart it with `docker compose ...
+restart web` and check its log. A hung probe in the scheduler is cleared by
+restarting the scheduler. See the [Compose service reference](https://docs.docker.com/reference/compose-file/services/).
 
 ## Health, credentials and incidents
 

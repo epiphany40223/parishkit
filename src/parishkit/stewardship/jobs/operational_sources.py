@@ -40,6 +40,7 @@ def critical_log(event):
         Event.BOUNDARY_LAG: IncidentKind.SCHEDULER_LAG,
         Event.DUE_WORK_LAG: IncidentKind.SCHEDULER_LAG,
         Event.PRODUCTION_CLEANUP_FAILED: IncidentKind.PRODUCTION_CLEANUP_FAILED,
+        Event.WEB_UNHEALTHY: IncidentKind.WEB_UNHEALTHY,
     }.get(event, IncidentKind.SYSTEM_FAILURE)
     return record_observation(kind, IncidentLevel.CRITICAL, policy=configured_policy())
 
