@@ -52,6 +52,7 @@ from .response_lists import (
     LISTS,
     ListQuery,
     cells,
+    current_snapshot,
     downloads_paused,
     list_csv,
     read_list,
@@ -85,11 +86,26 @@ def _admit_mode(principal, query):
         raise PermissionError("Testing responses are shown to Administrators only.")
 
 
-def _audit(action, principal, campaign_id, outcome, count):
+def audit_choices(query, snapshot):
+    """The audit context naming what was read (#556).
+
+    The system mode and the ``show`` choice are closed words, and the
+    snapshot is the ParishSoft data the names came from (left out when
+    nothing was read, as for Testing with no rehearsal). The event type
+    names the list.
+    """
+    context = {"report_mode": query.mode, "report_filter": query.show}
+    if snapshot is not None:
+        context["snapshot_id"] = snapshot
+    return context
+
+
+def _audit(action, principal, campaign_id, outcome, count, choices):
     """Record the view or download: who, which campaign, how it ended, how many.
 
-    The event type names the list; no name, DUID or filter value is copied.
-    An append takes no row locks, so it runs after the read guard closes.
+    ``choices`` (``audit_choices``) adds the mode, filter and snapshot; no
+    name or DUID is copied. An append takes no row locks, so it runs after
+    the read guard closes.
     """
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
@@ -102,7 +118,7 @@ def _audit(action, principal, campaign_id, outcome, count):
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome, "count": count},
+            context={"outcome": outcome, "count": count} | choices,
         )
 
 
@@ -208,7 +224,7 @@ def _respond(request, campaign_id, key, *, export):
             return private_response("Invalid report filters.\n", status=400)
         _admit_mode(principal, query)
         admit_report_read(campaign_id)
-        finalized, count = False, 0
+        finalized, count, snapshot = False, 0, None
 
         def finish(completed):
             """Audit completion once, after the read-only transaction closes.
@@ -226,6 +242,7 @@ def _respond(request, campaign_id, key, *, export):
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     count,
+                    audit_choices(query, snapshot),
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -247,17 +264,20 @@ def _respond(request, campaign_id, key, *, export):
 
         def content():
             """Read the list once under the guard and render the page or file."""
-            nonlocal count
+            nonlocal count, snapshot
             campaign = Campaign.objects.select_related("active_configuration").get(
                 pk=campaign_id
             )
             as_of = database_now()
             scope = _scope(campaign_id, query)
-            rows = (
-                []
-                if scope is None
-                else read_list(spec, scope, as_of, spec.choice(query.show))
-            )
+            rows = []
+            if scope is not None:
+                # Read once and pass in, so the audit names the snapshot
+                # the names actually came from.
+                snapshot = current_snapshot()
+                rows = read_list(
+                    spec, scope, as_of, spec.choice(query.show), snapshot=snapshot
+                )
             count = len(rows)
             table = paginate(rows, values, carry=query.carried(), sorting=spec.sorting)
             if export:

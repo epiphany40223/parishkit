@@ -302,6 +302,15 @@ FIELDS = {
         "file_kind",
         "file_size",
         "file_fingerprint",
+        # An on-request report page or download (#556): which system mode it
+        # showed, its closed filter choice, the parish's talent option when
+        # that is the filter, and the ParishSoft snapshot its names came
+        # from. Never the search text, which can name a Family; whether a
+        # search was used is the existing ``search_used``.
+        "report_mode",
+        "report_filter",
+        "talent_option_id",
+        "snapshot_id",
     },
 }
 
@@ -315,6 +324,30 @@ MINISTRY_LIST_FIELDS = frozenset(
     }
 )
 REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
+# An on-request report's system mode and filter choices (#556); mirrored in
+# stewardship_safe_context_v1. The filters are each report's own fixed
+# choices: the response lists' ``show`` keys (reports.response_lists) and
+# the Talents report's ``talent`` words, where ``option`` stands for a
+# configured talent (recorded as ``talent_option_id``). A test keeps this
+# set equal to the reports' choices.
+REPORT_MODES = frozenset({"production", "testing"})
+REPORT_FILTERS = frozenset(
+    {
+        "all",
+        "invited",
+        "uninvited",
+        "progressed",
+        "opened",
+        "followed",
+        "unfollowed",
+        "mailing-name",
+        "envelope",
+        "any",
+        "cannot_serve",
+        "cannot_attend",
+        "option",
+    }
+)
 # Stored hosted-file types (#346); mirrored in stewardship_safe_context_v1.
 HOSTED_FILE_KINDS = frozenset({"pdf", "docx", "xlsx", "pptx", "png", "jpeg"})
 
@@ -506,6 +539,12 @@ def sanitize(kind, values):
             safe[key] = value
         elif key == "file_kind":
             valid = type(value) is str and value in HOSTED_FILE_KINDS
+            safe[key] = value
+        elif key == "report_mode":
+            valid = type(value) is str and value in REPORT_MODES
+            safe[key] = value
+        elif key == "report_filter":
+            valid = type(value) is str and value in REPORT_FILTERS
             safe[key] = value
         elif key == "review_reason":
             valid = type(value) is str and 0 < len(value) <= 500 and "@" not in value
