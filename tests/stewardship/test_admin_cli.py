@@ -78,9 +78,15 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "delivery list",
         "delivery show",
         "delivery resolve",
+        "delivery resend",
         "delivery refusals",
         "delivery refusal-show",
+        "delivery refusal-clear",
     }
+    # The commands that ask for the page's acknowledgement (PR 9c). Other
+    # branches add their own prompting commands, so this checks these two
+    # and that --yes comes exactly with ``prompts``, not a closed list.
+    acknowledged = {"delivery resend", "delivery refusal-clear"}
     reports = {
         "logs list",
         "logs export",
@@ -144,6 +150,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         assert ("--yes" in names) == entry["prompts"], name
         # Only the two downloads stream a file to standard output.
         assert entry["streams"] == (name in {"logs export", "export download"}), name
+        if name in acknowledged:
+            assert entry["prompts"], name
     # The sample test asks for the page's acknowledgement (PR 6b); its
     # preview changes nothing and asks nothing.
     preview, sample = entries["test sample-preview"], entries["test sample"]
@@ -347,6 +355,19 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert manual["audit_event"] == "admin_cmd_digest_weekly_request"
     assert manual["result_fields"] == ["created", "request_key", "task"]
     assert "--yes" in {option["name"] for option in manual["options"]}
+    # resend and refusal-clear: keyed, full scope, asking at the prompt.
+    resend = entries["delivery resend"]
+    assert resend["scope"] == "full" and resend["changes_state"]
+    assert resend["request_key"] and resend["expected_version"]
+    assert resend["audit_event"] == "admin_cmd_delivery_resend"
+    assert resend["arguments"] == ["MESSAGE_ID"]
+    assert resend["result_fields"] == resolve["result_fields"]
+    clear = entries["delivery refusal-clear"]
+    assert clear["scope"] == "full" and clear["changes_state"]
+    assert clear["request_key"] and not clear["expected_version"]
+    assert clear["audit_event"] == "admin_cmd_delivery_refusal_clear"
+    assert clear["arguments"] == ["REFUSAL_ID"]
+    assert clear["result_fields"] == ["created", "request_key", "resolution"]
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -366,6 +387,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_test_families",
         "admin_cmd_task_retry",
         "admin_cmd_delivery_resolve",
+        "admin_cmd_delivery_resend",
+        "admin_cmd_delivery_refusal_clear",
         "admin_cmd_export_create",
         "admin_cmd_export_cancel",
         "admin_cmd_export_retry",
@@ -1422,3 +1445,21 @@ def test_family_keys_refuse_an_unreadable_ring(tmp_path):
     receipts["general_encryption"] = credential_receipt(bad, "general_encryption")
     with pytest.raises(admin_cli.CredentialMismatch):
         admin_cli.load_keyrings(configuration, receipts, admin_cli.FAMILY_KEYRINGS)
+        admin_cli.load_family_keys(configuration, receipts)
+
+
+@pytest.mark.parametrize(
+    "template,text",
+    [
+        ("delivery.html", admin_cli.RESEND_ACKNOWLEDGEMENT),
+        ("delivery-refusal.html", admin_cli.CLEAR_ACKNOWLEDGEMENT),
+    ],
+)
+def test_the_prompts_ask_the_pages_own_acknowledgement(template, text):
+    """The prompt shows the words the page's checkbox shows, unchanged."""
+    from pathlib import Path
+
+    from parishkit.stewardship import accounts
+
+    page = Path(accounts.__file__).parent / "templates" / "stewardship" / template
+    assert '{% translate "' + text + '" %}' in page.read_text()

@@ -737,6 +737,7 @@ def test_the_prompting_list_names_every_prompting_command():
     }
     assert set(listed.split()) == prompting
     assert {"test_sample", "test_families"} <= prompting
+    assert prompting >= {"delivery_resend", "delivery_refusal-clear"}
 
 
 def test_export_download_is_never_written_to_a_terminal(host):

@@ -889,18 +889,18 @@ a called service needs. Before any session use it compares its loaded
 (the proof `acknowledge-credential` checks) and refuses with exit 2 when they
 differ, for example during a key rotation.
 
-The Family keyrings load only for `delivery resolve` retrying a Family
-email (#682): the `general_encryption` and `token_public` rings the web's
-retry seals with, read then and checked against the web's published
-receipts the same way (exit 2 when they differ, or when a ring cannot be
-read). A rotation holding the credential key lock, or a database key
-inventory that moved past the web's rings, refuses the sealing inside the
-transaction, which rolls back: exit 3 (`unavailable`). It never loads the
-code MAC ring, which preparation does not use, or the private token ring,
-which the web never holds. The files are already readable by this process
-(the web's user and mounts), so this adds no access; it keeps that key
-material out of every other command, and a rotation of these rings refuses
-only Family retries.
+The Family keyrings load only for `delivery resolve` retrying, or
+`delivery resend` resending, a Family email (#682): the `general_encryption`
+and `token_public` rings the web's retry seals with, read then and checked
+against the web's published receipts the same way (exit 2 when they differ,
+or when a ring cannot be read). A rotation holding the credential key lock,
+or a database key inventory that moved past the web's rings, refuses the
+sealing inside the transaction, which rolls back: exit 3 (`unavailable`). It
+never loads the code MAC ring, which preparation does not use, or the
+private token ring, which the web never holds. The files are already
+readable by this process (the web's user and mounts), so this adds no
+access; it keeps that key material out of every other command, and a
+rotation of these rings refuses only Family retries and resends.
 
 It holds at most one database connection and closes it between `--watch`
 polls.
@@ -1355,7 +1355,8 @@ waiting for it once the command has finished. A command declares that it prompts
 host wrapper's `PROMPTING` list so the wrapper forwards a terminal's input.
 `test_pk_admin.py` checks that list against the catalog; a prompting
 command that accepts only `--yes` is left out of it by name. PR 6b's
-`test sample` and PR 6c's `test families` are prompting commands.
+`test sample`, PR 6c's `test families` and PR 9c's `delivery resend` and
+`delivery refusal-clear` are prompting commands.
 
 ### Audit attribution
 
@@ -1448,6 +1449,9 @@ deliberately:
   the page's acknowledgement, answered `yes`;
 - a chosen-Family test (PR 6c): the page's acknowledgement that real Family
   data goes to the Testing recipient, answered `yes`;
+- a delivery's duplicate-risk resend and a refused address's clearance
+  (PR 9c): the page's acknowledgement, shown at the prompt and answered
+  `yes`;
 - a reason where the page asks for one: `--reason` (or `-`), which is input,
   not confirmation, and `--yes` does not supply it;
 - later guarded workflows (reopen, archive, return to Testing): their own
@@ -1456,8 +1460,9 @@ deliberately:
 ### Idempotency and retries
 
 - Keyed commands (refresh, test sends, configuration requests, exports,
-  task retries) accept `--request-key <uuid4>`. Clients should pass their own key. Without one the
-  command generates a key and writes it to standard error before it acts, so
+  task retries, delivery resolutions and resends, refusal clearances)
+  accept `--request-key <uuid4>`. Clients should pass their own key.
+  Without one the command generates a key and writes it to standard error before it acts, so
   it survives a crash, and also returns it in the result. Repeating a command
   with the same key returns the original durable receipt, as a repeated page
   submission does.
@@ -1545,7 +1550,9 @@ signatures:
   command scope (`jobs.task_retries`).
 - **PR 9b:** the delivery and refusal reads from `delivery_views`
   (`jobs.delivery_reads`), and delivery resolution through the page's
-  command scope; refusal clearing follows in PR 9c.
+  command scope.
+- **PR 9c:** the delivery page's resend through the same scope, and the
+  refusal page's clearance (`jobs.delivery_admin.clear_recipient_refusal`).
 - **PR 10:** campaign, content, Ministry, parish, branding and integration
   settings (including the backup folder probe) from `campaign_views`,
   `content_views`, `campaign_ministry_views`, `share_views`, `talent_views`,
@@ -2052,7 +2059,7 @@ lists the fields and refusals.
 | --- | --- |
 | `background`, `background_tasks`, `background_task` | `task list`, `task show` (PR 3a) |
 | `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9a) |
-| `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b; `resend` owed by PR 9c) |
+| `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b), `delivery resend` (PR 9c) |
 | `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-show` (PR 9b), `delivery refusal-clear` (PR 9c) |
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
 | `system_backup_request` (ADM-13) | `system backup-now` (keyed), `system backup-status --watch` |
@@ -2094,33 +2101,47 @@ the run's `retry_command_id` (the key) join them.
 
 The delivery commands (PR 9b) read through `jobs.delivery_reads`, the
 functions the Outgoing mail and Refused addresses pages use, and record the
-pages' `delivery_viewed` event. Their documents follow
-[personal data on the command line](#personal-data-on-the-command-line):
-a delivery has its metadata only (no recipient address, Family DUID or
-Family id), a resolution note only its time and action, and a refusal only
-its id, time, resolution and the source version to verify; a DUID is
-accepted as search input. A DUID-filtered read still links that Family to
-its delivery or refusal facts (counts, states, times); that is intended,
-for sessions only Administrators approve, as on the pages. `delivery show`
-lists in `actions` only what `delivery resolve` accepts. A check or
-uniqueness refusal from the database (SQLSTATE 23514 or 23505) during
-`task retry` or `delivery resolve` is `stale_version`, as the pages answer
-409. The refusal's detail is its own verb,
+pages' `delivery_viewed` event. Their documents follow [personal data on the
+command line](#personal-data-on-the-command-line): a delivery has its
+metadata only (no recipient address, Family DUID or Family id), a resolution
+note only its time and action, and a refusal only its id, time, resolution
+and the source version to verify; a DUID is accepted as search input. A
+DUID-filtered read still links that Family to its delivery or refusal facts
+(counts, states, times); that is intended, for sessions only Administrators
+approve, as on the pages. `delivery show` lists in `actions` what the page
+offers: `resend` is `delivery resend` (PR 9c), and each other action is a
+`delivery resolve` action. A check or uniqueness refusal from the database
+(SQLSTATE 23514 or 23505) during `task retry`, `delivery resolve`,
+`delivery resend` or `delivery refusal-clear` is `stale_version`, as the
+pages answer 409. The refusal's detail is its own verb,
 `delivery refusal-show` (a default, pending Administrator confirmation).
 `delivery resolve` is the delivery page's resolution form in the page's
 command scope, keyed by its `command_id`, recording
 `admin_cmd_delivery_resolve` when it creates the resolution. Two page
-actions need a ticked acknowledgement and wait for PR 9c, which uses PR 5b's
-[prompt](#command-line-confirmation): the duplicate-risk `resend` and
-`delivery refusal-clear` ("I verified this address"). A retry
-(`retry_failed`, `retry_unsent`) re-prepares the email as the page does; for
-a Family email that needs the Family keyrings, which the command loads only
+actions need a ticked acknowledgement, which PR 9c asks for at PR 5b's
+[prompt](#command-line-confirmation) (the page's words, then `yes`, or
+`--yes`) before any transaction opens. They are separate verbs, not more
+`delivery resolve` actions, so that only they prompt and a `--note -`
+resolution needs no `--yes` (a default, pending Administrator confirmation).
+`delivery resend` is the duplicate-risk **Resend** of a delivery whose
+outcome is unknown: `delivery resolve`'s path with the action `resend` and
+the acknowledgement passed as ticked, recording `admin_cmd_delivery_resend`.
+`delivery refusal-clear` ("I verified this address") calls the page's
+`clear_recipient_refusal` in the same command scope with the source version
+from `delivery refusal-show`, keyed by its `command_id`, recording
+`admin_cmd_delivery_refusal_clear` when it creates the clearance; its
+document is the clearance's ids, verified source version and time, never the
+note. A cleared refusal or a source version no longer current is
+`stale_version`, an unknown refusal `not_available`, and a key used with
+another intent `invalid`. Neither adds schema. A retry (`retry_failed`,
+`retry_unsent`) or resend re-prepares the email as the page does; for a
+Family email that needs the Family keyrings, which the command loads only
 then (see [process admission](#process-admission-and-database-login)).
 Preparation reads the Family's current code and link and writes no
 credential, so emailed codes and links stay valid. A repeat of the key
-returns the receipt before any preparation, and a retry with another key on
-the version already retried is `stale_version`, so one key never prepares
-or sends twice.
+returns the receipt before any preparation, and a retry or resend with
+another key on the version already retried is `stale_version`, so one key
+never prepares or sends twice.
 
 The ADM-13 rows are pending exemptions until ADM-11 PR 3 (the read) and
 PR 5 (the actions) land. The ADM-13 action routes are POSTs to the

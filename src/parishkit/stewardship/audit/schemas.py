@@ -156,6 +156,8 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_MINISTRY_PACKET = "admin_cmd_export_ministry_packet"
     ADMIN_CMD_EXPORT_DIRECTORY = "admin_cmd_export_directory"
     ADMIN_CMD_EXPORT_POSTAL = "admin_cmd_export_postal"
+    ADMIN_CMD_DELIVERY_RESEND = "admin_cmd_delivery_resend"
+    ADMIN_CMD_DELIVERY_REFUSAL_CLEAR = "admin_cmd_delivery_refusal_clear"
 
 
 # Closed field identifiers are operational metadata, never census values.
