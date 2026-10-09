@@ -4,7 +4,19 @@
 -- This private projection contains identities, not recipient addresses/bodies.
 CREATE VIEW public.stewardship_delivery_family_recovery AS
 WITH scope AS (
-    SELECT c.id,c.production_cycle,p.ends_at
+    -- workgroup_duids: the campaign's Reminder WorkGroup members (#861, #866),
+    -- read as source.workgroups.excluded_duids reads them. The current
+    -- snapshot's recorded read counts only while its name is the campaign's
+    -- setting, so a changed or cleared name stops applying at once.
+    SELECT c.id,c.production_cycle,p.ends_at,(
+        SELECT s.cursor->'load'->'reminder_workgroup'->'family_duids'
+        FROM public.stewardship_source_current sc
+        JOIN public.stewardship_source_snapshot s ON s.id=sc.snapshot_id
+        WHERE coalesce(p.values->>'reminder_workgroup','')<>''
+            AND jsonb_typeof(s.cursor->'load'->'reminder_workgroup'->'name')='string'
+            AND s.cursor->'load'->'reminder_workgroup'->>'name'=p.values->>'reminder_workgroup'
+            AND jsonb_typeof(s.cursor->'load'->'reminder_workgroup'->'family_duids')='array'
+    ) AS workgroup_duids
     FROM public.stewardship_system_configuration r
     JOIN public.stewardship_campaign c ON c.id=r.current_campaign_id
     JOIN public.stewardship_campaign_configuration p ON p.id=c.active_configuration_id
@@ -65,6 +77,15 @@ WITH scope AS (
         WHEN public.stewardship_campaign_now_v1()>=ends_at THEN 'campaign_closed'
         WHEN NOT active OR NOT email_eligible THEN 'family_ineligible'
         WHEN effective_submission_id IS NOT NULL THEN 'family_responded'
+        -- A Reminder WorkGroup Family's reminders are skipped, as planning
+        -- skips them (plan_family, same precedence). Only its reminder rows:
+        -- its due invitation is still selected, and its reminders no longer
+        -- coalesce into it.
+        WHEN kind='reminder' AND EXISTS(SELECT 1 FROM scope s
+            JOIN public.stewardship_family_campaign wf ON wf.id=groups.family_id
+            WHERE s.id=groups.campaign_id
+                AND s.workgroup_duids @> jsonb_build_array(wf.family_duid))
+            THEN 'workgroup_excluded'
         WHEN NOT email_deliverable THEN 'no_deliverable_recipient'
         WHEN initial_unreviewed OR initial_unfulfilled THEN 'initial_unfulfilled'
         ELSE '' END AS reason
