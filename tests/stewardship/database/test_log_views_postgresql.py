@@ -14,7 +14,7 @@ from django.utils import timezone
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.audit import log_search, log_views
+from parishkit.stewardship.audit import log_reads, log_search, log_views
 from parishkit.stewardship.audit.log_rows import DETAIL_FIELDS, DETAIL_LIMIT
 from parishkit.stewardship.audit.models import (
     AuditContext,
@@ -279,7 +279,7 @@ def test_a_bounded_count_says_more_than_and_paging_stops_at_its_depth(
     """Past the count bound the navigator says "more than"; a page past the
     paging depth shows the last reachable page and says why."""
     browser, _ = signed_in()
-    monkeypatch.setattr(log_views, "EXPORT_LIMIT", 30)
+    monkeypatch.setattr(log_reads, "EXPORT_LIMIT", 30)
     diagnostics(("INFO",) * 40)
     wanted = {"applied": "yes", "info": "yes", "size": "25"}
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -683,8 +683,8 @@ def test_page_keys_are_read_from_the_creation_time_index(auth_service, model, ol
             # index path it would take for a large table.
             cursor.execute("SET LOCAL enable_seqscan = off")
             cursor.execute("SET LOCAL enable_bitmapscan = off")
-        rows = log_views._filtered(model.objects.all(), query, timezone.now())
-        plan = log_views._ordered(rows, oldest=oldest)[:50].explain()
+        rows = log_reads.filtered(model.objects.all(), query, timezone.now())
+        plan = log_reads.ordered(rows, oldest=oldest)[:50].explain()
     assert "created_id" in plan and "Sort" not in plan, plan
     assert re.search(r"Index Cond: \(created_at <= ", plan), plan
 
@@ -699,10 +699,10 @@ def test_level_filtered_reads_and_counts_stay_on_indexes(auth_service):
         with connection.cursor() as cursor:
             cursor.execute("SET LOCAL enable_seqscan = off")
         levels = OperationalLog.objects.filter(level__in=["ERROR", "CRITICAL"])
-        rows = log_views._filtered(levels, query, timezone.now())
-        page = log_views._ordered(rows, oldest=False)[:50].explain()
+        rows = log_reads.filtered(levels, query, timezone.now())
+        page = log_reads.ordered(rows, oldest=False)[:50].explain()
         counts = [
-            log_views._filtered(model.objects.all(), query, timezone.now())
+            log_reads.filtered(model.objects.all(), query, timezone.now())
             .order_by()[: COUNT_LIMIT + 1]
             .explain()
             for model in (OperationalLog, AuditEvent)
@@ -988,8 +988,8 @@ def test_a_read_past_its_limit_is_stopped_recorded_and_unavailable(
     the limit and the time taken, and answered with the unavailable page;
     nothing is audited as a view or export."""
     browser, _ = signed_in()
-    monkeypatch.setattr(log_views, "READ_SECONDS", 0.2)
-    real = log_views._sources
+    monkeypatch.setattr(log_reads, "READ_SECONDS", 0.2)
+    real = log_reads.sources
 
     def slow(query, through):
         """A read that takes longer than the limit."""
@@ -997,7 +997,7 @@ def test_a_read_past_its_limit_is_stopped_recorded_and_unavailable(
             cursor.execute("SELECT pg_sleep(2)")
         return real(query, through)
 
-    monkeypatch.setattr(log_views, "_sources", slow)
+    monkeypatch.setattr(log_reads, "sources", slow)
     before = len(views())
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         answer = post(browser, {"text": "anything"})
