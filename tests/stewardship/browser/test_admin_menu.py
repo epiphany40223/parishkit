@@ -274,3 +274,47 @@ def test_the_current_pages_group_always_opens(page, component_origin):
     assert page.evaluate("localStorage.getItem('pk-admin-menu-group:campaign')") == (
         "closed"
     )
+
+
+def test_open_counts_read_with_their_entry(page, component_origin):
+    """A queue's open count sits inside its entry and is announced with it (#585)."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + PATH)
+    sidebar = _sidebar(page)
+    for name, count in (
+        ("Additional information", "3"),
+        ("Ministry follow-up", "1,250"),
+    ):
+        link = sidebar.locator("a", has_text=name)
+        expect(link).to_have_accessible_name(f"{name} ({count} open)")
+        pill = link.locator(".admin-menu-count")
+        visible(pill)
+        assert pill.inner_text() == count
+        # The number stays inside its entry rather than spilling out of it.
+        box, number = link.bounding_box(), pill.bounding_box()
+        assert box["x"] <= number["x"]
+        assert number["x"] + number["width"] <= box["x"] + box["width"]
+        assert box["y"] <= number["y"]
+        assert number["y"] + number["height"] <= box["y"] + box["height"]
+    expect(sidebar.locator(".admin-menu-count")).to_have_count(2)
+    # No layout shift (#585 review): the counts are rendered with the page
+    # and nothing adds, removes or resizes them afterwards, so pointing at
+    # or focusing a counted entry never moves any menu entry.
+    entries = sidebar.locator(".admin-group ul a")
+
+    def layout():
+        """Every menu entry's offset box, in menu order (scrolling aside)."""
+        return entries.evaluate_all(
+            "links => links.map(link => [link.offsetLeft, link.offsetTop,"
+            " link.offsetWidth, link.offsetHeight])"
+        )
+
+    before = layout()
+    for name in ("Additional information", "Ministry follow-up"):
+        sidebar.locator("a", has_text=name).hover()
+        page.wait_for_timeout(300)
+        assert layout() == before, name
+        sidebar.locator("a", has_text=name).focus()
+        assert layout() == before, name

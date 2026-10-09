@@ -1,6 +1,9 @@
 """The declarative Admin navigation covers every route and yields sound trails."""
 
+import json
+import logging
 import re
+from contextlib import nullcontext
 from html.parser import HTMLParser
 from pathlib import Path
 from types import SimpleNamespace
@@ -934,3 +937,158 @@ def test_a_ministry_leaders_export_names_participation_without_a_link():
             _, trail = navigation.build(_match(name, request_id=uuid4()), items)
             assert trail[-2]["label"] == navigation.PAGES["participation"].label
             assert (trail[-2]["url"] == reverse("admin:reports")) is linked
+
+
+def test_open_counts_read_once_per_request_and_only_for_offered_entries(
+    monkeypatch,
+):
+    """One statement for both counts, none without a counted link (#585)."""
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.reports.ministry_followup import FollowupQuery
+
+    statements = []
+
+    class Cursor:
+        """Records each statement and answers both counts."""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, parameters):
+            statements.append(parameters)
+
+        def fetchone(self):
+            return (
+                3 if statements[-1]["information"] else None,
+                2 if statements[-1]["ministry"] else None,
+            )
+
+    monkeypatch.setattr(
+        admin_context,
+        "connection",
+        SimpleNamespace(cursor=lambda: Cursor(), in_atomic_block=False),
+    )
+    active = _campaign("active")
+    cases = (
+        # Both queues for Staff: every Ministry.
+        ("staff", active, {"information_queue": 3, "ministry_followup": 2}),
+        # A leader only has Ministry follow-up, scoped to their Ministry.
+        ("ministry_leader", active, {"ministry_followup": 2}),
+        # Greyed out (no Ministry module) or absent: no count, no query.
+        ("ministry_leader", _campaign("active", modules=("census",)), {}),
+        ("staff", None, {}),
+    )
+    for role, campaign, expected in cases:
+        statements.clear()
+        actor = _principal(role)
+        items = _menu(role, campaign, "production")
+        request = SimpleNamespace()
+        counts = admin_context._open_counts(request, actor, items, campaign)
+        assert counts == expected, role
+        assert len(statements) == (1 if expected else 0), role
+        # A second chrome render in the same request reuses the counts.
+        assert admin_context._open_counts(request, actor, items, campaign) == counts
+        assert len(statements) == (1 if expected else 0), role
+        if expected:
+            operational = role != "ministry_leader"
+            assert statements[0]["operational"] is operational
+            assert statements[0]["scope"] == ([] if operational else [9])
+            assert statements[0]["campaign"] == campaign.pk
+            # The count runs the follow-up page's own default filters.
+            assert json.loads(statements[0]["filters"]) == (
+                FollowupQuery().form_values() | {"assignee": "any"}
+            )
+            assert statements[0]["viewer"] == actor.identity
+
+
+def test_open_counts_are_plain_numbers_with_screen_reader_words():
+    """A count shows after the name, read as "(N open)"; zero shows none (#585)."""
+    campaign = _campaign("active")
+    items = _menu("staff", campaign, "production")
+    sections, _trail = navigation.build(None, items)
+    counts = {"information_queue": 1234, "ministry_followup": 0}
+    for section in sections:
+        for entry in section["items"]:
+            entry["count"] = counts.get(entry["name"])
+    html = render_to_string(
+        "stewardship/admin-navigation.html",
+        {"admin_chrome": {"home_url": "/admin/", "sections": sections}},
+    )
+    information = reverse("admin:information_queue")
+    assert (
+        f'<a href="{information}">Additional information '
+        '<span class="admin-menu-count" aria-hidden="true">1,234</span>'
+        '<span class="visually-hidden">(1,234 open)</span></a>'
+    ) in html
+    assert html.count("admin-menu-count") == 1
+
+
+def test_a_failed_open_counts_query_leaves_the_menu_without_numbers(monkeypatch):
+    """A database error in the counts is logged and the menu shows no count.
+
+    The counts only decorate the menu (#585), so an error in their statement
+    (for example inside the follow-up selection) must not break the page:
+    the chrome gets no numbers, the failure is logged at WARNING to the
+    process log and System logs, and the empty result is kept for the
+    request, so the failing statement is not retried within it.
+    """
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.observability import Event, FailureKind
+
+    class Cursor:
+        """Fails the counts statement as the selection would."""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, parameters):
+            raise DatabaseError("invalid input syntax for type bigint")
+
+    calls = []
+    monkeypatch.setattr(
+        admin_context,
+        "connection",
+        SimpleNamespace(cursor=lambda: Cursor(), in_atomic_block=True),
+    )
+    # Inside a view's transaction the count takes a savepoint; no database
+    # here, so it is a recorded no-op stand-in.
+    savepoints = []
+
+    def atomic():
+        """Record the savepoint the count takes."""
+        savepoints.append(True)
+        return nullcontext()
+
+    monkeypatch.setattr(admin_context, "transaction", SimpleNamespace(atomic=atomic))
+    monkeypatch.setattr(
+        admin_context,
+        "emit_failure",
+        lambda error, **details: calls.append(("emit", details)),
+    )
+    monkeypatch.setattr(
+        admin_context,
+        "operational",
+        lambda event, **details: calls.append(("operational", event, details)),
+    )
+    campaign = _campaign("active")
+    items = _menu("staff", campaign, "production")
+    request = SimpleNamespace()
+    actor = _principal("staff")
+    assert admin_context._open_counts(request, actor, items, campaign) == {}
+    assert admin_context._open_counts(request, actor, items, campaign) == {}
+    emit, durable = calls
+    # The count's savepoint, then the durable entry's own.
+    assert savepoints == [True, True]
+    assert emit[1]["event"] is Event.REPORT_SHAPING_FAILED
+    assert emit[1]["level"] == logging.WARNING
+    assert durable[1] is Event.REPORT_SHAPING_FAILED
+    assert durable[2]["level"] == "WARNING"
+    assert durable[2]["context"]["failure_kind"] is FailureKind.DATABASE

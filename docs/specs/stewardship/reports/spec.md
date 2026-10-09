@@ -754,6 +754,13 @@ reauthentication ceremony, distinct-Family reveal budget, or Valkey dependency.
 The server rechecks the report role and campaign scope on each request and uses
 `Cache-Control: no-store` for interactive responses.
 
+In Testing mode the Family sign-in accepts only rehearsal codes, so the page,
+and a directory export's page, says the listed codes work only after go-live.
+For Administrators the notice links "Try the Family form as a chosen Family",
+the chosen-Family test send they alone may open; Staff get no link and are told
+to ask an Administrator for a test invitation
+([#591](https://github.com/epiphany40223/parishkit/issues/591)).
+
 The manual code is intentionally a low-sensitivity, campaign-bound access
 mechanism. Admin and Staff already hold broader parish-data access, and the code
 is unusable while closed but may become usable again if that same campaign is

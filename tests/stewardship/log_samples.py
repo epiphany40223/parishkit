@@ -41,6 +41,11 @@ SAMPLES = {
             "outcome": Outcome.FAILED,
         },
     ),
+    # The Admin menu's open counts could not be read (#585).
+    Event.REPORT_SHAPING_FAILED: (
+        ContextKind.FAILURE,
+        {"failure_kind": FailureKind.DATABASE, "outcome": Outcome.FAILED},
+    ),
     Event.SOURCE_PROVIDER_FAILED: (ContextKind.FAILURE, _SOURCE_TASK),
     Event.SOURCE_CREDENTIAL_FAILED: (
         ContextKind.FAILURE,

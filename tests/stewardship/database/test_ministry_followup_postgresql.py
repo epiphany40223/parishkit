@@ -3,6 +3,7 @@
 import re
 from datetime import UTC, datetime, timedelta
 from html import escape
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -17,6 +18,7 @@ from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -39,7 +41,7 @@ from parishkit.stewardship.workflows.models import (
     MinistryWorkflowRevision,
 )
 
-from .auth_builders import unguarded
+from .auth_builders import signed_in, unguarded
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
@@ -951,3 +953,191 @@ def test_refusal_outside_scope_is_denied_not_a_conflict(response_service, google
     assert len({body for _, body in answers}) == 1
     assert b"This request changed" not in answers[0][1]
     assert MinistryWorkflowRevision.objects.count() == 0
+
+
+def _menu_count(body, label):
+    """The open count the menu shows after ``label``, or None without one."""
+    found = re.search(
+        rf'>{label} <span class="admin-menu-count" aria-hidden="true">'
+        rf"([0-9,]+)</span>".encode(),
+        body,
+    )
+    return int(found.group(1)) if found else None
+
+
+def test_menu_shows_open_follow_up_counts_scoped_to_the_viewer(
+    response_service, google
+):
+    """The menu counts each follow-up queue's open items (#585).
+
+    Ministry follow-up counts Unresolved requests: every Ministry for
+    Administrators, a Ministry leader's own only. A resolved request leaves
+    the count, a zero count shows no number, and Additional information
+    counts the Family's current request.
+    """
+    harness = setup(response_service)
+    admin_browser, _ = signed_in()
+    # The leader is another Google account, so the Administrator stays one.
+    google[0]["sub"] = "synthetic-leader"
+    browser, _, _, _ = leader(harness, google)
+    admin = user("admin@example.org").pk
+    join, leave = requests()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        body = get(admin_browser, "/admin/")[1]
+        assert _menu_count(body, "Ministry follow-up") == 2
+        # This Family wrote no additional information, so nothing is open.
+        assert b"Additional information <span" not in body
+        assert _menu_count(get(browser, "/admin/")[1], "Ministry follow-up") == 1
+    edit(harness, admin, join, state="resolved", outcome="joined")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert _menu_count(get(admin_browser, "/admin/")[1], "Ministry follow-up") == 1
+        body = get(browser, "/admin/")[1]
+        assert b">Ministry follow-up</a>" in body
+        assert _menu_count(body, "Ministry follow-up") is None
+    # Additional information counts the Family's current, uncompleted request;
+    # a Ministry leader has no Additional information entry at all.
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["additional_information"] = "Please call about the choir"
+    respond(harness, form, answers)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert (
+            _menu_count(get(admin_browser, "/admin/")[1], "Additional information") == 1
+        )
+        assert b"Additional information" not in get(browser, "/admin/")[1]
+
+
+def test_a_leaders_open_count_costs_the_chrome_one_query(
+    response_service, google, monkeypatch
+):
+    """A Ministry leader whose menu links Ministry follow-up pays exactly one
+    more chrome query for its open count, and no other (#585).
+
+    The NAV-2 budget test covers a draft without the Ministry module; this
+    is the leader's case with the entry available. The same Home page is
+    rendered with and without the count, each from a cold Family portal
+    switch cache, and only the chrome's own queries are counted.
+    """
+    from django.template import engines
+    from django.test.utils import CaptureQueriesContext
+
+    from parishkit.stewardship.accounts import admin_context, family_maintenance
+
+    harness = setup(response_service)
+    browser, _, _, _ = leader(harness, google)
+    engine = engines["django"].engine
+    runs = []
+
+    def counted(request):
+        """The real chrome, with the statements its one call runs recorded."""
+        with CaptureQueriesContext(connection) as chrome:
+            result = admin_context.portal_chrome(request)
+        if result:
+            runs.append([query["sql"] for query in chrome.captured_queries])
+        return result
+
+    processors = tuple(
+        counted if processor is admin_context.portal_chrome else processor
+        for processor in engine.template_context_processors
+    )
+    monkeypatch.setitem(engine.__dict__, "template_context_processors", processors)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        monkeypatch.setitem(family_maintenance._cache, "at", None)
+        body = get(browser, "/admin/")[1]
+        assert _menu_count(body, "Ministry follow-up") == 1
+        with monkeypatch.context() as patched:
+            patched.setattr(admin_context, "_open_counts", lambda *args: {})
+            patched.setitem(family_maintenance._cache, "at", None)
+            body = get(browser, "/admin/")[1]
+            assert _menu_count(body, "Ministry follow-up") is None
+    counts, plain = runs
+    assert len(counts) == len(plain) + 1, (counts, plain)
+    marker = "stewardship_ministry_followup_v1"
+    assert [marker in sql for sql in counts].count(True) == 1
+    assert not any(marker in sql for sql in plain)
+
+
+def test_menu_ministry_count_applies_the_follow_up_pages_filters(response_service):
+    """The menu's Ministry follow-up count is the page's own default total (#585).
+
+    It runs the page's selection, so wherever the page lists requests the
+    count is that page's total, and wherever the page cannot list them (an
+    unavailable campaign or source, or a leader with no Ministry of this
+    campaign in scope) there is no count at all, never a stale number.
+    """
+    from parishkit.stewardship.accounts import admin_context
+
+    harness = setup(response_service)
+    items = [SimpleNamespace(name="ministry_followup", url="/admin/follow-up/")]
+
+    def count(principal, campaign_id=harness.campaign.pk):
+        """The menu's count for ``principal``, read as the web role reads it."""
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            return admin_context._open_counts(
+                SimpleNamespace(), principal, items, SimpleNamespace(pk=campaign_id)
+            ).get("ministry_followup")
+
+    staff = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    own = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
+    for principal, total in ((staff, 2), (own, 1)):
+        assert read(harness, principal)["total"] == total
+        assert count(principal) == total
+    # A leader of a Ministry this campaign neither selects nor has a request
+    # for: the page refuses, and the menu shows no number.
+    other = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({77}))
+    with pytest.raises(PermissionError):
+        read(harness, other)
+    assert count(other) is None
+    # A campaign the selection cannot read: the page says unavailable, and
+    # again the menu shows no number.
+    missing = uuid4()
+    with (
+        pytest.raises(ReadUnavailable),
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        transaction.atomic(),
+    ):
+        followup_page(missing, FollowupQuery(), staff)
+    assert count(staff, missing) is None
+
+
+def test_a_failing_menu_count_leaves_the_page_and_transaction_usable(
+    response_service, google, monkeypatch
+):
+    """An error in the menu's counts never breaks an Admin page (#585).
+
+    The counts statement is made to fail inside PostgreSQL. The Admin page
+    still renders, its menu shows the entries without numbers, a WARNING
+    System logs entry records the failure, and a transaction the counts ran
+    in stays usable afterwards, because the statement had its own savepoint.
+    """
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    harness = setup(response_service)
+    admin_browser, _ = signed_in()
+    monkeypatch.setattr(
+        admin_context, "OPEN_COUNTS", "SELECT 1/0, %(information)s, %(ministry)s"
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = get(admin_browser, "/admin/")
+        assert response.status_code == 200
+        assert b">Ministry follow-up</a>" in body
+        assert b"admin-menu-count" not in body
+        # Read inside one transaction, as an owning view would: the failed
+        # count rolls back only its savepoint.
+        items = [SimpleNamespace(name="ministry_followup", url="/admin/follow-up/")]
+        staff = Principal(uuid4(), frozenset({"staff"}), frozenset())
+        with transaction.atomic():
+            counts = admin_context._open_counts(
+                SimpleNamespace(), staff, items, SimpleNamespace(pk=harness.campaign.pk)
+            )
+            assert counts == {}
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                assert cursor.fetchone() == (1,)
+    entries = OperationalLog.objects.filter(event="report_shaping_failed")
+    assert entries.count() == 2
+    assert {entry.level for entry in entries} == {"WARNING"}
+    assert {entry.context["failure_kind"] for entry in entries} == {
+        "database_unavailable"
+    }

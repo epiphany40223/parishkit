@@ -243,7 +243,7 @@ def directory(request, campaign_id, *, postal=False):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
-            testing = testing_codes_context(campaign_id)
+            testing = testing_codes_context(campaign_id, principal)
             report_url = reverse("admin:family_directory")
             context = (
                 report

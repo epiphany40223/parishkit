@@ -271,7 +271,7 @@ def detail(request, request_id):
                 step=_export_step(state["state"]),
             )
             testing = (
-                testing_codes_context(campaign_id)
+                testing_codes_context(campaign_id, principal)
                 if job.report in {"family_directory", "postal_outreach"}
                 else {}
             )
