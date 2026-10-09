@@ -387,3 +387,10 @@ def test_an_unknown_total_shows_counts_without_a_percentage():
     assert "data-live-pending" in region(html)
     # Even with nothing planned left, the send is not finished while unknown.
     assert progress(counts(sent=12, unplanned=None)).active
+
+
+def test_reminder_workgroup_skips_are_not_sent_and_not_remaining():
+    """Reminders the Reminder WorkGroup skipped (#861) count as not sent."""
+    observed = counts(kind="reminder", sent=3, workgroup=2, not_needed=1)
+    assert observed.not_sent == 3 and not observed.in_progress
+    assert progress(observed).total == 3

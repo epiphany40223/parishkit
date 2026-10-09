@@ -42,6 +42,9 @@ def add_schedule_planning_grants(tables, columns):
         {
             "id",
             "campaign_id",
+            # The source identity, matched against the campaign's Reminder
+            # WorkGroup members (#861); not a recipient or an answer.
+            "family_duid",
             "active",
             "email_eligible",
             "email_deliverable",

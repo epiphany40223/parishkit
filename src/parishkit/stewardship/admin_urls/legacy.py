@@ -204,6 +204,7 @@ SLASHLESS = (
     ("campaign/schedules", "schedule_settings"),
     ("campaign/share-options", "share_settings"),
     ("campaign/talents", "talent_settings"),
+    ("campaign/reminder-workgroup", "reminder_workgroup"),
     ("campaign/go-live", "go_live"),
     ("campaign/go-live/families", "go_live_families"),
     ("campaign/go-live/cleanup/<uuid:request_id>", "go_live_cleanup"),

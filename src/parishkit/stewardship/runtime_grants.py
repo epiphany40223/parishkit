@@ -429,8 +429,10 @@ def runtime_grants(role, *, target=None):
             }
         }
         # Readiness verifies the full-observation anchor using permanent public
-        # manifest metadata. Cursor load evidence contains completeness counts,
-        # not source payloads; validation/content/corpus columns remain private.
+        # manifest metadata. Cursor load evidence contains completeness counts
+        # and the campaign's Reminder WorkGroup name and member Family DUIDs
+        # (#861; identifiers this login already reads on Family rows), not
+        # source payloads; validation/content/corpus columns remain private.
         columns["stewardship_source_snapshot"] = {
             "SELECT": {
                 "id",

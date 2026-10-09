@@ -166,6 +166,14 @@ def test_events_read_oldest_first_with_email_links():
         ("Reminder 1", other.id),
         ("Invitation not sent", None),
     ]
+    # A Reminder WorkGroup skip (#861) replaces its reminder's cancelled email.
+    shown = events(
+        [planned, other], [], workgroup_skips=[(START + MINUTE, UUID(int=50))]
+    )
+    assert [(str(line.what), str(line.detail)) for line in shown] == [
+        ("Invitation", planned.outcome),
+        ("Reminder not sent", "in the ParishSoft Reminder WorkGroup"),
+    ]
     # Nothing recorded: no lines; no engagement record: no step lines.
     assert events([], []) == ()
     assert len(events([], [FIRST], engagement=Engagement())) == 1

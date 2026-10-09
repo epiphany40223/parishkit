@@ -475,6 +475,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Campaign setup | Dates and mail schedules | `/admin/campaign/schedules/` | Administrator | No current campaign |
 | Campaign setup | Share options | `/admin/campaign/share-options/` | Administrator | The campaign has no financial module, or it is not an unlocked Testing draft |
 | Campaign setup | Member talents | `/admin/campaign/talents/` | Administrator | The campaign has no Ministry module, or it is not an unlocked Testing draft |
+| Campaign setup | Reminder WorkGroup | `/admin/campaign/reminder-workgroup/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Go-live readiness | `/admin/campaign/go-live/` | Administrator | The campaign is not a draft (it points to Production activation) |
 | Campaign setup | Production activation | `/admin/campaign/production/` | Administrator | Production has not been confirmed for this campaign |
 | Mail and Family portal | Pause and resume mail | `/admin/mail/controls/` | Administrator | Testing mode |
@@ -736,6 +737,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same; old address redirects) |  |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same; old address redirects) | Gains a Return link and About panel. |
 | `talent_settings` | Member talents | Menu: Member talents | Administrator | Talents Members can share | `/admin/campaign/talents/` | (same; old address redirects) | Gains a Return link and About panel. |
+| `reminder_workgroup` | Reminder WorkGroup | Menu: Reminder WorkGroup | Administrator | (new, #861) | `/admin/campaign/reminder-workgroup/` | (same) | Edit, review, apply; stays editable while live. |
 | `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/go-live/` | (same; old address redirects) |  |
 | `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same; old address redirects) |  |
 | `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (same; old address redirects) |  |
@@ -1671,6 +1673,20 @@ slot's image is its own reviewed change; a slot without an image shows nothing.
 Artwork is presentation, not structure, so it stays editable while the campaign
 is live. Each Family email's editor (initial, reminder and confirmation) has a
 "Show the campaign banner at the top of this email" checkbox, on by default.
+
+Reminder WorkGroup (Campaign navigation, #861) names the one ParishSoft Family
+WorkGroup whose Families get no Reminders, for example a second Family record
+kept for a staff member who already responded as a parishioner. It is the
+campaign's optional `reminder_workgroup` setting: one plain-language text
+field (the WorkGroup's name as ParishSoft shows it; empty turns it off),
+reviewed and applied like any other change, and editable while the campaign
+is live because staff mark Families in ParishSoft during the campaign. The
+page says what the newest refresh found: no WorkGroup set, the name not read
+yet (it takes effect at the next refresh), no ParishSoft WorkGroup by that
+name, or how many Families are in it. What the exclusion does and when it
+applies is in the background-processing specification's
+[Reminder WorkGroup](../background-processing/spec.md#family-invitations-and-reminders)
+rules; nothing else about those Families changes.
 
 Hosted files (Parish data) is the Administrator-only library of
 PDF, Office and image files that page and email content links or shows
@@ -2939,6 +2955,11 @@ its outbox message state, or, before preparation, by its occurrence:
 - **Couldn't be emailed**: skipped or cancelled because the Family has no
   deliverable address (`no_deliverable_recipient`) or is no longer eligible
   (`family_ineligible`).
+- **Skipped: in the ParishSoft Reminder WorkGroup** (shown when non-zero; a
+  column of the send history): a reminder skipped, or its unsent email
+  cancelled, because the Family is in the campaign's Reminder WorkGroup
+  (`workgroup_excluded`, #861). Such a Family is never owed a reminder, so it
+  is not remaining either.
 - **Not needed** (shown when non-zero): skipped, coalesced or cancelled for
   any other reason, such as the Family having responded, a later email
   replacing this one, or the campaign closing.
@@ -3783,6 +3804,13 @@ might be held back:
   [ParishSoft outage runbook](../../../guides/stewardship-launch-runbooks.md#parishsoft-outage).
 - **Old copies not being removed** (`source_retention_failing`), linking the
   same runbook section.
+- **An unknown Reminder WorkGroup** (#861): the newest refresh found no
+  ParishSoft Family WorkGroup with the campaign's
+  [Reminder WorkGroup](#parish-and-integration-configuration) name, so no
+  Family's Reminders are being skipped. The notice names the setting and
+  links its page; the refresh itself logs a WARNING. It is a panel notice,
+  not one of the problems listed first, and it clears when a refresh finds
+  the name or the setting is cleared.
 
 "About this page" explains the difference between full refreshes and quick
 updates, why quick updates pause during a send, and that every later

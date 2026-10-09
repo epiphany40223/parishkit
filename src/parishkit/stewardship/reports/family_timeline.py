@@ -133,6 +133,20 @@ WHERE d.campaign_id=%(campaign)s AND d.kind='initial'
   AND (%(ended)s::timestamptz IS NULL OR t.created_at<%(ended)s)
 ORDER BY t.created_at
 """
+# When a planned reminder to the Family was skipped because the Family is in
+# the campaign's Reminder WorkGroup (#861), read like ``_SKIPS``.
+_WORKGROUP_SKIPS = """
+SELECT t.created_at, o.id
+FROM stewardship_schedule_definition d
+JOIN stewardship_schedule_occurrence o ON o.definition_id=d.id
+JOIN stewardship_occurrence_transition t ON t.occurrence_id=o.id
+WHERE d.campaign_id=%(campaign)s AND d.kind='reminder'
+  AND o.mode=%(mail_mode)s AND o.target=%(target)s
+  AND t.after_state='skipped' AND t.reason='workgroup_excluded'
+  AND (%(started)s::timestamptz IS NULL OR t.created_at>=%(started)s)
+  AND (%(ended)s::timestamptz IS NULL OR t.created_at<%(ended)s)
+ORDER BY t.created_at
+"""
 
 
 @dataclass(frozen=True)
@@ -297,7 +311,16 @@ def scope_sign_ins(instants, transitions, current, mode, lifetime):
     ]
 
 
-def events(emails, submissions, *, skips=(), sign_ins=(), forms=(), engagement=None):
+def events(
+    emails,
+    submissions,
+    *,
+    skips=(),
+    sign_ins=(),
+    forms=(),
+    engagement=None,
+    workgroup_skips=(),
+):
     """The Administrator's timeline: every line, oldest first.
 
     The page shows it newest first (``TIMELINE_SORTING``); this order is the
@@ -308,6 +331,8 @@ def events(emails, submissions, *, skips=(), sign_ins=(), forms=(), engagement=N
     steps read in the order it took them. ``skips`` are ``(instant,
     occurrence)`` pairs; a skip's line replaces the cancelled email of the
     same occurrence, so one planned invitation is not listed twice.
+    ``workgroup_skips`` are the same pairs for reminders skipped because the
+    Family is in the campaign's Reminder WorkGroup (#861).
     """
     lines = [
         Event(at, _("Signed in"), _("or a mail scanner checked the link"))
@@ -331,7 +356,11 @@ def events(emails, submissions, *, skips=(), sign_ins=(), forms=(), engagement=N
         Event(at, _("Invitation not sent"), _("already responded"))
         for at, _occurrence in skips
     ]
-    skipped = {occurrence for _at, occurrence in skips}
+    lines += [
+        Event(at, _("Reminder not sent"), _("in the ParishSoft Reminder WorkGroup"))
+        for at, _occurrence in workgroup_skips
+    ]
+    skipped = {occurrence for _at, occurrence in (*skips, *workgroup_skips)}
     lines += [
         Event(email.at, email.name, email.outcome, email.id)
         for email in emails
@@ -466,8 +495,11 @@ def read_timeline(scope, family_id, *, full, current_mode="production"):
         if not full:
             return Timeline(summary(emails, submissions))
         bounds = lifetime(scope)
-        cursor.execute(_SKIPS, values | {"started": bounds[0], "ended": bounds[1]})
+        window = values | {"started": bounds[0], "ended": bounds[1]}
+        cursor.execute(_SKIPS, window)
         skips = cursor.fetchall()
+        cursor.execute(_WORKGROUP_SKIPS, window)
+        workgroup_skips = cursor.fetchall()
     forms = FamilyFormBaseline.objects.filter(
         family_id=family_id,
         mode=values["response_mode"],
@@ -483,6 +515,7 @@ def read_timeline(scope, family_id, *, full, current_mode="production"):
             sign_ins=read_sign_ins(family_id, scope, current_mode, bounds),
             forms=sorted(forms),
             engagement=engagement,
+            workgroup_skips=workgroup_skips,
         ),
         engagement,
     )

@@ -69,6 +69,13 @@ ARTWORK_SLOTS = ("banner", "welcome", "member", "financial", "closing")
 BANNER_EMAILS = ("initial", "reminder", "confirmation")
 
 
+# The campaign's Reminder WorkGroup (#861): Families in this ParishSoft Family
+# WorkGroup get no Reminders. ParishSoft names are free text; this bound only
+# keeps the stored value sane. The key is absent, never empty, when unset.
+REMINDER_WORKGROUP = "reminder_workgroup"
+WORKGROUP_NAME_LIMIT = 200
+
+
 def _artwork(artwork):
     """Validate the optional ``artwork`` value; it is absent rather than empty.
 
@@ -101,8 +108,10 @@ def campaign_values(values):
 
     ``talent_options`` is optional: a campaign that never edited its Member
     talents list resolves to the built-in defaults (see responses.service).
+    ``reminder_workgroup`` is optional too (#861): the name of the ParishSoft
+    Family WorkGroup whose Families get no Reminders; absent means none.
     """
-    if set(values) - {"talent_options", "artwork"} != {
+    if set(values) - {"talent_options", "artwork", REMINDER_WORKGROUP} != {
         "name",
         "year_label",
         "timezone",
@@ -182,6 +191,8 @@ def campaign_values(values):
         _options(values["talent_options"])
     if "artwork" in values:
         _artwork(values["artwork"])
+    if REMINDER_WORKGROUP in values:
+        text(values[REMINDER_WORKGROUP], WORKGROUP_NAME_LIMIT)
     content = values["content_versions"]
     if type(content) is not dict or not set(content) <= {
         "welcome",

@@ -1,0 +1,19 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Reminder WorkGroup" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Reminder WorkGroup" %}</h1>
+{% aboutpage "reminder-workgroup" %}<p>{% translate "Some Families should not get Reminder emails, for example a second Family record ParishSoft keeps for a staff member who already responded as a parishioner. Add those Families to one Family WorkGroup in ParishSoft and name that WorkGroup here." %}</p>
+<p>{% translate "A Family in the WorkGroup gets no Reminders. Nothing else changes: it still gets the invitation, receipts and confirmations, keeps its code and link, and counts in every report. Changes take effect at the next ParishSoft refresh, including quick updates, and a Reminder already prepared for a Family is not sent once the Family is in the WorkGroup." %}</p>{% endaboutpage %}
+<p>{{ campaign.active_configuration.name }}</p>
+<section class="panel" aria-labelledby="workgroup-status-heading">
+<h2 id="workgroup-status-heading">{% translate "Now" %}</h2>
+{% if not current %}<p data-workgroup-status="off">{% translate "No WorkGroup is set: every eligible Family that has not responded gets the Reminders." %}</p>
+{% elif not evidence %}<p data-workgroup-status="pending">{% blocktranslate with name=current trimmed %}“{{ name }}” takes effect at the next ParishSoft refresh.{% endblocktranslate %}</p>
+{% elif not evidence.found %}<p class="notice notice-error" data-workgroup-status="missing">{% blocktranslate with name=current trimmed %}ParishSoft has no Family WorkGroup named “{{ name }}”, so no Family's Reminders are being skipped. Check the name in ParishSoft.{% endblocktranslate %}</p>
+{% else %}<p data-workgroup-status="found">{% blocktranslate with name=current count count=evidence.family_duids|length trimmed %}The newest ParishSoft refresh found {{ count }} Family in “{{ name }}”; it gets no Reminders.{% plural %}The newest ParishSoft refresh found {{ count }} Families in “{{ name }}”; they get no Reminders.{% endblocktranslate %}</p>{% endif %}
+</section>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview">
+{{ form.non_field_errors }}{{ form.base_digest }}{{ form.base_digest.errors }}
+<div>{{ form.name.as_field_group }}</div>
+{% button type="submit" %}{% translate "Preview changes" %}{% endbutton %}</form>
+{% endblock %}
