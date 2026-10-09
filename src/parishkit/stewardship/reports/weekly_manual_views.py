@@ -82,7 +82,9 @@ def request_report(request, campaign_id):
         runtime_row = SystemConfiguration.objects.select_related(
             "current_campaign__active_configuration"
         ).get()
-        if campaign_id != runtime_row.current_campaign_id:
+        # The route passes the current campaign's id (None when there is
+        # none); recheck it against the row read under this request.
+        if campaign_id is None or campaign_id != runtime_row.current_campaign_id:
             raise PermissionError("Manual reporting requires the current campaign.")
         if request.GET or (
             request.method == "POST"

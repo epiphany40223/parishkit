@@ -625,8 +625,8 @@ def test_each_role_has_one_menu_shape_in_every_mode_and_campaign_state(role):
 def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
     """No campaign: the campaign's pages say so instead of disappearing."""
     items = _menu("administrator", None, "testing")
-    needs = {entry.name for entry in navigation.MENU if entry.campaign} | {
-        # Campaign pages whose URLs name no campaign (#525) still need one.
+    # Campaign pages, whose URLs name no campaign (#525, #865), still need one.
+    needs = {
         "campaign_settings",
         "content_catalog",
         "artwork_settings",
@@ -647,6 +647,7 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "ministry_report",
         "ministry_followup",
         "family_directory",
+        "weekly_digest_manual",
     }
     for item in items:
         if item.name in needs:

@@ -415,15 +415,14 @@ class Entry:
     ``capability`` is the capability the page itself checks, so the menu and
     the page cannot disagree (the menu is still not the security boundary).
     ``scoped`` marks a Ministry-scoped capability, which a Ministry leader
-    holds through an assigned Ministry. ``campaign`` marks a route that names
-    the current campaign; its ``reason`` must refuse when there is none.
+    holds through an assigned Ministry. No entry's route names a campaign
+    (single-campaign interim, #865); each page finds the current one.
     ``reason`` returns why the entry is unavailable right now, or None.
     """
 
     name: str
     capability: Capability
     reason: Callable = _never
-    campaign: bool = False
     scoped: bool = False
 
 
@@ -463,7 +462,7 @@ MENU = (
     Entry("family_directory", Capability.FAMILY_CODES, _campaign),
     # Moves to the Emailed reports page with NAV-14; until then it keeps its
     # menu entry so it stays reachable.
-    Entry("weekly_digest_manual", _ADMIN, _campaign, campaign=True),
+    Entry("weekly_digest_manual", _ADMIN, _campaign),
     # Parish data
     Entry("parish_settings", _ADMIN),
     Entry("branding_settings", _ADMIN),
@@ -497,8 +496,7 @@ def menu(state, may_open):
         reason = entry.reason(state)
         url = None
         if reason is None:
-            arguments = [state.campaign.pk] if entry.campaign else []
-            url = reverse(f"{NAMESPACE}:{entry.name}", args=arguments)
+            url = reverse(f"{NAMESPACE}:{entry.name}")
         page = PAGES[entry.name]
         items.append(MenuItem(page.section, entry.name, page.label, url, reason))
     return items

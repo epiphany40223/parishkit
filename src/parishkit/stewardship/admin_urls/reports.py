@@ -9,7 +9,8 @@ Family box posts to ``families/search/``. ``/admin/reports/`` keeps its old
 meaning (Participation, or Ministry requests for a viewer who may not open
 Participation) instead of the group's first entry. The export, latest-data
 export and emailed report pages, which are addressed by their own record,
-move with NAV-12 and stay in ``urls.py`` until then.
+move with NAV-12 and stay in ``urls.py`` until then; "Send a weekly report
+now" names no record, so it is here, for the current campaign (#865).
 """
 
 from django.urls import path
@@ -28,6 +29,7 @@ from ..reports import (
     ministry_followup_views,
     response_dashboard,
     response_list_views,
+    weekly_manual_views,
     workspace_views,
 )
 from ..reports import ministry_views as ministry_report_views
@@ -145,5 +147,12 @@ patterns = [
         "reports/families/<uuid:family_id>/",
         family_timeline_views.family_timeline,
         "family_timeline",
+    ),
+    # A fixed word where the emailed reports' snapshot pages (still in
+    # urls.py) take a UUID, so neither address can shadow the other.
+    _page(
+        "reports/weekly-digests/request/",
+        weekly_manual_views.request_report,
+        "weekly_digest_manual",
     ),
 ]
