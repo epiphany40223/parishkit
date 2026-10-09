@@ -72,6 +72,7 @@ from .automation_components import SLOW_GETS as AUTOMATION_SLOW_GETS
 from .automation_components import SLOW_POSTS as AUTOMATION_SLOW_POSTS
 from .automation_components import canonical
 from .automation_components import components as automation_components
+from .census_components import components as census_components
 from .chart_components import components as chart_components
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
@@ -1976,6 +1977,7 @@ def component_origin():
     responses.update(system_health_components(context, admin))
     responses.update(hosted_file_components(context, admin))
     responses.update(talent_components(context, admin))
+    responses.update(census_components(context, admin))
     responses.update(workgroup_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))

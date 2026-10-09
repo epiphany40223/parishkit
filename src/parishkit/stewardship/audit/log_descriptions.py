@@ -499,6 +499,8 @@ DESCRIPTIONS = {
     "talents_report_exported": _(
         "Someone downloaded the talents and limitations report."
     ),
+    "census_changes_viewed": _("Someone opened the Census changes worklist."),
+    "census_changes_exported": _("Someone downloaded the Census changes worklist."),
     "response_dashboard_viewed": _("Someone opened the response dashboard."),
     "response_submitted_list_viewed": _(
         "Someone opened the list of Families that submitted."
