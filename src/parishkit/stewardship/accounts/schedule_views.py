@@ -4,6 +4,7 @@ from django.core import signing
 from django.db import DatabaseError
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
@@ -22,7 +23,9 @@ from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .schedule_changes import build_preview, confirm_scope, preview_salt
 from .schedule_forms import Schedules, ScheduleWindow, schedule_action
+from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
+from .schedule_table import attach
 from .sessions import authenticated_admin
 
 
@@ -30,6 +33,14 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
     """Show civil dates/timezone separately from browser-local audit timestamps."""
     # Schedules stay editable when the dates are locked: step 1 of 3 (#196).
     admin_navigation.place(request, flow="change", step="edit")
+    # The table of saved schedules (#448): what each is, when it sends and
+    # whether it has already sent, from the counts the review also reads.
+    rows = attach(
+        schedules,
+        campaign.active_configuration.values,
+        work_summary(campaign.pk),
+        timezone.now(),
+    )
     response = render(
         request,
         "stewardship/schedule-settings.html",
@@ -37,6 +48,7 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
             "campaign": campaign,
             "window": window,
             "schedules": schedules,
+            "schedule_rows": rows,
             "base_digest": digest,
             "editable": editable,
             "templates_url": reverse("admin:content_catalog"),

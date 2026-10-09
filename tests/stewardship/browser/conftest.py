@@ -35,7 +35,12 @@ from parishkit.stewardship.accounts.ministry_views import CATALOG_SORTING
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.accounts.schedule_changes import describe as _describe
-from parishkit.stewardship.accounts.schedule_forms import Schedules, ScheduleWindow
+from parishkit.stewardship.accounts.schedule_forms import (
+    Schedules,
+    ScheduleWindow,
+    schedule_order,
+)
+from parishkit.stewardship.accounts.schedule_table import attach
 from parishkit.stewardship.accounts.setup_branding_views import SetupLogoForm
 from parishkit.stewardship.accounts.setup_campaign_views import SetupCampaignForm
 from parishkit.stewardship.accounts.setup_confirmation_views import (
@@ -66,6 +71,7 @@ from parishkit.stewardship.web.tables import paginate, window_table
 
 from ..campaign_factory import campaign, financial, schedule
 from ..content_factory import content
+from ..test_schedule_forms import data_for
 from ..test_setup_final_steps import wizard as final_wizard
 from .automation_components import POSTS as AUTOMATION_POSTS
 from .automation_components import SLOW_GETS as AUTOMATION_SLOW_GETS
@@ -354,6 +360,76 @@ def invalid_schedules(owner, emails):
     return schedules
 
 
+# Between the fixture campaign's initial invitation (October 1, 2054) and
+# its reminders, so the table shows a past send next to upcoming ones.
+SCHEDULE_TABLE_NOW = datetime(2054, 10, 5, 12, tzinfo=UTC)
+
+
+def schedule_page(
+    owner, previous, *, templates=(), summary=None, data=None, now=SCHEDULE_TABLE_NOW
+):
+    """Dates and mail schedules as its view renders it, table rows included.
+
+    ``summary`` stands in for the work counts by schedule ID that the view
+    reads from the database (schedule_preview.work_summary). With ``data``
+    the formset is bound and validated, as after a refused preview.
+    """
+    schedules = Schedules(
+        data,
+        previous=previous,
+        templates=list(templates),
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+        prefix="schedules",
+    )
+    if data is not None:
+        schedules.is_valid()
+    return {
+        "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
+        "window": ScheduleWindow(
+            previous=owner["values"], editable=True, prefix="window"
+        ),
+        "schedules": schedules,
+        "schedule_rows": attach(schedules, owner["values"], summary or {}, now),
+        "base_digest": "a" * 64,
+        "editable": True,
+    }
+
+
+def table_schedules(owner, emails):
+    """A sent invitation, two upcoming reminders and a weekly digest.
+
+    They are listed out of sending order, and each sends a real saved email
+    of its type, so every editor's email list holds its saved choice.
+    """
+    by_kind = {row["values"]["slot"]: row for row in emails}
+
+    def saved(kind, **values):
+        """A saved schedule of ``kind`` that sends that type's email."""
+        email = by_kind[kind]
+        return schedule(
+            owner["id"],
+            kind=kind,
+            template_version=email["id"],
+            subject=email["values"]["subject"],
+            **values,
+        )
+
+    return [
+        saved("weekly_digest", date=None, weekday=0),
+        saved("reminder", date="2054-10-20"),
+        saved("initial"),
+        saved("reminder", date="2054-10-10"),
+    ]
+
+
+def refused_table_data(rows):
+    """The table page's post with Reminder 2 moved outside the campaign."""
+    data = data_for(sorted(rows, key=schedule_order))
+    data["schedules-2-date"] = "2054-11-15"
+    return data
+
+
 @pytest.fixture(scope="module")
 def component_origin():
     """An exact response allowlist avoids exposing source files through the server."""
@@ -366,6 +442,7 @@ def component_origin():
         content(mail_campaign["id"], kind="email", slot=kind, subject=f"{kind} mail")
         for kind in ("initial", "reminder", "daily_digest", "weekly_digest")
     ]
+    table_rows = table_schedules(mail_campaign, mail_emails)
     context = {
         "server_now": NOW,
         "deadline": NOW + timedelta(hours=1),
@@ -718,24 +795,32 @@ def component_origin():
         (
             "/schedule-settings",
             "schedule-settings",
-            {
-                "campaign": {
-                    "pk": mail_campaign["id"],
-                    "active_configuration": mail_campaign["values"],
-                },
-                "window": ScheduleWindow(
-                    previous=mail_campaign["values"], editable=True, prefix="window"
-                ),
-                "schedules": Schedules(
-                    previous=[mail],
-                    templates=[],
-                    campaign_id=mail_campaign["id"],
-                    campaign=mail_campaign["values"],
-                    prefix="schedules",
-                ),
-                "base_digest": "a" * 64,
-                "editable": True,
-            },
+            schedule_page(mail_campaign, [mail], now=datetime(2054, 9, 1, tzinfo=UTC)),
+        ),
+        (
+            # The scheduled emails table (#448): a sent invitation, two
+            # upcoming reminders out of order, and a weekly digest.
+            "/schedule-table",
+            "schedule-settings",
+            schedule_page(
+                mail_campaign,
+                table_rows,
+                templates=mail_emails,
+                summary={table_rows[2]["id"]: {"delivered": 1031, "failed": 2}},
+            ),
+        ),
+        (
+            # The same page after a refused preview: Reminder 2's date is
+            # outside the campaign, so its editor starts open with the error.
+            "/schedule-table-error",
+            "schedule-settings",
+            schedule_page(
+                mail_campaign,
+                table_rows,
+                templates=mail_emails,
+                summary={table_rows[2]["id"]: {"delivered": 1031, "failed": 2}},
+                data=refused_table_data(table_rows),
+            ),
         ),
         # The campaign dates locked: one line of notice with a field tip (#227).
         (
