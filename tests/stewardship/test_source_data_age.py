@@ -153,10 +153,14 @@ def test_data_as_of_is_the_newer_of_full_and_changed_quick():
     assert SourceFacts().data_as_of is None
 
 
-def connection(facts, now, *, sending=False):
+def connection(facts, now, *, sending=False, held=None):
     """The line for ``facts`` at ``now`` with a one-hour threshold."""
     return connection_state(
-        facts, now=now, threshold=timedelta(hours=1), sending=lambda: sending
+        facts,
+        now=now,
+        threshold=timedelta(hours=1),
+        sending=lambda: sending,
+        held=lambda: held,
     )
 
 
@@ -180,6 +184,31 @@ def test_held_time_does_not_count_toward_not_checked():
     # The scheduler's newest durable hold entry restarts the gap.
     held = SourceFacts(success_at=local(2), answered_at=local(2, 3), held_at=local(3))
     assert connection(held, local(3, 30)).state == "working"
+
+
+def test_a_go_live_hold_end_restarts_the_gap_and_is_read_lazily():
+    """The latest go-live hold end counts like a send hold (#462).
+
+    It is read only when the gap from the last success is exceeded.
+    """
+    stale = SourceFacts(success_at=local(2), answered_at=local(2, 3))
+    # Within the threshold after the hold ended: still working.
+    assert connection(stale, local(4), held=local(3, 30)).state == "working"
+    # More than the threshold after it: not checked again.
+    assert connection(stale, local(5), held=local(3, 30)).state == "not_checked"
+    # A fresh line never asks for the hold end.
+    fresh = SourceFacts(success_at=local(9), answered_at=local(9, 2))
+
+    def forbidden():
+        """The hold end must not be read while the gap is not exceeded."""
+        raise AssertionError("read the go-live hold end")
+
+    assert (
+        connection_state(
+            fresh, now=local(9, 30), threshold=timedelta(hours=1), held=forbidden
+        ).state
+        == "working"
+    )
 
 
 def test_connection_threshold_is_the_longest_gap_plus_the_margin():

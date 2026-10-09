@@ -138,6 +138,9 @@ FROZEN = {
     "0035_workgroup_recovery_skip.sql": (
         "caf487471ad981bf360e12c72ca6848607f9dd61492f866130b67123d2123e9a"
     ),
+    "0036_go_live_log_events.sql": (
+        "fcf83cf10b12666ae7656546774f97bd44a0e4899dd4871236af2ac96c0e241e"
+    ),
 }
 
 

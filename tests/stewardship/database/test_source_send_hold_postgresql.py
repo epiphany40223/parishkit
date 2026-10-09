@@ -599,3 +599,28 @@ def test_restricted_logins_can_read_the_send_check(tmp_path, monkeypatch, role):
             # With a send reported, the current source's age is read too.
             monkeypatch.setattr(send_hold, "family_send_active", lambda: True)
             assert send_hold.delta_held(database_now())
+
+
+def test_a_go_live_hold_moves_the_stale_alarm_to_its_end(
+    tmp_path, monkeypatch, settings
+):
+    """A full slot due during a go-live hold counts from the hold's end (#462).
+
+    The go-live attempt is stood in for by moving the overdue point, as
+    ``go_live_sequencing.held_until`` does for a slot inside a hold; the
+    attempt arithmetic itself is tested with real attempts in
+    test_go_live_sequencing_postgresql.py.
+    """
+    skipping_deltas(quarter_hourly(tmp_path))
+    settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
+    sending(monkeypatch, active=False)
+    hold = timedelta(hours=1)
+    monkeypatch.setattr(health, "held_until", lambda overdue: overdue + hold)
+    with monkeypatch.context() as patch:
+        future_observation(patch, stale_offset())
+        observe()
+    assert not OperationalIncident.objects.exists()
+    with monkeypatch.context() as patch:
+        future_observation(patch, stale_offset(1 + int(hold.total_seconds())))
+        observe()
+    assert OperationalIncident.objects.get(kind="source_stale")
