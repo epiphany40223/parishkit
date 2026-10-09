@@ -51,6 +51,7 @@ from .outcomes import (
     MAX_AUTOMATIC_ATTEMPTS,
     _request,
     completed_snapshot,
+    counted_attempt,
     failure_action,
     fallback_state,
     retry_delay,
@@ -190,9 +191,10 @@ def failure_context(decision, result, *, attempt, action):
     """The ``failure`` context a settled source read failure records (#633).
 
     ``result`` is the task's new status after ``action`` (``change_run``);
-    ``attempt`` is the attempt that failed. A retry says when it runs again
-    and how many automatic attempts a provider failure gets; a held read
-    (contention) waits without using them. Closed words, numbers and ids
+    ``attempt`` is the attempt that failed, as the allowance counts it
+    (``outcomes.counted_attempt``) for a provider failure. A retry says when
+    it runs again and how many automatic attempts a provider failure gets; a
+    held read (contention) waits without using them. Closed words, numbers and ids
     only: no provider text.
     """
     retry = action == "retryable_failure"
@@ -326,8 +328,15 @@ def settle_failed_read(execution, error, *, source_claim=None):
                     raise StorageInvariantError(
                         "Source failure must retain its source claim."
                     )
+            # A hold keeps the raw claim count for its back-off; a provider
+            # failure counts only claims that reached ParishSoft (#386, L1).
+            counted = (
+                status.attempt
+                if decision.contention
+                else counted_attempt(status, execution.claim.fence)
+            )
             action = failure_action(
-                status.attempt, retry=decision.retry, contention=decision.contention
+                counted, retry=decision.retry, contention=decision.contention
             )
             retry = action == "retryable_failure"
 
@@ -356,7 +365,7 @@ def settle_failed_read(execution, error, *, source_claim=None):
                 fence=execution.claim.fence,
                 admit=admit_failure,
                 **(
-                    {"retry_seconds": retry_delay(status.attempt)}
+                    {"retry_seconds": retry_delay(counted)}
                     if action == "retryable_failure"
                     else {}
                 ),
@@ -368,7 +377,7 @@ def settle_failed_read(execution, error, *, source_claim=None):
                 else "CRITICAL",
                 schema=ContextKind.FAILURE,
                 context=failure_context(
-                    decision, result, attempt=status.attempt, action=action
+                    decision, result, attempt=counted, action=action
                 ),
             )
             if decision.checks and attempt is not None:
