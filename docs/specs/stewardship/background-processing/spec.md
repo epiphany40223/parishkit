@@ -1085,10 +1085,24 @@ schedule converted to the equivalent rules, after filling the defaults
 - no skips, and **skip refreshes around Family emails** off, since the
   schedule never skips today.
 
-Precedence and coverage then remove a quick time that equals a full time, as
-the old scheduler joined a quick slot due with a full one, and also the quick
-times less than 15 minutes from a kept off-quarter-hour full time, which the
-old scheduler ran; the page's preview shows both as covered. The page
+The converted schedule keeps today's quick times exactly: its daily times
+are the times the old scheduler runs, a quick time that equals a full time
+excepted, which precedence removes as the old scheduler joined a quick slot
+due with a full one. Coverage (layer 5 of
+[schedule entries and rules](#schedule-entries-and-rules)) would also remove
+a rule's quick time when a full time falls at or after it and less than one
+rule step after it, or less than 15 minutes before it; with 15-minute quick
+updates that is only a time near a kept off-quarter-hour full time, but with
+hourly quick updates a full time at 08:30 would remove the 08:00 quick
+update that runs today. So for each quick time today's schedule runs that
+coverage would remove, the conversion adds a "Quick at" row, which coverage
+never removes. Changing an unrelated part of the schedule therefore never
+drops a refresh that runs today without the Administrator seeing it: a quick
+time within 15 minutes of a full time, or two kept full times less than 15
+minutes apart, which the old scheduler ran, shows as a spacing problem on
+its row for the Administrator to resolve (see
+[the settings page](../admin-portal/spec.md#schedule-editor)), not
+as a quietly covered time. The page
 writes the new keys only when the Administrator changes the schedule itself;
 saving other settings keeps the stored keys as they are. When the schedule is
 changed, what differs from the old one is said before saving:
@@ -1098,11 +1112,16 @@ changed, what differs from the old one is said before saving:
   for a send, while as listed times each slot records its own time (a new
   slot identity, so the slot due at the switch may run once more) and every
   one but the nightly waits for a send;
-- the nightly refresh becomes the earliest full time, 00:00 for a converted
-  hourly or quarter-hour full refresh, so a stored nightly time other than
-  the earliest no longer marks the refresh that runs during a send;
+- for a converted hourly or quarter-hour full refresh, the recorded
+  nightly time becomes 00:00, the earliest full time, instead of the stored
+  one;
 - in a time zone whose offset is not a whole hour, hourly refreshes move
   from the UTC hour to the local hour;
+- hourly and quarter-hour refreshes today fall on UTC boundaries, so on the
+  day clocks go back the repeated local hour runs twice; as listed local
+  times they run once, at the earlier instant, as
+  [slots, identities and daylight saving](#slots-identities-and-daylight-saving)
+  describes;
 - turning on **skip refreshes around Family emails** starts skipping
   daytime refreshes inside each Family email's window, as
   [skipped around Family emails](#skipped-around-family-emails) describes.

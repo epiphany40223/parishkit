@@ -1966,7 +1966,9 @@ the same checks on save.
   two ranges: one up to 23:45 and one from 00:00"). A rule whose last time
   equals its start time is allowed and gives that one time.
 
-While any problem remains, Save is unavailable and a line beside it names
+While any problem remains in a changed schedule, Save is unavailable (an
+unchanged converted schedule is the exception described under
+[live checks and saving](#live-checks-and-saving)) and a line beside it names
 what is missing, for example "Fix 2 problems before saving: 00:00 is too
 close to 23:50; the skip at 12:30 matches no refresh", each linking to its
 row.
@@ -2008,7 +2010,14 @@ and removes rows, fills presets and reads times through the shared
   names for a converted schedule, rather than the stored settings.
 - A schedule whose rows (in any order), skips and switch are what the page
   showed is not a change: saving other settings with it keeps the stored
-  schedule exactly as it is and writes no new keys.
+  schedule exactly as it is and writes no new keys. Problems on such an
+  unchanged converted schedule are still shown at their rows, but they do
+  not make Save unavailable for the page's other settings; they block only
+  a change to the schedule. For example, a stored full time at 23:50 with
+  quarter-hour quick updates converts to a quick time at 00:00 only 10
+  minutes after it, and two stored full times 10 minutes apart are too
+  close; both run today and keep running until the Administrator changes
+  the schedule.
 
 Rejected: a copy of the rules in the page script, kept in step by a shared
 table of cases (as the mail repeat panel does). The preview needs the
