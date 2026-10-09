@@ -792,7 +792,12 @@ export is retried like any failed render. Report details (parish, campaign, capt
 when it applies, Families in the file, filters applied and the privacy line "Sensitive: Family codes.
 Authorized recipients only.") are in the PDF header and footer and the XLSX
 "Report information" sheet, never in columns. The page's export panel names
-the file's columns for the current filters and mailing-columns choice. Exports use the standard asynchronous, short-lived, requester-authorized export
+the file's columns for the current filters and mailing-columns choice. The
+export's retained capture keeps only the private contact columns its file
+renders (#388 L6): the address for the mailing-columns file, phones for the
+list filtered to Families no campaign mail can reach, and never the envelope
+number. The rest are stored empty, and captures made before this rule are
+kept as they were until their exports expire. Exports use the standard asynchronous, short-lived, requester-authorized export
 pipeline, including its explicitly accepted plaintext storage and owner-only
 permissions under the
 [export retention policy](../operations/spec.md#temporary-retention-and-housekeeping).
