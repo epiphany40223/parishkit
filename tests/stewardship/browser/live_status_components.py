@@ -16,11 +16,16 @@ from django.urls import reverse
 
 from parishkit.stewardship.accounts.integration_credentials import CredentialSummary
 from parishkit.stewardship.accounts.integration_forms import IntegrationForm
+from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.jobs.send_progress_views import (
     GIVE_UP_MILLISECONDS,
     POLL_MILLISECONDS,
     _announcement,
 )
+from parishkit.stewardship.jobs.task_wording import phase_words
+from parishkit.stewardship.jobs.views import EVENT_SORTING
+from parishkit.stewardship.web.contracts import PageWindow
+from parishkit.stewardship.web.tables import window_table
 
 from .send_progress_components import _send
 from .step_up_components import render
@@ -36,6 +41,10 @@ PROGRESS_STATUS = "/live-progress-status"
 FAMILY_TESTS = reverse("admin:campaign_mail_families", args=[UUID(int=702)])
 INTEGRATION = reverse("admin:integration_settings", args=["parishsoft"])
 DISMISS = reverse("admin:dismiss_credential_result", args=["parishsoft"])
+# A ParishSoft refresh's task page and the passive status it polls (#869).
+TASK_RUN = UUID(int=869)
+TASK_PAGE = reverse("admin:background_task_page", args=[TASK_RUN])
+TASK_STATUS = reverse("admin:background_task_status", args=[TASK_RUN])
 # The fixture server's answer to Dismiss (status, Location, body).
 POSTS = {DISMISS: (303, INTEGRATION + "?dismissed=1", "")}
 
@@ -109,6 +118,77 @@ def components(context, admin):
             },
         )
 
+    def refresh_task(state, steps, *, fragment=False):
+        """A ParishSoft refresh's task page (or its polled status fragment) in
+        ``state``, with one history row per (action, state, phase, current)
+        of ``steps``, out of 4,000 records."""
+
+        def progress(phase, current):
+            """A progress record as task_page builds it, worded for a refresh."""
+            return {
+                "phase": phase,
+                "current": current,
+                "total": 4000,
+                "display": Percentage(current, 4000),
+            }
+
+        events = [
+            {
+                "version": version,
+                "at": now.isoformat(),
+                "action": action,
+                "state": step_state,
+                "progress": progress(phase, current),
+                "phase_text": phase_words("source_refresh", phase),
+            }
+            for version, (action, step_state, phase, current) in enumerate(steps, 1)
+        ]
+        phase, current = steps[-1][2:]
+        values = page | {
+            "is_refresh": True,
+            "refresh_label": "Full refresh",
+            "phase_text": phase_words("source_refresh", phase),
+            "refresh_result": "4,000 records checked, 12 changed."
+            if state == "succeeded"
+            else None,
+            "task": {
+                "id": TASK_RUN,
+                "name": "ParishSoft data refresh",
+                "type": "source_refresh",
+                "state": state,
+                "active": True,
+                "attempt": 1,
+                "retry_sequence": 0,
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "progress": progress(phase, current),
+            },
+            "work": {"events": events},
+            "status_url": TASK_STATUS,
+            "history": window_table(
+                PageWindow(1, 20),
+                events,
+                False,
+                total=(len(events), False),
+                sorting=EVENT_SORTING,
+                sort=EVENT_SORTING.default,
+            ),
+        }
+        template = "background-task-status" if fragment else "background-task"
+        return render_to_string(f"stewardship/{template}.html", values)
+
+    # A refresh part-way through its download, then finished: the bar and
+    # the history table must both end on the last step.
+    running = [
+        ("created", "queued", "queued", 0),
+        ("progress", "running", "fetching", 1000),
+    ]
+    finished = [
+        *running,
+        ("progress", "running", "promoting", 4000),
+        ("complete", "succeeded", "promoting", 4000),
+    ]
+
     failed = CredentialSummary(
         "failed", now, "ParishSoft did not accept the new API key.", REQUEST
     )
@@ -129,5 +209,11 @@ def components(context, admin):
         "/live-family-tests-later": family_tests(tested),
         INTEGRATION: integration(failed),
         INTEGRATION + "?dismissed=1": integration(None),
+        TASK_PAGE: refresh_task("running", running),
+        TASK_STATUS: refresh_task("running", running, fragment=True),
+        "/live-task-finished": refresh_task("succeeded", finished),
+        "/live-task-finished-status": refresh_task(
+            "succeeded", finished, fragment=True
+        ),
     }
     return {path: ("text/html", body) for path, body in pages.items()}

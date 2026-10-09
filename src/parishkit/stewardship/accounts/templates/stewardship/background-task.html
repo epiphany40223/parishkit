@@ -7,7 +7,9 @@
 <p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail." %}</p>{% endaboutpage %}{% endif %}
 <p>{{ task.name }}{% if refresh_label %}: <strong>{{ refresh_label }}</strong>{% endif %}</p>
 {% include 'stewardship/background-task-status.html' %}
-{% if export_cleanup_retry_key %}
+{% comment %}Retry panels appear once a task has failed; as an in-place region the
+  page brings them in when a watched task ends, without a reload (#869).{% endcomment %}
+<div id="task-actions" data-in-place-region>{% if export_cleanup_retry_key %}
 <section class="panel"><h2>{% translate "Retry export cleanup" %}</h2>
 <p>{% translate "After fixing the storage or access problem, retry removing this expired export file. The report's history and the data it was built from are kept." %}</p>
 <form method="post" action="{% url 'admin:retry_export_cleanup' task.id %}">
@@ -30,7 +32,7 @@
 {% csrf_token %}<input type="hidden" name="command_id" value="{{ digest_retry_key }}">
 {% button type="submit" %}{% translate "Retry report work" %}{% endbutton %}
 </form></section>
-{% endif %}
+{% endif %}</div>
 {% if history %}{% translate "Task history pages" as history_label %}<div id="{{ history.anchor }}" data-table-region>{% include "stewardship/table-navigator.html" with table=history label=history_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="task-history-caption"><table class="data-table"><caption id="task-history-caption">{% translate "Task history" %}</caption>
 <thead><tr>{% translate "Version" as heading %}{% sort_heading history "version" heading "numeric" %}{% translate "Time" as heading %}{% sort_heading history "time" heading %}{% translate "Action" as heading %}{% sort_heading history "action" heading %}{% translate "State" as heading %}{% sort_heading history "state" heading %}{% translate "Phase and progress" as heading %}{% sort_heading history "progress" heading %}</tr></thead>

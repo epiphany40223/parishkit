@@ -18,6 +18,8 @@ from .live_status_components import (
     INTEGRATION,
     PROGRESS,
     PROGRESS_STATUS,
+    TASK_PAGE,
+    TASK_STATUS,
 )
 from .test_in_place import MARK, MARKED, VIEWPORT, count_requests
 from .waits import has_text, hidden, visible
@@ -195,3 +197,32 @@ def test_refresh_keeps_one_progress_poller(page, component_origin):
     gaps = [later - earlier for earlier, later in zip(polls, polls[1:], strict=False)]
     assert min(gaps) > 2500, gaps
     assert page.locator(".live-status-problem").count() == 1
+
+
+def test_finished_task_shows_its_final_steps_in_place(page, component_origin):
+    """When a watched refresh ends, its Task history table shows the final
+    steps without a reload (#869): the status poll brings the finished bar,
+    and the page is then re-read once, in place, for the table. Focus and
+    the address stay as they were, and no further reads follow."""
+    page.set_viewport_size(VIEWPORT)
+    polls = answer_reads(
+        page, component_origin, TASK_STATUS, "/live-task-finished-status"
+    )
+    reads = answer_reads(page, component_origin, TASK_PAGE, "/live-task-finished")
+    page.goto(component_origin + TASK_PAGE)
+    page.evaluate(MARK)
+    history = page.locator("[data-table-region]")
+    visible(history.get_by_text("Downloading from ParishSoft"))
+    assert history.get_by_role("cell", name="Finished", exact=True).count() == 0
+    # The poll finds the run finished; the follow-up re-reads the page.
+    visible(page.get_by_text("Finished successfully."))
+    visible(history.get_by_role("cell", name="Finished", exact=True))
+    visible(history.get_by_text("Making the new data current").first)
+    # The bar and the table agree: both at the last of 4,000 records.
+    visible(page.get_by_text("4,000 of 4,000 records checked"))
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url == component_origin + TASK_PAGE
+    assert page.evaluate("document.activeElement === document.body")
+    page.wait_for_timeout(3000)
+    assert len(polls) == 1, polls
+    assert len(reads) == 1, reads
