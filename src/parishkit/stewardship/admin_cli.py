@@ -2601,7 +2601,10 @@ def _test_specs():
             6,
             options=(_families_preview_options,),
             # The review itself changes nothing; --names requests an export
-            # and records this event (#817).
+            # and records this event (#817). The catalog has no per-option
+            # state, so changes_state stays False for the plain review and
+            # the named audit event marks the --names exception (see the
+            # spec's "Discovering commands").
             audit_event="admin_cmd_export_family_test_names",
         ),
         CommandSpec(

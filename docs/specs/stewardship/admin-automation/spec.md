@@ -930,8 +930,13 @@ state, whether it is fresh-gated, whether it prompts, whether it takes
 `--request-key` or `--expected-version`, whether it takes `--watch`,
 whether it streams a file to standard output, the audit event it records,
 its options and positional arguments, its result fields and the PR that
-added it. The catalog is generated from the subparser tree and the
-read-model projections, and a test keeps it complete. `commands` itself
+added it. "Changes state" describes the command without optional flags:
+`test families-preview` is listed as not changing state, but its `--names`
+flag requests an export and records `admin_cmd_export_family_test_names`,
+which the catalog names as its audit event (the only command that is not
+state-changing yet names an `admin_cmd_` event). The catalog is generated
+from the subparser tree and the read-model projections, and a test keeps it
+complete. `commands` itself
 needs no database: it checks the preamble's form and prints the catalog.
 
 ### Output documents

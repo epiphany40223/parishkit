@@ -171,6 +171,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
     # The review changes nothing; its --names export records this (#817).
     assert not review["prompts"] and not review["changes_state"]
     assert review["audit_event"] == "admin_cmd_export_family_test_names"
+    # changes_state has no per-option form, so --names is the documented
+    # exception: the only read-only entry naming a command event.
+    assert {
+        name
+        for name, entry in entries.items()
+        if not entry["changes_state"]
+        and (entry["audit_event"] or "").startswith("admin_cmd_")
+    } == {"test families-preview"}
     options = {option["name"]: option for option in review["options"]}
     assert options["--family"]["required"]
     assert not options["--names"]["takes_value"]

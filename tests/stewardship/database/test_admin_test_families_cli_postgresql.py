@@ -23,10 +23,13 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.jobs.family_mail_models import FamilyMailTest
 from parishkit.stewardship.jobs.models import TaskRun
 
+from ..policy_factory import address
 from .automation_builders import paired
 from .test_admin_family_export_cli_postgresql import reports_root  # noqa: F401
 from .test_admin_test_sample_cli_postgresql import runner
+from .test_export_authorization_postgresql import add_policy
 from .test_family_mail_test_postgresql import family_test, review  # noqa: F401
+from .test_policy_postgresql import user
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_views_postgresql import post
 
@@ -377,9 +380,14 @@ def test_names_need_the_time_zone_and_a_testing_review(admin, family_test):  # n
 
 
 def test_the_names_capture_is_guarded_in_sql(admin, family_test):  # noqa: F811
-    """SQL refuses a capture that is not the review's, or not an Administrator's."""
-    from django.db import IntegrityError, InternalError, transaction
+    """SQL refuses a capture that is not the review's, or not an Administrator's.
 
+    It also refuses one in Production mode, for a campaign that is not a
+    draft, or by a Staff member; none leaves a capture or an export request.
+    """
+    from django.db import IntegrityError, InternalError, connection, transaction
+
+    from parishkit.stewardship.accounts.policy_models import PortalUser
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.reports.export_models import FamilyTestNamesSnapshot
 
@@ -420,3 +428,49 @@ def test_the_names_capture_is_guarded_in_sql(admin, family_test):  # noqa: F811
     ):
         FamilyTestNamesSnapshot.objects.create(**good)
     assert not FamilyTestNamesSnapshot.objects.exists()
+
+    # The same well-formed capture is unavailable outside Testing mode or
+    # for a campaign that is no longer a draft. The guard reads the mode
+    # and the campaign state, so each is set, with the tables' own guards
+    # off, inside the refused transaction, which rolls the change back.
+    for table, change in (
+        ("stewardship_system_configuration", "mode='production'"),
+        ("stewardship_campaign", "state='active'"),
+    ):
+        with (
+            pytest.raises((IntegrityError, InternalError), match="unavailable"),
+            transaction.atomic(),
+        ):
+            with connection.cursor() as cursor:
+                cursor.execute(f"ALTER TABLE {table} DISABLE TRIGGER USER")
+                cursor.execute(f"UPDATE {table} SET {change}")
+                cursor.execute(f"ALTER TABLE {table} ENABLE TRIGGER USER")
+            FamilyTestNamesSnapshot.objects.create(**good)
+    assert SystemConfiguration.objects.get().mode == "testing"
+    harness.campaign.refresh_from_db()
+    assert harness.campaign.state == "draft"
+
+    # A Staff member, under a policy that grants the role, cannot capture
+    # names: only an Administrator can. The Administrator, under the same
+    # new configuration, still passes the insert guard (the control).
+    admin_user = PortalUser.objects.get(pk=row.principal_id)
+    add_policy(
+        (admin.service.store, admin_user, None, None),
+        address("staff@example.org", ("staff",)),
+    )
+    staff = user("staff@example.org")
+    current = good | {
+        "configuration_id": SystemConfiguration.objects.get().active_configuration_id
+    }
+    for actor, expected in (
+        (staff.pk, "unavailable"),
+        (row.principal_id, "requires its request"),
+    ):
+        with (
+            pytest.raises((IntegrityError, InternalError), match=expected),
+            transaction.atomic(),
+        ):
+            FamilyTestNamesSnapshot.objects.create(**(current | {"actor_id": actor}))
+    # No refusal left a capture or an export request behind.
+    assert not FamilyTestNamesSnapshot.objects.exists()
+    assert names_trail()[0] == 0
