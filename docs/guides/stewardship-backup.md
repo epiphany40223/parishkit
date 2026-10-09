@@ -188,8 +188,12 @@ updated under the pre-production policy. No other object changes.
 - The schema audit shows one added table, one function, one trigger and one
   index (the primary key); ruff, formatting, Markdown lint and migration drift
   pass.
-- The real `pg_dump` runs only in the application image; the runbook's
-  restore drill is the human-run end-to-end check.
+- The real `pg_dump` runs only in the application image. Since #305 the
+  operational CI job's Production scenario with a completed setup wizard
+  also restores a real set end to end with that image's own tools (see the
+  runbook's [restore drill](stewardship-backup-runbook.md#restore-drill));
+  the runbook's human drill still covers what CI cannot: a real host, the
+  kept copies of the key, Google Drive and the mail-provider review.
 
 ## Checkpoint
 

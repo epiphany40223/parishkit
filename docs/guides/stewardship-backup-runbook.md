@@ -476,6 +476,30 @@ and whenever the restore procedure changes:
   Production credential, the live Drive folder and every Family's data.
   Destroy the host and its disks afterwards.
 
+Whenever CI's operational job runs (a manual dispatch, or a non-draft pull
+request whose changed paths can affect the operational scenarios), it also
+rehearses most of this automatically (#305), with the image CI builds from
+the release image's Dockerfile. That job's Production scenario completes
+the setup wizard against fake providers, then, with a throwaway key made by
+`backup-keygen`, runs `backup-worker` exactly as the cron job does and
+follows this procedure with the same image. Step 1 is partial: it stops
+every online service but leaves `postgres` and `valkey` running, with no
+cron jobs to disable. Step 2 runs whole (the manifest digest, `backup-open`
+of both files with the key's fingerprint, `restore-check` with the dump as
+well as the manifest), followed by a
+[comparison](#comparing-a-set-with-another-release) that must report
+`same`. Step 3 is replaced by emptying the scenario's PostgreSQL data
+directory, so the same host stands in for a replacement with a new, empty
+PostgreSQL. Steps 5 and 6 run whole. Step 8 starts `web` alone and checks
+its health, as on a drill host, and step 10 deletes the decrypted copies.
+It skips step 4 (the files never left the scenario's host; it only checks
+that the archive holds every tree and the record), step 7 (the set's image
+is the one already running) and step 9. It passes only when every table
+holds exactly the rows it held at the backup, the setup's invariants hold
+again and `web` reports healthy. It does not replace the drill: it never
+touches a real host, the kept copies of the private key, Google Drive or a
+mail provider.
+
 The drill returns the validation deployment to the backup's moment, so run
 it when staff have no unsaved work in progress, taking the backup
 immediately before it. Run both pre-activation drills on the deployment

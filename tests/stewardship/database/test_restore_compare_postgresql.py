@@ -3,9 +3,9 @@
 The migrated test database stands in for both sides: described as it is,
 then after drift made inside the test's transaction (PostgreSQL DDL is
 transactional, so the rollback undoes it). The whole command, with
-pg_restore and a scratch server, is exercised by hand with the release
-image (see the PR): the CI runner's own pg_restore cannot read a PostgreSQL
-18 dump.
+pg_restore and a scratch server, runs in the image on a real backup in the
+operational scenario's restore test (runtime_backup_restore, #305): the CI
+runner's own pg_restore cannot read a PostgreSQL 18 dump.
 """
 
 import pytest
