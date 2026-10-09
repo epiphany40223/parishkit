@@ -1,5 +1,7 @@
 """On-request report audits record their mode, filter and snapshot (#556).
 
+A response list also records its sort token (``report_sort``, #851).
+
 The response lists and the Talents report record closed choices only: the
 system mode, each report's own filter key, a configured talent's UUID and the
 ParishSoft snapshot read, never search text. Python's ``sanitize`` and the SQL
@@ -15,11 +17,16 @@ from uuid import UUID, uuid4
 import pytest
 from django.utils.datastructures import MultiValueDict
 
-from parishkit.stewardship.audit.log_descriptions import FIELD_LABELS, VALUE_LABELS
+from parishkit.stewardship.audit.log_descriptions import (
+    FIELD_LABELS,
+    VALUE_LABELS,
+    field_value,
+)
 from parishkit.stewardship.audit.log_rows import detail_labels
 from parishkit.stewardship.audit.schemas import (
     REPORT_FILTERS,
     REPORT_MODES,
+    REPORT_SORTS,
     ContextKind,
     Outcome,
     sanitize,
@@ -49,6 +56,13 @@ DOWNLOAD_AUDIT_CASES = [
     ({"talent_option_id": OPTION.upper()}, False),
     ({"search": "Smith"}, False),
     ({"report_search": "Smith"}, False),
+    # A response list's sort token (#851): a column key, or "-" and one.
+    ({"report_filter": "all", "report_sort": "-submitted"}, True),
+    ({"report_sort": "family"}, True),
+    ({"report_sort": "name"}, False),
+    ({"report_sort": "--family"}, False),
+    ({"report_sort": "Smith"}, False),
+    ({"report_sort": 1}, False),
 ]
 
 
@@ -92,6 +106,7 @@ def test_sql_allowlist_names_the_same_words():
 
     assert words("report_filter") == REPORT_FILTERS
     assert words("report_mode") == REPORT_MODES
+    assert words("report_sort") == REPORT_SORTS
 
 
 def test_response_list_audit_choices():
@@ -153,4 +168,36 @@ def test_system_logs_show_the_choices_in_words():
         "talent_option_id",
         "snapshot_id",
         "search_used",
+        "report_sort",
     }
+
+
+def test_response_list_sorts_are_exactly_the_lists_tokens():
+    """Every list's sort token is approved, and nothing else is (#851)."""
+    tokens = {token for spec in LISTS.values() for token in spec.sorting.tokens}
+    assert tokens == REPORT_SORTS
+    # System logs word each token by its column's own heading.
+    headings = {
+        column.key: str(column.heading)
+        for spec in LISTS.values()
+        for column in spec.columns
+    }
+    assert set(VALUE_LABELS["report_sort"]) == REPORT_SORTS
+    for key, heading in headings.items():
+        assert str(field_value("report_sort", key)) == f"{heading} (ascending)"
+        assert str(field_value("report_sort", f"-{key}")) == f"{heading} (descending)"
+
+
+def test_response_list_sort_choice():
+    """A view or download records its sort token, or the list's default."""
+    from parishkit.stewardship.reports.response_list_views import sort_choice
+
+    spec = LISTS["data-quality"]
+    assert sort_choice(spec, {}) == {"report_sort": spec.default_sort}
+    context = sort_choice(spec, {"sort": "-duid", "size": "25", "page": "2"})
+    assert context == {"report_sort": "-duid"}
+    assert sanitize(ContextKind.ACTION, context) == context
+    rows = detail_labels([("report_sort", "-duid")])
+    assert [(str(key), str(value)) for key, value in rows] == [
+        ("Sorted by", "Family DUID (descending)")
+    ]

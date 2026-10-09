@@ -590,8 +590,16 @@ refuses is recorded as failed. As the export audit rule in
 the mode (`report_mode`), the Show choice's closed key (`report_filter`) and
 the ParishSoft snapshot the names were read from (`snapshot_id`; left out when
 nothing was read, as for Testing with no rehearsal)
-([#556](https://github.com/epiphany40223/parishkit/issues/556)). System logs
-shows the mode and choice in the page's own words.
+([#556](https://github.com/epiphany40223/parishkit/issues/556)), and the sort
+order as its closed token (`report_sort`: a column key such as `family`, or
+`-` and one for the other direction, such as `-submitted`; the list's default
+when none was chosen)
+([#851](https://github.com/epiphany40223/parishkit/issues/851)). The page size
+and page number are not recorded: they pick which part of the same list is on
+screen, and the row count with these choices already says which Families the
+list held. System logs shows the mode, choice and order in the page's own
+words, the order as the column heading followed by "(ascending)" or
+"(descending)".
 
 ### Family timeline
 

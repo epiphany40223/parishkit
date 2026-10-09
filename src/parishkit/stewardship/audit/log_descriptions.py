@@ -13,6 +13,7 @@ enforces that. Types built from a prefix and a state, such as
 ``config_request_applied``, are explained by ``PREFIXES``.
 """
 
+from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
 DESCRIPTIONS = {
@@ -670,6 +671,24 @@ FIELD_LABELS = {
     "talent_option_id": _("Talent chosen (its settings id)"),
     "snapshot_id": _("ParishSoft data read (its snapshot id)"),
     "search_used": _("Search box used"),
+    "report_sort": _("Sorted by"),
+}
+# A response list's sort columns (#851), by sort key, in each list's own
+# column headings (reports.response_lists); ``-key`` is the same column
+# sorted the other way.
+_SORT_COLUMNS = {
+    "family": _("Family"),
+    "duid": _("Family DUID"),
+    "envelope": _("Envelope number"),
+    "submitted": _("First submitted"),
+    "submissions": _("Submissions"),
+    "opened": _("Form opened"),
+    "progressed": _("Got past the first step"),
+    "invited": _("Invitation delivered"),
+    "link": _("Link followed"),
+    "last": _("Last submitted"),
+    "mailing": _("Mailing name"),
+    "problem": _("What to check"),
 }
 # Recorded closed values shown in words, by field (#556): each report's own
 # menu wording (reports.response_lists and the Talents report's Show menu).
@@ -690,6 +709,14 @@ VALUE_LABELS = {
         "cannot_serve": _("Cannot participate in ministries"),
         "cannot_attend": _("Families that cannot attend Mass"),
         "option": _("One talent"),
+    },
+    "report_sort": {
+        token: format_lazy(template, heading)
+        for key, heading in _SORT_COLUMNS.items()
+        for token, template in (
+            (key, _("{} (ascending)")),
+            (f"-{key}", _("{} (descending)")),
+        )
     },
 }
 
