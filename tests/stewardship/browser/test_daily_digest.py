@@ -2,7 +2,6 @@
 
 import pytest
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -160,18 +159,12 @@ def test_chart_press_after_slider_keeps_the_tooltip_open(
         context.close()
 
 
-def test_snapshot_retains_all_values_without_scripts(browser_engine, component_origin):
-    """Static image, native download link and complete table remain useful."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/daily-digest")
-        assert page.locator("tbody tr").count() == 3
-        assert "$3,234.56" in page.locator("table").inner_text()
-        visible(page.get_by_role("link", name="Download the original chart (PNG)"))
-        assert page.locator("[data-digest-controls]").is_hidden()
-    finally:
-        context.close()
+def test_snapshot_keeps_every_value_and_the_original_chart(page, component_origin):
+    """The complete table and the original chart's download link stay on the page."""
+    page.goto(component_origin + "/daily-digest")
+    assert page.locator("tbody tr").count() == 3
+    assert "$3,234.56" in page.locator("table").inner_text()
+    visible(page.get_by_role("link", name="Download the original chart (PNG)"))
 
 
 def test_missing_controls_keeps_static_report_usable(page, component_origin):

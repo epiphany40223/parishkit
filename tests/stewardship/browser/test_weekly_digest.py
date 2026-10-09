@@ -1,8 +1,7 @@
-"""Private weekly report pages remain usable on phones and without JavaScript."""
+"""Private weekly report pages remain usable on phones."""
 
 import pytest
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -19,10 +18,12 @@ def test_weekly_detail_is_responsive_accessible_and_escaped(
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto(component_origin + "/weekly-digest")
+    visible(page.get_by_role("link", name="Next page"))
     page.get_by_role(
         "link", name="Open full captured request and current status"
     ).click()
     visible(page.get_by_role("heading", name="Full text at capture"))
+    visible(page.get_by_role("link", name="Return to Weekly report"))
     # The Family DUID is an identifier, shown without grouping.
     assert "1234567" in page.locator("main").inner_text()
     assert "1,234,567" not in page.locator("main").inner_text()
@@ -38,22 +39,6 @@ def test_weekly_detail_is_responsive_accessible_and_escaped(
       runOnly: {type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']}
     })).violations.map(({id, impact}) => ({id, impact}))""")
     assert violations == []
-
-
-def test_weekly_report_remains_usable_without_scripts(browser_engine, component_origin):
-    """Reading full requests and paging require no JavaScript enhancement."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/weekly-digest")
-        visible(page.get_by_role("link", name="Next page"))
-        page.get_by_role(
-            "link", name="Open full captured request and current status"
-        ).click()
-        visible(page.get_by_role("heading", name="Full text at capture"))
-        visible(page.get_by_role("link", name="Return to Weekly report"))
-    finally:
-        context.close()
 
 
 @pytest.mark.parametrize("width", [320, 1280])

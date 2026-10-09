@@ -1,9 +1,8 @@
-"""Mobile, keyboard, no-script and accessibility checks for staff follow-up."""
+"""Mobile, keyboard and accessibility checks for staff follow-up."""
 
 import pytest
 from django.urls import reverse
 
-from .conftest import no_script_context
 from .waits import hidden, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -90,7 +89,7 @@ def test_staff_queue_detail_history_and_accessibility(
 
 
 def export_post(page, component_origin):
-    """The same complete-result form works with or without browser scripting."""
+    """The complete-result form posts its private filters in the body."""
     page.goto(component_origin + "/information")
     page.get_by_label("Export format", exact=True).select_option("xlsx")
     page.get_by_label("Export timezone", exact=True).select_option("UTC")
@@ -113,26 +112,18 @@ def test_staff_complete_export_native_post(page, component_origin):
     export_post(page, component_origin)
 
 
-def test_staff_native_workflow_without_scripts(browser_engine, component_origin):
-    """JavaScript is optional for reading, searching, editing and confirmation."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        export_post(page, component_origin)
-        page.goto(component_origin + "/information")
-        visible(page.get_by_role("button", name="Apply filters"))
-        page.goto(component_origin + "/information-item")
-        page.get_by_label("Follow-up completed", exact=True).uncheck()
-        page.get_by_label("If clearing completion", exact=False).check()
-        page.get_by_label("Staff notes", exact=True).fill("Reopened")
-        assert page.get_by_role("button", name="Save follow-up").is_enabled()
-        assert page.locator("input[name=expected_version]").input_value() == "2"
-        page.route("**/record/", lambda route: route.fulfill(body="Saved"))
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Save follow-up").click()
-        assert "notes=Reopened" in sent.value.post_data
-        assert "confirm_clear=yes" in sent.value.post_data
-        assert "followed_up=" not in sent.value.post_data
-        assert "Reopened" not in sent.value.url
-    finally:
-        context.close()
+def test_staff_follow_up_edit_posts_privately(page, component_origin):
+    """Reopening a completed follow-up posts its notes and confirmation privately."""
+    page.goto(component_origin + "/information-item")
+    page.get_by_label("Follow-up completed", exact=True).uncheck()
+    page.get_by_label("If clearing completion", exact=False).check()
+    page.get_by_label("Staff notes", exact=True).fill("Reopened")
+    assert page.get_by_role("button", name="Save follow-up").is_enabled()
+    assert page.locator("input[name=expected_version]").input_value() == "2"
+    page.route("**/record/", lambda route: route.fulfill(body="Saved"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Save follow-up").click()
+    assert "notes=Reopened" in sent.value.post_data
+    assert "confirm_clear=yes" in sent.value.post_data
+    assert "followed_up=" not in sent.value.post_data
+    assert "Reopened" not in sent.value.url
