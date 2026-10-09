@@ -95,6 +95,39 @@ def test_staff_and_ministry_leaders_cannot_read_readiness(campaign_test, google,
         assert Client().get(path).status_code in {302, 403}
 
 
+def test_testing_submissions_after_go_live_say_so_plainly(
+    live_response_service, google
+):
+    """After go-live the Testing list refuses with its own notice (#867).
+
+    The refusal is not a permission problem, so it never offers "Sign in
+    again"; Go-live readiness, the only page linking here, refuses too.
+    """
+    browser, _ = signed_in()
+    with web_login():
+        response = browser.get(
+            reverse("admin:go_live_families"), HTTP_ACCEPT="text/html"
+        )
+        assert response.status_code == 410
+        body = response.content.decode()
+        assert "Testing submissions are only available before go-live." in body
+        assert "Going live removes the Testing submissions." in body
+        # The error page's own "Sign in again" link (the Admin base also
+        # carries a hidden signed-out dialog with that text).
+        assert '<p><a href="/admin/login">' not in body
+        readiness = browser.get(reverse("admin:go_live"), HTTP_ACCEPT="text/html")
+        assert readiness.status_code != 200
+        assert reverse("admin:go_live_families") not in readiness.content.decode()
+        # Scripts get the same refusal as JSON.
+        script = browser.get(
+            reverse("admin:go_live_families"), HTTP_ACCEPT="application/json"
+        )
+        assert script.status_code == 410
+        assert script.json()["refusal"]["message"] == (
+            "Testing submissions are only available before go-live."
+        )
+
+
 def test_revocation_during_render_prevents_private_response(campaign_test, monkeypatch):
     _, browser, _, _ = campaign_test
     original = go_live_views.render

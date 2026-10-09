@@ -16,6 +16,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.admission import _scope
 from parishkit.stewardship.source.readiness import source_readiness
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
+from parishkit.stewardship.web.refusals import UserFacingGone
 from parishkit.stewardship.web.tables import window_table
 
 from . import admin_navigation
@@ -219,7 +220,17 @@ def testing_families(request, campaign_id):
                 or configuration.mode != "testing"
                 or scope.campaign.state != "draft"
             ):
-                raise PermissionError("Testing inventory belongs to the current draft.")
+                # Not a permission problem: signing in again cannot help, so
+                # refuse with a plain 410 notice rather than the generic 403
+                # "sign in again" page (#867). Go-live readiness, the only page
+                # that links here, itself renders only for the Testing draft.
+                raise UserFacingGone(
+                    _("Testing submissions are only available before go-live."),
+                    fix=_(
+                        "Going live removes the Testing submissions. Live "
+                        "responses are under Responses and reports."
+                    ),
+                )
             source = source_readiness(scope)
             source_id = (
                 source.current_id

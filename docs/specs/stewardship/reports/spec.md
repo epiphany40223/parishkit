@@ -885,6 +885,12 @@ Each Ministry links to:
 - requested leavers: Member name/DUID, current role where known, request date,
   status/outcome.
 
+Each list opens by a POST from its Ministry's form on the summary. A GET of
+either list's address (typed, bookmarked, refreshed or reached with Back)
+carries no Ministry selection, so it answers with a 303 redirect to the
+summary rather than an invalid-request error
+([#867](https://github.com/epiphany40223/parishkit/issues/867)).
+
 Follow-up has no assignee, so neither list nor its exports show one; see
 [Follow-up workflows](../admin-portal/spec.md#follow-up-workflows).
 
