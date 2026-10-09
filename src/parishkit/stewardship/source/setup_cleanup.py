@@ -100,30 +100,36 @@ def admit_cleanup(action, status):
     return action in {"enqueue", "effect", "heartbeat", "progress"}
 
 
+def _unscheduled():
+    """Terminal attempts with source work that no cleanup Task owns yet."""
+    scheduled = TaskRun.objects.filter(
+        task_type=TASK_TYPE, domain_request_id=OuterRef("id")
+    )
+    return SetupAttempt.objects.filter(
+        state__in=("expired", "completed"),
+        source_task_id__isnull=False,
+    ).filter(~Exists(scheduled))
+
+
 def produce_setup_cleanup(guard):
-    """Queue one original terminal attempt per scheduler pass, idempotently."""
+    """Queue one original terminal attempt per scheduler pass, idempotently.
+
+    The locked path enqueues only an attempt _unscheduled() returns, so when
+    the same query finds none the work-order lock is skipped (#715).
+    """
     if not isinstance(guard, SchedulerGuard):
         raise TypeError("Setup cleanup requires its actual scheduler guard.")
     if connection.in_atomic_block:
         raise StorageInvariantError("Setup cleanup production owns its transaction.")
     guard.check()
+    if not _unscheduled().exists():
+        return ()
     with work_transaction():
         if not SystemConfiguration.objects.filter(
             restore_review_required=False
         ).exists():
             return ()
-        scheduled = TaskRun.objects.filter(
-            task_type=TASK_TYPE, domain_request_id=OuterRef("id")
-        )
-        attempt = (
-            SetupAttempt.objects.filter(
-                state__in=("expired", "completed"),
-                source_task_id__isnull=False,
-            )
-            .filter(~Exists(scheduled))
-            .order_by("created_at", "id")
-            .first()
-        )
+        attempt = _unscheduled().order_by("created_at", "id").first()
         if attempt is None:
             return ()
         result = enqueue(

@@ -16,6 +16,7 @@ import pytest
 from django.db import IntegrityError, connection, transaction
 
 from parishkit.stewardship.audit.models import OperationalLog
+from parishkit.stewardship.campaigns import work_locks
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.scheduler import scheduler_session
@@ -263,6 +264,40 @@ def test_a_schedule_change_requests_one_catch_up_when_a_slot_was_overdue(
         assert (
             production._catch_up(effective, tick.timezone, scope_of(tick)) is not None
         )
+
+
+def test_an_idle_loop_still_requests_a_pending_catch_up(tmp_path, monkeypatch):
+    """Every regular slot has its refresh, yet the catch-up is still owed.
+
+    The first loop runs without the catch-up (as if the change had not yet
+    taken effect), so the regular slots are ticked. The next loop must not
+    take the idle shortcut: the catch-up is one of the current slots, and
+    the locked pass requests it (#715). The loop after that has nothing to
+    do, takes no work-order lock and returns the same receipts.
+    """
+    effective = schedule_change(tmp_path, monkeypatch, new=NEW_DEFAULT)
+    with transaction.atomic():
+        now = database_now()
+    with monkeypatch.context() as early:
+        early.setattr(production, "_catch_up_at", lambda: None)
+        produce(monkeypatch, now)
+    assert not SourceRefreshCommand.objects.filter(cause="catch_up").exists()
+    taken, real = [], work_locks.lock_work_order
+
+    def counting():
+        """Count the lock, then take the real one."""
+        taken.append(True)
+        return real()
+
+    monkeypatch.setattr(work_locks, "lock_work_order", counting)
+    receipts = produce(monkeypatch, now)
+    assert taken
+    tick = SourceRefreshTick.objects.get(command__cause="catch_up")
+    assert tick.due_at == effective.replace(microsecond=0)
+    assert tick.command_id in {receipt.command_id for receipt in receipts}
+    taken.clear()
+    assert produce(monkeypatch, now) == receipts
+    assert taken == []
 
 
 def test_no_catch_up_without_an_overdue_slot(tmp_path, monkeypatch):

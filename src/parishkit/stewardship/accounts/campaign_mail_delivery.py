@@ -85,25 +85,40 @@ def finish_submission(identifier, claim, outcome):
         )
 
 
+# What this sweep recovers, locked FOR UPDATE (#715 cross-checks it
+# against RECOVERABLE_STATES, the read before the lock).
+RECOVERABLE = (
+    "SELECT d.id,d.state FROM public.stewardship_campaign_mail_test d "
+    "WHERE (d.state='queued' AND (NOT "
+    "public.stewardship_campaign_mail_live_v1(d.configuration_id,"
+    "d.campaign_id,d.template_id,d.fingerprint,d.requested_by_id) "
+    "OR EXISTS (SELECT 1 FROM public.stewardship_task_run original "
+    "WHERE original.id=d.task_id "
+    "AND original.state IN ('failed','cancelled')))) "
+    "OR (d.state='submitting' AND d.deadline_at<=clock_timestamp() "
+    "AND NOT EXISTS (SELECT 1 FROM public.stewardship_task_run task "
+    "WHERE task.id=d.run_id AND task.state='running' "
+    "AND task.fence=d.task_fence AND task.worker_id=d.worker_id "
+    "AND task.lease_expires_at>clock_timestamp())) "
+    "ORDER BY d.created_at,d.id LIMIT 100 FOR UPDATE OF d"
+)
+# Every row RECOVERABLE can select is in one of these states.
+RECOVERABLE_STATES = ("queued", "submitting")
+
+
 def recover_pending():
-    """Cancel stale unsent tests; retain drained uncertainty without retrying."""
+    """Cancel stale unsent tests; retain drained uncertainty without retrying.
+
+    Only a queued or submitting test can be recovered, so when none exists
+    the work-order lock is skipped (#715).
+    """
     _identity("pk_stewardship_scheduler")
+    if not CampaignMailTest.objects.filter(state__in=RECOVERABLE_STATES).exists():
+        return 0
     with work_transaction():
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT d.id,d.state FROM public.stewardship_campaign_mail_test d "
-                "WHERE (d.state='queued' AND (NOT "
-                "public.stewardship_campaign_mail_live_v1(d.configuration_id,"
-                "d.campaign_id,d.template_id,d.fingerprint,d.requested_by_id) "
-                "OR EXISTS (SELECT 1 FROM public.stewardship_task_run original "
-                "WHERE original.id=d.task_id "
-                "AND original.state IN ('failed','cancelled')))) "
-                "OR (d.state='submitting' AND d.deadline_at<=clock_timestamp() "
-                "AND NOT EXISTS (SELECT 1 FROM public.stewardship_task_run task "
-                "WHERE task.id=d.run_id AND task.state='running' "
-                "AND task.fence=d.task_fence AND task.worker_id=d.worker_id "
-                "AND task.lease_expires_at>clock_timestamp())) "
-                "ORDER BY d.created_at,d.id LIMIT 100 FOR UPDATE OF d"
+                RECOVERABLE,
             )
             found = cursor.fetchall()
         for identifier, state in found:

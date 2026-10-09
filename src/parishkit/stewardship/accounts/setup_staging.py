@@ -165,6 +165,10 @@ def cancel_setup(request, service, attempt_id):
         return _status(_expire(row, actor_id=actor.identity, reason=reason))
 
 
+# The only attempt states expiry acts on.
+EXPIRABLE = (SetupState.COLLECTING, SetupState.LOADING, SetupState.FROZEN)
+
+
 def expire_setup_attempts():
     """Fence the single abandoned attempt before its target owners scrub artifacts."""
     with work_transaction():
@@ -173,11 +177,7 @@ def expire_setup_attempts():
         ).exists():
             return 0
         row = (
-            SetupAttempt.objects.select_for_update()
-            .filter(
-                state__in=[SetupState.COLLECTING, SetupState.LOADING, SetupState.FROZEN]
-            )
-            .first()
+            SetupAttempt.objects.select_for_update().filter(state__in=EXPIRABLE).first()
         )
         if row is None:
             return 0
@@ -189,7 +189,11 @@ def expire_setup_attempts():
 
 
 def produce_setup_expiry(guard):
-    """The actual scheduler fences abandoned staging before artifact owners scan it."""
+    """The actual scheduler fences abandoned staging before artifact owners scan it.
+
+    expire_setup_attempts() acts only on an attempt in one of these states,
+    so when none exists the read below skips the work-order lock (#715).
+    """
     from django.db import connection
 
     from parishkit.stewardship.jobs.scheduler import SchedulerGuard
@@ -200,6 +204,8 @@ def produce_setup_expiry(guard):
     if connection.in_atomic_block:
         raise StorageInvariantError("Setup expiry owns its short transaction.")
     guard.check()
+    if not SetupAttempt.objects.filter(state__in=EXPIRABLE).exists():
+        return 0
     count = expire_setup_attempts()
     guard.check()
     return count

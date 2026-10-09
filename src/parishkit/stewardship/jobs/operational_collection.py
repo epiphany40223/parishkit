@@ -55,11 +55,31 @@ def pending_logs():
     )
 
 
+def _minute_key(now):
+    """The intake key for ``now``'s minute: one intake task per clock minute."""
+    return uuid5(NAMESPACE, str(int(now.timestamp()) // 60))
+
+
 def produce_collection(guard):
-    """At most one new bounded intake task per minute, independent of campaign gates."""
+    """At most one new bounded intake task per minute, independent of campaign gates.
+
+    Returns the task this call allocated, or found under the lock. The only
+    write below is enqueueing this minute's task, so once that task exists
+    the locked path can write nothing more this minute (#715): the read
+    before the lock then returns () without joining the work order. While a
+    source scope is admitted (always, in a running parish) intake is wanted
+    every minute, so the lock is taken once a minute instead of on every
+    loop.
+    """
     if not isinstance(guard, SchedulerGuard):
         raise PermissionError("Operational intake requires the owned scheduler.")
     guard.check()
+    with transaction.atomic():
+        allocated = TaskRun.objects.filter(
+            task_type=TASK_TYPE, idempotency_key=str(_minute_key(database_now()))
+        ).exists()
+    if allocated:
+        return ()
     with work_transaction():
         if (
             not pending_logs().exists()
@@ -70,7 +90,7 @@ def produce_collection(guard):
             and not needs_web_observation()
         ):
             return ()
-        key = uuid5(NAMESPACE, str(int(database_now().timestamp()) // 60))
+        key = _minute_key(database_now())
         task = enqueue(
             task_type=TASK_TYPE,
             domain_request_id=key,
