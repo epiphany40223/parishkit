@@ -66,7 +66,7 @@ $$;
 
 CREATE FUNCTION public.stewardship_production_tokens_intake_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE kind text; preparation public.stewardship_production_tokens%ROWTYPE;
+DECLARE kind text; preparation public.stewardship_production_tokens%ROWTYPE; transition uuid;
 BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Production link preparation history is immutable' USING ERRCODE='23514';
@@ -77,10 +77,29 @@ BEGIN
         RAISE EXCEPTION 'Production link intent requires READ COMMITTED' USING ERRCODE='42501';
     END IF;
     PERFORM pg_advisory_xact_lock(736220,1);
-    IF NOT pg_has_role(session_user,(SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE')
-       AND (session_user<>'pk_stewardship_web'
-            OR public.stewardship_export_authorized_v1(NEW.actor_id,true) IS NOT TRUE) THEN
-        RAISE EXCEPTION 'Production link intent requires a current Admin' USING ERRCODE='42501';
+    IF NOT pg_has_role(session_user,(SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
+        IF session_user='pk_stewardship_scheduler' THEN
+            -- Go-live sequencing (#462, migration 0025): the scheduler records
+            -- or discards a preparation only for the Administrator who started
+            -- this go-live, still a current Administrator, while its request
+            -- is cleanup_complete (it still owns the go-live gate). Each
+            -- branch reads only its own table's columns.
+            IF TG_TABLE_NAME='stewardship_production_tokens' THEN
+                transition:=NEW.transition_id;
+            ELSE
+                SELECT p.transition_id INTO transition FROM stewardship_production_tokens p
+                    WHERE p.id=NEW.preparation_id;
+            END IF;
+            IF public.stewardship_export_authorized_v1(NEW.actor_id,true) IS NOT TRUE
+               OR NOT EXISTS(SELECT 1 FROM stewardship_production_request request
+                   WHERE request.id=transition AND request.state='cleanup_complete'
+                       AND request.initiated_by_id=NEW.actor_id) THEN
+                RAISE EXCEPTION 'Scheduled Production link intent requires the go-live requester' USING ERRCODE='42501';
+            END IF;
+        ELSIF session_user<>'pk_stewardship_web'
+              OR public.stewardship_export_authorized_v1(NEW.actor_id,true) IS NOT TRUE THEN
+            RAISE EXCEPTION 'Production link intent requires a current Admin' USING ERRCODE='42501';
+        END IF;
     END IF;
     IF NEW.actor_id IS NULL THEN
         RAISE EXCEPTION 'Production link intent requires an attributed actor' USING ERRCODE='23514';
