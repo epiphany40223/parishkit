@@ -901,3 +901,36 @@ def test_campaign_ministries_trail_runs_through_ministries():
     assert trail[-1]["url"] is None
     assert [section["key"] for section in sections if section["current"]] == ["parish"]
     assert navigation.back(match, None, _items())["url"] == reverse("admin:ministries")
+
+
+@pytest.mark.parametrize("role", ROLES)
+def test_a_trail_links_only_pages_the_viewer_may_open(role):
+    """No breadcrumb links a menu page the viewer's menu does not offer (#457 L3).
+
+    The menu applies each page's own capability, so a crumb for a menu page,
+    or for a report root that only redirects to one, is linked only when the
+    menu offers it. Every page is checked for each role, with an active
+    campaign so that each role's whole menu is available.
+    """
+    campaign = CAMPAIGNS["active"]
+    items = _menu(role, campaign, "production")
+    offered = {item.name: item.url for item in items if item.url}
+    for name in sorted(navigation.PAGES):
+        arguments = {**_arguments(name), "campaign_id": campaign.pk}
+        _, trail = navigation.build(_match(name, **arguments), items)
+        chain = navigation._chain(name)
+        for ancestor, crumb in zip(chain[:-1], trail[-len(chain) : -1], strict=True):
+            gate = navigation.PAGES[ancestor].entry or ancestor
+            if crumb["url"] and gate in navigation.MENU_NAMES:
+                assert gate in offered, (role, name, ancestor)
+
+
+def test_a_ministry_leaders_export_names_participation_without_a_link():
+    """A Ministry leader may open their export, but not the Participation report."""
+    campaign = CAMPAIGNS["active"]
+    for role, linked in (("ministry_leader", False), ("staff", True)):
+        items = _menu(role, campaign, "production")
+        for name in ("report_export", "report_exact"):
+            _, trail = navigation.build(_match(name, request_id=uuid4()), items)
+            assert trail[-2]["label"] == navigation.PAGES["participation"].label
+            assert (trail[-2]["url"] == reverse("admin:reports")) is linked

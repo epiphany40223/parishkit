@@ -17,6 +17,9 @@
 
   const WARN_MS = 5 * 60 * 1000;
   const SYNC_MS = 30 * 1000;
+  // The clock offset trails the server by a request's latency, so a 401 this
+  // close to the deadline is still read as the deadline passing.
+  const GRACE_MS = 5 * 1000;
   const form = dialog.querySelector("[data-session-renew]");
   const warning = dialog.querySelector("#session-warning");
   const expired = dialog.querySelector("#session-expired");
@@ -65,7 +68,8 @@
     absolute = nextAbsolute;
   }
 
-  // Passive status read; failures leave the local deadlines unchanged.
+  // Passive status read; failures leave the local deadlines unchanged, but a
+  // 401 means the session has ended, whatever the countdown says (#457 M4).
   async function sync() {
     if (signedOut) return;
     if (syncing) return syncing;
@@ -76,7 +80,8 @@
           credentials: "same-origin", cache: "no-store",
           headers: {"Accept": "application/json"}
         });
-        if (response.ok) adopt(await response.json());
+        if (response.status === 401) showExpired();
+        else if (response.ok) adopt(await response.json());
       } catch {
         // Offline or unavailable: keep counting down from what we know.
       } finally {
@@ -86,12 +91,24 @@
     return syncing;
   }
 
+  // The ended dialog names a cause only when it knows it: a passed deadline is
+  // inactivity or the sign-in time limit; a 401 before then means the session
+  // ended some other way (signed out in another tab, or access changed).
   function showExpired() {
     signedOut = true;
+    const cause = deadline() - now() > GRACE_MS ? "other"
+      : absolute <= idle ? "limit" : "idle";
+    let shown = null;
+    for (const reason of expired.querySelectorAll("[data-session-ended]")) {
+      reason.hidden = reason.dataset.sessionEnded !== cause;
+      if (!reason.hidden) shown = reason;
+    }
     warning.hidden = true;
     expired.hidden = false;
     dialog.setAttribute("aria-labelledby", "session-expired-title");
-    dialog.removeAttribute("aria-describedby");
+    // Describe the dialog by the one cause paragraph that is shown.
+    if (shown) dialog.setAttribute("aria-describedby", shown.id);
+    else dialog.removeAttribute("aria-describedby");
     if (!dialog.open) dialog.showModal();
     expired.querySelector("a")?.focus();
   }
@@ -119,7 +136,7 @@
       // Another tab may have renewed the session; check before interrupting.
       await sync();
       remaining = deadline() - now();
-      if (remaining > WARN_MS) return;
+      if (signedOut || remaining > WARN_MS) return;
       warning.hidden = false;
       expired.hidden = true;
       error.hidden = true;
@@ -133,11 +150,12 @@
     if (remaining <= 0) {
       // Confirm with the server before declaring the session over.
       await sync();
-      if (deadline() - now() <= 0) showExpired();
+      if (!signedOut && deadline() - now() <= 0) showExpired();
       return;
     }
     if (Date.now() - lastSync >= SYNC_MS) {
       await sync();
+      if (signedOut) return;
       if (deadline() - now() > WARN_MS) {
         dialog.close();
         return;

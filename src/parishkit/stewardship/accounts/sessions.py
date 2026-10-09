@@ -327,8 +327,16 @@ def reauthenticate_admin(request, user_id, *, store, authenticated_at):
     return principal
 
 
-def authenticated_admin(caller, *, store, activity=False, read_only=False):
+def authenticated_admin(
+    caller, *, store, activity=False, read_only=False, stale_authority=False
+):
     """Re-evaluate policy every time; passive status/presence calls never renew idle.
+
+    ``stale_authority`` (read-only checks only) admits a session whose roles or
+    Ministries changed since it was issued, without rotating it. Only the
+    session status endpoint uses it, and it reveals nothing but deadlines: a
+    changed role is not a signed-out session (#755). The next ordinary page
+    rotates the session as usual.
 
     ``caller`` is an ``AdminCaller`` (until the final ADM-11 PR, a Django
     request is still converted). A read-only automation session can never
@@ -347,6 +355,8 @@ def authenticated_admin(caller, *, store, activity=False, read_only=False):
 
     if activity and read_only:
         raise ValueError("Read-only authorization cannot renew session activity.")
+    if stale_authority and not read_only:
+        raise ValueError("Only a read-only check may admit stale authority.")
     caller = as_caller(caller)
     if activity and caller.read_only:
         raise PermissionError("Access is unavailable.")
@@ -400,6 +410,9 @@ def authenticated_admin(caller, *, store, activity=False, read_only=False):
             # A read guard cannot write or rotate a cookie after headers start.
             # Its ordinary admission must first establish a current session.
             # Only the web rotates; automation re-admits on its next command.
+            if stale_authority and caller.channel == WEB:
+                caller.admitted(row, principal)
+                return principal
             if read_only or caller.channel != WEB:
                 return None
             row = _rotate_authority(caller, row, principal, now)
