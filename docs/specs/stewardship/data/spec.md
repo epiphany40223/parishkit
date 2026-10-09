@@ -563,11 +563,26 @@ monitoring are owned by [housekeeping](../operations/spec.md#temporary-retention
   rows defined by the
   [credential specification](../architecture/spec.md#family-credential-security);
 - association with generation-scoped email-link token records containing
-  versioned ciphertext, domain-separated SHA-256 lookup digest, destruction,
-  and revocation times;
-- initial/live invitation state;
+  versioned ciphertext, domain-separated SHA-256 lookup digest, destruction
+  and rotation times;
 - first live submission and current effective submission IDs; and
-- latest session/activity metadata used by the Admin indicator.
+- the instant of the Family's latest session activity (`last_activity_at`).
+  The Admin "Families on the form now" indicator reads the Family session
+  rows, not this column.
+
+Invitation and reminder state is kept in the schedule occurrences and outbox
+messages, not on this row (#472 removed an unused per-Family invitation state
+column).
+
+Each campaign also has one credential row (`CampaignCredentialState`). It
+holds the current rehearsal pointer, the go-live gate, and the Family
+population the codes and links were last built for: its source snapshot and
+generation and an eligibility digest and count. Inserting a Family row, or
+changing one's Portal eligibility or source generation, marks that population
+dirty (a statement trigger) until source reconciliation records the new
+population. While the population is dirty, Family sign-in, Family mail and
+link preparation are refused; while the go-live gate is held, Family sign-in
+and Family mail are.
 
 The first-eligibility timestamp/generation pair is set atomically when source
 promotion first makes the Family Portal-eligible in the Campaign and is never

@@ -1710,7 +1710,8 @@ eligible address is suppressed is included in the
 [active parishioner family directory's mailing columns](../reports/spec.md#mailing-columns).
 A systemic provider, configuration or credential failure stops new sending in
 every mail consumer of the `mail-dispatch` container until it restarts, and
-three consecutive shared outages pause a consumer for ten minutes and then
+three consecutive shared outages pause a consumer (ten minutes for Family
+mail, five for Administrator alert and security mail) and then
 admit one probe; both raise the CRITICAL `mail_provider_failed` incident
 rather than a flood of identical failures (see the
 [Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)).
