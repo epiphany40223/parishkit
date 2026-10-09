@@ -212,3 +212,22 @@ def test_missing_controls_keeps_static_report_usable(page, component_origin):
     assert page.locator("[data-omitted-controls]").is_hidden()
     assert page.locator("input[type=range]").get_attribute("aria-valuetext") is None
     assert page.locator("tbody tr").count() == 3
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_saved_report_shows_the_response_funnel(
+    page, component_origin, axe_source, width
+):
+    """The funnel table and figures are readable, accessible and fit (#477)."""
+    from .test_components import axe_violations
+
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/daily-digest-funnel")
+    funnel = page.locator("[data-digest-funnel]")
+    visible(funnel.get_by_role("heading", name="Response funnel"))
+    assert funnel.locator("tbody tr").count() == 5
+    text = funnel.inner_text()
+    assert "includes mail-scanner prefetches" in text and "40%" in text
+    assert "Submitted more than once" in text
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []

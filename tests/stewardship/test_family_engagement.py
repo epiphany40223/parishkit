@@ -171,8 +171,21 @@ def test_only_web_writes_engagement_and_never_deletes_it():
     assert {"family_id", "mode", "rehearsal_epoch_id", "created_at", "id"}.isdisjoint(
         ENGAGEMENT_UPDATE_COLUMNS
     )
+    # The worker builds the daily digest, whose response funnel (#477) reads
+    # the first instants by column; it holds no table grant and no write.
+    tables, columns = runtime_grants(ServiceRole.WORKER)
+    assert table not in tables
+    assert columns[table] == {
+        "SELECT": {
+            "family_id",
+            "mode",
+            "rehearsal_epoch_id",
+            "first_link_at",
+            "first_form_at",
+            "first_progress_at",
+        }
+    }
     for role in (
-        ServiceRole.WORKER,
         ServiceRole.SCHEDULER,
         ServiceRole.MAIL_DISPATCH,
         "download",

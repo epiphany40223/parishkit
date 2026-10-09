@@ -495,3 +495,91 @@ def test_report_button_is_padded_for_outlook():
     assert 'bgcolor="#115e56"' in result.html
     assert "mso-padding-alt:10px 20px;" in result.html
     assert "Open this exact report</a>" in result.html
+
+
+def funnel_metrics():
+    """A funnel as response_metrics returns it, without the rows behind it."""
+    from datetime import UTC, datetime
+
+    from parishkit.stewardship.reports.response_metrics import (
+        LINK_FOLLOWED_NOTE,
+        ResponseMetrics,
+        ResponseScope,
+        Stage,
+    )
+
+    counts = (
+        ("invited", 1000),
+        ("link_followed", 640),
+        ("form_opened", 512),
+        ("progressed", 480),
+        ("submitted", 401),
+    )
+    return ResponseMetrics(
+        scope=ResponseScope(UUID(int=1)),
+        as_of=datetime(2026, 11, 3, 5, tzinfo=UTC),
+        timezone="America/New_York",
+        grain="hour",
+        families=(),
+        stages=tuple(
+            Stage(key, count, LINK_FOLLOWED_NOTE if key == "link_followed" else "")
+            for key, count in counts
+        ),
+        skipped_responded=12,
+        submitted_uninvited=3,
+        submitted_again=7,
+        activity=(),
+        sends=(),
+    )
+
+
+def test_a_production_digest_shows_the_response_funnel():
+    """Five stages with counts and shares, the scanner note, three figures (#477)."""
+    result = render(replace(document(), funnel=funnel_metrics(), mode="production"))
+    for body in (visible(result.html), result.text):
+        assert "Response funnel" in body
+        assert "Invited" in body and "100%" in body
+        assert "Submitted" in body and "401" in body and "40%" in body
+        assert "includes mail-scanner prefetches" in body
+        assert "Invitations not sent (already responded)" in body and "12" in body
+        assert "::" not in body
+        assert "Percentages are of the Families invited." in body
+    # The figures: "label: count" in the text part, a two-cell row in HTML.
+    assert "Submitted without a delivered invitation: 3" in result.text
+    assert "Submitted more than once: 7" in result.text
+    assert ">Submitted more than once</td>" in result.html
+    # After the campaign totals, before the participation chart.
+    html = result.html
+    assert html.index("Campaign totals") < html.index("Response funnel")
+    assert html.index("Response funnel") < html.index("Daily participation")
+
+
+def test_a_testing_digest_says_where_the_funnel_is():
+    """No Testing funnel: rehearsal data is cleaned up, so it cannot be recounted."""
+    result = render(replace(document(), mode="testing"))
+    for body in (visible(result.html), result.text):
+        assert "Response funnel" not in body
+        assert "Testing digests leave out the response funnel." in body
+    # A document with no mode (older callers) shows neither.
+    plain = render(document())
+    assert "Response funnel" not in plain.text and "Testing digests" not in plain.text
+
+
+def test_the_saved_page_shows_the_same_funnel():
+    """The saved report page renders the funnel from the same document."""
+    from parishkit.stewardship.reports.digest_presentation import snapshot_context
+
+    value = replace(document(), funnel=funnel_metrics(), mode="production")
+    context = snapshot_context(
+        value, mode="production", chart_url="/chart", download_url="/download"
+    )
+    assert [row[1] for row in context["funnel_stages"]] == [1000, 640, 512, 480, 401]
+    assert context["funnel_testing_note"] == ""
+    testing = snapshot_context(
+        replace(document(), mode="testing"),
+        mode="testing",
+        chart_url="/chart",
+        download_url="/download",
+    )
+    assert testing["funnel_stages"] == ()
+    assert "Testing digests" in testing["funnel_testing_note"]

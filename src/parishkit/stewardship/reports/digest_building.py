@@ -9,6 +9,7 @@ from parishkit.stewardship.web.digest_content import validate_digest_body
 
 from .daily_digest import DailyDigestContent, DailyDigestDocument
 from .digest_capture import retained_dates, retained_statistics
+from .digest_funnel import digest_funnel, report_day_end
 from .digest_models import DailyDigestReady, DailyDigestSnapshot
 from .digest_ownership import (
     TASK_TYPE,
@@ -87,13 +88,24 @@ def retained_daily_document(snapshot, facts):
     # The ParishSoft data age and connection as known at the observation
     # (#510), for the email and the saved report page alike. The compiled
     # email body is retained, so later refreshes never rewrite a sent digest.
+    covered = retained_dates(snapshot)
+    mode = snapshot.preparation.mode
+    # The response funnel at the end of the report day (#477), counted from
+    # durable timestamps here and again on the saved page, so both agree.
+    funnel = digest_funnel(
+        snapshot.campaign_id,
+        mode,
+        report_day_end(covered[-1], document.campaign_timezone, snapshot.observed_at),
+    )
     return DailyDigestDocument(
         snapshot.pk,
         document,
         retained_statistics(snapshot),
-        retained_dates(snapshot),
+        covered,
         snapshot.configuration.parish.date_format,
         source_age=data_age_at(snapshot.observed_at),
+        funnel=funnel,
+        mode=mode,
     )
 
 

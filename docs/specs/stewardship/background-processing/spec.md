@@ -1971,7 +1971,23 @@ Admin-configurable, send:
 - the report day's first submissions, cumulative participation and
   percentage;
 - the report day's cumulative annual pledges (USD), the same label as the
-  table column, when financial stewardship is enabled; and
+  table column, when financial stewardship is enabled;
+- in a Production digest, the
+  [response funnel](../reports/spec.md#response-funnel) at the end of the
+  report day ([#477](https://github.com/epiphany40223/parishkit/issues/477)):
+  each stage's Families compared with invited ("Link followed" noting that
+  it includes mail-scanner prefetches) and the three figures reported beside
+  it, after the campaign totals, with a caption saying the percentages are of
+  the Families invited and that the totals count the participating Families
+  instead. The email shows rows with share bars; the saved report page a
+  table. The compiling worker counts it and the page counts it again from
+  the same durable timestamps, so the two agree unless the engagement record
+  is backfilled later. The saved page of a digest sent before the funnel
+  existed also shows it (or the Testing note), although that email did not;
+  the web login does not read compiled mail text to tell them apart. A
+  Testing digest omits it, because a rehearsal's records are cleaned
+  up and could not be counted again, and says that the Response dashboard's
+  Testing view has it; and
 - the same participation chart/data basis as the web report, rendered as an
   inline accessible image plus textual summary.
 

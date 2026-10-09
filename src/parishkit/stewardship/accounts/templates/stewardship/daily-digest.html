@@ -23,6 +23,14 @@
 <section class="panel"><h2>{% translate "Campaign totals" %}</h2>
 <dl>{% for label,value in cards %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
 </section>
+{% if funnel_stages %}<section class="panel" data-digest-funnel><h2>{% translate "Response funnel" %}</h2>
+<div class="table-scroll"><table>
+<caption>{{ funnel_caption }}</caption>
+<thead><tr><th scope="col">{% translate "Stage" %}</th><th scope="col">{% translate "Families" %}</th><th scope="col">{% translate "Compared with invited" %}</th></tr></thead>
+<tbody>{% for label, count, portion, note in funnel_stages %}<tr><th scope="row">{{ label }}{% if note %} <small>({{ note|lower }})</small>{% endif %}</th><td>{{ count|number }}</td><td>{{ portion }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<dl>{% for label, count in funnel_figures %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% endfor %}</dl>
+</section>{% elif funnel_testing_note %}<p class="notice">{{ funnel_testing_note }}</p>{% endif %}
 <section class="panel" data-digest-chart>
 <h2>{% translate "Daily participation — Historical as of day" %}</h2>
 <div class="digest-figure"><img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840"><div class="digest-tip" data-digest-tip aria-hidden="true" hidden></div></div>
