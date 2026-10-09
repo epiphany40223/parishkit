@@ -337,6 +337,8 @@ FIELDS = {
         "report_filter",
         "talent_option_id",
         "snapshot_id",
+        # A response list's sort order (#851): its closed sort token.
+        "report_sort",
     },
 }
 
@@ -373,6 +375,27 @@ REPORT_FILTERS = frozenset(
         "cannot_attend",
         "option",
     }
+)
+# A response list's sort order (#851); mirrored in stewardship_safe_context_v1.
+# Each list sorts by any of its columns both ways (reports.response_lists): the
+# column key ascending, ``-key`` descending. A test keeps this set equal to
+# the lists' own tokens.
+REPORT_SORT_COLUMNS = (
+    "family",
+    "duid",
+    "envelope",
+    "submitted",
+    "submissions",
+    "opened",
+    "progressed",
+    "invited",
+    "link",
+    "last",
+    "mailing",
+    "problem",
+)
+REPORT_SORTS = frozenset(
+    token for key in REPORT_SORT_COLUMNS for token in (key, f"-{key}")
 )
 # Stored hosted-file types (#346); mirrored in stewardship_safe_context_v1.
 HOSTED_FILE_KINDS = frozenset({"pdf", "docx", "xlsx", "pptx", "png", "jpeg"})
@@ -600,6 +623,9 @@ def sanitize(kind, values):
             safe[key] = value
         elif key == "report_filter":
             valid = type(value) is str and value in REPORT_FILTERS
+            safe[key] = value
+        elif key == "report_sort":
+            valid = type(value) is str and value in REPORT_SORTS
             safe[key] = value
         elif key == "review_reason":
             valid = type(value) is str and 0 < len(value) <= 500 and "@" not in value

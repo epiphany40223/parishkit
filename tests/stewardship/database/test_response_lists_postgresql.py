@@ -264,12 +264,28 @@ def test_lists_and_downloads_for_admin_and_staff(
         "count": 2,
         "report_mode": "production",
         "report_filter": "all",
+        "report_sort": "-duid",
         "snapshot_id": str(snapshot),
     }
     assert events.filter(
         event_type="response_data_quality_list_viewed",
         auditcontext__context__report_filter="envelope",
     ).exists()
+    # And the order chosen, or the list's default (#851).
+    assert events.filter(
+        event_type="response_data_quality_list_viewed",
+        auditcontext__context__contains={
+            "report_filter": "envelope",
+            "report_sort": "-duid",
+        },
+    ).exists()
+    assert (
+        events.filter(
+            event_type="response_submitted_list_viewed",
+            auditcontext__context__report_sort="submitted",
+        ).count()
+        == events.filter(event_type="response_submitted_list_viewed").count()
+    )
     for context in events.values_list("auditcontext__context", flat=True):
         assert name not in str(context)
     # Refused downloads are audited too, as failed.
