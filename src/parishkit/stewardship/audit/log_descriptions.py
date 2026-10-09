@@ -151,9 +151,11 @@ DESCRIPTIONS = {
     "system_health_viewed": _("An Administrator opened System health."),
     "background_viewed": _("An Administrator opened Background work."),
     "delivery_viewed": _("An Administrator opened Outgoing mail."),
-    "family_directory_viewed": _("Someone opened the Family directory."),
+    "family_directory_viewed": _(
+        "Someone opened the active parishioner family directory."
+    ),
     "postal_outreach_viewed": _(
-        "Someone opened the Family directory with mailing columns."
+        "Someone opened the active parishioner family directory with mailing columns."
     ),
     "ministry_report_viewed": _("Someone opened a Ministry report."),
     "participation_viewed": _("Someone opened the participation report."),

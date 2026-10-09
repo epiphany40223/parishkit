@@ -170,12 +170,14 @@ def test_post_only_routes_return_to_the_form_page(named, expected):
     returns to the Admin home, never to the POST URL.
     """
     request = RequestFactory().post("/admin/reports/c/families/export", **PAGE)
-    body = through(request, step_up_response(named, "Family directory")).content
+    body = through(
+        request, step_up_response(named, "Active parishioner family directory")
+    ).content
     body = body.decode()
     assert "Nothing was done or sent." in body
     assert f'name="next" value="{expected}"' in body
     # The page names where the step-up returns, since it is not this page.
-    assert "You will then return to Family directory." in body
+    assert "You will then return to Active parishioner family directory." in body
     assert "return to this page" not in body
 
 

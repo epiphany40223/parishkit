@@ -69,8 +69,10 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     # The combined logs are offered to Administrators only.
     assert (b'href="/admin/system/logs/"' in body) == (role == "administrator")
     assert (b"Background work" in body) == (role == "administrator")
-    assert (b"Family directory" in body) == (role != "ministry_leader")
-    # The Postal outreach page merged into the Family directory (#202).
+    assert (b"Active parishioner family directory" in body) == (
+        role != "ministry_leader"
+    )
+    # The Postal outreach page merged into the family directory (#202).
     assert b"Postal outreach" not in body
     assert body.count(b'id="session-warning"') == 1
     assert body.count(b'id="session-expired"') == 1

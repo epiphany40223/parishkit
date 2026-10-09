@@ -448,7 +448,7 @@ def directory_page(campaign_id, query, *, postal, general, mac):
 
 
 # How many matches the header's Find a Family box lists (#561); more than
-# this offers the whole list in the Family directory instead.
+# this offers the whole list in the active parishioner family directory instead.
 FIND_LIMIT = 8
 # The shortest search the box sends. One character would match nearly every
 # Family (any name with that letter, any DUID with that digit), so a lookup
@@ -460,7 +460,7 @@ def find_families(campaign_id, query):
     """The first ``FIND_LIMIT`` Families the directory search finds (#561).
 
     Runs the installed directory selection itself, so the header's Find a
-    Family box matches exactly what the Family directory's search matches
+    Family box matches exactly what the directory page's search matches
     (the shown name with its heads, DUID and address) and lists in the same
     order. Only the search filter is set. Unlike ``directory_page`` it
     decrypts no Family code and reads no head emails: a match shows only

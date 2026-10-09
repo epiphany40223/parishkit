@@ -532,7 +532,7 @@ rather than a reproducible count, for the launch-day data problems that made
 Family names misleading; the record itself is fixed in ParishSoft, and a
 Family the latest ParishSoft data no longer has is left out (the About panel
 says so). The Family column is the
-[Family directory](#family-directory)'s name (surname, then active heads),
+[active parishioner family directory](#active-parishioner-family-directory)'s name (surname, then active heads),
 and the envelope number and mailing name come from the same latest
 ParishSoft data, read in two queries for the listed Families; a Family no
 longer in that data says so instead of a name.
@@ -593,10 +593,10 @@ opaque random identifier like a Mail message's; the Family's name, DUID,
 envelope number and code never enter the URL, and the browser title leaves the
 name out so browser history does not keep it. The Family's name opens the page from each
 [response list](#response-lists) row (in the list's mode) and each
-[Family directory](#family-directory) row, and from each match in the header's
+[active parishioner family directory](#active-parishioner-family-directory) row, and from each match in the header's
 Find a Family box (see
 [Admin navigation](../admin-portal/spec.md#admin-navigation)). Its breadcrumb
-parent is the Family directory. The page reads the Family's records at the
+parent is the active parishioner family directory. The page reads the Family's records at the
 database's current instant (**Counted at**).
 
 Data comes first: the heading, then the Family's name (the directory's
@@ -676,7 +676,7 @@ row pairs a campaign with a Family that is not in it. Recording which
 Family was viewed lets a later review see who looked at whom, and a view left
 unrecorded could never be filled in; the Administrator confirmed it on
 2026-10-05 ([#477](https://github.com/epiphany40223/parishkit/issues/477)),
-with the page's name, its URL and its place under the Family directory. The
+with the page's name, its URL and its place under the active parishioner family directory. The
 subject
 is a soft reference with no foreign key, so, like other report access audit,
 the event is outside the purge inventory (see
@@ -701,15 +701,21 @@ and workflow state. Exports include complete text and workflow history option.
 Editing is audited and uses optimistic concurrency. This report is also the
 source for the weekly Admin digest.
 
-## Family directory
+## Active parishioner family directory
 
 **Access:** Admin and Staff.
 
-One **Family directory** page serves both Family-code lookup and postal
-outreach; they were separate pages until
+One **Active parishioner family directory** page serves both Family-code
+lookup and postal outreach; they were separate pages until
 [#202](https://github.com/epiphany40223/parishkit/issues/202). The page lists
-active Families with name, Family DUID, manual code, current email
-eligibility/deliverability, and response status. The name is the Family's
+the campaign's Families: those both active and registered at the parish
+(portal-eligible). Active Families registered elsewhere, and inactive
+Families, are left out by design, and the page's name says so
+([#870](https://github.com/epiphany40223/parishkit/issues/870)). The page
+shows no population summary or separate code-privacy line above its filters;
+the page's About help covers code privacy. Each row has the Family's name,
+Family DUID, manual code, current email eligibility/deliverability, and
+response status. The name is the Family's
 surname followed by its heads of household, so same-surname Families can be
 told apart: "Smith, Anna and John" (three or more heads read "A, B and C"); a
 head whose surname differs from the Family's is shown in full ("Smith, Anna and
@@ -816,13 +822,13 @@ addressee and mailing address, and the mail merge covers exactly the listed
 Families, including those without a usable mailing address (as below). To
 list the Families postal mail
 is for, filter reach to "By postal mail only" (or email availability to a
-reason). Families without deliverable email, counted on the page, are the
+reason). Families without deliverable email are the
 complement of the deliverable-email
 statistics card, not of the syntactic eligible-email card. The Addressee
 column names the Family as the mail-merge file does; a Family without a
 usable mailing address has no addressee, and its Mailing address column says
 its address columns are blank in the file. Mailing columns show
-nothing the Family directory's contact details do not already show Admin and
+nothing the active parishioner family directory's contact details do not already show Admin and
 Staff, and Ministry leaders are denied either way. Viewing with mailing
 columns is audited as postal outreach, and its export is a `postal_outreach`
 export request.
@@ -835,7 +841,7 @@ The export is a mail merge for envelope labels and cover letters: one header
 row plus one row per Family, with the columns ParishSoft DUID, Family,
 Addressee, Family heads, Address line 1–3 (empty optional lines omitted), City,
 State, ZIP (with its +4 extension when present), Family code and Family head
-emails (as in the [Family directory](#family-directory) export). Addressee and
+emails (as in the [active parishioner family directory](#active-parishioner-family-directory) export). Addressee and
 Family heads join the active heads' names naturally ("Aaron and Isabelle
 Williams" when they share a surname, "Aaron Williams and Isabelle Smith"
 otherwise); Addressee falls back to the Family name. The file has exactly the
@@ -1038,7 +1044,7 @@ Family count, annual total, frequency distribution, share-method counts and the
 number of Families that cannot contribute financially; such a Family's
 frequency reads "Cannot contribute". Exports are CSV, XLSX, and PDF; queuing
 or regenerating one needs the same fresh sign-in as a
-[Family directory](#family-directory) export, returning to this report. No
+[active parishioner family directory](#active-parishioner-family-directory) export, returning to this report. No
 Ministry leader receives aggregate or Family financial detail.
 
 ## Talents and limitations

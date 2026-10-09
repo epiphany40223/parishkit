@@ -101,7 +101,11 @@ def test_typing_searches_once_after_a_pause_by_post(page, component_origin):
     visible(results)
     has_text(status, "12 Families found")
     assert results.get_by_role("link").count() == 8
-    visible(results.get_by_role("button", name="See all 12 in the Family directory"))
+    visible(
+        results.get_by_role(
+            "button", name="See all 12 in the active parishioner family directory"
+        )
+    )
     # The text never reached the address bar.
     assert page.url == component_origin + PATH
     page.wait_for_timeout(500)
@@ -274,7 +278,9 @@ def test_searching_never_reloads_and_see_all_posts_to_the_directory(
     page.evaluate("window.findFamilyMark = 'kept'")
     field, results, _status = _box(page)
     field.fill("examp")
-    see_all = results.get_by_role("button", name="See all 12 in the Family directory")
+    see_all = results.get_by_role(
+        "button", name="See all 12 in the active parishioner family directory"
+    )
     visible(see_all)
     assert page.evaluate("window.findFamilyMark") == "kept"
     assert page.url == component_origin + PATH
@@ -283,7 +289,7 @@ def test_searching_never_reloads_and_see_all_posts_to_the_directory(
     request = posted.value
     assert request.method == "POST"
     assert parse_qs(request.post_data)["search"] == ["examp"]
-    visible(page.get_by_role("heading", name="Family directory"))
+    visible(page.get_by_role("heading", name="Active parishioner family directory"))
 
 
 def test_a_page_restored_from_history_closes_the_results(page, component_origin):

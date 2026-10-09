@@ -132,7 +132,7 @@ def test_results_open_the_timeline_and_offer_the_rest_in_the_directory():
     # The rest: a POST to the directory carrying the escaped search text.
     assert '<form method="post" action="/admin/directory/"' in html
     assert 'name="search" value="&quot;&gt;&lt;b&gt;x"' in html
-    assert "See all 1,234 in the Family directory" in html
+    assert "See all 1,234 in the active parishioner family directory" in html
 
 
 def test_results_say_when_one_or_none_match():

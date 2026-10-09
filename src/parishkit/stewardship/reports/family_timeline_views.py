@@ -11,7 +11,7 @@ Admission, the campaign read guard, the role recheck inside it and the audit
 follow the response lists (``response_list_views``). Production is the
 default; Administrators may choose the campaign's active Testing rehearsal
 (``mode=testing``) and Staff may not. The Family code is decrypted under the
-credential key-set lock inside the guard, as the Family directory does.
+credential key-set lock inside the guard, as the directory page does.
 
 The Administrator's timeline is a shared Admin table (``web/tables.py``)
 whose When heading sorts it in place, newest first by default. Its rows are
@@ -138,7 +138,7 @@ def page_context(campaign, family_id, identity, mode, timeline, as_of, **options
     with no rehearsal). The ``options`` are ``full`` (an Administrator's
     view: the timeline and the mode switch), ``show_codes`` (the role may see
     Family codes; without it the code and Open form are left out),
-    ``testing_codes`` and ``family_test_url`` (the Family directory's
+    ``testing_codes`` and ``family_test_url`` (the active parishioner family directory's
     Testing-mode link, given only to roles that may open that page), and
     ``values``, the timeline table's validated ``sort`` and ``size``.
     """
