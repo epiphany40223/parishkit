@@ -148,6 +148,92 @@ def _admit_reader(cursor, login, tables):
 # The backup login's only membership, as pg_auth_members reports it.
 READER_MEMBERSHIP = "pg_read_all_data:true:false"
 
+# Authority a runtime login could gain or lend outside its declared grants,
+# after cluster drift (#389 L7): each a boolean over the login's ``pg_roles``
+# row ``r``, true when the drift is present, keyed by what a refusal names.
+# Provisioning creates each login as the superuser operator, so it is never a
+# role's member (PostgreSQL 16 gives a CREATEROLE creator one) and owns
+# nothing. Every login's own admission refuses these
+# (``credential_database._identity``, ``backup_commands``), and the upgrade
+# check refuses them too, so an upgrade stops before its services would.
+# The migration login owns the schema, so only the ownership check
+# (``OWNERSHIP``) is waived for it; a member of the schema owner would hold
+# every table, policy and guard, so reverse membership still applies.
+# - Reverse membership: another role that is a member of the login inherits
+#   or can SET ROLE to its grants.
+# - Ownership: an owner holds every privilege on what it owns and can grant
+#   it. pg_shdepend's owner rows cover every kind of object (functions,
+#   types, schemas, sequences, servers, default privileges, databases),
+#   not only the relations the grant check sees. There is deliberately no
+#   dbid filter: login names are cluster-wide, so ownership in another
+#   database of the cluster, or of a shared object (dbid 0), is drift too.
+#   Do not narrow it to current_database().
+# - Foreign data: USAGE on a wrapper or server lets the login reach outside
+#   the database. Wrappers and servers belong to one database, and a login
+#   may connect only to this one, so this database is the one to check.
+OWNERSHIP = "the login owns an object"
+ISOLATION_DRIFT = {
+    "another role is a member of the login": (
+        "EXISTS(SELECT 1 FROM pg_auth_members WHERE roleid=r.oid)"
+    ),
+    OWNERSHIP: (
+        "EXISTS(SELECT 1 FROM pg_shdepend WHERE refclassid='pg_authid'::regclass "
+        "AND refobjid=r.oid AND deptype='o')"
+    ),
+    "the login has foreign-data USAGE": (
+        "(EXISTS(SELECT 1 FROM pg_foreign_data_wrapper w "
+        "WHERE has_foreign_data_wrapper_privilege(r.oid,w.oid,'USAGE')) "
+        "OR EXISTS(SELECT 1 FROM pg_foreign_server s "
+        "WHERE has_server_privilege(r.oid,s.oid,'USAGE')))"
+    ),
+}
+
+# A routine's signature as admission names it: ``name(argument types)``.
+SIGNATURE = "p.proname||'('||oidvectortypes(p.proargtypes)||')'"
+# The sequence privileges the backup login must not hold. Its
+# pg_read_all_data membership gives SELECT on every sequence by design.
+BACKUP_SEQUENCES = "USAGE,UPDATE"
+
+
+def excess_authority_checks(role, functions, sequences):
+    """Authority no declared grant gives a login, each a boolean true when present.
+
+    Keyed by what a refusal names. All three arguments are SQL expressions:
+    ``role`` is the login (``current_user`` at admission, a quoted name in
+    the upgrade check), ``functions`` a text array of the public definer
+    signatures it may EXECUTE, ``sequences`` the sequence privileges it must
+    not hold. Admission passes ``%s`` bind placeholders for the last two.
+    One definition serves admission and the upgrade check, so they cannot
+    disagree.
+    """
+    return {
+        "EXECUTE on a definer routine": (
+            "EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n "
+            "ON n.oid=p.pronamespace WHERE n.nspname !~ '^pg_' "
+            "AND n.nspname<>'information_schema' AND p.prosecdef "
+            f"AND NOT (n.nspname='public' AND {SIGNATURE}=ANY({functions})) "
+            f"AND has_function_privilege({role},p.oid,'EXECUTE'))"
+        ),
+        # The CASE keeps has_sequence_privilege off every non-sequence:
+        # PostgreSQL may evaluate the WHERE terms in any order, and the
+        # function raises on, for example, a TOAST table.
+        "a sequence privilege": (
+            "EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n "
+            "ON n.oid=c.relnamespace WHERE n.nspname !~ '^pg_' "
+            "AND n.nspname<>'information_schema' AND c.relkind='S' "
+            "AND CASE WHEN c.relkind='S' "
+            f"THEN has_sequence_privilege({role},c.oid,{sequences}) END)"
+        ),
+        "CREATE on a schema": (
+            "EXISTS(SELECT 1 FROM pg_namespace n WHERE n.nspname !~ '^pg_' "
+            "AND n.nspname<>'information_schema' "
+            f"AND has_schema_privilege({role},n.oid,'CREATE'))"
+        ),
+        "CREATE on the database": (
+            f"has_database_privilege({role},current_database(),'CREATE')"
+        ),
+    }
+
 
 def _check_role(cursor, name, marker, limit, *, reader=False):
     """Idempotent retry never adopts, repairs or silently changes an existing role.

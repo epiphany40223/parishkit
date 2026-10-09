@@ -37,6 +37,55 @@ def test_the_query_names_every_login_and_migration(tmp_path):
     assert upgrade_check._writer_guard_digest() in query
 
 
+def test_every_runtime_login_must_show_no_isolation_drift(tmp_path):
+    """The upgrade refuses what every service's admission would (#389 L7).
+
+    The migration login, which owns the schema, is exempt from the ownership
+    check only: a member of the schema owner is still refused.
+    """
+    from parishkit.stewardship.database_provisioning import (
+        ISOLATION_DRIFT,
+        OWNERSHIP,
+    )
+
+    query = upgrade_check.upgrade_noop_query(configuration_at(tmp_path), uuid4())
+    logins = len(database_identities())
+    for name, check in ISOLATION_DRIFT.items():
+        assert f"AND NOT {check} " in upgrade_check.role_matches(
+            "pk_stewardship_web", "m", 1, reader=False
+        )
+        owner = upgrade_check.role_matches(
+            "pk_stewardship_migration", "m", 1, reader=False, exempt={OWNERSHIP}
+        )
+        assert (check in owner) is (name != OWNERSHIP)
+        expected = logins - 1 if name == OWNERSHIP else logins
+        assert query.count(f"AND NOT {check} ") == expected, name
+
+
+def test_the_backup_login_must_hold_no_excess_authority(tmp_path):
+    """The upgrade refuses what the backup admission's excess check refuses.
+
+    Rendered for the backup login's name, with no allowed definer routine
+    and the backup's sequence privileges, and for that login alone.
+    """
+    from parishkit.stewardship.database_provisioning import (
+        BACKUP_SEQUENCES,
+        excess_authority_checks,
+    )
+
+    login = "pk_stewardship_backup_worker"
+    checks = excess_authority_checks(
+        f"'{login}'", "ARRAY[]::text[]", f"'{BACKUP_SEQUENCES}'"
+    )
+    reader = upgrade_check.no_excess(login, {}, {}, reader=True)
+    writer = upgrade_check.no_excess("pk_stewardship_web", {}, {}, reader=False)
+    query = upgrade_check.upgrade_noop_query(configuration_at(tmp_path), uuid4())
+    assert "has_function_privilege" not in writer
+    for name, check in checks.items():
+        assert f"AND NOT {check}" in reader, name
+        assert query.count(f"AND NOT {check}") == 1, name
+
+
 def test_the_command_prints_the_query(tmp_path, capsys):
     """The CLI renders the same query from a deployment document."""
     configuration = configuration_at(tmp_path)

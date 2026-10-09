@@ -103,11 +103,18 @@ def _admit_backup_identity():
     Like every other process that opens the database, the command proves its
     identity before acting: a rendered document naming another login must not
     dump or record under it. The backup login alone bypasses row-level
-    security and belongs to pg_read_all_data; everything else is refused.
+    security and belongs to pg_read_all_data; everything else is refused,
+    including the isolation drift every login is checked for (no member
+    roles, no owned objects, no foreign-data USAGE).
+
+    Its grants are checked too (#389 L7), as far as pg_read_all_data leaves
+    anything to check: every write privilege must be one ``runtime_grants``
+    declares, and it may not execute a definer routine, use or update a
+    sequence, or create in a schema or the database.
     """
     from django.db import connection
 
-    from .database_provisioning import READER_MEMBERSHIP
+    from .database_provisioning import ISOLATION_DRIFT, READER_MEMBERSHIP
     from .runtime_database import require_no_temporary_authority
 
     with connection.cursor() as cursor:
@@ -116,15 +123,80 @@ def _admit_backup_identity():
             "rolcreaterole,rolreplication,rolinherit,"
             "(SELECT string_agg(m.rolname||':'||am.inherit_option::text||':'"
             "||am.admin_option::text,',' ORDER BY m.rolname) FROM pg_auth_members am "
-            "JOIN pg_roles m ON m.oid=am.roleid WHERE am.member=r.oid) "
+            "JOIN pg_roles m ON m.oid=am.roleid WHERE am.member=r.oid),"
+            f"{', '.join(ISOLATION_DRIFT.values())} "
             "FROM pg_roles r WHERE rolname=current_user"
         )
         row = cursor.fetchone()
     login = "pk_stewardship_backup_worker"
-    attributes = (False, True, False, False, False, False)  # super, bypass, ...
-    if row != (login, login, *attributes, READER_MEMBERSHIP):
+    # Each column the login must show, and what a refusal calls a mismatch.
+    expected = {
+        "not the backup login": login,
+        "not its own session": login,
+        "superuser": False,
+        "does not bypass row-level security": True,
+        "may create databases": False,
+        "may create roles": False,
+        "replication": False,
+        "inherits role authority": False,
+        "role membership other than pg_read_all_data": READER_MEMBERSHIP,
+        **dict.fromkeys(ISOLATION_DRIFT, False),
+    }
+    if row is None:
         raise ConfigError("The backup command requires its own database login.")
+    if failed := [
+        name
+        for (name, value), actual in zip(expected.items(), row, strict=True)
+        if actual != value
+    ]:
+        # Names only which checks failed, so an operator can repair the role.
+        raise ConfigError(
+            f"The backup command requires its own database login: {', '.join(failed)}."
+        )
+    _admit_backup_grants(connection)
     require_no_temporary_authority()
+
+
+def _admit_backup_grants(connection):
+    """Refuse a backup login whose grants exceed what the backup declares.
+
+    pg_read_all_data gives SELECT on every table and sequence and USAGE on
+    every schema, so only what it does not give is compared: table and
+    column write privileges against ``runtime_grants``, and the definer,
+    sequence-write and CREATE authority of ``excess_authority``.
+    """
+    from .accounts.credential_database import excess_authority
+    from .database_provisioning import BACKUP_SEQUENCES
+    from .deployment import ServiceRole
+    from .runtime_grants import runtime_grants
+
+    tables, columns = runtime_grants(ServiceRole.BACKUP_WORKER)
+    allowed = {table: set(grants) for table, grants in tables.items()}
+    for table, grants in columns.items():
+        allowed.setdefault(table, set()).update(grants)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT n.nspname,c.relname,p FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid=c.relnamespace "
+            "CROSS JOIN unnest(ARRAY['INSERT','UPDATE','DELETE','TRUNCATE',"
+            "'REFERENCES','TRIGGER']) p "
+            "WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema' "
+            "AND c.relkind IN('r','p','v','m','f') "
+            "AND (has_table_privilege(current_user,c.oid,p) OR "
+            "CASE WHEN p IN('INSERT','UPDATE','REFERENCES') "
+            "THEN has_any_column_privilege(current_user,c.oid,p) ELSE false END)"
+        )
+        for schema, table, privilege in cursor.fetchall():
+            if schema != "public" or privilege not in allowed.get(table, set()):
+                raise ConfigError(
+                    "The backup login's database grants are excessive: "
+                    f"{privilege} on {schema}.{table}."
+                )
+        if excess := excess_authority(cursor, sequences=BACKUP_SEQUENCES):
+            raise ConfigError(
+                "The backup login's database grants are excessive: "
+                f"{', '.join(excess)}."
+            )
 
 
 def recipient_changed(current):

@@ -13,10 +13,13 @@ that answers `t` only when all of these hold at once:
 * the download capacity already equals the budget that `migrate` would set;
 * the database carries this deployment's provisioning marker;
 * every foundation login exists with exactly the attributes, membership and
-  connection limit that `database-grants` requires of it;
+  connection limit that `database-grants` requires of it, and shows none of
+  the isolation drift a runtime login's admission refuses (the schema-owning
+  migration login is exempt from the ownership check only);
 * the operational log writer guard is this release's exact function body;
 * every login already holds every privilege this image's registry grants it,
-  and nothing beyond what `database-grants` would admit.
+  and nothing beyond what `database-grants` would admit (for the backup
+  login, also none of the authority its backup admission refuses).
 
 Anything else, including a query error such as a missing table, means "run
 both commands". The query checks the same conditions the commands check,
@@ -28,7 +31,15 @@ the schema, excess grants and its role's connection limit independently.
 import secrets
 from importlib import import_module
 
-from .database_provisioning import READER_MEMBERSHIP, _writer_guard_digest, role_limit
+from .database_provisioning import (
+    BACKUP_SEQUENCES,
+    ISOLATION_DRIFT,
+    OWNERSHIP,
+    READER_MEMBERSHIP,
+    _writer_guard_digest,
+    excess_authority_checks,
+    role_limit,
+)
 from .deployment import ServiceRole
 from .runtime_identities import database_identities
 
@@ -97,9 +108,21 @@ def migrations_match(migrations):
     )
 
 
-def role_matches(login, marker, limit, *, reader):
-    """The row database_provisioning._check_role admits, and nothing else."""
+def role_matches(login, marker, limit, *, reader, exempt=frozenset()):
+    """The row database_provisioning._check_role admits, and nothing else.
+
+    The login must also show none of the ``ISOLATION_DRIFT`` that a runtime
+    login's own admission refuses at startup (#389 L7), so an upgrade onto a
+    drifted catalog stops here, before its services would all refuse to
+    start. ``exempt`` names checks waived for this login: the migration
+    login owns the schema, so it is exempt from ``OWNERSHIP`` only.
+    """
     membership = literal(READER_MEMBERSHIP) if reader else "NULL"
+    drift = "".join(
+        f"AND NOT {check} "
+        for name, check in ISOLATION_DRIFT.items()
+        if name not in exempt
+    )
     return (
         "EXISTS(SELECT 1 FROM pg_roles r WHERE r.rolname="
         f"{literal(login)} "
@@ -107,6 +130,7 @@ def role_matches(login, marker, limit, *, reader):
         f"AND NOT r.rolsuper AND r.rolbypassrls={'true' if reader else 'false'} "
         "AND NOT r.rolcreatedb AND NOT r.rolcreaterole AND NOT r.rolreplication "
         f"AND NOT r.rolinherit AND r.rolcanlogin AND r.rolconnlimit={int(limit)} "
+        f"{drift}"
         "AND (SELECT string_agg(m.rolname||':'||am.inherit_option::text||':'"
         "||am.admin_option::text,',' ORDER BY m.rolname) FROM pg_auth_members am "
         "JOIN pg_roles m ON m.oid=am.roleid WHERE am.member=r.oid) "
@@ -150,7 +174,10 @@ def no_excess(login, tables, columns, *, reader):
 
     The backup login reads every table through pg_read_all_data, so, as in
     _admit_reader, only its non-SELECT privileges are compared, and a column
-    write is admitted only by a whole-table grant of that privilege.
+    write is admitted only by a whole-table grant of that privilege. It must
+    also hold none of the definer EXECUTE, sequence-write or CREATE authority
+    its backup admission refuses, so a catalog drifted that way stops the
+    upgrade instead of failing the next backup.
     """
     allowed = sorted(
         (table, privilege)
@@ -196,6 +223,10 @@ def no_excess(login, tables, columns, *, reader):
     )
     if reader:
         result += f" AND pg_has_role({literal(login)},'pg_read_all_data','MEMBER')"
+        authority = excess_authority_checks(
+            literal(login), text_array(()), literal(BACKUP_SEQUENCES)
+        )
+        result += "".join(f" AND NOT {check}" for check in authority.values())
     return result
 
 
@@ -235,7 +266,13 @@ def upgrade_noop_query(configuration, deployment_id):
     for _, login, role, target in database_identities():
         reader = role is ServiceRole.BACKUP_WORKER
         checks.append(
-            role_matches(login, marker, role_limit(configuration, role), reader=reader)
+            role_matches(
+                login,
+                marker,
+                role_limit(configuration, role),
+                reader=reader,
+                exempt={OWNERSHIP} if role is ServiceRole.MIGRATION else set(),
+            )
         )
         if role is ServiceRole.MIGRATION:
             continue  # The schema owner receives no runtime grants.
