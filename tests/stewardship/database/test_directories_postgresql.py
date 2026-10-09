@@ -224,6 +224,11 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
         response, body = search(browser, route, {"reach": "email"})
         assert response.status_code == 200 and harness.code.encode() in body
         assert b"Addressee" not in body and b"<td>1 Example Street<br>" not in body
+        # The page is named for who it lists (#870), and the population
+        # summary and code-privacy lines above the filters are gone.
+        assert b"<h1>Active parishioner family directory</h1>" in body
+        assert b"those without deliverable email:" not in body
+        assert b"Family codes are private:" not in body
         # A form rendered before the merge still posts to the old route and
         # keeps its mailing columns.
         response, body = search(browser, legacy, {"reach": "any"})
@@ -465,7 +470,7 @@ def test_staff_directories_survive_limiter_outage_but_not_revocation(
 
 
 def test_archived_directory_keeps_its_retained_source(response_service, google):
-    """A successor's global import cannot rewrite an archived Family directory."""
+    """A successor's global import cannot rewrite an archived campaign's directory."""
     from parishkit.stewardship.campaigns.lifecycle import Action
     from parishkit.stewardship.campaigns.work_locks import work_transaction
     from parishkit.stewardship.jobs.models import TaskRun

@@ -491,7 +491,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign |
 | Responses and reports | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
 | Responses and reports | Ministry follow-up | `/admin/reports/ministries/follow-up/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
-| Responses and reports | Family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign |
+| Responses and reports | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign |
 | Responses and reports | Emailed reports | `/admin/reports/emailed/` | Administrator, Staff | Never |
 | Parish data | Parish settings | `/admin/parish/settings/` | Administrator | Never |
 | Parish data | Parish logos | `/admin/parish/logos/` | Administrator | Never |
@@ -516,7 +516,7 @@ Notes on the groups:
   [Talents and limitations](../reports/spec.md#talents-and-limitations),
   [Additional information](../reports/spec.md#additional-information), the
   Ministry report and its [follow-up](#follow-up-workflows) queue, and the
-  [Family directory](../reports/spec.md#family-directory) (with Family
+  [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) (with Family
   campaign codes and its mailing columns). Reports always show the current
   campaign. Ministry leaders see only their own Ministries in the Ministry
   entries. Additional information and Ministry follow-up show their open
@@ -564,7 +564,7 @@ logout is CSRF-protected. Pages carry no product footer.
 
 The shared header holds a **Find a Family** search box (#561) for
 Administrators and Staff only; Ministry leaders get none, since they cannot
-open the [Family directory](../reports/spec.md#family-directory). It uses the
+open the [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory). It uses the
 directory's search query (the Family name with its heads of household, DUID
 and address) and its permission checks, so results show only Families the role
 may already see, and a result opens that Family's
@@ -770,9 +770,9 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_leavers` | Members leaving | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving | `/admin/reports/ministries/leaving/` | (same; old address redirects) | Becomes a bookmarkable view of Ministry requests (#521). |
 | `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/ministries/follow-up/` | (same; old address redirects) | No assignee column, filter or bulk assignment (#552). |
 | `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same; old address redirects) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
-| `family_directory` | Family directory | Menu: Family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same; old address redirects) |  |
-| `family_codes` | Family campaign codes | Family directory | Administrator, Staff | (same) | `/admin/reports/family-codes/` | (same; old address redirects) | Needs a fresh sign-in (#547). |
-| `family_timeline` | Family timeline | Family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same; old address redirects) | Opened from each Family directory and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
+| `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same; old address redirects) |  |
+| `family_codes` | Family campaign codes | Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/family-codes/` | (same; old address redirects) | Needs a fresh sign-in (#547). |
+| `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same; old address redirects) | Opened from each directory row and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `weekly_digest_manual` | Send a weekly report now | Emailed reports (new page) | Administrator | Request a manual information report; Manual information report | `/admin/reports/weekly-digests/request/<campaign>/` | `/admin/reports/emailed/weekly/new/` | Was the Manual information report menu entry; ends on Emailed reports, which links the report it produced. |
 | `weekly_digest_snapshot` | Weekly report | Emailed reports (new page) | Administrator | Weekly information report; Weekly summary | `/admin/reports/weekly-digests/<snapshot>/` | `/admin/reports/emailed/weekly/<snapshot>/` |  |
 | `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/weekly-digests/<snapshot>/items/<item>/` | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | Links the live Additional information request. |
@@ -1119,7 +1119,7 @@ exporting keeps the order the table shows.
 Page, size and sort are query parameters (`page`, `size`, `sort`), optionally
 prefixed so two tables on one page keep their own place, and every navigator
 link, heading and filter form keeps the page's filters and the others' choices.
-Reports whose filters are private (the Family directory, System logs and the
+Reports whose filters are private (the active parishioner family directory, System logs and the
 campaign reports) keep them in POST state: their navigator and headings are
 small CSRF-protected forms that carry the filters as hidden fields, so no
 private value reaches a URL. System logs also accept a link carrying only its
@@ -1128,7 +1128,7 @@ orders offers that selection's sort orders on the columns they order and its
 page sizes; its other columns do not sort, since the schema owns those
 orders. In v1 that covers:
 
-- the Family directory (Family and DUID, 50 rows; Family code would need
+- the active parishioner family directory (Family and DUID, 50 rows; Family code would need
   every code decrypted per view);
 - Financial stewardship detail (Family, Annual pledge and latest response);
 - the Additional information queue (Family and Submitted);
@@ -1166,7 +1166,7 @@ POST table's address never changes. Applying a page's filters works the same
 way (#484): the filter form is sent as it would have been (a GET query, or a
 CSRF POST body), every table region is replaced, and so are the counts,
 summaries and filter-dependent panels outside the tables (a report's matching
-count and summary, the Family directory's export column list); focus stays on
+count and summary, the active parishioner family directory's export column list); focus stays on
 the filter button and the live region announces the rows now shown in each
 table, including none. A response the
 server refuses (a malformed filter's 400, a denial, an unavailable report) is
@@ -1572,7 +1572,7 @@ Admins have two always-visible indicators:
 - **Families on the form now**: count of Family sessions with a heartbeat
   within the last 90 seconds, that is, Families with the form open in their
   browser; a Family that signed in but closed the form is not counted. Detail
-  lists the Family name as on the Family directory (surname, then the
+  lists the Family name as on the active parishioner family directory (surname, then the
   active heads of household, e.g. "Squyres, Jeff and Tracy"), DUID, start
   time, last activity, and form section; it never shows answers or
   credentials.
@@ -2534,7 +2534,7 @@ For staff validation, a Testing-mode draft campaign also offers a link from the
 test send, **Send this email to chosen real Families (Testing recipient only)**,
 to the page **Send this email to chosen Families**: a freshly authenticated
 Administrator enters up to ten Family IDs, reviews each Family's eligibility
-(each reviewed row names the Family as the Family directory does, the
+(each reviewed row names the Family as the active parishioner family directory does, the
 surname then the heads of household), and confirms that real Family data goes to the Testing recipient. Each eligible
 Family's real message for a template its invitation or reminder schedules use is
 prepared with that Family's own Testing credential (reusing the credential
@@ -2601,7 +2601,7 @@ what applies now:
    2 to 5 show only the Go live page's own steps, because campaign settings
    are locked by the go-live gate.
 2. **Start.** The cleanup inventory (counts first, then the Admin-only Family
-   list, each Testing Family named as the Family directory names it), the
+   list, each Testing Family named as the active parishioner family directory names it), the
    acknowledgement that Testing cleanup cannot be undone, and **Start
    go-live**. Starting needs no fresh sign-in, as today. The server re-checks
    readiness at the POST. Every problem still blocks except one: a full
@@ -4176,7 +4176,7 @@ requires today.
    or contacts: Families present and counted in the baseline but missing,
    or no longer counted, in the refused load (for a Member or contact count,
    the Family the lost record belonged to). Each example holds only the
-   Family's DUID and its name as the Family directory shows it, taken from
+   Family's DUID and its name as the active parishioner family directory shows it, taken from
    the baseline. Ministry, roster and fund counts have no examples, and a
    tenant-mismatch refusal records none. The examples go in a new
    parish-level table that the worker's login writes and deletes and the

@@ -159,7 +159,10 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             and b"Choir" not in body
         )
         # The menu offers the leader the Ministry entries only (#522).
-        assert b"Ministry requests" in body and b"Family directory" not in body
+        assert (
+            b"Ministry requests" in body
+            and b"Active parishioner family directory" not in body
+        )
         assert b"/ministries/9/" not in body
         assert b'name="ministry" value="9"' in body
         response, body = search(browser, route, {"ministry": "9"})

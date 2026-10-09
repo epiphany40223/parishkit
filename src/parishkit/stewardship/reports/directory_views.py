@@ -1,4 +1,4 @@
-"""The native private-POST Family directory with response-lifetime read admission.
+"""The private-POST active parishioner family directory, with read admission.
 
 One page serves both uses that used to be separate pages: the Family-code
 directory and postal outreach. The "Include mailing columns" checkbox
@@ -28,11 +28,9 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
-from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
-from parishkit.stewardship.web.presentation import out_of
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 
@@ -60,7 +58,9 @@ def _principal(request, store, *, read_only=False):
         request, store=store, activity=not read_only, read_only=read_only
     )
     if not allows(principal, Capability.FAMILY_CODES):
-        raise PermissionError("Family directory access is unavailable.")
+        raise PermissionError(
+            "Active parishioner family directory access is unavailable."
+        )
     return principal
 
 
@@ -249,9 +249,6 @@ def directory(request, campaign_id, *, postal=False):
                 report
                 | testing
                 | {
-                    "postal_proportion": out_of(
-                        Percentage(report["postal_total"], report["active_total"])
-                    ),
                     "campaign_id": campaign_id,
                     "mailing": postal,
                     "query": query,
@@ -316,7 +313,7 @@ def directory(request, campaign_id, *, postal=False):
 
 
 def _finder(request, store, *, read_only=False):
-    """A viewer who may open the Family directory and the Family timeline."""
+    """A viewer who may open the directory page and the Family timeline."""
     principal = _principal(request, store, read_only=read_only)
     if not allows(principal, Capability.CAMPAIGN_REPORT):
         raise PermissionError("Find a Family is unavailable.")
@@ -330,7 +327,7 @@ def find_family(request, campaign_id):
     A non-page action: the shared Admin header's search box posts its text
     here (CSRF-protected, so the text never enters a URL, a log line or the
     browser history) and shows the answer under the box. The viewer must be
-    able to open both the Family directory, whose search this runs, and the
+    able to open both the directory page, whose search this runs, and the
     Family timeline each result opens: Administrators and Staff. Both are
     rechecked inside the campaign read guard, as the directory does, and the
     search is audited as a directory view (search used, row counts; never

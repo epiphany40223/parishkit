@@ -1680,7 +1680,7 @@ A permanent address refusal records that recipient/family, suppresses that
 normalized address until its source value changes or an Admin clears the
 refusal after verification, and continues. A Family whose every otherwise
 eligible address is suppressed is included in the
-[Family directory's mailing columns](../reports/spec.md#mailing-columns).
+[active parishioner family directory's mailing columns](../reports/spec.md#mailing-columns).
 A systemic provider/authentication failure stops further sending for that run
 and becomes CRITICAL to avoid a flood of identical failures.
 
@@ -2108,9 +2108,9 @@ the owner-only directory/file/temporary-file permissions defined by
 [runtime storage](../operations/spec.md#runtime-storage) and the retention policy defined by
 [operations](../operations/spec.md#temporary-retention-and-housekeeping).
 Expired files can be regenerated from retained source/config where permitted.
-A Family directory file's head emails are the one exception to "retained":
+An active parishioner family directory file's head emails are the one exception to "retained":
 they may come from the current ParishSoft data, and the file says so (see
-the [Family directory](../reports/spec.md#family-directory)).
+the [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory)).
 Files are served only through an authorized application response. A short-lived
 single-use download grant authorizes that application response, never proxy
 file access or an internal-redirect handoff. Caddy has no export-storage mount.
