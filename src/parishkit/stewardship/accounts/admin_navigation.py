@@ -55,12 +55,17 @@ class Page:
     pending change and refuses once that change is confirmed (a staged
     image, a new campaign). Its crumb is shown for orientation but never
     linked, and "Return to" skips it, because a GET would fail.
+
+    ``entry`` names the menu entry a page outside the menu only redirects to
+    (a report root): it is linked only while the viewer's menu offers that
+    entry, because the page checks the same capability (#457 L3).
     """
 
     section: str | None
     label: str
     parent: str | None = None
     linkable: bool = True
+    entry: str | None = None
 
 
 @dataclass(frozen=True)
@@ -172,7 +177,7 @@ PAGES = {
     # Responses and reports. Every report is a menu entry of its own. The
     # reports root only redirects to the current campaign's report (or shows
     # that there is none), so it stands alone, outside the menu.
-    "reports": Page("reports", _("Participation")),
+    "reports": Page("reports", _("Participation"), entry="participation"),
     "participation": Page("reports", _("Participation")),
     "financial_report": Page("reports", _("Financial stewardship")),
     "talents_report": Page("reports", _("Talents and limitations")),
@@ -742,12 +747,14 @@ def _sidebar_page(name):
 def _link(name, arguments, offered=None):
     """Reverse an Admin page with the arguments it needs, or None if unavailable.
 
-    ``offered`` is the set of URLs the viewer's sidebar offers now. A menu
-    page is linked only when the sidebar offers that exact URL: the sidebar
-    already greys out entries their page would refuse (Share options once
-    the campaign is locked, Campaign images for an archived campaign,
+    ``offered`` maps each entry the viewer's sidebar offers now to its URL.
+    A menu page is linked only when the sidebar offers that exact URL: the
+    sidebar already greys out entries their page would refuse (Share options
+    once the campaign is locked, Campaign images for an archived campaign,
     Go-live readiness after the draft), so a trail or "Return to" link
-    reuses that decision instead of repeating it (#196). None skips the check.
+    reuses that decision instead of repeating it (#196). A page standing for
+    an entry (``Page.entry``) is linked only while that entry is offered. None
+    skips the check.
     """
     if not PAGES[name].linkable:
         return None
@@ -761,8 +768,11 @@ def _link(name, arguments, offered=None):
         )
     except NoReverseMatch:
         return None
-    if offered is not None and _sidebar_page(name) and url not in offered:
-        return None
+    if offered is not None:
+        if _sidebar_page(name) and offered.get(name) != url:
+            return None
+        if PAGES[name].entry and PAGES[name].entry not in offered:
+            return None
     return url
 
 
@@ -904,10 +914,10 @@ def _item(entry):
 
 
 def _offered(items):
-    """The URLs of the available menu entries, or None when none were given."""
+    """``{entry name: URL}`` of the available menu entries, or None if not given."""
     if items is None:
         return None
-    return {item.url for item in map(_item, items) if item.url}
+    return {item.name: item.url for item in map(_item, items) if item.url}
 
 
 def _breadcrumbs(name, chain, arguments, sections, labels, offered=None):
