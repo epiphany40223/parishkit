@@ -520,8 +520,19 @@ without search, the parser, the catalog),
 `tests/stewardship/database/test_admin_family_export_cli_postgresql.py`
 (the page's record and `export_requested` event, the worker's file
 streamed byte for byte as the page's download, keyed repeats, a bound
-key, refused filters, a read-only session). 8f (the exports that need the
-Family keys, the in-memory downloads and the exact exports) follows.
+key, refused filters, a read-only session). 8f adds `export directory` and
+`export postal`, loading only the code MAC keyring, only for a new request
+and only when it matches the running web's; proven by
+`tests/stewardship/test_admin_family_exports.py` (the keyring loader's
+receipt check), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_family_export_cli_postgresql.py`
+(one key load per new request and none for a repeat or a refusal, the codes
+only in the file, the stream equal to the page's download, a keyring
+mismatch with nothing made, a read-only session refused, a busy key lock as
+exit 3), and the real admission's keyring wiring in
+`tests/stewardship/test_admin_cli.py`. 8g (the one-Family timeline, the
+in-memory downloads and the exact exports) follows.
 
 ## ADM-12: Admin navigation overhaul
 
