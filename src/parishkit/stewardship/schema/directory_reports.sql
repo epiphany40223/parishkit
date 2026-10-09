@@ -247,8 +247,9 @@ CREATE INDEX directory_export_campaign ON stewardship_directory_export_snapshot(
 CREATE INDEX directory_export_source ON stewardship_directory_export_snapshot(source_id);
 CREATE INDEX directory_export_config ON stewardship_directory_export_snapshot(configuration_id);
 
-CREATE FUNCTION stewardship_directory_export_capture_v1() RETURNS trigger
+CREATE FUNCTION public.stewardship_directory_export_capture_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE postal boolean; phones boolean;
 BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Directory export snapshots are immutable' USING ERRCODE='23514';
@@ -267,6 +268,20 @@ BEGIN
     END IF;
     NEW.source_id:=(NEW.document->'metadata'->>'source_id')::uuid;
     NEW.row_count:=(NEW.document->>'total')::integer;
+    -- Keep only the private contact columns the requested file renders
+    -- (#388 L6; reports.directory_documents): the postal mail merge uses the
+    -- address, and the code list uses phones only for reach 'neither'. The
+    -- envelope number is in neither file. The keys stay, emptied, so the
+    -- document keeps its shape; heads (names and head emails) are in both.
+    postal:=coalesce((NEW.parameters->>'postal')::boolean,false);
+    phones:=NOT postal AND NEW.parameters->'filters'->>'reach' IS NOT DISTINCT FROM 'neither';
+    NEW.document:=jsonb_set(NEW.document,'{rows}',coalesce((SELECT jsonb_agg(
+        e.r||jsonb_build_object('envelope',NULL)
+           ||CASE WHEN postal THEN '{}'::jsonb ELSE jsonb_build_object('address','{}'::jsonb) END
+           ||CASE WHEN phones THEN '{}'::jsonb ELSE jsonb_build_object('phones','[]'::jsonb) END
+        ORDER BY e.ordinal)
+        FROM jsonb_array_elements(NEW.document->'rows') WITH ORDINALITY e(r,ordinal)),
+        '[]'::jsonb));
     RETURN NEW;
 END $$;
 

@@ -90,6 +90,9 @@ FROZEN = {
     "0020_directory_reach.sql": (
         "cb505df5c8d4cd58da53244b805d8d01d0d9394883915ac9aea784189ca44f45"
     ),
+    "0021_slim_directory_capture.sql": (
+        "40e9df61f1c6c6b35b6781510a5eda34173dc570aae85951d1e59048c2945266"
+    ),
 }
 
 
