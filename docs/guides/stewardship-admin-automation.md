@@ -104,7 +104,9 @@ pk-admin status
 The session is `--session NAME`, else `PK_ADMIN_SESSION`, else the only file
 in the directory; with several files and no choice the wrapper lists them
 and exits 2. Each command prints exactly one JSON document (schema
-`pk-admin/1`) on standard output; warnings, such as a session with less than
+`pk-admin/1`) on standard output, except one that writes a file there
+(`logs export`, see [System logs](#system-logs)), whose document goes to
+standard error; warnings, such as a session with less than
 72 hours left, and structured logs go to standard error. The document's
 fields, the exit codes and the error codes are in the specification's
 [running a command](../specs/stewardship/admin-automation/spec.md#running-a-command);
@@ -675,6 +677,76 @@ The duplicate-risk **resend** and clearing a refused address ask you to
 tick an acknowledgement on the page, so they stay on the page until a
 follow-up (ADM-11 PR 9c) asks for it at the prompt PR 5b added.
 
+## System logs
+
+`logs list` reads the System logs page and `logs export` its download, with
+the page's filters. Each records the page's event in System logs
+(`system_logs_viewed` or `system_logs_exported`, with the number of
+entries). Any session may run `logs list`; `logs export`, like every
+export, needs a full-scope session.
+
+```sh
+pk-admin logs list
+pk-admin logs list --correlation CORRELATION_ID
+pk-admin logs list --show error --show critical --start 2026-10-01 --zone America/New_York
+pk-admin logs list --through THROUGH --page 2
+(umask 077; pk-admin logs export --show audit --format jsonl > logs.jsonl)
+```
+
+The filters are the page's: `--show` (`debug`, `info`, `warning`, `error`,
+`critical` or `audit`, repeated for more; without it, every level but debug
+plus audit records, as the page first shows), `--event` (one type, exactly),
+`--actor`, `--correlation`, `--campaign` and `--subject` (UUIDs; a campaign
+or subject keeps only audit records), `--text` (the page's search phrase,
+without an email address), `--ministry` (one Ministry's DUID), and
+`--start` and `--end` (days), which need `--zone`, the time zone the days
+fall in. Search text stays in your shell's history, so use `--text` only
+when the other filters cannot find what you need. To follow one command's
+effects, filter on the `correlation_id` its document printed. A filter the
+page would refuse is exit 1 (`invalid`). Each read has the page's time
+limit: a read stopped by it is exit 3 (`unavailable`), recorded in System
+logs as a timeout; narrow the filters and try again.
+
+`logs list` also takes `--page`, `--size` (25, 50, 100 or 250), `--sort`
+(`newest` or `oldest`) and `--through`: give back the `through` the first
+page printed to read the next pages of the same snapshot, so entries
+written meanwhile do not shift them.
+
+| Field | What it holds |
+| --- | --- |
+| `through` | The snapshot the page read, for `--through` |
+| `page`, `pages`, `size`, `sort`, `has_next` | The page of entries |
+| `matching`, `matching_capped`, `depth_limited` | How many entries match (at most 10,000, the paging depth), whether more did, and whether the page asked for lay past that depth |
+| `entries` | Each entry's `id`, `source` (`operational` or `audit`), `created_at`, `level` (operational only), `type`, `actor_id`, `actor_kind` (audit only), `correlation_id`, `campaign_id`, `subject_id` and `details`, the recorded fields under their stored names |
+
+Entries name people by identifier only: the actor's email address, which
+the page shows, and a Family's or member's DUID in `details` are left out.
+Open the page, or export, to see them.
+
+`logs export` writes the page's download, the newest 10,000 matching
+entries at most, to standard output, byte for byte as the page's file. It
+takes the filters above, `--format` (`csv`, the default, or `jsonl`) and
+`--timezone` (UTC, the default, or a time zone name, for the file's times).
+Redirect standard output to a file: the wrapper refuses to write the file
+to a terminal.
+
+The file has the same contents as the page's download, actor email
+addresses and Family DUIDs included. A redirected file gets your umask's
+permissions, so create it private, as in the example above (`umask 077` in
+a subshell), or in a directory only you can read, and delete it once used.
+
+The JSON document goes to standard error, as its **last** line: warnings
+and structured logs come before it. The wrapper shows standard error as it
+arrives, so an interrupted run still shows what came before the
+interruption, but the document itself is written only when the command
+ends. Check the exit status first: anything
+but 0 means the file is incomplete or empty, so discard it. On success, the
+document gives `file_name` (the page's), `content_type`, `format`,
+`timezone`, `size` and `sha256` of the bytes written, `count` and `limit`;
+compare `size` and `sha256` with the file (`sha256sum logs.jsonl`). The page
+keeps no record of a download, so neither does the command: there is
+nothing for `export fetch` to fetch.
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -729,3 +801,6 @@ follow-up (ADM-11 PR 9c) asks for it at the prompt PR 5b added.
 - `pk-admin/1` (ADM-11 PR 9b): additive. `delivery list`,
   `delivery show`, `delivery resolve`, `delivery refusals` and
   `delivery refusal-show`.
+- `pk-admin/1` (ADM-11 PR 8a): additive. `logs list` and `logs export`,
+  the first command that streams a file (its document on standard error),
+  and `streams` in each catalog entry.
