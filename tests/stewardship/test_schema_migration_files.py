@@ -75,6 +75,9 @@ FROZEN = {
     "0015_reminder_workgroup_setting.sql": (
         "76b33d8e4ce41bf45c2289ad70846bf15686dc4f1b42398127e91d930046bec1"
     ),
+    "0016_log_events.sql": (
+        "89d6ab97ae5f64e948de393a58076f2fe7440086de42d231a173b99ef383a2ef"
+    ),
 }
 
 

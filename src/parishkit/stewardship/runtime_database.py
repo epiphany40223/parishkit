@@ -31,6 +31,11 @@ STARTUP_DATABASE_WAIT = "startup_database_wait"
 # await_database; None in a process that never waited (operator commands,
 # diagnostics), whose admission therefore never retries.
 _startup_started = None
+# Whether this process has logged startup_waiting (at most once, #541), and
+# whether a wait is under way that has not yet ended with the database
+# answering; the line that ends it says how long the service waited.
+_wait_logged = False
+_waiting = False
 
 
 def require_internal_database(configuration):
@@ -159,8 +164,20 @@ def _pause_or_give_up(delay, attempt_started):
     admission (a web worker re-forked hours on) started outside the window
     and is an ordinary refusal with nothing waited.
     """
+    global _wait_logged, _waiting
     elapsed = time.monotonic() - _startup_started
     if elapsed + delay <= STARTUP_DATABASE_WAIT_SECONDS:
+        if not _wait_logged:
+            # One INFO line when the first wait begins, so a slow start does
+            # not look like a hung container; never one per retry (#541).
+            _wait_logged = True
+            emit(
+                Event.STARTUP_WAITING,
+                timeout=STARTUP_DATABASE_WAIT,
+                limit_seconds=STARTUP_DATABASE_WAIT_SECONDS,
+                elapsed_seconds=round(elapsed),
+            )
+        _waiting = True
         time.sleep(delay)
         return True
     if attempt_started - _startup_started <= STARTUP_DATABASE_WAIT_SECONDS:
@@ -172,6 +189,19 @@ def _pause_or_give_up(delay, attempt_started):
             elapsed_seconds=round(elapsed),
         )
     return False
+
+
+def _wait_ended():
+    """After a wait, log that the database answered and how long it took."""
+    global _waiting
+    if _waiting:
+        _waiting = False
+        emit(
+            Event.STARTUP_WAIT_ENDED,
+            timeout=STARTUP_DATABASE_WAIT,
+            limit_seconds=STARTUP_DATABASE_WAIT_SECONDS,
+            elapsed_seconds=round(time.monotonic() - _startup_started),
+        )
 
 
 def await_database(configuration):
@@ -190,14 +220,17 @@ def await_database(configuration):
     still refused loudly; a wait that runs out logs the timeout line first.
     Either is a Django OperationalError with fixed text, so the caller's
     ``startup_rejected`` names ``database_unavailable`` and no server or
-    exception text reaches the log.
+    exception text reaches the log. The first pause logs one INFO
+    ``startup_waiting`` line, and a connection after any pause logs
+    ``startup_wait_ended`` with the seconds waited (#541).
     """
     import psycopg
     from django.db.utils import OperationalError
 
-    global _startup_started
+    global _startup_started, _waiting
     settings = database_settings(configuration)
     _startup_started = time.monotonic()
+    _waiting = False
     delay = STARTUP_RETRY_SECONDS
     while True:
         attempt_started = time.monotonic()
@@ -217,6 +250,7 @@ def await_database(configuration):
                 autocommit=True,
             ) as database:
                 database.execute("SELECT 1")
+            _wait_ended()
             return
         except psycopg.Error as error:
             _debug_failure(error)
@@ -251,7 +285,7 @@ def during_startup(step):
     while True:
         attempt_started = time.monotonic()
         try:
-            return step()
+            result = step()
         except OperationalError as error:
             if _startup_started is None or not database_not_ready(error.__cause__):
                 raise
@@ -260,6 +294,9 @@ def during_startup(step):
             if not _pause_or_give_up(delay, attempt_started):
                 raise
             delay = min(STARTUP_RETRY_CAP_SECONDS, delay * 2)
+            continue
+        _wait_ended()
+        return result
 
 
 def profile_settings(configuration):

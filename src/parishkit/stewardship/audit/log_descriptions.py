@@ -182,6 +182,39 @@ DESCRIPTIONS = {
         "example, a required backup was missing)."
     ),
     "startup_validated": _("A process started and passed its startup checks."),
+    # Process log only (#541).
+    "startup_waiting": _(
+        "A service is starting while the database is not yet answering, and "
+        "is waiting for it (up to the limit the detail gives). This is normal "
+        "just after a server restart. A wait-ended entry follows when the "
+        "database answers; if the limit runs out, a timeout entry follows and "
+        "the service stops, to be restarted by its restart policy (as "
+        "Production's services are)."
+    ),
+    # Process log only (#546); System health's debug logging panel shows
+    # the same state for every running service.
+    "debug_logging_enabled": _(
+        "A service started with debug logging on, so its log lines keep "
+        "free text and error details that can hold personal data. It keeps "
+        "running this way until it is restarted without debug logging. In "
+        "Production, turn it off: see the debug logging panel on System "
+        "health."
+    ),
+    # Process log only (#584); advice, never an operational incident.
+    "refresh_lead_window_conflict": _(
+        "A scheduled full ParishSoft refresh falls inside the two hours "
+        "before a Production reminder, when its emails are prepared. Nothing "
+        "is sent wrongly or twice, but preparation pauses while the refreshed "
+        "data is applied, which can delay the reminder. Move the full "
+        "refresh outside those hours in the ParishSoft refresh schedule "
+        "settings."
+    ),
+    "startup_wait_ended": _(
+        "The database answered a starting service that had been waiting for "
+        "it; the detail gives the seconds since the service started waiting. "
+        "A second such entry can follow when the service waits again while "
+        "checking its database access. Nothing needs to be done."
+    ),
     "request_completed": _("A web request finished."),
     "report_audit_failed": _(
         "A report could not be shown because recording who viewed it failed."

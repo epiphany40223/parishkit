@@ -3862,6 +3862,12 @@ installers), from each one's
 [turn off debug logging](#turn-off-debug-logging)). A service's debug
 logging is in effect when it was started with `PARISHKIT_DEBUG_LOGGING=1`
 and the debug-off switch is not set.
+Each such start also logs one WARNING `debug_logging_enabled` line next to
+`startup_validated` in that service's log, once per process (each web worker
+logs it), so someone reading the logs sees it too (#546). It is not an
+operational incident, since this panel already reports it. The line reads
+only `PARISHKIT_DEBUG_LOGGING`, so once the debug-off switch exists, it must
+honor the switch too.
 
 - **In Production, any service with debug logging in effect is a problem**
   at the top of the page, and the panel offers **Turn off debug logging**.
