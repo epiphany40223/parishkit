@@ -7,6 +7,32 @@
 <p>{% translate "A campaign starts with default text for every page and email. You can edit any of them, or reset one to its default text, but you do not have to." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <section class="panel"><h2>{% translate "Family pages" %}</h2><ul>{% for page in pages %}<li><a href="{{ page.url }}">{{ page.label }}</a> — {% if page.state == 'default' %}{% translate "Default text" %}{% elif page.state == 'custom' %}{% translate "Customized" %}{% else %}{% translate "Empty" %}{% endif %}{% if page.resave %} — <strong>{% if page.resave.blocked %}{% translate "Can't be sent until fixed" %}{% else %}{% translate "Re-save recommended" %}{% endif %}</strong>{% endif %}</li>{% endfor %}</ul></section>
-<section class="panel"><h2>{% translate "Email templates" %}</h2>{% for email in emails %}<h3>{{ email.label }}</h3><ul>{% for revision in email.revisions %}<li><a href="{{ revision.url }}">{{ revision.subject }}</a> — {% if revision.state == 'default' %}{% translate "Default text" %}{% else %}{% translate "Customized" %}{% endif %}{% if revision.resave %} — <strong>{% if revision.resave.blocked %}{% translate "Can't be sent until fixed" %}{% else %}{% translate "Re-save recommended" %}{% endif %}</strong>{% endif %}{% if revision.test_url %} — <a href="{{ revision.test_url }}">{% translate "Preview and send test" %}</a>{% endif %}</li>{% empty %}<li>{% translate "No template yet. Select Create template to add one." %}</li>{% endfor %}</ul><p><a href="{{ email.url }}">{% if email.singleton %}{% translate "Edit confirmation email" %}{% else %}{% translate "Create template" %}{% endif %}</a></p>{% endfor %}</section>
+{% comment %}
+Each mail type's emails are a short Admin table shown whole (#446): which
+saved schedules send each one (named as on Dates and mail schedules), the
+start of its text and, for one no schedule sends, Remove, which opens its
+editor at the existing reviewed "Remove this selected content" control.
+{% endcomment %}<section class="panel"><h2>{% translate "Email templates" %}</h2>{% for email in emails %}<h3>{{ email.label }}</h3>
+{% if email.revisions %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="email-table-{{ forloop.counter }}">
+<table class="data-table">
+  <caption id="email-table-{{ forloop.counter }}" class="visually-hidden">{{ email.label }}</caption>
+  <thead><tr>
+    <th scope="col">{% translate "Email" %}</th>
+    <th scope="col">{% translate "Starts with" %}</th>
+    {% if email.scheduled %}<th scope="col">{% translate "Sent by" %}</th>{% endif %}
+    <th scope="col">{% translate "Text" %}</th>
+    <th scope="col">{% translate "Actions" %}</th>
+  </tr></thead>
+  <tbody>{% for revision in email.revisions %}<tr>
+    <th scope="row"><a href="{{ revision.url }}">{{ revision.subject }}</a>{% if revision.short_id %} <span class="help">({{ revision.short_id }})</span>{% endif %}</th>
+    <td>{{ revision.excerpt }}</td>
+    {% if email.scheduled %}<td>{% if revision.used_by %}{{ revision.used_by|join:", " }}{% else %}{% translate "No schedule" %}{% endif %}</td>{% endif %}
+    <td>{% if revision.state == 'default' %}{% translate "Default text" %}{% else %}{% translate "Customized" %}{% endif %}{% if revision.resave %} — <strong>{% if revision.resave.blocked %}{% translate "Can't be sent until fixed" %}{% else %}{% translate "Re-save recommended" %}{% endif %}</strong>{% endif %}</td>
+    <td>{% if revision.test_url %}<a href="{{ revision.test_url }}">{% translate "Preview and send test" %}</a>{% endif %}{% if email.scheduled and not revision.used_by %}{% if revision.test_url %} · {% endif %}<a href="{{ revision.url }}#id_clear">{% translate "Remove" %}<span class="visually-hidden"> {{ revision.subject }}</span></a>{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table>
+</div>{% else %}<p>{% translate "No template yet. Select Create template to add one." %}</p>{% endif %}
+<p><a href="{{ email.url }}">{% if email.singleton %}{% translate "Edit confirmation email" %}{% else %}{% translate "Create template" %}{% endif %}</a></p>{% endfor %}
+<p class="help">{% translate "An email a schedule sends can't be removed; choose another email for that schedule first. Removing one doesn't change campaigns that already used it." %}</p></section>
 <p><a href="{% url 'admin:campaign_settings' %}">{% translate "Open Campaign settings" %}</a></p>
 {% endblock %}

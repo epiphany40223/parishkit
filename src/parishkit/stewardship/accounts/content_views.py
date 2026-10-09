@@ -52,6 +52,7 @@ from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .receipt_note import fold, legacy_note
 from .request_patch import build_candidate
+from .schedule_forms import KINDS, email_usage, excerpt, schedule_order
 from .sessions import authenticated_admin
 
 
@@ -84,6 +85,28 @@ def _records(configuration, campaign_id):
     ]
 
 
+def campaign_email_usage(configuration, campaign_id):
+    """The names of the saved schedules that send each email, by email ID.
+
+    Names come from schedule_forms.email_usage, the helper the schedules'
+    email lists use, so both pages name a sender the same way (#446).
+    """
+    # The same records schedule_reads.campaign_schedules reads; that module
+    # imports this one, so it is not imported here.
+    return email_usage(
+        sorted(
+            (
+                row
+                for row in configuration.active_configuration.canonical_document[
+                    "sections"
+                ].get("schedules", [])
+                if row["values"]["campaign_id"] == str(campaign_id)
+            ),
+            key=schedule_order,
+        )
+    )
+
+
 def _content_state(record):
     """Catalog status of one revision: "empty", "default" (unmodified) or "custom"."""
     if record is None:
@@ -114,11 +137,28 @@ def _catalog(request, configuration, campaign):
                 "resave": stale_markup(record and record["values"]),
             }
         )
+    # Which saved schedules send each email, named as on Dates and mail
+    # schedules (#446), so look-alike emails can be told apart and an unused
+    # one can be removed.
+    usage = campaign_email_usage(configuration, campaign.pk)
     emails = []
     for slot, label in EMAIL_LABELS.items():
+        rows = [
+            row
+            for row in records
+            if (row["values"]["kind"], row["values"]["slot"]) == ("email", slot)
+        ]
+        subjects = [row["values"]["subject"] for row in rows]
         revisions = [
             {
                 "subject": row["values"]["subject"],
+                # The start of the ID tells apart two emails of one type
+                # with the same subject, as on the schedules' email list.
+                "short_id": row["id"][:8]
+                if subjects.count(row["values"]["subject"]) > 1
+                else None,
+                "excerpt": excerpt(values.get("text")),
+                "used_by": usage.get(row["id"], []),
                 "state": _content_state({"values": values}),
                 "resave": stale_markup(values),
                 "test_url": reverse("admin:campaign_mail", args=[row["id"]]),
@@ -127,8 +167,7 @@ def _catalog(request, configuration, campaign):
                     args=["email", slot, row["id"]],
                 ),
             }
-            for row in records
-            if (row["values"]["kind"], row["values"]["slot"]) == ("email", slot)
+            for row in rows
             # The confirmation email is listed with any retired closing note
             # folded in, as receipts send it (#260).
             for values in [
@@ -155,6 +194,8 @@ def _catalog(request, configuration, campaign):
             {
                 "label": label,
                 "singleton": slot == "confirmation",
+                # Only schedulable mail has schedules that send it.
+                "scheduled": slot in KINDS,
                 "url": editor,
                 "revisions": revisions,
             }

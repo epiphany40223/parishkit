@@ -884,6 +884,67 @@ def component_origin():
             },
         ),
         (
+            # Pages and emails (#446): a reminder email two schedules send,
+            # and an unused one with the same subject that offers Remove.
+            "/content-catalog",
+            "content-catalog",
+            {
+                "campaign": {
+                    "pk": mail_campaign["id"],
+                    "active_configuration": mail_campaign["values"],
+                },
+                "pages": [
+                    {"label": "Welcome", "url": "/content-edit", "state": "custom"}
+                ],
+                "emails": [
+                    {
+                        "label": "Reminder",
+                        "singleton": False,
+                        "scheduled": True,
+                        "url": "/content-edit",
+                        "revisions": [
+                            {
+                                "subject": "Please respond",
+                                "short_id": "1a2b3c4d",
+                                "excerpt": "Welcome to {{ parish_name }}.",
+                                "used_by": ["Reminder 1", "Reminder 2"],
+                                "state": "custom",
+                                "test_url": "/campaign-mail",
+                                "url": "/content-edit/used",
+                            },
+                            {
+                                "subject": "Please respond",
+                                "short_id": "5e6f7a8b",
+                                "excerpt": "A second reminder for the parish, "
+                                "with a much longer first line of text.",
+                                "used_by": [],
+                                "state": "default",
+                                "test_url": "/campaign-mail",
+                                "url": "/content-edit/spare",
+                            },
+                        ],
+                    },
+                    {
+                        "label": "Confirmation email",
+                        "singleton": True,
+                        "scheduled": False,
+                        "url": "/content-edit",
+                        "revisions": [
+                            {
+                                "subject": "Thank you",
+                                "short_id": None,
+                                "excerpt": "Thank you for responding.",
+                                "used_by": [],
+                                "state": "default",
+                                "test_url": None,
+                                "url": "/content-edit",
+                            }
+                        ],
+                    },
+                ],
+            },
+        ),
+        (
             "/content-settings",
             "content-settings",
             {
