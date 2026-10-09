@@ -228,7 +228,8 @@ decimal places and a documented maximum suitable for reporting.
 Required-but-unknown fields offer an explicit Unknown/prefer-not-to-answer
 choice where defined. An untouched blank is not equivalent to explicit
 Unknown. Server errors return the user to Review with a summary linked to every
-problem.
+problem; an error about one Member as a whole, their Ministry choices or their
+talents names that Member and links to their section.
 
 ## Family census
 
@@ -470,7 +471,16 @@ effective Family response or relevant source input requires review using a
 refreshed baseline while unsaved edits remain only in tab memory. Clearly
 distinguish updated parish records from proposed answers, preserve unaffected
 edits, and require resolution of invalid/competing choices and a new Submit;
-never silently overwrite refreshed records with unchanged old form values.
+never silently overwrite refreshed records with unchanged old form values. A
+competing choice for answers the form currently hides and does not send (the
+pledge while "cannot contribute" is checked, or the frequency and share method
+of a zero pledge) does not block Review when this tab's own answer hides them;
+it stays open, across further refreshes, and is asked when those answers are
+shown again. When the refreshed records hide answers this tab changed
+(another device checked "cannot contribute" or entered a zero pledge), the
+choice is asked on that control instead. A pledge kept aside by "cannot
+contribute" meets the refreshed records the same way, so unchecking it never
+restores an older pledge over another device's change without a choice.
 A baseline replaced by the form opening in another tab, or invalidated by a
 deploy, is handled the same way: the tab loads a fresh form and keeps its edits
 (see [submission concurrency](../data/spec.md#submission-concurrency)).
