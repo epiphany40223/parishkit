@@ -20,8 +20,7 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
 
-from .content_forms import EMAIL_LABELS
-from .schedule_forms import WEEKDAYS
+from .schedule_forms import WEEKDAYS, schedule_labels
 
 DIGESTS = frozenset({"daily_digest", "weekly_digest"})
 STATUS_LABELS = {
@@ -137,21 +136,17 @@ def schedule_rows(previous, campaign, summary, now):
     ``summary`` the work counts by schedule ID. Reminders are numbered in
     sending order, as Family email history numbers them.
     """
-    rows, reminders = [], 0
-    for record in previous:
+    rows = []
+    for record, label in zip(previous, schedule_labels(previous), strict=True):
         values = record["values"]
         kind = values["kind"]
         plan = SchedulePlan.from_values(values, campaign)
-        label = EMAIL_LABELS[kind]
-        if kind == "reminder":
-            reminders += 1
-            label = _("Reminder %(number)s") % {"number": reminders}
         counts = summary.get(str(record["id"]), {})
         slot = plan.next_slot(after=now) if kind in DIGESTS else None
         rows.append(
             ScheduleRow(
                 id=str(record["id"]),
-                label=str(label),
+                label=label,
                 kind=kind,
                 subject=values["subject"],
                 status=status(kind, plan.one_time_due, counts, now),
