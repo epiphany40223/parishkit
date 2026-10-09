@@ -1,9 +1,9 @@
 """Admin structural editing of the current campaign through exact YAML requests.
 
 Creating another campaign is retired until the single-campaign change (#145):
-the one campaign is created in the setup wizard (admin-portal spec, decision
-11), the old New campaign address only redirects here, and ``_target``
-refuses a new draft for every caller.
+the one campaign is created by Create the campaign (campaign_create_views,
+#142; admin-portal spec, decision 11), the old New campaign address only
+redirects here, and ``_target`` refuses a new draft for every caller.
 """
 
 import hashlib

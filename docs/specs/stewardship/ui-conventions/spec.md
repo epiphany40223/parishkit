@@ -539,8 +539,12 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   review region, beside the change's status when there is one; a plain load
   shows the refusal page. Parish and Campaign settings' and Campaign
   Ministries' forms are never redrawn; until the change is applied, Apply's
-  answer hands them the version it was reviewed at. The other editors keep their review and
-  Change status pages until issue 750 reaches them.
+  answer hands them the version it was reviewed at.
+  [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142)
+  reviews and confirms the same way, except that its status names no
+  `in_place` page, so it never refreshes the page once applied. The other
+  editors keep their review and Change status pages until issue 750 reaches
+  them.
 - **In-place review of a table selection (#750).** Ministries reviews,
   applies and follows an activity change in place too, in the review region
   under its table (so a review appearing never moves the table or its bulk
