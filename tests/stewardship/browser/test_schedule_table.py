@@ -34,10 +34,20 @@ def test_table_lists_schedules_in_sending_order(
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + PATH)
-    names = rows(page).locator("th").all_inner_texts()
     # An editable row's button reads "Change <name>" (the verb visually
-    # hidden), so keep only the name.
-    assert [name.split("\n")[-1].strip() for name in names] == [
+    # hidden), so keep only the name. innerText of a visually hidden span
+    # differs by engine (Chromium and Firefox end it with a line break, WebKit
+    # runs it into the name), so drop the hidden parts from the DOM text.
+    names = (
+        rows(page)
+        .locator("th")
+        .evaluate_all(
+            "cells => cells.map(cell => { const copy = cell.cloneNode(true);"
+            " copy.querySelectorAll('.visually-hidden, [data-schedule-editing]')"
+            ".forEach(part => part.remove()); return copy.textContent.trim(); })"
+        )
+    )
+    assert names == [
         "Initial invitation",
         "Reminder 1",
         "Reminder 2",
