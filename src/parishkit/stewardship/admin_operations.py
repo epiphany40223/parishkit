@@ -219,8 +219,14 @@ def retry_task(caller, service, task_id, *, request_key, context):
 # The resolutions the command line offers: every one the page offers but the
 # duplicate-risk resend, whose acknowledgement waits for PR 9c at the prompt.
 RESOLVE_ACTIONS = ("note", "accept", "confirm_unsent", "retry_failed", "retry_unsent")
-# Mail a retry prepares without the web's Family keys (a receipt or report).
-KEYLESS_PURPOSES = frozenset({"receipt", "daily_digest", "weekly_digest"})
+# Mail a retry prepares with the web's Family keys (a Family invitation or
+# reminder), which this process loads only then (``admin_cli.load_keyrings`` with
+# ``FAMILY_KEYRINGS``).
+# Every other purpose prepares without keys: receipts and reports, and a
+# chosen-Family test, which preparation refuses before any key is used. The
+# page's ``jobs.delivery_views._retry_inputs`` makes the same split (it names
+# the keyless purposes instead); change both together.
+FAMILY_KEYED_PURPOSES = frozenset({"initial", "reminder"})
 # The page's evidence note limit (DeliveryResolution.evidence_note).
 NOTE_LIMIT = 2000
 
@@ -330,19 +336,13 @@ def delivery_list_model(data):
     )
 
 
-def command_actions(delivery, actions):
+def command_actions(actions):
     """The page's offered resolutions that ``delivery resolve`` accepts.
 
-    Not ``resend`` (its acknowledgement waits for the prompt), and no retry
-    of a Family email (it needs the web's Family keys), so every action
-    listed can be given to ``delivery resolve`` as is.
+    Not ``resend`` (its acknowledgement waits for the prompt), so every
+    action listed can be given to ``delivery resolve`` as is.
     """
-    return [
-        action
-        for action in actions
-        if action in RESOLVE_ACTIONS
-        and (not action.startswith("retry_") or delivery["purpose"] in KEYLESS_PURPOSES)
-    ]
+    return [action for action in actions if action in RESOLVE_ACTIONS]
 
 
 def delivery_show_model(data):
@@ -351,7 +351,7 @@ def delivery_show_model(data):
     return DeliveryShow(
         delivery=delivery_row(data["delivery"]),
         task=data["task"],
-        actions=command_actions(data["delivery"], data["actions"]),
+        actions=command_actions(data["actions"]),
         retry_unavailable=data["retry_unavailable"],
         page=window.page,
         size=window.size,
@@ -517,6 +517,26 @@ def delivery_resolve_model(receipt, *, created, request_key):
     )
 
 
+def _family_keyed(message_id, request_key):
+    """Whether resolving ``message_id`` would prepare a Family email.
+
+    False for a repeat of a bound key (``resolve_delivery`` returns its
+    receipt before any preparation, so no key is needed) and for an unknown
+    delivery (refused later as ``not_available``).
+    """
+    from .jobs.delivery_resolution_models import DeliveryResolution
+    from .jobs.outbox_models import OutboxMessage
+
+    if DeliveryResolution.objects.filter(pk=request_key).exists():
+        return False
+    purpose = (
+        OutboxMessage.objects.filter(pk=message_id)
+        .values_list("purpose", flat=True)
+        .first()
+    )
+    return purpose in FAMILY_KEYED_PURPOSES
+
+
 def resolve_delivery_command(
     caller, service, message_id, *, action, expected_version, note, request_key, context
 ):
@@ -529,12 +549,21 @@ def resolve_delivery_command(
     intent returns the original receipt; with another intent it is
     ``invalid``. A delivery that changed since ``--expected-version``, or an
     action its state does not allow, is ``stale_version``; an unknown
-    delivery is ``not_available``. A retry of a Family email needs the web's
-    Family keys, which this process does not load, so it is
-    ``not_available``; receipts and reports retry here.
+    delivery is ``not_available``.
+
+    A retry re-prepares the email as the page does. A Family email seals the
+    Family's current code and link with the web's general and public token
+    keyrings (reading them, never writing or rotating a credential), so
+    ``service.keyrings(FAMILY_KEYRINGS)`` loads them first, outside every lock, and only
+    for a retry of a Family email; a keyring that differs from the running
+    web's is ``credential_mismatch``. The message's purpose never changes,
+    so reading it before the command's transaction decides that safely. A
+    repeat with the same key returns before any preparation.
     """
     from django.core.exceptions import ObjectDoesNotExist
 
+    from .accounts.cryptography import CryptographicError
+    from .admin_reads import Unavailable
     from .audit.schemas import Action, ActorKind, Outcome
     from .audit.services import record_action
     from .jobs.delivery_resolution import resolve_delivery
@@ -549,12 +578,25 @@ def resolve_delivery_command(
     actor = _admit(caller, service)
     context["request_id"] = str(request_key)
     written = []
+    general = public = None
+    if action.startswith("retry_") and _family_keyed(message_id, request_key):
+        from .admin_cli import FAMILY_KEYRINGS
+
+        if service.keyrings is None:
+            raise NotAvailable("This process cannot load the Family keys.")
+        general, public = service.keyrings(FAMILY_KEYRINGS)
 
     def inputs(purpose):
-        """What a retry prepares with: keyless mail only, from this process."""
-        if purpose not in KEYLESS_PURPOSES:
-            raise NotAvailable("Retrying a Family email needs the page.")
-        return dict(general=None, public=None, public_origin=service.public_origin)
+        """What a retry prepares with, as the page's ``_retry_inputs``."""
+        keyed = purpose in FAMILY_KEYED_PURPOSES
+        if keyed and general is None:
+            # Unreachable: the purpose was read above and cannot change.
+            raise NotAvailable("The Family keys were not loaded.")
+        return dict(
+            general=general if keyed else None,
+            public=public if keyed else None,
+            public_origin=service.public_origin,
+        )
 
     def step():
         """Resolve inside the page's command scope, with the command's event."""
@@ -577,6 +619,14 @@ def resolve_delivery_command(
                 raise StaleRecordError("The delivery's task changed.") from None
             except ObjectDoesNotExist:
                 raise NotAvailable("No such delivery.") from None
+            except CryptographicError:
+                if general is None:
+                    raise
+                # Sealing with the Family keys refused: a key rotation holds
+                # the credential key lock, or the database's accepted key
+                # inventory moved past the web's rings. The transaction rolled
+                # back, so nothing changed; retry once the rotation settles.
+                raise Unavailable("The Family keys are changing; retry.") from None
             if not repeat:
                 record_action(
                     Action.ADMIN_CMD_DELIVERY_RESOLVE,

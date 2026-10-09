@@ -42,11 +42,13 @@ pytestmark = pytest.mark.django_db(transaction=True)
 EVENT = "admin_cmd_task_retry"
 
 
-def runner(service, monkeypatch):
+def runner(service, monkeypatch, family_keys=None):
     """Run admin commands in this process over ``service``.
 
     ``run(*argv, secret)`` returns ``(exit code, document, standard error)``
-    for a command that prints exactly one document.
+    for a command that prints exactly one document. ``family_keys`` stands
+    in for ``admin_cli.load_keyrings`` of ``FAMILY_KEYRINGS``, the only
+    keyrings a delivery retry loads (None: this process has none).
     """
     monkeypatch.setattr(
         "parishkit.stewardship.observability.configure_logging", lambda: None
@@ -65,7 +67,13 @@ def runner(service, monkeypatch):
             ),
             public_origin="https://campaign.example.org",
             setup_complete=service.setup_complete,
+            keyrings=None if family_keys is None else keyrings,
         )
+
+    def keyrings(names):
+        """The Family retry's keyrings, and only those."""
+        assert tuple(names) == admin_cli.FAMILY_KEYRINGS, names
+        return family_keys()
 
     monkeypatch.setattr(admin_cli, "ADMISSION", admitted)
 
