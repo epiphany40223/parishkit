@@ -18,6 +18,18 @@
     {% for key in dashboard.unfinished_keys %}<p class="notice notice-error" role="alert">{% blocktranslate with name=key.label stopped=key.stopped %}{{ name }}: a new key is installed, but switching to it did not finish, so {{ stopped }}.{% endblocktranslate %} {% url 'admin:integration_settings' key.target as button_href %}{% button variant="primary" href=button_href %}{% translate "Finish switching" %}{% endbutton %}</p>{% endfor %}
     {% if dashboard.next_mail %}<p>{% translate "Next planned Family mailing:" %} <time datetime="{{ dashboard.next_mail.due_at|instant }}" data-local-instant>{{ dashboard.next_mail.due_at|instant }}</time></p>{% endif %}
   </section>
+  {% if dashboard.my_ministries %}{% with mine=dashboard.my_ministries %}<section class="panel" aria-labelledby="my-ministries-heading" data-my-ministries>
+    <h2 id="my-ministries-heading">{% translate "My Ministries" %}</h2>
+    {# A short list, not a table, so each Ministry fits a phone screen with no horizontal scrolling (#533 review). #}
+    <p>{% translate "Requests from Families to join or leave your Ministries that are still open (New or In progress) in the current campaign." %}</p>
+    {% if mine.ministries %}<ul class="my-ministries">{% for ministry in mine.ministries %}<li data-ministry="{{ ministry.duid }}">
+      <span class="my-ministry-name">{{ ministry.name }}{% if not ministry.in_campaign %} <span class="my-ministry-note">({% translate "no longer in this campaign" %})</span>{% endif %}</span>
+      <span class="my-ministry-counts">{% if ministry.join or ministry.leave %}{% blocktranslate count count=ministry.join trimmed %}{{ count }} asking to join{% plural %}{{ count }} asking to join{% endblocktranslate %} · {% blocktranslate count count=ministry.leave trimmed %}{{ count }} asking to leave{% plural %}{{ count }} asking to leave{% endblocktranslate %}{% else %}{% translate "No open requests" %}{% endif %}</span>
+      {% if ministry.join or ministry.leave %}{% url 'admin:ministry_followup' as queue_url %}{% blocktranslate asvar open_label with name=ministry.name %}Open requests for {{ name }}{% endblocktranslate %}{% with duid=ministry.duid|stringformat:"s" %}{% button variant="secondary" href=queue_url|add:"?ministry="|add:duid aria-label=open_label %}{% translate "Open requests" %}{% endbutton %}{% endwith %}{% endif %}
+    </li>{% endfor %}</ul>
+    {% else %}<p>{% translate "None of your Ministries is part of the current campaign." %}</p>{% endif %}
+    <p><a href="{% url 'admin:ministry_followup' %}">{% translate "Ministry follow-up" %}</a> · <a href="{% url 'admin:ministry_report' %}#ministry-packet-heading">{% translate "Follow-up packet for my Ministries" %}</a></p>
+  </section>{% endwith %}{% endif %}
   {# Each Acknowledge acts in place (#519): the region is always drawn, empty once nothing awaits, so the answer after the last one still carries it. #}
   <div id="security-events" data-in-place-region>{% if dashboard.security_events %}<section class="panel" aria-labelledby="security-events-heading">
     <h2 id="security-events-heading">{% translate "Security events awaiting acknowledgement" %}</h2>

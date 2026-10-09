@@ -20,14 +20,16 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSn
 from .policy import Capability, allows
 
 
-def observe(actor, store):
+def observe(actor, store, *, home=False):
     """Read the home summary in one read-only snapshot, for the page and the CLI.
 
     Returns ``(configuration, summary, now)``, or None while a restore is
     under review. A read-only snapshot, not the writers' work lock: the
     dashboard only observes, and must not wait behind a source promotion or
     installer. ``now`` is read inside the snapshot, so the page's chrome can
-    reuse it instead of another clock query.
+    reuse it instead of another clock query. ``home`` adds what only the
+    Home page shows (a Ministry leader's My Ministries panel); the command
+    line's status read leaves it out rather than read and drop it.
     """
     from parishkit.stewardship.campaigns.models import Campaign
     from parishkit.stewardship.campaigns.work_locks import read_transaction
@@ -46,10 +48,10 @@ def observe(actor, store):
                 "active_configuration"
             ).get(pk=config.current_campaign_id)
         now = database_now()
-        return config, summary(actor, config, now), now
+        return config, summary(actor, config, now, home=home), now
 
 
-def summary(actor, configuration, now):
+def summary(actor, configuration, now, *, home=False):
     """Read under the caller's work lock, which pins source/configuration promotion."""
     campaign = configuration.current_campaign
     # One query for the promoted snapshot's time: the page has a fixed query
@@ -153,6 +155,12 @@ def summary(actor, configuration, now):
         result["health_problems"] = home_problems(
             configuration, now, result["full_refresh"]
         )
+    if home and campaign is not None and leads_ministries(actor):
+        from parishkit.stewardship.reports.ministry_followup import my_ministries
+
+        # A Ministry leader's own starting point (#533): Administrators and
+        # Staff reach every Ministry from the Reports menu instead.
+        result["my_ministries"] = my_ministries(campaign.pk, actor)
     if "administrator" in actor.roles:
         from .security_events import open_events
 
@@ -180,6 +188,20 @@ def summary(actor, configuration, now):
             .values("id", "task_type", "updated_at")[:5]
         ]
     return result
+
+
+def leads_ministries(actor):
+    """Whether Home shows this person the My Ministries panel.
+
+    Only a Ministry leader whose follow-up access is scoped to particular
+    Ministries: someone with campaign-wide follow-up (Administrator, Staff)
+    already has every Ministry one click away.
+    """
+    return (
+        "ministry_leader" in actor.roles
+        and bool(actor.ministries)
+        and not allows(actor, Capability.MINISTRY_FOLLOWUP)
+    )
 
 
 def unreachable_families(campaign_id):

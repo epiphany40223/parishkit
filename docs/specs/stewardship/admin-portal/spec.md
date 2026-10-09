@@ -706,6 +706,34 @@ preparation), there is no way to create one until the single-campaign change
 Home explains in plain language that there is no current campaign and that
 the next one cannot be created here yet.
 
+For a Ministry leader whose follow-up access is limited to particular
+Ministries (not Administrators or Staff, who reach every Ministry from the
+menu), Home also shows a **My Ministries** panel (#533). It says what it
+counts: requests from Families to join or leave the leader's Ministries that
+are still open (New or In progress) in the current campaign. It lists each
+of the leader's Ministries in the campaign, and any Ministry since removed
+from the campaign that still has open requests, marked "no longer in this
+campaign" as the queue marks it. Each line gives the Ministry's open
+requests to join and to leave, or "No open requests", and, when there are
+some, an "Open requests" link to the Ministry follow-up queue
+([follow-up workflows](#follow-up-workflows)) filtered to that Ministry.
+The panel also links the unfiltered queue and the Ministry report's
+[follow-up packet](../reports/spec.md#multi-ministry-follow-up-packet). On
+a phone each Ministry is one short block (name, counts, link), never a
+squeezed table.
+
+The counts are exact: each is the queue's own selection, with the leader's
+scope and default filters, read for one Ministry and action without its
+rows, so the panel never counts a request the queue would not list for that
+leader. The link carries only the Ministry number (`?ministry=<DUID>`); the
+queue accepts that one closed value by GET, checked against the person's
+current scope (a number outside it is refused), so Back and reload work.
+The queue then remembers that view like any other, so its request links,
+Save and next, and each request page's "Return to Ministry follow-up" link
+keep that Ministry. Every other queue filter, search above all, stays
+private POST state. The command line's status read does not
+compute the panel.
+
 Home also shows one **Today** line for each role. Its contents are a
 proposal for the Administrator to confirm in NAV-18 (gap G10 on #522):
 submissions since yesterday, next scheduled email, open follow-up counts,
@@ -3527,7 +3555,12 @@ Both follow-up queues remember the view the reader is working through
 remembers its applied filters, sort, page and page size in the signed-in
 session (never in the URL), as a change's origin is remembered (navigation
 rule 5). Links carry only an opaque token, and the session keeps the last 20
-views. An item opened from the queue carries the token, so its "Return to"
+views. The one exception is the Ministry number on the "Open requests" link
+of Home's [My Ministries panel](#home-page), which opens the Ministry
+follow-up queue for that Ministry; the queue then remembers that view under
+a token like any other. A link the queue cannot use (a malformed or
+out-of-date address) says so in plain words and links back to the queue,
+without asking the reader to reload it. An item opened from the queue carries the token, so its "Return to"
 link reopens the same filters, sort and page. A token the session no longer
 holds opens the default queue. Beside Save follow-up, **Save and next** saves
 the same way (the same optimistic version check, history and audit event) and

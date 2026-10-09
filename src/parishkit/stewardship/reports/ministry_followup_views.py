@@ -13,6 +13,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
+from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
@@ -50,6 +51,7 @@ from .ministry_followup import (
     can_follow_up,
     followup_history,
     followup_page,
+    valid_ministry,
 )
 from .read_admission import admit_report_read
 from .report_paging import (
@@ -99,13 +101,39 @@ def _principal(request, store, *, read_only=False):
     return principal
 
 
-def _error(campaign_id, *, request_id=None, status=400):
-    """No private form/exception values or database-dependent context processors."""
+def _linked_ministry(value, principal):
+    """A Ministry number from a link (#533), checked against this person's scope.
+
+    Links from Home's My Ministries panel open the queue for one Ministry by
+    GET, so Back and reload work; only this closed value may travel in a
+    URL (search stays private POST state). A malformed number is a 400; a
+    well-formed number outside the person's scope is refused like any other
+    access they do not have.
+    """
+    if not valid_ministry(value):
+        raise ValueError("Invalid Ministry link.")
+    if not allows(principal, Capability.MINISTRY_FOLLOWUP, ministry_id=int(value)):
+        raise PermissionError("That Ministry is outside this person's follow-up scope.")
+    return value
+
+
+def _error(campaign_id, *, request_id=None, status=400, link=False):
+    """No private form/exception values or database-dependent context processors.
+
+    ``link`` marks a refused address (a GET with a malformed or out-of-date
+    query), which says so instead of asking to reload a form never sent:
+    reloading that address would only repeat the error.
+    """
     debug_swallowed("report request refused")
     response = HttpResponse(
         render_to_string(
             "stewardship/ministry-followup-error.html",
-            {"campaign_id": campaign_id, "request_id": request_id, "status": status},
+            {
+                "campaign_id": campaign_id,
+                "request_id": request_id,
+                "status": status,
+                "link": link,
+            },
         ),
         status=status,
         headers={"Cache-Control": "no-store"},
@@ -247,12 +275,26 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
         principal = _principal(request, service.store)
         if request_id is None:
             if request.GET:
-                # Only "Return to Ministry follow-up" carries a query string:
-                # the token of a remembered view, never a filter (#534).
+                # A query string carries either the token of a remembered
+                # view ("Return to Ministry follow-up", #534) or, from Home's
+                # My Ministries panel, one Ministry (#533). Search and every
+                # other filter stay private POST state.
                 if request.method != "GET":
                     raise ValueError("Search and filters require a POST body.")
-                values = filters(request.GET, allowed={"queue"})
-                query = _recalled(request, campaign_id, queue_token(values["queue"]))
+                values = filters(request.GET, allowed={"queue", "ministry"})
+                if len(values) != 1:
+                    raise ValueError("Use one query value.")
+                if "ministry" in values:
+                    # Remembered below like any view, so its token keeps
+                    # the Ministry on each request page, Save and next and
+                    # the way back to the queue.
+                    query = FollowupQuery(
+                        ministry=_linked_ministry(values["ministry"], principal)
+                    )
+                else:
+                    query = _recalled(
+                        request, campaign_id, queue_token(values["queue"])
+                    )
             else:
                 parameters = request.POST.copy()
                 parameters.pop("csrfmiddlewaretoken", None)
@@ -457,7 +499,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
     except (*SAFE_FAILURES, StorageInvariantError):
         return _error(campaign_id, request_id=request_id, status=503)
     except ValueError:
-        return _error(campaign_id, request_id=request_id)
+        return _error(campaign_id, request_id=request_id, link=request.method == "GET")
     finally:
         if finish is not None and not handed_off:
             finish(False)
