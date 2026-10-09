@@ -113,6 +113,9 @@ FROZEN = {
     "0027_recovery_session_grants.sql": (
         "942522d8d481a4cd9511fccbb667279ae0ad220f48d5633f3b897f13c00a7436"
     ),
+    "0028_drop_initial_invitation_state.sql": (
+        "f6c6745536014cf67ccffdbaadd42282e331f98b1358afad5843747831259111"
+    ),
 }
 
 
