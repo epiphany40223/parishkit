@@ -29,6 +29,7 @@ from parishkit.stewardship.observability import Event
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .role_grants import schema_owner
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -51,18 +52,23 @@ def views():
 
 
 def diagnostics(levels=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")):
-    """One safe operational entry per level, written by the real service."""
-    for level in levels:
-        operational(
-            Event.TASK_FAILED,
-            level=level,
-            schema=ContextKind.FAILURE,
-            context={
-                "failure": "alert_mail",
-                "outcome": Outcome.FAILED,
-                "count": len(level),
-            },
-        )
+    """One safe operational entry per level, written by the real service.
+
+    Seeded as the schema owner: web may not write these entries itself
+    (the log writer's allow-list, #389 L2), even inside a web-login block.
+    """
+    with schema_owner():
+        for level in levels:
+            operational(
+                Event.TASK_FAILED,
+                level=level,
+                schema=ContextKind.FAILURE,
+                context={
+                    "failure": "alert_mail",
+                    "outcome": Outcome.FAILED,
+                    "count": len(level),
+                },
+            )
 
 
 def audit_entries(response):

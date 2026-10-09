@@ -1042,6 +1042,16 @@ exceptions to the durable entry, which go to the process log only:
   because the installers' logins have no operational-log grant, and the
   record is for display only, so it does not justify giving them one.
 
+Each runtime login may write only the operational log entries its own code
+writes (#389). The table's writer trigger holds a closed list of (schema,
+event, level) per login: every login may record the four timeout events at
+INFO, WARNING or ERROR; web adds only an unusable source Member and a Family
+engagement failure, and never writes CRITICAL; the worker and scheduler add
+the entries of their own failure, health and lag paths. No direct entry may
+name an actor, and each gets the database's own time. Entries written inside
+SECURITY DEFINER functions run as the schema owner and are not limited by it.
+A new write path therefore needs a forward migration that extends the list.
+
 `/health/live` confirms the web process loop only. `/health/ready` confirms the
 database, migrations, Valkey limiter store, and configuration needed for the
 deployment's current setup phase; it must not call external services per probe.
