@@ -50,6 +50,9 @@
 <dt>{% translate "Matching Families" %}</dt><dd>{{ job.financial_snapshot.row_count|number }}</dd>
 <dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.financial_source_generation|number }}</dd>
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.financial_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.financial_snapshot.created_at|date:'c' }}</time></dd>
+{% elif job.family_test_names_snapshot_id %}
+<dt>{% translate "Families" %}</dt><dd>{{ job.family_test_names_snapshot.row_count|number }}</dd>
+<dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.family_test_names_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.family_test_names_snapshot.created_at|date:'c' }}</time></dd>
 {% elif job.ministry_snapshot_id %}
 <dt>{% translate "Matching results" %}</dt><dd>{{ job.ministry_snapshot.row_count|number }}</dd>
 <dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.ministry_source_generation|number }}</dd>

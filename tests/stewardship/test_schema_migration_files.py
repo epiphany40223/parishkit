@@ -141,6 +141,9 @@ FROZEN = {
     "0036_go_live_log_events.sql": (
         "fcf83cf10b12666ae7656546774f97bd44a0e4899dd4871236af2ac96c0e241e"
     ),
+    "0037_family_test_names.sql": (
+        "2a84ed1ee20997311c3a11068e1ceb9b2f4469660e8e3035f04fcc841009d054"
+    ),
 }
 
 

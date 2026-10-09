@@ -1,6 +1,9 @@
 -- The request table's export_format_known check intentionally retains the
 -- PostgreSQL-deparsed ANY/ARRAY form required by model/schema comparison.
 -- Replacing it with equivalent IN syntax changes the fresh-baseline contract.
+-- Frozen migration 0037 adds family_test_names_snapshot_id, its table and the
+-- family_test_names arm of export_report_known (#817); the request and
+-- publication guards below already name them, and 0037 installs their copies.
 CREATE TABLE stewardship_export_request (
     id uuid NOT NULL PRIMARY KEY,
     created_at timestamptz DEFAULT statement_timestamp() NOT NULL,
@@ -127,6 +130,7 @@ DECLARE facts stewardship_daily_fact_set%ROWTYPE;
         directory stewardship_directory_export_snapshot%ROWTYPE;
         ministry stewardship_ministry_export_snapshot%ROWTYPE;
         financial stewardship_financial_export_snapshot%ROWTYPE;
+        names stewardship_family_test_names_export_snapshot%ROWTYPE;
         handoff boolean; inputs_valid boolean:=false;
 BEGIN
     PERFORM stewardship_export_campaign_lock_v1(NEW.campaign_id,false);
@@ -177,6 +181,16 @@ BEGIN
                 OR stewardship_export_authorized_v1(NEW.requester_id,true)
                 OR EXISTS(SELECT 1 FROM stewardship_export_request prior
                     WHERE prior.financial_snapshot_id=financial.id
+                      AND prior.requester_id=NEW.requester_id));
+    ELSIF NEW.report='family_test_names' THEN
+        SELECT * INTO names FROM stewardship_family_test_names_export_snapshot
+            WHERE id=NEW.family_test_names_snapshot_id;
+        inputs_valid:=names.id IS NOT NULL AND names.campaign_id=NEW.campaign_id
+            AND NEW.parameters=names.parameters
+            AND (names.actor_id=NEW.requester_id
+                OR stewardship_export_authorized_v1(NEW.requester_id,true)
+                OR EXISTS(SELECT 1 FROM stewardship_export_request prior
+                    WHERE prior.family_test_names_snapshot_id=names.id
                       AND prior.requester_id=NEW.requester_id));
     END IF;
     IF inputs_valid IS DISTINCT FROM true OR NEW.actor_id IS DISTINCT FROM NEW.requester_id
@@ -250,7 +264,10 @@ BEGIN
                WHERE s.id=request.ministry_snapshot_id AND s.row_count=NEW.row_count))
            OR (request.report='financial' AND EXISTS(
                SELECT 1 FROM stewardship_financial_export_snapshot s
-               WHERE s.id=request.financial_snapshot_id AND s.row_count=NEW.row_count)))
+               WHERE s.id=request.financial_snapshot_id AND s.row_count=NEW.row_count))
+           OR (request.report='family_test_names' AND EXISTS(
+               SELECT 1 FROM stewardship_family_test_names_export_snapshot s
+               WHERE s.id=request.family_test_names_snapshot_id AND s.row_count=NEW.row_count)))
        OR NOT EXISTS(SELECT 1 FROM stewardship_export_attempt a JOIN stewardship_task_run t ON t.id=a.run_id
            WHERE a.id=NEW.attempt_id AND a.request_id=request.id AND a.actor_id=NEW.actor_id
              AND t.state='running' AND t.fence=a.fence AND t.worker_id=a.actor_id
