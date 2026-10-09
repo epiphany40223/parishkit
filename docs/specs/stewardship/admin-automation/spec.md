@@ -2232,6 +2232,18 @@ PR 5 (the actions) land. The ADM-13 action routes are POSTs to the
 | `select_credential` | `integration key finish-switching` (PR 10) |
 | Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview`, `integration backup-key confirm` (PR 10) |
 
+The refresh schedule is given to `integration set --target parishsoft` as
+`--refresh-schedule FILE` (`-` reads standard input): a YAML or JSON
+document in the stored `refresh_rules` shape (rules, skips and the skip
+switch), never the derived time lists. The command derives the lists and
+runs the page's validator, with the same kept off-quarter-hour times, and a
+refusal carries each problem with the page's words. Its preview lists the
+same differences the page's review does. `integration schedule-preview`
+takes the same option for a proposed schedule, or reads the applied one
+without it, and its JSON document carries the page's seven days, cost and
+freshness. Both follow the ParishSoft settings page's
+[live checks and saving](../admin-portal/spec.md#live-checks-and-saving).
+
 Secret values never pass through command output. The backup destination is an
 `integration` target; backups themselves already run as `pk-stewardship
 backup`, and backup status is part of `status`.
