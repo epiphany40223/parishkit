@@ -322,6 +322,11 @@ DESCRIPTIONS = {
         "log. A Recovered entry follows once it has answered for five "
         "minutes."
     ),
+    "admin_command_failed": _(
+        "An Admin command-line command (pk-admin) failed unexpectedly. The "
+        "detail names the command and says whether its change may have been "
+        "made; give the entry's correlation id when you report it."
+    ),
     "incident_recovered": _(
         "A problem the system had detected has ended. The detail names it "
         "and how long it lasted, and says what to check when its end still "

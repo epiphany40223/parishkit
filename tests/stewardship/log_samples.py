@@ -103,6 +103,14 @@ SAMPLES = {
             "count": 3,
         },
     ),
+    Event.ADMIN_COMMAND_FAILED: (
+        ContextKind.FAILURE,
+        {
+            "failure": "admin_command",
+            "failure_kind": FailureKind.UNEXPECTED,
+            "command": "export create",
+        },
+    ),
     Event.CONFIG_MISMATCH: (ContextKind.EXCEPTION, {"outcome": Outcome.CHANGED}),
     Event.TASK_TIMED_OUT: (ContextKind.TIMEOUT, {"what": "lease"}),
     Event.HELPER_TIMED_OUT: (ContextKind.TIMEOUT, {"what": "mail_helper"}),

@@ -62,6 +62,9 @@ REQUIRED = {
     # Web stopped answering (jobs.web_health): how it failed, and for how
     # many minutes in a row.
     Event.WEB_UNHEALTHY: frozenset({"failure", "failure_kind", "count"}),
+    # An Admin command-line command that failed unexpectedly (#617): what
+    # failed, its category and which command.
+    Event.ADMIN_COMMAND_FAILED: frozenset({"failure", "failure_kind", "command"}),
     # A backup sealed to a different key (backup_health); its outcome
     # ``changed`` selects the sentence that says what to check.
     Event.CONFIG_MISMATCH: frozenset({"outcome"}),

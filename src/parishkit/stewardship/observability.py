@@ -95,6 +95,10 @@ class Event(StrEnum):
     # probe, CRITICAL, once per failed minute; opens the web_unhealthy
     # incident.
     WEB_UNHEALTHY = "web_unhealthy"
+    # An Admin command-line command failed unexpectedly after admission
+    # (#617): one durable ERROR entry with what failed, its category and the
+    # command's catalog name, written by admin_cli on the web login.
+    ADMIN_COMMAND_FAILED = "admin_command_failed"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 

@@ -250,7 +250,8 @@ FIELDS = {
     # (``REASONS``) and ``status`` an HTTP status. ``outcome`` says whether it
     # will be retried (``retry``, after ``retry_seconds``, as ``attempt`` of
     # ``attempt_limit``) or gave up (``failed``). Ids name the task, message or
-    # snapshot involved; ``count`` how many failed together.
+    # snapshot involved; ``count`` how many failed together. ``command`` is an
+    # Admin command-line command's catalog name (#617).
     ContextKind.FAILURE: {
         "failure",
         "failure_kind",
@@ -265,6 +266,7 @@ FIELDS = {
         "reason",
         "count",
         "outcome",
+        "command",
     },
     # An operational incident that ended (#633), written by the database when
     # it resolves; mirrored in stewardship_safe_context_v1. ``log_id`` is the
@@ -417,6 +419,11 @@ FAILURES = frozenset(
         # The mail provider as a whole (mail_health.sql).
         "smtp_systemic",
         "smtp_unavailable",
+        # An Admin command-line command failed unexpectedly (#617;
+        # admin_cli.record_failure): nothing changed, or, for a command that
+        # may have committed a change, its outcome is unknown.
+        "admin_command",
+        "admin_command_outcome_unknown",
     }
 )
 # Closed provider results a ``reason`` may hold; mirrored in
@@ -491,6 +498,17 @@ TIMEOUT_HELPERS = frozenset(
 )
 
 
+def admin_commands():
+    """The Admin command-line catalog's command names, a closed set (#617).
+
+    Imported lazily: the catalog module logs through modules that import
+    this one. SQL checks only the name's shape (lower-case words).
+    """
+    from parishkit.stewardship.admin_cli import BY_NAME
+
+    return BY_NAME.keys()
+
+
 def sanitize(kind, values):
     """Reject unknown fields/types rather than merely hiding secret-looking names."""
     if not isinstance(kind, ContextKind) or type(values) is not dict:
@@ -512,6 +530,9 @@ def sanitize(kind, values):
             safe[key] = value
         elif key == "failure":
             valid = type(value) is str and value in FAILURES
+            safe[key] = value
+        elif key == "command":
+            valid = type(value) is str and value in admin_commands()
             safe[key] = value
         elif key == "failure_kind":
             valid = isinstance(value, FailureKind)

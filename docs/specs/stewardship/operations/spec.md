@@ -1047,8 +1047,10 @@ exceptions to the durable entry, which go to the process log only:
 Each runtime login may write only the operational log entries its own code
 writes (#389). The table's writer trigger holds a closed list of (schema,
 event, level) per login: every login may record the four timeout events at
-INFO, WARNING or ERROR; web adds only an unusable source Member and a Family
-engagement failure, and never writes CRITICAL; the worker and scheduler add
+INFO, WARNING or ERROR; web adds only an unusable source Member, a Family
+engagement failure and a failed
+[Admin command-line command](../admin-automation/spec.md#correlation-and-logging)
+(#617), and never writes CRITICAL; the worker and scheduler add
 the entries of their own failure, health and lag paths. No direct entry may
 name an actor, and each gets the database's own time. Entries written inside
 SECURITY DEFINER functions run as the schema owner and are not limited by it.
