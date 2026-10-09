@@ -1,0 +1,13 @@
+{% load i18n stewardship %}{% comment %}
+  Outgoing mail's note on why Family email is waiting on a sending limit
+  (#382 M3a), from jobs.delivery_reads.read_sending_holds: the mail sender
+  states System health shows, in its words, and the emails on a longer
+  retry backoff. Outgoing mail draws it once per page load, outside its
+  in-place regions, so it never appears or vanishes under the pointer.
+{% endcomment %}{% if holds %}<aside class="notice" id="delivery-holds" aria-labelledby="delivery-holds-heading">
+<h2 id="delivery-holds-heading">{% translate "Some Family email is waiting on a sending limit" %}</h2>
+<ul>{% if holds.daily_limit %}<li>{% translate "The mail sender has reached this server's daily limit for Family email. Waiting emails go out by themselves as the count of emails sent in the last 24 hours falls." %}</li>{% endif %}
+{% if holds.gmail_held %}<li>{% translate "Gmail has asked the mail sender to stop for now (Gmail's own sending limit)." %}{% if holds.gmail_until %} {% translate "Sending starts again by itself at about" %} <time datetime="{{ holds.gmail_until|instant }}" data-local-instant>{{ holds.gmail_until|instant }}</time>.{% endif %}</li>{% endif %}
+{% if holds.throttled %}<li>{% blocktranslate count count=holds.throttled trimmed %}{{ count }} Family email is waiting longer than usual to retry, because the receiving mail service or Gmail asked us to slow down.{% plural %}{{ count }} Family emails are waiting longer than usual to retry, because the receiving mail service or Gmail asked us to slow down.{% endblocktranslate %}{% if holds.throttled_due %} {% translate "The next retry is due at" %} <time datetime="{{ holds.throttled_due|instant }}" data-local-instant>{{ holds.throttled_due|instant }}</time>.{% endif %}</li>{% endif %}</ul>
+<p>{% translate "These emails show below as Still sending. No action is needed: they are sent automatically when the wait ends." %} <a href="{% url 'admin:system_health' %}">{% translate "See System health for details" %}</a></p>
+</aside>{% endif %}

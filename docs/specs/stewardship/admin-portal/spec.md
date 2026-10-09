@@ -3401,6 +3401,49 @@ before validating the query. The page does not update itself, records one
 audited Outgoing mail view and does not renew the Admin's idle time; as on
 Outgoing mail, a restore review that begins while it renders withholds it.
 
+### Outgoing mail
+
+Outgoing mail (`/admin/mail/outgoing/`, Administrators only) lists every
+email the system has sent or is about to send, with filters by delivery
+state, an exact Family DUID or delivery ID, and a
+[Family email send](#family-email-sends). Each email's own page shows its
+history and offers the resolutions its state allows (an evidence note,
+confirming delivery or that it was not sent, a retry, or a duplicate-risk
+resend), each with a required note, as the
+[delivery workflow](../background-processing/spec.md#family-invitations-and-reminders)
+defines.
+
+#### Sending limit note
+
+While Family email is waiting on a sending limit, a note above the list says
+why, in the same words as System health's
+[Why sends are waiting](#why-sends-are-waiting) panel, and links to
+[System health](#system-health-page) (#382 item M3a). It names each reason
+that applies:
+
+- a running mail sender is **waiting for the daily limit**;
+- a running mail sender is **held at Gmail's sending limit**, with the time
+  sending starts again (browser-local), when the sender reports one;
+- some of the current campaign's Family emails, in the current mode, are
+  **waiting longer than usual to retry** because the receiving mail service
+  or Gmail asked for fewer emails (the recipient-throttle backoff of
+  [bulk Family send](../background-processing/spec.md#bulk-family-send), or
+  a Gmail limit answering that one message), with how many and, while it is
+  still ahead, when the first retry is due.
+
+The sender states are read from the mail consumers'
+[service status records](#service-status-records), grouped as the
+[mail sender panel](#mail-sender-panel) groups them, so the two pages agree.
+An email is on the longer backoff when it is waiting to retry, its latest
+outcome was a temporary refusal, and its wait is longer than halfway between
+the ordinary retry schedule's longest wait (10 minutes) and the shortest
+limit or throttle wait (15 minutes); every value comes from columns the web
+login already reads, so the refused addresses are never read. The note says
+these emails show as Still sending and need no action. It is drawn once per
+page load, outside the in-place regions, so it never appears or vanishes
+under the pointer, and it is absent when nothing is held. No schema change
+and no lasting record: the process log keeps each hold's WARNING line.
+
 ### Family portal maintenance
 
 An Administrator may close the Family portal for maintenance from System →
@@ -4031,9 +4074,9 @@ reason ends (if known), and a link to act on it:
   with #382's `(previous_state, created_at)` index on the outbox events),
   which returns one number and takes no argument: the count is made of the
   routed recipient lists, which the web login never reads. This is the
-  24-hour count that #382 (item M3) asks to show. The lasting record of
-  each hold on Outgoing mail stays with that issue, and both use the same
-  words for each reason.
+  24-hour count that #382 (item M3) asks to show. Outgoing mail's
+  [sending limit note](#sending-limit-note) uses the same words for each
+  reason.
 - **Held at Gmail's sending limit**, until the time shown.
 - **Paused after a mail outage**, until the time shown, linking the
   [mail-provider outage runbook](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage).

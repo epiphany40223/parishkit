@@ -18,6 +18,7 @@ from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.storage import StaleRecordError
@@ -39,6 +40,7 @@ from .delivery_reads import (
     read_listing,
     read_refusal,
     read_refusals,
+    read_sending_holds,
 )
 from .delivery_resolution import resolve_delivery
 from .models import TaskRun
@@ -225,6 +227,7 @@ def delivery_list(request):
             selected_state=values["state"],
             query=values["q"],
             send=data["send"],
+            holds=read_sending_holds(database_now()),
         ), len(data["rows"])
 
     return _page(request, "stewardship/deliveries.html", load)

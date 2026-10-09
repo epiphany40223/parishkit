@@ -1,5 +1,6 @@
 """Synthetic mail metadata for actual-template browser acceptance, never sends."""
 
+from datetime import timedelta
 from uuid import uuid4
 
 from parishkit.stewardship.jobs.delivery_metadata import DELIVERY_SORTING
@@ -41,6 +42,32 @@ def components(now):
             states=["all", "delivery_unknown"],
             selected_state="delivery_unknown",
             query="",
+        ),
+    )
+    # Family email waiting on a sending limit (#382 M3a): the note above
+    # the list, with a Gmail hold's end and the next throttled retry.
+    yield (
+        "/deliveries-holds",
+        "deliveries",
+        dict(
+            table=window_table(
+                PageWindow(1, 25),
+                [message | dict(state="retry_wait")],
+                False,
+                total=(1, False),
+                sorting=DELIVERY_SORTING,
+                sort=DELIVERY_SORTING.default,
+            ),
+            states=["all", "retry_wait"],
+            selected_state="all",
+            query="",
+            holds=dict(
+                daily_limit=True,
+                gmail_held=True,
+                gmail_until=now + timedelta(minutes=40),
+                throttled=2,
+                throttled_due=now + timedelta(minutes=15),
+            ),
         ),
     )
     delivery = dict(
