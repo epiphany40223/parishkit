@@ -874,6 +874,51 @@ def sample_test(args, preamble, runtime, context):
     )
 
 
+def families_preview(args, preamble, runtime, context):
+    """Review a chosen-Family test, as its page does (PR 6c)."""
+    from uuid import uuid4
+
+    from .admin_tests import preview_families
+
+    return preview_families(
+        context["caller"],
+        runtime,
+        args.revision_id,
+        args.family,
+        request_key=args.request_key or uuid4(),
+    )
+
+
+def families_test(args, preamble, runtime, context):
+    """Send a reviewed chosen-Family test, as its page's confirmation does (PR 6c).
+
+    The page always asks for its acknowledgement, so this always prompts,
+    before any transaction opens.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_tests import FAMILIES_ACKNOWLEDGEMENT, families_count, send_families
+
+    token = _input(args.token, context, TOKEN_LIMIT)
+    count = families_count(token)
+    confirm(
+        context,
+        (
+            "Send a chosen-Family test of "
+            + ("the reviewed Families" if count is None else f"{count} Families")
+            + " to the Testing recipient.",
+            FAMILIES_ACKNOWLEDGEMENT,
+        ),
+    )
+    return send_families(context["caller"], runtime, token=token, context=context)
+
+
+def families_status(args, preamble, runtime, context):
+    """The page's Recent Family tests, without DUIDs (PR 6c)."""
+    from .admin_tests import read_families_status
+
+    return read_families_status(context["caller"], runtime)
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -1025,6 +1070,35 @@ def _refresh_start_options(parser):
 def _sample_preview_options(parser):
     """Options of ``test sample-preview``: the email revision and the key."""
     parser.add_argument("revision_id", type=_uuid, metavar="REVISION_ID")
+    parser.add_argument(
+        "--request-key",
+        type=_uuid4,
+        help="a version 4 UUID the token binds, so a send is safe to repeat "
+        "(default: a new one)",
+    )
+
+
+def _duid(value):
+    """A Family DUID option value, as the page accepts one."""
+    from .jobs.delivery_metadata import family_duid
+
+    try:
+        return family_duid(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("not a Family DUID") from None
+
+
+def _families_preview_options(parser):
+    """Options of ``test families-preview``: the email, the Families, the key."""
+    parser.add_argument("revision_id", type=_uuid, metavar="REVISION_ID")
+    parser.add_argument(
+        "--family",
+        required=True,
+        action="append",
+        type=_duid,
+        metavar="DUID",
+        help="a ParishSoft Family DUID; repeat for up to ten Families",
+    )
     parser.add_argument(
         "--request-key",
         type=_uuid4,
@@ -1374,8 +1448,14 @@ def _refresh_specs():
 
 
 def _test_specs():
-    """The sample test email commands (PR 6b)."""
-    from .admin_tests import SamplePreview, SampleTest
+    """The Testing send commands: sample (PR 6b) and chosen-Family (PR 6c)."""
+    from .admin_tests import (
+        FamiliesPreview,
+        FamiliesStatus,
+        FamiliesTest,
+        SamplePreview,
+        SampleTest,
+    )
 
     return (
         CommandSpec(
@@ -1399,6 +1479,39 @@ def _test_specs():
             6,
             options=(_sample_test_options,),
             prompts=True,
+        ),
+        CommandSpec(
+            "test families-preview",
+            "Review a test of one email for up to ten chosen Families.",
+            families_preview,
+            "full",
+            False,
+            FamiliesPreview.field_names(),
+            6,
+            options=(_families_preview_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "test families",
+            "Send a reviewed chosen-Family test to the Testing recipient.",
+            families_test,
+            "full",
+            True,
+            FamiliesTest.field_names(),
+            6,
+            options=(_sample_test_options,),
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "test status",
+            "Show the recent chosen-Family tests, without DUIDs.",
+            families_status,
+            "read_only",
+            False,
+            FamiliesStatus.field_names(),
+            6,
+            audit_event=None,
         ),
     )
 

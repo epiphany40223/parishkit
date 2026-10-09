@@ -524,6 +524,39 @@ arrived; I want to send another test.", and waits for `yes` (or takes
 (`stale_version`): preview again. System logs show each send as
 `admin_cmd_test_sample`.
 
+## Chosen-Family tests
+
+`test families-preview` and `test families` are **Send to chosen
+Families**: the current Testing draft's invitation or reminder, rendered
+for up to ten real Families with their own Testing codes and links, and
+sent only to the Testing recipient, never to the Families. Both need a
+full-scope session; `test status` (any session) lists recent tests.
+
+```sh
+pk-admin test families-preview REVISION_ID --family 1234 --family 5678 > preview.json
+jq -r .result.preview.token preview.json | pk-admin test families --token - --yes
+pk-admin test status
+```
+
+| Field | What it holds |
+| --- | --- |
+| `families` | `test families-preview`: each DUID you gave, in order, with `eligible` and `eligibility` (`eligible`, `unknown`, `ineligible`, `undeliverable` or `stale_source`) |
+| `available`, `in_progress` | `test families-preview`: how many more tests may start, and how many are in progress (at most ten) |
+| `held`, `credentials_ready` | `test families-preview`: campaign work or a restore review holds sending; the Testing codes exist |
+| `preview` | `test families-preview`: `token`, which `test families` takes |
+| `created`, `request_key`, `tickets` | `test families`: false when this token was sent before; the key; each ticket's `id`, `sequence` (the order of your DUIDs), `state` and `task_id` |
+| `tickets` | `test status`: recent tickets' `id`, `created_at`, `request_key`, `sequence`, `state` and `message_state`, without DUIDs |
+
+The preview never shows Family names; check them on the page. `test
+families` always shows the page's words, "I understand that these real
+Families' names and codes will be sent to the Testing recipient.", and
+waits for `yes` (or takes `--yes`). The session stands in for the page's
+recent Google sign-in, so the dashboard shows an automation notice and
+System logs show `automation_fresh_gate` with `admin_cmd_test_families`. A
+token made on the page works here and the other way round; sending it again
+sends nothing more. An old preview, a Family that can no longer be tested,
+or too many tests in progress is exit 1 (`stale_version`): preview again.
+
 ## Task retries
 
 `task retry` is the **Retry** button of a failed task on Background work,
@@ -634,3 +667,5 @@ irreversible and also email and post to Slack.
   when a prompt is not answered.
 - `pk-admin/1` (ADM-11 PR 6b): additive. `test sample-preview` and
   `test sample`, which prompts while an earlier test's outcome is unknown.
+- `pk-admin/1` (ADM-11 PR 6c): additive. `test families-preview`,
+  `test families` (fresh-gated, always prompts) and `test status`.
