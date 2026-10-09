@@ -107,7 +107,11 @@ the same request/status, while key reuse with a different payload is rejected.
 Status responses include the request's applied-version ID/digest only after
 matching YAML/database activation, plus its authoritative affected values.
 Lookup and retry require current authorization; idempotency is not a bypass of
-role, CSRF, or activation guards. Client intents not yet submitted are not
+role, CSRF, or activation guards. A retry by the same Administrator with the
+same capability returns its original request even when the confirming page's
+own scope check would now refuse a new one (for example, Create the campaign
+once its campaign exists, or an editor whose settings changed since the
+review), because no second change is recorded (#142). Client intents not yet submitted are not
 durable ConfigurationChangeRequests and cannot be shown as saved.
 
 There is exactly one materialized `Parish` row for each applied configuration

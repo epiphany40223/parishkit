@@ -721,7 +721,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. |
 | `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same; old address redirects) |  |
 | `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/settings/` | (same; old address redirects) |  |
-| `campaign_create` | Create the campaign | Home | Administrator | (new, #142) | `/admin/campaign/create/` | (same) | Offered on Home only while the deployment has never had a campaign; refused once one exists. Not linked from a change's status page. |
+| `campaign_create` | Create the campaign | Home | Administrator | (new, #142) | `/admin/campaign/first/` | (same) | Offered on Home only while the deployment has never had a campaign; refused once one exists. Not linked from a change's status page. |
 | `campaign_clone` | Copy campaign | Campaign settings | Administrator | Clone archived campaign | `/admin/campaign/copy/` | (same; old address redirects) | Decision 18: until #145 removes it, Campaign settings shows Copy campaign greyed out, not an action, with the tip "Disabled; will be removed with the single-campaign change (#145)". The server refuses the clone action. |
 | `content_history` | Content history | Campaign settings | Administrator | Retained campaign content | `/admin/campaign/content/history/` | (same; old address redirects) |  |
 | `content_history_revision` | Earlier version | Content history | Administrator | Retained campaign content; Revision | `/admin/campaign/content/history/<revision>/` | (same; old address redirects) |  |
@@ -1406,7 +1406,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   Make changes, Review and Apply. The signed preview, optimistic
   concurrency, capability and session rechecks, the durable request and its
   audit are unchanged; a refusal that needs a fresh sign-in still shows its
-  page whole. Other editors keep their review and Change status pages.
+  page whole. [Create the campaign](#create-the-campaign) reviews and
+  confirms the same way, except that its status never refreshes the page
+  once applied. Other editors keep their review and Change status pages.
 
 ### Page help
 
@@ -2392,24 +2394,33 @@ or a direct request cannot bypass them.
 form: name, modules, start and end dates, Ministries (from the loaded catalog,
 initially all active ones) and, for Financial stewardship, the financial
 period and current and comparison funds. The time zone comes from the Parish
-profile, as it does for every new draft. The review then shows the whole new
-campaign, and confirming records one versioned configuration request, in the
-same format as every other campaign save, that adds the draft campaign with
-its [default content](#default-content) and the default share options;
-Member talents show their built-in defaults until edited.
+profile, as it does for every new draft. Review changes then shows the whole
+new campaign [in place](#in-place-controls) under the form, noting that it
+creates a Testing-mode draft whose pages and emails start with the default
+text, and its **Create the campaign** button records one versioned
+configuration request, in the same format as every other campaign save, that
+adds the draft campaign with its [default content](#default-content) and the
+default share options; Member talents show their built-in defaults until
+edited. A refused review or confirmation, including one refused because a
+campaign now exists, is explained in the same region.
 
-**After confirming.** The next page is the request's status page, as for any
-campaign save. The configuration installer applies the request, and the
+**After confirming.** The request's live status replaces the review in
+place, polled from its Change status page. Unlike the settings pages, the
+page does not refresh itself once the change is applied: by then the
+campaign exists, so the form has nothing left to create, and a reload of
+that address still shows the change's status. The configuration installer applies the request, and the
 database checks admission again at activation: a new campaign record becomes
 the current campaign only when the current-campaign pointer is empty in
 Testing mode and every earlier campaign is archived or purged, the rule every
 new draft follows, so of two creation requests confirmed at once one applies
-and the other fails. Once the request is applied, the status page offers
+and the other fails. Once the request is applied, the status (in place and
+on Change status alike) offers
 **Load the campaign's ParishSoft data**, which requests a full ParishSoft
 refresh and opens that refresh's progress page. The refresh can only be
 requested after activation, because a refresh reads the current campaign when
-it is requested. It reads the campaign's giving window and creates the
-campaign's Families and Family codes, as a refresh does for any current
+it is requested. The offer disappears once the campaign has its Families. It
+reads the campaign's giving window and creates the campaign's Families and
+Family codes, as a refresh does for any current
 draft. If no one presses the button, the next scheduled quick update cannot
 continue from its cursor, because the giving window changed, and runs as a
 full refresh instead. Go-live readiness, which already requires the

@@ -31,13 +31,14 @@ SPEC = ROOT / "docs/specs/stewardship/admin-portal/spec.md"
 # The menu groups whose page names are settled so far.
 GROUPS = {"campaign", "mail", "reports", "parish", "users", "system"}
 # Pages outside every menu group whose names are settled too.
-UNGROUPED = {"index", "configuration_request"}
+UNGROUPED = {"index", "configuration_request", "campaign_create"}
 
 # Each page's template. Object-named pages (an email or page being edited)
 # take their heading from the object and are left out; so are pages whose
 # heading the view supplies.
 TEMPLATES = {
     "campaign_settings": "campaign-settings.html",
+    "campaign_create": "campaign-create.html",
     "campaign_clone": "clone-settings.html",
     "content_catalog": "content-catalog.html",
     "content_history": "content-history.html",

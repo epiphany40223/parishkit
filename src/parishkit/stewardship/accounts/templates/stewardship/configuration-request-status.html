@@ -1,4 +1,4 @@
-{% load i18n %}{% comment %}
+{% load i18n stewardship %}{% comment %}
   A configuration change's live status: Change status draws it, and so does
   an in-place settings page's review region (#532), which passes status_url
   (Change status's passive read, naming that page with in_place) so the poll
@@ -6,7 +6,11 @@
   once the change is applied: a hidden follow-up that refreshes the settings
   page in place, quietly, so its form starts from the applied settings. A
   change that was not applied leaves the page alone, so its form keeps the
-  version it was reviewed at.
+  version it was reviewed at. The change that created the deployment's first
+  campaign (#142) is given refresh_key once applied: inside the live region,
+  so it appears in place when the status turns Applied, it offers the
+  campaign's first full ParishSoft refresh, posted to Refresh from
+  ParishSoft's own action.
 {% endcomment %}<section class="panel" role="status" aria-live="polite" data-live-status="configuration"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-state="{{ receipt.state }}"{% if receipt.state != 'applied' and receipt.state != 'failed' and receipt.state != 'cancelled' %} data-live-pending{% endif %}>
 {% if receipt.state == 'applied' %}
   <h2 class="live-done">{% translate "Applied: your change is saved" %}</h2><p>{% translate "The change has been applied and is now in effect." %}</p>
@@ -21,5 +25,7 @@
   <p>{% translate "This usually takes a few seconds. The change is not saved until this page says Applied." %}</p>
 {% endif %}
   <p>{% translate "Request:" %} {{ receipt.request_id }}</p>
+{% if refresh_key %}<div class="next-step" data-campaign-refresh><p><strong>{% translate "Next: load the campaign's ParishSoft data." %}</strong> {% translate "A full refresh adds the campaign's Families, Family codes and giving. It usually takes a few minutes." %}</p>
+<form method="post" action="{% url 'admin:source_refresh' %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ refresh_key }}">{% button type="submit" data-submit-waits %}{% translate "Load the campaign's ParishSoft data" %}{% endbutton %}</form></div>{% endif %}
 {% if follow_url %}{% if receipt.state == 'applied' %}<a hidden data-live-follow data-in-place data-in-place-quiet href="{{ follow_url }}#settings-review">{% translate "Reload settings" %}</a>{% endif %}{% endif %}
 </section>

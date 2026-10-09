@@ -187,6 +187,7 @@ SLASHLESS = (
     ("mail", "mail_root"),
     ("parish", "parish_root"),
     ("campaign/settings", "campaign_settings"),
+    ("campaign/first", "campaign_create"),
     ("campaign/copy", "campaign_clone"),
     ("campaign/content", "content_catalog"),
     ("campaign/content/history", "content_history"),

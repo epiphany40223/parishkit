@@ -225,6 +225,7 @@ EXPECTED = {
     "/admin/mail": "/admin/mail/",
     "/admin/parish": "/admin/parish/",
     "/admin/campaign/settings": "/admin/campaign/settings/",
+    "/admin/campaign/first": "/admin/campaign/first/",
     "/admin/campaign/copy": "/admin/campaign/copy/",
     "/admin/campaign/content": "/admin/campaign/content/",
     "/admin/campaign/content/history": "/admin/campaign/content/history/",
