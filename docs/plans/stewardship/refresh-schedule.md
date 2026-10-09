@@ -274,7 +274,9 @@ the second and third correction rounds in
 and [a third](https://github.com/epiphany40223/parishkit/issues/632#issuecomment-6023305360));
 the implementation follows the default unless the Administrator decides
 otherwise. Items 1–5 are about data age (#510), 6–14 about the schedule
-(#632, #630), 15–17 about storage and upgrade, and 18 about time zones.
+(#632, #630), 15–17 about storage and upgrade, 18 about time zones, and
+19–23 about the settings page and command line (posted with the remaining
+slices).
 
 1. **What counts toward data age.** Default, split in two: the alarm and the
    bulk-send hold measure from the newest promoted **full** refresh only,
@@ -384,6 +386,27 @@ otherwise. Items 1–5 are about data age (#510), 6–14 about the schedule
     Alternative: enter times in the browser's zone and convert them with
     today's offset, which is simple for the common case of a browser in the
     parish's zone but wrong part of the year for anyone else.
+19. **The switch on a converted schedule.** Default: **skip refreshes
+    around Family emails** starts off for an existing schedule shown as
+    rules, because it never skips today, and the review names turning it on
+    as a difference; it starts on only when no schedule is stored, and
+    presets leave it alone. Alternative: on for every schedule the page
+    shows, so the first saved edit of any kind also starts skipping.
+20. **How existing full times are shown.** Default: one "Full at" row per
+    stored time, with no rule inferred, so the page shows exactly what is
+    stored; the Administrator can then pick a preset. Alternative: infer
+    rules ("Full every 2 hours from 08:00 to 20:00"), which reads better but
+    can surprise when the inference is not what was meant.
+21. **Where the rules are checked live.** Default: only on the server, by a
+    read-only check request each time typing pauses, since the preview
+    needs the server anyway. Alternative: a copy in the page script pinned
+    by a shared case table, as the mail repeat panel does.
+22. **What the review shows.** Default: the full and quick times added and
+    removed and the switch, in words, plus the converted-schedule
+    differences, instead of the stored settings' diff.
+23. **The grid's timing.** Default: the per-day list ships with the editor
+    and the grid follows in its own PR, so the editor can be checked and
+    used sooner.
 
 ## Delivery plan
 
@@ -393,6 +416,17 @@ with an independent review, and local human verification for those that
 change Admin pages. `main` is production, so no PR lets a document store
 settings that the deployed scheduler cannot run. Production configuration
 changes and deploys stay the Administrator's decision.
+
+**Status (2026-10-09).** Steps 1–3 are merged: data age and connection in
+[#654](https://github.com/epiphany40223/parishkit/pull/654), 2a in
+[#677](https://github.com/epiphany40223/parishkit/pull/677) (migration 0011)
+and 2b in [#687](https://github.com/epiphany40223/parishkit/pull/687)
+(migration 0014). Flexible time entry (#631) landed in
+[#646](https://github.com/epiphany40223/parishkit/pull/646). No page or
+command writes `refresh_rules` yet, so every stored schedule, Production's
+included, still runs as an existing schedule. Steps 4 and 5 are re-sliced
+below, after a short spec update, into
+[remaining slices](#remaining-slices).
 
 1. **Data age and connection (#510).** No schema change. On its own this
    lets the Administrator choose hourly or no quick updates on today's page.
@@ -514,6 +548,66 @@ changes and deploys stay the Administrator's decision.
 
 After merge and deploy, the Administrator chooses the Production schedule;
 the worked example's second row is the suggested starting point.
+
+### Remaining slices
+
+Steps 4 and 5 as PR-sized slices. None needs a schema change: the stored
+keys, the tick guard and the slot decision record already shipped in 2a and
+2b. None changes when Production refreshes run until the Administrator saves
+a changed schedule; until then every stored schedule is an existing one.
+
+1. **Spec update (docs only).** The
+   [live checks and saving](../../specs/stewardship/admin-portal/spec.md#live-checks-and-saving)
+   design, the conversion of an existing schedule to rules in
+   [stored schedule and upgrade](../../specs/stewardship/background-processing/spec.md#stored-schedule-and-upgrade),
+   the command line's input shape, and decisions 19–23.
+2. **Preview and cost functions (server only, no page).** Seven days of
+   instants for the daily times through the shared daylight-saving
+   resolver, each time that will not run with its reason, the Family email
+   windows over the seven days (the `send_windows` window rules, applied to
+   every upcoming email rather than only the current one), the cost from the
+   medians of recent successful scheduled runs, the freshness line, and the
+   conversion of an existing schedule to rules. A parity test checks the
+   preview's instants against the scheduler's slots across both
+   daylight-saving days. Read-only; nothing the scheduler runs changes.
+3. **Settings page editor.** Presets, rule rows, skips, the switch, "Edit as
+   text", the problems and Save hint, the read-only check request, the
+   preview as the per-day list, the cost and freshness summary, and the
+   review's list of differences; the frequency, "At these times" and
+   quick-update fields, and the page's cap of eight, go. This is the first
+   writer of `refresh_rules`. Browser tests in three engines with
+   `--require-no-skips`; Administrator check on pk-local before merge.
+4. **Seven-day grid.** The read-only quarter-hour grid beside the list, its
+   shading, labels, current-time mark and narrow-screen scrolling.
+   Administrator check on pk-local before merge.
+5. **Command line.** `integration set --target parishsoft
+   --refresh-schedule` and `integration schedule-preview`, through the
+   functions of slices 2 and 3. It follows ADM-11 PR 10, which adds the
+   `integration` commands.
+
+**Reuse of the mail repeat rules (#469, PR #855).** That engine expands
+calendar dates (daily, weekly on chosen days, monthly) into one-off
+reminders; a refresh schedule is the same every day and repeats within the
+day, so its expansion is not shared. What is reused is the pattern: the
+live summary line as the only live region, a list that never moves the
+action button, the shared time entry, and, once the campaign calendar
+(#469 slice 3) exists, this preview as its source of refresh times. A
+weekday filter (decision 11), if it is ever added, should reuse the repeat
+panel's weekday choice.
+
+**Risks.**
+
+- A live campaign: slices 2 and 4 are read-only and slice 5 only adds
+  another writer of the same validated settings. Slice 3's save is the
+  first time a stored schedule can change shape; the switch starts off for
+  a converted schedule and the review names every difference, so nothing
+  about refresh timing changes unless the Administrator saves it. Deploy it
+  on a night without a reminder the next morning, as for 2a and 2b.
+- PR #880 (#868) rewrites the window's active-work rule in the
+  background-processing spec; this spec update does not touch that
+  paragraph, so the two merge in either order.
+- The preview's window estimate must match the scheduler's; slice 2's
+  parity tests pin it to `send_windows`.
 
 ## Rejected approaches
 

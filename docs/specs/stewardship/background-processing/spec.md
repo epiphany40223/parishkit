@@ -819,10 +819,11 @@ mutation lease serializes them.
 #### Skipped around Family emails
 
 When the schedule's **skip refreshes around Family emails** setting is on
-(the default for a schedule saved on the new settings page; a document
-without `refresh_rules`, that is every existing schedule, has no such
-setting and never skips, so nothing changes until an Administrator saves a
-schedule with it), the deployment is in Production mode and Production delivery
+(the settings page starts it on only when no schedule is stored, and off
+for an existing schedule it shows converted; a document without
+`refresh_rules`, that is every existing schedule, has no such setting and
+never skips, so nothing changes until an Administrator saves a schedule with
+it on), the deployment is in Production mode and Production delivery
 is not paused, the scheduler skips a scheduled refresh (other than the
 nightly) whose due instant falls inside a Family email's window. A window
 includes its start and excludes its end:
@@ -1071,18 +1072,40 @@ existing schedule, and its slots are created exactly as before: the listed
 full times, or a full refresh every UTC hour or quarter hour, and quick
 updates every UTC quarter hour, every UTC hour or none; a parity test proves
 identical slot keys, due times and commands. The settings page shows such a
-schedule converted to the equivalent rules, and writes the new keys only when
-the Administrator changes the schedule itself; saving other settings keeps
-the stored keys as they are. When the schedule is changed, what differs from
-the old one is said before saving:
+schedule converted to the equivalent rules, after filling the defaults
+`cadence.refresh_settings` fills:
+
+- listed full times (`full_refresh` `daily`): one "Full at" row for each,
+  kept off-quarter-hour times included, with no rule inferred from them;
+- `full_refresh` `hourly`: "Full every 60 minutes from 00:00 to 23:00";
+  `quarter_hour`: "Full every 15 minutes from 00:00 to 23:45";
+- `delta_refresh` `quarter_hour`: "Quick every 15 minutes from 00:00 to
+  23:45"; `hourly`: "Quick every 60 minutes from 00:00 to 23:00"; `off`: no
+  quick rule;
+- no skips, and **skip refreshes around Family emails** off, since the
+  schedule never skips today.
+
+Precedence and coverage then remove a quick time that equals a full time, as
+the old scheduler joined a quick slot due with a full one, and also the quick
+times less than 15 minutes from a kept off-quarter-hour full time, which the
+old scheduler ran; the page's preview shows both as covered. The page
+writes the new keys only when the Administrator changes the schedule itself;
+saving other settings keeps the stored keys as they are. When the schedule is
+changed, what differs from the old one is said before saving:
 
 - an hourly or quarter-hour full refresh becomes full times every 60 or 15
   minutes; today every such slot records the nightly time and is never held
   for a send, while as listed times each slot records its own time (a new
   slot identity, so the slot due at the switch may run once more) and every
   one but the nightly waits for a send;
+- the nightly refresh becomes the earliest full time, 00:00 for a converted
+  hourly or quarter-hour full refresh, so a stored nightly time other than
+  the earliest no longer marks the refresh that runs during a send;
 - in a time zone whose offset is not a whole hour, hourly refreshes move
-  from the UTC hour to the local hour.
+  from the UTC hour to the local hour;
+- turning on **skip refreshes around Family emails** starts skipping
+  daytime refreshes inside each Family email's window, as
+  [skipped around Family emails](#skipped-around-family-emails) describes.
 
 ### Delta cycle
 

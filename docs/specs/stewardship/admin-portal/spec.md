@@ -1930,18 +1930,22 @@ each preview time in the browser's zone as well. See decision 18 in the
   beside the field, and accept quarter-hour times; a kept off-quarter-hour full time is shown as a single time,
   labeled as kept from the earlier schedule.
 - **Skip these times**: single times or from–to ranges.
-- **Skip refreshes around Family emails** (on by default), with one line
-  saying what it does: refreshes are skipped while a reminder is being
-  prepared and while a Family email is being sent.
+- **Skip refreshes around Family emails**, with one line saying what it
+  does: refreshes are skipped while a reminder is being prepared and while a
+  Family email is being sent. It starts on when no schedule is stored, and
+  off for an existing schedule shown converted (below), since such a
+  schedule never skips today. Presets fill the rules and leave it as it is.
 - **Edit as text**: the resulting full and quick times as two plain lists,
   for pasting. Editing them replaces the rules with single times, and the
   page says so before it does. The lists and the rows stay in step.
 - The page states which full time is the nightly refresh and that it runs
   even while Family emails are being sent.
 - A schedule saved before this page existed is shown converted to the
-  equivalent rules, and saving other settings leaves it stored as it is; a
-  change to it lists what will differ, as
-  [stored schedule and upgrade](../background-processing/spec.md#stored-schedule-and-upgrade)
+  equivalent rules, by the mapping in
+  [stored schedule and upgrade](../background-processing/spec.md#stored-schedule-and-upgrade),
+  with one line saying so ("Your current schedule, shown as rules. It runs
+  exactly as before until you change it."). Saving other settings leaves it
+  stored as it is; a change to it lists what will differ, as that section
   describes.
 
 **Problems, at the row that causes them.** Each appears live, names the
@@ -1967,6 +1971,51 @@ what is missing, for example "Fix 2 problems before saving: 00:00 is too
 close to 23:50; the skip at 12:30 matches no refresh", each linking to its
 row.
 
+#### Live checks and saving
+
+The rules are applied in one place, the server. The page script only adds
+and removes rows, fills presets and reads times through the shared
+[time entry](#time-entry); it has no copy of the rules, coverage or spacing.
+
+- **Checking.** Once typing pauses (about half a second, as the time entry
+  waits), or a row, preset or switch changes, the page posts the editor's
+  unsaved state to a read-only check of this page. The server reads it with
+  the same form that saves it, runs the shared validator
+  (`refresh_rules.check_schedule`, with the kept off-quarter-hour times) and
+  the preview and cost functions, and answers with the problems, the
+  preview and the summary, which the page puts in place through the shared
+  [in-place controls](#in-place-controls). The check saves nothing, makes no
+  configuration request and writes no audit entry; it needs the same Admin
+  configuration permission as the page and is never cached. Only the answer
+  to the latest check is shown; an older one that arrives late is dropped.
+- **What is announced.** The line beside Save (problem count, or "About
+  1 h 34 min of ParishSoft time a day") is the check's only live region. It
+  keeps room for two lines and changes only when its text changes, so
+  neither it nor a longer preview moves Save or the rows under the pointer.
+  The preview and the problems at each row are not live regions. This is
+  the same pattern as the mail schedules' repeat panel
+  ([#469](https://github.com/epiphany40223/parishkit/issues/469)).
+- **When a check fails** (the network or the server), the earlier problems
+  and preview stay, marked "Not checked since your last change", and Save
+  stays available: saving checks everything again.
+- **Saving** uses the ordinary configuration request of this page. The
+  form turns the rows into `refresh_rules`, derives the stored lists
+  (`refresh_rules.stored_settings`) and checks them; nothing posted can set
+  the stored lists directly. The review before applying lists, in words,
+  the full and quick times added and removed, the switch if it changed, and
+  each difference that
+  [stored schedule and upgrade](../background-processing/spec.md#stored-schedule-and-upgrade)
+  names for a converted schedule, rather than the stored settings.
+- A schedule whose rows (in any order), skips and switch are what the page
+  showed is not a change: saving other settings with it keeps the stored
+  schedule exactly as it is and writes no new keys.
+
+Rejected: a copy of the rules in the page script, kept in step by a shared
+table of cases (as the mail repeat panel does). The preview needs the
+server anyway, for the Family email windows, the daylight-saving days and
+the measured durations, so a second copy would add a way to disagree
+without saving a request.
+
 #### Seven-day preview
 
 Below the editor, updated live as it changes, the page shows the next seven
@@ -1991,7 +2040,9 @@ days from today:
 The preview is computed by the server from the same functions the scheduler
 uses, from the edited (unsaved) schedule and the campaign's current upcoming
 Family emails. Windows for emails not yet sent are estimates, and the preview
-says so.
+says so. The campaign calendar's optional refresh times
+([#469](https://github.com/epiphany40223/parishkit/issues/469)) come from the
+same preview functions, so the two pages never disagree.
 
 #### Cost and freshness summary
 

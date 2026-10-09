@@ -74,6 +74,7 @@ sections:
     "Parish and integration configuration": [ADM-03, ARC-06]
     "ParishSoft refresh schedule settings": [ADM-03, BG-05]
     "Schedule editor": [ADM-03, BG-05]
+    "Live checks and saving": [ADM-03, BG-05]
     "Seven-day preview": [ADM-03, BG-05]
     "Cost and freshness summary": [ADM-03, BG-05, OPS-08]
     "Ministry activity management": [ADM-03, DAT-05, FAM-05]
