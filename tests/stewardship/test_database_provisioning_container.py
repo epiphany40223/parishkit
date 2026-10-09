@@ -14,6 +14,8 @@ import pytest
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.database_provisioning import (
+    isolation_drift,
+    migration_exemption,
     provision_grants,
     provision_roles,
     role_limit,
@@ -164,6 +166,57 @@ def test_initial_database_roles_retry_and_refuse_takeover(empty_operator_databas
         provision_roles(configuration, deployment)
     with connect(configuration, "pk_stewardship_web"):
         pass  # A mismatching file did not alter the existing database password.
+
+
+def test_provisioning_and_migrate_refuse_isolation_drift(empty_operator_database):
+    """Provisioning retry refuses a lent or foreign-reaching login (#389).
+
+    The migration login owns the schema after provisioning and is still
+    admitted, so its ownership exemption holds; a member of it, or
+    foreign-data USAGE, is refused. Migrate's identity query renders the same
+    boolean, evaluated here as the real migration login.
+    """
+    configuration = empty_operator_database
+    deployment = uuid4()
+    provision_roles(configuration, deployment)
+    drift = (
+        "SELECT "
+        f"{isolation_drift(migration_exemption(ServiceRole.MIGRATION))} "
+        "FROM pg_roles r WHERE rolname=current_user"
+    )
+    cases = [
+        (
+            "CREATE ROLE pk_drift_member; "
+            "GRANT pk_stewardship_migration TO pk_drift_member",
+            "DROP ROLE pk_drift_member",
+            True,
+        ),
+        (
+            "CREATE FOREIGN DATA WRAPPER pk_drift_fdw; "
+            "GRANT USAGE ON FOREIGN DATA WRAPPER pk_drift_fdw "
+            "TO pk_stewardship_migration",
+            "DROP FOREIGN DATA WRAPPER pk_drift_fdw CASCADE",
+            True,
+        ),
+        (
+            "CREATE ROLE pk_drift_web_member; "
+            "GRANT pk_stewardship_web TO pk_drift_web_member",
+            "DROP ROLE pk_drift_web_member",
+            False,
+        ),
+    ]
+    for apply, undo, migration in cases:
+        with connect(configuration) as database:
+            database.execute(apply)
+        with pytest.raises(ConfigError, match="differs from initial provisioning"):
+            provision_roles(configuration, deployment)
+        with connect(configuration, "pk_stewardship_migration") as database:
+            assert database.execute(drift).fetchone() == (migration,)
+        with connect(configuration) as database:
+            database.execute(undo)
+        assert provision_roles(configuration, deployment)["database_roles_provisioned"]
+        with connect(configuration, "pk_stewardship_migration") as database:
+            assert database.execute(drift).fetchone() == (False,)
 
 
 def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_path):
