@@ -55,6 +55,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "profiles": [
     "admin-recovery"
    ],
@@ -134,6 +135,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "profiles": [
     "backup-worker"
    ],
@@ -231,6 +233,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "profiles": [
     "bootstrap"
    ],
@@ -600,6 +603,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -690,6 +694,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -798,6 +803,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -906,6 +912,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -1014,6 +1021,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -1122,6 +1130,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -1230,6 +1239,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -1338,6 +1348,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -1446,6 +1457,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -1554,6 +1566,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -1662,6 +1675,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -1770,6 +1784,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -1878,6 +1893,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -1972,6 +1988,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "profiles": [
     "database-provision"
    ],
@@ -2255,6 +2272,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -2320,6 +2338,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -2493,6 +2512,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "profiles": [
     "migration"
    ],
@@ -2654,6 +2674,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -2830,6 +2851,7 @@
      "ipv4_address": "172.29.241.10"
     }
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [
@@ -3010,6 +3032,7 @@
    "networks": {
     "backend": {}
    },
+   "oom_score_adj": 500,
    "read_only": true,
    "restart": "unless-stopped",
    "security_opt": [

@@ -517,6 +517,33 @@ def test_every_service_caps_its_container_log(tmp_path, production):
     assert services["web"]["logging"] is not services["worker"]["logging"]
 
 
+@pytest.mark.parametrize("production", [False, True])
+def test_the_oom_killer_takes_application_processes_before_the_database(
+    tmp_path, production
+):
+    """#392 L3: under memory exhaustion PostgreSQL is not the kernel's pick.
+
+    Every service that runs the application image, the one-shot profiles
+    included, raises its OOM score; the stock database, broker and ingress
+    images keep the default. Nothing gets a hard memory limit.
+    """
+    compose, _ = render_runtime(
+        configuration_at(tmp_path, production=production),
+        image=IMAGE if production else "parishkit-stewardship:development",
+    )
+    services = compose["services"]
+    application = services["web"]["image"]
+    raised = {name for name, service in services.items() if "oom_score_adj" in service}
+    assert raised == {
+        name for name, service in services.items() if service["image"] == application
+    }
+    assert {"web", "worker", "mail-dispatch", "scheduler", "backup-worker"} <= raised
+    assert {services[name]["oom_score_adj"] for name in raised} == {500}
+    assert not {"postgres", "valkey", "caddy"} & raised
+    for service in services.values():
+        assert not {"mem_limit", "cpus", "deploy"} & set(service)
+
+
 def test_static_files_are_revalidated_on_every_use(tmp_path):
     """#326 M4: fixed-name scripts and styles never outlive a hotfix in a cache."""
     output = render_caddy(configuration_at(tmp_path, production=True))

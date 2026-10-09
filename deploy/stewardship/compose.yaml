@@ -1,5 +1,7 @@
 name: parishkit-stewardship
 
+# Intentionally no oom_score_adj (#392): this development/CI file is not the
+# rendered deployment, which sets it on every application-image service.
 x-application: &application
   image: ${STEWARDSHIP_IMAGE:-parishkit-stewardship:development}
   user: "10001:10001"
