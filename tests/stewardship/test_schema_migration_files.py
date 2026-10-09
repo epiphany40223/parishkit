@@ -131,6 +131,9 @@ FROZEN = {
     "0033_retention_stall_wording.sql": (
         "70188504c3ba33124f3ab0a8f495c946b3b568181da1fb0f71401e6f7fcc1e3a"
     ),
+    "0034_setup_without_campaign.sql": (
+        "721b40fdf8d0b3a49b3d77d330d833334b2b3df647bb20590dc8428658ac0309"
+    ),
 }
 
 

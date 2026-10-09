@@ -62,6 +62,49 @@ def live(row):
         return cursor.fetchone() == (True,)
 
 
+def setup_test_message(parish):
+    """The fixed setup test email (#142): proves the mail settings, nothing else.
+
+    It carries no Family data, link, code or campaign content, so it needs no
+    campaign; the parish name is escaped for the HTML part.
+    """
+    from django.utils.html import escape
+
+    name = parish["name"]
+    sentence = (
+        "This is a test from the stewardship system of {name}. "
+        "Its outgoing email settings work."
+    )
+    return {
+        "subject": "Stewardship setup test",
+        "html": "<p>" + sentence.format(name=escape(name)) + "</p>",
+        "text": sentence.format(name=name),
+    }
+
+
+def _campaign_sample(sections, slot):
+    """A sample of a first campaign's email, for an attempt staged before #142."""
+    selected = next(
+        (
+            row["values"]
+            for row in sections.get("content", [])
+            if row["values"]["kind"] == "email" and row["values"]["slot"] == slot
+        ),
+        {
+            "subject": "{{ parish_name }} readiness test",
+            "html": "<p>{{ head_salutation }}, this is a readiness sample "
+            "for {{ campaign_name }}.</p>",
+            "text": "{{ head_salutation }}, this is a readiness sample "
+            "for {{ campaign_name }}.",
+        },
+    )
+    return sample_render(
+        selected,
+        parish=document_parish({"sections": sections}),
+        campaign=sections["campaigns"][0]["values"],
+    )
+
+
 def request_sample(
     request,
     service,
@@ -110,25 +153,13 @@ def request_sample(
             "id", "version", "fingerprint", "settings"
         ).get(attempt_id=attempt_id, target="google_workspace", scrubbed_at=None)
         sections = preview.compiled.candidate.document()["sections"]
-        selected = next(
-            (
-                row["values"]
-                for row in sections.get("content", [])
-                if row["values"]["kind"] == "email" and row["values"]["slot"] == slot
-            ),
-            {
-                "subject": "{{ parish_name }} readiness test",
-                "html": "<p>{{ head_salutation }}, this is a readiness sample "
-                "for {{ campaign_name }}.</p>",
-                "text": "{{ head_salutation }}, this is a readiness sample "
-                "for {{ campaign_name }}.",
-            },
-        )
-        rendered = sample_render(
-            selected,
-            parish=document_parish({"sections": sections}),
-            campaign=sections["campaigns"][0]["values"],
-        )
+        if not sections.get("campaigns"):
+            # System setup (#142): a fixed message that needs no campaign.
+            # ``slot`` (the Test email page's template choice) names a
+            # campaign email, so it is ignored here.
+            rendered = setup_test_message(document_parish({"sections": sections}))
+        else:
+            rendered = _campaign_sample(sections, slot)
         identifier = uuid5(attempt_id, "setup-mail:" + str(request_key))
         mail = ReadinessMail(
             delivery_id=identifier,

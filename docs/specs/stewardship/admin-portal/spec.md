@@ -95,9 +95,11 @@ has a First campaign step (name, modules, dates, Ministry/fund selection,
 financial period) and Share options, Pages and emails and Dates and mail
 schedules pages before Review, its email test sends that campaign's
 invitation, and finishing setup creates the campaign with its Family codes.
-Create the campaign can land before the wizard changes; until they do, no real
-deployment reaches it (setup always leaves a campaign), so it is exercised
-only by test fixtures that start without one.
+The back end that lets setup finish without a campaign comes first, switched
+off until the wizard stops offering the campaign pages, so that setup never
+ends without a campaign before Create the campaign exists. Until both land,
+no real deployment reaches Create the campaign (setup always leaves a
+campaign), so it is exercised only by test fixtures that start without one.
 
 The [parish date format](../spec.md#global-presentation-rules) is not a wizard
 step: setup starts with the default US long style, and an Admin changes it

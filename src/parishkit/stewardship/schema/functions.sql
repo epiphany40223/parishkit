@@ -6592,7 +6592,7 @@ BEGIN
                 AND activation.configuration_id=prepared.configuration_id
             JOIN public.stewardship_system_configuration runtime
                 ON runtime.active_configuration_id=prepared.configuration_id
-                AND runtime.current_campaign_id=attempt.id AND runtime.mode='testing'
+                AND runtime.mode='testing'
                 AND runtime.testing_recipient=ready.testing_recipient
             JOIN public.stewardship_source_snapshot snapshot ON snapshot.id=NEW.snapshot_id
                 AND snapshot.task_id=NEW.task_id AND snapshot.source_fence=NEW.source_fence
@@ -6600,32 +6600,48 @@ BEGIN
             JOIN public.stewardship_source_current current ON current.snapshot_id=snapshot.id
             JOIN public.stewardship_source_lease lease ON lease.owner_id=NEW.task_id
                 AND lease.fence=NEW.source_fence AND lease.task_fence=NEW.task_fence
-            JOIN public.stewardship_campaign_credentials population
-                ON population.campaign_id=attempt.id AND population.source_snapshot_id=snapshot.id
-                AND population.source_generation=snapshot.generation AND NOT population.population_dirty
-                AND population.eligible_count=(SELECT count(*) FROM public.stewardship_family_campaign
-                    WHERE campaign_id=attempt.id AND portal_eligible)
             WHERE prepared.id=NEW.preparation_id AND NEW.actor_id=attempt.owner_id
-                AND snapshot.cursor->>'window_digest'=encode(sha256(convert_to(
-                    public.stewardship_source_current_window_v1(attempt.id),'UTF8')),'hex')
-                AND (SELECT count(*) FROM public.stewardship_family_campaign WHERE campaign_id=attempt.id)
-                    = (SELECT count(*) FROM public.stewardship_snapshot_family WHERE snapshot_id=snapshot.id)
-                AND NOT EXISTS (
-                    SELECT 1 FROM public.stewardship_snapshot_family member
-                    JOIN public.stewardship_source_family payload ON payload.id=member.payload_id
-                    LEFT JOIN public.stewardship_family_campaign family ON family.campaign_id=attempt.id
-                        AND family.family_duid=member.source_key::bigint
-                    WHERE member.snapshot_id=snapshot.id AND (
-                        family.id IS NULL OR family.source_generation IS DISTINCT FROM snapshot.generation
-                        OR family.active IS DISTINCT FROM (payload.canonical::jsonb->>'active')::boolean
-                        OR family.portal_eligible IS DISTINCT FROM (payload.canonical::jsonb->>'portal_eligible')::boolean
-                        OR family.email_eligible IS DISTINCT FROM (payload.canonical::jsonb->>'email_eligible')::boolean
-                    )
+                AND (
+                    -- System-only setup (#142): no campaign, so no giving
+                    -- window, no Families and no Family codes yet.
+                    (runtime.current_campaign_id IS NULL
+                        AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign)
+                        AND snapshot.cursor->>'window_digest'=encode(sha256(convert_to(
+                            public.stewardship_source_current_window_v1(NULL),'UTF8')),'hex'))
+                    OR
+                    -- Setup that also created its first campaign (an attempt
+                    -- confirmed before #142): that campaign, its window and its
+                    -- complete, coded population.
+                    (runtime.current_campaign_id=attempt.id
+                        AND EXISTS (SELECT 1 FROM public.stewardship_campaign_credentials population
+                            WHERE population.campaign_id=attempt.id
+                                AND population.source_snapshot_id=snapshot.id
+                                AND population.source_generation=snapshot.generation
+                                AND NOT population.population_dirty
+                                AND population.eligible_count=(SELECT count(*)
+                                    FROM public.stewardship_family_campaign
+                                    WHERE campaign_id=attempt.id AND portal_eligible))
+                        AND snapshot.cursor->>'window_digest'=encode(sha256(convert_to(
+                            public.stewardship_source_current_window_v1(attempt.id),'UTF8')),'hex')
+                        AND (SELECT count(*) FROM public.stewardship_family_campaign WHERE campaign_id=attempt.id)
+                            = (SELECT count(*) FROM public.stewardship_snapshot_family WHERE snapshot_id=snapshot.id)
+                        AND NOT EXISTS (
+                            SELECT 1 FROM public.stewardship_snapshot_family member
+                            JOIN public.stewardship_source_family payload ON payload.id=member.payload_id
+                            LEFT JOIN public.stewardship_family_campaign family ON family.campaign_id=attempt.id
+                                AND family.family_duid=member.source_key::bigint
+                            WHERE member.snapshot_id=snapshot.id AND (
+                                family.id IS NULL OR family.source_generation IS DISTINCT FROM snapshot.generation
+                                OR family.active IS DISTINCT FROM (payload.canonical::jsonb->>'active')::boolean
+                                OR family.portal_eligible IS DISTINCT FROM (payload.canonical::jsonb->>'portal_eligible')::boolean
+                                OR family.email_eligible IS DISTINCT FROM (payload.canonical::jsonb->>'email_eligible')::boolean
+                            )
+                        )
+                        AND NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign family
+                            WHERE family.campaign_id=attempt.id AND family.portal_eligible
+                                AND (coalesce(family.code_ciphertext,'')='' OR NOT EXISTS (
+                                    SELECT 1 FROM public.stewardship_family_code_mac mac WHERE mac.family_id=family.id))))
                 )
-                AND NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign family
-                    WHERE family.campaign_id=attempt.id AND family.portal_eligible
-                        AND (coalesce(family.code_ciphertext,'')='' OR NOT EXISTS (
-                            SELECT 1 FROM public.stewardship_family_code_mac mac WHERE mac.family_id=family.id)))
         ) THEN
         RAISE EXCEPTION 'Setup completion requires exact activation, source and population'
             USING ERRCODE='23514';
