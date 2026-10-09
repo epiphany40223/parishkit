@@ -85,6 +85,7 @@ TEMPLATES = {
     "automation_access": "automation-access.html",
     "automation_approval": "automation-approval.html",
     "system_health": "system-health.html",
+    "source_form": "source-form.html",
     "integrations": "integrations.html",
     "credential_status": "credential-status.html",
     "select_credential": "credential-selection.html",

@@ -60,3 +60,22 @@ def test_every_command_of_this_release_covers_a_route():
     }
     session = {"login start", "login wait", "logout", "whoami", "sessions", "commands"}
     assert {spec.name for spec in admin_cli.COMMANDS} - session == covered
+
+
+def test_every_ledger_route_is_in_the_spec_inventory():
+    """The admin-automation spec's Action inventory names every ledger route
+    (old redirect addresses aside, which one rule covers), so a new page's
+    ledger entry cannot drift from the spec (#843 review)."""
+    import re
+    from pathlib import Path
+
+    from parishkit.stewardship.admin_urls.legacy import TARGETS
+
+    spec = (
+        Path(__file__).resolve().parents[2]
+        / "docs/specs/stewardship/admin-automation/spec.md"
+    ).read_text(encoding="utf-8")
+    inventory = spec[spec.index("## Action inventory") :]
+    named = set(re.findall(r"`([a-z][a-z0-9_]*)`", inventory))
+    missing = sorted(set(admin_parity.LEDGER) - set(TARGETS) - named)
+    assert not missing, f"Name these routes in the spec's Action inventory: {missing}"
