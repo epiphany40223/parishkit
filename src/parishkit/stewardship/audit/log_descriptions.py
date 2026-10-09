@@ -164,6 +164,14 @@ DESCRIPTIONS = {
         "An automation session requested a Ministry follow-up packet, as the "
         "Ministry report's packet form does."
     ),
+    "admin_cmd_export_directory": _(
+        "An automation session requested a Family-code directory export, as "
+        "the Family directory's export form does."
+    ),
+    "admin_cmd_export_postal": _(
+        "An automation session requested a postal mail-merge export, as the "
+        "Family directory's export form does with mailing columns."
+    ),
     "admin_cmd_digest_weekly_request": _(
         "An automation session requested a manual weekly report, as the "
         "Send a weekly report now page does."

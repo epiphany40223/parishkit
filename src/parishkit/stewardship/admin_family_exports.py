@@ -93,7 +93,7 @@ def _admit(caller, service, principal):
 def _create(caller, service, *, principal, action, parse, create, request_key, context):
     """Request one Family-level export as its page's form does.
 
-    ``principal`` is the page's admission; ``parse(campaign_id)`` reads the
+    ``principal`` is the page's admission; ``parse(actor, campaign_id)`` reads the
     form's values once the reader is admitted, in the page's order (it may
     run the page's campaign check first); ``create(actor, campaign_id,
     parsed)`` calls the page's export service for the current campaign (the
@@ -113,7 +113,7 @@ def _create(caller, service, *, principal, action, parse, create, request_key, c
         _recheck(caller, service.store, actor)
         raise
     try:
-        parsed = parse(campaign_id)
+        parsed = parse(actor, campaign_id)
     except _page_refusals() as error:
         # A campaign the page refuses (another current campaign, a read it
         # cannot admit now), after the session recheck, as 8b reports it.
@@ -153,7 +153,7 @@ def export_financial(caller, service, *, filters, fmt, zone, request_key, contex
     from .reports.financial_views import _principal
     from .reports.read_admission import admit_report_read
 
-    def parse(campaign_id):
+    def parse(actor, campaign_id):
         """The page's campaign check, then its filters, in the page's order."""
         admit_report_read(campaign_id)
         return FinancialQuery.parse(filter_values(filters))
@@ -221,7 +221,7 @@ def export_information(
         service,
         principal=_principal,
         action=Action.ADMIN_CMD_EXPORT_INFORMATION,
-        parse=lambda campaign_id: InformationQuery.parse(filter_values(filters)),
+        parse=lambda actor, campaign_id: InformationQuery.parse(filter_values(filters)),
         create=create,
         request_key=request_key,
         context=context,
@@ -250,7 +250,7 @@ def export_ministry(
     from .reports.ministry_exports import create_ministry_export, offered_ministries
     from .reports.ministry_views import _principal
 
-    def parse(campaign_id):
+    def parse(actor, campaign_id):
         """The page's form checks, once the reader is admitted.
 
         ``size`` chooses only the screen's window, which the page's export
@@ -310,7 +310,7 @@ def export_ministry_packet(
     from .reports.ministry_exports import MAX_PACKET_MINISTRIES, create_ministry_export
     from .reports.ministry_views import _principal
 
-    def parse(campaign_id):
+    def parse(actor, campaign_id):
         """The packet form's selection checks, once the reader is admitted."""
         chosen = tuple(ministries or ())
         if len(chosen) > MAX_PACKET_MINISTRIES or len(set(chosen)) != len(chosen):
@@ -338,6 +338,169 @@ def export_ministry_packet(
         service,
         principal=_principal,
         action=Action.ADMIN_CMD_EXPORT_MINISTRY_PACKET,
+        parse=parse,
+        create=create,
+        request_key=request_key,
+        context=context,
+    )
+
+
+# The filter the directory commands refuse beyond the search ``filter_values``
+# already refuses: a Family's own code, never typed on a command line.
+DIRECTORY_SECRETS = frozenset({"exact_code"})
+# The one keyring the directory export needs in this process: the code MAC
+# ring, which holds the credential inventory steady while the export's
+# selection is bound (``key_set_lock``). The codes themselves are decrypted
+# by the worker, never here.
+DIRECTORY_KEYRINGS = ("family_code_mac",)
+
+
+def _directory_repeat(actor, campaign_id, query, *, postal, fmt, zone, request_key):
+    """The export a repeated key already made, or None for a new request.
+
+    Checked before any key is loaded, so a repeat needs no key material.
+    Without an exact code the selection the service binds is a function of
+    the filters alone (``selection_parameters`` uses the MAC ring only for
+    an exact code, which the command refuses), so the comparison is the
+    service's own: a key bound to another selection is the page's 409.
+    """
+    from .reports.directories import selection_parameters
+    from .reports.export_models import ExportRequest
+    from .reports.export_services import ExportRequestBound
+
+    previous = ExportRequest.objects.filter(
+        requester_id=actor.identity, request_key=request_key
+    ).first()
+    if previous is None:
+        return None
+    parameters = selection_parameters(campaign_id, query, postal=postal, mac=None)
+    report = "postal_outreach" if postal else "family_directory"
+    if (
+        previous.report,
+        previous.campaign_id,
+        previous.parameters,
+        previous.format,
+        previous.browser_timezone,
+    ) != (report, campaign_id, parameters, fmt, zone):
+        raise ExportRequestBound("Export request identity is already bound.")
+    return previous
+
+
+def export_directory(
+    caller, service, *, filters, postal, fmt, zone, request_key, context
+):
+    """``export directory`` and ``export postal``: the Family directory's export.
+
+    ``postal`` is the page's mailing-columns choice: the mail merge
+    (``postal_outreach``) or the Family-code directory (``family_directory``),
+    whose codes the worker decrypts into the file. The page's admission
+    (``FAMILY_CODES``) applies. Creating either export is fresh-gated
+    (#547): as the page's view (``directory_export_views.create``) does for
+    every post, a repeated key included, the command calls ``require_fresh``
+    inside the export lock, where a live full-scope session passes.
+
+    The code MAC keyring
+    is loaded only for a new request, after the repeat check, and must match
+    the running web's (``credential_mismatch``, exit 2, otherwise); the
+    credential inventory must be current (``key_set_lock``), or the request
+    is ``unavailable``, as the page's 503.
+    """
+    from django.db import transaction
+
+    from .accounts.cryptography import CryptographicError
+    from .accounts.sessions import require_fresh
+    from .audit.schemas import Action
+    from .reports.directories import DirectoryQuery
+    from .reports.directory_exports import admit_directory, create_directory_export
+    from .reports.directory_views import _principal
+
+    def parse(actor, campaign_id):
+        """The form's filters, the repeat check, then the key for a new request.
+
+        After admission and outside every lock and the configuration hold,
+        so a keyring that differs from the web's is ``credential_mismatch``,
+        not ``unavailable``. A search or a Family code is refused before
+        anything else. The repeat check runs in a short transaction of its
+        own; the export service repeats it inside its lock, so a request
+        made meanwhile with the same key is still returned, not doubled.
+        Returns ``(query, mac)``, ``mac`` None for a repeated key.
+        """
+        values = filter_values(filters)
+        if DIRECTORY_SECRETS & set(values):
+            raise ValueError("A search or a Family code is never a command option.")
+        query = DirectoryQuery.parse(values)
+        with transaction.atomic():
+            # The service's admission first, as it runs before its own repeat
+            # check: a bound key on a refused campaign gets the page's
+            # refusal, not a comparison of the selection (``invalid``).
+            admit_directory(service.store, actor.identity, campaign_id)
+            previous = _directory_repeat(
+                actor,
+                campaign_id,
+                query,
+                postal=postal,
+                fmt=fmt,
+                zone=zone,
+                request_key=request_key,
+            )
+        if previous is not None:
+            return query, None
+        if service.keyrings is None:
+            raise NotAvailable("This process cannot load the Family code keyring.")
+        (mac,) = service.keyrings(DIRECTORY_KEYRINGS)
+        return query, mac
+
+    def create(actor, campaign_id, parsed):
+        """The page's fresh gate, then its service, or the export a repeated
+        key already made."""
+        query, mac = parsed
+        # The automation branch records automation_fresh_gate (and its
+        # notice, which names the campaign) in this transaction.
+        caller.campaign_id = campaign_id
+        require_fresh(caller)
+        if mac is None:
+            # A repeated key: the service's own admission, inside the same
+            # export lock, then the record the key already made, compared as
+            # the service compares it, with no key read.
+            admit_directory(service.store, actor.identity, campaign_id)
+            previous = _directory_repeat(
+                actor,
+                campaign_id,
+                query,
+                postal=postal,
+                fmt=fmt,
+                zone=zone,
+                request_key=request_key,
+            )
+            if previous is None:
+                # The record went away since the check (a campaign purge
+                # in between): nothing was made, and a new run starts over.
+                raise Unavailable("The export changed; request it again.")
+            return previous
+        try:
+            return create_directory_export(
+                service.store,
+                actor.identity,
+                campaign_id=campaign_id,
+                query=query,
+                postal=postal,
+                format=fmt,
+                browser_timezone=zone,
+                request_key=request_key,
+                mac=mac,
+            )
+        except CryptographicError:
+            # A rotation in progress or an inventory not yet current: the
+            # page's 503, nothing written; retry.
+            raise Unavailable("The Family code keys are changing; retry.") from None
+
+    return _create(
+        caller,
+        service,
+        principal=_principal,
+        action=Action.ADMIN_CMD_EXPORT_POSTAL
+        if postal
+        else Action.ADMIN_CMD_EXPORT_DIRECTORY,
         parse=parse,
         create=create,
         request_key=request_key,

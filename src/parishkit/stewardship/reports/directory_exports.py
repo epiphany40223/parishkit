@@ -25,6 +25,18 @@ from .export_services import (
 REPORTS = FAMILY_CODE_REPORTS
 
 
+def admit_directory(store, user_id, campaign_id):
+    """The directory export's admission: the codes capability and campaign gates.
+
+    The service's own check, inside its export lock; the command line's
+    repeat of a bound request key runs it too (``admin_family_exports``).
+    """
+    if not allows(authorize(store, user_id), Capability.FAMILY_CODES):
+        raise PermissionError("This export is unavailable.")
+    admit_campaign(campaign_id, mutating=True)
+    return True
+
+
 def create_directory_export(
     store,
     user_id,
@@ -71,10 +83,7 @@ def create_directory_export(
 
     def admit(*args):
         """Owning work and enqueue both check current requester and campaign gates."""
-        if not allows(authorize(store, user_id), Capability.FAMILY_CODES):
-            raise PermissionError("This export is unavailable.")
-        admit_campaign(campaign_id, mutating=True)
-        return True
+        return admit_directory(store, user_id, campaign_id)
 
     with export_transaction(campaign_id):
         admit()

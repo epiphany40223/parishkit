@@ -168,6 +168,8 @@ def test_every_export_command_has_a_golden_document():
         "export information",
         "export ministry",
         "export ministry-packet",
+        "export directory",
+        "export postal",
     }
     models = {
         "export status": admin_exports.ExportStatus,

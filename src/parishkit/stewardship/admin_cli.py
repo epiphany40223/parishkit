@@ -223,6 +223,9 @@ class AdminRuntime:
     # deployment's download lifetime (``read_guards.ReadLimits``); None
     # uses the default lifetime.
     read_limits: object = None
+    # ``keyrings(names)`` loads the named web keyrings for one command that
+    # needs them (``load_keyrings``); None in a process that loads none.
+    keyrings: object = None
 
     def configured(self):
         """Whether first setup finished, by the web's own rule (``AuthRuntime``)."""
@@ -299,6 +302,42 @@ def configure_admin_process(configuration):
     return credential_receipt(loaded, "django_signing")
 
 
+def load_keyrings(configuration, receipts, names):
+    """Read the named web keyrings for the one command that needs them.
+
+    Only the command that uses a keyring loads it, and only once it knows
+    the request is new, so no other command holds this key material. Each
+    file is read once and its credential receipt must equal the one the
+    running web published (``receipts``), as for the signing keyring: a
+    difference, for example during a key rotation, is
+    ``credential_mismatch`` (exit 2) before anything changes. So is a ring
+    file that cannot be read or parsed: the web loaded its rings at
+    startup, so this command's view of them differs. Returns the parsed
+    keyrings in ``names`` order.
+
+    #759 adds the same loader for the Family email retry's two keyrings
+    (``load_family_keys``); whichever lands second keeps this one, with its
+    ``FAMILY_KEYRINGS``.
+    """
+    from .accounts.cryptography import CryptographicError, independent_keyrings
+    from .accounts.key_files import parse_keyring, read_private
+    from .accounts.metrics_credentials import credential_receipt
+
+    rings = []
+    try:
+        for name in names:
+            if name not in configuration.secrets:
+                raise CredentialMismatch("The web keyrings are not mounted.")
+            loaded = read_private(configuration.secrets[name])
+            if credential_receipt(loaded, name) != receipts.get(name):
+                raise CredentialMismatch("The web keyrings differ.")
+            rings.append(parse_keyring(loaded, name))
+        independent_keyrings(*rings)
+    except CryptographicError:
+        raise CredentialMismatch("The web keyrings cannot be read.") from None
+    return tuple(rings)
+
+
 @contextlib.contextmanager
 def admitted(configuration):
     """Admit this process as ``engagement-backfill`` does, then yield its runtime.
@@ -306,8 +345,10 @@ def admitted(configuration):
     The admitted web profile, the lifecycle mounts, a non-offline startup
     lease and the web's own SQL login; every other profile and login is
     refused. The signing keyring must match the running web's published
-    receipt, so a key rotation in progress refuses (exit 2). At most one
-    database connection is held, and it is closed at exit.
+    receipt, so a key rotation in progress refuses (exit 2); any other
+    keyring loads later, only for the command that needs it, under the same
+    check (``load_keyrings``). At most one database connection is held,
+    and it is closed at exit.
     """
     # Only Django-free modules before configure_admin_process sets Django up;
     # a module that loads models is imported after it (a test checks this).
@@ -334,7 +375,8 @@ def admitted(configuration):
         client = None
         try:
             admit_runtime_database(configuration)
-            if loaded_service_receipts(configuration).get("django_signing") != receipt:
+            receipts = loaded_service_receipts(configuration)
+            if receipts.get("django_signing") != receipt:
                 raise CredentialMismatch("The web signing keyring differs.")
             client = valkey_client(configuration)
             yield AdminRuntime(
@@ -345,6 +387,7 @@ def admitted(configuration):
                 public_origin=configuration.public_origin,
                 setup_complete=setup_is_complete,
                 read_limits=download_limits(configuration.runtime_budget),
+                keyrings=lambda names: load_keyrings(configuration, receipts, names),
             )
         finally:
             connections.close_all()
@@ -1167,6 +1210,60 @@ def export_ministry_packet(args, preamble, runtime, context):
     )
 
 
+def export_directory(args, preamble, runtime, context):
+    """Request a Family-code directory export, as its form does (PR 8f).
+
+    Fresh-gated (#547), so it asks at the confirmation prompt first, as
+    ``export financial`` does.
+    """
+    from .admin_family_exports import export_directory as request
+
+    confirm(
+        context,
+        (
+            "Create a Family directory export: a file of every matching "
+            "Family's code for the current campaign.",
+        ),
+    )
+    return request(
+        context["caller"],
+        runtime,
+        filters=args.filter,
+        postal=False,
+        fmt=args.format,
+        zone=args.timezone,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
+def export_postal(args, preamble, runtime, context):
+    """Request a postal mail-merge export, as its form does (PR 8f).
+
+    Fresh-gated (#547), so it asks at the confirmation prompt first, as
+    ``export financial`` does.
+    """
+    from .admin_family_exports import export_directory as request
+
+    confirm(
+        context,
+        (
+            "Create a mail-merge export: a file of every matching Family's "
+            "code and mailing address for the current campaign.",
+        ),
+    )
+    return request(
+        context["caller"],
+        runtime,
+        filters=args.filter,
+        postal=True,
+        fmt=args.format,
+        zone=args.timezone,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
 def export_status(args, preamble, runtime, context):
     """One export's state, as its status page shows it (PR 8b)."""
     from .admin_exports import read_export
@@ -1741,7 +1838,7 @@ def _family_export_options(parser, *, filters=True):
             action="append",
             metavar="NAME=VALUE",
             help="one of the page's filters, as its form names it; repeat for "
-            "more (no search: it would name a Family)",
+            "more (no search or Family code: it would name a Family)",
         )
     _request_key_option(parser)
 
@@ -2529,6 +2626,34 @@ def _report_specs():
             8,
             options=(_export_ministry_packet_options,),
             request_key=True,
+        ),
+        # The Family directory's exports (PR 8f): the code MAC keyring loads
+        # only for a new request of these two.
+        CommandSpec(
+            "export directory",
+            "Request a Family-code directory export, as its form does.",
+            export_directory,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_family_export_options,),
+            request_key=True,
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "export postal",
+            "Request a postal mail-merge export, as its form does.",
+            export_postal,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_family_export_options,),
+            request_key=True,
+            fresh_gated=True,
+            prompts=True,
         ),
         # The digests (PR 8d, ``admin_digests``).
         CommandSpec(

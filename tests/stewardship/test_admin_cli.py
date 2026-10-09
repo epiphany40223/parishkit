@@ -104,6 +104,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export information",
         "export ministry",
         "export ministry-packet",
+        "export directory",
+        "export postal",
     }
     assert set(entries) == (
         session | reads | changes | refresh | tests | operations | reports
@@ -125,10 +127,17 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in reports
             else 3
         )
-        # Only the chosen-Family send, the financial export and some
-        # regenerations need a recent sign-in on their pages.
+        # Only the chosen-Family send, the code and financial exports and
+        # some regenerations need a recent sign-in on their pages.
         assert entry["fresh_gated"] == (
-            name in {"test families", "export regenerate", "export financial"}
+            name
+            in {
+                "test families",
+                "export regenerate",
+                "export financial",
+                "export directory",
+                "export postal",
+            }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
         # their own prompting commands, so this is not a closed list.
@@ -322,6 +331,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export information",
         "export ministry",
         "export ministry-packet",
+        "export directory",
+        "export postal",
     ):
         entry = entries[name]
         assert entry["scope"] == "full" and entry["changes_state"], name
@@ -363,6 +374,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_information",
         "admin_cmd_export_ministry",
         "admin_cmd_export_ministry_packet",
+        "admin_cmd_export_directory",
+        "admin_cmd_export_postal",
         "admin_cmd_digest_weekly_request",
     ]
     for event in events:
@@ -616,14 +629,17 @@ def test_admission_refuses_every_profile_but_the_web(monkeypatch):
         pass
 
 
-def test_admission_refuses_a_signing_keyring_the_web_did_not_load(monkeypatch):
-    """A key rotation in progress (receipts differ) refuses with exit 2."""
+def stub_admission(monkeypatch, receipts, closed):
+    """Replace the host and database admissions around the real ``admitted()``.
+
+    The signing ring this process "loaded" has receipt ``"a" * 64``; the
+    running web published ``receipts``. ``closed`` collects each close.
+    """
     import contextlib
     from types import SimpleNamespace
 
     from parishkit.stewardship.deployment import ServiceRole
 
-    closed = []
     monkeypatch.setattr(
         "parishkit.stewardship.service_boundaries.admit_online_service",
         lambda configuration: ServiceRole.WEB,
@@ -647,9 +663,15 @@ def test_admission_refuses_a_signing_keyring_the_web_did_not_load(monkeypatch):
     )
     monkeypatch.setattr(
         "parishkit.stewardship.consumer_runtime.loaded_service_receipts",
-        lambda configuration: {"django_signing": "b" * 64},
+        lambda configuration: receipts,
     )
     monkeypatch.setattr("django.db.connections.close_all", lambda: closed.append(True))
+
+
+def test_admission_refuses_a_signing_keyring_the_web_did_not_load(monkeypatch):
+    """A key rotation in progress (receipts differ) refuses with exit 2."""
+    closed = []
+    stub_admission(monkeypatch, {"django_signing": "b" * 64}, closed)
     with pytest.raises(admin_cli.CredentialMismatch), admin_cli.admitted(object()):
         pass
     assert closed == [True]
@@ -1235,3 +1257,89 @@ def test_the_families_prompt_asks_the_pages_own_acknowledgement():
 
     label = FamilyTestConfirmForm.base_fields["acknowledge"].label
     assert str(label) == FAMILIES_ACKNOWLEDGEMENT
+
+
+def code_mac_file(tmp_path):
+    """The web's code MAC keyring file, and the receipt the web published."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.cryptography import CodeMacKeyring, Key
+    from parishkit.stewardship.accounts.key_files import (
+        serialize_keyring,
+        write_private,
+    )
+    from parishkit.stewardship.accounts.metrics_credentials import (
+        credential_receipt,
+    )
+
+    root = tmp_path.resolve()
+    root.chmod(0o700)
+    raw = serialize_keyring(CodeMacKeyring([Key("m1", "active", b"m" * 32)]))
+    path = root / "family_code_mac"
+    write_private(path, raw)
+    return (
+        SimpleNamespace(secrets={"family_code_mac": path}),
+        {"family_code_mac": credential_receipt(raw, "family_code_mac")},
+    )
+
+
+def test_admission_hands_the_keyring_loader_the_webs_receipts(tmp_path, monkeypatch):
+    """The real ``admitted()`` loads no keyring itself; its loader checks the
+    receipts the web published at admission (ADM-11 PR 8f)."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.cryptography import CodeMacKeyring
+
+    files, receipts = code_mac_file(tmp_path)
+    configuration = SimpleNamespace(
+        secrets=files.secrets,
+        paths={"authority": tmp_path / "authority"},
+        public_origin="https://campaign.example.org",
+        runtime_budget=None,
+    )
+    reads = []
+    real = admin_cli.load_keyrings
+    monkeypatch.setattr(
+        admin_cli,
+        "load_keyrings",
+        lambda config, published, names: (
+            reads.append((published, tuple(names))) or real(config, published, names)
+        ),
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.authority.AuthorityStore",
+        lambda *args: "store",
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.automation_sessions.PairingStore",
+        lambda client: "pairing",
+    )
+    client = SimpleNamespace(connection_pool=SimpleNamespace(disconnect=lambda: None))
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_web.valkey_client", lambda config: client
+    )
+    closed = []
+    published = {"django_signing": "a" * 64, **receipts}
+    stub_admission(monkeypatch, published, closed)
+    with admin_cli.admitted(configuration) as runtime:
+        assert reads == []
+        (ring,) = runtime.keyrings(("family_code_mac",))
+        assert isinstance(ring, CodeMacKeyring)
+        assert reads == [(published, ("family_code_mac",))]
+    # A keyring the web did not load (a rotation) refuses, the signing ring fine.
+    stub_admission(
+        monkeypatch, {"django_signing": "a" * 64, "family_code_mac": "0" * 64}, closed
+    )
+    with (
+        admin_cli.admitted(configuration) as runtime,
+        pytest.raises(admin_cli.CredentialMismatch),
+    ):
+        runtime.keyrings(("family_code_mac",))
+
+
+def test_an_unreadable_keyring_is_a_credential_mismatch(tmp_path):
+    """A ring file that cannot be read or parsed is exit 2, as a rotated one."""
+    files, receipts = code_mac_file(tmp_path)
+    files.secrets["family_code_mac"].chmod(0o644)
+    with pytest.raises(admin_cli.CredentialMismatch):
+        admin_cli.load_keyrings(files, receipts, ("family_code_mac",))

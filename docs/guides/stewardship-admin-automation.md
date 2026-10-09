@@ -968,9 +968,40 @@ pk-admin export fetch EXPORT_ID
   export cannot be requested right now (its inputs are being refreshed,
   for example), the command exits 3 (`unavailable`): try again.
 
-The Family directory and mail-merge exports, the
-one-Family timeline, the talents and response list downloads and the exact
-daily exports are not on the command line yet; use the pages.
+#### Family codes and mail merge
+
+`export directory` is the Family directory's export of Family codes, for
+the current campaign, and `export postal` its mail merge. Each needs a
+full-scope session and records the page's events, plus
+`admin_cmd_export_directory` or `admin_cmd_export_postal`. Both need a
+recent Google sign-in on the page, so each asks at the
+[confirmation prompt](#confirmations) (or takes `--yes`); the session
+stands in for the sign-in, and System logs show `automation_fresh_gate`
+beside it.
+
+```sh
+pk-admin export directory --format csv --timezone America/New_York \
+  --filter response=no
+pk-admin export postal --format xlsx --timezone America/New_York
+```
+
+- They take the same `--format`, `--timezone`, `--filter` and
+  `--request-key` as the exports above.
+- `--filter` refuses `search` and `exact_code` (exit 1, `invalid`): a name
+  or a Family code typed on a command line stays in your shell's history
+  and is visible to other processes on the host. Choose Families with the
+  page's other filters, or use the page.
+- Both need the web's Family code key, which this command reads only for
+  them, and only for a new request (repeating a request key reads none).
+  If that key differs from the one the web started with (a key rotation in
+  progress) or cannot be read, they exit 2 (`credential_mismatch`) and
+  nothing is made: retry once the web service is recreated. While a key
+  rotation holds the keys, they exit 3 (`unavailable`): retry shortly.
+- The file holds every matching Family's code (or mailing address). Keep
+  it private and delete it once used (`pk-admin exports clean`).
+
+The one-Family timeline, the talents and response list downloads and the
+exact daily exports are not on the command line yet; use the pages.
 
 ### Fetching an export's file
 
@@ -1087,3 +1118,5 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   `--yes`).
 - `pk-admin/1` (ADM-11 PR 8e): additive. `export financial`,
   `export information`, `export ministry` and `export ministry-packet`.
+- `pk-admin/1` (ADM-11 PR 8f): additive. `export directory` and
+  `export postal`.
