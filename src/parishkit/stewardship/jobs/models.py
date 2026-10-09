@@ -100,6 +100,14 @@ class TaskRun(MutableRecord):
             models.Index(
                 fields=["task_type", "domain_request_id"], name="task_type_request"
             ),
+            # Terminal runs by when they finished, for task event retention
+            # (#386; installed by frozen migration file
+            # 0024_task_event_retention.sql).
+            models.Index(
+                fields=["updated_at"],
+                name="task_terminal_updated",
+                condition=models.Q(state__in=["succeeded", "failed", "cancelled"]),
+            ),
         ]
         constraints = MutableRecord.Meta.constraints + [
             models.UniqueConstraint(
