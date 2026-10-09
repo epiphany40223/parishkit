@@ -112,7 +112,11 @@ def _command_scope(request, service, actor):
 
 
 def _retry_inputs(purpose):
-    """Only invitations require Family keys; report and receipt retries are keyless."""
+    """Only invitations require Family keys; report and receipt retries are keyless.
+
+    The command line's ``admin_operations.FAMILY_KEYED_PURPOSES`` makes the
+    same split (naming the keyed purposes); change both together.
+    """
     from parishkit.stewardship.accounts.family_authentication import (
         runtime as family_runtime,
     )

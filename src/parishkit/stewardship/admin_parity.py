@@ -274,7 +274,8 @@ LEDGER = {
     "retry_export_cleanup": command("task retry"),
     "deliveries": command("delivery list"),
     "delivery": command("delivery show"),
-    # The duplicate-risk resend needs its acknowledgement at the prompt.
+    # Every retry, a Family email's too (#682); the duplicate-risk resend
+    # needs its acknowledgement at the prompt.
     "delivery_resolve": command("delivery resolve", owed="PR 9c"),
     "delivery_refusals": command("delivery refusals"),
     "delivery_refusal": command("delivery refusal-show"),

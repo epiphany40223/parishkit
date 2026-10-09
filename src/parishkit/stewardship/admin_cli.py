@@ -83,7 +83,7 @@ class UsageError(Exception):
 
 
 class CredentialMismatch(ConfigError):
-    """The signing keyring differs from the running web's (exit 2)."""
+    """A keyring this process loaded differs from the running web's (exit 2)."""
 
 
 class WatchTimeout(Exception):
@@ -131,8 +131,8 @@ MESSAGES = {
     "usage": "The command line is not valid; see --help.",
     "configuration": "The command could not start; check the web configuration.",
     "credential_mismatch": (
-        "The web's signing key differs from this process's; retry after the "
-        "web service is recreated."
+        "The web's keys differ from this command's; retry after the web "
+        "service is recreated."
     ),
     "unavailable": "A service is temporarily unavailable; nothing changed. Retry.",
     "busy": "Offline maintenance is in progress; nothing changed. Retry.",
@@ -302,6 +302,13 @@ def configure_admin_process(configuration):
     return credential_receipt(loaded, "django_signing")
 
 
+# The keyrings a Family email's preparation seals with, as the web's
+# ``delivery_views._retry_inputs`` passes them (``delivery resolve`` loads
+# them only to retry a Family email, #682): never the code MAC ring, which
+# preparation does not use, nor the private token ring the web never holds.
+FAMILY_KEYRINGS = ("general_encryption", "token_public")
+
+
 def load_keyrings(configuration, receipts, names):
     """Read the named web keyrings for the one command that needs them.
 
@@ -314,10 +321,6 @@ def load_keyrings(configuration, receipts, names):
     file that cannot be read or parsed: the web loaded its rings at
     startup, so this command's view of them differs. Returns the parsed
     keyrings in ``names`` order.
-
-    #759 adds the same loader for the Family email retry's two keyrings
-    (``load_family_keys``); whichever lands second keeps this one, with its
-    ``FAMILY_KEYRINGS``.
     """
     from .accounts.cryptography import CryptographicError, independent_keyrings
     from .accounts.key_files import parse_keyring, read_private

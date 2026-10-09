@@ -889,6 +889,19 @@ a called service needs. Before any session use it compares its loaded
 (the proof `acknowledge-credential` checks) and refuses with exit 2 when they
 differ, for example during a key rotation.
 
+The Family keyrings load only for `delivery resolve` retrying a Family
+email (#682): the `general_encryption` and `token_public` rings the web's
+retry seals with, read then and checked against the web's published
+receipts the same way (exit 2 when they differ, or when a ring cannot be
+read). A rotation holding the credential key lock, or a database key
+inventory that moved past the web's rings, refuses the sealing inside the
+transaction, which rolls back: exit 3 (`unavailable`). It never loads the
+code MAC ring, which preparation does not use, or the private token ring,
+which the web never holds. The files are already readable by this process
+(the web's user and mounts), so this adds no access; it keeps that key
+material out of every other command, and a rotation of these rings refuses
+only Family retries.
+
 It holds at most one database connection and closes it between `--watch`
 polls.
 
@@ -1002,7 +1015,7 @@ still live, so it never revives one that ended or idled out.
 | --- | --- | --- |
 | 0 | Done | none |
 | 1 | Refused by the application; nothing changed | `denied`, `invalid`, `stale_version`, `not_available` |
-| 2 | Usage, configuration or admission error before any command ran, or a keyring this process must load (the signing keyring at admission; the Family code keyring for `export directory` and `export postal`) that differs from the running web's | `usage`, `configuration`, `credential_mismatch` |
+| 2 | Usage, configuration or admission error before any command ran, or a keyring this process must load (the signing keyring at admission; the Family code keyring for `export directory` and `export postal`; the Family keyrings when `delivery resolve` retries a Family email) that differs from the running web's (nothing changed) | `usage`, `configuration`, `credential_mismatch` |
 | 3 | Temporarily unavailable before any change; retry | `unavailable`, `busy`, `internal` |
 | 4 | Confirmation not given; nothing changed | `confirmation_required` |
 | 5 | No usable automation session, or pairing not finished | `session_missing`, `session_ended`, `pairing_pending`, `pairing_expired` |
@@ -2099,10 +2112,15 @@ command scope, keyed by its `command_id`, recording
 `admin_cmd_delivery_resolve` when it creates the resolution. Two page
 actions need a ticked acknowledgement and wait for PR 9c, which uses PR 5b's
 [prompt](#command-line-confirmation): the duplicate-risk `resend` and
-`delivery refusal-clear` ("I verified this address"). A retry of a Family
-email re-prepares it with the web's Family keys, which the command process
-does not load, so it is `not_available` from the command line; receipt and
-report retries work.
+`delivery refusal-clear` ("I verified this address"). A retry
+(`retry_failed`, `retry_unsent`) re-prepares the email as the page does; for
+a Family email that needs the Family keyrings, which the command loads only
+then (see [process admission](#process-admission-and-database-login)).
+Preparation reads the Family's current code and link and writes no
+credential, so emailed codes and links stay valid. A repeat of the key
+returns the receipt before any preparation, and a retry with another key on
+the version already retried is `stale_version`, so one key never prepares
+or sends twice.
 
 The ADM-13 rows are pending exemptions until ADM-11 PR 3 (the read) and
 PR 5 (the actions) land. The ADM-13 action routes are POSTs to the

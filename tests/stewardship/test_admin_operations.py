@@ -444,23 +444,21 @@ def test_an_unknown_outcome_names_the_request_key(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "purpose,offered,listed",
+    "offered,listed",
     [
-        # Receipts and reports retry here; resend waits for the prompt.
+        # resend waits for the prompt (PR 9c).
         (
-            "receipt",
             ["note", "accept", "confirm_unsent", "resend"],
             ["note", "accept", "confirm_unsent"],
         ),
-        ("daily_digest", ["note", "retry_failed"], ["note", "retry_failed"]),
-        # A Family email's retry needs the page's Family keys.
-        ("initial", ["note", "retry_failed"], ["note"]),
-        ("reminder", ["note", "retry_unsent"], ["note"]),
+        # Every retry is accepted, a Family email's too (#682).
+        (["note", "retry_failed"], ["note", "retry_failed"]),
+        (["note", "retry_unsent"], ["note", "retry_unsent"]),
     ],
 )
-def test_delivery_show_lists_only_what_resolve_accepts(purpose, offered, listed):
+def test_delivery_show_lists_only_what_resolve_accepts(offered, listed):
     """Every listed action can be given to delivery resolve as is."""
-    assert admin_operations.command_actions({"purpose": purpose}, offered) == listed
+    assert admin_operations.command_actions(offered) == listed
 
 
 class Cause(Exception):
