@@ -151,7 +151,6 @@ SETUP_SHARED = ("setup-step.html", "setup-credential.html")
 # The review steps of these pages' change flows render their own templates;
 # their "Return to" links are checked with the pages'.
 REVIEWS = (
-    "campaign-preview.html",
     "campaign-ministries-preview.html",
     "integration-preview.html",
     "ministry-preview.html",

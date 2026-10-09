@@ -4,8 +4,10 @@ ui-v1.js relies on, and the no-script landing every such control keeps."""
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
+from types import SimpleNamespace
+from uuid import UUID, uuid4
 
+import pytest
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
@@ -112,10 +114,18 @@ def test_presence_refresh_refreshes_the_list_in_place():
 
 
 # Fragment templates whose in-place control acts on a region the page
-# around them draws: the template's name, and the page template's. The
+# around them draws: the template's name, and the page templates'. The
 # integration status line is also the passive status view live-status-v1.js
 # reads, whose answer never holds the page's regions.
-HOSTED = {"integration-summary.html": "integration-settings.html"}
+# The in-place settings pages (#532) draw their review region around
+# settings-review.html, whose Apply names it, and around the change status a
+# confirmed change shows, whose follow-up link names it too.
+SETTINGS_PAGES = ("parish-settings.html", "campaign-settings.html")
+HOSTED = {
+    "integration-summary.html": ("integration-settings.html",),
+    "settings-review.html": SETTINGS_PAGES,
+    "configuration-request-status.html": SETTINGS_PAGES,
+}
 
 
 def test_every_in_place_control_names_its_region_as_a_fragment():
@@ -136,12 +146,13 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
             target = re.search(r'\b(?:href|action)="([^"]*)"', tag.group(0))
             assert target and "#" in target.group(1), (path.name, tag.group(0))
             fragment = target.group(1).split("#", 1)[1]
-            host = (
-                (TEMPLATES / HOSTED[path.name]).read_text()
-                if path.name in HOSTED
-                else text
+            hosts = (
+                [(TEMPLATES / name).read_text() for name in HOSTED[path.name]]
+                if (path.name in HOSTED)
+                else [text]
             )
-            assert names_region(host, fragment), (path.name, fragment)
+            for host in hosts:
+                assert names_region(host, fragment), (path.name, fragment)
     assert found >= 8
 
 
@@ -339,3 +350,17 @@ def test_live_status_pages_refresh_and_dismiss_in_place():
     summary = (TEMPLATES / "integration-summary.html").read_text()
     form = re.search(r"<form [^>]*dismiss_credential_result[^>]*>", summary).group(0)
     assert '#integration-status" ' in form and 'data-in-place="dismiss"' in form
+
+
+@pytest.mark.parametrize("state", ["applied", "failed", "cancelled", "staged"])
+def test_only_an_applied_change_refreshes_its_settings_page(state):
+    """An in-place settings page refreshes itself only once its change is
+    applied (#532 review). A change that was not applied leaves the page
+    alone, so its form keeps the version it was reviewed at and a change
+    refused as stale must be reloaded before the next Review."""
+    receipt = SimpleNamespace(state=state, request_id=uuid4(), failure_code="")
+    html = render_to_string(
+        "stewardship/configuration-request-status.html",
+        {"receipt": receipt, "follow_url": "/admin/parish/settings/?request=x"},
+    )
+    assert ("data-live-follow" in html) == (state == "applied")

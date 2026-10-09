@@ -798,7 +798,9 @@
   // form marked data-in-place-anywhere changes a region every Admin page
   // draws (the critical-problems banner): whichever same-origin page
   // answers it, only that region is taken from the answer, and the address
-  // stays.
+  // stays. An element of the swapped region marked data-in-place-focus (an
+  // in-place review's heading, #532) takes focus after a successful answer
+  // instead of the control, since that is what the reader acts on next.
   const REGIONS = "[data-in-place-region][id], [data-table-region][id]";
   const isRegion = (node) => Boolean(node && node.matches(REGIONS));
   // A checkbox that submits its own in-place form when it changes (#621).
@@ -1322,7 +1324,11 @@
       || (owner && !anywhere && !moved && answered.pathname !== window.location.pathname);
     if (!refused && (elsewhere || !isRegion(fresh))) {
       if (response.redirected || init.method !== "POST") {
-        leave(() => window.location.assign(withFragment(response.url, id)));
+        // The region's fragment goes along only when that page draws the
+        // region too; elsewhere it would name nothing (Campaign settings'
+        // dates-only Review leads to Dates and mail schedules, #532).
+        const target = isRegion(fresh) ? withFragment(response.url, id) : response.url;
+        leave(() => window.location.assign(target));
       } else {
         leave(() => showAsReturned(text));
       }
@@ -1387,7 +1393,8 @@
         .filter(Boolean).join(" "));
       return;
     }
-    let target = summary || focus(swapped);
+    let target = summary || (!refused && swapped.querySelector("[data-in-place-focus]"))
+      || focus(swapped);
     if (!target || target.disabled) {
       target = swapped.querySelector("h1, h2, h3, h4, h5, h6")
         || (squeeze(swapped.textContent) ? swapped : document.querySelector("main h1") || swapped);
@@ -1436,6 +1443,12 @@
   // repeats (a double click, Enter pressed twice) are ignored here instead,
   // and the submitter is marked aria-disabled until the request settles.
   const inFlight = new WeakSet();
+  // Ids of forms edited while their in-place Review was in flight (see the
+  // in-place review below). A request that starts clears its form's id
+  // there, at the moment it is marked in flight: a repeated submission
+  // (Enter pressed again while the Review runs) is ignored above that point,
+  // so it never forgets an edit the running Review does not include.
+  const editedInFlight = new Set();
   document.addEventListener("submit", (event) => {
     const form = event.target;
     if (event.defaultPrevented || !(form instanceof HTMLFormElement)) return;
@@ -1505,6 +1518,7 @@
         : () => HTMLFormElement.prototype.submit.call(form);
     }
     inFlight.add(form);
+    editedInFlight.delete(form.id);
     const submitter = event.submitter;
     submitter?.setAttribute("aria-disabled", "true");
     // A save shows its button busy, as an ordinary submission does.
@@ -1518,6 +1532,52 @@
     refreshTable(region, control, action.href, init, load, {owner, form: save ? form : null})
       .finally(settle);
   }, true);
+  // An in-place review (#532): a settings page's review region shows what its
+  // form's last Review would change, in an element marked
+  // data-review-of="<form id>", with Apply. Editing that form again makes
+  // the review out of date, and Apply would still apply the reviewed values,
+  // so the review is withdrawn at once: its Apply is removed, the rest is
+  // greyed out (data-review-stale), and its data-review-note line says to
+  // review again. The review stays in place at no less than its height, so
+  // the page never gets shorter under the reader's caret: when they have
+  // scrolled down to the review, a shorter page would pull the form under
+  // the pointer (#736). The server's signed preview stays the authority for
+  // what is applied. An edit made while Review is still in flight is not in
+  // the review that answer brings, so that review is withdrawn as soon as
+  // it arrives. Forms are noted by id (editedInFlight, above): a form that
+  // is its own region is replaced by the answer.
+  const withdraw = (review) => {
+    review.style.minHeight = `${review.offsetHeight}px`;
+    review.removeAttribute("data-review-of");
+    review.setAttribute("data-review-stale", "");
+    review.querySelectorAll("form").forEach((apply) => apply.remove());
+    let note = review.querySelector("[data-review-note]");
+    if (!note) {
+      note = document.createElement("p");
+      note.setAttribute("data-review-note", "");
+      review.append(note);
+    }
+    note.className = "notice";
+    note.setAttribute("role", "status");
+    note.textContent = "You changed the settings after reviewing them. "
+      + "Choose Review changes again to see what will change.";
+  };
+  const withdrawReview = (event) => {
+    const form = event.target instanceof Element ? event.target.closest("form") : null;
+    if (!form?.id) return;
+    if (inFlight.has(form)) editedInFlight.add(form.id);
+    document.querySelectorAll(`[data-review-of="${CSS.escape(form.id)}"]`).forEach(withdraw);
+  };
+  document.addEventListener("input", withdrawReview);
+  document.addEventListener("change", withdrawReview);
+  document.addEventListener("parishkit:swap", (event) => {
+    if (!(event.target instanceof Element)) return;
+    within(event.target, "[data-review-of]").forEach((review) => {
+      const id = review.getAttribute("data-review-of");
+      if (!editedInFlight.delete(id)) return;
+      withdraw(review);
+    });
+  });
   // A checkbox marked data-submit-on-change applies at once (Automation
   // access's "Include ended sessions", #621): it submits its own
   // form[data-in-place], which the handler above sends in place, and is

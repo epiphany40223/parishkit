@@ -21,6 +21,9 @@
 // When the work finishes while the page is watching, a terminal region may
 // ask for one follow-up: an a[data-live-follow] link is opened, or a
 // form[data-live-autosubmit] (such as a ready download) is submitted once.
+// A follow-up link also marked data-in-place (an in-place settings page's
+// refresh once its change settles, #532) is clicked instead, so ui-v1.js
+// refreshes the page where the reader is rather than loading it again.
 //
 // A region that follows a steadily changing count (such as Family email
 // progress) may set data-live-interval="<ms>" to poll at that fixed pace
@@ -305,7 +308,8 @@
       stop("");
       const follow = region.querySelector("a[data-live-follow]");
       if (follow) {
-        window.location.assign(follow.href);
+        if (follow.hasAttribute("data-in-place")) follow.click();
+        else window.location.assign(follow.href);
         return;
       }
       const form = region.querySelector("form[data-live-autosubmit]");
