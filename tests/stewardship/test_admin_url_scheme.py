@@ -203,6 +203,7 @@ EXPECTED = {
     # Pages already in the scheme, without their trailing slash.
     "/admin/system": "/admin/system/",
     "/admin/system/health": "/admin/system/health/",
+    "/admin/system/source-form": "/admin/system/source-form/",
     "/admin/system/integrations": "/admin/system/integrations/",
     "/admin/system/integrations/parishsoft": "/admin/system/integrations/parishsoft/",
     f"/admin/system/key-changes/{T}": f"/admin/system/key-changes/{T}/",

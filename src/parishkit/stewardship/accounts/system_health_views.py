@@ -31,6 +31,7 @@ from .authentication import runtime
 from .policy import Capability, allows
 from .runtime_models import SystemConfiguration
 from .sessions import authenticated_admin
+from .source_form_views import source_form_summary
 
 # How often the open page re-reads the status, in ms (the specification's
 # 10 seconds). Watching stops after live-status-v1.js's usual hour.
@@ -78,6 +79,9 @@ def _read(request, template, *, page):
         }
         if page:
             context["status_url"] = reverse("admin:system_health_status")
+            # Families the form cannot open (#774): on page load only, never
+            # in the polled status, so the poll never pays for the scan.
+            context["source_form_count"] = source_form_summary(extra["campaign_id"])
             # The Admin chrome reuses this instant instead of reading the clock.
             request._stewardship_display_now = health.checked_at
             response = render(request, template, context)

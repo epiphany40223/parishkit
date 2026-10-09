@@ -794,6 +794,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); revoke posts to `/admin/users/automation/sessions/<session>/`. |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
+| `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. |
 | `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/system/integrations/` | (same; old address redirects) |  |
 | `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/system/integrations/<target>/` | (same; old address redirects) | Object-named (exception); hand-written Integrations link removed. |
 | `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/` | (same; old address redirects) |  |
@@ -3709,6 +3710,22 @@ the way to do these things.
   Production in the web portal, background worker, scheduler and both mail
   senders"), so Home and the page list it, and screen readers hear it, once
   (#686).
+- **Families the form cannot open (#774).** Below the problems, one
+  sentence says how many Families cannot open the Family form because a
+  Member's ParishSoft data has a value the form cannot accept, linking the
+  **Families the form cannot open** list (`/admin/system/source-form/`,
+  Administrators only, no menu entry). The list comes from the same check as
+  the server's `source-form-check` command, over every portal-eligible
+  Family of the current campaign and the current snapshot, so it includes
+  Families that have not tried the form. It shows the Family name and DUID,
+  the Member DUID and the field to correct in plain words, never the value
+  (not even a Member's name), sorted and paged in place, and says the Family
+  can open the form after the correction and the next ParishSoft refresh.
+  The result is cached in memory per campaign, snapshot and campaign
+  configuration, so a refresh clears it. The sentence is read on page load
+  only, never by the 10-second status poll; if the check cannot run, it
+  says so instead. Opening the list records `source_form_viewed` with the
+  number of Families listed.
 - **Panels.** Below the problems come the panels described under
   [health panels](#health-panels), in this order: why sends are waiting, mail
   sender, ParishSoft refresh, backups, debug logging and version. During a
