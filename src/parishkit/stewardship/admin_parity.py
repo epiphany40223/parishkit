@@ -171,12 +171,12 @@ LEDGER = {
     ),
     # Testing sends.
     "campaign_mail": command("test sample-preview", "test sample"),
-    # The preview's --names export waits for PR 8b's export lifecycle.
+    # The names the page shows: test families-preview --names exports
+    # them for export fetch (#817).
     "campaign_mail_families": command(
         "test families-preview",
         "test families",
         "test status",
-        owed="PR 8b",
     ),
     # Reports and exports. PR 8 lands in parts: 8a the logs, 8b the export
     # lifecycle and its fetch, 8c the aggregate report reads, 8d the

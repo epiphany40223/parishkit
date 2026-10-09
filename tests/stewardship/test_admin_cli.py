@@ -168,9 +168,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert chosen["prompts"] and chosen["changes_state"] and chosen["fresh_gated"]
     assert chosen["audit_event"] == "admin_cmd_test_families"
     assert chosen["result_fields"] == ["created", "request_key", "tickets"]
-    assert not review["prompts"] and review["audit_event"] is None
+    # The review changes nothing; its --names export records this (#817).
+    assert not review["prompts"] and not review["changes_state"]
+    assert review["audit_event"] == "admin_cmd_export_family_test_names"
     options = {option["name"]: option for option in review["options"]}
     assert options["--family"]["required"]
+    assert not options["--names"]["takes_value"]
+    assert not options["--timezone"]["required"]
+    assert review["result_fields"][-1] == "export"
     status = entries["test status"]
     assert status["scope"] == "read_only" and status["audit_event"] is None
     # The manual weekly report asks for the page's acknowledgement (PR 8d).
@@ -384,6 +389,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_schedule_confirm",
         "admin_cmd_refresh_start",
         "admin_cmd_test_sample",
+        # test families-preview's --names export (#817).
+        "admin_cmd_export_family_test_names",
         "admin_cmd_test_families",
         "admin_cmd_task_retry",
         "admin_cmd_delivery_resolve",

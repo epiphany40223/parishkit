@@ -139,6 +139,7 @@ GOLDEN = {
             "credentials_ready": True,
             "testing_recipient_set": True,
             "preview": {"token": "signed"},
+            "export": None,
         },
     ),
     "test families": (
@@ -220,6 +221,7 @@ ALLOWED = {
         "testing_recipient_set",
         "preview",
         "token",
+        "export",
     },
     "test families": {"created", "request_key", "tickets", "id", "sequence"}
     | {"state", "task_id"},
@@ -362,3 +364,83 @@ def test_the_families_token_binds_the_recipient_by_digest():
     binding = preview.binding()
     assert "example.org" not in json.dumps(binding)
     assert binding["recipient"] == recipient_digest("test@example.org")
+
+
+def test_the_names_export_is_only_its_status_document():
+    """--names adds the export's ``export status`` document, never a name (#817)."""
+    from .test_admin_exports import queued
+
+    status = queued().to_document()
+    model = families_preview()
+    document = admin_tests.families_preview_model(
+        SimpleNamespace(
+            campaign=SimpleNamespace(pk=CAMPAIGN),
+            request_key=KEY,
+            families=(
+                SimpleNamespace(
+                    duid=1234, eligible=True, reason="eligible", name="Hidden"
+                ),
+            ),
+            available=8,
+            in_progress=2,
+            held=False,
+            epoch_id=None,
+            testing_recipient="",
+        ),
+        "signed",
+        REVISION,
+        export=status,
+    ).to_document()
+    assert document["export"] == status
+    assert set(document) == set(model.to_document())
+    found = set(members(document["export"]))
+    assert found == set(status) and "Hidden" not in str(document)
+
+
+def families_preview_run(monkeypatch, argv):
+    """Parse ``argv`` and run the preview handler; return its calls and stderr."""
+    calls = []
+    monkeypatch.setattr(
+        admin_tests,
+        "preview_families",
+        lambda *args, **values: calls.append(("plain", values)),
+    )
+    monkeypatch.setattr(
+        admin_tests,
+        "preview_families_with_names",
+        lambda *args, **values: calls.append(("names", values)),
+    )
+    args = admin_cli.build_parser().parse_args(
+        [
+            "test",
+            "families-preview",
+            str(REVISION),
+            "--family",
+            "1",
+            "--config",
+            "web.yaml",
+            "--session-stdin",
+            *argv,
+        ]
+    )
+    stderr = io.StringIO()
+    context = {"caller": None, "stderr": stderr}
+    admin_cli.families_preview(args, None, None, context)
+    return calls, stderr.getvalue()
+
+
+def test_names_need_a_time_zone_and_print_a_new_key(monkeypatch):
+    """--names and --timezone go together; a new key is told before acting."""
+    for argv in (["--names"], ["--timezone", "UTC"]):
+        with pytest.raises(admin_cli.UsageError):
+            families_preview_run(monkeypatch, argv)
+    calls, errors = families_preview_run(monkeypatch, [])
+    assert [kind for kind, _ in calls] == ["plain"] and errors == ""
+    calls, errors = families_preview_run(monkeypatch, ["--names", "--timezone", "UTC"])
+    [(kind, values)] = calls
+    assert kind == "names" and values["zone"] == "UTC"
+    assert f"request key {values['request_key']}" in errors
+    calls, errors = families_preview_run(
+        monkeypatch, ["--names", "--timezone", "UTC", "--request-key", str(KEY)]
+    )
+    assert calls[0][1]["request_key"] == KEY and errors == ""

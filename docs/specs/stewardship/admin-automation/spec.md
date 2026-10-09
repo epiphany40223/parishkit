@@ -1662,8 +1662,7 @@ This limits accidents; it does not hide data from the host operator (see
   that they be deleted once used, as for every report export.
 - Chosen-Family tests take ParishSoft Family DUIDs. The preview prints the
   DUIDs with their eligibility, without names; `--names` produces an export
-  with the names (owed after PR 8b; see
-  [Testing sends](#testing-sends)).
+  with the names (see [Testing sends](#testing-sends)).
 
 ## Action inventory
 
@@ -1854,7 +1853,7 @@ pause, and closing work is the closed-campaign resolution. See
 | URL names | Command or exemption |
 | --- | --- |
 | `campaign_mail` | `test sample-preview`, `test sample` (PR 6b) |
-| `campaign_mail_families` | `test families-preview REVISION_ID --family DUID …`, `test families --token …`, `test status` (PR 6c); the preview's `--names` export is owed after PR 8b ([#817](https://github.com/epiphany40223/parishkit/issues/817)) |
+| `campaign_mail_families` | `test families-preview REVISION_ID --family DUID …` (with `--names --timezone ZONE`, the names as an export, [#817](https://github.com/epiphany40223/parishkit/issues/817)), `test families --token …`, `test status` (PR 6c) |
 
 `test sample-preview REVISION_ID [--request-key UUID]` (PR 6b) is the
 Preview and test email page's review, through the page's own `prepare` and
@@ -1909,9 +1908,31 @@ for the preview. Each refusal rolls the send back, so none is
 `outcome_unknown`. `test status` is the page's recent tickets for any session,
 without DUIDs (a default, pending Administrator confirmation), and records
 no event. The worker, not this process, renders each message, which goes
-only to the Testing recipient. The names behind the DUIDs, the preview's
-`--names` export, wait for PR 8b's export lifecycle; until then they are on
-the page.
+only to the Testing recipient.
+
+The page shows each Family's name beside its DUID so the Administrator
+recognizes the Families; the command line prints none.
+`test families-preview … --names --timezone ZONE [--request-key UUID]`
+([#817](https://github.com/epiphany40223/parishkit/issues/817)) runs the
+same review and, in its transaction, captures the names the page's
+`prepare` read (`snapshot_family_names`) into a `family_test_names` export
+(CSV only) keyed by the preview's request key, through the shared
+[export lifecycle](#reports-and-exports): the worker renders the file and
+`export fetch` downloads it, so the names reach only the file. The document
+is the preview's with `export`, the export's `export status` document (it is
+null without `--names`). `--names` and `--timezone` go together (`usage`
+otherwise); without `--request-key` the new key is written to standard error
+first. Unlike the plain review, it changes state: it admits as a form post
+(recording activity) and runs in the export commands' scope, and records the
+export service's `export_requested` and, only for a new export,
+`admin_cmd_export_family_test_names`; the catalog names that event. The same
+key with the same revision, DUIDs and time zone returns the same export; the
+same key for another selection is `invalid`. The capture
+(`stewardship_family_test_names_export_snapshot`, migration 0037) is
+guarded in SQL: only an Administrator, for the current Testing draft, with
+one `{"duid", "name"}` row per reviewed DUID in the review's order; the
+export needs the configure capability to read, as the page does. An expired
+file is regenerated from the retained capture.
 
 ### Reports and exports
 
@@ -2544,8 +2565,8 @@ Administrator's approval of that deploy.
 - **PR 6, refresh and Testing sends,** in three parts. **PR 6a:**
   `refresh start` and `refresh status`. **PR 6b:** `test sample-preview` and
   `test sample`, at the prompt. **PR 6c:** `test families-preview`,
-  `test families` and `test status` (the preview's `--names` export after
-  PR 8b), after PR 5.
+  `test families` and `test status`, after PR 5; the preview's `--names`
+  export followed PR 8b (#817).
 - **PR 7, delivery controls:** pause, resume, closed-campaign resolution and
   Family portal maintenance.
 - **PR 8, reports and exports,** in five parts. **PR 8a:** the log commands.

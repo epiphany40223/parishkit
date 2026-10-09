@@ -24,6 +24,7 @@ from parishkit.stewardship.jobs.family_mail_models import FamilyMailTest
 from parishkit.stewardship.jobs.models import TaskRun
 
 from .automation_builders import paired
+from .test_admin_family_export_cli_postgresql import reports_root  # noqa: F401
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_family_mail_test_postgresql import family_test, review  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
@@ -220,3 +221,202 @@ def test_an_email_changed_since_the_preview_is_refused(
     code, document, _ = send(admin, secret, token, b"yes\n")
     assert code == 1 and document["error"]["code"] == expected, document
     assert not FamilyMailTest.objects.exists() and trail() == (0, 0, 0)
+
+
+# ------------------------------------------------- the names export (#817)
+
+NAMES_EVENT = "admin_cmd_export_family_test_names"
+
+
+def names_preview(admin, secret, family_test, *duids, key):  # noqa: F811
+    """``test families-preview --names`` for ``duids`` under ``key``."""
+    argv = ["test", "families-preview", revision(family_test)]
+    for duid in duids:
+        argv += ["--family", str(duid)]
+    argv += ["--names", "--timezone", "UTC", "--request-key", str(key)]
+    return admin(*argv, secret=secret)
+
+
+def page_names(*duids):
+    """The names the page shows for ``duids`` (its ``_family_names``)."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+
+    current = SourceCurrent.objects.get(singleton=True)
+    return snapshot_family_names(current.snapshot_id, duids, "Family")
+
+
+def names_trail():
+    """The export requests, export_requested events and command events so far."""
+    from parishkit.stewardship.reports.export_models import ExportRequest
+
+    return (
+        ExportRequest.objects.filter(report="family_test_names").count(),
+        AuditEvent.objects.filter(event_type="export_requested").count(),
+        AuditEvent.objects.filter(event_type=NAMES_EVENT).count(),
+    )
+
+
+def test_names_reach_only_the_exported_file(admin, family_test, reports_root):  # noqa: F811
+    """--names: the preview's document, an export of the names, one trail.
+
+    The names the page shows are in the file the worker renders and
+    ``export download --stream`` writes (what ``export fetch`` runs), and in
+    no document. A repeat returns the same export; the key for other DUIDs
+    is refused; the file can be regenerated once it expires.
+    """
+    from parishkit.stewardship.reports.export_models import (
+        ExportRequest,
+        FamilyTestNamesSnapshot,
+    )
+
+    from .test_admin_export_cli_postgresql import download
+    from .test_admin_family_export_cli_postgresql import render
+    from .test_export_cleanup_postgresql import expire_publication
+
+    _, secret, row = paired(admin.service)
+    key = uuid4()
+    names = page_names(1)
+    assert names[1]
+    code, document, errors = names_preview(
+        admin, secret, family_test, 1, 999999, key=key
+    )
+    assert code == 0, document
+    result = document["result"]
+    # The review is the plain preview's, with no name anywhere printed.
+    assert [item["duid"] for item in result["families"]] == [1, 999999]
+    assert result["request_key"] == str(key) and result["preview"]["token"]
+    assert names[1] not in json.dumps(document) and names[1] not in errors
+    export = result["export"]
+    made = ExportRequest.objects.get(pk=export["id"])
+    assert export["report"] == "family_test_names" and export["format"] == "csv"
+    assert export["state"] == "queued" and export["size"] is None
+    assert made.request_key == key and made.requester_id == row.principal_id
+    assert made.parameters == {"revision": revision(family_test), "duids": [1, 999999]}
+    # The capture holds the page's own names, in the review's order; a DUID
+    # the source does not know has none, as on the page.
+    capture = FamilyTestNamesSnapshot.objects.get(pk=made.family_test_names_snapshot_id)
+    assert capture.document == {
+        "rows": [{"duid": 1, "name": names[1]}, {"duid": 999999, "name": ""}]
+    }
+    assert capture.row_count == 2 and capture.actor_id == row.principal_id
+    assert names_trail() == (1, 1, 1)
+    [event] = AuditEvent.objects.filter(event_type=NAMES_EVENT)
+    assert event.actor_id == row.principal_id and event.subject_id == row.pk
+    # No ticket: the review sends nothing.
+    assert not FamilyMailTest.objects.exists() and trail() == (0, 0, 0)
+
+    # The same key and selection again returns the same export, recording
+    # nothing new; the same key for other Families is the forms' 409.
+    code, again, _ = names_preview(admin, secret, family_test, 1, 999999, key=key)
+    assert code == 0 and again["result"]["export"]["id"] == str(made.pk), again
+    assert names_trail() == (1, 1, 1)
+    code, bound, _ = names_preview(admin, secret, family_test, 1, key=key)
+    assert code == 1 and bound["error"]["code"] == "invalid", bound
+    assert names_trail() == (1, 1, 1)
+
+    # The real worker renders the CSV; the stream is that file, byte for byte.
+    render(admin.service, reports_root, made.pk)
+    code, body, streamed = download(made.pk, secret)
+    assert code == 0, streamed
+    assert streamed["result"]["file_name"] == "family_test_names.csv"
+    assert streamed["result"]["count"] == 2
+    assert streamed["result"]["size"] == len(body)
+    text = body.decode()
+    assert text.startswith("Family DUID,Family name,")
+    lines = text.splitlines()
+    assert lines[2].startswith(f"1,{names[1]},") or lines[2].startswith(
+        f'1,"{names[1]}",'
+    )
+    assert lines[3].startswith("999999,,")
+
+    # An expired file is regenerated from the retained capture.
+    expire_publication(made)
+    code, regenerated, _ = admin(
+        "export",
+        "regenerate",
+        str(made.pk),
+        "--request-key",
+        str(uuid4()),
+        secret=secret,
+    )
+    assert code == 0 and regenerated["result"]["created"], regenerated
+    again = ExportRequest.objects.get(pk=regenerated["result"]["export"]["id"])
+    assert again.family_test_names_snapshot_id == capture.pk
+
+
+def test_names_need_the_time_zone_and_a_testing_review(admin, family_test):  # noqa: F811
+    """--names without --timezone is a usage error; refusals export nothing."""
+    _, secret, _ = paired(admin.service)
+    argv = ["test", "families-preview", revision(family_test), "--family", "1"]
+    code, document, _ = admin(*argv, "--names", secret=secret)
+    assert code == 2 and document["error"]["code"] == "usage", document
+    code, document, _ = admin(*argv, "--timezone", "UTC", secret=secret)
+    assert code == 2 and document["error"]["code"] == "usage", document
+    code, document, _ = admin(
+        *argv, "--names", "--timezone", "Not/AZone", secret=secret
+    )
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    code, document, _ = admin(
+        "test",
+        "families-preview",
+        str(uuid4()),
+        "--family",
+        "1",
+        "--names",
+        "--timezone",
+        "UTC",
+        secret=secret,
+    )
+    assert code == 1 and document["error"]["code"] == "not_available", document
+    assert names_trail() == (0, 0, 0)
+    # Without --names the review is unchanged: no export, nothing recorded.
+    code, document, _ = admin(*argv, secret=secret)
+    assert code == 0 and document["result"]["export"] is None, document
+    assert names_trail() == (0, 0, 0)
+
+
+def test_the_names_capture_is_guarded_in_sql(admin, family_test):  # noqa: F811
+    """SQL refuses a capture that is not the review's, or not an Administrator's."""
+    from django.db import IntegrityError, InternalError, transaction
+
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.reports.export_models import FamilyTestNamesSnapshot
+
+    harness = family_test[0]
+    runtime = SystemConfiguration.objects.get()
+    _, _, row = paired(admin.service)
+    good = {
+        "campaign_id": harness.campaign.pk,
+        "configuration_id": runtime.active_configuration_id,
+        "actor_id": row.principal_id,
+        "correlation_id": uuid4(),
+        "parameters": {"revision": revision(family_test), "duids": [1]},
+        "document": {"rows": [{"duid": 1, "name": "Example"}]},
+        "row_count": 1,
+    }
+    bad = [
+        {"actor_id": uuid4()},
+        {"parameters": {"revision": revision(family_test), "duids": [1, 1]}},
+        {"parameters": {"revision": "x", "duids": [1]}},
+        {"document": {"rows": [{"duid": 2, "name": "Example"}]}},
+        {"document": {"rows": [{"duid": 1, "name": 5}]}},
+        {"document": {"rows": [{"duid": 1, "name": "A", "code": "x"}]}},
+        {"document": {"rows": []}},
+        {"row_count": 2},
+    ]
+    for change in bad:
+        expected = "unavailable" if "actor_id" in change else "does not match"
+        with (
+            pytest.raises((IntegrityError, InternalError), match=expected),
+            transaction.atomic(),
+        ):
+            FamilyTestNamesSnapshot.objects.create(**(good | change))
+    # A well-formed capture passes the insert guard, but with no export
+    # request it is refused at commit.
+    with (
+        pytest.raises((IntegrityError, InternalError), match="requires its request"),
+        transaction.atomic(),
+    ):
+        FamilyTestNamesSnapshot.objects.create(**good)
+    assert not FamilyTestNamesSnapshot.objects.exists()
