@@ -53,7 +53,6 @@ from .reports import (
     exact_views,
     export_ui,
     export_views,
-    weekly_manual_views,
     weekly_views,
 )
 from .responses import views as response_views
@@ -246,11 +245,6 @@ admin_patterns = [
         name="system_health_status",
     ),
     path("background/tasks", job_views.task_list, name="background_tasks"),
-    path(
-        "reports/weekly-digests/request/<uuid:campaign_id>/",
-        weekly_manual_views.request_report,
-        name="weekly_digest_manual",
-    ),
     path(
         "reports/weekly-digests/<uuid:snapshot_id>/",
         weekly_views.snapshot,

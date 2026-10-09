@@ -227,7 +227,7 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
         configure_content(harness)
         configuration = SystemConfiguration.objects.get().active_configuration_id
         browser, _ = signed_in()
-        path = f"/admin/reports/weekly-digests/request/{harness.campaign.pk}/"
+        path = "/admin/reports/weekly-digests/request/"
         values = {
             "command_id": str(uuid4()),
             "configuration_id": str(configuration),
@@ -277,10 +277,9 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
 
 def test_manual_form_explains_a_missing_weekly_schedule(response_service, google):
     """Without a Weekly digest schedule the page says so instead of refusing blindly."""
-    harness = response_service
     with campaign_clock(INSTANT):
         browser, _ = signed_in()
-        path = f"/admin/reports/weekly-digests/request/{harness.campaign.pk}/"
+        path = "/admin/reports/weekly-digests/request/"
         before = TaskRun.objects.count()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = browser.get(path)

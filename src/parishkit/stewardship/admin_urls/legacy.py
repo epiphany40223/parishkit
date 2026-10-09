@@ -233,6 +233,7 @@ SLASHLESS = (
     ("reports/ministries/follow-up/<uuid:request_id>", "ministry_followup_item"),
     ("reports/families", "family_directory"),
     ("reports/families/<uuid:family_id>", "family_timeline"),
+    ("reports/weekly-digests/request", "weekly_digest_manual"),
     ("mail/controls", "delivery_control"),
     ("mail/family-progress", "family_email_progress"),
     ("mail/family-history", "family_email_sends"),

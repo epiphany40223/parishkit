@@ -12,7 +12,7 @@ from uuid import UUID
 
 import pytest
 from django.test import RequestFactory
-from django.urls import resolve, reverse
+from django.urls import Resolver404, resolve, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.admin_urls import (
@@ -94,6 +94,43 @@ def test_every_moved_page_reverses_under_its_group(name):
     url = reverse(f"admin:{name}", kwargs=arguments)
     assert url.startswith(f"/admin/{navigation.PAGES[name].section}/")
     assert url.endswith("/")
+
+
+# Admin form actions and old bookmark routes that still name a campaign in
+# their address. None is a menu page; each is listed so a new route naming a
+# campaign fails below instead of slipping in (#865), and the list shrinks
+# as these move.
+CAMPAIGN_ROUTES = {
+    "export_create",
+    "exact_export_create",
+    "postal_directory",
+    "postal_directory_export",
+}
+
+
+def test_no_admin_page_names_a_campaign():
+    """Single-campaign interim: Admin addresses carry no campaign id (#865).
+
+    Only the old addresses (legacy routes, which redirect for the current
+    campaign) and the known form actions above may still take one.
+    """
+    naming = {
+        name
+        for name, parameters in navigation.route_parameters().items()
+        if "campaign_id" in parameters and not name.startswith(legacy.PREFIX)
+    }
+    assert naming == CAMPAIGN_ROUTES
+    assert not CAMPAIGN_ROUTES & set(navigation.PAGES)
+
+
+def test_weekly_report_request_names_no_campaign():
+    """Send a weekly report now is a reports page; its old address is gone."""
+    url = reverse("admin:weekly_digest_manual")
+    assert url == "/admin/reports/weekly-digests/request/"
+    assert resolve(url).url_name == "weekly_digest_manual"
+    # No redirect from the old campaign address (#864).
+    with pytest.raises(Resolver404):
+        resolve(f"/admin/reports/weekly-digests/request/{TASK}/")
 
 
 def test_polled_reads_keep_their_addresses():
@@ -292,6 +329,7 @@ EXPECTED = {
     ),
     "/admin/reports/families": "/admin/reports/families/",
     f"/admin/reports/families/{T}": f"/admin/reports/families/{T}/",
+    "/admin/reports/weekly-digests/request": "/admin/reports/weekly-digests/request/",
     # Retired addresses that named no campaign (decisions 10 and 19): the
     # two campaign choosers and the old Ministry reports root.
     "/admin/reports/campaigns/": "/admin/reports/participation/",
