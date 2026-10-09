@@ -477,9 +477,32 @@ def test_invariant_sql_pins_the_counts_the_timeline_states():
     assert "IF NOT (n = 0) THEN\n        RAISE EXCEPTION 'seed invariant: % live " in (
         invariant_sql(seeded_now, {})
     )
-    # Outbox and occurrence counts depend on eligibility; not pinned (#731).
-    for table in ("stewardship_outbox_message", "stewardship_schedule_occurrence"):
-        assert f"SELECT count(*) FROM {table} WHERE {table}" not in sql
+    # Outbox and occurrence counts depend on eligibility, so the timeline
+    # never pins them: without a campaign there is no mail check (#731).
+    assert "mailed AS" not in sql and "not mailed exactly once" not in sql
+
+
+def test_invariant_sql_derives_who_got_each_initial_and_reminder():
+    """With the campaign, four mail checks derive the Families from the rows."""
+    seeded_now = datetime(2026, 10, 7, 15, 25, 12, tzinfo=UTC)
+    campaign = "0b9e8d4c-2f5a-4d7e-9a1b-3c6d8e0f1a2b"
+    sql = invariant_sql(seeded_now, {}, campaign_id=campaign)
+    blocks = sql.split("END IF;")
+    for message in (
+        "an eligible Family that had not responded was not mailed exactly once",
+        "emails to a Family that had responded or was not eligible",
+        "emails not delivered after the seed settled",
+        "Production Initial or Reminder emails without their occurrence",
+    ):
+        (block,) = [block for block in blocks if message in block]
+        assert "IF NOT (n = 0)" in block and campaign in block
+    # The expected set is the planning rule, read from the rows.
+    assert "f.first_eligible_at <= i.due_at" in sql
+    assert "s.created_at < i.due_at" in sql
+    assert "f.active AND f.portal_eligible AND f.email_eligible" in sql
+    # Only a real UUID can name the campaign in the SQL.
+    with pytest.raises(ValueError):
+        invariant_sql(seeded_now, {}, campaign_id="x'; DROP TABLE y; --")
 
 
 def test_expected_counts_add_the_families_the_timeline_drives():
