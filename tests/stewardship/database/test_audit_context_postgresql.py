@@ -16,6 +16,7 @@ from parishkit.stewardship.audit.services import (
 from parishkit.stewardship.observability import Event
 from parishkit.stewardship.storage import StorageInvariantError
 
+from ..test_download_audit import DOWNLOAD_AUDIT_CASES
 from ..test_ministry_exports import AUDIT_SCOPE_CASES
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -26,6 +27,18 @@ def test_sql_ministry_result_scope_privacy():
     """SQL independently rejects private, unsorted and non-integer audit scope."""
     with connection.cursor() as cursor:
         for context, valid in AUDIT_SCOPE_CASES:
+            cursor.execute(
+                "SELECT stewardship_safe_context_v1('action', %s::jsonb)",
+                [json.dumps(context)],
+            )
+            assert cursor.fetchone()[0] is valid, context
+
+
+@pytest.mark.django_db(transaction=False)
+def test_sql_report_choice_privacy():
+    """SQL decides the on-request report contexts (#556) as Python does."""
+    with connection.cursor() as cursor:
+        for context, valid in DOWNLOAD_AUDIT_CASES:
             cursor.execute(
                 "SELECT stewardship_safe_context_v1('action', %s::jsonb)",
                 [json.dumps(context)],
