@@ -1,5 +1,6 @@
 """Named page/email revision editing with sample-only inert rendering."""
 
+from dataclasses import dataclass
 from datetime import date
 from uuid import uuid4
 
@@ -8,11 +9,13 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.content import (
+    FAMILY_CREDENTIAL_PLACEHOLDERS,
     MAX_TEXT_BYTES,
     PLACEHOLDERS,
     family_email_problems,
     generated_text_matches,
     prepare_content,
+    removed_markup,
     render_template,
     validate_admin_digest_content,
     validate_receipt_content,
@@ -579,3 +582,46 @@ def text_is_generated(values):
     it without the Admin choosing to.
     """
     return values is None or generated_text_matches(values["html"], values["text"])
+
+
+@dataclass(frozen=True)
+class StaleMarkup:
+    """How today's sanitizer changes a saved revision's HTML (#832).
+
+    ``removed`` is the plain-words list of removed markup (empty when cleaning
+    only rewrites structure, such as ``<b>`` to ``<strong>``). ``lost`` names
+    the placeholders that appear only inside removed markup, so Families never
+    see them. ``blocked`` says sending refuses the cleaned form: an invitation
+    or reminder that lost its Family code or link.
+    """
+
+    removed: tuple
+    lost: tuple
+    blocked: bool
+
+
+def stale_markup(values):
+    """The StaleMarkup of saved content, or None when its HTML is already clean.
+
+    Rendering re-sanitizes retained HTML (#385), so a revision saved before a
+    sanitizer change still sends the cleaned form, but its stored text no
+    longer matches what Families receive. A placeholder that survived only in
+    removed markup is lost; for an invitation or reminder a lost code or link
+    means the send is refused until the Admin puts it back.
+    """
+    if values is None:
+        return None
+    html = values["html"]
+    clean = prepare_content(html).html
+    if clean == html:
+        return None
+    lost = validate_template(html) - validate_template(clean)
+    family = (values.get("kind"), values.get("slot")) in {
+        ("email", "initial"),
+        ("email", "reminder"),
+    }
+    return StaleMarkup(
+        removed=tuple(removed_markup(html)),
+        lost=tuple(f"{{{{ {name} }}}}" for name in sorted(lost)),
+        blocked=family and bool(lost & FAMILY_CREDENTIAL_PLACEHOLDERS),
+    )

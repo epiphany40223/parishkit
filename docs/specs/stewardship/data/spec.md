@@ -976,7 +976,15 @@ history, and carrying an unchanged revision into a new candidate, never re-run
 today's text rules; a sanitizer improvement therefore cannot block later
 configuration changes. Rendering likewise re-sanitizes retained HTML with
 today's sanitizer instead of refusing it; plain text stays as stored, and the
-placeholder and credential rules still refuse. A configuration request that can never verify against
+placeholder and credential rules still refuse. The Pages and emails list
+marks a retained page or email whose HTML today's sanitizer would change as
+"Re-save recommended", and its editor names the markup that sending already
+removes and any placeholder found only inside it. An invitation or reminder
+whose Family code or link is only inside removed markup is marked "Can't be
+sent until fixed" instead, because sending refuses it. Previewing and applying
+the form stores the cleaned version through the normal configuration change
+(after putting back any lost placeholder); nothing rewrites applied history
+automatically. A configuration request that can never verify against
 the applied history fails with a visible reason instead of waiting forever.
 The direct submission confirmation selects at most one email template
 per campaign; editing replaces its immutable revision, not an arbitrary member
