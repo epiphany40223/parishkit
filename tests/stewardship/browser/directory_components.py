@@ -92,12 +92,11 @@ def components(context, admin):
         "reaches": REACH,
         "report_url": reverse("admin:family_directory"),
         "total": 51,
-        "postal_proportion": "51 out of 1,000 (5.1%)",
         "mutable": True,
         "request_key": UUID(int=81),
         "export_timezones": ("UTC", "America/Detroit"),
     }
-    # The one Family directory page without and with its mailing columns.
+    # The one directory page without and with its mailing columns.
     code_list = {
         "mailing": False,
         "query_fields": query.form_values() | {"mailing": "no"},

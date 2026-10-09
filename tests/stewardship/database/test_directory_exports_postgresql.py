@@ -869,7 +869,9 @@ def test_directory_export_and_regenerate_need_a_fresh_sign_in(
             page = refused.content.decode()
             assert "Confirm with Google" in page and "Nothing was done" in page
             assert f'name="next" value="{back}"' in page
-            assert "You will then return to Family directory." in page
+            assert (
+                "You will then return to Active parishioner family directory." in page
+            )
             assert harness.code not in page
         assert not ExportRequest.objects.exists()
     signed_in(browser)

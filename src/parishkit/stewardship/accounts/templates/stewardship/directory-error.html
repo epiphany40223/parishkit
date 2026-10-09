@@ -1,10 +1,10 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n %}
-{% block title %}{% translate "Family directory unavailable" %}{% endblock %}
+{% block title %}{% translate "Active parishioner family directory unavailable" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Family directory unavailable" %}</h1>
+<h1>{% translate "Active parishioner family directory unavailable" %}</h1>
 {% if status == 503 %}<p role="alert">{% translate "The report is temporarily unavailable. Your saved data has not changed; please try again shortly." %}</p>
 {% elif status == 409 %}{% include 'stewardship/export-request-bound.html' %}
 {% else %}<p role="alert">{% translate "Invalid report filters. Return to the directory and check the values." %}</p>{% endif %}
 {% if status == 503 %}<p><a href="{% url 'admin:family_codes' %}">{% translate "Try the code-only recovery listing" %}</a> — {% translate "Retained campaign DUIDs and manual codes only; names and contact details require an available source. Normal access checks still apply." %}</p>{% endif %}
-<p><a href="{% url 'admin:family_directory' %}">{% translate "Return to Family directory" %}</a></p>
+<p><a href="{% url 'admin:family_directory' %}">{% translate "Return to the active parishioner family directory" %}</a></p>
 {% endblock %}

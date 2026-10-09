@@ -212,7 +212,7 @@ def first_entry_url(actor, section):
 def _find_family(actor, items, campaign):
     """The header's Find a Family box (#561), or None when the viewer gets none.
 
-    Only a viewer whose menu offers the Family directory now (Administrators
+    Only a viewer whose menu offers the directory now (Administrators
     and Staff, with a current campaign) gets the box, and only if they may
     also open the Family timeline its results link to. It reuses the menu's
     decision, so it costs the header no query. The search route rechecks

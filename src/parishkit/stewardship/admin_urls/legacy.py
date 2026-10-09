@@ -109,7 +109,7 @@ CAMPAIGN = (
     (f"{_C}/production/withdraw", "production_withdrawal"),
     # Campaign Ministries now sits under Parish data's Ministries.
     (f"{_C}/ministries", "campaign_ministries"),
-    # Family campaign codes now sits under the Family directory (NAV-11).
+    # Family campaign codes now sits under the directory (NAV-11).
     (f"{_C}/family-codes", "family_codes"),
     *(
         # Responses and reports (NAV-11). Each report's form actions move
