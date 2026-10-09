@@ -3,7 +3,10 @@
 ``reports/responses/<list>/`` shows one list of Families behind
 the response funnel (``response_lists``) at the database's current instant,
 as a shared Admin table (web/tables.py) that sorts, filters and pages in
-place. ``.../csv/`` downloads the complete filtered list, in the page's order,
+place. A name or envelope-number search (#849) is posted to the same page in
+a CSRF-protected body, never put in a URL; while one is applied the table is
+a POST table, whose controls carry it as hidden fields. ``.../csv/``
+downloads the complete filtered list, in the page's order,
 rendered on request on the web connection (see ``_respond``). Admission, the
 campaign read guard, the role recheck inside it and the audit follow the
 response dashboard (``response_dashboard``); a download also needs
@@ -21,7 +24,7 @@ from django.http import Http404
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_POST, require_safe
+from django.views.decorators.http import require_http_methods, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
@@ -92,9 +95,14 @@ def audit_choices(query, snapshot):
     The system mode and the ``show`` choice are closed words, and the
     snapshot is the ParishSoft data the names came from (left out when
     nothing was read, as for Testing with no rehearsal). The event type
-    names the list.
+    names the list. The search text can name a Family, so only whether one
+    was applied is kept (``search_used``, #849), never the text.
     """
-    context = {"report_mode": query.mode, "report_filter": query.show}
+    context = {
+        "report_mode": query.mode,
+        "report_filter": query.show,
+        "search_used": bool(query.search),
+    }
     if snapshot is not None:
         context["snapshot_id"] = snapshot
     return context
@@ -150,13 +158,21 @@ def page_context(campaign, spec, query, table, as_of, **options):
     Testing view with no rehearsal, which ``no_rehearsal`` marks). The other
     ``options`` are ``can_test``, ``can_export`` and ``paused`` (downloads
     refused by the purge gate).
+
+    With a search applied the table becomes a POST table posting back to
+    the list, so its headings and navigators carry the search privately.
     """
     key = spec.key
     # Switching mode keeps the filter and a chosen order, from page 1; the
     # fragment lands a full load on the table and marks the link in place.
+    # It is a link, so it leaves a search behind.
     sort = table.sort if table.sort != spec.default_sort else None
     size = table.size_value if table.size != 50 else None
+    page = str(table.number) if table.number > 1 else None
     no_rehearsal = options.get("no_rehearsal", False)
+    list_url = reverse("admin:response_list", args=[key])
+    if query.search:
+        table = replace(table, method="post", action=list_url)
     return {
         "campaign": campaign,
         "spec": spec,
@@ -174,13 +190,19 @@ def page_context(campaign, spec, query, table, as_of, **options):
             key, size=size, sort=sort
         ),
         "testing_url": ListQuery("testing", query.show).url(key, size=size, sort=sort),
-        "filter_action": reverse("admin:response_list", args=[key]),
+        # The address bar after an in-place answer (data-page-address, #536):
+        # only the closed choices, so Back and Reload keep them; never the
+        # search, which a reload therefore clears.
+        "page_address": ListQuery(query.mode, query.show).url(
+            key, sort=sort, size=size, page=page
+        ),
+        "filter_action": list_url,
         "export_action": reverse("admin:response_list_export", args=[key]),
         "export_timezones": sorted(timezone_names()),
         "show_choices": spec.choices if len(spec.choices) > 1 else (),
-        # The download keeps the page's filter and order; refreshed in place,
-        # the export form's hidden fields follow them (data-table-sync).
-        "export_fields": query.carried() + table.sort_fields,
+        # The download keeps the page's filter, search and order; refreshed in
+        # place, the export form's hidden fields follow them (data-table-sync).
+        "export_fields": query.posted() + table.sort_fields,
     }
 
 
@@ -198,8 +220,10 @@ def _paused_response():
 def _respond(request, campaign_id, key, *, export):
     """Shared admission, purge protection, audit and failure handling.
 
-    A page is a GET whose choices travel in the query string; a download
-    is a CSRF-protected POST carrying the same choices plus a time zone.
+    A page is a GET whose closed choices travel in the query string, or a
+    CSRF-protected POST carrying them and a search, which never enters a
+    URL; a POST with anything in its query string is refused. A download is
+    a CSRF-protected POST carrying the same choices plus a time zone.
 
     The download is not a stored export file: it is built in memory on the
     web connection, as the System logs download is, and read under the
@@ -222,13 +246,21 @@ def _respond(request, campaign_id, key, *, export):
                     raise ValueError("A download's choices travel in its form.")
                 parameters = request.POST.copy()
                 parameters.pop("csrfmiddlewaretoken", None)
-                query, values = ListQuery.parse(spec, parameters, extra={"timezone"})
+                query, values = ListQuery.parse(
+                    spec, parameters, extra={"timezone"}, private=True
+                )
                 zone = values.pop("timezone", "UTC")
                 if values.keys() - {"sort"} or (
                     zone != "UTC" and zone not in timezone_names()
                 ):
                     raise ValueError("Invalid response list download.")
                 values["size"] = "all"
+            elif request.method == "POST":
+                if request.GET:
+                    raise ValueError("A search travels only in its form.")
+                parameters = request.POST.copy()
+                parameters.pop("csrfmiddlewaretoken", None)
+                query, values = ListQuery.parse(spec, parameters, private=True)
             else:
                 query, values = ListQuery.parse(spec, request.GET)
             # Refuse a bad sort, size or page now, as a 400.
@@ -288,11 +320,10 @@ def _respond(request, campaign_id, key, *, export):
                 # Read once and pass in, so the audit names the snapshot
                 # the names actually came from.
                 snapshot = current_snapshot()
-                rows = read_list(
-                    spec, scope, as_of, spec.choice(query.show), snapshot=snapshot
-                )
+                rows = read_list(spec, scope, as_of, query, snapshot=snapshot)
             count = len(rows)
-            table = paginate(rows, values, carry=query.carried(), sorting=spec.sorting)
+            # A POST table's controls carry the search as hidden fields.
+            table = paginate(rows, values, carry=query.posted(), sorting=spec.sorting)
             if export:
                 return iter((list_csv(spec, table.rows, ZoneInfo(zone)),))
             context = page_context(
@@ -346,9 +377,13 @@ def _respond(request, campaign_id, key, *, export):
             finish(False)
 
 
-@require_safe
+@require_http_methods(["GET", "HEAD", "POST"])
 def response_list(request, campaign_id, key):
-    """One list of Families behind the response funnel, as a paged table."""
+    """One list of Families behind the response funnel, as a paged table.
+
+    A POST is a read: the filter form's search (and its table's controls
+    while a search is applied), never a change.
+    """
     return _respond(request, campaign_id, key, export=False)
 
 

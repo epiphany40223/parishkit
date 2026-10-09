@@ -57,12 +57,12 @@ FACTS = {
 }
 
 
-def rows_of(key, show=EVERYONE, active=None):
+def rows_of(key, show=EVERYONE, active=None, search=""):
     """A list's rows over the test rows, with every Family active by default."""
     spec = LISTS[key]
     active = {row.family_id for row in ROWS} if active is None else active
     chosen = candidates(spec, ROWS, frozenset(active))
-    return listed(spec, chosen, FACTS, spec.choice(show))
+    return listed(spec, chosen, FACTS, ListQuery(show=show, search=search))
 
 
 def duids(rows):
@@ -90,14 +90,46 @@ def test_funnel_lists_match_the_dashboard_figures():
 
 def test_filters_split_each_list():
     """Every filter choice keeps a subset; together the choices cover the list."""
-    assert duids(rows_of("submitted", "invited")) == [1, 2]
-    assert duids(rows_of("submitted", "uninvited")) == [5]
     assert duids(rows_of("started", "progressed")) == []
     assert duids(rows_of("started", "opened")) == [4]
     assert duids(rows_of("not-opened", "followed")) == [3]
     assert duids(rows_of("not-opened", "unfollowed")) == []
     with pytest.raises(ValueError):
         LISTS["submitted"].choice("progressed")
+
+
+def test_submitted_has_no_filter_but_accepts_old_links():
+    """Families that submitted lists everyone (#860); old Show values are ignored."""
+    spec = LISTS["submitted"]
+    assert [choice.value for choice in spec.choices] == [EVERYONE]
+    for old in ("invited", "uninvited", EVERYONE):
+        query, _ = ListQuery.parse(spec, QueryDict(f"show={old}"))
+        assert query == ListQuery()
+        assert duids(rows_of("submitted", spec.choice(old).value)) == [1, 2, 5]
+    with pytest.raises(ValueError):
+        ListQuery.parse(spec, QueryDict("show=followed"))
+
+
+def test_search_matches_part_of_a_name_or_an_exact_envelope():
+    """The directory's name rule, any case; an all-digit search is an envelope."""
+    assert duids(rows_of("submitted", search="adams")) == [1]
+    assert duids(rows_of("submitted", search="BOB")) == [2]
+    # Part of the name, anywhere in it (surname or head).
+    assert duids(rows_of("submitted", search="ve")) == [5]
+    assert duids(rows_of("submitted", search="a")) == [1, 2, 5]
+    # The envelope number must match exactly; a part of one does not.
+    assert duids(rows_of("submitted", search="102")) == [2]
+    assert duids(rows_of("submitted", search="10")) == []
+    assert duids(rows_of("data-quality", search="0")) == [4]
+    # Nothing found, and a search combines with the list's filter.
+    assert duids(rows_of("submitted", search="zzz")) == []
+    assert duids(rows_of("started", "opened", search="diaz")) == [4]
+    assert duids(rows_of("started", "progressed", search="diaz")) == []
+    # A Family missing from the snapshot has no name to match.
+    missing = ListQuery(search="family")
+    assert not missing.matches(
+        listed(LISTS["not-opened"], ROWS[2:3], {}, ListQuery())[0]
+    )
 
 
 def test_data_quality_lists_active_families_with_a_problem():
@@ -135,29 +167,53 @@ def test_every_column_sorts_with_missing_values_last():
     with pytest.raises(ValueError):
         paginate(rows, {"sort": "name"}, sorting=spec.sorting)
     # A Family missing from the snapshot has no name and sorts last by name.
-    missing = listed(LISTS["not-opened"], ROWS[2:3], {}, LISTS["not-opened"].choices[0])
+    missing = listed(LISTS["not-opened"], ROWS[2:3], {}, ListQuery())
     assert missing[0].name is None and missing[0].envelope is None
 
 
 def test_query_accepts_only_closed_choices():
     """Mode, show and the table's own parameters; nothing identifying."""
-    spec = LISTS["submitted"]
-    query, values = ListQuery.parse(spec, QueryDict("show=uninvited&sort=-family"))
-    assert query == ListQuery("production", "uninvited")
+    spec = LISTS["not-opened"]
+    query, values = ListQuery.parse(spec, QueryDict("show=unfollowed&sort=-family"))
+    assert query == ListQuery("production", "unfollowed")
     assert values == {"sort": "-family"}
     for invalid in (
         "mode=live",
         "show=envelope",
         "search=smith",
-        "show=invited&show=uninvited",
+        "show=followed&show=unfollowed",
     ):
         with pytest.raises(ValueError):
             ListQuery.parse(spec, QueryDict(invalid))
     assert ListQuery().url("submitted") == BASE + "submitted/"
-    assert ListQuery("testing", "invited").url("submitted") == (
-        BASE + "submitted/?mode=testing&show=invited"
+    assert ListQuery("testing", "followed").url("not-opened") == (
+        BASE + "not-opened/?mode=testing&show=followed"
     )
     assert ListQuery().url("started", sort="", size="25") == (BASE + "started/?size=25")
+
+
+def test_search_comes_only_from_a_post_body():
+    """A search is private: parsed from a POST body, trimmed, never in a URL."""
+    spec = LISTS["submitted"]
+    body = QueryDict("search=+Adams+&mode=testing&sort=family&page=2")
+    query, values = ListQuery.parse(spec, body, private=True)
+    assert query == ListQuery("testing", EVERYONE, "Adams")
+    assert values == {"sort": "family", "page": "2"}
+    assert query.posted() == [("mode", "testing"), ("search", "Adams")]
+    # Links and URLs carry only the closed choices.
+    assert query.carried() == [("mode", "testing")]
+    assert "Adams" not in query.url("submitted") and "Adams" not in repr(query)
+    assert ListQuery.parse(spec, QueryDict("search=+"), private=True)[0] == (
+        ListQuery()
+    )
+    for invalid in (
+        "search=a&search=b",
+        "search=" + "x" * 201,
+        "search=" + "1" * 5000,
+        "search=a%00",
+    ):
+        with pytest.raises(ValueError):
+            ListQuery.parse(spec, QueryDict(invalid), private=True)
 
 
 def test_csv_is_complete_neutralized_and_in_the_chosen_zone():
@@ -205,9 +261,13 @@ def render(key="submitted", query=None, rows=None, values=None, **options):
     spec = LISTS[key]
     query = query or ListQuery()
     table = paginate(
-        [] if rows is False else rows_of(key, query.show) if rows is None else rows,
+        []
+        if rows is False
+        else rows_of(key, query.show, search=query.search)
+        if rows is None
+        else rows,
         values or {},
-        carry=query.carried(),
+        carry=query.posted(),
         sorting=spec.sorting,
     )
     options.setdefault("no_rehearsal", rows is False)
@@ -237,18 +297,26 @@ def test_page_shows_the_table_filter_and_download():
     assert f'<th scope="row"><a href="{timeline}">Adams, Ann</a></th>' in page
     assert '<td class="numeric">101</td>' in page
     assert re.search(r'<th scope="row"><a href="[^"?]+/">=Baker, Bob</a></th>', page)
-    # Sort headings are links that keep the filter; the filter is a GET form.
+    # Sort headings are links; the search posts privately (CSRF form), and
+    # Families that submitted offers no Show selector (#860).
     assert 'aria-sort="ascending" data-sort-column="submitted"' in page
     assert 'href="?size=50&amp;sort=family#table"' in page
-    assert '<form id="table-filters" data-table-sync method="get"' in page
-    assert '<option value="uninvited">Without a delivered invitation</option>' in page
+    assert (
+        f'<form id="table-filters" data-table-sync method="post" '
+        f'action="{BASE}submitted/" class="filter-bar">'
+    ) in page
+    assert '<input type="search" id="list-search" name="search"' in page
+    assert 'id="list-show"' not in page and "delivered invitation" not in page
+    assert ">Search</button>" in page
+    # The address an in-place answer leaves: closed choices only.
+    assert f'<a href="{BASE}submitted/" data-page-address hidden></a>' in page
     # The download posts the page's filter and order, with a CSRF form.
     assert (
         f'<form id="table-export" data-table-sync method="post" '
         f'action="{BASE}submitted/csv/">' in page
     )
     assert '<input type="hidden" name="sort" value="submitted">' in page
-    assert "CSV of the 3 Families on this list, with the filter chosen." in page
+    assert "CSV of the 3 Families on this list.</p>" in page
     assert "Sensitive parish report" in page
     assert "Downloads are paused" not in page
     # No inline script or style under the CSP.
@@ -258,37 +326,69 @@ def test_page_shows_the_table_filter_and_download():
 
 def test_page_keeps_filter_in_links_and_download():
     """A chosen filter travels in every table link and in the download."""
-    query = ListQuery("testing", "uninvited")
-    page = render(query=query)
+    query = ListQuery("testing", "followed")
+    page = render("not-opened", query=query)
     assert "Sample campaign — Testing rehearsal" in page
     assert "never counted in Production" in page
-    assert '<input type="hidden" name="show" value="uninvited">' in page
+    assert '<input type="hidden" name="show" value="followed">' in page
     assert '<input type="hidden" name="mode" value="testing">' in page
-    assert "mode=testing&amp;show=uninvited" in page
+    assert "mode=testing&amp;show=followed" in page
+    assert '<option value="followed" selected>Link followed</option>' in page
+    assert ">Apply</button>" in page
     # A Testing list's Family opens the Family's Testing timeline.
     assert re.search(
         r'<th scope="row"><a href="[^"]+/families/[^"]+/\?mode=testing">', page
     )
-    # Switching mode keeps the filter and a chosen order.
-    resorted = render(query=query, values={"sort": "-family"})
-    assert f'href="{BASE}submitted/?show=uninvited&amp;sort=-family#table"' in resorted
-    assert "CSV of the 1 Family on this list" in page
+    # Switching mode keeps the filter and a chosen order; it is a link, so
+    # the filter form then shows what the fresh page applied.
+    resorted = render("not-opened", query=query, values={"sort": "-family"})
+    assert (
+        f'href="{BASE}not-opened/?show=followed&amp;sort=-family#table" '
+        'data-in-place="mode-production" data-in-place-filters'
+    ) in resorted
+    assert "CSV of the 1 Family on this list, with the filter chosen." in page
+
+
+def test_search_makes_a_private_post_table():
+    """With a search, headings, navigators and the download post it privately."""
+    query = ListQuery("testing", EVERYONE, "Adams")
+    page = render(query=query, values={"sort": "family", "size": "25"})
+    assert '<input type="search" id="list-search" name="search"' in page
+    assert 'value="Adams"' in page
+    # Headings are POST forms carrying the search; no link carries it.
+    assert 'class="inline-form sort-form"' in page
+    assert '<input type="hidden" name="search" value="Adams">' in page
+    assert "Adams&" not in page and "=Adams" not in page
+    assert 'href="?' not in page
+    # The address keeps only the closed choices; the mode links drop it.
+    assert (
+        f'<a href="{BASE}submitted/?mode=testing&amp;sort=family&amp;size=25" '
+        "data-page-address hidden></a>"
+    ) in page
+    assert f'href="{BASE}submitted/?size=25&amp;sort=family#table"' in page
+    assert "CSV of the 1 Family on this list that matches the search.</p>" in page
+    export = page[page.index('id="table-export"') :]
+    assert '<input type="hidden" name="search" value="Adams">' in export
+    # Nothing found says so, and nothing can be downloaded.
+    none = render(query=ListQuery(search="zzz"))
+    assert "No Families on this list match the search." in none
+    assert "Nothing to download: no Families on this list match the search." in none
+    # With a filter as well, the download sentence names both.
+    both = render("not-opened", query=ListQuery(show="followed", search="cole"))
+    assert "that matches the search, with the filter chosen." in both
 
 
 def test_missing_values_read_as_words_on_the_page():
     """No envelope, no progress, no name: each says so in plain words."""
-    page = render(
-        "started",
-        rows=listed(LISTS["started"], ROWS[3:4], {}, LISTS["started"].choices[0]),
-    )
+    page = render("started", rows=listed(LISTS["started"], ROWS[3:4], {}, ListQuery()))
     assert "Not in the latest ParishSoft data" in page
     assert "Not yet" in page
 
 
-def test_list_without_a_filter_has_no_filter_form():
-    """Submitted more than once has one choice, so no filter is offered."""
+def test_list_without_a_filter_has_only_the_search():
+    """Submitted more than once has one choice, so only the search is offered."""
     page = render("more-than-once")
-    assert 'id="table-filters"' not in page
+    assert 'id="table-filters"' in page and 'id="list-show"' not in page
     assert 'aria-sort="descending" data-sort-column="submissions"' in page
 
 
@@ -307,7 +407,9 @@ def test_staff_and_paused_and_empty_testing_pages():
     # Its switch back to Production keeps the chosen order and lands on the
     # table; each switch is an in-place link (#519).
     production = f'<a href="{BASE}submitted/?sort=family#table" data-in-place='
-    assert production + '"mode-production">Production</a>' in empty
+    assert production + '"mode-production" data-in-place-filters>Production</a>' in (
+        empty
+    )
     no_export = render(can_export=False)
     assert 'id="table-export"' not in no_export
 
@@ -348,7 +450,7 @@ def test_rows_keep_the_funnel_order_for_ties():
     """Equal values keep DUID order, so pages never swap rows between reads."""
     same = tuple(replace(row, submitted_at=START) for row in ROWS if row.submitted_at)
     spec = LISTS["submitted"]
-    rows = listed(spec, same, FACTS, spec.choices[0])
+    rows = listed(spec, same, FACTS, ListQuery())
     assert duids(paginate(rows, {}, sorting=spec.sorting).rows) == [1, 2, 5]
 
 

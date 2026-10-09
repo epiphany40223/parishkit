@@ -538,6 +538,7 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         ("family_directory_export", []),
         ("find_family", []),
         ("response_list_export", ["submitted"]),
+        ("response_list", ["submitted"]),
     ):
         response = browser.post(reverse(f"admin:{name}", args=args), values)
         assert response.status_code < 500, (name, response.status_code)

@@ -3,9 +3,12 @@
 Each page is the real template with the Admin chrome, shaped by the view's
 own ``page_context`` from the response-lists unit test rows. Besides the
 default page, the fixtures serve each page the lists' in-place controls lead
-to at the exact query string those controls carry (a sort heading, the
-filter form, the mode switch), so the script's fetch is an ordinary page
-request and the swapped-in region is the real template output.
+to at the exact query string those controls carry (a sort heading, the mode
+switch), so the script's fetch is an ordinary page request and the
+swapped-in region is the real template output. The filter form and the
+search post privately (#849); the fixture server serves only GET pages, so
+each POST answer is served at its own fixture path (``SEARCHED`` and the
+rest) for a test's Playwright route to answer the POST with.
 """
 
 from datetime import timedelta
@@ -22,21 +25,27 @@ from ..test_response_metrics import START
 
 SUBMITTED = ListQuery().url("submitted")
 DATA_QUALITY = ListQuery().url("data-quality")
-# The addresses the submitted list's controls lead to, as the browser builds
-# them: the Family heading, the filter form (show, then its hidden size and
-# sort) and the Testing switch.
+# The addresses the submitted list's GET controls lead to, as the browser
+# builds them: the Family heading and the Testing switch.
 BY_FAMILY = SUBMITTED + "?size=50&sort=family"
-UNINVITED = SUBMITTED + "?show=uninvited&size=50&sort=submitted"
 TESTING = ListQuery("testing").url("submitted")
+# The POST answers: the submitted list searched for "e" (=Baker, Bob and
+# Evans, Eve), that search sorted by Family, an envelope-number search, a
+# search that finds nothing, and data quality filtered to envelope 0.
+SEARCHED = "/response-list-searched"
+SEARCHED_BY_FAMILY = "/response-list-searched-by-family"
+SEARCHED_ENVELOPE = "/response-list-searched-envelope"
+SEARCHED_NONE = "/response-list-searched-none"
+ENVELOPE_ZERO = "/response-list-envelope-zero"
 
 
 def render(context, admin, key, query, values=None, *, rows=True, paused=False):
     """One list page for ``query`` with the table choices in ``values``."""
     spec = LISTS[key]
     table = paginate(
-        rows_of(key, query.show) if rows else [],
+        rows_of(key, query.show, search=query.search) if rows else [],
         values or {},
-        carry=query.carried(),
+        carry=query.posted(),
         sorting=spec.sorting,
     )
     shaped = page_context(
@@ -60,7 +69,23 @@ def components(context, admin):
     pages = {
         SUBMITTED: ("submitted", ListQuery(), None, True, False),
         BY_FAMILY: ("submitted", ListQuery(), {"sort": "family"}, True, False),
-        UNINVITED: ("submitted", ListQuery(show="uninvited"), None, True, False),
+        SEARCHED: ("submitted", ListQuery(search="e"), None, True, False),
+        SEARCHED_BY_FAMILY: (
+            "submitted",
+            ListQuery(search="e"),
+            {"sort": "family"},
+            True,
+            False,
+        ),
+        SEARCHED_ENVELOPE: ("submitted", ListQuery(search="101"), None, True, False),
+        SEARCHED_NONE: ("submitted", ListQuery(search="zzz"), None, True, False),
+        ENVELOPE_ZERO: (
+            "data-quality",
+            ListQuery(show="envelope"),
+            None,
+            True,
+            False,
+        ),
         # No Testing rehearsal: the empty Testing view.
         TESTING: ("submitted", ListQuery("testing"), None, False, False),
         DATA_QUALITY: ("data-quality", ListQuery(), None, True, False),

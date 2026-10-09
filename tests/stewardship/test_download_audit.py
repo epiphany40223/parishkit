@@ -87,8 +87,12 @@ def test_sanitize_accepts_only_closed_report_choices(context, valid):
 
 
 def test_report_filters_are_exactly_the_reports_choices():
-    """The closed vocabulary follows the reports' own menus, no more."""
+    """The closed vocabulary follows the reports' own menus, no more.
+
+    A retired Show value (#860) stays, since earlier events recorded it.
+    """
     shows = {choice.value for spec in LISTS.values() for choice in spec.choices}
+    shows |= {value for spec in LISTS.values() for value in spec.retired}
     assert shows | TALENT_WORDS | {"option"} == REPORT_FILTERS
     assert set(MODES) == REPORT_MODES
 
@@ -121,9 +125,17 @@ def test_response_list_audit_choices():
     assert context == {
         "report_mode": "testing",
         "report_filter": "envelope",
+        "search_used": False,
         "snapshot_id": snapshot,
     }
     assert sanitize(ContextKind.ACTION, context)["snapshot_id"] == str(snapshot)
+    # A search is recorded as used, never by its text (#849).
+    searched, _ = ListQuery.parse(
+        spec, MultiValueDict({"search": ["Smith"]}), private=True
+    )
+    context = audit_choices(searched, snapshot)
+    assert context["search_used"] is True
+    assert "Smith" not in str(sanitize(ContextKind.ACTION, context))
     # Nothing was read (Testing with no rehearsal): no snapshot is named.
     assert "snapshot_id" not in audit_choices(query, None)
 

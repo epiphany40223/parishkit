@@ -532,7 +532,7 @@ per-Family rows as the [funnel](#response-funnel):
 
 | List | Families listed | Columns | Filter |
 | --- | --- | --- | --- |
-| `submitted` | with a submission (Submitted) | First submitted, Family, Family DUID, Envelope number, Submissions | with or without a delivered invitation |
+| `submitted` | with a submission (Submitted) | First submitted, Family, Family DUID, Envelope number, Submissions | none |
 | `started` | form opened, nothing submitted (Form opened minus Submitted) | Form opened, Got past the first step, Family, Family DUID, Envelope number | got past the first step, or opened the form only |
 | `not-opened` | a delivered invitation, form never opened | Invitation delivered, Link followed, Family, Family DUID, Envelope number | link followed or not |
 | `more-than-once` | more than one submission (Submitted more than once) | Submissions, First submitted, Last submitted, Family, Family DUID, Envelope number | none |
@@ -553,21 +553,47 @@ and the envelope number and mailing name come from the same latest
 ParishSoft data, read in two queries for the listed Families; a Family no
 longer in that data says so instead of a name.
 
+The Administrator removed the `submitted` list's filter (it offered Families
+with or without a delivered invitation), so that list simply shows every
+Family that submitted
+([#860](https://github.com/epiphany40223/parishkit/issues/860)). A saved link
+that still carries one of its old `show` values (`invited`, `uninvited`) opens
+the whole list rather than being refused; any other unknown value still is.
+
 Each list is a [shared Admin table](../admin-portal/spec.md#admin-tables):
 every column sorts (times and counts newest or largest first on the first
 click, missing values last), the default is chronological for `submitted`,
 most submissions first for `more-than-once` and Family name otherwise, and the
-filter, sort headings, rows per page and paging refresh the table in place.
-The Production and Testing rehearsal links are
+filter, search, sort headings, rows per page and paging refresh the table in
+place. The Production and Testing rehearsal links are
 [in-place controls](../admin-portal/spec.md#in-place-controls) of the table's
 region: they keep the filter and order and refresh the list without a reload.
 The URL carries only closed choices: `mode` (as on the dashboard: Production
 by default, the active Testing rehearsal for Administrators only), `show` (the
-filter), `sort`, `size` and `page`; nothing identifying, so a list needs no
-POST body. Name search is not offered.
+filter), `sort`, `size` and `page`; nothing identifying.
 
-**Download CSV** posts the list's filter and order (CSRF-protected) and
-downloads the complete filtered list, not just the page, rendered on request
+Every list has a **Search by Family name or envelope number** box
+([#849](https://github.com/epiphany40223/parishkit/issues/849)). It keeps a
+Family whose Family column (the directory's name: surname, then active heads)
+contains the text, ignoring case, or, for a search of digits only, whose
+envelope number is exactly that number; a part of an envelope number matches
+nothing by number. The search runs on the list's rows after its filter, before
+sorting and paging, so the row count, the pages and the download all follow
+it. A search can name a Family, so it is sent only in the filter form's
+CSRF-protected POST body, never in a URL, as the
+[active parishioner family directory](#active-parishioner-family-directory)'s
+search is: the list page accepts that POST as a read, and refuses a POST with
+a query string and a `search` in a URL (400). While a search is applied the
+table is a POST table, whose sort headings and navigators carry the search as
+hidden fields. After each in-place answer the address bar shows the view's
+closed choices only (the page's `data-page-address`, as
+[System logs](#system-logs) does), so Back and Reload keep the filter, order,
+page size and page, and a reload clears the search. The mode links are plain
+links, so switching mode clears the search too, and the search box then shows
+it cleared.
+
+**Download CSV** posts the list's filter, search and order (CSRF-protected)
+and downloads the complete filtered list, not just the page, rendered on request
 in that order, with the table's columns, in the
 [shared CSV format](#shared-report-behavior), times in a time zone chosen
 beside the button (the browser's by default). Before the download the panel
@@ -591,9 +617,11 @@ list and the action (such as `response_submitted_list_exported`), with its
 outcome and row count and no Family name or DUID; a download the purge gate
 refuses is recorded as failed. As the export audit rule in
 [shared report behavior](#shared-report-behavior) asks, the event also records
-the mode (`report_mode`), the Show choice's closed key (`report_filter`) and
-the ParishSoft snapshot the names were read from (`snapshot_id`; left out when
-nothing was read, as for Testing with no rehearsal)
+the mode (`report_mode`), the Show choice's closed key (`report_filter`;
+`all` for `submitted`, whose old values are ignored), whether a search was
+applied (`search_used`, never its text, #849) and the ParishSoft snapshot the
+names were read from (`snapshot_id`; left out when nothing was read, as for
+Testing with no rehearsal)
 ([#556](https://github.com/epiphany40223/parishkit/issues/556)), and the sort
 order as its closed token (`report_sort`: a column key such as `family`, or
 `-` and one for the other direction, such as `-submitted`; the list's default
