@@ -475,8 +475,9 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
 ):
     """No current campaign: no moved report page or form is a server error.
 
-    The reports root and Ministry requests show the "no campaign" page; the
-    others refuse plainly, and no form starts an export.
+    The reports root, Ministry requests and Ministry follow-up show the "no
+    campaign" page; the others refuse plainly (saying there is no current
+    campaign), and no form starts an export.
     """
     from parishkit.stewardship.reports.exact_models import ExactExportRequest
     from parishkit.stewardship.reports.export_models import ExportRequest
@@ -498,14 +499,17 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         ("ministry_followup_item", [item]),
         ("family_directory", []),
         ("family_timeline", [item]),
+        ("weekly_digest_manual", []),
     )
     for name, args in pages:
         response = browser.get(reverse(f"admin:{name}", args=args))
         assert response.status_code < 500, (name, response.status_code)
-        if name in {"reports", "ministry_report"}:
+        if name in {"reports", "ministry_report", "ministry_followup"}:
             assert response.status_code == 200, name
         else:
             assert 400 <= response.status_code < 500, (name, response.status_code)
+            # Never "this campaign is no longer current": there is none.
+            assert REFUSAL.encode() not in response.content, name
     browser.get(reverse("admin:logs"))
     values = {
         "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
@@ -569,3 +573,59 @@ def test_reports_root_takes_a_ministry_leader_to_ministry_requests(
     moved = browser.get(reverse("admin:reports").rstrip("/"))
     assert moved.status_code == 301
     assert moved["Location"] == reverse("admin:reports")
+
+
+def test_sent_report_email_links_still_reach_their_reports(auth_service, google):
+    """Daily and weekly report emails already sent keep working (NAV-12).
+
+    Their links name a report, not a campaign, so anyone gets the same
+    permanent redirect and the report page checks access itself.
+    """
+    _current(auth_service.store)
+    browser, _ = signed_in()
+    snapshot, item = uuid4(), uuid4()
+    for old, name, args in (
+        (
+            f"/admin/reports/daily-digests/{snapshot}/",
+            "daily_digest_snapshot",
+            [snapshot],
+        ),
+        (
+            f"/admin/reports/weekly-digests/{snapshot}/",
+            "weekly_digest_snapshot",
+            [snapshot],
+        ),
+        (
+            f"/admin/reports/weekly-digests/{snapshot}/items/{item}/",
+            "weekly_digest_item",
+            [snapshot, item],
+        ),
+    ):
+        new = reverse(f"admin:{name}", args=args)
+        for client in (browser, Client()):
+            moved = client.get(old)
+            assert moved.status_code == 301, old
+            assert moved["Location"] == new
+        # The report page answers for itself: never a server error.
+        assert browser.get(new).status_code < 500, new
+
+
+def test_export_page_keeps_no_old_address(auth_service, google):
+    """The shared export page has only its slashless form (NAV-12, #864).
+
+    The old export, latest-data export and manual weekly report addresses
+    are gone (404), not redirected; an unknown export is refused by the page.
+    """
+    current = _current(auth_service.store)
+    browser, _ = signed_in()
+    request = uuid4()
+    page = reverse("admin:report_export", args=[request])
+    moved = browser.get(f"/admin/reports/exports/{request}")
+    assert moved.status_code == 301 and moved["Location"] == page
+    for old in (
+        f"/admin/reports/exact-exports/{request}/",
+        f"/admin/reports/exports/{request}/cancel",
+        f"/admin/reports/weekly-digests/request/{current}/",
+    ):
+        assert browser.get(old).status_code == 404, old
+    assert 400 <= browser.get(page).status_code < 500

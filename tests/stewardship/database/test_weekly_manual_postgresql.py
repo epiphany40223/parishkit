@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditEvent
@@ -227,7 +228,7 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
         configure_content(harness)
         configuration = SystemConfiguration.objects.get().active_configuration_id
         browser, _ = signed_in()
-        path = "/admin/reports/weekly-digests/request/"
+        path = reverse("admin:weekly_digest_manual")
         values = {
             "command_id": str(uuid4()),
             "configuration_id": str(configuration),
@@ -279,7 +280,7 @@ def test_manual_form_explains_a_missing_weekly_schedule(response_service, google
     """Without a Weekly digest schedule the page says so instead of refusing blindly."""
     with campaign_clock(INSTANT):
         browser, _ = signed_in()
-        path = "/admin/reports/weekly-digests/request/"
+        path = reverse("admin:weekly_digest_manual")
         before = TaskRun.objects.count()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = browser.get(path)

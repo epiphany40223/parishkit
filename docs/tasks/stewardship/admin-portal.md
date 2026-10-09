@@ -575,7 +575,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.12 — NAV-9: move Campaign setup URLs, part A, and add the group root.
 - [x] ADM-12.13 — NAV-10: move Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries).
 - [x] ADM-12.14 — NAV-11: move report URLs, including response lists and the reports root.
-- [ ] ADM-12.15 — NAV-12: move export and digest URLs and fold the latest-data export into the shared export page.
+- [x] ADM-12.15 — NAV-12: move export and digest URLs and fold the latest-data export into the shared export page.
 - [ ] ADM-12.16 — NAV-13 (optional): add trailing slashes to sign-in, setup and maintenance URLs.
 - [ ] ADM-12.17 — NAV-14: add the Emailed reports page.
 - [ ] ADM-12.18 — NAV-15: split Portal users into Sign-in rules, Ministry assignments and Chairpersons (#535).
@@ -819,6 +819,28 @@ addresses and forms for the current campaign and another, the retired
 addresses, the pages and forms without a current campaign, the Ministry
 leader at the reports root) and the updated report, export, follow-up,
 directory, timeline and single-campaign suites.
+
+ADM-12.15 (NAV-12) gives every export one page, `/admin/reports/exports/<request>/`
+(decision 8): a latest-data participation export now shares it, keeping its
+own heading and trail, and each request id is handed to the view that owns
+the record. The export's actions are nouns under it (`cancellation/`,
+`retries/`, `download/`, `regeneration/`). The reports sent by email move
+under `/admin/reports/emailed/`: daily `daily/<snapshot>/` (with its chart and
+download images), weekly `weekly/<snapshot>/` and its items, and Send a weekly
+report now `weekly/new/`. New report emails link the new addresses. Daily and
+weekly report emails already sent link the old digest addresses, so only
+those redirect permanently (301, no campaign check); each report page still
+checks its own access. The old export, latest-data export and manual weekly
+report addresses are gone (#864). The unused JSON export API and the old
+postal routes are not retired here (#758). From the NAV-11 review: a moved
+report opened with no current campaign says so plainly instead of "This
+campaign is no longer the current campaign", and Ministry follow-up shows the
+"no campaign" page as Ministry requests does. It is proven by
+`tests/stewardship/test_admin_url_scheme.py` (the export and emailed report
+rows, the sent digest link shapes, the shared export page, the route order),
+`tests/stewardship/database/test_admin_url_scheme_postgresql.py` (sent digest
+links through the real middleware, the old export addresses' 404) and the
+updated export, latest-data export, daily and weekly report suites.
 
 ## ADM-13: System health page
 

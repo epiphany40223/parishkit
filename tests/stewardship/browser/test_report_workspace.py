@@ -1,6 +1,9 @@
 """Real report templates retain exact values, native forms and accessible controls."""
 
+from uuid import UUID
+
 import pytest
+from django.urls import reverse
 
 from .conftest import no_script_context
 from .waits import visible
@@ -100,7 +103,9 @@ def test_export_status_updates_itself_and_downloads_once(page, component_origin)
         downloads.append(route.request.method)
         route.fulfill(status=204)
 
-    page.route("**/download", download)
+    page.route(
+        "**" + reverse("admin:report_export_download", args=[UUID(int=20)]), download
+    )
     page.goto(component_origin + "/report-export-pending")
     visible(page.get_by_text("Preparing your file"))
     assert not page.get_by_text("Requested by (user reference)").is_visible()

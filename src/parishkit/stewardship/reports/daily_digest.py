@@ -139,7 +139,12 @@ class DailyDigestDocument:
     @property
     def report_path(self):
         """Select a protected snapshot; this identity is not a bearer credential."""
-        return f"/admin/reports/daily-digests/{self.snapshot_id}/"
+        # Its Emailed reports address (NAV-12); emails sent before link the
+        # old one, which redirects here. Imported here so the document
+        # module itself stays free of Django.
+        from django.urls import reverse
+
+        return reverse("admin:daily_digest_snapshot", args=[self.snapshot_id])
 
 
 @dataclass(frozen=True, repr=False)

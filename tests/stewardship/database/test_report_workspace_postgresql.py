@@ -14,6 +14,7 @@ from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.export_models import ExportPublication, ExportRequest
 
+from ..export_urls import export_action
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock
 from .test_background_grants_postgresql import task_login
@@ -217,11 +218,11 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     with monkeypatch.context() as patch:
         patch.setattr(export_ui, "runtime", unavailable)
         for method, endpoint in (
-            (browser.get, f"/admin/reports/exports/{uuid4()}/"),
+            (browser.get, reverse("admin:report_export", args=[uuid4()])),
             (lambda url: post(browser, url), reverse("admin:report_export_create")),
             (
                 lambda url: post(browser, url),
-                f"/admin/reports/exports/{uuid4()}/cancel",
+                reverse("admin:report_export_cancel", args=[uuid4()]),
             ),
         ):
             response = method(endpoint)
@@ -287,7 +288,9 @@ def test_native_export_creation_status_cancel_and_restricted_download(
         )
         assert (
             post(
-                browser, status_path + "retry", {"request_key": str(uuid4())}
+                browser,
+                export_action(status_path, "retry"),
+                {"request_key": str(uuid4())},
             ).status_code
             == 409
         )
@@ -308,7 +311,9 @@ def test_native_export_creation_status_cancel_and_restricted_download(
         for _ in range(2):
             assert (
                 post(
-                    browser, status_path + "retry", {"request_key": str(retry_key)}
+                    browser,
+                    export_action(status_path, "retry"),
+                    {"request_key": str(retry_key)},
                 ).status_code
                 == 302
             )
@@ -325,7 +330,7 @@ def test_native_export_creation_status_cancel_and_restricted_download(
         pool = settings.STEWARDSHIP_DOWNLOAD_POOL
         pool.acquire()
         try:
-            response = post(browser, status_path + "download")
+            response = post(browser, export_action(status_path, "download"))
             assert response.status_code == 503
             assert response["Retry-After"] == "5"
             assert b"not been discarded" in response.content
@@ -334,7 +339,9 @@ def test_native_export_creation_status_cancel_and_restricted_download(
         server, peer = socket.socketpair()
         try:
             response = post(
-                browser, status_path + "download", **{"gunicorn.socket": server}
+                browser,
+                export_action(status_path, "download"),
+                **{"gunicorn.socket": server},
             )
             assert response.status_code == 200
             body = b"".join(response.streaming_content)
@@ -349,7 +356,7 @@ def test_native_export_creation_status_cancel_and_restricted_download(
         cancelled = post(browser, path, values | {"request_key": str(uuid4())})[
             "Location"
         ]
-        assert post(browser, cancelled + "cancel").status_code == 302
+        assert post(browser, export_action(cancelled, "cancel")).status_code == 302
         _, body = read(browser, cancelled)
         assert b"cancelled" in body
     from .test_export_cleanup_postgresql import expire_publication
@@ -384,7 +391,7 @@ def test_native_export_creation_status_cancel_and_restricted_download(
         assert response.status_code == 200 and b"Other campaign work" in gated
         # Attribute order follows the template (the theme adds a class).
         assert re.search(rb'<button type="submit"[^>]* disabled[ >]', gated)
-        assert post(browser, gated_path + "cancel").status_code == 403
+        assert post(browser, export_action(gated_path, "cancel")).status_code == 403
 
 
 def test_staff_report_access_then_ministry_role_and_revocation(http_scenario, google):
@@ -442,5 +449,5 @@ def test_staff_report_access_then_ministry_role_and_revocation(http_scenario, go
         for url in (reverse("admin:reports"), path, f"{path}{facts.pk}.png", job_path):
             response, _ = read(browser, url)
             assert response.status_code == 403
-        assert post(browser, job_path + "cancel").status_code == 403
-        assert post(browser, job_path + "download").status_code == 403
+        assert post(browser, export_action(job_path, "cancel")).status_code == 403
+        assert post(browser, export_action(job_path, "download")).status_code == 403

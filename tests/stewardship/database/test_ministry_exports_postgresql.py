@@ -34,6 +34,7 @@ from parishkit.stewardship.reports.information_rendering import render_informati
 from parishkit.stewardship.reports.ministries import MinistryQuery
 from parishkit.stewardship.reports.ministry_exports import create_ministry_export
 
+from ..export_urls import export_action
 from ..policy_factory import address, assignment
 from .auth_builders import signed_in
 from .campaign_builders import change
@@ -360,7 +361,7 @@ def test_native_leader_exports_worker_download_and_regeneration(
                 },
             )
         with restricted_download_pool(settings):
-            response, body = search(browser, job_route + "download", {})
+            response, body = search(browser, export_action(job_route, "download"), {})
             assert response.status_code == 200
             assert body.startswith(
                 {"csv": b"Member,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
@@ -377,7 +378,9 @@ def test_native_leader_exports_worker_download_and_regeneration(
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             fields = {"request_key": str(uuid4())}
             response = post(
-                browser, f"/admin/reports/exports/{first.pk}/regenerate", fields
+                browser,
+                reverse("admin:report_export_regenerate", args=[first.pk]),
+                fields,
             )
             assert response.status_code == 302
             regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
@@ -393,7 +396,9 @@ def test_native_leader_exports_worker_download_and_regeneration(
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert read(browser, job_route)[0].status_code == 403
-        assert post(browser, job_route + "download", {}).status_code == 403
+        assert (
+            post(browser, export_action(job_route, "download"), {}).status_code == 403
+        )
         with pytest.raises(PermissionError):
             issue_download(store, actor, first.pk)
         with pytest.raises(PermissionError):

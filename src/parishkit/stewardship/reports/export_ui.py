@@ -88,7 +88,6 @@ def _error(
     *,
     campaign_id=None,
     request_id=None,
-    exact_id=None,
     status=409,
     busy=False,
     bound=False,
@@ -108,7 +107,6 @@ def _error(
             {
                 "campaign_id": campaign_id,
                 "request_id": request_id,
-                "exact_id": exact_id,
                 "busy": busy,
                 "bound": bound,
                 "expired": expired,

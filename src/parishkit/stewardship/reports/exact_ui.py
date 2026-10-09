@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from django.core.exceptions import ObjectDoesNotExist
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.stewardship.accounts import admin_navigation
@@ -37,7 +38,7 @@ from .workspace import ReportQuery
 
 def _redirect(identifier):
     """Keep native mutation responses private and safe to reload."""
-    response = redirect("admin:report_exact", request_id=identifier)
+    response = redirect("admin:report_export", request_id=identifier)
     response["Cache-Control"] = "no-store"
     return response
 
@@ -117,6 +118,9 @@ def detail(request, request_id):
                 step="download" if state.get("export_id") else "prepare",
             )
             context = {
+                # It shares the report export page's address (decision 8), so
+                # the trail names it as the page's heading does.
+                "breadcrumb_label": _("Latest-data export"),
                 "job": job,
                 # WEB may read public source metadata, not every manifest column.
                 "source": SourceSnapshot.objects.values(
@@ -148,9 +152,9 @@ def detail(request, request_id):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
-        return _error(request, exact_id=request_id, status=503)
+        return _error(request, request_id=request_id, status=503)
     except ValueError:
-        return _error(request, exact_id=request_id, status=400)
+        return _error(request, request_id=request_id, status=400)
 
 
 @require_POST
@@ -173,10 +177,10 @@ def command(request, request_id, *, action):
             raise ValueError("Unknown report action.")
         return _redirect(request_id)
     except (ExportConflict, TaskRetryConflict):
-        return _error(request, exact_id=request_id)
+        return _error(request, request_id=request_id)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
-        return _error(request, exact_id=request_id, status=503)
+        return _error(request, request_id=request_id, status=503)
     except ValueError:
-        return _error(request, exact_id=request_id, status=400)
+        return _error(request, request_id=request_id, status=400)

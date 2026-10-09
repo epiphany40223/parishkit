@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 import pytest
 from django.db import connection
+from django.urls import reverse
 from psycopg import sql
 
 from parishkit.stewardship.audit.models import AuditEvent
@@ -173,7 +174,7 @@ def test_export_page_explains_its_wait_through_the_web_login(
     """The real page shows each case, reads only through web grants, audits nothing."""
     _, browser = http_scenario
     request = create(http_scenario)
-    path = f"/admin/reports/exports/{request.pk}/"
+    path = reverse("admin:report_export", args=[request.pk])
     before = AuditEvent.objects.count()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         body = read(browser, path)[1]
@@ -228,7 +229,7 @@ def test_ministry_leader_sees_only_the_generic_reason(response_service, google):
     export = create_ministry_export(harness, actor)
     running("report_facts")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = read(browser, f"/admin/reports/exports/{export.pk}/")
+        response, body = read(browser, reverse("admin:report_export", args=[export.pk]))
     assert response.status_code == 200
     assert b"Waiting for other background work to finish." in body
     assert b"report totals" not in body

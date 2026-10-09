@@ -46,14 +46,10 @@ from .admin_urls import reports as admin_reports
 from .admin_urls import system as admin_system
 from .jobs import views as job_views
 from .reports import (
-    digest_views,
     directory_export_views,
     directory_views,
-    exact_ui,
     exact_views,
-    export_ui,
     export_views,
-    weekly_views,
 )
 from .responses import views as response_views
 
@@ -97,46 +93,6 @@ admin_patterns = [
         directory_views.directory,
         {"postal": True},
         name="postal_directory",
-    ),
-    path(
-        "reports/exact-exports/<uuid:request_id>/", exact_ui.detail, name="report_exact"
-    ),
-    path(
-        "reports/exact-exports/<uuid:request_id>/cancel",
-        exact_ui.command,
-        {"action": "cancel"},
-        name="report_exact_cancel",
-    ),
-    path(
-        "reports/exact-exports/<uuid:request_id>/retry",
-        exact_ui.command,
-        {"action": "retry"},
-        name="report_exact_retry",
-    ),
-    path(
-        "reports/exports/<uuid:request_id>/regenerate",
-        export_ui.command,
-        {"action": "regenerate"},
-        name="report_export_regenerate",
-    ),
-    path("reports/exports/<uuid:request_id>/", export_ui.detail, name="report_export"),
-    path(
-        "reports/exports/<uuid:request_id>/cancel",
-        export_ui.command,
-        {"action": "cancel"},
-        name="report_export_cancel",
-    ),
-    path(
-        "reports/exports/<uuid:request_id>/retry",
-        export_ui.command,
-        {"action": "retry"},
-        name="report_export_retry",
-    ),
-    path(
-        "reports/exports/<uuid:request_id>/download",
-        export_ui.command,
-        {"action": "download"},
-        name="report_export_download",
     ),
     path(
         "campaign/<uuid:campaign_id>/exports/participation",
@@ -245,33 +201,6 @@ admin_patterns = [
         name="system_health_status",
     ),
     path("background/tasks", job_views.task_list, name="background_tasks"),
-    path(
-        "reports/weekly-digests/<uuid:snapshot_id>/",
-        weekly_views.snapshot,
-        name="weekly_digest_snapshot",
-    ),
-    path(
-        "reports/weekly-digests/<uuid:snapshot_id>/items/<uuid:item_id>/",
-        weekly_views.snapshot,
-        name="weekly_digest_item",
-    ),
-    path(
-        "reports/daily-digests/<uuid:snapshot_id>/",
-        digest_views.snapshot,
-        name="daily_digest_snapshot",
-    ),
-    path(
-        "reports/daily-digests/<uuid:snapshot_id>/chart.png",
-        digest_views.snapshot,
-        {"representation": "png"},
-        name="daily_digest_chart",
-    ),
-    path(
-        "reports/daily-digests/<uuid:snapshot_id>/download.png",
-        digest_views.snapshot,
-        {"representation": "download"},
-        name="daily_digest_download",
-    ),
     path("background/counts", job_views.task_counts, name="background_counts"),
     path("session/status", session_views.session_status, name="session_status"),
     path("session/renew", session_views.session_renew, name="session_renew"),

@@ -150,6 +150,26 @@ CAMPAIGN = (
     ),
 )
 
+# (old route, new URL name, name suffix): the emailed reports (NAV-12).
+# Daily and weekly report emails already sent link the old digest addresses,
+# so these rows stay, unlike the other old Admin addresses (#864):
+# they are links in mail, not bookmarks.
+RECORDS = (
+    ("reports/daily-digests/<uuid:snapshot_id>/", "daily_digest_snapshot", ""),
+    ("reports/daily-digests/<uuid:snapshot_id>/chart.png", "daily_digest_chart", ""),
+    (
+        "reports/daily-digests/<uuid:snapshot_id>/download.png",
+        "daily_digest_download",
+        "",
+    ),
+    ("reports/weekly-digests/<uuid:snapshot_id>/", "weekly_digest_snapshot", ""),
+    (
+        "reports/weekly-digests/<uuid:snapshot_id>/items/<uuid:item_id>/",
+        "weekly_digest_item",
+        "",
+    ),
+)
+
 # (old route, new URL name, name suffix): retired addresses that named no
 # campaign (NAV-11). The two campaign choosers (decisions 10 and 19) and the
 # old Ministry reports root open the report they stood for; the suffix keeps
@@ -233,7 +253,14 @@ SLASHLESS = (
     ("reports/ministries/follow-up/<uuid:request_id>", "ministry_followup_item"),
     ("reports/families", "family_directory"),
     ("reports/families/<uuid:family_id>", "family_timeline"),
-    ("reports/weekly-digests/request", "weekly_digest_manual"),
+    ("reports/exports/<uuid:request_id>", "report_export"),
+    ("reports/emailed/weekly/new", "weekly_digest_manual"),
+    ("reports/emailed/weekly/<uuid:snapshot_id>", "weekly_digest_snapshot"),
+    (
+        "reports/emailed/weekly/<uuid:snapshot_id>/items/<uuid:item_id>",
+        "weekly_digest_item",
+    ),
+    ("reports/emailed/daily/<uuid:snapshot_id>", "daily_digest_snapshot"),
     ("mail/controls", "delivery_control"),
     ("mail/family-progress", "family_email_progress"),
     ("mail/family-history", "family_email_sends"),
@@ -252,7 +279,7 @@ ROWS = (
     tuple((old, new, False, "") for old, new in SYSTEM + PARISH + MAIL)
     + tuple((old, new, True, "") for old, new in CAMPAIGN)
     + tuple((old, new, False, "_slashless") for old, new in SLASHLESS)
-    + tuple((old, new, False, suffix) for old, new, suffix in RETIRED)
+    + tuple((old, new, False, suffix) for old, new, suffix in RECORDS + RETIRED)
 )
 
 PREFIX = "legacy_"

@@ -937,10 +937,11 @@ def test_a_ministry_leaders_export_names_participation_without_a_link():
     campaign = CAMPAIGNS["active"]
     for role, linked in (("ministry_leader", False), ("staff", True)):
         items = _menu(role, campaign, "production")
-        for name in ("report_export", "report_exact"):
-            _, trail = navigation.build(_match(name, request_id=uuid4()), items)
-            assert trail[-2]["label"] == navigation.PAGES["participation"].label
-            assert (trail[-2]["url"] == reverse("admin:reports")) is linked
+        # Every export, a latest-data one included, shares one page (NAV-12).
+        match = _match("report_export", request_id=uuid4())
+        _, trail = navigation.build(match, items)
+        assert trail[-2]["label"] == navigation.PAGES["participation"].label
+        assert (trail[-2]["url"] == reverse("admin:reports")) is linked
 
 
 def test_open_counts_read_once_per_request_and_only_for_offered_entries(
