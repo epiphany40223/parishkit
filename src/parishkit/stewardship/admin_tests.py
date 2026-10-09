@@ -1,0 +1,312 @@
+"""Testing send commands of the Admin automation command line (ADM-11 PR 6b).
+
+``test sample-preview`` and ``test sample`` are the Preview and test email
+page's review and its **Send this test email**: one fictional message from
+an email revision, sent only to the configured Testing recipient, never to
+a Family. They go through the page's own functions in
+``accounts.campaign_mail`` (``prepare``, ``request_sample`` and
+``recent_tests``), and the token is the page's own signed binding, so a
+preview made on the page can be sent from the command line and the other
+way round.
+
+The page asks for no fresh sign-in. Its one acknowledgement ("A previous
+test may have arrived; I want to send another test.") is required only
+while an earlier test's outcome is unknown, so ``test sample`` asks for it
+at the prompt only then (``admin_cli.sample_test``). It records one
+``admin_cmd_test_sample`` event, in the send's own transaction, only when
+the send is new.
+"""
+
+from dataclasses import dataclass
+from uuid import UUID
+
+from django.db import DatabaseError
+
+from .admin_reads import NotAvailable, ReadModel, _held, _recheck
+
+# The page's acknowledgement, asked at the prompt: the checkbox's words.
+UNKNOWN_ACKNOWLEDGEMENT = (
+    "A previous test may have arrived; I want to send another test."
+)
+
+
+def _admit(caller, store, *, final=False):
+    """The page's admission (``CONFIGURE``); a ``final`` one writes nothing.
+
+    The commands admit read-only (``final``): the page's own functions
+    record the session's activity where the page does (``request_sample``'s
+    ``principal``, once per send; the preview, like the page's view, never).
+    ``command_scope`` repeats it under the work lock, read-only too. A
+    session that ended is exit 5 (``session_ended``), not the page's refusal.
+    """
+    from .accounts.automation_sessions import SessionUnusable
+    from .accounts.policy import Capability, allows
+    from .accounts.sessions import authenticated_admin
+
+    principal = authenticated_admin(
+        caller, store=store, activity=not final, read_only=final
+    )
+    if principal is None:
+        raise SessionUnusable("session_ended")
+    if not allows(principal, Capability.CONFIGURE):
+        raise PermissionError("A test email needs the configure capability.")
+    return principal
+
+
+def _current_campaign(service):
+    """The current campaign's id; ``not_available`` when there is none.
+
+    A restore under review or an unfinished setup refuses with a
+    ``ConfigError``, which the callers' ``_held`` reports as ``unavailable``.
+    """
+    from .accounts.admin_editing import editable_configuration
+
+    campaign_id = editable_configuration(service).current_campaign_id
+    if campaign_id is None:
+        raise NotAvailable("There is no current campaign.")
+    return campaign_id
+
+
+@dataclass(frozen=True)
+class SamplePreview(ReadModel):
+    """The page's review of a sample test, and the token that sends it.
+
+    ``subject`` is the fictional sample's subject, as the page shows it.
+    The Testing recipient's address and the message body stay on the page:
+    ``testing_recipient_set`` only says one is configured. ``pending`` and
+    ``unknown`` are the page's flags; while ``unknown``, ``test sample`` asks
+    for the page's acknowledgement. ``tests`` is the page's recent list.
+    ``preview.token`` is valid for the page's preview lifetime.
+    """
+
+    campaign_id: UUID
+    revision_id: UUID
+    request_key: UUID
+    subject: str
+    testing_recipient_set: bool
+    pending: bool
+    unknown: bool
+    tests: list
+    preview: dict
+
+
+def sample_preview_model(preview, tests, token, revision_id):
+    """The command's projection of the page's preview and recent tests."""
+    return SamplePreview(
+        campaign_id=preview.row.campaign_id,
+        revision_id=revision_id,
+        request_key=preview.row.request_key,
+        subject="[TEST] " + preview.sample.subject,
+        testing_recipient_set=bool(preview.sample.recipient),
+        pending=tests["pending"],
+        unknown=tests["unknown"],
+        tests=[
+            {key: item[key] for key in ("id", "state", "created_at", "current")}
+            for item in tests["items"]
+        ],
+        preview={"token": token},
+    )
+
+
+def preview_sample(caller, service, revision_id, *, request_key):
+    """``test sample-preview``: the page's review of one email revision.
+
+    ``request_key`` becomes the preview's key, so the token it signs is the
+    page's own. An unknown revision is ``not_available``; one the current
+    configuration cannot test now is ``stale_version``, as the page answers
+    409. Records no event, as the page's view records none.
+    """
+    from django.core import signing
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from .accounts.campaign_mail import SALT, prepare, recent_tests
+    from .accounts.policy import Capability
+
+    actor = _admit(caller, service.store, final=True)
+
+    def step():
+        """The page's preview and list, in its work transaction."""
+        campaign_id = _current_campaign(service)
+        try:
+            preview = prepare(
+                caller, service, campaign_id, revision_id, request_key=request_key
+            )
+        except ObjectDoesNotExist:
+            raise NotAvailable("No such email revision.") from None
+        token = signing.dumps(preview.binding(), salt=SALT)
+        return sample_preview_model(
+            preview, recent_tests(campaign_id, preview.row), token, revision_id
+        )
+
+    try:
+        model = _held(step)
+    except (NotAvailable, PermissionError) as error:
+        _recheck(caller, service.store, actor, Capability.CONFIGURE)
+        raise error
+    _recheck(caller, service.store, actor, Capability.CONFIGURE)
+    return model
+
+
+def unknown_outcome(caller, service):
+    """Whether an earlier test's outcome is unknown, so the page would ask.
+
+    Read before the prompt, outside any transaction: no lock is held while a
+    person reads and types. A test that becomes unknown afterwards is still
+    refused by ``request_sample`` (``invalid``: preview again).
+    """
+    from .accounts.campaign_mail_models import CampaignMailTest
+
+    _admit(caller, service.store, final=True)
+
+    def step():
+        """The page's flag for the current campaign."""
+        return CampaignMailTest.objects.filter(
+            campaign_id=_current_campaign(service), state="delivery_unknown"
+        ).exists()
+
+    return _held(step)
+
+
+@dataclass(frozen=True)
+class SampleTest(ReadModel):
+    """The test a ``test sample`` queued, or found for its token's key.
+
+    ``created`` is false when the token's key was already sent (a repeat,
+    from the command line or the page), which returns the original test.
+    """
+
+    created: bool
+    request_key: UUID
+    test: dict
+
+
+def sample_test_model(row, *, created):
+    """The command's projection of a ``CampaignMailTest``; never the message."""
+    return SampleTest(
+        created=created,
+        request_key=row.request_key,
+        test={
+            "id": row.pk,
+            "state": row.state,
+            "task_id": row.task_id,
+            "created_at": row.created_at,
+        },
+    )
+
+
+def send_sample(caller, service, *, token, acknowledge_unknown, context):
+    """``test sample``: the page's **Send this test email** for a reviewed token.
+
+    ``acknowledge_unknown`` is the page's checkbox, which the command line
+    asked for at the prompt (or took from ``--yes``). Runs the page's
+    ``request_sample`` in the delivery pages' command scope. An expired or
+    out-of-date preview (including one whose revision has since left the
+    active configuration), or a test already pending, is ``stale_version``;
+    an altered token ``invalid``; another Administrator's token, or one for
+    another campaign, ``denied``; an unknown outcome not acknowledged
+    ``invalid``.
+
+    ``context["request_id"]`` is the token's key once read, so an exit-6
+    document names it. ``context["committed"]`` is set once the send may
+    have committed (as for ``refresh start``).
+    """
+    from django.core import signing
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from .accounts.campaign_mail import SALT, request_sample
+    from .accounts.campaign_mail_models import CampaignMailTest
+    from .accounts.policy import Capability
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .jobs.task_retries import command_scope
+    from .observability import _guard_refusal
+    from .storage import StaleRecordError
+
+    actor = _admit(caller, service.store, final=True)
+    try:
+        # The key only names the outcome; request_sample verifies the token.
+        key = UUID(signing.loads(token, salt=SALT)["key"])
+    except (signing.BadSignature, KeyError, TypeError, ValueError):
+        key = None
+    if key is not None:
+        context["request_id"] = str(key)
+    written = []
+
+    def step():
+        """Send inside the page's command scope, with the command's event."""
+        written.clear()
+        campaign_id = _current_campaign(service)
+        with command_scope(caller, service, actor, admit=_admit):
+            repeat = (
+                key is not None
+                and CampaignMailTest.objects.filter(
+                    requested_by_id=actor.identity, request_key=key
+                ).exists()
+            )
+            try:
+                row = request_sample(
+                    caller,
+                    service,
+                    campaign_id,
+                    _revision(token),
+                    preview_token=token,
+                    acknowledge_unknown=acknowledge_unknown,
+                )
+            except ObjectDoesNotExist:
+                # The revision (or the integration it needs) left the active
+                # configuration after the preview. The send's transaction
+                # rolled back, so nothing was sent: a stale preview, not an
+                # unknown outcome.
+                raise StaleRecordError(
+                    "Review a fresh campaign test preview."
+                ) from None
+            if not repeat:
+                record_action(
+                    Action.ADMIN_CMD_TEST_SAMPLE,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=actor.identity,
+                    subject_id=caller.automation_session_id,
+                    context={"outcome": Outcome.SUCCEEDED},
+                )
+                written.append(True)
+        return sample_test_model(row, created=not repeat)
+
+    try:
+        model = _held(step)
+    except signing.BadSignature:
+        raise ValueError("The preview token is not valid.") from None
+    except DatabaseError as error:
+        if written and not _guard_refusal(error):
+            context["committed"] = True
+        raise
+    except (NotAvailable, PermissionError) as error:
+        _recheck(caller, service.store, actor, Capability.CONFIGURE)
+        raise error
+    context["committed"] = True
+    return model
+
+
+def _revision(token):
+    """The email revision a preview token names, for ``request_sample``.
+
+    The binding names the template's content version, not its revision
+    record, so this finds the record. A token that cannot be read or names
+    nothing is ``invalid``; ``request_sample`` then verifies everything.
+    """
+    from django.core import signing
+
+    from .accounts.campaign_mail import SALT
+    from .accounts.content_models import ContentVersion
+
+    try:
+        template = UUID(signing.loads(token, salt=SALT)["template"])
+    except (signing.BadSignature, KeyError, TypeError, ValueError):
+        raise ValueError("The preview token is not valid.") from None
+    record = (
+        ContentVersion.objects.filter(pk=template)
+        .values_list("record_id", flat=True)
+        .first()
+    )
+    if record is None:
+        raise ValueError("The preview token is not valid.")
+    return record

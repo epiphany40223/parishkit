@@ -1311,7 +1311,9 @@ wrapper forwards exactly one answer line from the terminal and stops
 waiting for it once the command has finished. A command declares that it prompts in the catalog
 (`prompts`), which gives it `--yes`, and adds its `AREA_VERB` words to the
 host wrapper's `PROMPTING` list so the wrapper forwards a terminal's input.
-The first prompting commands arrive with the actions that need them.
+`test_pk_admin.py` checks that list against the catalog; a prompting
+command that accepts only `--yes` is left out of it by name. PR 6b's
+`test sample` is a prompting command.
 
 ### Audit attribution
 
@@ -1400,6 +1402,8 @@ deliberately:
 - Testing cleanup and pre-start withdrawal (whose deleted Testing data cannot
   be restored): the irreversibility acknowledgement, answered `yes`;
 - Production confirmation: the typed value `Production`;
+- a sample test email while an earlier test's outcome is unknown (PR 6b):
+  the page's acknowledgement, answered `yes`;
 - a reason where the page asks for one: `--reason` (or `-`), which is input,
   not confirmation, and `--yes` does not supply it;
 - later guarded workflows (reopen, archive, return to Testing): their own
@@ -1482,8 +1486,8 @@ signatures:
   in `confirmation_commands`.
 - **PR 6a:** the refresh request and the page's read from `refresh_views`
   (`request_manual_refresh`, `read_refresh_page`).
-- **PR 6b and 6c:** sample and chosen-Family tests (`campaign_mail`,
-  `campaign_family_test`).
+- **PR 6b:** the sample test page's list as `campaign_mail.recent_tests`.
+- **PR 6c:** chosen-Family tests (`campaign_family_test`).
 - **PR 7:** `delivery_control_commands` onto the caller; the maintenance
   switch from `family_maintenance_views`.
 - **PR 8:** report and export reads and export actions from the report and
@@ -1760,8 +1764,34 @@ pause, and closing work is the closed-campaign resolution. See
 
 | URL names | Command or exemption |
 | --- | --- |
-| `campaign_mail` | `test sample` (PR 6) |
-| `campaign_mail_families` | `test families-preview --family DUID …`, `test families --token …`, `test status` (PR 6) |
+| `campaign_mail` | `test sample-preview`, `test sample` (PR 6b) |
+| `campaign_mail_families` | `test families-preview --family DUID …`, `test families --token …`, `test status` (PR 6c) |
+
+`test sample-preview REVISION_ID [--request-key UUID]` (PR 6b) is the
+Preview and test email page's review, through the page's own `prepare` and
+`recent_tests`, for the current campaign only: there is no `--campaign`,
+as the Admin portal has one campaign for now (the single-campaign interim,
+[#145](https://github.com/epiphany40223/parishkit/issues/145)). It returns the sample's subject,
+whether a Testing recipient is set (never its address, and never the
+message body), the page's `pending` and `unknown` flags, its recent tests
+and `preview.token`, the page's own signed binding, whose key is the
+request key, so a token crosses between the page and the command line. A
+token is signed, not encrypted, so the binding holds the Testing
+recipient's SHA-256 digest (`campaign_mail.recipient_digest`), never the
+address; a changed recipient still invalidates the preview. It
+admits read-only and records no event, as the page's view does neither.
+`test sample --token TOKEN|-` is the page's send, through `request_sample`
+in the delivery pages' command scope, recording `admin_cmd_test_sample` only
+for a new key; a repeat returns the original test. The page shows its
+acknowledgement ("A previous test may have arrived; I want to send another
+test.") only while an earlier test's outcome is unknown, so the command
+reads that before any transaction and asks at the
+[prompt](#command-line-confirmation) only then; `--yes` answers it. An
+outcome that becomes unknown after that read is still refused (`invalid`).
+An expired or out-of-date preview (including one whose revision has since
+left the active configuration), or a test already pending, is
+`stale_version`; an altered token `invalid`; another Administrator's token
+`denied`. Each refusal rolls the send back, so none is `outcome_unknown`.
 
 ### Reports and exports
 
@@ -2213,8 +2243,8 @@ Administrator's approval of that deploy.
   replacement call sites) and the post-cleanup check. **PR 5b:** the
   confirmation prompt and `--yes`; the fresh-gated notices.
 - **PR 6, refresh and Testing sends,** in three parts. **PR 6a:**
-  `refresh start` and `refresh status`. **PR 6b:** `test sample`. **PR 6c:**
-  chosen-Family tests, after PR 5.
+  `refresh start` and `refresh status`. **PR 6b:** `test sample-preview` and
+  `test sample`, at the prompt. **PR 6c:** chosen-Family tests, after PR 5.
 - **PR 7, delivery controls:** pause, resume, closed-campaign resolution and
   Family portal maintenance.
 - **PR 8, reports and exports:** report reads, exports with streamed fetch

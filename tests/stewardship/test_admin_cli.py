@@ -66,8 +66,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     changes = {"schedule preview", "schedule confirm", "config request show"}
     refresh = {"refresh start", "refresh status"}
+    tests = {"test sample-preview", "test sample"}
     operations = {"task retry"}
-    assert set(entries) == session | reads | changes | refresh | operations
+    assert set(entries) == session | reads | changes | refresh | tests | operations
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
         assert {"--config", "--session-stdin"} <= names
@@ -78,12 +79,26 @@ def test_the_catalog_lists_every_command_with_its_flags():
             else 4
             if name in changes
             else 6
-            if name in refresh
+            if name in refresh | tests
             else 9
             if name in operations
             else 3
         )
-        assert not entry["fresh_gated"] and not entry["prompts"]
+        assert not entry["fresh_gated"]
+        # A prompting command, and only one, takes --yes. Other branches add
+        # their own prompting commands, so this is not a closed list.
+        assert ("--yes" in names) == entry["prompts"], name
+    # The sample test asks for the page's acknowledgement (PR 6b); its
+    # preview changes nothing and asks nothing.
+    preview, sample = entries["test sample-preview"], entries["test sample"]
+    assert sample["prompts"] and not preview["prompts"]
+    assert preview["scope"] == sample["scope"] == "full"
+    assert not preview["changes_state"] and preview["audit_event"] is None
+    assert sample["changes_state"]
+    assert sample["audit_event"] == "admin_cmd_test_sample"
+    assert preview["arguments"] == ["REVISION_ID"] and sample["arguments"] == []
+    assert sample["result_fields"] == ["created", "request_key", "test"]
+    assert preview["result_fields"][-1] == "preview"
     for name in reads:
         # Read-only status: any session, no state change, the page's event.
         assert entries[name]["scope"] == "read_only", name
@@ -174,6 +189,7 @@ def test_every_state_change_has_a_registered_described_event():
     assert events == [
         "admin_cmd_schedule_confirm",
         "admin_cmd_refresh_start",
+        "admin_cmd_test_sample",
         "admin_cmd_task_retry",
     ]
     for event in events:
@@ -993,3 +1009,12 @@ def test_every_pre_setup_import_is_django_free():
         if result.returncode:
             failed.append(module)
     assert not failed, f"These load Django models before setup: {failed}"
+
+
+def test_the_sample_prompt_asks_the_pages_own_acknowledgement():
+    """The prompt shows the words the page's checkbox shows, unchanged."""
+    from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
+    from parishkit.stewardship.admin_tests import UNKNOWN_ACKNOWLEDGEMENT
+
+    label = CampaignMailForm.base_fields["acknowledge_unknown"].label
+    assert str(label) == UNKNOWN_ACKNOWLEDGEMENT

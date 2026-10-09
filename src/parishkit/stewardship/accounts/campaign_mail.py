@@ -1,5 +1,6 @@
 """Current-preview test-mail intake, independently journalled from live schedules."""
 
+import hashlib
 from dataclasses import dataclass
 from uuid import UUID, uuid4, uuid5
 
@@ -40,7 +41,12 @@ class MailPreview:
     families_url: str | None = None
 
     def binding(self):
-        """A changed configuration, recipient or key invalidates an unsent preview."""
+        """A changed configuration, recipient or key invalidates an unsent preview.
+
+        The token is signed, not encrypted: anyone holding it can read it. So
+        it binds the Testing recipient by ``recipient_digest``, never the
+        address itself (ADM-11 PR 6b prints the token on the command line).
+        """
         row = self.row
         return {
             "actor": str(row.requested_by_id),
@@ -50,8 +56,18 @@ class MailPreview:
             "campaign": str(row.campaign_id),
             "template": str(row.template_id),
             "fingerprint": row.fingerprint,
-            "recipient": self.sample.recipient,
+            "recipient": recipient_digest(self.sample.recipient),
         }
+
+
+def recipient_digest(address):
+    """The SHA-256 of a normalized address, so a token never carries it.
+
+    Normalized as the address is compared elsewhere: surrounding spaces
+    removed and lower case, so the same configured recipient always binds
+    the same digest.
+    """
+    return hashlib.sha256((address or "").strip().lower().encode()).hexdigest()
 
 
 def live(row):
@@ -147,6 +163,33 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
             f"{version.digest}:{campaign.readiness_revision}",
             _families_link(runtime, campaign, revision_id),
         )
+
+
+def recent_tests(campaign_id, row):
+    """The page's test list: pending and unknown flags and the 25 newest tests.
+
+    ``row`` is the preview's ``CampaignMailTest``; a test is ``current`` when
+    it used the same configuration and template. The Preview and test email
+    page and ``pk-admin test sample-preview`` (ADM-11 PR 6b) both read this.
+    """
+    rows = CampaignMailTest.objects.filter(campaign_id=campaign_id)
+    newest = rows.order_by("-created_at", "-id").only(
+        "id", "state", "created_at", "configuration_id", "template_id"
+    )[:25]
+    return {
+        "pending": rows.filter(state__in=["queued", "submitting"]).exists(),
+        "unknown": rows.filter(state="delivery_unknown").exists(),
+        "items": [
+            {
+                "id": test.pk,
+                "state": test.state,
+                "created_at": test.created_at,
+                "current": test.configuration_id == row.configuration_id
+                and test.template_id == row.template_id,
+            }
+            for test in newest
+        ],
+    }
 
 
 def _public_origin():

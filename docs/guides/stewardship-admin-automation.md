@@ -495,6 +495,35 @@ configured, or the configured organization changed, it is exit 3
 key in `error.request_id`: repeat the command with it. System logs show
 each new request as `admin_cmd_refresh_start`.
 
+## Sample test emails
+
+`test sample-preview` and `test sample` are **Preview and test email** and
+its **Send this test email**: one fictional message from an email revision,
+sent only to the Testing recipient, never to a Family. Both need a
+full-scope session.
+
+```sh
+pk-admin test sample-preview REVISION_ID --request-key "$(uuidgen | tr A-Z a-z)" > preview.json
+jq -r .result.preview.token preview.json | pk-admin test sample --token - --yes
+```
+
+| Field | What it holds |
+| --- | --- |
+| `subject` | `test sample-preview`: the sample's subject, as the page shows it. Read the message itself on the page |
+| `testing_recipient_set` | `test sample-preview`: whether a Testing recipient is configured (its address stays on the page) |
+| `pending`, `unknown` | `test sample-preview`: a test is still being sent; an earlier test's outcome is unknown |
+| `tests` | `test sample-preview`: the page's recent tests: `id`, `state`, `created_at` and `current` (same configuration and email) |
+| `preview` | `test sample-preview`: `token`, which `test sample` takes |
+| `created`, `request_key`, `test` | `test sample`: false when this token was sent before; the key; the test's `id`, `state`, `task_id` and `created_at` |
+
+A token made on the page works here and the other way round, and sending
+the same token again returns the same test. While an earlier test's outcome
+is unknown, `test sample` shows the page's words, "A previous test may have
+arrived; I want to send another test.", and waits for `yes` (or takes
+`--yes`). An old preview, or a test still being sent, is exit 1
+(`stale_version`): preview again. System logs show each send as
+`admin_cmd_test_sample`.
+
 ## Task retries
 
 `task retry` is the **Retry** button of a failed task on Background work,
@@ -538,9 +567,9 @@ its subject; it creates no automation notice.
 
 Every command for an action that needs a recent Google sign-in on its page,
 and every command whose page asks you to type a value or tick an
-acknowledgement, asks at a prompt before it acts (none in this release; the
-first arrive with the delivery, go-live and key commands). The command writes what it is
-about to do to standard error and waits for `yes`, or for the page's typed
+acknowledgement, asks at a prompt before it acts, for example `test sample`
+while an earlier test's outcome is unknown; the catalog's `prompts` flag
+names every one. The command writes what it is about to do to standard error and waits for `yes`, or for the page's typed
 value (`Production` for the Production confirmation). Anything else, or the
 end of input, changes nothing and exits 4 (`confirmation_required`). The
 wrapper passes one line typed at your terminal to a prompting command, so
@@ -603,3 +632,5 @@ irreversible and also email and post to Slack.
 - `pk-admin/1` (ADM-11 PR 5): additive. `--yes` on prompting commands,
   the catalog's `prompts` flag in use, and exit 4 (`confirmation_required`)
   when a prompt is not answered.
+- `pk-admin/1` (ADM-11 PR 6b): additive. `test sample-preview` and
+  `test sample`, which prompts while an earlier test's outcome is unknown.
