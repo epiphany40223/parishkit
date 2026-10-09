@@ -126,6 +126,9 @@ HOSTED = {
     "settings-review.html": SETTINGS_PAGES,
     "configuration-request-status.html": SETTINGS_PAGES,
     "background-task-status.html": ("background-task.html",),
+    # Outgoing mail's bulk review region (#382 M4): Confirm and Continue
+    # sit inside it, and the bulk panel draws it.
+    "delivery-bulk-review.html": ("delivery-bulk.html",),
 }
 
 

@@ -97,6 +97,32 @@ def read_listing(parameters):
     )
 
 
+def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry):
+    """The resolutions a message's page offers now, in the page's order.
+
+    ``state`` is the message's state and ``task_state`` its latest delivery
+    task's (None without one); ``can_resolve`` is the campaign's export
+    admission and ``can_retry`` the message's resend admission
+    (``stewardship_delivery_retry_admitted_v1``). The bulk actions on
+    Outgoing mail (``delivery_bulk``) select by these same rules, so a bulk
+    action never touches a message whose own page would not offer it.
+    """
+    actions = ["note"] if campaign_state != "archived" and can_resolve else []
+    if task_state == "failed" and actions:
+        if state == "delivery_unknown":
+            # Both settle the attempt from external evidence without a
+            # send, so neither depends on the resend admission (can_retry).
+            actions += ["accept", "confirm_unsent"]
+            if can_retry:
+                actions.append("resend")
+        elif can_retry:
+            if state == "permanent_failure":
+                actions.append("retry_failed")
+            elif state in {"pending", "retry_wait"}:
+                actions.append("retry_unsent")
+    return actions
+
+
 def read_detail(message_id, parameters):
     """One delivery: its metadata, history, latest task, notes and actions.
 
@@ -135,19 +161,13 @@ def read_detail(message_id, parameters):
             (message["campaign_id"], message_id),
         )
         can_resolve, can_retry = cursor.fetchone()
-    actions = ["note"] if campaign.state != "archived" and can_resolve else []
-    if task and task["state"] == "failed" and actions:
-        if message["state"] == "delivery_unknown":
-            # Both settle the attempt from external evidence without a
-            # send, so neither depends on the resend admission (can_retry).
-            actions += ["accept", "confirm_unsent"]
-            if can_retry:
-                actions.append("resend")
-        elif can_retry:
-            if message["state"] == "permanent_failure":
-                actions.append("retry_failed")
-            elif message["state"] in {"pending", "retry_wait"}:
-                actions.append("retry_unsent")
+    actions = offered_actions(
+        message["state"],
+        task and task["state"],
+        campaign_state=campaign.state,
+        can_resolve=can_resolve,
+        can_retry=can_retry,
+    )
     notes, notes_following = window.rows(
         DeliveryResolution.objects.filter(message_id=message_id)
         .order_by("-created_at", "-id")

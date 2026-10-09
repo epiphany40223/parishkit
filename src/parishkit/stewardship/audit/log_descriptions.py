@@ -225,6 +225,11 @@ DESCRIPTIONS = {
     ),
     "background_viewed": _("An Administrator opened Background work."),
     "delivery_viewed": _("An Administrator opened Outgoing mail."),
+    "delivery_bulk_resolved": _(
+        "An Administrator retried failed emails, or recorded uncertain emails "
+        "as not sent, several at a time on Outgoing mail. Each email also has "
+        "its own entry."
+    ),
     "family_directory_viewed": _(
         "Someone opened the active parishioner family directory."
     ),

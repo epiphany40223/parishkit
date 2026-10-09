@@ -1,0 +1,24 @@
+{% load i18n stewardship delivery %}{% comment %}
+  The contents of Outgoing mail's #bulk-review region (delivery-bulk.html),
+  at most one at a time: a refusal's error summary (bulk_errors); the
+  preview of one bulk action (bulk_review) with Confirm, which posts its
+  signed preview and the note again (the preview carries only its
+  digest); or what confirming did (bulk_result), with Continue, posting
+  bulk_result.token and bulk_note, while the batch limit left emails for
+  another request.
+{% endcomment %}{% if bulk_errors %}{% include 'stewardship/components/errors.html' with errors=bulk_errors %}
+{% elif bulk_review %}<section class="panel" data-review-of="{{ bulk_review.form }}" data-stale-note="{% translate 'You changed the form after previewing it. Choose Preview again to see what it covers now.' %}" aria-labelledby="bulk-review-title">
+<h2 id="bulk-review-title" tabindex="-1" data-in-place-focus>{% if bulk_review.kind == "retry_failed" %}{% blocktranslate count count=bulk_review.count trimmed %}Retry {{ count }} failed email?{% plural %}Retry {{ count }} failed emails?{% endblocktranslate %}{% else %}{% blocktranslate count count=bulk_review.count trimmed %}Record {{ count }} email as not sent?{% plural %}Record {{ count }} emails as not sent?{% endblocktranslate %}{% endif %}</h2>
+<p>{% translate "Type of email:" %} {% if bulk_review.purpose == "all" %}{% translate "All types" %}{% else %}{{ bulk_review.purpose|delivery_label }}{% endif %}.</p>
+<p>{% translate "Evidence or reason:" %} {{ bulk_review.note }}</p>
+<p>{% if bulk_review.kind == "retry_failed" %}{% translate "Each email goes back to the mail sender, which sends it shortly, and keeps its own history." %}{% else %}{% translate "Each email is recorded as failed, with this note, and is not sent again." %}{% endif %} {% translate "An email that changes before you confirm is skipped. This preview expires after 15 minutes." %}</p>
+<p data-review-note>{% translate "Nothing changes until you confirm." %}</p>
+<form method="post" action="#bulk-review" data-in-place data-in-place-message="{% translate 'Done.' %}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ bulk_review.token }}"><input type="hidden" name="note" value="{{ bulk_review.note }}">
+{% if bulk_review.kind == "retry_failed" %}{% button type="submit" %}{% blocktranslate count count=bulk_review.count trimmed %}Retry {{ count }} email{% plural %}Retry {{ count }} emails{% endblocktranslate %}{% endbutton %}{% else %}{% button type="submit" %}{% blocktranslate count count=bulk_review.count trimmed %}Record {{ count }} email as not sent{% plural %}Record {{ count }} emails as not sent{% endblocktranslate %}{% endbutton %}{% endif %}</form>
+</section>{% elif bulk_result %}<section class="panel" aria-labelledby="bulk-result-title">
+<h2 id="bulk-result-title" tabindex="-1" data-in-place-focus>{% if bulk_result.remaining %}{% translate "Partly done" %}{% else %}{% translate "Done" %}{% endif %}</h2>
+<p>{% if bulk_result.kind == "retry_failed" %}{% blocktranslate with done=bulk_result.resolved|number total=bulk_result.total|number trimmed %}Retried {{ done }} of {{ total }} failed emails.{% endblocktranslate %}{% else %}{% blocktranslate with done=bulk_result.resolved|number total=bulk_result.total|number trimmed %}Recorded {{ done }} of {{ total }} emails as not sent.{% endblocktranslate %}{% endif %}</p>
+{% if bulk_result.skipped %}<p>{% blocktranslate count count=bulk_result.skipped trimmed %}{{ count }} email was skipped because it changed since the preview or is no longer allowed. Open it in the list to see why.{% plural %}{{ count }} emails were skipped because they changed since the preview or are no longer allowed. Open them in the list to see why.{% endblocktranslate %}</p>{% endif %}
+{% if bulk_result.token %}<p>{% blocktranslate count count=bulk_result.remaining trimmed %}{{ count }} more email is left. Choose Continue to handle it.{% plural %}{{ count }} more emails are left. Choose Continue to handle the next ones.{% endblocktranslate %}</p>
+<form method="post" action="#bulk-review" data-in-place data-in-place-message="{% translate 'Done.' %}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ bulk_result.token }}"><input type="hidden" name="note" value="{{ bulk_note }}">{% button type="submit" %}{% translate "Continue" %}{% endbutton %}</form>{% endif %}
+</section>{% endif %}

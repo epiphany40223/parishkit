@@ -319,7 +319,12 @@ to `DATA`, for example), becomes
    the **Outgoing mail** page (`/admin/mail/outgoing/`), choose the **Failed** state
    and look at the messages last changed during the outage.
    Open each one that should still go and choose **Retry failed delivery** on
-   its page (the button is offered only when delivery is not paused). Then
+   its page (the button is offered only when delivery is not paused), or,
+   when all of one type should go, use **Fix many emails at once** →
+   **Retry all failed emails** on the same page, which retries each the
+   same way after one preview
+   ([Outgoing mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)).
+   Then
    check the **Still sending (queued)** and **Still sending (waiting to
    retry)** states for messages last changed during the outage whose page offers **Retry delivery not accepted
    by the provider**, and choose it for each that should still go. If you did
@@ -655,7 +660,12 @@ owns the policy for each kind:
 and [Admin reports](../specs/stewardship/background-processing/spec.md#administrator-digests).
 The guides linked in step 4 own each kind's resolution workflow.
 
-For each message, from its detail page (`/admin/mail/outgoing/<message id>/`):
+For each message, from its detail page (`/admin/mail/outgoing/<message id>/`)
+(when the provider's records show that many of them were not sent, step 5
+can be done for all of them at once with **Fix many emails at once** →
+**Record all "Not sure it arrived" emails as not sent** on Outgoing mail,
+after one preview and with one note; see
+[Outgoing mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)):
 
 1. Look for it in the provider's own record: the delegated mailbox's sent
    mail or the Workspace admin log, by time and recipient.

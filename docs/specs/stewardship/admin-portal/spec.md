@@ -3444,6 +3444,63 @@ page load, outside the in-place regions, so it never appears or vanishes
 under the pointer, and it is absent when nothing is held. No schema change
 and no lasting record: the process log keeps each hold's WARNING line.
 
+#### Fix many emails at once
+
+After a mail outage many emails can need the same decision. A collapsed
+**Fix many emails at once** panel on Outgoing mail offers two bulk actions
+(#382 item M4), each shown only while some email of the current campaign
+qualifies:
+
+- **Retry all failed emails**: every failed email whose own page offers
+  **Retry failed delivery**.
+- **Record all "Not sure it arrived" emails as not sent**: every uncertain
+  email whose own page offers recording it as not sent. As on that page,
+  the evidence is the Administrator's: a required checkbox says they checked
+  the mail service's own records and these emails were not sent. Nothing is
+  resent and no address is blocked.
+
+A message qualifies only by the rules its own page uses
+(`delivery_reads.offered_actions`): the campaign is not archived and its
+exports are admitted, its latest delivery task failed, and, for a retry,
+its resend admission holds. A chosen-Family test is never retried. Each
+form names the email types it covers with their counts (and All types when
+there are several) and requires an evidence or reason note, recorded on
+every email. Preview is unavailable until the required fields are filled
+in. A duplicate-risk resend is never offered in bulk.
+
+**Preview** shows the exact count in place, below the forms, and changes
+nothing. Its **Confirm** button posts a signed preview that binds every
+selected email's identity and version, a digest of the note and the
+Administrator, and expires after 15 minutes. The note itself is not in the
+preview: Confirm posts it again beside the preview, and it must match. Changing the form after previewing withdraws the
+preview, as an [in-place review](#in-place-controls) does. Confirming
+resolves each email through the ordinary per-email resolution, one email per
+command and transaction, at its previewed version, so each keeps its own
+guard, resolution record and audit event, and a retry prepares the email
+exactly as a one-at-a-time retry does: Families' codes and links already
+emailed stay valid. An email that changed after the preview, or that its
+own guard refuses, is skipped and counted, never forced; a lost sign-in or a
+database outage stops the run. Each email's command identity is derived
+from the preview and the email, so confirming the same preview again never
+repeats a resolution. At most 100 emails are resolved per request, so a
+request stays well inside the web time limit; the result then offers
+**Continue**, which applies the rest of the same preview. Continue's preview
+also lists the emails skipped so far, which are counted again but not
+retried, so skipped emails never fill a later batch; it expires when the
+original preview would. The result says
+how many were resolved, skipped and left, and the list is refreshed in
+place. Every application that attempted an email records one
+`delivery_bulk_resolved` audit event with the number resolved and the
+number previewed. An expired, altered or another Administrator's preview,
+or a choice that no longer matches any email, is refused in place with an
+error summary and changes nothing.
+
+The bulk actions are page-only for now; the shared functions in
+`jobs/delivery_bulk.py` would back an
+[Admin automation](../admin-automation/spec.md) command if one is added.
+No schema change: they insert the same resolution rows the per-email page
+inserts.
+
 ### Family portal maintenance
 
 An Administrator may close the Family portal for maintenance from System →

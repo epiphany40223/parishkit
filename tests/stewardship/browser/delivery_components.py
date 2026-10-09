@@ -3,6 +3,7 @@
 from datetime import timedelta
 from uuid import uuid4
 
+from parishkit.stewardship.jobs.delivery_bulk import BulkResult
 from parishkit.stewardship.jobs.delivery_metadata import DELIVERY_SORTING
 from parishkit.stewardship.jobs.delivery_views import REFUSAL_SORTING
 from parishkit.stewardship.web.contracts import PageWindow
@@ -68,6 +69,85 @@ def components(now):
                 throttled=2,
                 throttled_due=now + timedelta(minutes=15),
             ),
+        ),
+    )
+    # Outgoing mail's bulk actions (#382 M4): the panel, and the answers its
+    # in-place Preview and Confirm get (a test routes each POST to one).
+    failed = message | dict(state="permanent_failure")
+    bulk = dict(
+        table=window_table(
+            PageWindow(1, 25),
+            [failed],
+            False,
+            total=(1, False),
+            sorting=DELIVERY_SORTING,
+            sort=DELIVERY_SORTING.default,
+        ),
+        states=["all", "permanent_failure"],
+        selected_state="all",
+        query="",
+        bulk_overview={
+            "retry_failed": {
+                "total": 3,
+                "purposes": [("initial", 2), ("receipt", 1)],
+            },
+            "confirm_unsent": {"total": 1, "purposes": [("reminder", 1)]},
+        },
+    )
+    yield "/deliveries-bulk", "deliveries", bulk
+    yield (
+        "/deliveries-bulk-review",
+        "deliveries",
+        bulk
+        | dict(
+            bulk_review=dict(
+                kind="retry_failed",
+                purpose="all",
+                count=3,
+                note="Gmail was down from 2 to 3 PM.",
+                token="signed-preview",
+                form="bulk-retry_failed",
+            )
+        ),
+    )
+    yield (
+        "/deliveries-bulk-result",
+        "deliveries",
+        bulk
+        | dict(
+            table=window_table(
+                PageWindow(1, 25),
+                [failed | dict(state="pending")],
+                False,
+                total=(1, False),
+                sorting=DELIVERY_SORTING,
+                sort=DELIVERY_SORTING.default,
+            ),
+            bulk_result=BulkResult(
+                kind="retry_failed",
+                purpose="all",
+                total=250,
+                resolved=100,
+                newly=100,
+                skipped=2,
+                remaining=148,
+                token="signed-continue",
+            ),
+            bulk_note="Gmail was down from 2 to 3 PM.",
+        ),
+    )
+    yield (
+        "/deliveries-bulk-refused",
+        "deliveries",
+        bulk
+        | dict(
+            bulk_errors=[
+                dict(
+                    message="These emails changed, or the preview expired, "
+                    "before you confirmed. Choose Preview again to see what "
+                    "qualifies now."
+                )
+            ]
         ),
     )
     delivery = dict(

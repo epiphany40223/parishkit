@@ -93,6 +93,7 @@ sections:
     "Family email sends": [ADM-06]
     "Outgoing mail": [ADM-06]
     "Sending limit note": [ADM-06]
+    "Fix many emails at once": [ADM-06]
     "Family portal maintenance": [ADM-06]
     "Reopen and archive": [ADM-06]
     "Return to Testing after archive": [ADM-06]
