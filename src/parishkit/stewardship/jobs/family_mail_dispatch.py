@@ -2,6 +2,7 @@
 
 import logging
 from datetime import timedelta
+from typing import NamedTuple
 from uuid import UUID, uuid4
 
 from django.db import connection, transaction
@@ -62,6 +63,9 @@ UNSCHEDULED_PURPOSES = frozenset(
 MAX_ATTEMPTS = 5
 PROVIDER_SECONDS = 30
 RETRY_BASE_SECONDS = 30
+# Retry delays, by attempt, after every recipient was refused temporarily
+# (see result_retry_seconds): MAX_ATTEMPTS then span about 17 hours.
+RECIPIENT_RETRY_SECONDS = (900, 3600, 14400, 43200)
 DAY = timedelta(hours=24)
 
 
@@ -104,11 +108,53 @@ def retry_delay(attempt):
     return min(600, RETRY_BASE_SECONDS * 2 ** (attempt - 1))
 
 
-def result_retry_seconds(result, attempt):
-    """A sending-limit refusal waits for the limit; other retries back off."""
+def result_retry_seconds(result, attempt, *, counted=None):
+    """A sending-limit refusal waits for the limit; other retries back off.
+
+    ``counted`` is given only by Family mail (see ``family_retry_seconds``):
+    the attempts that count against the budget. With it, a message whose
+    every recipient was refused with a per-address temporary code (such as
+    ``450 4.2.1``, the receiving side throttling) backs off on
+    RECIPIENT_RETRY_SECONDS instead (#382): the ordinary schedule spends all
+    MAX_ATTEMPTS in about 8 minutes, too soon for the receiving mailbox to
+    recover, which mattered most for one-address Families. Administrator
+    alerts never pass it, so they keep the ordinary schedule.
+    """
     if result.limit is not None:
         return LIMIT_RETRY_SECONDS[result.limit]
+    if counted is not None and recipient_throttled(result):
+        step = min(max(counted, 1), len(RECIPIENT_RETRY_SECONDS))
+        return RECIPIENT_RETRY_SECONDS[step - 1]
     return retry_delay(attempt)
+
+
+def family_retry_seconds(message_id, attempt, result):
+    """``result_retry_seconds`` for a Family message, with its throttle schedule.
+
+    The throttle step is indexed by the attempts that count against the
+    budget (``attempt`` less the spared limit and outage outcomes), so a
+    message that first waited out limits still starts at 15 minutes.
+    """
+    counted = None
+    if recipient_throttled(result):
+        counted = attempt - limit_history(_Message(message_id)).spared
+    return result_retry_seconds(result, attempt, counted=counted)
+
+
+class _Message(NamedTuple):
+    """The one field limit_history reads, for callers holding only an id."""
+
+    pk: object
+
+
+def recipient_throttled(result):
+    """Whether a Family result is a temporary refusal of every one of its recipients."""
+    return (
+        isinstance(result, FamilyDeliveryResult)
+        and result.status is FamilyDeliveryStatus.TRANSIENT
+        and result.recipient_count > 0
+        and len(set(result.transient)) == result.recipient_count
+    )
 
 
 def sends_in_last_day():
@@ -179,11 +225,12 @@ def limit_history(message):
     instead as a healthy submission outcome whose Task then deferred in the
     RECONCILING phase (see
     family_mail_delivery_tasks._execute), matched by the attempt's (run,
-    fence). Return ``(spared, started, first)``: every spared outcome so far,
-    the time of the first limit refusal in the current unbroken run of them,
-    and the time of the message's first provider outcome since it was last
-    retried by staff. Any other provider outcome, or a staff retry of a
-    failed delivery, ends a limit run.
+    fence). Return a ``LimitHistory``: ``spared``, every spared outcome so
+    far; ``started``, the time of the first limit refusal in the current
+    unbroken run of them; ``first``, the time of the message's first provider
+    outcome since it was last retried by staff; and ``held``, the time of its
+    first spared (limit or outage) outcome since then. Any other provider
+    outcome, or a staff retry of a failed delivery, ends a limit run.
     """
     events = list(
         OutboxEvent.objects.filter(message_id=message.pk)
@@ -212,6 +259,15 @@ def limit_history(message):
     )
 
 
+class LimitHistory(NamedTuple):
+    """What ``limit_history`` found; see there."""
+
+    spared: int
+    started: object
+    first: object
+    held: object
+
+
 def limit_run(events, limited):
     """The pure walk behind ``limit_history`` (see there), kept separately testable.
 
@@ -219,23 +275,25 @@ def limit_run(events, limited):
     version order, ``shared`` marking a shared-outage result; ``limited`` is
     the set of ``(run, fence)`` pairs whose Task deferred as a hold.
     """
-    spared, started, first = 0, None, None
+    spared, started, first, held = 0, None, None, None
     for action, previous, run, fence, created, shared in events:
         if action == DeliveryAction.RETRY_FAILED.value:
             # A staff retry starts the message's give-up clocks afresh.
-            started = first = None
+            started = first = held = None
         elif previous == "submitting":
             first = first or created
             if shared:
                 # Outage deferrals are holds too, but never limit refusals.
                 spared += 1
                 started = None
+                held = held or created
             elif (run, fence) in limited:
                 spared += 1
                 started = started or created
+                held = held or created
             else:
                 started = None
-    return spared, started, first
+    return LimitHistory(spared, started, first, held)
 
 
 def accepted_since(instant):
@@ -272,12 +330,14 @@ def budget_spent(message, result):
     Limit refusals and shared outages are not the message's fault: they are
     left out of the attempt budget. Instead a message refused at a limit
     continuously for LIMIT_GIVE_UP fails visibly, unless other mail was
-    accepted recently, and in any case after LIMIT_GIVE_UP_ABSOLUTE; a message
-    kept unsent by outages fails LIMIT_GIVE_UP_ABSOLUTE after its first
-    provider outcome since any staff retry. (The delivery circuit, not this
-    budget, keeps a long outage from probing with every queued message.)
+    accepted recently, and in any case LIMIT_GIVE_UP_ABSOLUTE after the
+    start of its limit run or after its first limit or outage outcome since
+    any staff retry, whichever is earlier (an outage restarts the run, #382);
+    a message kept unsent by outages fails LIMIT_GIVE_UP_ABSOLUTE after its
+    first provider outcome since any staff retry. (The delivery circuit, not
+    this budget, keeps a long outage from probing with every queued message.)
     """
-    spared, started, first = limit_history(message)
+    spared, started, first, held = limit_history(message)
     now = database_now()
     if result.limit is None and result.health is ProviderHealth.UNAVAILABLE:
         if first is None or now - first <= LIMIT_GIVE_UP_ABSOLUTE:
@@ -288,6 +348,14 @@ def budget_spent(message, result):
         return message.attempt - spared >= MAX_ATTEMPTS
     if started is None:
         return False
+    if held is not None and now - held > LIMIT_GIVE_UP_ABSOLUTE:
+        # An outage between limit refusals restarts the limit run, so the
+        # run alone could keep a message waiting about twice the absolute
+        # cap (#382); the cap also counts from the first limit or outage
+        # outcome. (Not from any outcome: an old ordinary failure must not
+        # fail the message at its first limit hold.)
+        _log_give_up(message, now - held, "Google refused it at a sending limit")
+        return True
     waited = now - started
     if waited <= LIMIT_GIVE_UP or (
         waited <= LIMIT_GIVE_UP_ABSOLUTE
@@ -842,7 +910,11 @@ def finish_submission(identifier, claim, result, *, hold=False):
                 evidence=evidence,
                 admit=admit,
                 **(
-                    {"retry_seconds": result_retry_seconds(result, message.attempt)}
+                    {
+                        "retry_seconds": family_retry_seconds(
+                            message.pk, message.attempt, result
+                        )
+                    }
                     if action is DeliveryAction.RETRY_UNACCEPTED
                     else {}
                 ),
