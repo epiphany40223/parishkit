@@ -184,9 +184,10 @@ INSTRUCTIONS = MappingProxyType(
         ),
         IncidentKind.SOURCE_RETENTION_FAILING: (
             "Removing old ParishSoft copies was skipped by the last three "
-            "refreshes, so the database keeps growing. Refreshes still "
-            "work. Ask the server operator to check the worker log for "
-            "the cause."
+            "refreshes, or kept stopping at its time or lock limits with old "
+            "copies left, so the database keeps growing. Refreshes still "
+            "work. Ask the server operator to check the System log and the "
+            "worker log for the cause."
         ),
         # No apostrophe or other HTML-special character: the SQL twin
         # (stewardship_ops_content_v1) inserts instructions unescaped.

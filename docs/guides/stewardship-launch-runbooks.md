@@ -387,11 +387,24 @@ those refreshes and does not overwrite the snapshot; stop and investigate
 before touching the credential or the source. For a destructive change, see
 [Accepting a large ParishSoft change](#accepting-a-large-parishsoft-change).
 A third, `source_retention_failing` (WARNING, escalating to CRITICAL if it
-persists), is housekeeping: the last three refreshes each skipped removing
-old ParishSoft copies (the System log shows a `source_retention_skipped`
-entry per refresh). Refreshes still work, but the database keeps growing
-until the cause is fixed; the worker's log names its failure category. It
-resolves after a refresh gets through the cleanup without a skip.
+persists), is housekeeping. It opens in either of two cases:
+
+- **Skipped:** the last three refreshes each skipped removing old
+  ParishSoft copies. The System log shows a `source_retention_skipped`
+  entry per refresh, and the worker's log names its failure category.
+- **Stalled** ([#833](https://github.com/epiphany40223/parishkit/issues/833)):
+  the last 12 refreshes each stopped their cleanup at its time or lock
+  limit, removed nothing, and old work is still waiting (a compacted copy
+  not reclaimed, or a superseded report generation not removed, more than
+  two days on). The System log shows `work_budget_reached` (INFO, a lock or
+  time limit) or `task_timed_out` (WARNING, a statement limit) entries for
+  those refreshes, not `source_retention_skipped`. The usual cause is lock
+  contention, such as a Campaign row held by a long transition on every
+  refresh, or a backlog too large to finish in the budget.
+
+Refreshes still work, but the database keeps growing until the cause is
+fixed. It resolves after a refresh gets through the cleanup without a skip
+and the stall's conditions no longer hold.
 
 **You do:**
 

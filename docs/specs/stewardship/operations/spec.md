@@ -958,7 +958,9 @@ Each refresh runs this retention first, within a time budget:
 - the compaction lease is released even while the worker stops gracefully.
 
 A stop at any of these limits is recorded in the timeout log, and the next
-refresh resumes the work.
+refresh resumes the work. Stops that keep happening without progress open
+the [retention incident](../admin-portal/spec.md#parishsoft-refresh-panel)
+([#833](https://github.com/epiphany40223/parishkit/issues/833)).
 
 Run dedicated derived-fact compaction hourly by default, with a configurable
 positive interval and bounded batches, under the

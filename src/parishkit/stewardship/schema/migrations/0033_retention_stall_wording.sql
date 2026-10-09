@@ -1,7 +1,22 @@
--- Independent fixed-content admission for outbox SQL writers. The private
--- helper also recompiles these facts; it never trusts stored arbitrary prose.
--- Contract tests compare every closed kind/phase against operational_content.py.
-CREATE FUNCTION public.stewardship_ops_content_v1(notice uuid, deployment_mode text)
+-- Frozen forward migration file 0033 (the repository-wide file sequence):
+-- the Administrator's instruction for the source_retention_failing incident
+-- also covers retention that keeps stopping at its limits (#833). It is
+-- installed by the Django migration that names it in FROZEN_SQL and must
+-- never change once released; tests/stewardship/test_schema_migration_files.py
+-- pins its digest and checks that its copy of the replaced function equals
+-- the fresh-install baseline's (schema/operational_render.sql).
+--
+-- The incident now also opens when the newest refreshes all stopped their
+-- retention at its time or lock limits with old work left, and its
+-- instruction said only "skipped by the last three refreshes". The notice
+-- content function (stewardship_ops_content_v1) mirrors the Python text
+-- (jobs/operational_content.py) for the SQL writers, so it is replaced with
+-- that one sentence changed and nothing else. It stays invoker's rights,
+-- STABLE, with its fixed search_path.
+SET LOCAL check_function_bodies = false;
+SET LOCAL search_path = public;
+
+CREATE OR REPLACE FUNCTION public.stewardship_ops_content_v1(notice uuid, deployment_mode text)
 RETURNS jsonb LANGUAGE plpgsql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE n stewardship_ops_notice%ROWTYPE; kind text; title text; status text;
     instruction text; labels text[]; vals text[]; body text; html text; i integer;
@@ -72,22 +87,15 @@ BEGIN
       'html',html||'</dl>','text',body);
 END $$;
 
-CREATE FUNCTION stewardship_ops_render_matches_v1(proposed jsonb, notice uuid,
-    configuration uuid, address text, deployment_mode text)
-RETURNS boolean LANGUAGE plpgsql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE email jsonb; content jsonb;
+DO $check$
 BEGIN
-    SELECT settings INTO email FROM stewardship_applied_integration
-      WHERE configuration_id=configuration AND kind='email';
-    IF email IS NULL OR address IS NULL THEN RETURN false; END IF;
-    content:=stewardship_ops_content_v1(notice,deployment_mode);
-    RETURN (proposed->>'configuration_id')::uuid=configuration
-      AND proposed->>'template_id' IS NULL
-      AND proposed->>'sender'=email->>'sender'
-      AND proposed->>'reply_to'=email->>'reply_to'
-      AND proposed->'intended_recipients'=jsonb_build_array(address)
-      AND proposed->'routed_recipients'=jsonb_build_array(address)
-      AND proposed->>'subject'=content->>'subject'
-      AND proposed->>'html'=content->>'html'
-      AND proposed->>'text'=content->>'text';
-END $$;
+    IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname='stewardship_ops_content_v1'
+          AND NOT p.prosecdef AND p.provolatile='s'
+          AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']
+          AND p.prosrc LIKE '%kept stopping at its time or lock limits%'
+          AND p.prosrc NOT LIKE '%three refreshes, so the database%')<>1 THEN
+        RAISE EXCEPTION 'stewardship_ops_content_v1 was not installed as declared';
+    END IF;
+END
+$check$;

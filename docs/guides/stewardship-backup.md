@@ -43,7 +43,8 @@ than the one before it, as the
 [runbook](stewardship-backup-runbook.md#the-key) explains. Source snapshot
 retention, which runs with each ParishSoft refresh, has its own
 `source_retention_failing` incident (WARNING, escalating) when three
-refreshes in a row skipped it, as the
+refreshes in a row skipped it, or when the last 12 all stopped it at its
+time or lock limits, removed nothing and left old work waiting, as the
 [launch runbooks](stewardship-launch-runbooks.md#parishsoft-outage)
 describe. The migration profile and `database-grants`
 admit a configured deployment when a backup completed within that window.
