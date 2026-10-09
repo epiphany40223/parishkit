@@ -526,27 +526,40 @@ BACKUP_ROW = (
     False,  # replication
     False,  # inherit
     "pg_read_all_data:true:false",
+    False,  # another role is a member of the login
+    False,  # the login owns an object
+    False,  # the login has foreign-data wrapper or server USAGE
 )
 
 
 @pytest.mark.parametrize(
-    "change, temporary, accepted",
+    "change, temporary, refusal",
     [
-        ({}, False, True),
-        ({0: "pk_stewardship_web", 1: "pk_stewardship_web"}, False, False),
-        ({1: "pk_stewardship_operator"}, False, False),
-        ({2: True}, False, False),
-        ({3: False}, False, False),
-        ({7: True}, False, False),
-        ({8: "pg_read_all_data:true:false,pg_write_all_data:true:false"}, False, False),
-        ({8: None}, False, False),
-        ({}, True, False),
+        ({}, False, None),
+        ({0: "pk_stewardship_web", 1: "pk_stewardship_web"}, False, "not the backup"),
+        ({1: "pk_stewardship_operator"}, False, "not its own session"),
+        ({2: True}, False, ": superuser"),
+        ({3: False}, False, "does not bypass row-level security"),
+        ({7: True}, False, "inherits role authority"),
+        (
+            {8: "pg_read_all_data:true:false,pg_write_all_data:true:false"},
+            False,
+            "other than pg_read_all_data",
+        ),
+        ({8: None}, False, "other than pg_read_all_data"),
+        ({9: True}, False, "another role is a member of the login"),
+        ({10: True}, False, "the login owns an object"),
+        ({11: True}, False, "the login has foreign-data USAGE"),
+        ({}, True, "temporary-object authority"),
     ],
 )
 def test_the_backup_command_admits_only_its_own_login(
-    monkeypatch, change, temporary, accepted
+    monkeypatch, change, temporary, refusal
 ):
-    """Exactly the backup login's attributes and membership, and no temp authority."""
+    """Exactly the backup login's attributes and membership, and no temp authority.
+
+    A refusal names the check that failed.
+    """
     from unittest.mock import MagicMock
 
     import django.db
@@ -556,13 +569,63 @@ def test_the_backup_command_admits_only_its_own_login(
     row = tuple(change.get(index, value) for index, value in enumerate(BACKUP_ROW))
     database = MagicMock()
     cursor = database.cursor.return_value.__enter__.return_value
-    cursor.fetchone.side_effect = [row, (temporary,)]
+    cursor.fetchone.side_effect = [row, NO_EXCESS, (temporary,)]
+    cursor.fetchall.return_value = [("public", "stewardship_backup_run", "INSERT")]
     monkeypatch.setattr(django.db, "connection", database)
-    if accepted:
+    if refusal is None:
         backup_commands._admit_backup_identity()
     else:
-        with pytest.raises(ConfigError):
+        with pytest.raises(ConfigError, match=refusal):
             backup_commands._admit_backup_identity()
+
+
+# excess_authority's row: definer EXECUTE, sequence, schema CREATE, database
+# CREATE.
+NO_EXCESS = (False, False, False, False)
+
+
+@pytest.mark.parametrize(
+    "writes, excess, refusal",
+    [
+        (
+            [("public", "stewardship_family_campaign", "UPDATE")],
+            NO_EXCESS,
+            "UPDATE on public.stewardship_family_campaign",
+        ),
+        (
+            [("public", "stewardship_backup_run", "DELETE")],
+            NO_EXCESS,
+            "DELETE on public.stewardship_backup_run",
+        ),
+        (
+            [("other", "stewardship_backup_run", "INSERT")],
+            NO_EXCESS,
+            "INSERT on other.stewardship_backup_run",
+        ),
+        ([], (True, False, False, False), "EXECUTE on a definer routine"),
+        ([], (False, True, False, False), "a sequence privilege"),
+        ([], (False, False, True, False), "CREATE on a schema"),
+        ([], (False, False, False, True), "CREATE on the database"),
+    ],
+)
+def test_the_backup_command_refuses_grants_beyond_its_own(
+    monkeypatch, writes, excess, refusal
+):
+    """A write it does not declare, or definer, sequence or CREATE authority,
+    named in the refusal."""
+    from unittest.mock import MagicMock
+
+    import django.db
+
+    from parishkit.stewardship import backup_commands
+
+    database = MagicMock()
+    cursor = database.cursor.return_value.__enter__.return_value
+    cursor.fetchone.side_effect = [BACKUP_ROW, excess, (False,)]
+    cursor.fetchall.return_value = writes
+    monkeypatch.setattr(django.db, "connection", database)
+    with pytest.raises(ConfigError, match=f"grants are excessive: {refusal}"):
+        backup_commands._admit_backup_identity()
 
 
 def test_keygen_and_open_commands_roundtrip_and_refuse_generically(

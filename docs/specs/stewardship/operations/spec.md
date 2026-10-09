@@ -333,7 +333,16 @@ measurement is in
   the full pass serves.
 - **Grant admission.** Every queue operation still checks the actual login:
   the exact role, still able to log in and not past its `VALID UNTIL`, with
-  no superuser, bypass, membership or schema-create authority. PostgreSQL
+  no superuser, bypass, membership or schema-create authority. The same
+  identity check, which every runtime login's admission runs and not only
+  the installers' (online services, download, offline profiles and
+  backup), also refuses another role's membership in the login, an object
+  of any kind that the login owns, and foreign-data wrapper or server
+  `USAGE` (#389), and its refusal names the checks that failed. The backup
+  login also has its grants compared, as far as `pg_read_all_data` leaves
+  anything to compare, as the
+  [backup guide](../../../guides/stewardship-backup.md#the-whole-trees-read-only-by-one-identity)
+  describes. PostgreSQL
   checks the login attribute only when a session starts, and `VALID UNTIL`
   only when it authenticates a password, so this check is what makes the
   installer's own code stop on a kept connection once its login is
@@ -514,7 +523,12 @@ grants command, or skips both when the new image's upgrade check proves from
 the live database that neither would change anything, and starts the
 services, as the
 [release image guide](../../../guides/stewardship-release-image.md) and the
-runtime guide describe. That upgrade check and the upgrade-parity test are the
+runtime guide describe. The upgrade check also refuses the identity drift
+that every runtime login's admission refuses (see **Grant admission**
+above), and the backup login's definer, sequence and `CREATE` authority
+that its backup admission refuses, so an upgrade onto a drifted catalog
+stops before its services would all refuse to start or its next backup
+would fail. That upgrade check and the upgrade-parity test are the
 automated upgrade checks in v1; broader migration checks and upgrade readiness
 checks remain deferred. Migrations must be forward-safe for the
 declared rollout; destructive column removal follows expand/migrate/contract
