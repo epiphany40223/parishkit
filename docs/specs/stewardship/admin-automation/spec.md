@@ -1080,7 +1080,7 @@ document.
 
 #### Durable failure entry
 
-After admission, the same failure also leaves one durable ERROR entry in the
+A failure inside the admitted command also leaves one durable ERROR entry in the
 [system logs](../admin-portal/spec.md#logs) (#617), so it is not lost with the
 operator's terminal: event `admin_command_failed`, schema `failure`, under the
 invocation's correlation ID. Its context holds only closed values: `failure`

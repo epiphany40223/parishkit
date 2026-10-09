@@ -1555,3 +1555,13 @@ def test_the_prompts_ask_the_pages_own_acknowledgement(template, text):
 
     page = Path(accounts.__file__).parent / "templates" / "stewardship" / template
     assert '{% translate "' + text + '" %}' in page.read_text()
+
+
+def test_every_command_name_fits_the_durable_failure_shape():
+    """Migration 0038 admits a failure entry's ``command`` only as lower-case
+    words (letters and hyphens, at most four, at most 64 characters). A
+    catalog name outside that shape would lose its durable entry silently,
+    leaving only a WARNING line (#617)."""
+    shape = re.compile(r"[a-z][a-z-]*( [a-z][a-z-]*){0,3}")
+    for name in admin_cli.BY_NAME:
+        assert len(name) <= 64 and shape.fullmatch(name), name
