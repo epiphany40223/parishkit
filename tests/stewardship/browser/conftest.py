@@ -22,7 +22,6 @@ from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoForm
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
-from parishkit.stewardship.accounts.code_reports import CODE_SORTING
 from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.accounts.integration_credentials import (
     CredentialSummary,
@@ -1354,20 +1353,6 @@ def component_origin():
                         },
                     ]
                 },
-            },
-        ),
-        (
-            "/codes",
-            "codes",
-            {
-                "table": window_table(
-                    PageWindow(2, 50),
-                    [{"duid": 1234567890123456789, "code": "ABCDEFGH"}],
-                    True,
-                    total=(120, False),
-                    sorting=CODE_SORTING,
-                    sort="-duid",
-                ),
             },
         ),
         (

@@ -14,7 +14,6 @@ move with NAV-12 and stay in ``urls.py`` until then.
 
 from django.urls import path
 
-from ..accounts import code_reports
 from ..reports import (
     directory_export_views,
     directory_views,
@@ -147,5 +146,4 @@ patterns = [
         family_timeline_views.family_timeline,
         "family_timeline",
     ),
-    _page("reports/family-codes/", code_reports.family_codes, "family_codes"),
 ]

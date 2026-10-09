@@ -2,8 +2,9 @@
 
 import json
 import re
+import socket
 from datetime import timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.db import connection, transaction
@@ -11,8 +12,11 @@ from django.http import QueryDict
 from django.test import Client
 from django.urls import reverse
 
+from parishkit.stewardship.accounts import sessions
+from parishkit.stewardship.accounts.models import PortalSession
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.audit.models import AuditContext
+from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.directories import DirectoryQuery, directory_page
@@ -532,11 +536,74 @@ def test_directory_unavailability_and_invalid_filters_are_private(
         assert b"private source" not in body and harness.code.encode() not in body
         assert response["Cache-Control"] == "no-store"
         assert response["Retry-After"] == "5"
-        recovery = reverse("admin:family_codes")
-        assert f'href="{recovery}"'.encode() in body
-        recovered, codes = read(browser, recovery)
-        assert recovered.status_code == 200 and harness.code.encode() in codes
-        assert recovered["Cache-Control"] == "no-store"
+        # The error page explains and offers a retry; there is no separate
+        # codes page to fall back to (#873).
+        assert f'href="{route}"'.encode() in body
+        assert b"family-codes" not in body
+
+
+def directory_outcomes():
+    """The directory page's audit outcomes, oldest first."""
+    return [
+        context["outcome"]
+        for context in AuditContext.objects.filter(
+            event__event_type="family_directory_viewed"
+        )
+        .order_by("event__created_at")
+        .values_list("context", flat=True)
+    ]
+
+
+@pytest.mark.parametrize("complete", [False, True])
+def test_directory_terminal_event_keeps_request_correlation(
+    live_response_service, google, complete
+):
+    """Stream close runs after request middleware restores its context.
+
+    The terminal audit row is written from the response's close hook, after
+    the request has left the middleware; it must still carry the request's
+    correlation id, whether the stream was read or abandoned.
+    """
+    browser, _ = signed_in()
+    route = reverse("admin:family_directory")
+    server, peer = socket.socketpair()
+    try:
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            response = browser.get(route, **{"gunicorn.socket": server})
+            assert response.status_code == 200 and response.streaming
+            if complete:
+                assert b"".join(response.streaming_content)
+            response.close()
+    finally:
+        server.close()
+        peer.close()
+    rows = list(AuditEvent.objects.filter(event_type="family_directory_viewed"))
+    assert len(rows) == 2
+    assert {row.correlation_id for row in rows} == {UUID(response["X-Correlation-ID"])}
+    assert directory_outcomes() == [
+        "started",
+        "succeeded" if complete else "failed",
+    ]
+
+
+def test_changed_authority_can_immediately_open_the_directory(
+    live_response_service, google, monkeypatch
+):
+    """A persisted rotation emits its new cookie without writing inside the guard."""
+    harness = live_response_service
+    browser, _ = signed_in()
+    original = PortalSession.objects.get()
+    cookie = browser.cookies["pk_admin"].value
+    principal = Principal(original.principal_id, frozenset({"staff"}))
+    monkeypatch.setattr(sessions, "current_principal", lambda *args: principal)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, reverse("admin:family_directory"))
+    assert response.status_code == 200 and harness.code.encode() in body
+    assert browser.cookies["pk_admin"].value != cookie
+    current = PortalSession.objects.get(revoked_at__isnull=True)
+    assert current.authenticated_at == original.authenticated_at
+    assert current.expires_at == original.expires_at
+    assert directory_outcomes()[-1] == "succeeded"
 
 
 def test_reach_filter_finds_families_no_campaign_mail_can_reach(

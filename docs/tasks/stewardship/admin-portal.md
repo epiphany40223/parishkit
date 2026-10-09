@@ -668,8 +668,9 @@ stewardship `financial/`, Talents and limitations `talents/`, Additional
 information `information/` and its requests, Ministry requests
 `ministries/` with Members joining `joining/` and leaving `leaving/`,
 Ministry follow-up `ministries/follow-up/` and its requests, the Family
-directory `families/`, the Family timeline `families/<family>/` and Family
-campaign codes `family-codes/`. Each report's form actions move with it as
+directory `families/` and the Family timeline `families/<family>/` (it
+also moved Family campaign codes to `family-codes/`; #873 later removed
+that page and its addresses). Each report's form actions move with it as
 nouns: exports post to its `exports/` collection, a follow-up is saved to
 its request's `record/`, the follow-up packet to `ministries/packets/`, and
 the header's Find a Family box posts to `families/search/`. Each old address

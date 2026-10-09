@@ -290,7 +290,6 @@ EXPECTED = {
     ),
     "/admin/reports/families": "/admin/reports/families/",
     f"/admin/reports/families/{T}": f"/admin/reports/families/{T}/",
-    "/admin/reports/family-codes": "/admin/reports/family-codes/",
     # Retired addresses that named no campaign (decisions 10 and 19): the
     # two campaign choosers and the old Ministry reports root.
     "/admin/reports/campaigns/": "/admin/reports/participation/",
@@ -336,7 +335,6 @@ CAMPAIGN_EXPECTED = {
     f"{C}/production": "/admin/campaign/production/",
     f"{C}/production/withdraw": "/admin/campaign/production/cancellation/",
     f"{C}/ministries": "/admin/parish/ministries/campaign/",
-    f"{C}/family-codes": "/admin/reports/family-codes/",
 }
 # Old report addresses named the campaign under /admin/reports/ (NAV-11).
 R = f"/admin/reports/{T}"

@@ -7,7 +7,8 @@ old route names a campaign uses ``legacy(…, campaign=True)``. Route names are
 slash, ``_chooser`` or ``_root`` for a retired address), so the navigation
 registry can tell them from pages. The table only grows: an
 old address is never dropped while bookmarks, sent digest emails or the
-runbooks may still name it.
+runbooks may still name it. The one exception is a page that is itself
+removed (the Family codes page, #873): its old addresses go with it.
 """
 
 from django.urls import path
@@ -109,8 +110,6 @@ CAMPAIGN = (
     (f"{_C}/production/withdraw", "production_withdrawal"),
     # Campaign Ministries now sits under Parish data's Ministries.
     (f"{_C}/ministries", "campaign_ministries"),
-    # Family campaign codes now sits under the directory (NAV-11).
-    (f"{_C}/family-codes", "family_codes"),
     *(
         # Responses and reports (NAV-11). Each report's form actions move
         # with it, so a form left open on an old address is re-posted (308)
@@ -232,7 +231,6 @@ SLASHLESS = (
     ("reports/ministries/follow-up/<uuid:request_id>", "ministry_followup_item"),
     ("reports/families", "family_directory"),
     ("reports/families/<uuid:family_id>", "family_timeline"),
-    ("reports/family-codes", "family_codes"),
     ("mail/controls", "delivery_control"),
     ("mail/family-progress", "family_email_progress"),
     ("mail/family-history", "family_email_sends"),
