@@ -1020,7 +1020,8 @@ def test_open_counts_are_plain_numbers_with_screen_reader_words():
     information = reverse("admin:information_queue")
     assert (
         f'<a href="{information}">Additional information '
-        '<span class="admin-menu-count" aria-hidden="true">1,234</span>'
+        '<span class="admin-menu-count" aria-hidden="true"'
+        ' title="Open items to handle: 1,234">1,234</span>'
         '<span class="visually-hidden">(1,234 open)</span></a>'
     ) in html
     assert html.count("admin-menu-count") == 1

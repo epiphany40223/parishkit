@@ -958,8 +958,8 @@ def test_refusal_outside_scope_is_denied_not_a_conflict(response_service, google
 def _menu_count(body, label):
     """The open count the menu shows after ``label``, or None without one."""
     found = re.search(
-        rf'>{label} <span class="admin-menu-count" aria-hidden="true">'
-        rf"([0-9,]+)</span>".encode(),
+        rf'>{label} <span class="admin-menu-count" aria-hidden="true"'
+        rf' title="[^"]*">([0-9,]+)</span>'.encode(),
         body,
     )
     return int(found.group(1)) if found else None
