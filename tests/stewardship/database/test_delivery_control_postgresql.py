@@ -35,6 +35,7 @@ from ..campaign_factory import schedule
 from ..content_factory import content
 from . import test_setup_preview_postgresql as preview_inputs
 from .campaign_builders import advance, campaign_clock
+from .preview_builders import assert_out_of_date, previews_aged
 from .test_campaign_mail_postgresql import deliver
 from .test_digest_schedule_planning_postgresql import add_digest
 from .test_outbox_postgresql import claim
@@ -308,6 +309,14 @@ def test_pause_is_atomic_exact_and_keeps_delivery_payload(
         assert held.attempt == 0 and held.routing == "production"
     assert CampaignMailTest.objects.filter(state="delivery_unknown").count() == 1
     with web_login():
+        # An expired preview is the plain out-of-date refusal (#398) and
+        # resumes nothing.
+        with previews_aged(monkeypatch):
+            expired = {"action": "confirm", "preview": resume_token}
+            assert_out_of_date(post(item.browser, path, expired), path)
+        item.campaign.refresh_from_db()
+        assert item.campaign.delivery_paused
+        assert DeliveryControlCommand.objects.count() == 1
         # A newer accepted test can supersede a prior uncertain test, but no
         # uncertain live outbox is silently resolved by this sender check.
         response = post(

@@ -16,6 +16,11 @@ from parishkit.stewardship.campaigns.runtime import _now, campaign_transaction
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import (
+    CONTROL_PREVIEW_MAX_AGE,
+    load_preview,
+    return_link,
+)
 
 from .admin_editing import editable_configuration, principal
 from .content_models import ContentVersion
@@ -373,11 +378,11 @@ def _preview(
         return binding, signing.dumps(binding, salt=SALT)
 
 
-def _binding(token, *, max_age=None):
+def _binding(token):
     """Reject open-ended command envelopes even when signed by this service."""
     if type(token) is not str or len(token) > 16384:
         raise ValueError("Invalid delivery-control preview.")
-    value = signing.loads(token, salt=SALT, max_age=max_age)
+    value = signing.loads(token, salt=SALT)
     fields = {
         "key",
         "actor",
@@ -441,7 +446,14 @@ def confirm(request, service, campaign_id, *, token):
             if any(getattr(previous, name) != value for name, value in values.items()):
                 raise PermissionError("Delivery command belongs to another intent.")
             return previous
-        _binding(token, max_age=300)
+        # The parse above has no lifetime so an identical replay still
+        # finds its receipt; a new intent must be under five minutes old.
+        load_preview(
+            token,
+            salt=SALT,
+            link=return_link(request),
+            max_age=CONTROL_PREVIEW_MAX_AGE,
+        )
         current_inventory = inventory(campaign_id)
         if (
             not _action_available(campaign, binding["action"])

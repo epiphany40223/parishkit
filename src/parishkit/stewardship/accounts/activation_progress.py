@@ -27,6 +27,11 @@ from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.storage import TaskRetryConflict, retry_failed
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import (
+    CONTROL_PREVIEW_MAX_AGE,
+    load_preview,
+    return_link,
+)
 from parishkit.stewardship.web.tables import bounded_count, read_window
 
 from .go_live_progress import _current
@@ -148,7 +153,12 @@ def control(request, service, campaign_id, request_id, *, token):
     if type(token) is not str or len(token) > 4096:
         raise ValueError("Invalid link preparation control.")
     with work_transaction():
-        binding = signing.loads(token, salt=SALT, max_age=300)
+        binding = load_preview(
+            token,
+            salt=SALT,
+            link=return_link(request),
+            max_age=CONTROL_PREVIEW_MAX_AGE,
+        )
         if (
             type(binding) is not dict
             or set(binding)

@@ -38,6 +38,7 @@ from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.storage import StaleRecordError
 
 from . import test_setup_preparation_postgresql as setup_inputs
+from .preview_builders import assert_out_of_date, previews_aged
 from .test_activation_views_postgresql import (  # noqa: F401
     bootstrapped,
     config_role,
@@ -223,6 +224,10 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         token = page.context["confirmation_token"]
         values = {"action": "confirm", "preview": token, "typed": "Production"}
         assert post(browser, path, values | {"typed": "Testing"}).status_code == 400
+        # An expired preview is the plain out-of-date refusal (#398).
+        with previews_aged(monkeypatch):
+            assert_out_of_date(post(browser, path, values), path)
+        assert not ProductionConfirmation.objects.exists()
         response = post(browser, path, values)
         assert response.status_code == 302, response.content
         assert post(browser, path, values).status_code == 302
@@ -280,6 +285,10 @@ def test_fresh_confirmation_atomically_activates_and_replays(
             retry = {"control": page.context["control"]}
             assert retry["control"]
             competing = {"control": browser.get(progress_path).context["control"]}
+            runs = TaskRun.objects.filter(root_id=demand.task_root_id).count()
+            with previews_aged(monkeypatch):
+                assert_out_of_date(post(browser, progress_path, retry), progress_path)
+            assert TaskRun.objects.filter(root_id=demand.task_root_id).count() == runs
             assert post(browser, progress_path, retry).status_code == 302
             assert post(browser, progress_path, retry).status_code == 302
             assert post(browser, progress_path, competing).status_code == 409
