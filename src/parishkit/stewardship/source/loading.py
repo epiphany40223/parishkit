@@ -34,6 +34,8 @@ DEFAULT_MAXIMUM_DROP_PERCENT = 25
 # YAML, which is fixed once provisioned. 100 accepts any drop; only a load
 # with no Families or Members is still refused.
 DROP_OVERRIDE_VARIABLE = "PARISHKIT_SOURCE_MAX_DROP_PERCENT"
+# Where a full load's evidence records its Member contact list coverage.
+CONTACT_COVERAGE_KEY = "member_contacts"
 
 
 def maximum_drop_percent():
@@ -250,6 +252,114 @@ def derived_baseline(*candidates):
     return {name: max(value[name] for value in usable) for name in DERIVED_COUNTS}
 
 
+# A full load is refused as a shifted scan when the Members its contact list
+# left out rise above the last full refresh's count by more than this margin
+# (#387 M4): CONTACT_MISSING_MARGIN Members, or CONTACT_MISSING_MARGIN_PERCENT
+# of the Members searched, whichever is larger (128 of 6,400). The list is
+# read in pages of 500 rows, so a list that lost a whole page is far past the
+# margin, while ordinary change between two full refreshes (a handful of
+# Members added or inactivated, whom the list may legitimately omit) stays
+# well inside it; one Production parish's count held exactly steady over 12
+# full loads. Erring wide matters because a refusal blocks every full
+# refresh until the count recovers or an operator raises the drop limit,
+# while a missed short list costs little: each left-out Member still gets a
+# contact row from its own search row.
+CONTACT_MISSING_MARGIN = 10
+CONTACT_MISSING_MARGIN_PERCENT = 2
+
+
+def member_contact_coverage(members, contactinfos):
+    """How completely the Member contact list covered the Members searched.
+
+    ``members`` and ``contactinfos`` are the shared loader's dictionaries,
+    both keyed by Member identifier. Returns counts only, never identifiers:
+    ``members`` searched, ``contact_infos`` the contact list returned, and
+    ``missing``, the searched Members the contact list left out. A Member
+    left out still gets a contact row built from its search row's contact
+    fields, which is why the normalized corpus cannot show this.
+    """
+    return {
+        "members": len(members),
+        "contact_infos": len(contactinfos),
+        "missing": len(members.keys() - contactinfos.keys()),
+    }
+
+
+def contact_missing_allowance(members):
+    """How many more left-out Members than the baseline a full load may have."""
+    return max(CONTACT_MISSING_MARGIN, members * CONTACT_MISSING_MARGIN_PERCENT // 100)
+
+
+# The names of a ShortContactList's counts, in the order its ``coverage``
+# tuple holds them; the process log reports them under these names.
+CONTACT_COVERAGE_FIELDS = (
+    "members",
+    "contact_infos",
+    "missing",
+    "baseline_missing",
+    "allowance",
+)
+
+
+class ShortContactList(ShiftedSourceScan):
+    """A full load's contact list left out too many more Members (#387 M4).
+
+    Retried like any shifted scan. ``coverage`` holds the counts the refusal
+    was decided on, in ``CONTACT_COVERAGE_FIELDS`` order, so the operator can
+    tell a cut-short list from a real ParishSoft change in ordinary output:
+    counts only, never identifiers.
+    """
+
+    def __init__(self, message, *, coverage):
+        """Keep the refusal's counts alongside the fixed message."""
+        super().__init__(message)
+        self.coverage = coverage
+
+
+def check_member_contact_coverage(
+    coverage, *, previous_missing, maximum_drop_percent=DEFAULT_MAXIMUM_DROP_PERCENT
+):
+    """Refuse a full load whose contact list looks cut short (#387 M4).
+
+    ``members/contact/list`` reports no total or row ordinal to check its
+    pages against, and ParishSoft legitimately leaves some Members out of it
+    (inactive ones, mostly), so neither a total nor "every Member present"
+    can be required. Instead the count left out is compared with the last
+    promoted full refresh's (``previous_missing``): a rise past
+    ``contact_missing_allowance`` is a retryable ``ShiftedSourceScan``.
+
+    With no recorded baseline (``None``: the first full loads after this
+    check was added, or setup's first load) the coverage is only recorded.
+    An operator who raises the drop limit for one refresh to accept a known
+    large change accepts this one too, and that refresh becomes the next
+    baseline. The error (``ShortContactList``) carries counts only.
+    """
+    if previous_missing is None or maximum_drop_percent > DEFAULT_MAXIMUM_DROP_PERCENT:
+        return
+    missing = coverage["missing"]
+    allowance = contact_missing_allowance(coverage["members"])
+    if missing > previous_missing + allowance:
+        raise ShortContactList(
+            f"The Member contact list left out {missing} Members; "
+            f"the last full refresh left out {previous_missing}.",
+            coverage=(
+                coverage["members"],
+                coverage["contact_infos"],
+                missing,
+                previous_missing,
+                allowance,
+            ),
+        )
+
+
+def recorded_contact_missing(cursor):
+    """The ``missing`` count a full snapshot's load recorded, or ``None``."""
+    load = cursor.get("load") if type(cursor) is dict else None
+    coverage = load.get(CONTACT_COVERAGE_KEY) if type(load) is dict else None
+    missing = coverage.get("missing") if type(coverage) is dict else None
+    return missing if type(missing) is int and missing >= 0 else None
+
+
 def check_source_counts(
     counts,
     derived,
@@ -309,6 +419,7 @@ def load_full_source(
     previous_full_counts=None,
     previous_derived_counts=None,
     maximum_drop_percent=DEFAULT_MAXIMUM_DROP_PERCENT,
+    previous_contact_missing=None,
     progress=None,
 ):
     """Fetch, normalize and validate without SQL or a mutable source pointer.
@@ -320,6 +431,8 @@ def load_full_source(
     and the exact campaign window again at atomic promotion. An optional
     ``progress(collection, count)`` observer hears about each downloaded
     collection in the order ``load_progress`` expects.
+    ``previous_contact_missing`` is the last promoted full refresh's count
+    of Members the contact list left out (``check_member_contact_coverage``).
     """
     if (
         not isinstance(client, CoherentParishSoftClient)
@@ -341,6 +454,14 @@ def load_full_source(
             # empty too); fetching them took about seven of fourteen minutes.
             load_workgroups=False,
             progress=progress,
+        )
+        # Checked on the raw collections, before normalization merges each
+        # Member's search-row contact fields in and hides who was left out.
+        coverage = member_contact_coverage(data.members, data.member_contactinfos)
+        check_member_contact_coverage(
+            coverage,
+            previous_missing=previous_contact_missing,
+            maximum_drop_percent=maximum_drop_percent,
         )
         # Catalogs are needed by initial campaign preparation even when no
         # giving window exists yet. Shared data is frozen; its collections are not.
@@ -396,5 +517,7 @@ def load_full_source(
             # Retained in the manifest, so later refreshes can compare with it
             # even after the snapshot's rows are compacted.
             "derived_counts": derived,
+            # The next full refresh's contact list baseline (#387 M4).
+            CONTACT_COVERAGE_KEY: coverage,
         },
     )

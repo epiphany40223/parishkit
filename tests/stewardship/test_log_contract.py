@@ -42,6 +42,7 @@ EMIT_DETAILS = {
     "failure_kind",
     "source_loss",
     "source_max_drop_percent",
+    "source_contact_coverage",
     "drive_failure",
     "timeout",
     "limit_seconds",

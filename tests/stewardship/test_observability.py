@@ -102,6 +102,34 @@ def test_source_loss_detail_is_logged_only_as_closed_counts(caplog):
             emit(event, source_loss=loss)
 
 
+def test_contact_list_coverage_is_logged_only_as_named_counts(caplog):
+    """#387 M4: a cut-short contact list refusal logs its counts, nothing else."""
+    with caplog.at_level(logging.DEBUG):
+        emit(
+            Event.SOURCE_PROVIDER_FAILED,
+            level=logging.WARNING,
+            source_contact_coverage=(6417, 6100, 364, 164, 128),
+        )
+    payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
+    assert payload["level"] == "WARNING"
+    assert payload["extra"]["source_contact_coverage"] == {
+        "members": 6417,
+        "contact_infos": 6100,
+        "missing": 364,
+        "baseline_missing": 164,
+        "allowance": 128,
+    }
+    for event, value in (
+        (Event.SOURCE_DESTRUCTIVE_CHANGE, (1, 1, 1, 1, 1)),
+        (Event.SOURCE_PROVIDER_FAILED, (1, 1, 1, 1)),
+        (Event.SOURCE_PROVIDER_FAILED, (1, 1, -1, 1, 1)),
+        (Event.SOURCE_PROVIDER_FAILED, (1, 1, "1", 1, 1)),
+        (Event.SOURCE_PROVIDER_FAILED, [1, 1, 1, 1, 1]),
+    ):
+        with pytest.raises(ValueError):
+            emit(event, source_contact_coverage=value)
+
+
 def test_source_loss_limit_override_is_logged_only_as_a_percent(caplog):
     """#320: an overridden limit is visible, carried by the reviewed start event."""
     task_id = uuid4()

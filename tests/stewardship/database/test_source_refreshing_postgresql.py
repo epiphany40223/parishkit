@@ -10,12 +10,13 @@ from parishkit import parishsoft_transport
 from parishkit.parishsoft_changes import ChangeFeedIncomplete
 from parishkit.stewardship.jobs.lifetime import maintain_execution
 from parishkit.stewardship.jobs.models import TaskRun
-from parishkit.stewardship.source import refreshing
+from parishkit.stewardship.source import loading, refreshing
 from parishkit.stewardship.source.attempts import begin_refresh_attempt
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
 from parishkit.stewardship.source.credentials import SourceCredential
 from parishkit.stewardship.source.cursors import refresh_cursor
 from parishkit.stewardship.source.leases import acquire_source, release_source
+from parishkit.stewardship.source.loading import CONTACT_COVERAGE_KEY
 from parishkit.stewardship.source.models import (
     SourceCurrent,
     SourceMutationLease,
@@ -30,7 +31,7 @@ from parishkit.stewardship.source.snapshots import (
 )
 from parishkit.stewardship.storage import StorageInvariantError
 
-from ..test_source_loading import provider_pages
+from ..test_source_loading import provider_pages, with_contact_list
 from .campaign_builders import add_draft
 from .test_source_attempts_postgresql import setup
 from .test_source_requests_postgresql import claim as claim_request
@@ -277,8 +278,13 @@ def test_campaign_changed_between_reads_cannot_stage_old_request(tmp_path, monke
     assert SourceCurrent.objects.get().snapshot_id is None
 
 
-def seed_full(credential, execution, lease):
-    """Seed complete real converter output without consuming an HTTP safety window."""
+def seed_full(credential, execution, lease, *, load=None):
+    """Seed complete real converter output without consuming an HTTP safety window.
+
+    ``load(as_of)``, when given, returns the ``SourceLoad`` to seed instead of
+    the converter fixture, so its corpus and evidence are promoted as a real
+    full refresh's would be.
+    """
     from dataclasses import replace
 
     from parishkit.stewardship.source.corpus import normalize_core
@@ -294,6 +300,14 @@ def seed_full(credential, execution, lease):
     for family in data.families.values():
         family["registeredOrganizationID"] = 12345
     corpus = normalize_core(data, as_of=as_of)
+    evidence = {
+        "giving_as_of_date": as_of.isoformat(),
+        "anonymous_pledges": 0,
+        "anonymous_contributions": 0,
+    }
+    if load is not None:
+        loaded = load(as_of)
+        corpus, evidence = loaded.corpus, loaded.evidence
     with execution.effect():
         for kind, rows in corpus.items():
             stage_entities(snapshot.pk, lease, kind=kind, entities=rows, admit=permit)
@@ -302,11 +316,7 @@ def seed_full(credential, execution, lease):
             kind="full",
             started_at=snapshot.started_at,
             window_digest=attempt.request.window_digest,
-            evidence={
-                "giving_as_of_date": as_of.isoformat(),
-                "anonymous_pledges": 0,
-                "anonymous_contributions": 0,
-            },
+            evidence=evidence,
         )
         snapshot = finish_snapshot(
             snapshot.pk,
@@ -471,3 +481,162 @@ def test_refresh_inputs_compare_with_the_full_refresh_trend(tmp_path, monkeypatc
     )
     assert inputs.previous_full_counts == older.counts
     assert inputs.previous_derived_counts == older.cursor["load"]["derived_counts"]
+
+
+def next_full():
+    """Acquire a new manual full claim after the seed full observation ended."""
+    execution = claim_request(command(cause="manual"))
+    with execution.effect():
+        lease = acquire_source(
+            task_id=execution.claim.run_id,
+            task_fence=execution.claim.fence,
+            worker_id=execution.claim.worker_id,
+            phase="full",
+        )
+    return execution, lease
+
+
+def listed_full(tmp_path):
+    """An offline full load of ``pages()`` whose contact list has its Member.
+
+    Seeding it (rather than running it through the faked transport) leaves no
+    HTTP safety window, so a second full refresh can start at once.
+    """
+    from test_parishsoft import Session
+    from test_parishsoft_source import response
+
+    from parishkit.parishsoft import ParishSoftConfig
+    from parishkit.parishsoft_source import CoherentParishSoftClient
+    from parishkit.stewardship.source.loading import load_full_source
+    from parishkit.stewardship.source.windows import RefreshWindow
+
+    values = pages()
+    member_id = values[4][0]["memberDUID"]
+    values = with_contact_list(values, {"memberDUID": member_id, "emailAddress": None})
+
+    def load(as_of):
+        """The real full loader over a synthetic Session; no network."""
+        client = CoherentParishSoftClient(
+            ParishSoftConfig(api_key="SYNTHETIC", cache_dir=tmp_path / "unused"),
+            organization_id=12345,
+            session=Session([response(value) for value in values]),
+        )
+        return load_full_source(client, window=RefreshWindow(None, ()), as_of=as_of)
+
+    return load
+
+
+def test_a_first_full_load_records_contact_coverage_without_refusing(
+    tmp_path, monkeypatch
+):
+    """#387 M4: with no recorded baseline the coverage is only recorded.
+
+    Even with no margin at all, the contact list leaving out the only Member
+    is recorded in the manifest, and the load is ready as before.
+    """
+    monkeypatch.setattr(loading, "CONTACT_MISSING_MARGIN", 0)
+    credential, execution, lease, *_ = setup(tmp_path)
+    fake_provider(monkeypatch, pages())
+    result = run(credential, execution, lease)
+    assert result.state == "ready"
+    assert result.cursor["load"][CONTACT_COVERAGE_KEY] == {
+        "members": 1,
+        "contact_infos": 0,
+        "missing": 1,
+    }
+
+
+def test_a_jump_in_members_left_off_the_contact_list_is_retried(tmp_path, monkeypatch):
+    """#387 M4: a rise past the margin is a retryable shifted scan.
+
+    The promoted full recorded nobody left out; the next full's contact list
+    leaves out its one Member. With the margin lowered to fit a one-Member
+    fixture, that is a cut-short list: retryable, nothing staged, and the
+    previous snapshot stays current.
+    """
+    from parishkit.parishsoft_pagination import ShiftedSourceScan
+    from parishkit.stewardship.source.failures import classify_read_failure
+
+    credential, execution, lease, *_ = setup(tmp_path)
+    first = seed_full(credential, execution, lease, load=listed_full(tmp_path))
+    assert first.cursor["load"][CONTACT_COVERAGE_KEY]["missing"] == 0
+    monkeypatch.setattr(loading, "CONTACT_MISSING_MARGIN", 0)
+    execution, lease = next_full()
+    fake_provider(monkeypatch, pages())
+    with pytest.raises(ShiftedSourceScan) as raised:
+        run(credential, execution, lease)
+    failure = classify_read_failure(raised.value, has_source_claim=True)
+    assert failure.retry and failure.failure == "shifted_scan"
+    # Members, contact infos, missing, baseline missing, allowance: what the
+    # process log reports so the operator can judge the refusal.
+    assert failure.coverage == (1, 0, 1, 0, 0)
+    refused = SourceSnapshot.objects.exclude(pk=first.pk).get()
+    assert refused.state == "staging" and not refused.counts
+    assert SourceCurrent.objects.get().snapshot_id == first.pk
+
+
+def test_ordinary_contact_list_variation_promotes_and_becomes_the_baseline(
+    tmp_path, monkeypatch
+):
+    """#387 M4: a rise within the margin promotes and records its own count."""
+    credential, execution, lease, *_ = setup(tmp_path)
+    first = seed_full(credential, execution, lease, load=listed_full(tmp_path))
+    execution, lease = next_full()
+    seen = []
+    real_inputs = refreshing._inputs
+
+    def inputs(*args):
+        """The real inputs, kept so the test sees the baseline passed on."""
+        seen.append(real_inputs(*args))
+        return seen[-1]
+
+    monkeypatch.setattr(refreshing, "_inputs", inputs)
+    fake_provider(monkeypatch, pages())
+    result = run(credential, execution, lease)
+    assert seen[0].previous_contact_missing == 0
+    assert result.state == "ready"
+    assert result.cursor["load"][CONTACT_COVERAGE_KEY] == {
+        "members": 1,
+        "contact_infos": 0,
+        "missing": 1,
+    }
+    with execution.effect():
+        promote_snapshot(result.pk, lease, admit=permit, reconcile=permit)
+    assert SourceCurrent.objects.get().snapshot_id == result.pk != first.pk
+    current = SourceSnapshot.objects.get(pk=result.pk)
+    assert loading.recorded_contact_missing(current.cursor) == 1
+
+
+def test_a_quick_update_after_the_last_full_is_not_the_contact_baseline(
+    tmp_path, monkeypatch
+):
+    """#387 M4: the baseline is the last promoted full, not the current snapshot.
+
+    A quick update does not read the contact list, so it records no count. If
+    a quick update promoted after the last full became the baseline, the next
+    full would see none and silently skip the check.
+    """
+    from parishkit.stewardship.source import transport
+
+    credential, execution, lease, *_ = setup(tmp_path)
+    first = seed_full(credential, execution, lease, load=listed_full(tmp_path))
+    execution, lease = next_delta()
+    fake_provider(
+        monkeypatch,
+        [[{"organizationID": 12345}], [], [{"famGroupID": 7, "famGroup": "Active"}]],
+    )
+    with monkeypatch.context() as patch:
+        # The faked calls reserve no HTTP safety window, so the next full
+        # can take the source at once; safety windows are tested elsewhere.
+        patch.setattr(transport, "reserve_source_request", lambda *a, **k: None)
+        quick = run(credential, execution, lease)
+    with execution.effect():
+        promote_snapshot(quick.pk, lease, admit=permit, reconcile=permit)
+        release_source(lease)
+    execution.transition("complete")
+    assert SourceCurrent.objects.get().snapshot_id == quick.pk != first.pk
+    promoted = SourceSnapshot.objects.get(pk=quick.pk)
+    assert loading.recorded_contact_missing(promoted.cursor) is None
+    execution, lease = next_full()
+    attempt = begin_refresh_attempt(execution, lease, credential)
+    assert _inputs(attempt.pk, execution, lease).previous_contact_missing == 0
