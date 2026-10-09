@@ -11,10 +11,10 @@
 {% if available %}
 <p>{% translate "Go-live can be cancelled only before" %} <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time>.</p>
 {% if not fresh %}<div class="notice"><p>{% if local_environment %}{% translate "Cancelling go-live needs a sign-in from the last five minutes. Confirm your sign-in, then preview the cancellation again." %}{% else %}{% translate "Cancelling go-live needs a Google sign-in from the last five minutes. Confirm it's you with Google; you will come back here, then preview the cancellation again." %}{% endif %}</p>{% url 'admin:production_withdrawal' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>{% endif %}
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview">
-<label for="withdrawal-reason">{% translate "Reason for cancelling go-live" %}</label><textarea id="withdrawal-reason" name="reason" required maxlength="2000">{{ preview.reason }}</textarea>
-<label><input type="checkbox" name="acknowledged" value="yes" required data-acknowledgment> {% translate "I understand that deleted Testing data cannot be restored." %}</label>
-{% button type="submit" %}{% translate "Preview cancellation" %}{% endbutton %}</form>
+{# Preview waits for a reason that is more than spaces and the tick, as the server requires; the hint follows the button (#563). #}<form method="post" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="preview">
+<label for="withdrawal-reason">{% translate "Reason for cancelling go-live" %}</label><textarea id="withdrawal-reason" name="reason" required maxlength="2000" data-missing-hint="{% translate 'Enter the reason for cancelling go-live.' %}">{{ preview.reason }}</textarea>
+<label><input type="checkbox" name="acknowledged" value="yes" required data-acknowledgment data-missing-hint="{% translate 'Tick the box to confirm that deleted Testing data cannot be restored.' %}"> {% translate "I understand that deleted Testing data cannot be restored." %}</label>
+{% button type="submit" aria-describedby="withdrawal-complete-hint" %}{% translate "Preview cancellation" %}{% endbutton %}<p class="help" id="withdrawal-complete-hint" data-complete-hint hidden></p></form>
 {% if preview %}<section class="panel"><h2>{% translate "What cancelling go-live will do" %}</h2>
 <p>{% translate "Reason" %}: {{ preview.reason }}</p>
 <dl><dt>{% translate "Scheduled mail runs recorded" %}</dt><dd>{{ preview.inventory.occurrences|number }}</dd>

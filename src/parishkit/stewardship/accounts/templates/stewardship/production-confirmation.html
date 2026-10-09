@@ -27,8 +27,8 @@
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Impact revision" %}</dt><dd>{{ state.impact_revision|number }}</dd></dl></details>
 </section>{% endif %}
 {% if confirmation_token and fresh %}<section class="panel"><h2>{% translate "Confirm Production" %}</h2>
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ confirmation_token }}">
-<label for="production-confirmation">{% translate "Type Production to confirm this exact transition" %}</label><input id="production-confirmation" name="typed" required pattern="Production" title="{% translate 'Enter Production exactly as shown.' %}" autocomplete="off" spellcheck="false">
-{% button type="submit" %}{% translate "Confirm Production" %}{% endbutton %}</form></section>{% endif %}
+{# Confirm waits for the typed word; like the server it ignores spaces around it, and the hint follows the button (#563). #}<form method="post" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ confirmation_token }}">
+<label for="production-confirmation">{% translate "Type Production to confirm this exact transition" %}</label><input id="production-confirmation" name="typed" required pattern="\s*Production\s*" title="{% translate 'Enter Production exactly as shown.' %}" data-missing-hint="{% translate 'Type Production exactly as shown to confirm.' %}" autocomplete="off" spellcheck="false">
+{% button type="submit" aria-describedby="production-complete-hint" %}{% translate "Confirm Production" %}{% endbutton %}<p class="help" id="production-complete-hint" data-complete-hint hidden></p></form></section>{% endif %}
 <p><a href="{% url 'admin:go_live_links' transition.pk %}">{% translate "Return to Prepare Family links" %}</a></p>
 {% endblock %}

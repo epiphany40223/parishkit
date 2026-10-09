@@ -16,7 +16,7 @@
 <form method="post" class="setup-content-defaults">{% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}"><input type="hidden" name="reset" value="on">
 <h2>{% translate "Start over from the default text" %}</h2>
 <p>{% translate "This replaces the text of every page and email above with its default, including text you edited. Mail schedules keep sending the same kind of email, now with the default text." %}</p>
-<p><label><input type="checkbox" name="confirm" value="on" required> {% translate "Yes, replace every page and email with the default text" %}</label></p>
+<p><label><input type="checkbox" name="confirm" value="on" required data-acknowledgment data-missing-hint="{% translate 'Tick the box to confirm replacing every page and email.' %}"> {% translate "Yes, replace every page and email with the default text" %}</label></p>
 {% button type="submit" %}{% translate "Reset all pages and emails to the default text" %}{% endbutton %}</form>
 {% include 'stewardship/setup-navigation.html' %}
 {% endblock %}
