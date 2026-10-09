@@ -159,8 +159,10 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         # open (test_system_health_postgresql pins that with a backup
         # overdue). An Administrator's chrome also reads whether an
         # integration key change holds the settings queue, for its banner
-        # (one small indexed query, #456): the page measures 50.
-        "admin_shell": _measure(admin_page, query_limit=50),
+        # (one small indexed query, #456), and the menu's open counts on
+        # Additional information and Ministry follow-up are one statement
+        # (#585): the page measures 51.
+        "admin_shell": _measure(admin_page, query_limit=51),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))
     # A Family page reads its own session and Family, never the population.

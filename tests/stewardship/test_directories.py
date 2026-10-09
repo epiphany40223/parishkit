@@ -191,6 +191,35 @@ def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(test
     assert ("appear next to the codes once the campaign is live" in html) is testing
 
 
+@pytest.mark.parametrize("administrator", [False, True])
+def test_testing_notice_links_the_test_page_only_when_given(administrator):
+    """Staff get the notice without the Administrator-only test link (#591).
+
+    The view passes the link only to Administrators; without it the notice
+    keeps its explanation and tells Staff whom to ask instead.
+    """
+    from uuid import UUID
+
+    html = render_to_string(
+        "stewardship/directory.html",
+        {
+            "campaign_id": UUID(int=80),
+            "metadata": {"source_generation": 1},
+            "total": 0,
+            "testing_codes": True,
+            "testing_codes_administrator": administrator,
+            "family_test_url": "/admin/test-send/" if administrator else None,
+            "table": _table([]),
+            "query": DirectoryQuery(),
+        },
+    )
+    assert "work only after go-live" in html
+    assert ('<a href="/admin/test-send/">' in html) is administrator
+    assert ("Try the Family form as a chosen Family" in html) is administrator
+    assert ("send yourself a test invitation" in html) is administrator
+    assert ("ask an Administrator for a test invitation" in html) is not administrator
+
+
 def test_directory_headings_and_pages_post_private_filters():
     """Family and DUID headings sort through the installed selection's closed
     vocabulary; every control is a POST form, so the private search never

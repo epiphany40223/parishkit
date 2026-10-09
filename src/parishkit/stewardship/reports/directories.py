@@ -128,27 +128,36 @@ class DirectoryQuery:
         }
 
 
-def testing_codes_context(campaign_id):
+def testing_codes_context(campaign_id, principal):
     """Template context for the Testing-mode note about live Family codes.
 
     In Testing mode the Family sign-in accepts only rehearsal credentials from
     a chosen-Family test send, so a code copied from the directory is refused.
-    The note says so and links to that test send. The Family-facing denial
-    stays reason-free; only Admin and Staff pages explain it.
+    The note says so and, for an Administrator, links to that test send. The
+    test-send page is Administrator only (CONFIGURE), so Staff get no link
+    (#591) and the note asks them to have an Administrator send one instead.
+    The Family-facing denial stays reason-free; only Admin and Staff pages
+    explain it.
     """
     from parishkit.stewardship.accounts.campaign_family_test import (
         chosen_family_test_url,
     )
+    from parishkit.stewardship.accounts.policy import Capability, allows
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.models import Campaign
 
     runtime = SystemConfiguration.objects.first()
     if runtime is None or runtime.mode != "testing":
         return {"testing_codes": False, "family_test_url": None}
-    campaign = Campaign.objects.filter(pk=campaign_id).first()
+    administrator = allows(principal, Capability.CONFIGURE)
+    url = None
+    if administrator:
+        campaign = Campaign.objects.filter(pk=campaign_id).first()
+        url = chosen_family_test_url(runtime, campaign)
     return {
         "testing_codes": True,
-        "family_test_url": chosen_family_test_url(runtime, campaign),
+        "testing_codes_administrator": administrator,
+        "family_test_url": url,
     }
 
 
@@ -464,9 +473,11 @@ def find_families(campaign_id, query):
     Runs the installed directory selection itself, so the header's Find a
     Family box matches exactly what the directory page's search matches
     (the shown name with its heads, any active Member's name, DUID, envelope
-    number and address; #664) and lists in the same order. Only the search
-    filter is set. Unlike ``directory_page`` it decrypts no Family code and
-    reads no head emails: a match shows only its name, DUID and envelope
+    number and address; #664). Only the search filter is set. The box lists
+    matches in the directory's order, except that a Family whose envelope
+    number or DUID is exactly the search text comes first (#712; see
+    ``_exact_rows``). Unlike ``directory_page`` it decrypts no Family code
+    and reads no head emails: a match shows only its name, DUID and envelope
     number. The caller holds the campaign read guard, as for the directory
     page. Returns ``{"rows", "total"}``; each row
     has ``family_id`` (None for a Family without a campaign record),
@@ -479,12 +490,10 @@ def find_families(campaign_id, query):
     # selection_parameters needs the MAC ring only for an exact-code filter,
     # which this query never has.
     parameters = selection_parameters(campaign_id, query, postal=False, mac=None)
-    with connection.cursor() as cursor:
-        cursor.execute(DIRECTORY, (campaign_id, json.dumps(parameters), 1))
-        result = cursor.fetchone()
-    if result is None or result[0] is None:
-        raise ReadUnavailable("Directory source information is unavailable.")
-    report = json.loads(result[0])
+    report = _selection(campaign_id, parameters)
+    rows = _exact_rows(campaign_id, parameters, report, query.search.strip())
+    first = {row["family_duid"] for row in rows}
+    rows += [row for row in report["rows"] if row["family_duid"] not in first]
     return {
         "rows": [
             {
@@ -493,7 +502,93 @@ def find_families(campaign_id, query):
                 "family_duid": row["family_duid"],
                 "envelope": row["envelope"],
             }
-            for row in report["rows"][:FIND_LIMIT]
+            for row in rows[:FIND_LIMIT]
         ],
         "total": report["total"],
     }
+
+
+def _selection(campaign_id, parameters):
+    """The installed directory selection's first page for ``parameters``."""
+    with connection.cursor() as cursor:
+        cursor.execute(DIRECTORY, (campaign_id, json.dumps(parameters), 1))
+        result = cursor.fetchone()
+    if result is None or result[0] is None:
+        raise ReadUnavailable("Directory source information is unavailable.")
+    return json.loads(result[0])
+
+
+# At most this many exact-number Families are looked up: in practice one
+# DUID and one envelope number can equal the same search text.
+EXACT_LIMIT = 2
+# The campaign records of the Families in the selection's own source whose
+# DUID or envelope number is exactly the search text. The envelope number is
+# only in the payload JSON, so this reads the source's Family rows once (one
+# snapshot's rows, found by its index; no per-Family work). Only Families the
+# directory lists (the selection's portal_eligible rule) count, so ineligible
+# ones cannot use up the limit and keep an eligible Family from moving up.
+EXACT_FAMILIES = """
+SELECT fc.id FROM stewardship_snapshot_family m
+JOIN stewardship_source_family p ON p.id=m.payload_id
+JOIN stewardship_family_campaign fc
+    ON fc.campaign_id=%(campaign)s AND fc.family_duid=m.source_key::bigint
+WHERE m.snapshot_id=%(source)s
+  AND p.canonical::jsonb->'portal_eligible'='true'::jsonb
+  AND (m.source_key=%(number)s OR p.canonical::jsonb->>'envelopeNumber'=%(number)s)
+ORDER BY m.source_key::bigint LIMIT %(limit)s
+"""
+
+
+def _exact_rows(campaign_id, parameters, report, text):
+    """The selection rows whose envelope number or DUID is exactly ``text``.
+
+    Staff typing a number from a gift usually want that one Family, but a
+    short number such as "12" also matches every DUID, address and name
+    containing it, so the Family may be past the first 8 matches or past
+    the selection's first page of 50 (#712). Reading every match instead
+    took close to a minute per search at 2,700 Families (address and postal
+    code matches make most digit searches broad), so this reads only page 1
+    and, when that page does not hold every match, looks the exact Families
+    up directly. Each one found is then read through the same selection
+    with the same search, restricted to that Family, so it is listed only
+    when the directory search would list it too: the set of matches, the
+    total and the audit counts never change. That costs one indexed lookup
+    and at most ``EXACT_LIMIT`` one-Family selections, only for an all-digit
+    search with more matches than one page. The ranking runs here rather
+    than in the installed selection so that it needs no schema change.
+
+    One limit follows from reading through the selection: a Family without
+    a campaign record (``family_id`` None) cannot be read alone, so it keeps
+    its place instead of moving up.
+    """
+    if not _whole_number(text):
+        return []
+    exact = [
+        row
+        for row in report["rows"]
+        if text in (str(row["envelope"]), str(row["family_duid"]))
+    ]
+    if report["total"] <= len(report["rows"]):
+        return exact
+    with connection.cursor() as cursor:
+        cursor.execute(
+            EXACT_FAMILIES,
+            {
+                "campaign": campaign_id,
+                "source": report["metadata"]["source_id"],
+                "number": text,
+                "limit": EXACT_LIMIT,
+            },
+        )
+        identities = [str(identity) for (identity,) in cursor.fetchall()]
+    shown = {row["family_id"] for row in exact}
+    for identity in identities:
+        if identity not in shown:
+            one = parameters | {"exact": True, "family_id": identity}
+            exact += _selection(campaign_id, one)["rows"]
+    return exact
+
+
+def _whole_number(text):
+    """Whether ``text`` is ASCII digits only, like envelope numbers and DUIDs."""
+    return text.isascii() and text.isdigit()

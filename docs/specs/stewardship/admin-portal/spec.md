@@ -520,7 +520,18 @@ Notes on the groups:
   campaign codes and its mailing columns). Reports always show the current
   campaign. Ministry leaders see only their own Ministries in the Ministry
   entries. Additional information and Ministry follow-up show their open
-  counts. Ministry follow-up has no assignment (#552): a request keeps its
+  counts ([#585](https://github.com/epiphany40223/parishkit/issues/585)): for
+  Additional information, the current requests not yet marked "Follow-up
+  completed" (its default view also lists completed ones); for Ministry
+  follow-up, the total of its default Unresolved view, read through that
+  page's own selection with every filter it applies (only the leader's own
+  Ministries for a Ministry leader); where that page would say the follow-up
+  is unavailable, no number shows. Each is a plain number after the entry's
+  name that screen readers announce as "(N open)". No number shows at zero,
+  nor on a greyed-out entry. The counts are read when a page loads, never
+  updated in place, so a number never appears or disappears under the
+  pointer; a save that updates a page in place changes them on the next page
+  load. Ministry follow-up has no assignment (#552): a request keeps its
   status, notes and outcome, and its Ministry leader handles it.
 - **Emailed reports** is a new page listing the past daily and weekly
   [Administrator digests](../background-processing/spec.md#administrator-digests)
@@ -575,11 +586,20 @@ does.
 Results appear in place under the box as the reader types: a search starts
 after a short pause in typing and needs at least 2 characters, and a newer
 search cancels an older one, so typing does not send a request per keystroke.
-The box lists the first 8 matches in the directory's order, each with its DUID
-and envelope number, and a "See all" button that opens the directory with the
-same search when more match. A Family without a campaign record is listed
-without a link, as in the directory. Each search is audited as a directory view
-(that a search was used, and the row counts), never its text. A search the
+The box lists the first 8 matches, each with its DUID and envelope number, and a
+"See all" button that opens the directory with the same search when more match.
+A Family whose envelope number or DUID is exactly the search text comes first,
+however far down the directory lists it; the rest follow in the directory's
+order ([#712](https://github.com/epiphany40223/parishkit/issues/712)). Only the
+box ranks this way: the directory and its exports keep their own order. The box
+reads only the directory's first page, then looks the exact Family up and reads
+it alone, so a Family without a campaign record keeps its place, and until the
+search matches envelope numbers
+([#664](https://github.com/epiphany40223/parishkit/issues/664)) a Family whose
+envelope number alone equals the text is not listed. A Family without a
+campaign record is listed without a link, as in the directory. Each search
+is audited as a directory view (that a search was used, and the row counts),
+never its text. A search the
 script cancels because a newer one started still runs to its end on the
 server, so it is audited too: a few audit records per lookup is the accepted
 cost of keeping one audit path with the directory. Down arrow moves
@@ -657,7 +677,9 @@ announce it with the entry. The reason names what to do when there
 is something to do. An unavailable entry's page refuses a direct visit as it
 does today, with the same reason. The conditions come from the campaign
 state, modules and mode the chrome already reads, so building the menu adds
-no query.
+no query. The one exception is the open counts on Additional information and
+Ministry follow-up ([Menu groups](#menu-groups)): one query reads both, only
+when the viewer's menu offers either entry as a link, once per request.
 
 #### Home page
 

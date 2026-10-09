@@ -38,6 +38,9 @@ REQUIRED = {
     Event.TASK_FAILED: frozenset({"failure", "outcome"}),
     Event.FACT_DRIFT: frozenset({"task_id", "count"}),
     Event.FAMILY_ENGAGEMENT_FAILED: frozenset({"failure", "failure_kind"}),
+    # A display-only step failed and the page showed without it (the Admin
+    # menu's open counts, #585): what kind of failure it was.
+    Event.REPORT_SHAPING_FAILED: frozenset({"failure_kind"}),
     # ParishSoft refreshes. A task-bound read also says which attempt it was;
     # the source health check and the intake have no task of their own.
     Event.SOURCE_PROVIDER_FAILED: _SOURCE_TASK,

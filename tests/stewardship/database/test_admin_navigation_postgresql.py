@@ -374,11 +374,15 @@ def test_critical_event_warning_is_persistent_and_admin_only(auth_service, googl
 # loads, so no role may pay more (admin-portal spec, "Stable menu shape").
 # The Administrator's count with a campaign fell by one: the campaign and its
 # configuration are now read together (admin_context._current_campaign).
+# The one deliberate addition is the open counts' query (#585), paid only by
+# a viewer whose menu links Additional information or Ministry follow-up:
+# here Administrators and Staff with the draft (it has no Ministry module,
+# so the leader's Ministry follow-up is greyed out and counts nothing).
 CHROME_QUERIES = {
     ("administrator", False): (4, 4),
-    ("administrator", True): (7, 6),
+    ("administrator", True): (7, 7),
     ("staff", False): (2, 2),
-    ("staff", True): (4, 4),
+    ("staff", True): (4, 5),
     ("ministry_leader", False): (2, 2),
     ("ministry_leader", True): (4, 4),
 }
@@ -386,14 +390,16 @@ CHROME_QUERIES = {
 # integration key change holds the settings queue (one small indexed query),
 # for the banner that says other changes wait.
 BANNER_QUERIES = {"administrator": 1}
+OPEN_COUNTS = {("administrator", True), ("staff", True)}
 
 
 @pytest.mark.parametrize("draft", [False, True])
 @pytest.mark.parametrize("role", ["administrator", "staff", "ministry_leader"])
-def test_building_the_menu_adds_no_query(
+def test_building_the_menu_adds_only_the_open_counts_query(
     auth_service, google, monkeypatch, role, draft
 ):
-    """The chrome's query count on a fresh page is the same as NAV-1's.
+    """The chrome's query count on a fresh report page is NAV-1's, plus one
+    for the menu's open counts where the viewer has a counted entry (#585).
 
     The real context processor is wrapped where the template engine keeps
     it, so the count is of the one call the page's own render makes, with
@@ -445,4 +451,5 @@ def test_building_the_menu_adds_no_query(
     assert response.status_code == 200
     assert b'aria-label="Administration"' in response.content
     before, now = CHROME_QUERIES[(role, draft)]
-    assert counts == [now + BANNER_QUERIES.get(role, 0)] and now <= before, counts
+    assert counts == [now + BANNER_QUERIES.get(role, 0)], counts
+    assert now <= before + ((role, draft) in OPEN_COUNTS), counts

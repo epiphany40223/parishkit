@@ -138,6 +138,22 @@ def can_follow_up(principal):
     )
 
 
+def selection_filters(query):
+    """The selection's ``filters`` JSON for ``query``.
+
+    The frozen selection still reads an assignee filter
+    (schema/ministry_followup.sql); without one every row fails it, so
+    always send the neutral "any" (#552). The menu's open count (#585,
+    admin_context._open_counts) sends the default query through here too.
+    """
+    return json.dumps(query.form_values() | {"assignee": "any"})
+
+
+def ministry_scope(principal):
+    """The viewer's own Ministry DUIDs the selection's bigint scope can hold."""
+    return sorted(value for value in principal.ministries if value < 2**31)
+
+
 def followup_page(campaign_id, query, principal, *, request_id=None):
     """Read one coherent page under the response guard's freshly resolved actor.
 
@@ -155,12 +171,9 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
             "page_limit => %s, page_offset => %s)::text",
             [
                 campaign_id,
-                # The frozen selection still reads an assignee filter
-                # (schema/ministry_followup.sql); without one every row
-                # fails it, so always send the neutral "any" (#552).
-                json.dumps(query.form_values() | {"assignee": "any"}),
+                selection_filters(query),
                 allows(principal, Capability.MINISTRY_FOLLOWUP),
-                sorted(value for value in principal.ministries if value < 2**31),
+                ministry_scope(principal),
                 principal.identity,
                 request_id,
                 query.page_size,

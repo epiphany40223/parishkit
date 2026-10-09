@@ -9,7 +9,8 @@ them: Pages and emails (near the menu's top) as the same page as ``PATH``,
 and System logs (near its end) as the menu on System logs. The other links
 are never followed. ``LOGO_PATH`` is the same page with a parish logo in the
 header, served at ``LOGO``, and ``FAMILY_LOGO_PATH`` the Family sign-in page
-with that logo, for the header-height test (#638).
+with that logo, for the header-height test (#638). Additional information
+and Ministry follow-up carry open counts (``COUNTS``, #585).
 """
 
 from io import BytesIO
@@ -35,6 +36,9 @@ CAMPAIGN = SimpleNamespace(
     active_configuration=SimpleNamespace(values={"modules": ["financial", "ministry"]}),
 )
 
+# Open counts on the two follow-up queues' entries (#585).
+COUNTS = {"information_queue": 3, "ministry_followup": 1250}
+
 
 def components(context, admin):
     """Render Home's layout with the real menu, on two of its pages.
@@ -53,6 +57,10 @@ def components(context, admin):
             url_name=url_name, namespace=admin_navigation.NAMESPACE, kwargs=kwargs
         )
         sections, breadcrumbs = admin_navigation.build(match, items)
+        # The follow-up queues' open counts, as portal_chrome adds them (#585).
+        for section in sections:
+            for entry in section["items"]:
+                entry["count"] = COUNTS.get(entry["name"])
         chrome = admin | {"sections": sections, "breadcrumbs": breadcrumbs}
         html = render_to_string(
             "stewardship/home.html",

@@ -18,6 +18,7 @@ from django.urls import reverse
 
 from parishkit.stewardship.accounts import admin_context, admin_navigation
 from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.reports.directories import FIND_LIMIT
 
 CAMPAIGN = SimpleNamespace(
     pk=UUID(int=561),
@@ -158,3 +159,117 @@ def test_the_script_waits_for_a_pause_and_posts():
     assert "const PAUSE = 300;" in script and "const MINIMUM = 2;" in script
     assert 'method: "POST"' in script and "AbortController" in script
     assert "fetch(form.action, {" in script and "?search" not in script
+
+
+def _row(duid, envelope, name="Family", family_id=None):
+    """One directory selection row with only what the box reads."""
+    return {
+        "family_id": family_id,
+        "family_name": name,
+        "heads": [],
+        "family_duid": duid,
+        "envelope": envelope,
+    }
+
+
+def _find(monkeypatch, text, page, total, exact=()):
+    """Run ``find_families`` against a fake database; return it and its statements.
+
+    The selection returns ``page`` (with ``total`` matches in all) unless the
+    call is restricted to one Family, when it returns that Family from
+    ``exact``. The exact-number lookup returns the ids of ``exact``.
+    """
+    import json
+
+    from parishkit.stewardship.reports import directories
+
+    statements = []
+
+    class Cursor:
+        """Answers the selection and the exact-number lookup."""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, parameters):
+            statements.append((sql, parameters))
+
+        def _report(self, rows):
+            """A selection answer holding ``rows``."""
+            report = {"rows": rows, "total": total, "metadata": {"source_id": "s"}}
+            return (json.dumps(report),)
+
+        def fetchone(self):
+            options = json.loads(statements[-1][1][1])
+            if options.get("exact"):
+                chosen = options["family_id"]
+                return self._report([r for r in exact if r["family_id"] == chosen])
+            return self._report(page)
+
+        def fetchall(self):
+            assert statements[-1][0] is directories.EXACT_FAMILIES
+            assert statements[-1][1]["number"] == text
+            return [(row["family_id"],) for row in exact]
+
+    monkeypatch.setattr(
+        directories, "connection", SimpleNamespace(cursor=lambda: Cursor())
+    )
+    monkeypatch.setattr(
+        directories,
+        "selection_parameters",
+        lambda *args, **kwargs: {"exact": False, "family_id": None},
+    )
+    found = directories.find_families(
+        UUID(int=561), directories.DirectoryQuery(search=text)
+    )
+    # Every selection call reads page 1: an unpaged read (None) builds every
+    # matched row, which took close to a minute for a broad digit search.
+    pages = [
+        parameters[2] for sql, parameters in statements if isinstance(parameters, tuple)
+    ]
+    assert pages == [1] * len(pages), pages
+    return found, statements
+
+
+def test_an_exact_match_on_the_page_is_listed_first(monkeypatch):
+    """Exact envelope or DUID Families lead; the rest keep their order (#712)."""
+    page = [_row(1120, "5"), _row(512, None), _row(9, "12"), _row(12, "77")]
+    found, statements = _find(monkeypatch, "12", page, total=4)
+    assert [row["family_duid"] for row in found["rows"]] == [9, 12, 1120, 512]
+    # The page holds every match, so nothing more is read.
+    assert len(statements) == 1 and statements[0][1][2] == 1
+    # Text that is not a whole number, or no exact match, never reorders.
+    for text in ("Smith", "45"):
+        found, statements = _find(monkeypatch, text, page, total=40)
+        assert [row["family_duid"] for row in found["rows"]] == [1120, 512, 9, 12]
+    assert len(_find(monkeypatch, "Smith", page, total=400)[1]) == 1
+
+
+def test_a_broad_number_search_reads_a_bounded_number_of_statements(monkeypatch):
+    """Page 1, one lookup and one one-Family read, however many match (#712).
+
+    The exact Family is past the selection's first page of 50, so it is
+    looked up and listed first; the total is still the selection's.
+    """
+    from parishkit.stewardship.reports import directories
+
+    page = [_row(1000 + index, str(index + 100)) for index in range(50)]
+    exact = [_row(4022, "7", family_id=str(UUID(int=4022)))]
+    found, statements = _find(monkeypatch, "4022", page, total=2700, exact=exact)
+    assert found["total"] == 2700 and len(found["rows"]) == FIND_LIMIT
+    assert found["rows"][0]["family_duid"] == 4022
+    assert [row["family_duid"] for row in found["rows"][1:]] == list(
+        range(1000, 1000 + FIND_LIMIT - 1)
+    )
+    assert len(statements) == 3
+    assert [parameters[2] for _sql, parameters in statements[::2]] == [1, 1]
+    assert statements[1][0] is directories.EXACT_FAMILIES
+    # An exact Family already on the page is not read again.
+    page[3] = exact[0]
+    found, statements = _find(monkeypatch, "4022", page, total=2700, exact=exact)
+    assert found["rows"][0]["family_duid"] == 4022
+    assert [row["family_duid"] for row in found["rows"]].count(4022) == 1
+    assert len(statements) == 2
