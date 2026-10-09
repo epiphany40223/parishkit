@@ -1731,6 +1731,41 @@ then moves to this entry as a follow-up. The planned
 ([#632](https://github.com/epiphany40223/parishkit/issues/632)) replaces the
 "At these times" list and uses this entry for its rule and exception times.
 
+### Preview lifetimes
+
+An action that is reviewed before it is confirmed carries a signed preview,
+and the server refuses a preview older than its lifetime. Pages do not
+announce the limit. Previews have two lifetimes
+([#523](https://github.com/epiphany40223/parishkit/issues/523)); a few other signed
+tokens keep their own (the integration page's one-hour key-replacement intent,
+the fifteen-minute backup-key proof and campaign clone seed):
+
+- **Fifteen minutes** for every preview made through the shared
+  configuration-change path: parish, integration and setup settings, campaign
+  configuration, content, mail schedules, users and access rules, Ministries,
+  logos and images, and the Preview and test email sends. The command line's
+  [configuration requests](../admin-automation/spec.md#schedules-and-configuration)
+  use the same fifteen minutes.
+- **Five minutes** for the delivery-critical actions, whose previews bind a
+  live work inventory or a public web address check: **Start Testing
+  cleanup**, the controls on the Testing cleanup and Family links pages
+  (prepare, retry, cancel), **Confirm Production** (or sooner, when the
+  campaign's start or close, the ParishSoft data's expiry or the next newly
+  due mail comes first), **Retry failed mail preparation** on the activation
+  progress page, **Cancel go-live** (or sooner, at the campaign start), and
+  pausing, resuming and resolving held messages on
+  [Pause and resume mail](#live-delivery-pause). The
+  [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
+  tells the Administrator about these limits, and the
+  [Go live page](#go-live-page) replaces them for going live.
+
+Confirming an expired or out-of-date preview is a correctable refusal ("This
+preview is out of date"), usually with a link back to the page that builds it, so one
+click starts a fresh review and nothing is saved in between. Today only the
+fifteen-minute previews answer that way; an expired five-minute preview gets
+the generic "Check this value." refusal
+([#398](https://github.com/epiphany40223/parishkit/issues/398)).
+
 ### Button labels
 
 A button's label never breaks inside a word, and a one-word label never
@@ -1924,10 +1959,8 @@ mismatch.
 
 Page text describes what the Admin sees happen, never the machinery: no
 configuration files, installers, fingerprints or preview lifetimes. Signed
-previews still expire after fifteen minutes; confirming an expired or
-out-of-date preview is a correctable refusal ("This preview is out of date")
-that links back to the page that builds it, so one click starts a fresh review
-and nothing is saved in between. A finished key change (updated, failed,
+previews still expire, as [preview lifetimes](#preview-lifetimes) describes.
+A finished key change (updated, failed,
 cancelled or expired) shows on its integration's page for one hour, and any
 Admin may dismiss it sooner for every Admin (the dismissal is an audit event);
 one that is installed but not selected (its automatic switch failed) is an
@@ -2629,9 +2662,10 @@ Going live is a dedicated workflow, not a toggle. It requires:
 - a commit instant before the campaign closing instant, with the preview
   explicitly identifying whether the result will be `scheduled` or `active`;
 - a successful full ParishSoft refresh with expected-tenant and scope
-  validation, recent as the [Go live page](#go-live-page) defines it: Start
-  accepts an older one because it queues the go-live's own, and
-  confirmation requires that one (or a later one);
+  validation that started less than `source_stale_seconds` ago, at Start and
+  again at confirmation; the [Go live page](#go-live-page) changes this rule
+  (Start accepts an older one because it queues the go-live's own, and
+  confirmation requires that one or a later one);
 - successful Google email and optional Slack checks;
 - valid Admin recipients, sender, templates/placeholders, links, and DNS/public
   origin;
@@ -2669,9 +2703,10 @@ the [Go live page](#go-live-page), which needs fresh Google authentication
 sign-in is fresh, the page offers **Confirm with Google** in place of the
 start button, and the request records that fresh sign-in instant. One
 transaction creates a durable ProductionTransitionRequest, acquires the
-campaign go-live gate, records the inventory/aggregate described below, queues
-an idempotent cleanup task and queues the go-live's own full ParishSoft
-refresh. The gate rejects new Testing submissions,
+campaign go-live gate, records the inventory/aggregate described below and
+queues an idempotent cleanup task; with the [Go live page](#go-live-page) it
+also queues the go-live's own full ParishSoft refresh. The gate rejects new
+Testing submissions,
 test sends, campaign content/configuration changes, and Testing campaign work;
 existing authenticated pages explain that go-live is in progress. The same
 transaction invalidates the rehearsal epoch and its sessions; the cleanup
@@ -2679,7 +2714,8 @@ inventory includes rehearsal credential detail under the
 [credential lifecycle](../architecture/spec.md#family-credential-security).
 Readiness/final confirmation verify that invalidation and completed credential
 cleanup without changing stable Production Family codes. Operational
-notifications and manual ParishSoft refreshes continue; scheduled refreshes
+notifications and ParishSoft refreshes continue; with the Go live page,
+scheduled refreshes
 [wait for the go-live](../background-processing/spec.md#refreshes-wait-for-go-live).
 
 The worker deletes the recorded Testing corpus in bounded, checkpointed batches
@@ -2689,9 +2725,11 @@ the request becomes `cleanup_complete`; deleted rows are not restored if a
 later check fails or the Admin cancels. Cancellation before activation releases
 the gate and leaves the campaign in Testing with whatever cleanup completed.
 
-From `cleanup_complete`, once the system has
-[prepared the inactive Family links](../background-processing/spec.md#go-live-sequencing)
-on current ParishSoft data, fresh authentication and typed confirmation
+From `cleanup_complete`, once the inactive Family links are prepared on
+current ParishSoft data (today by the Administrator on the Family links page;
+with the Go live page, by
+[go-live sequencing](../background-processing/spec.md#go-live-sequencing)),
+fresh authentication made after cleanup completed and typed confirmation
 invoke a short final transaction. Under the request, campaign, and global locks it
 recomputes readiness and compares its commit instant with the resolved half-open
 campaign interval. Test-mailing and terminal-delivery requirements are checked
@@ -2728,7 +2766,8 @@ a partially live campaign. The UI states separately that completed cleanup is
 not rolled back. Retry resumes from durable cleanup checkpoints or reruns the
 short final transaction; cancelling releases the gate without restoring deleted
 Testing data. Only the pre-start `scheduled` result offers **Cancel go-live**
-(formerly Withdraw from Production). That action
+(formerly Withdraw from Production), and not while
+[live delivery is paused](#live-delivery-pause). That action
 requires fresh Google authentication (or a full-scope
 [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)),
 an entered reason, and explicit
@@ -2812,10 +2851,10 @@ address (today's Go-live readiness). It replaces the readiness, Testing
 cleanup, Family links and final confirmation pages, and needs no one to time a
 click against the [refresh schedule](../background-processing/spec.md#refresh-schedule).
 The Administrator acts twice: once to start, acknowledging the irreversible
-Testing cleanup, and once to confirm Production, with the only Google sign-in.
-The system does everything in between. The page is a stepper with the same
-Next/Back and completion marks as the setup wizard, and each step shows only
-what applies now:
+Testing cleanup, and once to confirm Production, each with a fresh Google
+sign-in. The system does everything in between. The page is a stepper with
+the same Next/Back and completion marks as the setup wizard, and each step
+shows only what applies now:
 
 1. **Check.** What is still missing for go-live, each item with a link to the
    page that fixes it, and the ParishSoft, mail, public web address and test
@@ -2832,8 +2871,10 @@ what applies now:
 2. **Start.** The cleanup inventory (counts first, then the Admin-only Family
    list, each Testing Family named as the active parishioner family directory names it), the
    acknowledgement that Testing cleanup cannot be undone, and **Start
-   go-live**. Starting needs no fresh sign-in, as today. The server re-checks
-   readiness at the POST. Every problem still blocks except one: a full
+   go-live**. Starting needs a fresh Google sign-in, as it does today
+   ([#547](https://github.com/epiphany40223/parishkit/issues/547)); a stale
+   one gets **Confirm with Google** in place of the button. The server
+   re-checks readiness at the POST. Every problem still blocks except one: a full
    refresh that is merely older than `source_stale_seconds`
    (`full_refresh_stale`), which Start waives because it queues the go-live's
    own full refresh in the same transaction. A missing full refresh
@@ -3035,7 +3076,9 @@ send, and offers settlement and release is #537's second part.
 ### Live delivery pause
 
 An Admin may pause production delivery without changing global mode or Campaign
-lifecycle state. The action requires fresh authentication, a reason, explicit
+lifecycle state. Pause and resume mail is available only in Production, for
+the current campaign while it is `scheduled`, `active` or `closed`. The action
+requires fresh authentication, a reason, explicit
 confirmation, and a preview of queued, submitting, delivery-unknown, and next-
 due counts. It atomically sets the Campaign's durable delivery-pause control and
 holds every production message that has not begun provider submission. Family
@@ -3062,11 +3105,24 @@ unknown and resume can proceed (see the
 [unsent resolution guide](../../../guides/stewardship-unsent-resolution.md)).
 Workers recheck the pause immediately before provider submission, so no later
 production attempt crosses the pause.
-The campaign header and background-work view show a persistent delivery-paused
-banner, duration, actor/reason, held counts/types, and provider-uncertain counts.
+Every Admin page shows a persistent "Live campaign email delivery is paused."
+banner; for an Administrator it also names who paused and why, since when
+(and for how long), the held, still-being-handed-to-the-mail-service and
+not-sure-it-arrived counts, and links to Pause and resume mail, which shows the
+held counts by message type.
 
 Resume requires fresh authentication, successful current provider/sender
-health, an exact backlog preview, and explicit confirmation. Under Campaign and
+health, an exact backlog preview, and explicit confirmation. Current health is
+a test email to the Testing recipient (**Preview and send a test**, on the same
+page) that the mail service accepted after the pause, with the current mail
+settings, less than five minutes before; a later test still in progress, failed or
+uncertain, or a mail-service outage since, means a new test. Resume is refused
+while any message is still being handed to the mail service or not sure it
+arrived (resolve those first, as above), while a Family group is blocked or a
+report is still being prepared, and, after a direct activation, until the
+[activation catch-up](../background-processing/spec.md#activation-catch-up)
+has finished. Resuming before the campaign starts has no recovery plan,
+because no campaign email is due yet. Under Campaign and
 affected-work locks, it applies the normal overdue Family-mail/digest coalescing
 plan, cancels redundant pending outbox rows, records semantic coverage, clears
 pause holds/control, and queues only selected messages in one transaction.

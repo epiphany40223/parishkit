@@ -1466,8 +1466,10 @@ inventory and expiry exactly as for the page, after the
 bound to the portal user, not the channel, so a preview made in the browser can
 be confirmed from the command line and vice versa.
 
-A token is not a secret but is single-intent and expires on the page's limit
-(typically five minutes). An expired or stale token is refused with
+A token is not a secret but is single-intent and expires on the page's limit,
+fifteen or five minutes as the Admin portal's
+[preview lifetimes](../admin-portal/spec.md#preview-lifetimes) list. An
+expired or stale token is refused with
 `stale_version`, and the operator previews again.
 
 ### Typed confirmations and acknowledgements
