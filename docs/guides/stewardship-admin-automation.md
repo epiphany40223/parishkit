@@ -748,6 +748,56 @@ compare `size` and `sha256` with the file (`sha256sum logs.jsonl`). The page
 keeps no record of a download, so neither does the command: there is
 nothing for `export fetch` to fetch.
 
+## Reports
+
+The `report` commands read the campaign report pages and print their
+counts and totals. They never print a Family's or Member's name, DUID,
+contact details or answers; for those rows, use the page or an export. A
+session of any scope (read-only included) may run them, and each records the same "viewed" events in System
+logs as opening the page does. Each reads the current campaign, as the
+report pages do, and prints its `campaign_id`.
+
+```sh
+pk-admin report list
+pk-admin report participation
+pk-admin report responses --mode testing --grain day
+pk-admin report financial
+pk-admin report talents
+pk-admin report information --disposition all --needed yes
+pk-admin report ministry
+pk-admin report ministry --ministry 9 --requests join --state unresolved
+```
+
+| Command | The page | What it prints |
+| --- | --- | --- |
+| `report list` | Campaign reports | `campaign_id` (null without a current campaign) and `reports`: each report your menu offers, with `command`, `page` and `available` (false while the menu greys it out) |
+| `report participation` | Participation | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
+| `report responses` | Response dashboard | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`); null in Testing without a rehearsal |
+| `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
+| `report talents` | Talents and limitations | `members`, `cannot_serve`, `cannot_attend` and `talents` (by talent key) |
+| `report information` | Additional information | `matching`: how many items match the filters |
+| `report ministry` | Ministry report | `summaries`: each Ministry's DUID (`ministry`), name, state and request counts; with `--ministry` and `--requests`, `matching` is that list's request count |
+
+The options are the pages' own, and a value the page would refuse is exit 1
+(`invalid`):
+
+- `report participation`: `--scope` (`historical`, the default, or
+  `current`).
+- `report responses`: `--mode` (`production`, the default, or `testing`)
+  and `--grain` (`auto`, `hour` or `day`).
+- `report information`: `--disposition` (`current_actionable`, the
+  default, `superseded`, `withdrawn` or `all`), `--needed` and
+  `--completed` (`any`, `yes` or `no`), and `--start` and `--end` (days).
+- `report ministry`: `--activity`, `--sort`, `--page` and `--size` for the
+  summary; `--ministry DUID` with `--requests join` or `--requests leave`
+  counts one Ministry's list, and takes `--state`, `--history` (`current`
+  or `all`) and `--start` and `--end`.
+
+No command takes a search: searches match names. A report the campaign does
+not include (Financial or Ministry stewardship), or no current campaign, is
+exit 1 (`not_available`). In System logs, where the page's event counts
+the rows it showed, the command's counts 0: it shows none.
+
 ## Report exports
 
 A report export (the Participation page's **Export**, and the export of
@@ -767,12 +817,11 @@ pk-admin exports clean
 
 - `export create` requests a Participation export, as the page's export
   form does: `--fact-set` names the participation figures to export (the
-  page exports the ones it shows; until `report participation` prints
-  their `fact_set_id`, take it from the page's chart image link,
-  `.../participation/FACT_SET_ID.png`), `--format` is `csv`, `png`, `pdf`
-  or `xlsx`, and `--timezone` is the time zone of the file's dates. Exports
-  of the other report pages are requested on those pages for now; every
-  command below works on them too. An export's `EXPORT_ID` is in its status
+  page exports the ones it shows; take their `fact_set_id` from
+  `report participation`), `--format` is `csv`, `png`, `pdf` or `xlsx`,
+  and `--timezone` is the time zone of the file's dates. Exports of the
+  other report pages are requested on those pages for now; every command
+  below works on them too. An export's `EXPORT_ID` is in its status
   page's address, `/admin/reports/exports/EXPORT_ID/`.
 - `export status` shows the export as its status page does. With
   `--watch SECONDS` it repeats until the export stops changing (anything
@@ -933,3 +982,6 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   `export cancel`, `export retry`, `export regenerate` and
   `export download --stream`; the wrapper's `export fetch` and
   `exports clean`.
+- `pk-admin/1` (ADM-11 PR 8c): additive. `report list`,
+  `report participation`, `report responses`, `report financial`,
+  `report talents`, `report information` and `report ministry`.

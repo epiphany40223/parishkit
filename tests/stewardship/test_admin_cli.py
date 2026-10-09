@@ -90,6 +90,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export retry",
         "export regenerate",
         "export download",
+        "report list",
+        "report participation",
+        "report responses",
+        "report financial",
+        "report talents",
+        "report information",
+        "report ministry",
     }
     assert set(entries) == (
         session | reads | changes | refresh | tests | operations | reports
@@ -267,6 +274,28 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert download["arguments"] == ["EXPORT_ID"]
     stream = {option["name"]: option for option in download["options"]}
     assert stream["--stream"]["required"]
+    # The aggregate report reads: any session, no state change, the page's
+    # own view event (none for the reports root), no campaign and no search.
+    events = {
+        "report list": None,
+        "report participation": "participation_viewed",
+        "report responses": "response_dashboard_viewed",
+        "report financial": "financial_report_viewed",
+        "report talents": "talents_report_viewed",
+        "report information": "information_viewed",
+        "report ministry": "ministry_report_viewed",
+    }
+    for name, event in events.items():
+        entry = entries[name]
+        assert entry["scope"] == "read_only" and not entry["changes_state"], name
+        assert entry["audit_event"] == event and not entry["watch"], name
+        names = {option["name"] for option in entry["options"]}
+        assert not names & {"--campaign", "--search"}, name
+    ministry = {
+        option["name"]: option for option in entries["report ministry"]["options"]
+    }
+    assert ministry["--requests"]["choices"] == ["join", "leave"]
+    assert "fact_set_id" in entries["report participation"]["result_fields"]
 
 
 def test_every_state_change_has_a_registered_described_event():
