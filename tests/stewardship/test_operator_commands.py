@@ -242,6 +242,7 @@ def test_recovery_wrappers_refuse_wrong_identity_and_nonapplied_receipt(
     [
         "wrong-login",
         "superuser",
+        "isolation-drift",
         "configured",
         "configured-stale",
         "configured-backed",
@@ -266,11 +267,15 @@ def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
     monkeypatch.setattr(
         operator_commands, "configure_operator_database", lambda _: None
     )
-    identity = ["pk_stewardship_migration"] * 2 + [False] * 6
+    # The last column is the isolation drift (#389): a member of the
+    # migration login or foreign-data USAGE refuses it like a superuser.
+    identity = ["pk_stewardship_migration"] * 2 + [False] * 7
     if case == "wrong-login":
         identity[0] = "pk_stewardship_web"
     if case == "superuser":
         identity[2] = True
+    if case == "isolation-drift":
+        identity[-1] = True
     configured = case.startswith("configured")
     rows = [tuple(identity), ("system_configuration",), (configured,)]
     if configured:
@@ -304,3 +309,10 @@ def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
     assert migrate.call_count == int(
         case in {"missing-policy", "valid", "configured-backed"}
     )
+    # The identity query applies every isolation check but ownership.
+    from parishkit.stewardship.database_provisioning import ISOLATION_DRIFT, OWNERSHIP
+
+    cursor = database.cursor.return_value.__enter__.return_value
+    query = cursor.execute.call_args_list[0].args[0]
+    for name, check in ISOLATION_DRIFT.items():
+        assert (check in query) is (name != OWNERSHIP)

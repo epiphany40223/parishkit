@@ -89,11 +89,17 @@ def migrate_command(configuration):
         raise ConfigError("Migrations require their explicit operator profile.")
     with StartupLease(RuntimeLayout(configuration).interlock, offline=True) as lease:
         configure_operator_database(configuration)
+        from .database_provisioning import isolation_drift, migration_exemption
+
         with connection.cursor() as cursor:
+            # The migration login has no runtime admission, so it is checked
+            # here for the isolation drift every runtime login's admission
+            # refuses; it owns the schema, so ownership alone is waived.
             cursor.execute(
                 "SELECT current_user,session_user,rolsuper,rolbypassrls,rolcreatedb,"
-                "rolcreaterole,rolreplication,rolinherit FROM pg_roles "
-                "WHERE rolname=current_user"
+                "rolcreaterole,rolreplication,rolinherit,"
+                f"{isolation_drift(migration_exemption(ServiceRole.MIGRATION))} "
+                "FROM pg_roles r WHERE rolname=current_user"
             )
             row = cursor.fetchone()
             if (

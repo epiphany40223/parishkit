@@ -19,6 +19,13 @@ from its ``CREATE`` (written before or after the body) or from a later
 pattern for frozen migrations because ``CREATE OR REPLACE`` drops the
 attribute. A listed function that gains a path in a migration leaves the
 list only once its baseline file pins it too.
+
+The scan is deliberately simple and fails closed on what it cannot read:
+a function body that is not dollar-quoted (``AS '...'``), and ``ALTER
+FUNCTION ... RENAME TO``, which would leave the function under its old key.
+It strips ``--`` comments everywhere, including inside bodies, so a body
+line such as ``x -- note $$;`` would lose its closing quote; ``/* */``
+comments are not stripped. No schema file needs either today.
 """
 
 import re
@@ -36,6 +43,7 @@ STATEMENT = re.compile(
 DOLLAR = re.compile(r"\$(\w*)\$")
 SETS_PATH = re.compile(r"\bSET\s+search_path\b", re.I)
 RESETS_PATH = re.compile(r"\bRESET\s+(?:search_path|ALL)\b", re.I)
+RENAMES = re.compile(r"\bRENAME\s+TO\b", re.I)
 # Leading words of multi-word types, which are not parameter names.
 TYPE_STARTS = frozenset({"bit", "character", "double", "interval", "time", "timestamp"})
 ALIASES = {
@@ -233,12 +241,18 @@ def _statements(text):
         signature = _signature(match[2], text[match.end() : end - 1])
         if match[1]:
             body = DOLLAR.search(text, end)
+            # A ``;`` before the dollar quote means this body was not
+            # dollar-quoted, and the quote found belongs to a later function.
+            assert body and ";" not in text[end : body.start()], (
+                f"{signature}: body is not dollar-quoted"
+            )
             closing = text.index(body.group(), body.end()) + len(body.group())
             position = text.index(";", closing)
             attributes = text[end : body.start()] + text[closing:position]
         else:
             position = text.index(";", end)
             attributes = text[end:position]
+            assert not RENAMES.search(attributes), f"{signature}: RENAME TO"
         yield bool(match[1]), signature, attributes
 
 
@@ -340,3 +354,39 @@ def test_scan_refuses_an_alter_of_a_signature_no_create_produced():
                 )
             ]
         )
+
+
+@pytest.mark.parametrize(
+    "sql, refusal",
+    [
+        (
+            # The quoted body hides g's CREATE: the dollar quote found next
+            # belongs to h, so g would never be scanned.
+            """
+            CREATE FUNCTION public.f() RETURNS integer LANGUAGE sql AS 'SELECT 1';
+            CREATE FUNCTION public.g() RETURNS integer LANGUAGE sql AS 'SELECT 2';
+            CREATE FUNCTION public.h() RETURNS integer
+            LANGUAGE sql AS $$ SELECT 3; $$ SET search_path TO pg_catalog;
+            """,
+            r"f\(\): body is not dollar-quoted",
+        ),
+        (
+            """
+            CREATE FUNCTION public.f() RETURNS integer LANGUAGE sql AS 'SELECT 1';
+            """,
+            r"f\(\): body is not dollar-quoted",
+        ),
+        (
+            """
+            CREATE FUNCTION public.f() RETURNS void
+            LANGUAGE sql AS $$ SELECT 1; $$ SET search_path TO pg_catalog;
+            ALTER FUNCTION public.f() RENAME TO g;
+            """,
+            r"f\(\): RENAME TO",
+        ),
+    ],
+)
+def test_scan_refuses_what_it_cannot_read(sql, refusal):
+    """A quoted body or a rename fails the scan instead of hiding a function."""
+    with pytest.raises(AssertionError, match=refusal):
+        _search_paths([("a.sql", sql)])
