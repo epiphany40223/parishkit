@@ -1,4 +1,5 @@
 {% load i18n %}{% comment %}
   Shared help beside every report export format choice (issue #221): how each
-  format writes dates. See web/dates.py for the rules.
-{% endcomment %}<p class="help">{% translate "Dates in CSV files use ISO 8601 (2027-01-31), with times as 2027-01-31 14:05 in the display time zone. XLSX files hold real dates that Excel shows in your own regional date format. PDFs use the parish date format." %}</p>
+  format writes dates and money. See web/dates.py and
+  reports/information_rendering.py for the rules.
+{% endcomment %}<p class="help">{% translate "Dates in CSV files use ISO 8601 (2027-01-31), with times as 2027-01-31 14:05 in the display time zone. XLSX files hold real dates that Excel shows in your own regional date format. PDFs use the parish date format." %} {% translate "Money in CSV files is a plain amount such as 1234.50 or -50.00, with no $ sign, so spreadsheets read it as a number; XLSX files show it in dollars, and PDFs as on the page." %}</p>

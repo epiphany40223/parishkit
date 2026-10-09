@@ -57,12 +57,28 @@ def visible_text(value, *, supported=None):
 
 
 def plain(value):
-    """Money as its report text for CSV and PDF; every other value unchanged.
+    """Money as its report text for PDF; every other value unchanged.
 
-    Only the XLSX writer keeps money numeric (see ``xlsx_cell``), so CSV and
-    PDF files say exactly what the page says.
+    The XLSX writer keeps money numeric (see ``xlsx_cell``) and CSV writes
+    its canonical amount (``csv_cell_value``); PDF says exactly what the page says.
     """
     return value.display if isinstance(value, MoneyAmount) else value
+
+
+def csv_cell_value(value):
+    """One CSV cell: known money as its canonical amount, else the guarded text.
+
+    A known amount is the plain signed decimal (``1200.00``, ``-50.00``,
+    ``0.00``): no dollar sign, thousands separator or formula-guard
+    apostrophe, so a spreadsheet reads it as a number and a script parses
+    it without stripping text (#388 L5). Such a value is only an optional
+    minus sign, digits, a point and two digits, so it cannot be a formula
+    and needs no neutralizing. Unavailable money stays the word, and every
+    other value goes through ``csv_cell`` as before.
+    """
+    if isinstance(value, MoneyAmount) and value.available:
+        return value.canonical
+    return csv_cell(plain(value))
 
 
 def excel_amount(value):
@@ -127,12 +143,12 @@ def information_csv(document, output):
     try:
         writer = csv.writer(wrapper, lineterminator="\r\n")
         writer.writerow((*document.headings, *(key for key, _ in document.metadata)))
-        trailer = tuple(csv_cell(plain(value)) for _, value in document.metadata)
+        trailer = tuple(csv_cell_value(value) for _, value in document.metadata)
         writer.writerow(
             ("Report metadata", *("" for _ in document.headings[1:]), *trailer)
         )
         for row in document.rows:
-            writer.writerow((*(csv_cell(plain(value)) for value in row), *trailer))
+            writer.writerow((*(csv_cell_value(value) for value in row), *trailer))
         wrapper.flush()
     finally:
         wrapper.detach()
