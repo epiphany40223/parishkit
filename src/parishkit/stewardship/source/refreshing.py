@@ -49,6 +49,13 @@ from .snapshots import (
 )
 from .transport import runtime_profile, source_session
 from .windows import RefreshWindow
+from .workgroups import (
+    EVIDENCE_KEY,
+    configured_name,
+    load_reminder_workgroup,
+    recorded,
+    warn_if_missing,
+)
 
 # Each staging batch is one source step (attempts.source_step): a transaction
 # that verifies the attempt and writes the batch. It used to hold the
@@ -74,6 +81,10 @@ class RefreshInputs:
     previous_derived_counts: dict | None
     base_cursor: dict | None
     base: dict | None = field(repr=False)
+    # The campaign's Reminder WorkGroup name (#861), and what the current
+    # snapshot recorded for it; see source.workgroups.
+    workgroup_name: str | None = None
+    base_workgroup: dict | None = None
 
 
 # A load's drop check compares with every full refresh promoted in this many
@@ -194,6 +205,7 @@ def _inputs(attempt_id, execution, claim):
         cursor = None
         counts = None
         derived = None
+        base_workgroup = None
         if current.snapshot_id is not None:
             full = (
                 SourceSnapshot.objects.filter(
@@ -216,11 +228,12 @@ def _inputs(attempt_id, execution, claim):
             # snapshot (#320), from the derived counts each load records in its
             # manifest, so normally nothing is reconstructed for this.
             current_row = SourceSnapshot.objects.get(pk=current.snapshot_id)
-            recorded = _recorded_derived(current_row)
-            if recorded is None:
+            base_workgroup = recorded(current_row.cursor)
+            counted = _recorded_derived(current_row)
+            if counted is None:
                 # A snapshot promoted before these counts were recorded: count
                 # it once from its Family and contact rows (or the delta base).
-                recorded = derived_counts(
+                counted = derived_counts(
                     base
                     if base is not None
                     else reconstruct_snapshot(
@@ -228,7 +241,7 @@ def _inputs(attempt_id, execution, claim):
                     )
                 )
             derived = derived_baseline(
-                *(_recorded_derived(each) for each in trend), recorded
+                *(_recorded_derived(each) for each in trend), counted
             )
         zone = (
             scope.campaign.active_configuration.timezone
@@ -237,6 +250,9 @@ def _inputs(attempt_id, execution, claim):
                 configuration_id=scope.runtime.active_configuration_id
             )
         )
+        # Only a campaign still taking responses skips Reminders; a refresh
+        # with no campaign, or for an archived one, reads no WorkGroup.
+        live = scope.campaign is not None and scope.campaign.state != "archived"
         return RefreshInputs(
             _window(scope),
             snapshot.started_at.astimezone(ZoneInfo(zone)).date(),
@@ -244,6 +260,10 @@ def _inputs(attempt_id, execution, claim):
             derived,
             cursor,
             base,
+            configured_name(scope.campaign.active_configuration.values)
+            if live
+            else None,
+            base_workgroup,
         )
 
 
@@ -337,14 +357,22 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
                 base_cursor=inputs.base_cursor,
                 started_at=attempt.snapshot.started_at,
             )
+        # The Reminder WorkGroup (#861) is read on every refresh, full and
+        # quick, after the corpus: one list call plus the one WorkGroup's
+        # members, and nothing at all when the campaign names none.
+        workgroup = load_reminder_workgroup(client, inputs.workgroup_name)
     finally:
         session.close()
+    evidence = loaded.evidence
+    if workgroup is not None:
+        warn_if_missing(workgroup, task_id=execution.claim.run_id)
+        evidence = {**evidence, EVIDENCE_KEY: workgroup}
     cursor = refresh_cursor(
         snapshot_id=attempt.snapshot_id,
         kind=claim.phase,
         started_at=attempt.snapshot.started_at,
         window_digest=inputs.window.digest,
-        evidence=loaded.evidence,
+        evidence=evidence,
         base_cursor=inputs.base_cursor,
     )
 
@@ -365,10 +393,13 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
     # Most quick updates find nothing (#629): the change list is empty, so
     # the corpus is the current one exactly (a day change that flips a
     # roster's "current" flag is a difference and stages as before). Any
-    # doubt falls through to the ordinary staging path below.
+    # doubt falls through to the ordinary staging path below. A changed
+    # Reminder WorkGroup membership (#861) is a change too: promotion records
+    # it, so planning reads the new membership from the current snapshot.
     if (
         claim.phase == "delta"
         and unchanged is not None
+        and workgroup == inputs.base_workgroup
         and same_corpus(loaded.corpus, inputs.base)
     ):
         with execution.effect():

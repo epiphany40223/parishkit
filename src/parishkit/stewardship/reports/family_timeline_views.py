@@ -49,6 +49,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
+from parishkit.stewardship.source.workgroups import current_evidence
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.report_errors import report_unavailable
@@ -109,6 +110,9 @@ class Identity:
     code: str | None = None
     email_deliverable: bool = False
     reach: str = ""
+    # The campaign's Reminder WorkGroup name when this Family is in it now
+    # (#861): its Reminders are skipped.
+    reminder_workgroup: str | None = None
 
     @property
     def reach_label(self):
@@ -217,15 +221,22 @@ def _audit(principal, campaign_id, family_id, outcome):
         )
 
 
-def read_identity(family, *, codes):
+def read_identity(family, *, codes, workgroup=None):
     """The Family's name and envelope number, its code and its email reach.
 
     The name and envelope number come from the latest ParishSoft data (two
     snapshot reads), as on the response lists. The code is decrypted only
     when ``codes`` (the role may see Family codes), under the key-set lock,
     so a rotation cannot change keys between the read and the decryption;
-    the caller holds the read guard's transaction.
+    the caller holds the read guard's transaction. ``workgroup`` is the
+    campaign's configuration values, to tell whether its Reminder WorkGroup
+    holds this Family now.
     """
+    workgroup_name = None
+    if workgroup is not None:
+        name, evidence = current_evidence(workgroup)
+        if evidence is not None and family.family_duid in evidence["family_duids"]:
+            workgroup_name = name
     snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
     facts = snapshot_family_facts(snapshot, [family.family_duid], "Family").get(
         family.family_duid
@@ -244,6 +255,7 @@ def read_identity(family, *, codes):
         code,
         family.email_deliverable,
         family.deliverability_reason,
+        workgroup_name,
     )
 
 
@@ -325,7 +337,11 @@ def family_timeline(request, campaign_id, family_id):
             context = page_context(
                 campaign,
                 family.pk,
-                read_identity(family, codes=codes),
+                read_identity(
+                    family,
+                    codes=codes,
+                    workgroup=campaign.active_configuration.values,
+                ),
                 mode,
                 timeline,
                 database_now(),

@@ -549,6 +549,7 @@ SPEC_ORDER = [
     "schedule_settings",
     "share_settings",
     "talent_settings",
+    "reminder_workgroup",
     "go_live",
     "production_progress",
     # Mail and Family portal
@@ -632,6 +633,7 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "schedule_settings",
         "share_settings",
         "talent_settings",
+        "reminder_workgroup",
         "go_live",
         "production_progress",
         "delivery_control",

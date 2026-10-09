@@ -1170,7 +1170,7 @@ BEGIN
         END IF;
         IF EXISTS (SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
             WHERE c.id=target AND c.structural_locked
-              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork','ministry_duids']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork','ministry_duids'])) THEN
+              AND (old_c.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids']) IS DISTINCT FROM (candidate.values - ARRAY['name','year_label','content_versions','end_date','artwork','reminder_workgroup','ministry_duids'])) THEN
             RAISE EXCEPTION 'Live structural settings are locked' USING ERRCODE='23514';
         END IF;
         -- The one reviewed live structural exemption (#342): an Administrator

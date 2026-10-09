@@ -1082,6 +1082,20 @@ empty while such edits were made in ParishSoft
 contract). Administrators are told that ParishSoft changes appear after the
 next full refresh or **Refresh now**.
 
+Every refresh, full and quick, also reads the campaign's
+[Reminder WorkGroup](#family-invitations-and-reminders) when the campaign
+names one (#861): one paged list of the Family WorkGroups, then the members of
+only the WorkGroup with that name (matched ignoring case and surrounding
+spaces), recorded in the snapshot's load evidence. A refresh with no campaign,
+an archived one, or no name set reads nothing. A quick update whose corpus is
+unchanged still stages and promotes when the WorkGroup's recorded members
+differ from the current snapshot's, so planning sees the new membership. A
+name that matches no WorkGroup is recorded as not found, excludes nobody,
+logs a `task_started` WARNING with the failure category
+`reminder_workgroup_missing` (never the name), and shows a notice on
+[System health](../admin-portal/spec.md#system-health-page). Quick updates
+held for a bulk send (below) read nothing until they run.
+
 For each delta indication, reload every affected Family and related Members/
 contacts available through supported endpoints. If the feed/cursor is
 ambiguous, discontinuous, unsupported, too large, or indicates relationship
@@ -1382,6 +1396,35 @@ Family without one receives no outbox row; its occurrence terminates as
 `skipped` with the non-error reason `no_deliverable_recipient`. Permanent
 refusals therefore cannot create empty-recipient messages or systemic-provider
 failures, while the skipped occurrence preserves reporting and recovery state.
+
+A campaign may name a Reminder WorkGroup: a ParishSoft Family WorkGroup whose
+Families get no Reminders (#861; the setting is the campaign's
+[`reminder_workgroup`](../data/spec.md) value, edited on the Admin portal's
+[Reminder WorkGroup](../admin-portal/spec.md#parish-and-integration-configuration)
+page). Planning (`plan_family`) treats such a Family's reminders as their own
+group and skips each one as it falls due, or as it is planned ahead in the
+lead window, with the reason `workgroup_excluded` (a response, a closed
+campaign or ineligibility is still named first); none is sent and none
+coalesces into the invitation. Everything else is unchanged: the invitation,
+receipts and confirmations still go out, the Family keeps its portal access,
+code and link, its eligibility flags do not change, and it stays in every
+count and report. Membership comes from the current snapshot's recorded read
+(see the [delta cycle](#delta-cycle)) and applies only while the recorded name
+is the campaign's current setting, so clearing or changing the name takes
+effect at once for the old membership and at the next refresh for the new
+one. The scheduler plans every Family at each reminder's lead-window start
+and due time, and the mail dispatcher plans the Family again just before
+sending, so a reminder prepared ahead for a Family that joined the WorkGroup
+afterwards is skipped and its unsent email cancelled with the same reason;
+emailed codes and links are never touched. Activation catch-up does not apply
+the WorkGroup (its SQL proof admits only the established skip reasons); a
+reminder it selects is skipped when it is dispatched. Neither does the
+paused-delivery resume planner (`stewardship_delivery_recover_families_v1`):
+its resume preview counts WorkGroup Families as to be emailed, and may
+coalesce their older reminders into one, which the send-time check then
+skips, so nothing is sent but the preview's number is too high ([#866](https://github.com/epiphany40223/parishkit/issues/866)). Family email progress
+counts these skips separately ("Skipped: Reminder WorkGroup"), never as owed
+or remaining, and the Family timeline names them.
 
 ### Family schedule sweep
 

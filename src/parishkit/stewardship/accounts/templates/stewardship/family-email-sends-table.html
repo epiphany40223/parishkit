@@ -21,6 +21,7 @@
     <th scope="col" class="numeric">{% translate "Cancelled" %}</th>
     <th scope="col" class="numeric">{% translate "Not needed" %}</th>
     <th scope="col" class="numeric">{% translate "Couldn't be emailed" %}</th>
+    <th scope="col" class="numeric">{% translate "Skipped: Reminder WorkGroup" %}</th>
     <th scope="col" class="numeric">{% translate "Held" %}</th>
   </tr></thead>
   <tbody>
@@ -35,8 +36,9 @@
     {% for outcome in row.outcomes %}<td class="numeric">{% if outcome.listed == outcome.count and outcome.count %}<a href="{% url 'admin:deliveries' %}?{{ outcome.query }}" aria-label="{% blocktranslate with count=outcome.count|number label=outcome.label send=outcome.send %}{{ count }} {{ label }} emails of {{ send }}: show them{% endblocktranslate %}">{{ outcome.count|number }}</a>{% else %}{{ outcome.count|number }}{% if outcome.listed %}<br><a href="{% url 'admin:deliveries' %}?{{ outcome.query }}" aria-label="{% blocktranslate with listed=outcome.listed|number label=outcome.label send=outcome.send %}show {{ listed }} {{ label }} emails of {{ send }}{% endblocktranslate %}">{% blocktranslate with listed=outcome.listed|number %}show {{ listed }}{% endblocktranslate %}</a>{% endif %}{% endif %}</td>{% endfor %}
     <td class="numeric">{{ row.send.counts.not_needed|number }}</td>
     <td class="numeric">{{ row.send.counts.unreachable|number }}</td>
+    <td class="numeric">{{ row.send.counts.workgroup|number }}</td>
     <td class="numeric">{{ row.send.counts.waiting|number }}</td>
-  </tr>{% empty %}<tr><td colspan="14">{% translate "No invitation or reminder has been sent in this campaign yet." %}</td></tr>{% endfor %}
+  </tr>{% empty %}<tr><td colspan="15">{% translate "No invitation or reminder has been sent in this campaign yet." %}</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>

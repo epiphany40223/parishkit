@@ -777,6 +777,62 @@ is append-only. A copy already fetched by a browser or an email provider
 cannot be recalled. Backups still hold the file, so a restore brings it back:
 repeat step 3 after any restore.
 
+## Keeping a Family from getting Reminders
+
+Use this when a Family should not get the campaign's Reminder emails, for
+example a second ParishSoft Family record kept for a staff member who already
+responded as a parishioner (#861).
+
+**What the system does by itself.** If the campaign names a Reminder
+WorkGroup, every ParishSoft refresh (full refreshes and quick updates) reads
+which Families are in that Family WorkGroup. A Family in it gets no Reminders:
+each one is skipped when it is planned, and one already prepared is not sent.
+Nothing else changes. The Family still gets the invitation, receipts and
+confirmations, keeps its code and link (emailed codes and links are never
+changed), can still respond, and counts in every report. The Family's
+timeline says "Reminders skipped: in ParishSoft WorkGroup …", and Family
+email progress counts the skipped Reminders separately.
+
+**What you do.**
+
+1. In ParishSoft, create one Family WorkGroup for this campaign, for example
+   "Active: Stewardship 2027" (Families, then WorkGroups; any name works, but
+   a new one each year keeps last year's list from carrying over by
+   accident). Add each Family that should get no Reminders. Staff can add or
+   remove Families there at any time without touching any other field.
+2. In the Admin portal, open Campaign setup, then **Reminder WorkGroup**.
+   Type the WorkGroup's name as ParishSoft shows it (capital letters and
+   spaces at the ends do not matter), preview and apply the change. It can be
+   changed while the campaign is live.
+3. Wait for the next ParishSoft refresh, or use **Refresh from ParishSoft**.
+   Quick updates wait while a Family email send is in progress, so make
+   ParishSoft changes before a Reminder's preparation starts (two hours
+   before it is due) when you can; a Family added later is still skipped at
+   send time once a refresh has read it. Any edit to the name, even of its
+   capitals, stops the exclusion until the next refresh, so run **Refresh
+   from ParishSoft** after every edit.
+4. Check it against live ParishSoft right after the deploy, and well before
+   the night a Reminder is prepared (preparation starts two hours before it
+   is due): set the name, run **Refresh from ParishSoft**, and confirm that
+   the Reminder WorkGroup page shows the number of Families you expect. While
+   a name is set, a failure of ParishSoft's WorkGroup calls fails the whole
+   refresh, so a refresh that fails right after setting the name points at
+   the WorkGroup read.
+
+**How you know it worked.** The Reminder WorkGroup page says how many
+Families the newest refresh found in the WorkGroup, and each one's Family
+timeline names it. If the name matches no Family WorkGroup in ParishSoft,
+the page and System health say so, the refresh logs a warning, and nobody's
+Reminders are skipped: fix the name in either place.
+
+**What not to do.** Do not make the Family inactive or move it out of the
+parish in ParishSoft to stop Reminders: that removes it from the campaign,
+its counts and its portal access. Do not use ParishSoft's Send No Mail flag:
+it means postal mail. Clearing the setting sends later Reminders to those
+Families again. If delivery is paused and resumed around a Reminder, the
+resume preview counts the WorkGroup's Families as about to be emailed; they
+are still skipped when sent.
+
 ## Index
 
 | Situation | Where |
@@ -790,3 +846,4 @@ repeat step 3 after any restore.
 | Production activation and withdrawal | [Above](#production-activation); design in the [go-live readiness](stewardship-go-live-readiness.md), [link preparation](stewardship-production-activation.md), [Production confirmation](stewardship-production-confirmation.md) and [withdrawal](stewardship-production-withdrawal.md) guides |
 | HTTPS certificate expiry monitoring and renewal failures | [Above](#certificate-expiry) |
 | Withdraw published campaign artwork | [Above](#withdrawing-published-campaign-artwork) |
+| Keep a Family from getting Reminders | [Above](#keeping-a-family-from-getting-reminders) |

@@ -71,6 +71,9 @@ UPCOMING = timedelta(hours=1)
 # as opposed to no longer needing the email (it responded, a later email
 # replaced this one, or the campaign closed).
 UNREACHABLE_REASONS = ("no_deliverable_recipient", "family_ineligible")
+# A reminder skipped (or its prepared email cancelled) because the Family is
+# in the campaign's Reminder WorkGroup (#861) has its own bucket, so the
+# Administrator sees how many Families the WorkGroup kept from a reminder.
 
 # The send whose occurrences fell due most recently: its definition, kind,
 # revision and that revision's due time. ``read_send`` orders every send by
@@ -156,6 +159,7 @@ _COUNTS = (
     "WHEN m.id IS NULL THEN CASE "
     "WHEN l.state IN ('skipped','coalesced') AND l.reason=ANY(%(unreachable)s) "
     "THEN 'unreachable' "
+    "WHEN l.state='skipped' AND l.reason='workgroup_excluded' THEN 'workgroup' "
     "WHEN l.state IN ('skipped','coalesced') THEN 'not_needed' "
     "WHEN l.state='failed' THEN 'failed' "
     "WHEN l.state='delivery_unknown' THEN 'uncertain' "
@@ -166,6 +170,7 @@ _COUNTS = (
     "WHEN m.state='permanent_failure' THEN 'failed' "
     "WHEN m.state='delivery_unknown' THEN 'uncertain' "
     "WHEN m.state='cancelled' AND l.reason=ANY(%(unreachable)s) THEN 'unreachable' "
+    "WHEN m.state='cancelled' AND l.reason='workgroup_excluded' THEN 'workgroup' "
     "WHEN m.state='cancelled' THEN 'not_needed' "
     "ELSE 'remaining' END AS bucket, "
     "m.id IS NULL AS unprepared, m.created_at, m.updated_at "
@@ -180,6 +185,7 @@ _COUNTS = (
     "count(*) FILTER (WHERE bucket='remaining' AND unprepared), "
     "count(*) FILTER (WHERE bucket='unreachable'), "
     "count(*) FILTER (WHERE bucket='not_needed'), "
+    "count(*) FILTER (WHERE bucket='workgroup'), "
     "min(created_at), "
     "max(updated_at) FILTER (WHERE bucket IN ('sent','failed','uncertain')), "
     "count(*) FILTER (WHERE bucket IN ('sent','failed','uncertain') "
@@ -282,6 +288,9 @@ _OWED = (
     "AND h.target=" + _TARGET + " AND h.state IN ('unreviewed','assumed_delivered'))"
     "{reminder}"
 )
+# A Family in the campaign's Reminder WorkGroup (#861) is skipped once a
+# reminder is planned for it, so, like an undeliverable one, it is not owed.
+_NOT_WORKGROUP = " AND NOT f.family_duid=ANY(%(workgroup)s)"
 _RESPONDED = {
     "production": "f.effective_submission_id IS NULL",
     "testing": "NOT EXISTS (SELECT 1 FROM stewardship_submission s "
@@ -309,7 +318,8 @@ _INVITED = (
 def owed_statement(mode, kind):
     """The ``_OWED`` count for one mode and send kind."""
     return _OWED.format(
-        responded=_RESPONDED[mode], reminder=_INVITED if kind == "reminder" else ""
+        responded=_RESPONDED[mode],
+        reminder=_INVITED + _NOT_WORKGROUP if kind == "reminder" else "",
     )
 
 
@@ -332,7 +342,8 @@ class SendCounts:
     prepared yet (those Families included). ``unplanned`` is None when it
     cannot be known (see the module docstring): ``remaining`` then counts
     only the planned Families, and the send's total is unknown. ``held``
-    is whether planning is held for now.
+    is whether planning is held for now. ``workgroup`` counts reminders
+    skipped because the Family is in the campaign's Reminder WorkGroup.
     """
 
     kind: str
@@ -352,6 +363,7 @@ class SendCounts:
     unprepared: int = 0
     unplanned: int | None = 0
     held: bool = False
+    workgroup: int = 0
 
     @property
     def outbox_failed(self):
@@ -365,8 +377,9 @@ class SendCounts:
 
     @property
     def not_sent(self):
-        """Families the send did not email: unreachable or no longer needed."""
-        return self.unreachable + self.not_needed
+        """Families the send did not email: unreachable, no longer needed or
+        in the Reminder WorkGroup."""
+        return self.unreachable + self.not_needed + self.workgroup
 
 
 def read_send(campaign_id, mode, cycle, now):
@@ -436,6 +449,7 @@ def _count(cursor, values, kind, now):
         unprepared,
         unreachable,
         not_needed,
+        workgroup,
         started_at,
         last_settled_at,
         recent,
@@ -463,6 +477,7 @@ def _count(cursor, values, kind, now):
         unprepared=unprepared - waiting + (unplanned or 0),
         unplanned=unplanned,
         held=held,
+        workgroup=workgroup,
     )
 
 
@@ -481,7 +496,18 @@ def _owed(cursor, values, kind):
     _, held, dirty, epoch = row
     if dirty:
         return None, held
-    cursor.execute(owed_statement(values["mode"], kind), values | {"epoch": epoch})
+    extra = {"epoch": epoch}
+    if kind == "reminder":
+        from parishkit.stewardship.campaigns.models import Campaign
+        from parishkit.stewardship.source.workgroups import excluded_duids
+
+        settings = (
+            Campaign.objects.filter(pk=values["campaign"])
+            .values_list("active_configuration__values", flat=True)
+            .first()
+        )
+        extra["workgroup"] = sorted(excluded_duids(settings or {}))
+    cursor.execute(owed_statement(values["mode"], kind), values | extra)
     return cursor.fetchone()[0], held
 
 

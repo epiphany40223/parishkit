@@ -72,6 +72,9 @@ FROZEN = {
     "0014_slot_decisions.sql": (
         "3b97fdb22903dd045f1067661626bee9d2cb8be820f01fd34d5fd771113b895f"
     ),
+    "0015_reminder_workgroup_setting.sql": (
+        "76b33d8e4ce41bf45c2289ad70846bf15686dc4f1b42398127e91d930046bec1"
+    ),
 }
 
 

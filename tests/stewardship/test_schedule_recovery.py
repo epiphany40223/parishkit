@@ -121,6 +121,26 @@ def test_inapplicable_family_work_has_reasoned_skips(field, reason):
     assert plan.reason == reason and plan.selected is None and not plan.coalesced
 
 
+def test_workgroup_reminders_are_skipped_with_their_own_reason():
+    """A Reminder WorkGroup Family's due reminders are skipped (#861)."""
+    rows = (slot(1), slot(2))
+    plan = plan_recovery(rows, cutoff=NOW, initial_delivered=True, excluded=True)
+    assert plan.skipped == tuple(row.occurrence_id for row in rows)
+    assert plan.reason == "workgroup_excluded" and plan.selected is None
+    # A response or a closed campaign is still the reason it gives first.
+    responded = plan_recovery(rows, cutoff=NOW, responded=True, excluded=True)
+    assert responded.reason == "family_responded"
+    closed = plan_recovery(rows, cutoff=NOW, closed=True, excluded=True)
+    assert closed.reason == "campaign_closed"
+    # Not excluded, the same group selects the latest reminder as before.
+    assert plan_recovery(rows, cutoff=NOW, initial_delivered=True).selected
+
+
+def test_workgroup_exclusion_must_be_a_boolean():
+    with pytest.raises(ValueError):
+        plan_recovery((slot(1),), cutoff=NOW, excluded=1)
+
+
 @pytest.mark.parametrize("state", ["pending", "running", "delivery_unknown"])
 def test_uncertain_work_holds_whole_group_even_when_other_rows_are_cancellable(state):
     rows = (slot(1, state=state, safely_cancellable=False), slot(2))

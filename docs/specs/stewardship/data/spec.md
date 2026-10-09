@@ -124,6 +124,19 @@ lists, in canonical order, the Family emails that skip the banner. Selected
 images are pinned against staging cleanup like the logos, and `artwork` is
 exempt from the live-campaign structural lock.
 
+A campaign's optional `reminder_workgroup` value (absent when unset; #861)
+is the name, trimmed text of at most 200 characters, of the ParishSoft Family
+WorkGroup whose Families get no Reminders. It is exempt from the live-campaign
+structural lock too (Python admission and the configuration pointer guard,
+frozen migration 0015), so it can change while the campaign runs, and needs
+no configuration schema version: like `artwork`, documents without it stay
+valid. Each source refresh records what it read in its snapshot cursor's
+load evidence, `cursor.load.reminder_workgroup = {name, found,
+family_duids}`; nothing else stores the membership, and no Family row,
+eligibility flag, code or link changes because of it. The current snapshot's
+record applies only while its `name` equals the campaign's setting (see
+[background processing](../background-processing/spec.md#family-invitations-and-reminders)).
+
 One versioned `SystemConfiguration` holds the global `testing` or `production`
 mode, single valid Testing recipient, current campaign pointer, durable
 `restore_review_required` gate, and mode-change history. The system starts in

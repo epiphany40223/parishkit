@@ -73,6 +73,7 @@ def _read(request, template, *, page):
             "health": health,
             "campaign_id": extra["campaign_id"],
             "pause": extra["pause"],
+            "workgroup_missing": extra["workgroup_missing"],
             "poll_interval": POLL_MILLISECONDS,
         }
         if page:

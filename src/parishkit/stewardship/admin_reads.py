@@ -457,6 +457,7 @@ def _send_counts(sent):
         "waiting": counts.waiting,
         "unreachable": counts.unreachable,
         "not_needed": counts.not_needed,
+        "workgroup_skipped": counts.workgroup,
         "rate_per_minute": sent.rate,
         "started_at": counts.started_at,
         "last_settled_at": counts.last_settled_at,

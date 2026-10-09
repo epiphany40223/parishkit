@@ -127,6 +127,10 @@ class FailureKind(StrEnum):
     # record (#632): only that record was rolled back. Logged once per
     # scheduler process for each slot, like a refused catch-up.
     REFRESH_DECISION_REFUSED = "refresh_decision_refused"
+    # The campaign's Reminder WorkGroup (#861) names no ParishSoft Family
+    # WorkGroup, so no Family's Reminders are skipped. Warned on each refresh
+    # that reads it, riding on the refresh's reviewed task_started event.
+    REMINDER_WORKGROUP_MISSING = "reminder_workgroup_missing"
     # ``pk-stewardship load-check`` stopped because something it measures
     # changed under it (#633): the ParishSoft data, the Testing Family
     # portal, or the campaign. Each says to run the check again.

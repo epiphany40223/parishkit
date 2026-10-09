@@ -140,6 +140,7 @@ PAGES = {
         "campaign", _("Remove campaign image"), "artwork_settings", linkable=False
     ),
     "talent_settings": Page("campaign", _("Member talents")),
+    "reminder_workgroup": Page("campaign", _("Reminder WorkGroup")),
     "go_live": Page("campaign", _("Go-live readiness")),
     "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
     "go_live_cleanup": Page("campaign", _("Testing cleanup"), "go_live"),
@@ -436,6 +437,8 @@ MENU = (
     Entry("schedule_settings", _ADMIN, _campaign),
     Entry("share_settings", _ADMIN, _structural(FINANCIAL)),
     Entry("talent_settings", _ADMIN, _structural(MINISTRY)),
+    # Staff mark Families in ParishSoft while the campaign runs (#861).
+    Entry("reminder_workgroup", _ADMIN, _unarchived),
     Entry("go_live", _ADMIN, _draft),
     Entry("production_progress", _ADMIN, _confirmed),
     # Mail and Family portal

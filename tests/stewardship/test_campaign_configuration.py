@@ -316,3 +316,36 @@ def test_campaign_interval_is_reused_for_all_schedules(monkeypatch):
     monkeypatch.setattr(configuration, "campaign_values", tracked)
     validate_campaign_sections(value)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("value", ["", " padded", "line\nbreak", "x" * 201, 7, None])
+def test_reminder_workgroup_name_is_bounded_trimmed_text(value):
+    """The optional Reminder WorkGroup (#861) is a trimmed name, else absent."""
+    with pytest.raises(ConfigError):
+        campaign_values(campaign(reminder_workgroup=value)["values"])
+
+
+def test_reminder_workgroup_is_set_and_cleared_by_patch():
+    """A patch sets the name; a None value removes the key (the setting is off)."""
+    value = document()
+    version = configuration_version(value)
+    row = value["sections"]["campaigns"][0]
+
+    def patched(base, name):
+        """Apply one Reminder WorkGroup update and return the campaign values."""
+        patch = [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": row["id"],
+                "values": {"reminder_workgroup": name},
+            }
+        ]
+        result = build_candidate(base, patch, candidate_id=uuid4())
+        return result, result.candidate.document()["sections"]["campaigns"][0]["values"]
+
+    result, values = patched(version, "Active: Stewardship 2027")
+    assert values["reminder_workgroup"] == "Active: Stewardship 2027"
+    campaign_values(values)
+    _, cleared = patched(configuration_version(result.candidate.document()), None)
+    assert "reminder_workgroup" not in cleared

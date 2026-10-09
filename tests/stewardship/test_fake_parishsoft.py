@@ -763,3 +763,36 @@ def test_command_serves_in_local(quiet, monkeypatch, tmp_path):
     local = deployment_file(tmp_path, "local")
     assert main(["fake-parishsoft", "--config", local, "--fake-config", path]) == 0
     assert bind.call_count == 3
+
+
+def test_reminder_workgroup_reads_only_the_named_family_workgroup(
+    before_release, tmp_path
+):
+    """The Reminder WorkGroup read (#861) lists the WorkGroups, then fetches
+    the members of only the one the campaign names, matched ignoring case."""
+    from parishkit.stewardship.source.workgroups import load_reminder_workgroup
+
+    server, fake, _ = before_release
+    workgroup = fake.parish.family_workgroups[1]
+    members = sorted(
+        row["familyId"]
+        for row in fake.parish.family_workgroup_rosters[workgroup["workgroupDUID"]]
+    )
+    coherent = client(server, tmp_path)
+    # A refresh has validated the organization before it reads the WorkGroup.
+    coherent.validate_organization()
+    before = coherent.request_count
+    found = load_reminder_workgroup(coherent, workgroup["workgroupName"].upper())
+    assert found == {
+        "name": workgroup["workgroupName"].upper(),
+        "found": True,
+        "family_duids": members,
+    }
+    # One list request and one membership request (each a single page here),
+    # never the other WorkGroups' rosters.
+    assert coherent.request_count - before <= 4
+    other = client(server, tmp_path)
+    other.validate_organization()
+    missing = load_reminder_workgroup(other, "No such group")
+    assert missing == {"name": "No such group", "found": False, "family_duids": []}
+    assert load_reminder_workgroup(client(server, tmp_path), None) is None
