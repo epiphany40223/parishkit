@@ -62,6 +62,26 @@ def scope_authorized(principal, scope):
     )
 
 
+def offered_ministries(campaign_id):
+    """The Ministry DUIDs the campaign offers for an export, as its forms do.
+
+    The campaign's configured Ministries, and a Ministry removed from a live
+    campaign that keeps current (not withdrawn) requests, which the report
+    offers like any other, as the packet SQL does (#342). The packet form
+    and the command line's ``export ministry`` check a selection against it.
+    """
+    offered = Campaign.objects.select_related("active_configuration").get(
+        pk=campaign_id
+    )
+    return set(offered.active_configuration.values.get("ministry_duids", ())) | set(
+        MinistryRequest.objects.filter(
+            submission__campaign_id=campaign_id, submission__mode="live"
+        )
+        .exclude(state__in=("cancelled", "superseded"))
+        .values_list("ministry_duid", flat=True)
+    )
+
+
 def create_ministry_export(
     store,
     user_id,
@@ -145,28 +165,11 @@ def create_ministry_export(
         ):
             raise PermissionError("Ministry export is unavailable.")
         admit_campaign(campaign_id, mutating=True)
-        if ministries:
-            # SQL refuses a selection it cannot resolve exactly. Say so here as a
-            # bad selection, so a stale or crafted form is not reported as an
-            # outage to retry. The form offers only this campaign's Ministries.
-            offered = Campaign.objects.select_related("active_configuration").get(
-                pk=campaign_id
-            )
-            # A Ministry removed from a live campaign keeps its current (not
-            # withdrawn) requests, and the report offers it for a packet like
-            # any other, as the packet SQL does (#342).
-            if (
-                set(ministries)
-                - set(offered.active_configuration.values.get("ministry_duids", ()))
-                - set(
-                    MinistryRequest.objects.filter(
-                        submission__campaign_id=campaign_id, submission__mode="live"
-                    )
-                    .exclude(state__in=("cancelled", "superseded"))
-                    .values_list("ministry_duid", flat=True)
-                )
-            ):
-                raise ValueError("A selected Ministry is not in this campaign.")
+        # SQL refuses a selection it cannot resolve exactly. Say so here as a
+        # bad selection, so a stale or crafted form is not reported as an
+        # outage to retry. The form offers only this campaign's Ministries.
+        if ministries and set(ministries) - offered_ministries(campaign_id):
+            raise ValueError("A selected Ministry is not in this campaign.")
         return True
 
     with export_transaction(campaign_id):

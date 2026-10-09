@@ -174,9 +174,13 @@ LEDGER = {
     ),
     # Reports and exports. PR 8 lands in parts: 8a the logs, 8b the export
     # lifecycle and its fetch, 8c the aggregate report reads, 8d the
-    # digests and 8e the Family-level exports.
+    # digests, 8e the Family-level exports that create an export record
+    # without the Family keys, and 8f the rest: the exports that need the
+    # Family keys (directory, mail merge, codes, the one-Family timeline),
+    # the in-memory downloads (talents, response lists; after #752's audit
+    # fields) and the exact daily exports.
     # The aggregate report reads (PR 8c): counts and summaries only; the
-    # rows behind them are the Family-level exports (PR 8e).
+    # rows behind them are the Family-level exports (PR 8e and 8f).
     "reports": command("report list"),
     "participation": command("report participation"),
     "participation_chart": permanent(IMAGES),
@@ -188,28 +192,30 @@ LEDGER = {
     # One Family's submission and its follow-up history: read with the
     # follow-up commands, as the Ministry follow-up items are, which print
     # only the item's state and history; its content is Family-level and
-    # comes through ``export information`` (PR 8e).
+    # comes through ``export information``.
     "information_item": pending("PR 11", "followup"),
     "ministry_report": command("report ministry"),
     # The join and leave lists: ``report ministry --requests`` counts them.
     "ministry_joiners": command("report ministry"),
     "ministry_leavers": command("report ministry"),
     # A packet of the chosen Ministries' Members and contacts: an export.
-    "ministry_packet": pending("PR 8e", "export ministry"),
+    "ministry_packet": command("export ministry-packet"),
     "response_dashboard": command("report responses"),
-    "response_list": pending("PR 8e", "export responses"),
-    "response_list_export": pending("PR 8e", "export responses"),
-    "family_directory": pending("PR 8e", "export directory"),
-    "family_timeline": pending("PR 8e", "export family-timeline"),
+    "response_list": pending("PR 8f", "export responses"),
+    "response_list_export": pending("PR 8f", "export responses"),
+    "family_directory": pending("PR 8f", "export directory"),
+    "family_timeline": pending("PR 8f", "export family-timeline"),
     # The header's Find a Family box (#561) runs the directory's search.
-    "find_family": pending("PR 8e", "export directory"),
-    "postal_directory": pending("PR 8e", "export postal"),
-    "financial_export": pending("PR 8e", "export financial"),
-    "talents_export": pending("PR 8e", "export talents"),
-    "ministry_export": pending("PR 8e", "export ministry"),
-    "information_export": pending("PR 8e", "export information"),
-    "family_directory_export": pending("PR 8e", "export directory"),
-    "postal_directory_export": pending("PR 8e", "export postal"),
+    "find_family": pending("PR 8f", "export directory"),
+    "postal_directory": pending("PR 8f", "export postal"),
+    # Creating a financial export is fresh-gated (#547): the command calls
+    # the caller-aware require_fresh, as the page's view does.
+    "financial_export": command("export financial"),
+    "talents_export": pending("PR 8f", "export talents"),
+    "ministry_export": command("export ministry"),
+    "information_export": command("export information"),
+    "family_directory_export": pending("PR 8f", "export directory"),
+    "postal_directory_export": pending("PR 8f", "export postal"),
     # The export lifecycle (PR 8b): the status page and its buttons, the
     # Participation page's export form, and the JSON routes behind them.
     # The download's grant is issued and consumed inside ``export download``.
@@ -224,14 +230,14 @@ LEDGER = {
     "export_cancel": command("export cancel"),
     "export_download": command("export download"),
     "export_download_grant": command("export download"),
-    "report_exact_create": pending("PR 8e", "export exact"),
-    "report_exact": pending("PR 8e", "export exact"),
-    "report_exact_cancel": pending("PR 8e", "export exact"),
-    "report_exact_retry": pending("PR 8e", "export exact"),
-    "exact_export_create": pending("PR 8e", "export exact"),
-    "exact_export_status": pending("PR 8e", "export exact"),
-    "exact_export_cancel": pending("PR 8e", "export exact"),
-    "exact_export_retry": pending("PR 8e", "export exact"),
+    "report_exact_create": pending("PR 8f", "export exact"),
+    "report_exact": pending("PR 8f", "export exact"),
+    "report_exact_cancel": pending("PR 8f", "export exact"),
+    "report_exact_retry": pending("PR 8f", "export exact"),
+    "exact_export_create": pending("PR 8f", "export exact"),
+    "exact_export_status": pending("PR 8f", "export exact"),
+    "exact_export_cancel": pending("PR 8f", "export exact"),
+    "exact_export_retry": pending("PR 8f", "export exact"),
     # The digests (PR 8d): the retained reports an emailed digest links to,
     # and the manual weekly report.
     "daily_digest_snapshot": command("digest daily"),

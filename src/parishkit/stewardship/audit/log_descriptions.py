@@ -148,6 +148,22 @@ DESCRIPTIONS = {
         "An automation session requested an expired report export again, "
         "as the export's Regenerate button does."
     ),
+    "admin_cmd_export_financial": _(
+        "An automation session requested a financial report export, as the "
+        "Financial report's export form does."
+    ),
+    "admin_cmd_export_information": _(
+        "An automation session requested an additional information export, "
+        "as the Additional information page's export form does."
+    ),
+    "admin_cmd_export_ministry": _(
+        "An automation session requested a Ministry report export, as the "
+        "Ministry report's export form does."
+    ),
+    "admin_cmd_export_ministry_packet": _(
+        "An automation session requested a Ministry follow-up packet, as the "
+        "Ministry report's packet form does."
+    ),
     "admin_cmd_digest_weekly_request": _(
         "An automation session requested a manual weekly report, as the "
         "Send a weekly report now page does."

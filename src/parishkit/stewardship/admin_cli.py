@@ -40,7 +40,8 @@ take ``--watch``. The schedule change commands (``schedule preview`` and
 commands (PR 9, in ``admin_operations``), ``logs list`` and ``logs
 export`` (PR 8a, in ``admin_reports``), the export lifecycle (PR 8b, in
 ``admin_exports``), the aggregate report reads (PR 8c, in
-``admin_report_reads``) and the digests (PR 8d, in ``admin_digests``). A
+``admin_report_reads``), the digests (PR 8d, in ``admin_digests``) and the
+Family-level exports (PR 8e, in ``admin_family_exports``). A
 command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
@@ -1089,6 +1090,83 @@ def export_create(args, preamble, runtime, context):
     )
 
 
+def export_financial(args, preamble, runtime, context):
+    """Request a financial report export, as its export form does (PR 8e).
+
+    Creating one is a fresh-gated action (#547), so the command asks at the
+    confirmation prompt (or takes ``--yes``) before a request key is made or
+    any transaction opens; the session then stands in for the page's recent
+    sign-in (``admin_family_exports.export_financial``).
+    """
+    from .admin_family_exports import export_financial as request
+
+    confirm(
+        context,
+        (
+            "Create a financial export: a file of Families' giving detail "
+            "for the current campaign.",
+        ),
+    )
+    return request(
+        context["caller"],
+        runtime,
+        filters=args.filter,
+        fmt=args.format,
+        zone=args.timezone,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
+def export_information(args, preamble, runtime, context):
+    """Request an additional information export, as its form does (PR 8e)."""
+    from .admin_family_exports import export_information as request
+
+    return request(
+        context["caller"],
+        runtime,
+        filters=args.filter,
+        history=args.history,
+        fmt=args.format,
+        zone=args.timezone,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
+def export_ministry(args, preamble, runtime, context):
+    """Request a Ministry report export, as its export form does (PR 8e)."""
+    from .admin_family_exports import export_ministry as request
+
+    return request(
+        context["caller"],
+        runtime,
+        filters=args.filter,
+        ministry=args.ministry,
+        requests=args.requests,
+        fmt=args.format,
+        zone=args.timezone,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
+def export_ministry_packet(args, preamble, runtime, context):
+    """Request a Ministry follow-up packet, as its packet form does (PR 8e)."""
+    from .admin_family_exports import export_ministry_packet as request
+
+    return request(
+        context["caller"],
+        runtime,
+        ministries=args.ministry,
+        history=args.history,
+        fmt=args.format,
+        zone=args.timezone,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
 def export_status(args, preamble, runtime, context):
     """One export's state, as its status page shows it (PR 8b)."""
     from .admin_exports import read_export
@@ -1643,6 +1721,65 @@ def _export_create_options(parser):
         help="the time zone of the file's dates, for example America/New_York",
     )
     _request_key_option(parser)
+
+
+# The Family-level exports' formats (the export services' own).
+FAMILY_EXPORT_FORMATS = ("csv", "xlsx", "pdf")
+
+
+def _family_export_options(parser, *, filters=True):
+    """The format, time zone and key every Family-level export takes."""
+    parser.add_argument("--format", required=True, choices=FAMILY_EXPORT_FORMATS)
+    parser.add_argument(
+        "--timezone",
+        required=True,
+        help="the time zone of the file's times, for example America/New_York",
+    )
+    if filters:
+        parser.add_argument(
+            "--filter",
+            action="append",
+            metavar="NAME=VALUE",
+            help="one of the page's filters, as its form names it; repeat for "
+            "more (no search: it would name a Family)",
+        )
+    _request_key_option(parser)
+
+
+def _export_information_options(parser):
+    """Options of ``export information``: filters and workflow history."""
+    _family_export_options(parser)
+    parser.add_argument(
+        "--history", action="store_true", help="include each item's workflow history"
+    )
+
+
+def _export_ministry_options(parser):
+    """Options of ``export ministry``: the summary, or one Ministry's list."""
+    _family_export_options(parser)
+    parser.add_argument(
+        "--ministry", type=_ministry_duid, help="one Ministry, by its DUID"
+    )
+    parser.add_argument(
+        "--requests",
+        choices=("join", "leave"),
+        help="with --ministry: export its join or leave requests",
+    )
+
+
+def _export_ministry_packet_options(parser):
+    """Options of ``export ministry-packet``: the Ministries and history."""
+    _family_export_options(parser, filters=False)
+    parser.add_argument(
+        "--ministry",
+        type=_ministry_duid,
+        action="append",
+        help="a Ministry to include, by its DUID; repeat for more (default: "
+        "every Ministry you may report on)",
+    )
+    parser.add_argument(
+        "--history", action="store_true", help="include earlier request versions"
+    )
 
 
 def _export_id_option(parser):
@@ -2235,8 +2372,9 @@ def _report_specs():
     """The report, export, digest and log commands (PR 8; 8a: the logs).
 
     PR 8b adds the export lifecycle (``admin_exports``), PR 8c the
-    aggregate report reads (``admin_report_reads``) and PR 8d the digests
-    (``admin_digests``).
+    aggregate report reads (``admin_report_reads``), PR 8d the digests
+    (``admin_digests``) and PR 8e the Family-level exports
+    (``admin_family_exports``).
     """
     from .admin_digests import DailyDigest, WeeklyDigest, WeeklyRequest
     from .admin_exports import ExportChange, ExportDownload, ExportStatus
@@ -2343,6 +2481,54 @@ def _report_specs():
             options=(_export_download_options,),
             audit_event="export_downloaded",
             streams=True,
+        ),
+        # The Family-level exports (PR 8e, ``admin_family_exports``): each
+        # creates an export record, fetched with ``export fetch``.
+        CommandSpec(
+            "export financial",
+            "Request a financial report export, as its export form does.",
+            export_financial,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_family_export_options,),
+            request_key=True,
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "export information",
+            "Request an additional information export, as its form does.",
+            export_information,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_export_information_options,),
+            request_key=True,
+        ),
+        CommandSpec(
+            "export ministry",
+            "Request a Ministry report export, as its export form does.",
+            export_ministry,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_export_ministry_options,),
+            request_key=True,
+        ),
+        CommandSpec(
+            "export ministry-packet",
+            "Request a Ministry follow-up packet, as its packet form does.",
+            export_ministry_packet,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_export_ministry_packet_options,),
+            request_key=True,
         ),
         # The digests (PR 8d, ``admin_digests``).
         CommandSpec(
