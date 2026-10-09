@@ -457,3 +457,55 @@ def test_readme_documents_ci_validation_commands(step_name):
     )[0]
     assert command in validation
     assert "docs/development/stewardship-compose.md#validation" in validation
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job"),
+    [
+        ("ci.yml", "stewardship-compose-core"),
+        ("ci.yml", "stewardship-operational"),
+        ("release.yml", "publish-image"),
+    ],
+)
+def test_ci_docker_jobs_pull_docker_hub_through_the_mirror(workflow, job):
+    """Jobs that pull or build images first point the daemon at the mirror.
+
+    Anonymous Docker Hub pulls hit its rate limit (#892), so the mirror step
+    must precede the first docker step in every job that runs docker.
+    """
+    steps = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"][
+        job
+    ]["steps"]
+    runs = [step.get("run", "") for step in steps]
+    mirror = runs.index("tools/ci-docker-mirror.sh")
+    first_docker = next(i for i, run in enumerate(runs) if "docker " in run)
+    assert mirror < first_docker
+    script = ROOT / "tools/ci-docker-mirror.sh"
+    assert os.access(script, os.X_OK)
+    text = script.read_text()
+    assert '"registry-mirrors" = [$mirror]' in text
+    # Mirrors apply only to the classic image store (#892).
+    assert '.features."containerd-snapshotter" = false' in text
+
+
+def test_ci_service_images_use_the_mirror_with_the_runtime_digests():
+    """Service containers name the mirror but pin the runtime's exact digests.
+
+    Services start before any step can configure a daemon mirror, so they
+    name mirror.gcr.io directly; the digest keeps the bytes identical.
+    """
+    from parishkit.stewardship.runtime_topology import POSTGRES_IMAGE, VALKEY_IMAGE
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    expected = {
+        "postgres": "mirror.gcr.io/library/" + POSTGRES_IMAGE,
+        "valkey": "mirror.gcr.io/" + VALKEY_IMAGE,
+    }
+    images = [
+        service["image"]
+        for job in workflow["jobs"].values()
+        for service in job.get("services", {}).values()
+    ]
+    assert images
+    for image in images:
+        assert image in expected.values(), image
