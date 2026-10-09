@@ -60,6 +60,7 @@ def test_invalid_directory_filters_are_value_free(values):
         {"directory_phone": "202-555-0123"},
         {"directory_response": "ABCDEFGH"},
         {"directory_sort": "Private Family"},
+        {"directory_reach": "postal"},
         {"search_used": "Private Family"},
         {"exact_code_used": "ABCDEFGH"},
         {"matching_count": "Private Family"},
@@ -333,3 +334,11 @@ def test_contact_details_list_each_address_with_its_heads():
         "<br>Dan Example — No email on file"
     )
     assert pane([]) == "No active head"
+
+
+def test_directory_audit_records_every_reach_choice():
+    """Each reach word is audited and admitted by the closed schema (#388 L1)."""
+    for reach in ("any", "email", "mail", "neither"):
+        values = DirectoryQuery(reach=reach).audit_values()
+        assert values["directory_reach"] == reach
+        assert sanitize(ContextKind.ACTION, values)["directory_reach"] == reach
