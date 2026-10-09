@@ -24,6 +24,22 @@ class Event(StrEnum):
     CONFIG_MISMATCH = "configuration_digest_mismatch"
     STARTUP_REJECTED = "startup_rejected"
     STARTUP_VALIDATED = "startup_validated"
+    # An online service began waiting at startup for its database (#541):
+    # logged once per process at INFO, with the limit and the seconds already
+    # spent, and the line that ends the wait says how long it took. Process
+    # log only. A wait that runs out is a task_timed_out line instead.
+    STARTUP_WAITING = "startup_waiting"
+    STARTUP_WAIT_ENDED = "startup_wait_ended"
+    # A process started with debug logging on (#546): its lines keep free
+    # text and tracebacks, which can hold personal data. Logged at WARNING
+    # next to startup_validated, fixed text only; the System health page's
+    # debug logging panel is where an Administrator sees it (ADM-13).
+    DEBUG_LOGGING_ENABLED = "debug_logging_enabled"
+    # A scheduled full ParishSoft refresh falls inside a Production
+    # reminder's lead window (#584; see FailureKind.REFRESH_IN_LEAD_WINDOW,
+    # which it carries). Configuration advice at WARNING, process log only;
+    # never an operational incident.
+    REFRESH_LEAD_WINDOW_CONFLICT = "refresh_lead_window_conflict"
     REQUEST_COMPLETED = "request_completed"
     REPORT_AUDIT_FAILED = "report_audit_failed"
     REPORT_SHAPING_FAILED = "report_shaping_failed"
@@ -114,14 +130,13 @@ class FailureKind(StrEnum):
     # which the bulk Family send prepares a Production reminder (BG-12,
     # #447): its promotion would pause that preparation until the Family
     # population is rebuilt. Warned once per scheduler process for each
-    # campaign and configuration, riding on the reviewed startup_validated
-    # event until it has its own (see the follow-up issue on #447).
+    # campaign and configuration on refresh_lead_window_conflict (#584).
     REFRESH_IN_LEAD_WINDOW = "full_refresh_in_lead_window"
     # The database's refresh-tick guard refused the schedule-change catch-up
     # full refresh (#632): only that request was rolled back, and the
     # scheduler's other refreshes still run. Logged once per scheduler
-    # process for each catch-up slot, riding on startup_validated like the
-    # lead-window advice; not a failed refresh.
+    # process for each catch-up slot, riding on startup_validated; not a
+    # failed refresh.
     REFRESH_CATCH_UP_REFUSED = "refresh_catch_up_refused"
     # The database's slot decision guard refused a scheduler's skip or hold
     # record (#632): only that record was rolled back. Logged once per
@@ -591,6 +606,22 @@ def debug_logging_enabled() -> bool:
     data only; it is off unless the variable is exactly "1".
     """
     return os.environ.get(DEBUG_LOGGING_VARIABLE) == "1"
+
+
+def emit_started() -> None:
+    """Log that a process passed its startup checks, and its debug logging.
+
+    The ``startup_validated`` line, followed, only while debug logging is on,
+    by a WARNING ``debug_logging_enabled`` line (#546), once per process
+    (each web worker logs it), so someone reading the logs sees that this
+    process's lines can hold personal data. The event is its whole detail:
+    it carries no free text. It reads only the environment variable; when
+    the System health debug-off switch exists (ADM-13, #530), it must
+    honor that switch too.
+    """
+    emit(Event.STARTUP_VALIDATED)
+    if debug_logging_enabled():
+        emit(Event.DEBUG_LOGGING_ENABLED, level=logging.WARNING)
 
 
 def debug_swallowed(message: str) -> None:

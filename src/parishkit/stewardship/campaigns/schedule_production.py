@@ -435,7 +435,8 @@ def _warn_refresh_in_lead_window(campaign_id):
     or quarter-hour full refresh falls in every window. The default
     leaves an 08:00 reminder's window (from 06:00) clear. Only reminders
     still to come on the campaign clock count. The caller warns once per
-    process for each campaign and configuration. It changes nothing, and any
+    process for each campaign and configuration, on its own
+    ``refresh_lead_window_conflict`` event (#584). It changes nothing, and any
     failure to check is ignored: it is advice for the operator, not a gate.
     """
     from django.db.models import DateTimeField, Func
@@ -488,7 +489,7 @@ def _warn_refresh_in_lead_window(campaign_id):
             else refresh_in_lead_window(sorted(times), timezone, due_times)
         ):
             emit(
-                Event.STARTUP_VALIDATED,
+                Event.REFRESH_LEAD_WINDOW_CONFLICT,
                 level=logging.WARNING,
                 failure_kind=FailureKind.REFRESH_IN_LEAD_WINDOW,
             )

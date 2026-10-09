@@ -317,16 +317,39 @@ def test_every_sql_producer_of_a_serious_entry_names_its_context():
     } <= found
 
 
+# Serious process-log events whose name is the whole message, so they carry
+# no detail by design. Each must be a fixed state with nothing more to say:
+# adding one needs a reason here, never just a missing detail.
+SELF_DESCRIBING = {
+    # The process started with PARISHKIT_DEBUG_LOGGING=1 (#546); the switch
+    # has no other value to report, and free text is what it warns about.
+    Event.DEBUG_LOGGING_ENABLED,
+}
+
+
 def test_every_serious_process_log_line_carries_a_detail():
-    """An ``emit`` at WARNING or above names a category, task, limit or count."""
+    """An ``emit`` at WARNING or above names a category, task, limit or count.
+
+    Every module is checked, observability itself included; only an event in
+    SELF_DESCRIBING may go without a detail, and each of those must still be
+    emitted somewhere, so the allowlist cannot outlive its event.
+    """
     seen = 0
+    described = set()
     for path, node in _calls("emit"):
-        if path == "observability.py" or _literal_level(node) not in SERIOUS_LOGGING:
+        if _literal_level(node) not in SERIOUS_LOGGING:
             continue
         seen += 1
         given = {keyword.arg for keyword in node.keywords}
-        assert given & EMIT_DETAILS, f"{path}:{node.lineno} says only its event"
+        if given & EMIT_DETAILS:
+            continue
+        events = _events(node.args[0]) if node.args else None
+        assert events and events <= SELF_DESCRIBING, (
+            f"{path}:{node.lineno} says only its event"
+        )
+        described |= events
     assert seen >= 20
+    assert described == SELF_DESCRIBING
 
 
 def _sql_list(key):

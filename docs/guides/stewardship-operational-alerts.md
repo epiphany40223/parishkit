@@ -67,15 +67,14 @@ the [specification](../specs/stewardship/admin-automation/spec.md#notifications)
 Some advice is logged as a WARNING in the process log only, as a failure
 category on a reviewed event, and never opens an incident or sends mail:
 
-- `full_refresh_in_lead_window` (on `startup_validated`, BG-12): a scheduled
+- `full_refresh_in_lead_window` (on its own `refresh_lead_window_conflict`
+  event, BG-12 and #584): a scheduled
   ParishSoft full refresh falls inside the two-hour lead window in which
   the bulk Family send prepares a Production reminder, so its promotion
   would pause that preparation until the Family population is rebuilt.
   The scheduler logs it once per process for each campaign and
   configuration; move the refresh times or the reminder (see the
   [Family mail dispatch guide](stewardship-family-mail-dispatch.md#reminders-prepared-ahead-of-their-due-time)).
-  A dedicated event is
-  [#584](https://github.com/epiphany40223/parishkit/issues/584).
 - `refresh_catch_up_refused` (on `startup_validated`, #632): the database's
   refresh-tick guard refused the schedule-change catch-up full refresh,
   usually because the configuration changed between the scheduler's

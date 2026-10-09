@@ -1473,7 +1473,7 @@ def test_a_full_refresh_inside_a_lead_window_is_warned_once(
     warnings = [
         record
         for record in caplog.records
-        if record.getMessage() == Event.STARTUP_VALIDATED
+        if record.getMessage() == Event.REFRESH_LEAD_WINDOW_CONFLICT
         and record.levelname == "WARNING"
         and FailureKind.REFRESH_IN_LEAD_WINDOW in str(record.__dict__)
     ]
