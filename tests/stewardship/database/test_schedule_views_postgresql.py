@@ -1,6 +1,8 @@
 """Exact combined schedule/date previews through real Admin sessions and installer."""
 
+from datetime import timedelta
 from html import unescape
+from types import SimpleNamespace
 from uuid import uuid4
 
 import psycopg
@@ -438,3 +440,34 @@ def test_access_revoked_while_a_read_page_renders_is_refused(
 
     monkeypatch.setattr(schedule_views, "_page", revoking)
     assert browser.get(path).status_code == 403
+
+
+def test_schedule_table_marks_a_send_in_progress_read_only(
+    auth_service, google, monkeypatch
+):
+    """The table reads real work counts; a started send's editor stays closed.
+
+    Before the invitation's time both rows are Upcoming and editable. Once its
+    time has passed with planned work, the invitation is Sending: no control,
+    and its editor is marked as a past send. The reminder stays editable.
+    """
+    store = auth_service.store
+    campaign, path = setup(store)
+    browser, _ = signed_in()
+    page = unescape(browser.get(path).content.decode())
+    assert page.count('data-schedule-state="upcoming"') == 2
+    assert page.count("data-schedule-choose") == 2
+    assert "Change </span>Initial invitation" in page
+    assert "Change </span>Reminder 1" in page
+    assert "data-schedule-past" not in page
+    initial = ScheduleDefinition.objects.get(kind="initial")
+    pending(initial, uuid4())
+    later = initial.current_revision.due_at + timedelta(hours=1)
+    monkeypatch.setattr(schedule_views, "timezone", SimpleNamespace(now=lambda: later))
+    page = unescape(browser.get(path).content.decode())
+    assert 'data-schedule-state="sending"' in page
+    assert 'data-schedule-state="upcoming"' in page
+    assert page.count("data-schedule-choose") == 1
+    assert "Change </span>Initial invitation" not in page
+    assert f'id="schedule-editor-{initial.pk}"' in page
+    assert page.count("data-schedule-past") == 1

@@ -5,6 +5,14 @@ schedule_forms.FIELDS). The server still reports any value that does not
 apply, so the script is a convenience, not the only check. The same markup,
 rendered from the formset's empty form, is the template "Add another
 schedule" clones.
-{% endcomment %}<fieldset class="panel" data-schedule-row data-schedule-fields="{{ form.field_rules }}"><legend>{% translate "Schedule" %} <span data-schedule-number>{{ number|number }}</span></legend>
+A row not yet saved (the blank last row and every added one) is labelled "New
+schedule"; a saved row on a page without the table keeps "Schedule N".
+
+On Dates and mail schedules a saved schedule's form carries schedule_row
+(schedule_table.attach, #448): its editor has the id the table row controls
+and starts closed unless it holds an error or an unsaved change, and a
+schedule that has already run (data-schedule-past) is never opened. A closed
+editor still posts its saved values, so the formset is unchanged.
+{% endcomment %}<fieldset class="panel" data-schedule-row data-schedule-fields="{{ form.field_rules }}"{% with row=form.schedule_row %}{% if row %} id="{{ row.anchor }}" tabindex="-1" data-schedule-editor{% if row.read_only %} data-schedule-past{% endif %}{% if not row.open %} hidden{% endif %}{% endif %}{% endwith %}><legend>{% if form.schedule_row %}{{ form.schedule_row.label }}{% elif form.initial.id %}{% translate "Schedule" %} <span data-schedule-number>{{ number|number }}</span>{% else %}{% translate "New schedule" %}{% endif %}</legend>
 {{ form.non_field_errors }}{% for field in form.hidden_fields %}{{ field.errors }}{{ field }}{% endfor %}
 {% for field in form.visible_fields %}<div{% with classes=field.css_classes %}{% if classes %} class="{{ classes }}"{% endif %}{% endwith %} data-schedule-field="{{ field.name }}">{{ field.as_field_group }}</div>{% endfor %}</fieldset>

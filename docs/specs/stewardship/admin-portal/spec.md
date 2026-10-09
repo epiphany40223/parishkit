@@ -240,6 +240,52 @@ it, are collection errors. "Add another schedule" adds blank rows (with the
 same per-type fields) before saving, and a row added this way can be removed
 again, so several schedules save in one submission and are validated together.
 
+On the regular Dates and mail schedules page, a **Scheduled emails** table
+([#448](https://github.com/epiphany40223/parishkit/issues/448)) lists every
+saved schedule above the editors, one row each, in sending order: dated sends
+by date and time (the Initial invitation first at a tie), then the digests,
+with the saved ID as the final tie-break, so the order never changes between
+loads. Reminders are numbered in that order, as
+[Family email sends](#family-email-sends) numbers them. Each row shows the
+schedule, when it sends (a browser-local time; a digest shows its day and
+its next send), the email to send, a status and, for a Family send with
+results, its delivered and failed counts with a link to Family email
+history. Work that blocks a change (in progress or with an uncertain
+result) makes it Preparing before the send time and Sending after it.
+Otherwise it is Upcoming before the send time; after it, Sending while any
+of its work is pending or running. Once that work is finished it is Sent
+when any of its email was delivered or prepared, "Sent (failed)" when its
+only results are failures (with the same link), and Done when it settled
+every Family without an email of its own (the coalesced and empty
+dispositions). Otherwise it is "Not sent yet" (the scheduler, a hold or
+catch-up may still send it); a digest is Repeats. The status reads the same counts-only schedule work summary
+as the review, never Family data. A short line states the rules between
+schedules. The table is short and shown whole, and its order is its point, so
+its headings do not sort.
+
+Choosing an editable row (its name, or anywhere else on the row) opens that
+schedule's editor in place, without a page load, marks the row as being
+edited and moves focus to the editor; an opened editor stays open, so a
+change never hides while it waits for Preview. Saved schedules' editors start
+closed, except one with an error or an unsaved change after a refused
+preview; the blank new row and added rows show as before, each labelled
+"New schedule". Each row's control reports whether its editor is open
+(`aria-expanded`). To delete a schedule, open it and check Delete. A
+schedule that has run or has work prepared (Preparing, Sending, Sent, Sent
+(failed) or Done) is read-only and cannot be changed or deleted: its row is muted with no
+control and its editor stays closed, because moving a send that already
+happened would make a new revision and plan it again. The one exception is
+an editor holding a posted change or an error after a refused preview (for
+example, the schedule started running while it was being edited): it opens,
+so the change can be seen and undone rather than posted again unseen.
+Showing a row's "editing below" note never moves its control, because the
+note's space is reserved. Closed and read-only editors still post their saved
+values, so the posted formset, its validation, the review and reminder
+planning are unchanged. When the browser restores a value into a closed
+editor (Back), `pageshow` opens that editor again; a value restored into a
+read-only editor is put back to its saved value. The first-campaign step
+keeps its plain list of editors, since nothing has sent there.
+
 The staged ParishSoft load is a complete load of Families, Members, Ministries
 and the fund catalog, with no giving window, as any load is before a campaign
 exists; the campaign's giving arrives with the refresh that
@@ -1195,8 +1241,9 @@ orders. In v1 that covers:
 Extending those vocabularies is a schema change. Columns that are only
 controls (selection, actions, previews) never sort. Two short before/after
 lists of pending setting changes (credential selection and integration
-preview), the campaign mail test's at most ten reviewed Families, and link
-preparation history (panels, not columns) have no sortable columns.
+preview), the campaign mail test's at most ten reviewed Families, the
+scheduled emails table (fixed sending order), and link preparation history
+(panels, not columns) have no sortable columns.
 
 A short table shown whole has no navigator: its headings carry only its sort
 token (no page or size), and the page accepts nothing else for it. The two
