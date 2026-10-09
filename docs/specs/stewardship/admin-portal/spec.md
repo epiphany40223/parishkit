@@ -507,8 +507,7 @@ offers no action. Links and forms keep real `href` and `action` attributes,
 because they are the targets the scripts request. Every action is still
 validated on the server, in the same service code the
 [Admin automation interface](../admin-automation/spec.md) calls; client-side
-checks are a convenience, never the only guard. Existing no-script fallbacks
-are removed when a change touches their code anyway. The Family portal is not
+checks are a convenience, never the only guard. The Family portal is not
 gated and keeps working without script
 ([client behavior](../architecture/spec.md#accessibility-and-client-behavior)).
 

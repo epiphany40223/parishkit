@@ -3,9 +3,9 @@
 // Progressive enhancement only: never store answers or credentials in browser
 // storage, and never convert date-only campaign buckets into browser dates.
 (() => {
-  // The Admin sidebar menu is open in the markup so it works without
-  // JavaScript. Collapse it on narrow screens, where it sits above the page
-  // content, and keep it open on wide screens, where its toggle is hidden.
+  // The Admin sidebar menu is open in the markup. Collapse it on narrow
+  // screens, where it sits above the page content, and keep it open on wide
+  // screens, where its toggle is hidden.
   const adminMenu = document.querySelector("[data-admin-menu]");
   if (adminMenu && typeof window.matchMedia === "function") {
     const wide = window.matchMedia("(min-width: 60rem)");
@@ -96,8 +96,9 @@
   if (window.ParishDates) window.ParishDates.localize(document);
 
   // A download's timezone choice offers the browser's own zone, chosen by
-  // default; without script the choice stays UTC. Also run for markup a table
-  // swap brings in (enhanceTable below).
+  // default; the markup selects UTC, which stays when the browser's zone is
+  // not offered. Also run for markup a table swap brings in (enhanceTable
+  // below).
   //
   // A form that takes a date and time typed in local time (#558) sends the
   // browser's zone in a hidden input[data-browser-zone] for the server to
@@ -742,8 +743,8 @@
   // with a stable id and data-in-place-region, or data-table-region for a
   // shared Admin table (its navigators and rows; the id is the TablePage's
   // anchor). The id is also the control's URL fragment, so the ordinary
-  // load (without script, or when anything below goes wrong) lands on the
-  // region rather than at the top of the page.
+  // load (when anything below goes wrong) lands on the region rather than
+  // at the top of the page.
   //
   // Activating a control fetches exactly the request the control would have
   // made (a link's GET, a form's query or CSRF POST body), finds the regions
@@ -1680,9 +1681,10 @@
   // Required acknowledgments: a form's submit buttons stay disabled (muted by
   // button:disabled) until every visible [data-acknowledgment] checkbox that
   // belongs to it is checked. A hidden one (a setup test's "may have arrived"
-  // prompt before any doubt) does not count. This is progressive enhancement
-  // only: without JavaScript the buttons stay enabled and the server refuses a
-  // missing acknowledgment exactly as before. Real disabled is used, unlike
+  // prompt before any doubt) does not count. This is a convenience, not the
+  // guard: the server refuses a missing acknowledgment on its own (the Admin
+  // portal requires JavaScript, #565, but a crafted request still reaches the
+  // server). Real disabled is used, unlike
   // the busy state above, because no submission should start at all; only
   // buttons disabled here (data-acknowledgment-gated) are ever re-enabled, so
   // a button the server or another script disabled (a pending test, setup
@@ -2054,8 +2056,8 @@
   // its submit buttons disabled until every control that is currently shown
   // and required is valid, and says why in its [data-complete-hint] element
   // (which the buttons name with aria-describedby). Conditional requirements
-  // are applied only here, never in the markup, so without JavaScript the
-  // buttons stay enabled and the server's own validation answers as before:
+  // are applied only here, never in the markup; the server's own validation
+  // still answers any request that skips them:
   //   - data-required-when-shown="name …" on a data-show-when group (or an
   //     empty value on a field) makes those controls required while shown;
   //   - data-required-when="name=value" makes a field required while the
@@ -2129,8 +2131,8 @@
   // completed" is unticked. On a field the mark hides its enclosing div; on a
   // div (a group of fields, as in Ministry follow-up) it hides that div and
   // every control inside it. Hidden fields are disabled so they are not
-  // sent; without JavaScript every field simply stays visible, and the
-  // server ignores what does not apply. A browser can restore form values
+  // sent, and the server ignores whatever does not apply in any case. A
+  // browser can restore form values
   // without a change event (the back/forward cache, or autofill after load),
   // so every rule is applied again on pageshow, not only at load.
   //
@@ -2319,8 +2321,9 @@
     notFutureChecks.forEach(({check}) => check());
   });
 
-  // Optional modules remain ordinary accessible fieldsets without JavaScript.
-  // Hidden fields are disabled, not silently copied into submitted data. The
+  // Optional modules are ordinary accessible fieldsets shown or hidden by
+  // their toggle. Hidden fields are disabled, not silently copied into
+  // submitted data. The
   // server independently rejects stray data for every disabled module. The
   // back/forward cache can restore a module's tick without a change event,
   // so every group is set again on pageshow (#563); otherwise a restored

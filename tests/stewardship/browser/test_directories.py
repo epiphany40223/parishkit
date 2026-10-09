@@ -92,7 +92,7 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         # The export controls are collapsed until asked for.
         assert not page.get_by_label("Export format").is_visible()
         page.get_by_text("Export complete results").click()
-        assert page.get_by_label("Export timezone").input_value() == ("America/Detroit")
+        assert page.get_by_label("Export timezone").input_value() == "America/Detroit"
         visible(page.get_by_text("51 estimated matching Families", exact=False))
         page.get_by_label(
             "Search by Family name, any member's name, DUID, envelope number or address"

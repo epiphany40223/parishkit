@@ -7,7 +7,7 @@
   The live region is what live-status-v1.js refreshes in place while the export is
   queued or running (it re-reads this passive page, which never extends the
   login session). When the file becomes ready while the page watches, the
-  download starts once by itself. Without script, Refresh status reloads.
+  download starts once by itself. Refresh status reloads the whole page.
   While the export's task is still queued (not yet claimed by a worker),
   ``wait`` says why it has not started and how long it has waited (#340).
 {% endcomment %}
