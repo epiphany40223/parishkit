@@ -16,7 +16,7 @@ from parishkit.stewardship.jobs.storage import _status, change_run
 from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .failures import classify_read_failure, failure_context
+from .failures import classify_read_failure, failure_context, record_load_budget
 from .leases import acquire_source, release_source, verify_source
 from .outcomes import failure_action, retry_delay
 from .rejection import reject_snapshot
@@ -81,6 +81,7 @@ def _failed(execution, error, claim):
     if decision is None:
         raise error
     with execution.control.lock, correlation(execution.correlation_id):
+        record_load_budget(error, execution.claim.run_id)
         execution.control.check(allow_drain=True)
         with work_transaction():
             status = _status(lock_task_claim(execution.claim))

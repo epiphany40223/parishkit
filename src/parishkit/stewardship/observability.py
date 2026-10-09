@@ -252,6 +252,9 @@ TIMEOUT_LIMITS = frozenset(
         # request's socket timeout, or a probe thread still running past
         # its limit.
         "web_probe",
+        # A full ParishSoft load stopped at its own time bound (#834); also
+        # a durable timeout kind (audit.schemas.TIMEOUT_KINDS).
+        "source_load_budget",
     }
 )
 

@@ -125,6 +125,9 @@ FROZEN = {
     "0031_critical_ack_guard.sql": (
         "088a1368d806ba1718794986bfeb6d580992ebc203f412d0daf076c42e91af34"
     ),
+    "0032_load_budget_timeout.sql": (
+        "d6d55496b9a36cebe8c6e795effbe55787d5c47c47d6ffeff5d1a49404871513"
+    ),
 }
 
 

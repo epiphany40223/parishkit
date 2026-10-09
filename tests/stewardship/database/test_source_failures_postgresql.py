@@ -125,6 +125,42 @@ def test_skew_and_a_slow_provider_retry_instead_of_failing(tmp_path, error, fail
     assert "PRIVATE" not in str(log.context)
 
 
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_a_load_stopped_at_its_time_bound_writes_the_timeout_entry(tmp_path, wrapped):
+    """What stopped, its limit and the time the load ran, at WARNING with the
+    task, admitted by the SQL allow-list (#834); also when the retry layer
+    wrapped the error."""
+    from parishkit.retry import RetryError
+
+    credential, execution, lease, *_ = setup(tmp_path)
+    begin_refresh_attempt(execution, lease, credential)
+    error = SourceLoadBudgetExceeded("PRIVATE", limit_seconds=900, elapsed_seconds=903)
+    if wrapped:
+        error = RetryError("PRIVATE", error)
+    settle_failed_read(execution, error, source_claim=lease)
+    entry = OperationalLog.objects.get(event="task_timed_out")
+    assert entry.level == "WARNING" and entry.schema == "timeout"
+    assert entry.context["what"] == "source_load_budget"
+    assert entry.context["task_id"] == str(execution.claim.run_id)
+    assert (entry.context["limit_seconds"], entry.context["elapsed_seconds"]) == (
+        900,
+        903,
+    )
+    assert entry.correlation_id == execution.correlation_id
+
+
+def test_other_load_bounds_write_no_timeout_entry(tmp_path):
+    """A request-count or byte bound is not a time limit."""
+    from parishkit.parishsoft_pagination import IncompleteSourceCollection
+
+    credential, execution, lease, *_ = setup(tmp_path)
+    begin_refresh_attempt(execution, lease, credential)
+    settle_failed_read(
+        execution, IncompleteSourceCollection("PRIVATE"), source_claim=lease
+    )
+    assert not OperationalLog.objects.filter(event="task_timed_out").exists()
+
+
 def test_skew_that_persists_through_every_retry_ends_permanent(tmp_path, monkeypatch):
     """A reference that stays dangling on the last allowed attempt fails the
     refresh for good, still logged as the provider failure it was retried
