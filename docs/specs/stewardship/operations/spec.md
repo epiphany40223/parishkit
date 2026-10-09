@@ -33,6 +33,13 @@ It runs as a non-root UID, has a read-only root filesystem where practical,
 uses `/tmp`/declared volumes for writes, includes health checks, and handles
 termination signals. Third-party database/proxy/broker images are official,
 pinned major/minor lines, and updated to supported security patch releases.
+Every rendered service that runs the application image, one-shot profiles
+included, sets `oom_score_adj: 500`, while PostgreSQL, Valkey and Caddy keep
+the default, so under host memory exhaustion the kernel kills an application
+process (an online service restarts; a one-shot run fails and is re-run)
+before the database (#392). No service has a hard memory or CPU limit until
+peak use per service is measured: a limit set too low would kill web or a
+large export mid-campaign.
 
 Release-tag workflow builds the application image from the tagged commit
 after that commit's full validation, pushes
