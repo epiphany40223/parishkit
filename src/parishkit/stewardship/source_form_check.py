@@ -99,6 +99,65 @@ def member_source_findings(family_duids, members, contacts, *, census):
     )
 
 
+def scan_identity(campaign_id):
+    """What one scan's input is: the current snapshot and campaign configuration.
+
+    Cheap (two single-row reads), so a caller can tell whether an earlier
+    result still applies before loading every Member (``reports.source_form``).
+    """
+    from .campaigns.models import Campaign
+    from .load_check import current_source
+
+    source = current_source()
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=campaign_id
+    )
+    return {
+        "snapshot_id": source.snapshot_id,
+        "configuration_id": campaign.active_configuration_id,
+        "census": "census" in campaign.active_configuration.values["modules"],
+    }
+
+
+def scan_inputs(campaign_id):
+    """The scan's inputs for ``campaign_id``, read inside the caller's guard.
+
+    Returns the portal-eligible Family DUIDs, the current snapshot's Member
+    payloads for them and (with the census) their Member contacts, plus what
+    identifies this exact input: the snapshot and the campaign configuration.
+    The Admin page (#774) and this command both read through here, so they
+    can never disagree about which Families are blocked.
+    """
+    from .campaigns.credential_models import FamilyCampaign
+    from .source.version_models import SnapshotContact, SnapshotMember
+
+    identity = scan_identity(campaign_id)
+    census = identity["census"]
+    families = list(
+        FamilyCampaign.objects.filter(campaign_id=campaign_id, portal_eligible=True)
+        .order_by("family_duid")
+        .values_list("family_duid", flat=True)
+    )
+    members = [
+        row.payload.payload
+        for row in SnapshotMember.objects.filter(
+            snapshot_id=identity["snapshot_id"],
+            payload__family_key__in=[str(duid) for duid in families],
+        ).select_related("payload")
+    ]
+    contacts = (
+        {
+            row.payload.owner_key: row.payload.payload
+            for row in SnapshotContact.objects.filter(
+                snapshot_id=identity["snapshot_id"], payload__owner_kind="member"
+            ).select_related("payload")
+        }
+        if census
+        else {}
+    )
+    return identity | {"families": families, "members": members, "contacts": contacts}
+
+
 def scan():
     """Read the current campaign's eligible Families and scan their Members.
 
@@ -108,10 +167,7 @@ def scan():
     two queries rather than one form load per Family.
     """
     from .accounts.runtime_models import SystemConfiguration
-    from .campaigns.credential_models import FamilyCampaign
-    from .campaigns.models import Campaign
-    from .load_check import _guard, bounded_read, current_source
-    from .source.version_models import SnapshotContact, SnapshotMember
+    from .load_check import _guard, bounded_read
 
     with bounded_read():
         campaign_id = SystemConfiguration.objects.values_list(
@@ -120,36 +176,11 @@ def scan():
     if campaign_id is None:
         raise ScanRefused("There is no current campaign.")
     with _guard(campaign_id):
-        source = current_source()
-        configuration = (
-            Campaign.objects.select_related("active_configuration")
-            .get(pk=campaign_id)
-            .active_configuration.values
-        )
-        census = "census" in configuration["modules"]
-        families = list(
-            FamilyCampaign.objects.filter(campaign_id=campaign_id, portal_eligible=True)
-            .order_by("family_duid")
-            .values_list("family_duid", flat=True)
-        )
-        members = [
-            row.payload.payload
-            for row in SnapshotMember.objects.filter(
-                snapshot_id=source.snapshot_id,
-                payload__family_key__in=[str(duid) for duid in families],
-            ).select_related("payload")
-        ]
-        contacts = (
-            {
-                row.payload.owner_key: row.payload.payload
-                for row in SnapshotContact.objects.filter(
-                    snapshot_id=source.snapshot_id, payload__owner_kind="member"
-                ).select_related("payload")
-            }
-            if census
-            else {}
-        )
-    findings = member_source_findings(families, members, contacts, census=census)
+        inputs = scan_inputs(campaign_id)
+    families = inputs["families"]
+    findings = member_source_findings(
+        families, inputs["members"], inputs["contacts"], census=inputs["census"]
+    )
     return {
         "check": "source_form",
         "portal_eligible_families": len(families),

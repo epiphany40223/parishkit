@@ -166,6 +166,7 @@ RETIRED = (
 SLASHLESS = (
     ("system", "system"),
     ("system/health", "system_health"),
+    ("system/source-form", "source_form"),
     ("system/integrations", "integrations"),
     ("system/integrations/<str:target>", "integration_settings"),
     ("system/key-changes/<uuid:request_id>", "credential_status"),

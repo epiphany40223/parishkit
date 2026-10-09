@@ -33,6 +33,7 @@ from .accounts import (
     setup_schedule_views,
     setup_share_views,
     setup_views,
+    source_form_views,
     system_health_views,
     user_rule_views,
     user_views,
@@ -237,6 +238,8 @@ admin_patterns = [
     # /admin/system/ opens, and the status fragment the open page polls.
     path("system/", system_health_views.system, name="system"),
     path("system/health/", system_health_views.system_health, name="system_health"),
+    # Families whose ParishSoft data keeps the Family form from opening (#774).
+    path("system/source-form/", source_form_views.source_form, name="source_form"),
     path(
         "system/health/status",
         system_health_views.system_health_status,

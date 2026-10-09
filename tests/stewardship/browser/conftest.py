@@ -109,6 +109,7 @@ from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
 from .settings_components import POSTS as SETTINGS_POSTS
 from .settings_components import components as settings_components
+from .source_form_components import components as source_form_components
 from .step_up_components import components as step_up_components
 from .system_health_components import components as system_health_components
 from .talent_components import components as talent_components
@@ -1958,6 +1959,7 @@ def component_origin():
     responses.update(directory_components(context, admin))
     responses.update(ministry_components(context, admin))
     responses.update(followup_components(context, admin))
+    responses.update(source_form_components(context, admin))
     responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(chart_components(context, admin))

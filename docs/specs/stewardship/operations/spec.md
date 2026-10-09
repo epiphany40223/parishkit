@@ -1069,12 +1069,14 @@ detail. `pk-stewardship health` provides detailed operator diagnostics on the VM
 without creating a public endpoint. `pk-stewardship source-form-check` is a
 read-only web-container diagnostic that lists, by Family DUID, Member DUID and
 field name only, each ParishSoft Member or contact value or record that would
-refuse a current Family's form; the
-[deployment runbook](../../../guides/stewardship-deployment-runbook.md#staff-validation-checklist)
-says when to run it. `pk-stewardship engagement-backfill` is admitted the same
-way and fills the
-[Family engagement record](../data/spec.md#family-engagement) once after the
-release that introduces it.
+refuse a current Family's form; the [deployment
+runbook](../../../guides/stewardship-deployment-runbook.md#staff-validation-checklist)
+says when to run it. Administrators see the same list, from the same check, on
+the [Families the form cannot open](../admin-portal/spec.md#system-health-page)
+page linked from System health. `pk-stewardship engagement-backfill` is admitted
+the same way and fills the [Family engagement
+record](../data/spec.md#family-engagement) once after the release that
+introduces it.
 
 Administrators see this health in plain words, and fix its routine
 problems, on the Admin portal's

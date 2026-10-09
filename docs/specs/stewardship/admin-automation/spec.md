@@ -1670,14 +1670,18 @@ This limits accidents; it does not hide data from the host operator (see
 This is the parity ledger: every `admin:` URL name at the time of writing,
 and the separate actions some pages carry, grouped by area. "Command" names
 the planned command and its PR; "Permanent", "Pending" and "Deferred" are
-exemptions.
+exemptions. The old addresses kept as redirects (#525, every `legacy_…`
+name in `admin_urls/legacy.py`) are permanent exemptions: each only
+redirects to its new page, whose row covers it. `test_admin_route_parity`
+checks that every other ledger route is named here.
 
 ### Status and session routes
 
 | URL names | Command or exemption |
 | --- | --- |
 | `index`, `background_counts` | `status` (PR 3a) |
-| `presence` | `status`, its `presence.count` (PR 3a; see below) |
+| `presence`, `presence_count` | `status`, its `presence.count` (PR 3a; see below) |
+| `campaign_root`, `mail_root`, `parish_root` | Permanent: a menu group's root URL, which only redirects to the group's first open entry; that entry covers it |
 | `login`, `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
 | `maintenance` | Permanent: the status page the access gate shows |
 | `automation_access`, `automation_approval`, `automation_session` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
@@ -1736,7 +1740,7 @@ none.
 | `schedule_settings` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4) |
 | `configuration_request` | `config request show --watch` (PR 4) |
 | `campaign_settings`, `campaign_new`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
-| `campaign_ministries`, `share_settings`, `talent_settings` | `campaign ministries`, `campaign shares`, `campaign talents` (PR 10) |
+| `campaign_ministries`, `share_settings`, `talent_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign talents`, `campaign reminder-workgroup` (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` (PR 10) |
@@ -2077,6 +2081,7 @@ lists the fields and refusals.
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
 | `system_refresh_accept` (ADM-13) | `system refresh-accept-preview`, `system refresh-accept --token …` |
 | `system_debug_off`, `system_debug_allow` (ADM-13) | `system debug-off`; `system debug-allow` (Testing only) |
+| `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form` (PR 8), counts and DUIDs only; until then the host's `pk-stewardship source-form-check` lists the same Families |
 
 `system health` covers the page, its fragment and `/admin/system/`
 (ADM-13 PR 2b). The other ADM-13 rows are pending exemptions until their

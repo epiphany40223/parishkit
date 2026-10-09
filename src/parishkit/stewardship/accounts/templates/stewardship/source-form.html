@@ -1,0 +1,19 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Families the form cannot open" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Families the form cannot open" %}</h1>
+{% aboutpage "source-form" %}<p>{% translate "These Families cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept, such as a birth date that is not a real date, a name that is too long, or a choice the form does not offer. Open the Family in ParishSoft and correct the named field for that Member. The value itself is never shown here. The Family can open the form after that correction and the next ParishSoft refresh. The list checks every Family that can use the portal this campaign, including Families that have not tried the form yet, and it is up to date with the latest ParishSoft refresh. A DUID is ParishSoft's ID number for a Family or a Member; the Member DUID tells the Members apart when the Family has several. The server operator's source-form-check command lists the same Families." %}</p>{% endaboutpage %}
+{% if no_campaign %}<div id="source-form-none"><p>{% translate "There is no current campaign, so no Family can open the form yet." %}</p></div>
+{% else %}
+<div id="{{ table.anchor }}" data-table-region>
+<p id="source-form-count">{% blocktranslate count counter=families %}{{ counter }} Family cannot open the Family form because of its ParishSoft data.{% plural %}{{ counter }} Families cannot open the Family form because of their ParishSoft data.{% endblocktranslate %} {% blocktranslate with total=eligible|number %}Checked: {{ total }} Families that can use the portal.{% endblocktranslate %}</p>
+{% translate "Result pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Families the form cannot open' %}"><table>
+<caption>{% translate "ParishSoft values to correct" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member" heading %}{% translate "Correct in ParishSoft" as heading %}{% sort_heading table "field" heading %}</tr></thead><tbody>
+{% for row in table.rows %}<tr><th scope="row">{{ row.family_name }}</th><td>{{ row.family_duid }}</td><td>{% if row.member_duid %}{{ row.member_duid }}{% else %}{% translate "Unknown" %}{% endif %}</td><td>{{ row.field }}</td></tr>
+{% empty %}<tr><td colspan="4">{% translate "Every Family that can use the portal can open the form." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
+</div>
+{% endif %}
+<p><a href="{% url 'admin:system_health' %}">{% translate "Return to System health" %}</a></p>
+{% endblock %}

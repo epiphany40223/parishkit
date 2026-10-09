@@ -1,0 +1,8 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% block title %}{% translate "Families the form cannot open: unavailable" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Families the form cannot open: unavailable" %}</h1>
+{% if status == 503 %}<p role="alert">{% translate "This list is temporarily unavailable. Please retry later." %}</p>
+{% else %}<p role="alert">{% translate "Check the address, then try again." %}</p>{% endif %}
+<p><a href="{% url 'admin:system_health' %}">{% translate "Return to System health" %}</a></p>
+{% endblock %}

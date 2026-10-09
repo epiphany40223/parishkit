@@ -252,6 +252,7 @@ PAGES = {
     ),
     # System
     "system_health": Page("system", _("System health")),
+    "source_form": Page("system", _("Families the form cannot open"), "system_health"),
     "integrations": Page("system", _("Integrations")),
     "integration_settings": Page("system", _("Integration"), "integrations"),
     # A key's status and its Finish switching page sit under the integration
