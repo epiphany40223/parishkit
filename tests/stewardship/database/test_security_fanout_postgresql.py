@@ -11,7 +11,6 @@ from django.utils import timezone
 
 from parishkit.stewardship.accounts.policy_models import (
     PolicySecurityEvent,
-    PortalUser,
 )
 from parishkit.stewardship.campaigns.domain import SystemMode
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -34,6 +33,7 @@ from parishkit.stewardship.jobs.security_routing import event_alert
 
 from ..policy_factory import address, domain
 from .campaign_builders import change
+from .role_grants import seed_user
 from .test_background_grants_postgresql import task_login
 from .test_operational_routing_postgresql import routing as routing_fixture
 
@@ -428,11 +428,10 @@ def test_closed_content_compilers_agree_for_every_kind_mode_and_actor(routing):
     ]
     for present in (False, True):
         if present:
-            PortalUser.objects.create(
+            seed_user(
                 id=actor,
                 google_subject="synthetic-actor",
                 email="admin@example.org",
-                verified_at=timezone.now(),
             )
         for event in events:
             for mode in SystemMode:

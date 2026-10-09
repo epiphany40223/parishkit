@@ -6,7 +6,6 @@ import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.models import F
 from django.test.utils import CaptureQueriesContext
-from django.utils import timezone
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.authority import AuthorityStore
@@ -32,7 +31,6 @@ from parishkit.stewardship.accounts.policy_models import (
     DomainRule,
     PolicyEpoch,
     PolicySecurityEvent,
-    PortalUser,
 )
 from parishkit.stewardship.accounts.policy_projections import stored_policy
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -41,17 +39,17 @@ from parishkit.stewardship.storage import StorageInvariantError
 from ..configuration_factory import configuration_document, configuration_version
 from ..policy_factory import address, assignment, domain
 from .campaign_builders import bind_operations, change, initialized
+from .role_grants import seed_user
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def user(email, hosted=None):
     """Synthetic verified identity metadata; no real OAuth response is consumed."""
-    return PortalUser.objects.create(
+    return seed_user(
         google_subject=str(uuid4()),
         email=email,
         hosted_domain=hosted,
-        verified_at=timezone.now(),
     )
 
 
