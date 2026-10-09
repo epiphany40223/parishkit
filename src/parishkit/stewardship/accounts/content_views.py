@@ -45,6 +45,7 @@ from .content_forms import (
     revision_patch,
     sample_banner,
     sample_render,
+    stale_markup,
     text_is_generated,
 )
 from .limiting import LimiterUnavailable
@@ -110,6 +111,7 @@ def _catalog(request, configuration, campaign):
                 "label": label,
                 "url": reverse("admin:content_edit", args=["page", slot]),
                 "state": _content_state(record),
+                "resave": stale_markup(record and record["values"]),
             }
         )
     emails = []
@@ -117,15 +119,8 @@ def _catalog(request, configuration, campaign):
         revisions = [
             {
                 "subject": row["values"]["subject"],
-                "state": _content_state(
-                    {
-                        "values": fold(
-                            row["values"], note["values"], campaign_id=campaign.pk
-                        )
-                    }
-                    if note and slot == "confirmation"
-                    else row
-                ),
+                "state": _content_state({"values": values}),
+                "resave": stale_markup(values),
                 "test_url": reverse("admin:campaign_mail", args=[row["id"]]),
                 "url": reverse(
                     "admin:content_revision",
@@ -134,6 +129,13 @@ def _catalog(request, configuration, campaign):
             }
             for row in records
             if (row["values"]["kind"], row["values"]["slot"]) == ("email", slot)
+            # The confirmation email is listed with any retired closing note
+            # folded in, as receipts send it (#260).
+            for values in [
+                fold(row["values"], note["values"], campaign_id=campaign.pk)
+                if note and slot == "confirmation"
+                else row["values"]
+            ]
         ]
         editor = reverse("admin:content_edit", args=["email", slot])
         if note and slot == "confirmation" and not revisions:
@@ -144,6 +146,7 @@ def _catalog(request, configuration, campaign):
                 {
                     "subject": folded["subject"],
                     "state": _content_state({"values": folded}),
+                    "resave": stale_markup(folded),
                     "test_url": None,
                     "url": editor,
                 }
@@ -174,12 +177,14 @@ def _page(
     saved=False,
     started=False,
     refusal=None,
+    stale=None,
 ):
     """Never insert rejected user HTML into the visual editor without sanitizing it.
 
     ``default_url`` offers to start an empty slot (or, when ``saved``, reset a
     configured one) from its default text; ``started`` says the form now
-    holds that unsaved default.
+    holds that unsaved default. ``stale`` is the saved revision's
+    stale_markup result, shown as a "re-save recommended" notice (#832).
     """
     try:
         visual = sanitize_html(form["html"].value() or "")
@@ -202,6 +207,7 @@ def _page(
             "saved": saved,
             "started_from_default": started,
             "refusal": refusal,
+            "stale": stale,
             # Post to the clean path: a "?start=default" GET must not carry its
             # query into the POST, which accepts no query parameters.
             "post_url": request.path,
@@ -240,17 +246,30 @@ def _banner_patch(campaign, form, slot):
 
 
 def _preview(
-    request, service, actor, state, campaign, form, label, previous, slot, salt, note
+    request,
+    service,
+    actor,
+    state,
+    campaign,
+    form,
+    label,
+    previous,
+    slot,
+    salt,
+    note,
+    stale=None,
 ):
     """Sign sanitized canonical bytes and disclose every affected mail schedule.
 
     ``note`` is a retired receipt closing note that the confirmation email
     editor showed folded into the body (receipt_note); the same request
     removes it, so the saved email alone carries that text from then on.
+    ``stale`` keeps the saved text's re-save notice on a refused preview, so
+    the Admin still sees why the re-save is needed (#832).
     """
     configuration, fingerprint = state[0], state[-1]
     if not form.is_valid():
-        return _page(request, form, campaign, label, status=400)
+        return _page(request, form, campaign, label, status=400, stale=stale)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
     base = service.store.active()
@@ -272,11 +291,17 @@ def _preview(
             # still sends) is shown beside the form, which keeps its input.
             form.add_error(None, error.refusal.message)
             return _page(
-                request, form, campaign, label, status=400, refusal=error.refusal
+                request,
+                form,
+                campaign,
+                label,
+                status=400,
+                stale=stale,
+                refusal=error.refusal,
             )
         if not patch:
             form.add_error(None, "No content has changed.")
-            return _page(request, form, campaign, label, status=400)
+            return _page(request, form, campaign, label, status=400, stale=stale)
         build_candidate(base, patch, candidate_id=uuid4())
         parish = document_parish(base.document())
         from parishkit.stewardship.jobs.receipt_preview import confirmation_block
@@ -321,7 +346,7 @@ def _preview(
             "be removed. Large content or many affected schedules may need "
             "smaller edits.",
         )
-        return _page(request, form, campaign, label, status=400)
+        return _page(request, form, campaign, label, status=400, stale=stale)
     admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
@@ -446,6 +471,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         slot,
                         salt,
                         note,
+                        stale_markup(shown),
                     )
                     if request.method == "POST"
                     else _page(
@@ -458,6 +484,8 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         # default link offers a reset, not a start.
                         saved=shown is not None,
                         started=start,
+                        # Only the saved text, not a default being started.
+                        stale=None if start else stale_markup(shown),
                     )
                 )
         # Recheck access after the observation ends, so a GET's read-only
