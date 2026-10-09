@@ -311,7 +311,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [ ] ADM-11.07 — PR 6: add refresh and Testing send commands.
 - [ ] ADM-11.08 — PR 7: add delivery control and Family portal maintenance commands.
 - [ ] ADM-11.09 — PR 8: add report, export, digest and log commands.
-- [ ] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
+- [x] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
 - [ ] ADM-11.11 — PR 10: add the remaining configuration commands, including secret replacement.
 - [ ] ADM-11.12 — PR 11: add user, rule (including high-impact changes), assignment, acknowledgement and follow-up commands.
 - [ ] ADM-11.13 — PR 12: add go-live and withdrawal commands.
@@ -441,7 +441,7 @@ entry and the page's acknowledgement), `tests/stewardship/test_pk_admin.py`,
 event and notice, a repeat from either channel, the page's review sent from
 the command line, an ineligible Family, scopes and ended sessions). The
 preview's `--names` export follows PR 8b (#817).
-ADM-11.10 lands in two pull requests. 9a adds `task retry`
+ADM-11.10 lands in three pull requests. 9a adds `task retry`
 (`parishkit.stewardship.admin_operations`), with the retry pages' bodies,
 the delivery views' admission and their command scope moved into
 `jobs.task_retries`; proven by `tests/stewardship/test_admin_operations.py`,
@@ -538,7 +538,16 @@ the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,
 `tests/stewardship/test_admin_operations.py` and
 `tests/stewardship/database/test_admin_delivery_cli_postgresql.py` (a double
-invoke with one key prepares once; credentials unchanged).
+invoke with one key prepares once; credentials unchanged). 9c adds
+`delivery resend` and `delivery refusal-clear`, which ask at PR 5b's
+prompt; proven by `tests/stewardship/test_admin_operations.py`,
+`tests/stewardship/test_admin_cli.py`, `tests/stewardship/test_pk_admin.py`
+(the wrapper's `PROMPTING` list against the catalog),
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_delivery_ack_cli_postgresql.py` (a
+refused prompt changes nothing, a typed `yes`, a double invoke, the page's
+form with the same key, stale versions, unchanged credentials and the
+read-only refusal).
 
 ## ADM-12: Admin navigation overhaul
 

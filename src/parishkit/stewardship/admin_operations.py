@@ -25,9 +25,9 @@ Their documents never name a recipient: no address, Family DUID or Family
 id, and no evidence note text. ``delivery resolve`` is the delivery page's
 resolution form in the page's command scope, keyed by the page's
 ``command_id``, recording ``admin_cmd_delivery_resolve`` when it creates
-the resolution. The duplicate-risk ``resend`` and the verified refusal
-clearance need a ticked acknowledgement, which waits for PR 9c at the
-command-line prompt (PR 5b).
+the resolution. The duplicate-risk ``delivery resend`` and the verified
+``delivery refusal-clear`` (PR 9c) need the page's ticked acknowledgement,
+which the command line asks for at its prompt (PR 5b) before they act.
 """
 
 from dataclasses import dataclass
@@ -216,9 +216,12 @@ def retry_task(caller, service, task_id, *, request_key, context):
 
 # ---------------------------------------------------------------- deliveries
 
-# The resolutions the command line offers: every one the page offers but the
-# duplicate-risk resend, whose acknowledgement waits for PR 9c at the prompt.
+# The resolutions ``delivery resolve`` takes: every one the page offers but
+# the duplicate-risk resend, which is ``delivery resend`` because it asks for
+# the page's acknowledgement at the prompt (PR 9c).
 RESOLVE_ACTIONS = ("note", "accept", "confirm_unsent", "retry_failed", "retry_unsent")
+# The resolutions that prepare the email again before it is sent.
+PREPARING_ACTIONS = frozenset({"resend", "retry_failed", "retry_unsent"})
 # Mail a retry prepares with the web's Family keys (a Family invitation or
 # reminder), which this process loads only then (``admin_cli.load_keyrings`` with
 # ``FAMILY_KEYRINGS``).
@@ -336,22 +339,13 @@ def delivery_list_model(data):
     )
 
 
-def command_actions(actions):
-    """The page's offered resolutions that ``delivery resolve`` accepts.
-
-    Not ``resend`` (its acknowledgement waits for the prompt), so every
-    action listed can be given to ``delivery resolve`` as is.
-    """
-    return [action for action in actions if action in RESOLVE_ACTIONS]
-
-
 def delivery_show_model(data):
     """The command's projection of ``delivery_reads.read_detail``."""
     window = data["window"]
     return DeliveryShow(
         delivery=delivery_row(data["delivery"]),
         task=data["task"],
-        actions=command_actions(data["actions"]),
+        actions=list(data["actions"]),
         retry_unavailable=data["retry_unavailable"],
         page=window.page,
         size=window.size,
@@ -537,49 +531,96 @@ def _family_keyed(message_id, request_key):
     return purpose in FAMILY_KEYED_PURPOSES
 
 
-def resolve_delivery_command(
-    caller, service, message_id, *, action, expected_version, note, request_key, context
+def _keyed_command(caller, service, actor, context, *, event, exists, act):
+    """Run one keyed page command in the page's command scope (PR 9b, 9c).
+
+    ``exists()`` says whether the request key is already bound, read in the
+    command's own transaction; ``act(created=...)`` runs the page's function
+    and returns the document. ``event`` (``admin_cmd_<area>_<verb>``) is
+    recorded in the same transaction only when the key was new, so a repeat
+    records nothing. A missing record raised by ``act`` as ``NotAvailable``,
+    or a refusal, is exit 5 when the session ended meanwhile; a check or
+    uniqueness refusal from the database is ``stale_version``, as the pages
+    answer 409.
+    """
+    from .audit.schemas import ActorKind, Outcome
+    from .audit.services import record_action
+    from .jobs.task_retries import command_scope
+    from .observability import _guard_refusal
+
+    written = []
+
+    def step():
+        """The page's command, then the command's event when it created one."""
+        written.clear()
+        with command_scope(caller, service, actor):
+            repeat = exists()
+            model = act(created=not repeat)
+            if not repeat:
+                record_action(
+                    event,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=actor.identity,
+                    subject_id=caller.automation_session_id,
+                    context={"outcome": Outcome.SUCCEEDED},
+                )
+                written.append(True)
+            return model
+
+    try:
+        model = _held(step)
+    except DatabaseError as error:
+        if written and not _guard_refusal(error):
+            context["committed"] = True
+        _raise_stale_on_conflict(error)
+        raise
+    except (NotAvailable, PermissionError) as error:
+        _ended_or_raise(caller, service, actor, error)
+    context["committed"] = True
+    return model
+
+
+def _resolve(
+    caller,
+    service,
+    message_id,
+    *,
+    action,
+    expected_version,
+    note,
+    request_key,
+    context,
+    event,
 ):
-    """``delivery resolve``: the delivery page's resolution form.
+    """``resolve_delivery`` as the delivery page's form posts it.
 
-    Admits as the page's form post does (``BACKGROUND_WORK``, recording
-    activity) and runs ``resolve_delivery`` inside the page's command scope,
-    where it records ``admin_cmd_delivery_resolve`` only when it creates the
-    resolution. The key is the page's ``command_id``: a repeat with the same
-    intent returns the original receipt; with another intent it is
-    ``invalid``. A delivery that changed since ``--expected-version``, or an
-    action its state does not allow, is ``stale_version``; an unknown
-    delivery is ``not_available``.
+    ``resend`` carries the page's ticked duplicate-risk acknowledgement,
+    which ``delivery resend`` asked for at the prompt before calling this;
+    every other action carries none, as on the page.
 
-    A retry re-prepares the email as the page does. A Family email seals the
-    Family's current code and link with the web's general and public token
-    keyrings (reading them, never writing or rotating a credential), so
-    ``service.keyrings(FAMILY_KEYRINGS)`` loads them first, outside every lock, and only
-    for a retry of a Family email; a keyring that differs from the running
-    web's is ``credential_mismatch``. The message's purpose never changes,
-    so reading it before the command's transaction decides that safely. A
-    repeat with the same key returns before any preparation.
+    A retry or resend re-prepares the email as the page does. A Family email
+    seals the Family's current code and link with the web's general and
+    public token keyrings (reading them, never writing or rotating a
+    credential), so ``service.keyrings(FAMILY_KEYRINGS)`` loads them first,
+    outside every lock, and only when a Family email will be prepared; a
+    keyring that differs from the running web's is ``credential_mismatch``.
+    The message's purpose never changes, so reading it before the command's
+    transaction decides that safely. A repeat with the same key returns
+    before any preparation.
     """
     from django.core.exceptions import ObjectDoesNotExist
 
     from .accounts.cryptography import CryptographicError
     from .admin_reads import Unavailable
-    from .audit.schemas import Action, ActorKind, Outcome
-    from .audit.services import record_action
     from .jobs.delivery_resolution import resolve_delivery
     from .jobs.delivery_resolution_models import DeliveryResolution
     from .jobs.storage import TaskRetryConflict
-    from .jobs.task_retries import command_scope
-    from .observability import _guard_refusal
     from .storage import StaleRecordError
 
-    if action not in RESOLVE_ACTIONS:
-        raise ValueError("This resolution is not offered here.")
     actor = _admit(caller, service)
     context["request_id"] = str(request_key)
-    written = []
     general = public = None
-    if action.startswith("retry_") and _family_keyed(message_id, request_key):
+    if action in PREPARING_ACTIONS and _family_keyed(message_id, request_key):
         from .admin_cli import FAMILY_KEYRINGS
 
         if service.keyrings is None:
@@ -598,56 +639,188 @@ def resolve_delivery_command(
             public_origin=service.public_origin,
         )
 
-    def step():
-        """Resolve inside the page's command scope, with the command's event."""
-        written.clear()
-        with command_scope(caller, service, actor):
-            repeat = DeliveryResolution.objects.filter(pk=request_key).exists()
-            try:
-                receipt = resolve_delivery(
-                    service.store,
-                    actor.identity,
-                    message_id=message_id,
-                    command_id=request_key,
-                    expected_version=expected_version,
-                    action=action,
-                    note=note,
-                    duplicate_acknowledged=False,
-                    preparation_inputs=inputs,
-                )
-            except TaskRetryConflict:
-                raise StaleRecordError("The delivery's task changed.") from None
-            except ObjectDoesNotExist:
-                raise NotAvailable("No such delivery.") from None
-            except CryptographicError:
-                if general is None:
-                    raise
-                # Sealing with the Family keys refused: a key rotation holds
-                # the credential key lock, or the database's accepted key
-                # inventory moved past the web's rings. The transaction rolled
-                # back, so nothing changed; retry once the rotation settles.
-                raise Unavailable("The Family keys are changing; retry.") from None
-            if not repeat:
-                record_action(
-                    Action.ADMIN_CMD_DELIVERY_RESOLVE,
-                    actor_kind=ActorKind.PORTAL_USER,
-                    actor_id=actor.identity,
-                    subject_id=caller.automation_session_id,
-                    context={"outcome": Outcome.SUCCEEDED},
-                )
-                written.append(True)
-            return delivery_resolve_model(
-                receipt, created=not repeat, request_key=request_key
+    def act(*, created):
+        """The page's ``resolve_delivery``, as the page's form posts it."""
+        try:
+            receipt = resolve_delivery(
+                service.store,
+                actor.identity,
+                message_id=message_id,
+                command_id=request_key,
+                expected_version=expected_version,
+                action=action,
+                note=note,
+                duplicate_acknowledged=action == "resend",
+                preparation_inputs=inputs,
             )
+        except TaskRetryConflict:
+            raise StaleRecordError("The delivery's task changed.") from None
+        except ObjectDoesNotExist:
+            raise NotAvailable("No such delivery.") from None
+        except CryptographicError:
+            if general is None:
+                raise
+            # Sealing with the Family keys refused: a key rotation holds the
+            # credential key lock, or the database's accepted key inventory
+            # moved past the web's rings. The transaction rolled back, so
+            # nothing changed; retry once the rotation settles.
+            raise Unavailable("The Family keys are changing; retry.") from None
+        return delivery_resolve_model(receipt, created=created, request_key=request_key)
 
-    try:
-        model = _held(step)
-    except DatabaseError as error:
-        if written and not _guard_refusal(error):
-            context["committed"] = True
-        _raise_stale_on_conflict(error)
-        raise
-    except (NotAvailable, PermissionError) as error:
-        _ended_or_raise(caller, service, actor, error)
-    context["committed"] = True
-    return model
+    return _keyed_command(
+        caller,
+        service,
+        actor,
+        context,
+        event=event,
+        exists=lambda: DeliveryResolution.objects.filter(pk=request_key).exists(),
+        act=act,
+    )
+
+
+def resolve_delivery_command(
+    caller, service, message_id, *, action, expected_version, note, request_key, context
+):
+    """``delivery resolve``: the delivery page's resolution form.
+
+    Admits as the page's form post does (``BACKGROUND_WORK``, recording
+    activity) and runs ``resolve_delivery`` inside the page's command scope,
+    where it records ``admin_cmd_delivery_resolve`` only when it creates the
+    resolution. The key is the page's ``command_id``: a repeat with the same
+    intent returns the original receipt; with another intent it is
+    ``invalid``. A delivery that changed since ``--expected-version``, or an
+    action its state does not allow, is ``stale_version``; an unknown
+    delivery is ``not_available``. Retries load the Family keys as
+    ``_resolve`` describes. ``resend`` is ``delivery resend``.
+    """
+    from .audit.schemas import Action
+
+    if action not in RESOLVE_ACTIONS:
+        raise ValueError("This resolution is not offered here.")
+    return _resolve(
+        caller,
+        service,
+        message_id,
+        action=action,
+        expected_version=expected_version,
+        note=note,
+        request_key=request_key,
+        context=context,
+        event=Action.ADMIN_CMD_DELIVERY_RESOLVE,
+    )
+
+
+def resend_delivery_command(
+    caller, service, message_id, *, expected_version, note, request_key, context
+):
+    """``delivery resend``: the page's duplicate-risk **Resend** (PR 9c).
+
+    The command line asked for the page's acknowledgement first (the prompt,
+    or ``--yes``); this passes it as the ticked box. Otherwise it is
+    ``delivery resolve`` with the action ``resend``: only a delivery whose
+    outcome is unknown, keyed by the page's ``command_id`` (a repeat returns
+    the receipt and prepares nothing; once resent, another key for that
+    version is ``stale_version``), recording ``admin_cmd_delivery_resend``
+    when it creates the resolution.
+    """
+    from .audit.schemas import Action
+
+    return _resolve(
+        caller,
+        service,
+        message_id,
+        action="resend",
+        expected_version=expected_version,
+        note=note,
+        request_key=request_key,
+        context=context,
+        event=Action.ADMIN_CMD_DELIVERY_RESEND,
+    )
+
+
+@dataclass(frozen=True)
+class RefusalClear(ReadModel):
+    """The clearance a ``delivery refusal-clear`` recorded, or found for its key."""
+
+    created: bool
+    request_key: UUID
+    resolution: dict
+
+
+def refusal_clear_model(receipt, *, created, request_key):
+    """The command's projection of a ``RecipientRefusalResolution``.
+
+    Never the evidence note: ids, the verified source version and the time.
+    """
+    return RefusalClear(
+        created=created,
+        request_key=request_key,
+        resolution={
+            "id": receipt.pk,
+            "refusal_id": receipt.refusal_id,
+            "source_snapshot_id": receipt.source_snapshot_id,
+            "source_generation": receipt.source_generation,
+            "created_at": receipt.created_at,
+        },
+    )
+
+
+def clear_refusal_command(
+    caller,
+    service,
+    refusal_id,
+    *,
+    source_snapshot_id,
+    source_generation,
+    note,
+    request_key,
+    context,
+):
+    """``delivery refusal-clear``: the Refused address page's verified clearance.
+
+    The command line asked for the page's acknowledgement ("I verified this
+    address") first, at the prompt or with ``--yes``; this passes it as the
+    ticked box to ``clear_recipient_refusal`` in the page's command scope.
+    The key is the page's ``command_id``: a repeat with the same intent
+    returns the original clearance, another intent is ``invalid``. A refusal
+    already cleared, or a source version that is no longer current, is
+    ``stale_version``; an unknown refusal is ``not_available``. Records
+    ``admin_cmd_delivery_refusal_clear`` when it creates the clearance.
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from .audit.schemas import Action
+    from .jobs.delivery_admin import clear_recipient_refusal
+    from .jobs.recipient_models import RecipientRefusalResolution
+
+    actor = _admit(caller, service)
+    context["request_id"] = str(request_key)
+
+    def act(*, created):
+        """The page's ``clear_recipient_refusal``, with the box ticked."""
+        try:
+            receipt = clear_recipient_refusal(
+                service.store,
+                actor.identity,
+                refusal_id=refusal_id,
+                command_id=request_key,
+                source_snapshot_id=source_snapshot_id,
+                source_generation=source_generation,
+                note=note,
+                verified=True,
+            )
+        except ObjectDoesNotExist:
+            raise NotAvailable("No such refusal.") from None
+        return refusal_clear_model(receipt, created=created, request_key=request_key)
+
+    return _keyed_command(
+        caller,
+        service,
+        actor,
+        context,
+        event=Action.ADMIN_CMD_DELIVERY_REFUSAL_CLEAR,
+        exists=lambda: RecipientRefusalResolution.objects.filter(
+            pk=request_key
+        ).exists(),
+        act=act,
+    )

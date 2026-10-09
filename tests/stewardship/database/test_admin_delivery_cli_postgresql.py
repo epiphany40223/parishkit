@@ -104,8 +104,8 @@ def test_list_and_show_read_outgoing_mail_without_recipients(
         result = shown["result"]
         assert result["delivery"]["id"] == str(message.pk)
         assert result["task"]["state"] == "failed"
-        # resend is offered by the page, not here (PR 9c adds it).
-        assert result["actions"] == ["note", "accept", "confirm_unsent"]
+        # The page's offers; resend is ``delivery resend`` (PR 9c).
+        assert result["actions"] == ["note", "accept", "confirm_unsent", "resend"]
         assert result["events"] and not private(shown)
         assert views() == before + 3
         code, missing, _ = admin("delivery", "show", str(uuid4()), secret=secret)

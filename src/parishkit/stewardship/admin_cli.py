@@ -1452,6 +1452,68 @@ def digest_weekly_request(args, preamble, runtime, context):
     )
 
 
+# The page's acknowledgements, asked at the prompt (PR 9c): the same words
+# the person ticks on the delivery and refused address pages.
+RESEND_ACKNOWLEDGEMENT = (
+    "The prior attempt may already have been delivered. I accept the "
+    "duplicate risk and explicitly authorize another attempt."
+)
+CLEAR_ACKNOWLEDGEMENT = (
+    "I verified this address for this Family and authorize removing this refusal."
+)
+
+
+def delivery_resend(args, preamble, runtime, context):
+    """Resend one uncertain delivery, as its page's **Resend** does (PR 9c).
+
+    The note is read and the request key made first, so a refused prompt
+    has nothing left to read and the key is already on standard error; the
+    prompt comes before any transaction opens.
+    """
+    from .admin_operations import NOTE_LIMIT, resend_delivery_command
+
+    key = _request_key(args, context)
+    note = _input(args.note, context, NOTE_LIMIT * 4)
+    confirm(
+        context,
+        (
+            f"Resend delivery {args.message_id} (version {args.expected_version}).",
+            RESEND_ACKNOWLEDGEMENT,
+        ),
+    )
+    return resend_delivery_command(
+        context["caller"],
+        runtime,
+        args.message_id,
+        expected_version=args.expected_version,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
+def delivery_refusal_clear(args, preamble, runtime, context):
+    """Clear one verified refused address, as its page's form does (PR 9c)."""
+    from .admin_operations import NOTE_LIMIT, clear_refusal_command
+
+    key = _request_key(args, context)
+    note = _input(args.note, context, NOTE_LIMIT * 4)
+    confirm(
+        context,
+        (f"Clear refused address {args.refusal_id}.", CLEAR_ACKNOWLEDGEMENT),
+    )
+    return clear_refusal_command(
+        context["caller"],
+        runtime,
+        args.refusal_id,
+        source_snapshot_id=args.source_snapshot_id,
+        source_generation=args.source_generation,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -2006,6 +2068,47 @@ def _digest_weekly_request_options(parser):
     _request_key_option(parser)
 
 
+def _delivery_resend_options(parser):
+    """Options of ``delivery resend``: the page's Resend form."""
+    parser.add_argument("message_id", type=_uuid, metavar="MESSAGE_ID")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the delivery's version from delivery show",
+    )
+    parser.add_argument(
+        "--note",
+        required=True,
+        help="the evidence note, or - to read it from standard input (needs --yes)",
+    )
+    _request_key_option(parser)
+
+
+def _refusal_clear_options(parser):
+    """Options of ``delivery refusal-clear``: the page's clearance form."""
+    parser.add_argument("refusal_id", type=_uuid, metavar="REFUSAL_ID")
+    parser.add_argument(
+        "--source-snapshot-id",
+        required=True,
+        type=_uuid,
+        help="source snapshot_id from delivery refusal-show",
+    )
+    parser.add_argument(
+        "--source-generation",
+        required=True,
+        type=_version,
+        help="source generation from delivery refusal-show",
+    )
+    parser.add_argument(
+        "--note",
+        required=True,
+        help="how you verified the address, or - to read it from standard "
+        "input (needs --yes)",
+    )
+    _request_key_option(parser)
+
+
 def _go_live_progress_options(parser):
     """Options of ``go-live progress``: the campaign, and --watch."""
     _schedule_options(parser)
@@ -2294,6 +2397,7 @@ def _operation_specs():
         DeliveryList,
         DeliveryResolve,
         DeliveryShow,
+        RefusalClear,
         RefusalList,
         RefusalShow,
         TaskRetry,
@@ -2346,6 +2450,19 @@ def _operation_specs():
             expected_version=True,
         ),
         CommandSpec(
+            "delivery resend",
+            "Resend one uncertain delivery, accepting the duplicate risk.",
+            delivery_resend,
+            "full",
+            True,
+            DeliveryResolve.field_names(),
+            9,
+            options=(_delivery_resend_options,),
+            prompts=True,
+            request_key=True,
+            expected_version=True,
+        ),
+        CommandSpec(
             "delivery refusals",
             "List unresolved refused addresses, without the addresses.",
             delivery_refusals,
@@ -2366,6 +2483,18 @@ def _operation_specs():
             9,
             options=(_refusal_show_options,),
             audit_event="delivery_viewed",
+        ),
+        CommandSpec(
+            "delivery refusal-clear",
+            "Clear a refused address you verified, as its page does.",
+            delivery_refusal_clear,
+            "full",
+            True,
+            RefusalClear.field_names(),
+            9,
+            options=(_refusal_clear_options,),
+            prompts=True,
+            request_key=True,
         ),
     )
 

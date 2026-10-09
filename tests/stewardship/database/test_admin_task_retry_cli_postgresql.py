@@ -77,8 +77,12 @@ def runner(service, monkeypatch, family_keys=None):
 
     monkeypatch.setattr(admin_cli, "ADMISSION", admitted)
 
-    def run(*argv, secret):
-        """One command as the wrapper runs it, on the restricted web login."""
+    def run(*argv, secret, answer=b""):
+        """One command as the wrapper runs it, on the restricted web login.
+
+        ``answer`` follows the preamble on standard input: a prompt's typed
+        line, or a ``-`` input.
+        """
         out, err = io.StringIO(), io.StringIO()
         with (
             task_login(ServiceRole.WEB, exact=True, reconnect=True),
@@ -86,7 +90,9 @@ def runner(service, monkeypatch, family_keys=None):
         ):
             code = admin_cli.main(
                 [*argv, "--config", "web.yaml", "--session-stdin"],
-                stdin=io.BytesIO(f"pk-admin-session/1 {secret} {'a' * 64}\n".encode()),
+                stdin=io.BytesIO(
+                    f"pk-admin-session/1 {secret} {'a' * 64}\n".encode() + answer
+                ),
                 stdout=out,
                 stderr=err,
             )
