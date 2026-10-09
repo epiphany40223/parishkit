@@ -191,7 +191,11 @@ def test_the_page_expander_runs_the_shared_fixture(page, component_origin):
 
 
 def page_top(locator):
-    """The element's top edge from the top of the page, whatever the scroll."""
+    """The element's top edge from the top of the page, whatever the scroll.
+
+    Compare two readings within a pixel: Firefox reports subpixel edges that
+    differ by rounding noise (4151.8499… against 4151.8500…) with no move.
+    """
     return locator.evaluate("node => node.getBoundingClientRect().top + window.scrollY")
 
 
@@ -252,7 +256,7 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
     has_text(summary, "8 reminders to add, 1 not added.")
     # The summary's line is reserved and the list sits below the button, so
     # neither the summary's text nor a growing list moves the button.
-    assert page_top(add) == top
+    assert abs(page_top(add) - top) < 1
     # No email chosen: say so rather than leave the button silently disabled.
     repeat(page, "email").evaluate(
         "select => { select.selectedIndex = -1;"
@@ -265,7 +269,7 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
         " select.dispatchEvent(new Event('change', {bubbles: true})); }"
     )
     has_text(summary, "8 reminders to add, 1 not added.")
-    assert page_top(add) == top
+    assert abs(page_top(add) - top) < 1
     assert (
         "Thursday, October 1, 2054: not added, not after the initial invitation"
         in dates.inner_text()
