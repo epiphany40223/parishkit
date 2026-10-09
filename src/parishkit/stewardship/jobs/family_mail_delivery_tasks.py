@@ -68,7 +68,7 @@ from .models import TaskRun, TaskRunEvent
 from .ownership import database_now, lock_task_claim
 from .phases import TaskPhase
 from .queues import WorkQueue
-from .storage import _status
+from .storage import _status, change_run
 
 LOG = logging.getLogger(__name__)
 # How soon an abandoned, still-unsent delivery may be claimed again.
@@ -891,7 +891,7 @@ def _execute(
     # restart): replace it now, so recording an accepted outcome does not
     # fail and leave the message to recovery as delivery_unknown (#365).
     drop_unusable()
-    status = finish_submission(message.pk, execution.claim, result)
+    status = _settle(execution, message, result)
     if circuit.observe(result.health):
         if circuit.stopped:
             LOG.critical(
@@ -918,12 +918,6 @@ def _execute(
             result.limit,
         )
     if status.state.value == "retry_wait":
-        if result.limit is not None or result.health is ProviderHealth.UNAVAILABLE:
-            # A limit or outage deferral is an admission hold, not a failed
-            # attempt: in the RECONCILING phase it is not counted by
-            # preparation_attempts, so a later crash cannot exhaust the budget
-            # early (budget_spent spares it from the message's budget too).
-            execution.progress(0, 0, phase=TaskPhase.RECONCILING)
         execution.transition(
             "retryable_failure",
             retry_seconds=family_retry_seconds(message.pk, attempt, result),
@@ -932,6 +926,62 @@ def _execute(
         execution.transition(
             "complete" if status.state.value == "delivered" else "permanent_failure"
         )
+
+
+def _settle(execution, message, result):
+    """Record one provider outcome and, for a hold, its RECONCILING phase, at once.
+
+    A limit or outage deferral is an admission hold, not a failed attempt: in
+    the RECONCILING phase it is not counted by preparation_attempts, and
+    limit_history recognizes a limit refusal by that phase at the attempt's
+    (run, fence), so budget_spent spares it from the message's budget too.
+    The phase therefore commits in the same transaction as the outcome, under
+    the claim finish_submission locks (#382 L3): written afterwards, a crash
+    between the two lost the marking, and the refusal then counted as an
+    ordinary failed attempt and ended its limit run. The retry transition
+    still follows separately; after a crash, recovery retries the Task.
+
+    The worker's control lock is taken before the transaction, as
+    Execution.effect() does, so a lease renewal holding it can never wait on
+    this transaction's database locks while this thread waits for it.
+
+    The phase is written with change_run directly, as family_mail_bulk's
+    _transition does, not through Execution.progress(): that first checks
+    the process-local control flags, and a failed lease renewal (a dropped
+    connection, say) would raise there and roll back the provider outcome
+    with it, leaving a definitely-unsent message submitting until recovery
+    called it delivery_unknown. The SQL fence is the authority instead:
+    finish_submission has just proved this claim under the same locks, and
+    the Family handler always admits progress.
+    """
+    with execution.control.lock, work_transaction():
+        status = finish_submission(message.pk, execution.claim, result)
+        if status.state.value == "retry_wait" and (
+            result.limit is not None or result.health is ProviderHealth.UNAVAILABLE
+        ):
+            mark_hold(execution)
+    return status
+
+
+def mark_hold(execution):
+    """Write a hold's RECONCILING progress under the caller's claim and transaction.
+
+    Shared with operational mail, whose outcomes settle the same way.
+    """
+    row = lock_task_claim(execution.claim)
+    status = change_run(
+        run_id=row.pk,
+        expected_version=row.version,
+        action="progress",
+        actor_id=execution.claim.worker_id,
+        correlation_id=execution.correlation_id,
+        fence=execution.claim.fence,
+        admit=execution.handler.admit,
+        progress=(0, 0),
+        phase=TaskPhase.RECONCILING,
+    )
+    if execution.handler.after_transition is not None:
+        execution.handler.after_transition("progress", status)
 
 
 def _settle_failed_family_test(execution):

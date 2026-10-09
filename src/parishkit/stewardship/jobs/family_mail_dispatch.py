@@ -223,9 +223,13 @@ def limit_history(message):
     (only the optional send statistics may, for the send report, and they
     are never trusted for a decision), so a limit refusal is recognized
     instead as a healthy submission outcome whose Task then deferred in the
-    RECONCILING phase (see
-    family_mail_delivery_tasks._execute), matched by the attempt's (run,
-    fence). Return a ``LimitHistory``: ``spared``, every spared outcome so
+    RECONCILING phase (see family_mail_delivery_tasks._settle), matched by
+    the attempt's (run, fence). The RECONCILING progress event commits with
+    the outcome, so it is matched as well as the retry transition: after a
+    crash between the two, the transition never happens and recovery retries
+    the Task under a later fence (#382 L3). Only these holds write that
+    phase after a submission in the same fence; admission holds write it
+    before any. Return a ``LimitHistory``: ``spared``, every spared outcome so
     far; ``started``, the time of the first limit refusal in the current
     unbroken run of them; ``first``, the time of the message's first provider
     outcome since it was last retried by staff; and ``held``, the time of its
@@ -249,7 +253,7 @@ def limit_history(message):
     limited = set(
         TaskRunEvent.objects.filter(
             run_id__in=runs,
-            action="retryable_failure",
+            action__in=("progress", "retryable_failure"),
             phase=TaskPhase.RECONCILING,
         ).values_list("run_id", "fence")
     )

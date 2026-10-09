@@ -109,6 +109,9 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   the message id and Family DUID, never an address. Since stored evidence
   never names a limit, a limit refusal is recognized by its Task's
   RECONCILING-phase deferral for the same attempt, with healthy evidence.
+  That phase is written in the transaction that records the outcome, so a
+  crash before the Task's retry transition keeps it (#382); recovery then
+  retries the Task as a hold.
 - Stewardship also stops before Google does. Google limits a mailbox per
   rolling 24 hours to about 2,000 messages and 2,000 unique external
   recipients (see Google's Gmail sending limits), so Stewardship counts the

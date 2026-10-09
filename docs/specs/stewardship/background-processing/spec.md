@@ -1638,6 +1638,9 @@ reply to one message's DATA holds only that message, not all sending. It
 fails visibly after 48 hours of continuous limit refusals once no mail has
 been accepted in the last 24 hours, and after 7 days in any case; see
 [Family mail dispatch](../../../guides/stewardship-family-mail-dispatch.md).
+A limit or outage deferral is marked as a hold in the same transaction that
+records the provider's outcome, so a worker crash right after it cannot turn
+the deferral into a failed attempt.
 
 Before provider submission the exact non-secret message content and intended/
 routed recipients are persisted. Credential-bearing substitutions are sealed
