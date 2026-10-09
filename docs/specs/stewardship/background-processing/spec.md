@@ -1367,7 +1367,15 @@ Quick updates take
 contacts from each reloaded Family's Member details and do not read the
 contact list. So is a load that ran out of its time budget, which is a
 slow provider, not bad data. Malformed records, and loads past their
-request or byte bounds, stay invalid. It uses shared
+request or byte bounds, stay invalid. The provider-failure allowance is five of the
+run's claims that began a ParishSoft read (each records a refresh attempt
+before its first request), live and in recovery after a lost worker. A claim
+held for the source lease or a configuration activation before any read
+therefore does not use it up
+([#386](https://github.com/epiphany40223/parishkit/issues/386)); a failure
+on a claim that never began a read keeps counting every claim of the run, so
+a failure that recurs before any read still ends. An explicit retry starts a
+new run with a fresh allowance. It uses shared
 `load_families_and_members` with active/inactive data sufficient for transition
 recognition. Giving detail is limited to the financial and comparison periods
 of the sole current campaign while it is `draft`, `scheduled`, `active`, or

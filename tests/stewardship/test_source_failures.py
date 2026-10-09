@@ -24,6 +24,7 @@ from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.audit.schemas import FAILURES, Outcome
 from parishkit.stewardship.jobs.lifetime import ExecutionInterrupted
 from parishkit.stewardship.observability import Event
+from parishkit.stewardship.source import outcomes
 from parishkit.stewardship.source.canonical import (
     InvalidSourcePayload,
     SourceReferenceSkew,
@@ -38,6 +39,7 @@ from parishkit.stewardship.source.leases import SourceFenceLost, SourceLeaseUnav
 from parishkit.stewardship.source.loading import CountCheck, DestructiveSourceChange
 from parishkit.stewardship.source.outcomes import (
     MAX_AUTOMATIC_ATTEMPTS,
+    counted_attempt,
     failure_action,
     retry_delay,
 )
@@ -126,6 +128,51 @@ def test_source_retry_delay_is_shared_and_bounded(attempt, delay):
         "retryable_failure" if attempt < 5 else "permanent_failure"
     )
     assert failure_action(attempt, retry=True, contention=True) == "retryable_failure"
+
+
+class _Attempts:
+    """A stand-in for this run's SourceRefreshAttempt rows, by task fence."""
+
+    def __init__(self, fences, **lookup):
+        self.fences = [
+            fence
+            for fence in fences
+            if fence <= lookup.get("task_fence__lte", fence)
+            and fence == lookup.get("task_fence", fence)
+        ]
+
+    def filter(self, **lookup):
+        return _Attempts(self.fences, **lookup)
+
+    def exists(self):
+        return bool(self.fences)
+
+    def count(self):
+        return len(self.fences)
+
+
+@pytest.mark.parametrize(
+    "fences,claim_fence,expected",
+    [
+        # Claims 1-4 were held before any read; claim 5 read and failed.
+        ((5,), 5, 1),
+        # Claims 1 and 3 read; claim 2 was held; claim 3 is counted second.
+        ((1, 3), 3, 2),
+        # A later claim's row is never counted for an earlier claim.
+        ((1, 3, 4), 3, 2),
+        # The settled claim never read (no row): the raw claim count stays.
+        ((1, 2), 5, 5),
+        ((), 5, 5),
+    ],
+)
+def test_counted_attempt_counts_claims_that_reached_parishsoft(
+    monkeypatch, fences, claim_fence, expected
+):
+    """Earlier holds are skipped only when the settled claim began a read (#386)."""
+    rows = SimpleNamespace(objects=_Attempts(fences))
+    monkeypatch.setattr(outcomes, "SourceRefreshAttempt", rows)
+    status = SimpleNamespace(run_id=uuid4(), attempt=5)
+    assert counted_attempt(status, claim_fence) == expected
 
 
 @pytest.mark.parametrize("attempt", [None, True, 0, -1, 1.5])
