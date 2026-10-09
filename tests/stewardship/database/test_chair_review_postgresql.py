@@ -5,6 +5,7 @@ from html import unescape
 from uuid import uuid4
 
 import pytest
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.chair_models import ChairAssignmentReview
 from parishkit.stewardship.accounts.configuration_installation import install_request
@@ -29,11 +30,12 @@ from .test_configuration_service_postgresql import (
 from .test_current_chair_postgresql import publish
 from .test_policy_postgresql import user
 from .test_source_families_postgresql import source_singletons  # noqa: F401
-from .test_user_views_postgresql import URL as PAGE
 from .test_user_views_postgresql import row
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/users/reviews"
+URL = reverse("admin:chair_reviews")
+# The page these changes are started on and return to (NAV-15).
+PAGE = reverse("admin:chairpersons")
 
 
 def web():
@@ -69,7 +71,7 @@ def decided(store, browser, values):
     """Preview and confirm as the web role; install under the restricted installer."""
     with web():
         review = post(browser, values)
-        # The review step of a change started on Portal users (#196).
+        # The review step of a change started on Chairpersons (#196).
         assert flow_steps(review.content) == (STEPS, "Review")
         signed = token(review)
         response = post(browser, {"action": "confirm", "preview": signed})
@@ -110,15 +112,22 @@ def suspended(tmp_path, settings, real_limiter):
 
 
 def review_row(body):
-    """The suspended-review row for the seeded address."""
+    """The suspended-review row for the seeded address, on Chairpersons."""
     section = body[body.index('id="chair-reviews"') :]
+    return row(section[: section.index('id="kept-leaders"')], "valid@example.org")
+
+
+def kept_row(body):
+    """The seeded address's row among Ministry leaders only through a Chairperson."""
+    section = body[body.index('id="kept-leaders"') :]
     return row(section[: section.index('id="chair-suggestions"')], "valid@example.org")
 
 
-def address_row(body):
-    """The exact-address rule row, which precedes the review table."""
-    end = body.find('id="chair-reviews"')
-    return row(body if end < 0 else body[:end], "valid@example.org")
+def address_row(browser):
+    """The seeded address's rule row on Sign-in rules (NAV-15)."""
+    with web():
+        body = browser.get(reverse("admin:users")).content.decode()
+    return row(body, "valid@example.org")
 
 
 @pytest.mark.usefixtures("source_singletons", "config_role")
@@ -230,7 +239,7 @@ def test_a_removed_seed_leaves_the_rule_and_closes_the_review(
     with web():
         body = browser.get(PAGE).content.decode()
     assert 'id="chair-reviews"' not in body
-    assert "The Ministry leader role is suspended" in row(body, "valid@example.org")
+    assert "The Ministry leader role is suspended" in address_row(browser)
     with web():
         # Deciding again about a seed that no longer exists is refused.
         again = post(
@@ -334,20 +343,21 @@ def test_keeping_the_role_independently_survives_the_source(
     assert login.status_code == 302
     with web():
         body = browser.get(PAGE).content.decode()
-    assert 'name="decision" value="keep_role"' in address_row(body)
+    assert 'name="decision" value="keep_role"' in kept_row(body)
     request = decided(store, browser, decision(store, decision="keep_role"))
     # The POST-only review is named, never linked; Return goes to users (#196).
     with web():
         status = browser.get(f"/admin/changes/{request.pk}/").content
     assert b"<li><span>Review Chairperson decision</span></li>" in status
-    assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
+    assert f'<a href="{PAGE}">Return to Chairpersons</a>'.encode() in status
     principal = current_principal(store, account.pk)
     assert "ministry_leader" in principal.roles and principal.ministries == frozenset()
+    kept = address_row(browser)
+    assert "Ministry leader (Administrator entry; Parish source Chairperson)" in kept
+    # No longer a leader only through a Chairperson, so nothing to keep.
     with web():
         body = browser.get(PAGE).content.decode()
-    kept = address_row(body)
-    assert "Ministry leader (Administrator entry; Parish source Chairperson)" in kept
-    assert 'name="decision" value="keep_role"' not in kept
+    assert 'name="decision" value="keep_role"' not in body
     # The seed itself is still suspended and still awaiting review.
     assert ChairAssignmentReview.objects.filter(closed_by__isnull=True).count() == 1
     with web():

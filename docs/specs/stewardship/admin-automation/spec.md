@@ -2216,10 +2216,11 @@ PR 5 (the actions) land. The ADM-13 action routes are POSTs to the
 
 | URL names | Command or exemption |
 | --- | --- |
+| `users_root` | Permanent: a menu group's root URL, which only redirects to the group's first open entry; that entry covers it |
 | `users` | `users list` (PR 11) |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | `rules show`, `rules apply`, `rules request show` (PR 11), including the [high-impact changes](#high-impact-changes) |
-| `chair_confirmations`, `chair_reviews` | `chairs …` (PR 11) |
-| `assignments` | `assignments …` (PR 11) |
+| `chairpersons`, `chair_confirmations`, `chair_reviews` | `chairs …` (PR 11) |
+| `ministry_assignments`, `assignments` | `assignments …` (PR 11) |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` (PR 11) |
 | `information_update`, `ministry_followup`, `ministry_followup_assign`, `ministry_followup_item`, `ministry_followup_update` | `followup …` (PR 11) |
 

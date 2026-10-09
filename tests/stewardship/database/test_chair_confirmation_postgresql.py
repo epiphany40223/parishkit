@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.urls import reverse
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.chair_models import (
@@ -36,10 +37,11 @@ from .test_configuration_service_postgresql import (
     config_role,  # noqa: F401
 )
 from .test_source_families_postgresql import source_singletons  # noqa: F401
-from .test_user_views_postgresql import URL as PAGE
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/users/suggestions"
+URL = reverse("admin:chair_confirmations")
+# The page these changes are started on and return to (NAV-15).
+PAGE = reverse("admin:chairpersons")
 
 
 def web():
@@ -75,7 +77,7 @@ def recorded(browser, values):
     """Preview and confirm as the web role; the request is recorded, not applied."""
     with web():
         review = post(browser, values)
-        # The review step of a change started on Portal users (#196).
+        # The review step of a change started on Chairpersons (#196).
         assert flow_steps(review.content) == (STEPS, "Review")
         signed = token(review)
         response = post(browser, {"action": "confirm", "preview": signed})
@@ -130,7 +132,7 @@ def test_a_confirmation_creates_the_seeded_rule_assignment_and_evidence(
     with web():
         status = browser.get(f"/admin/changes/{request.pk}/").content
     assert b"<li><span>Review Chairperson suggestion</span></li>" in status
-    assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
+    assert f'<a href="{PAGE}">Return to Chairpersons</a>'.encode() in status
     assert request.request_schema == "chair-seed-patch-v9"
     rule = AddressRule.objects.filter(email="valid@example.org").latest("created_at")
     assert rule.creation_origin == "chair-seed"

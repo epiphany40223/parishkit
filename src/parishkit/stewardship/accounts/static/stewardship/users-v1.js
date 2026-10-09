@@ -1,14 +1,15 @@
-/* Autosave role checkbox changes on the Portal users page through one queue. */
+/* Autosave role checkbox changes on the Sign-in rules page through one queue. */
 "use strict";
 (() => {
   const page = document.querySelector("[data-rule-autosave]");
   if (!page || !window.crypto?.randomUUID || !window.AbortSignal?.timeout) return;
   const applyUrl = page.dataset.applyUrl, baseUrl = page.dataset.baseUrl;
-  // The template resolves the status route with a placeholder id; the
-  // prefix before it is what each request id is appended to.
-  const requestUrl = (page.dataset.requestUrl || "").replace(/[0-9a-f-]{36}$/, "");
+  // The template resolves the status route with a placeholder id, which each
+  // request's id replaces (the route may continue after it, e.g. "/").
+  const PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
+  const requestUrl = page.dataset.requestUrl || "";
   let csrf = document.querySelector('[name="csrfmiddlewaretoken"]')?.value;
-  if (!applyUrl || !requestUrl || !baseUrl || !csrf) return;
+  if (!applyUrl || !requestUrl.includes(PLACEHOLDER) || !baseUrl || !csrf) return;
   const TERMINAL = new Set(["applied", "failed", "cancelled"]);
   // Timing, with the page's own values as test seams; the template sets none.
   const timing = (name, fallback) => {
@@ -303,7 +304,7 @@
       signal: AbortSignal.timeout(DEADLINE)});
   }
   async function poll(id) {
-    const response = await fetch(requestUrl + id, {
+    const response = await fetch(requestUrl.replace(PLACEHOLDER, id), {
       credentials: "same-origin", cache: "no-store",
       headers: {"Accept": "application/json"}, signal: AbortSignal.timeout(DEADLINE)});
     if (response.status === 403) return {state: "ended"};

@@ -232,19 +232,25 @@ PAGES = {
     # Keeps its name until NAV-15 splits it into Sign-in rules, Ministry
     # assignments and Chairpersons; renaming the combined page earlier would
     # mislabel its other tables.
-    "users": Page("users", _("Portal users")),
-    # Only the review of a change started on Portal users (a POST from that
-    # page) renders at these routes, so trails name them but never link them.
+    # Portal users is three pages (decision 13, #535). Each review sits under
+    # the page it is started from, so a confirmed change returns there; only
+    # a POST from that page renders a review, so trails name them but never
+    # link them.
+    "users": Page("users", _("Sign-in rules")),
     "user_rules": Page("users", _("Review sign-in rules"), "users", linkable=False),
-    "rule_request": Page("users", _("Rule change"), "user_rules"),
+    "ministry_assignments": Page("users", _("Ministry assignments")),
+    "assignments": Page(
+        "users",
+        _("Review Ministry assignment"),
+        "ministry_assignments",
+        linkable=False,
+    ),
+    "chairpersons": Page("users", _("Chairpersons")),
     "chair_confirmations": Page(
-        "users", _("Review Chairperson suggestion"), "users", linkable=False
+        "users", _("Review Chairperson suggestion"), "chairpersons", linkable=False
     ),
     "chair_reviews": Page(
-        "users", _("Review Chairperson decision"), "users", linkable=False
-    ),
-    "assignments": Page(
-        "users", _("Review Ministry assignment"), "users", linkable=False
+        "users", _("Review Chairperson decision"), "chairpersons", linkable=False
     ),
     # The Administrator's own automation sessions (ADM-11), and the approval
     # of a pending one, which the command line links to.
@@ -475,6 +481,8 @@ MENU = (
     Entry("source_refresh", _ADMIN),
     # Users and access
     Entry("users", Capability.MANAGE_USERS),
+    Entry("ministry_assignments", Capability.MANAGE_USERS),
+    Entry("chairpersons", Capability.MANAGE_USERS),
     Entry("automation_access", _ADMIN),
     # System. System health comes first, so /admin/system/ opens it (ADM-13).
     Entry("system_health", Capability.SYSTEM_LOGS),
@@ -517,6 +525,9 @@ NON_PAGES = frozenset(
         "background_task_status",
         "background_tasks",
         "automation_notices",
+        # The role autosave's status, answered as JSON only (its script polls
+        # it); the spec reclassified it as a non-page.
+        "rule_request",
         "automation_session",
         "branding_asset",
         "content_plain_text",
@@ -603,6 +614,7 @@ NON_PAGES = frozenset(
         "campaign_root",
         "mail_root",
         "parish_root",
+        "users_root",
         # /admin/system/ only redirects to System health; the page polls its
         # status fragment.
         "system",

@@ -5,6 +5,7 @@ from html import unescape
 from uuid import uuid4
 
 import pytest
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.configuration_service import (
@@ -27,11 +28,12 @@ from .test_configuration_service_postgresql import (
 )
 from .test_policy_postgresql import user
 from .test_source_families_postgresql import source_singletons  # noqa: F401
-from .test_user_views_postgresql import URL as PAGE
 from .test_user_views_postgresql import add_rules, row
 
 pytestmark = pytest.mark.django_db(transaction=True)
-URL = "/admin/users/assignments"
+URL = reverse("admin:assignments")
+# The page these changes are started on and return to (NAV-15).
+PAGE = reverse("admin:ministry_assignments")
 ACTIVITY = "/admin/parish/ministries/"
 
 
@@ -70,7 +72,7 @@ def applied(store, browser, values, url=URL):
     """Preview and confirm as the web role; install under the restricted installer."""
     with web():
         review = post(browser, values, url)
-        # The review step of a change started on Portal users (#196).
+        # The review step of a change started on Ministry assignments (#196).
         assert flow_steps(review.content) == (STEPS, "Review")
         signed = token(review)
         response = post(browser, {"action": "confirm", "preview": signed}, url)
@@ -86,11 +88,10 @@ def applied(store, browser, values, url=URL):
 
 
 def address_row(body, email):
-    """The exact-address rule row, which precedes the suggestion tables."""
-    end = body.find('id="chair-reviews"')
-    if end < 0:
-        end = body.find('id="chair-suggestions"')
-    return row(body if end < 0 else body[:end], email)
+    """The address's row in Ministry assignments' exact-address table (NAV-15)."""
+    section = body[body.index('id="address-assignments"') :]
+    end = section.find('id="domain-assignments"')
+    return row(section if end < 0 else section[:end], email)
 
 
 @pytest.mark.usefixtures("source_singletons", "config_role")
@@ -105,7 +106,8 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
     assert login.status_code == 302
     with web():
         body = browser.get(PAGE).content.decode()
-    offered = address_row(body, "leader@example.org")
+    # No assignment yet, so the page's own add form offers the catalog.
+    offered = body[body.index("Add a Ministry assignment") :]
     assert '<option value="4">Choir (4)</option>' in offered
     # The effect is stated as the evaluator decides it: an exact leader rule
     # takes effect at once, an Administrator needs no scope, and an address
@@ -124,7 +126,7 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
     with web():
         status = browser.get(f"/admin/changes/{request.pk}/").content
     assert b"<li><span>Review Ministry assignment</span></li>" in status
-    assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
+    assert f'<a href="{PAGE}">Return to Ministry assignments</a>'.encode() in status
     assignment = MinistryAssignment.objects.get(
         configuration_id=store.active().version_id, email="leader@example.org"
     )

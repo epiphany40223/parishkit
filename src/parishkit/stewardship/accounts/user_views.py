@@ -1,4 +1,13 @@
-"""Read-only Administrator review of who may sign in to the portal and why."""
+"""Read-only Administrator review of who may sign in to the portal and why.
+
+Portal users is three pages (decision 13, #535), all drawn from the same
+coherent observation: Sign-in rules (the hosted-domain and exact-address
+rules and their roles), Ministry assignments (every Ministry assignment and
+its editor) and Chairpersons (suspended Chairperson assignments, Ministry
+leaders kept only through a Chairperson, and the parish source's
+suggestions). Each page shows only its own tables, and each change is
+started on, and returns to, the page that owns it.
+"""
 
 from dataclasses import replace
 
@@ -40,9 +49,10 @@ from .user_rules import ROLE_ORDER
 DOMAINS = "domains_"
 ADDRESSES = "addresses_"
 ASSIGNMENTS = "assignments_"
+ASSIGNED = "assigned_"
 REVIEWS = "reviews_"
+KEPT = "kept_"
 SUGGESTIONS = "suggestions_"
-PREFIXES = (DOMAINS, ADDRESSES, ASSIGNMENTS, REVIEWS, SUGGESTIONS)
 
 
 def _text(values):
@@ -139,9 +149,23 @@ SUGGESTION_SORTING = Sorting.by_column(
 TABLES = {
     "domain_table": (DOMAINS, DOMAIN_SORTING),
     "address_table": (ADDRESSES, ADDRESS_SORTING),
+    "assigned_table": (ASSIGNED, ADDRESS_SORTING),
     "assignment_table": (ASSIGNMENTS, ASSIGNMENT_SORTING),
     "review_table": (REVIEWS, REVIEW_SORTING),
+    "kept_table": (KEPT, ADDRESS_SORTING),
     "suggestion_table": (SUGGESTIONS, SUGGESTION_SORTING),
+}
+# Each page's template and its tables, in the order the page shows them.
+PAGES = {
+    "rules": ("stewardship/users.html", ("domain_table", "address_table")),
+    "assignments": (
+        "stewardship/ministry-assignments.html",
+        ("assigned_table", "assignment_table"),
+    ),
+    "chairpersons": (
+        "stewardship/chairpersons.html",
+        ("review_table", "kept_table", "suggestion_table"),
+    ),
 }
 
 
@@ -230,14 +254,16 @@ def chair_relationships(document):
 def user_tables(paging, rows):
     """Sort and page every table on the page, each keeping the others' place.
 
-    ``rows`` maps each ``TABLES`` name to its full row list; ``paging`` is
-    the validated query string. Every navigator link and sort heading of
-    one table carries the other tables' page, size and sort, so changing
-    one table never resets another.
+    ``rows`` maps each of the page's ``TABLES`` names to its full row list;
+    ``paging`` is the validated query string. Every navigator link and sort
+    heading of one table carries the other tables' page, size and sort, so
+    changing one table never resets another.
     """
     tables = {
-        name: paginate(rows[name], paging, prefix=prefix, sorting=sorting)
-        for name, (prefix, sorting) in TABLES.items()
+        name: paginate(
+            rows[name], paging, prefix=TABLES[name][0], sorting=TABLES[name][1]
+        )
+        for name in rows
     }
 
     def state(table):
@@ -262,8 +288,46 @@ def user_tables(paging, rows):
     }
 
 
+def _rows(section, policy, reviews, chairs):
+    """The full row list of each table ``section``'s page shows."""
+    addresses = address_rows(policy) if section != "chairpersons" else ()
+    builders = {
+        "domain_table": lambda: domain_rows(policy),
+        "address_table": lambda: addresses,
+        # Exact-address rules that carry an assignment; another address gets
+        # one through the page's own add form.
+        "assigned_table": lambda: [row for row in addresses if row["assignments"]],
+        "assignment_table": lambda: domain_assignment_rows(policy),
+        "review_table": lambda: suspended_rows(policy, reviews),
+        # A Ministry leader role that comes only from a Chairperson can be
+        # kept independently, a Chairperson decision.
+        "kept_table": lambda: [row for row in address_rows(policy) if row["seed_only"]],
+        "suggestion_table": lambda: suggestion_rows(
+            policy, chairs[0], active=chairs[1]
+        ),
+    }
+    return {name: builders[name]() for name in PAGES[section][1]}
+
+
 @require_safe
-def users(request):
+def sign_in_rules(request):
+    """Sign-in rules: who may sign in, and with which roles."""
+    return _users_page(request, "rules")
+
+
+@require_safe
+def ministry_assignments(request):
+    """Ministry assignments: which Ministries each Ministry leader leads."""
+    return _users_page(request, "assignments")
+
+
+@require_safe
+def chairpersons(request):
+    """Chairpersons: suspended assignments, kept leaders and suggestions."""
+    return _users_page(request, "chairpersons")
+
+
+def _users_page(request, section):
     """Observe one snapshot, render outside it, then recheck and audit.
 
     One read-only snapshot keeps the applied policy, the source overlays and the
@@ -288,7 +352,11 @@ def users(request):
         # parameters, so an address never reaches a URL or log.
         paging = filters(
             request.GET,
-            allowed={name for prefix in PREFIXES for name in table_parameters(prefix)},
+            allowed={
+                name
+                for table in PAGES[section][1]
+                for name in table_parameters(TABLES[table][0])
+            },
         )
         with read_transaction():
             configuration = editable_configuration(service)
@@ -298,8 +366,13 @@ def users(request):
             identities = policy_identities(records)
             # The same definition of a confirmed Chairperson that sign-in uses.
             active = confirmed_seeded(configuration.active_configuration)
-            relationships, ministries = chair_relationships(
-                configuration.active_configuration.canonical_document
+            # Only Chairpersons shows the source's Chairperson relationships.
+            chairs = (
+                chair_relationships(
+                    configuration.active_configuration.canonical_document
+                )
+                if section == "chairpersons"
+                else ((), frozenset())
             )
             current = SourceCurrent.objects.filter(singleton=True).first()
             reviews = open_reviews(configuration, current)
@@ -325,21 +398,10 @@ def users(request):
             else (),
             key=lambda item: (item[1].casefold(), item[0]),
         )
-        tables = user_tables(
-            paging,
-            {
-                "domain_table": domain_rows(policy),
-                "address_table": address_rows(policy),
-                "assignment_table": domain_assignment_rows(policy),
-                "review_table": suspended_rows(policy, reviews),
-                "suggestion_table": suggestion_rows(
-                    policy, relationships, active=ministries
-                ),
-            },
-        )
+        tables = user_tables(paging, _rows(section, policy, reviews, chairs))
         response = render(
             request,
-            "stewardship/users.html",
+            PAGES[section][0],
             tables
             | {
                 # Every edit form carries the digest it was drawn from, so a

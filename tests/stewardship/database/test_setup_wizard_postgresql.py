@@ -3,6 +3,7 @@
 # ruff: noqa: F811 -- pytest resolves the imported fixture dependencies.
 
 import pytest
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
 from parishkit.stewardship.accounts.setup_secret_models import SetupSealedCredential
@@ -27,7 +28,7 @@ def test_before_completion_admin_pages_route_to_the_wizard_only(setup_http, goog
     """Other Admin pages redirect, and the chrome offers no other destination."""
     with web_login():
         browser = started()
-        for path in ("/admin/", "/admin/system/integrations/", "/admin/users"):
+        for path in ("/admin/", "/admin/system/integrations/", reverse("admin:users")):
             response = browser.get(path)
             assert response.status_code == 302, path
             assert response["Location"] == "/admin/setup"
@@ -35,7 +36,7 @@ def test_before_completion_admin_pages_route_to_the_wizard_only(setup_http, goog
         assert b"Initial setup" in body
         for other in (
             b"Parish settings",
-            b'href="/admin/users"',
+            f'href="{reverse("admin:users")}"'.encode(),
             b'href="/admin/parish/ministries/"',
         ):
             assert other not in body

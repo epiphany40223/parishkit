@@ -526,11 +526,9 @@ through every Admin page (109 pages) and settled by the Administrator's
 moved to it, and the page names, links and URLs fixed against it, by the
 follow-up issues #520 (one name per page), #521 (every page reachable, every
 flow with a way back) and #525 (one URL scheme). Every page already uses the
-table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which keeps its
-name until NAV-15 splits it into Sign-in rules, Ministry assignments and
-Chairpersons, and the Ministry assignments and Chairpersons pages, which do
-not exist yet (Emailed reports exists since NAV-14). The System pages already have their new
-addresses (NAV-6), and so do the Parish data pages and a change's status page
+table's name (NAV-4, NAV-5a and NAV-5b), and Portal users is split into
+Sign-in rules, Ministry assignments and Chairpersons (NAV-15). The System
+pages already have their new addresses (NAV-6), and so do the Parish data pages and a change's status page
 (NAV-7), the Mail and Family portal pages (NAV-8) and the Campaign setup
 pages (NAV-9: settings, Copy campaign, content and its history, images,
 schedules, Share options and Member talents; NAV-10: the test email pages,
@@ -543,8 +541,9 @@ data group roots open their first entry, and `/admin/reports/` keeps its
 meaning. Exports and the reports sent by email follow (NAV-12): every export
 shares `/admin/reports/exports/<request>/`, a latest-data export included,
 and the daily and weekly reports sit under `/admin/reports/emailed/`, whose
-old addresses (which sent report emails link) redirect permanently. Until
-the rest of the URL work lands, other pages keep their
+old addresses (which sent report emails link) redirect permanently. The
+Users and access pages sit under `/admin/users/` (NAV-15), whose root opens
+its first entry. Until the rest of the URL work lands, other pages keep their
 "Current URL", and so does every other section of this spec and the other
 stewardship specs that name an Admin URL; those follow-up issues update them
 with the code.
@@ -663,8 +662,8 @@ Notes on the groups:
   **Chairpersons** (suspended Chairperson assignments awaiting review, and
   [Chairperson suggestions](#chairperson-suggestions-and-assignments) from
   ParishSoft). Each review started on one of them returns to it.
-- Emailed reports, Ministry assignments and Chairpersons are new pages: #520
-  and #521 add their registry entries and views.
+- Emailed reports (NAV-14), Ministry assignments and Chairpersons (NAV-15)
+  are pages of their own, each with its registry entry and view.
 - Each group's root URL (`/admin/campaign/`, `/admin/mail/`,
   `/admin/reports/`, `/admin/parish/`, `/admin/users/`, `/admin/system/`)
   redirects to the group's first entry available to the viewer, except
@@ -944,12 +943,14 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same; old address redirects) |  |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same; old address redirects) |  |
 | `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same; old address redirects) |  |
-| `users` | Sign-in rules | Menu: Sign-in rules | Administrator | Portal users | `/admin/users` | `/admin/users/sign-in-rules/` | Portal users is split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
-| `user_rules` | Review sign-in rules | Sign-in rules | Administrator | Review login rule change; Sign-in rules | `/admin/users/rules` (POST only) | `/admin/users/sign-in-rules/review/` (POST only) |  |
-| `rule_request` | (not a page) | Sign-in rules | Administrator | Rule change (status); Rule change | `/admin/users/rules/requests/<request>` | `/admin/users/sign-in-rules/requests/<request>/` (JSON) | Answers JSON only; reclassify as a non-page. |
-| `assignments` | Review Ministry assignment | Ministry assignments (new page) | Administrator | Review Ministry assignment change; Assignments | `/admin/users/assignments` (POST only) | `/admin/users/ministry-assignments/review/` (POST only) |  |
-| `chair_confirmations` | Review Chairperson suggestion | Chairpersons (new page) | Administrator | Review Chairperson confirmation; Chair suggestions | `/admin/users/suggestions` (POST only) | `/admin/users/chairpersons/suggestions/` (POST only) |  |
-| `chair_reviews` | Review Chairperson decision | Chairpersons (new page) | Administrator | Review Chairperson assignment decision; Chair reviews | `/admin/users/reviews` (POST only) | `/admin/users/chairpersons/reviews/` (POST only) |  |
+| `users` | Sign-in rules | Menu: Sign-in rules | Administrator | Portal users | `/admin/users/sign-in-rules/` | (same) | Portal users is split into Sign-in rules, Ministry assignments and Chairpersons (decision 13, #535): the hosted-domain and exact-address rules and their roles; it links the other two. |
+| `user_rules` | Review sign-in rules | Sign-in rules | Administrator | Review login rule change; Sign-in rules | `/admin/users/sign-in-rules/review/` (POST only) | (same) |  |
+| `rule_request` | (not a page) | Sign-in rules | Administrator | Rule change (status); Rule change | `/admin/users/sign-in-rules/requests/<request>/` (JSON) | (same) | Answers JSON only, a non-page; the role autosave polls it, and the role changes post to `autosave/` (its base digest is `autosave/base/`). |
+| `ministry_assignments` | Ministry assignments | Menu: Ministry assignments | Administrator | (new, #535) | `/admin/users/ministry-assignments/` | (same) | Every Ministry assignment, with exact-address rules and with domain rules, and its editor. |
+| `assignments` | Review Ministry assignment | Ministry assignments | Administrator | Review Ministry assignment change; Assignments | `/admin/users/ministry-assignments/review/` (POST only) | (same) |  |
+| `chairpersons` | Chairpersons | Menu: Chairpersons | Administrator | (new, #535) | `/admin/users/chairpersons/` | (same) | Suspended Chairperson assignments, Ministry leaders only through a Chairperson, and Chairperson suggestions. |
+| `chair_confirmations` | Review Chairperson suggestion | Chairpersons | Administrator | Review Chairperson confirmation; Chair suggestions | `/admin/users/chairpersons/suggestions/` (POST only) | (same) |  |
+| `chair_reviews` | Review Chairperson decision | Chairpersons | Administrator | Review Chairperson assignment decision; Chair reviews | `/admin/users/chairpersons/reviews/` (POST only) | (same) | Also keeps a Ministry leader role that comes only from a Chairperson (from Chairpersons). |
 | `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); revoke posts to `/admin/users/automation/sessions/<session>/`. |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
