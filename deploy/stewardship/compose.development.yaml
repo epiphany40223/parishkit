@@ -148,6 +148,9 @@ services:
         source: ../../tools/ci-pip-install.sh
         target: /app/tools/ci-pip-install.sh
       - <<: *test-bind
+        source: ../../tools/ci-docker-mirror.sh
+        target: /app/tools/ci-docker-mirror.sh
+      - <<: *test-bind
         source: ../../tools/stewardship-dev-deploy.sh
         target: /app/tools/stewardship-dev-deploy.sh
       - <<: *test-bind

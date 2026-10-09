@@ -301,9 +301,11 @@ def test_caddy_template_denies_internal_paths_before_proxy():
         input=(DEPLOY / "Caddyfile").read_text(),
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
         timeout=60,
     )
+    # Show Docker's own error (a refused pull, say), not only its exit code.
+    assert result.returncode == 0, result.stderr
     config = json.loads(result.stdout)
     (server,) = config["apps"]["http"]["servers"].values()
     # Guard every enclosing route too: a correct denial hidden behind another
@@ -365,9 +367,11 @@ def test_local_caddyfile_golden_adapts_and_validates():
         input=(FIXTURES / "local-Caddyfile.golden").read_text(),
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
         timeout=60,
     )
+    # Show Docker's own error (a refused pull, say), not only its exit code.
+    assert result.returncode == 0, result.stderr
     config = json.loads(result.stdout.splitlines()[0])
     assert config["admin"] == {"disabled": True}
     http = config["apps"]["http"]
