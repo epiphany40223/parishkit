@@ -104,6 +104,9 @@ FROZEN = {
     "0024_task_event_retention.sql": (
         "7e09c66ee0b85584955fb902ec21094051f94008f9bf0d82f57738d58a25e6d0"
     ),
+    "0025_scheduler_link_preparation.sql": (
+        "223644da6fefccaae630af459e1cd7717967501786ac8b311f2d5ad26583b4d8"
+    ),
 }
 
 
