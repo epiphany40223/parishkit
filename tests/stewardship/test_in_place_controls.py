@@ -125,6 +125,7 @@ HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
     "settings-review.html": SETTINGS_PAGES,
     "configuration-request-status.html": SETTINGS_PAGES,
+    "background-task-status.html": ("background-task.html",),
 }
 
 

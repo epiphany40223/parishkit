@@ -21,9 +21,11 @@
 // When the work finishes while the page is watching, a terminal region may
 // ask for one follow-up: an a[data-live-follow] link is opened, or a
 // form[data-live-autosubmit] (such as a ready download) is submitted once.
-// A follow-up link also marked data-in-place (an in-place settings page's
-// refresh once its change settles, #532) is clicked instead, so ui-v1.js
-// refreshes the page where the reader is rather than loading it again.
+// A follow-up link also marked data-in-place is clicked instead, so ui-v1.js
+// refreshes the page where the reader is rather than loading it again: an
+// in-place settings page's refresh once its change settles (#532) names its
+// own address, and a link naming only a fragment (a task page once its task
+// ends, #869) re-reads this same address.
 //
 // A region that follows a steadily changing count (such as Family email
 // progress) may set data-live-interval="<ms>" to poll at that fixed pace
@@ -304,11 +306,32 @@
       speak(region);
     }
 
+    function refreshPage(link) {
+      // Bring the rest of this page up to date where the reader is, as the
+      // task page does when its task ends (#869): the region shows the end,
+      // but the history table and Retry panels outside it were drawn when the
+      // page opened. The link is followed through ui-v1.js's in-place
+      // refresh, which re-reads this same address (so a history page or sort
+      // the reader chose is kept) and swaps every in-place region; marked
+      // data-in-place-quiet, it moves no focus and announces nothing, since
+      // this region's own aria-live already said the work ended. A page with
+      // no in-place region has nothing more to show.
+      const target = document.querySelector("[data-in-place-region][id], [data-table-region][id]");
+      if (!target) return;
+      const here = new URL(window.location.href);
+      here.hash = target.id;
+      link.href = here.href;
+      link.click();
+    }
+
     function finish() {
       stop("");
       const follow = region.querySelector("a[data-live-follow]");
       if (follow) {
-        if (follow.hasAttribute("data-in-place")) follow.click();
+        // An in-place link naming only a fragment re-reads this page
+        // (#869); one naming an address is clicked as it is (#532).
+        if (follow.hasAttribute("data-in-place") && follow.getAttribute("href").startsWith("#")) refreshPage(follow);
+        else if (follow.hasAttribute("data-in-place")) follow.click();
         else window.location.assign(follow.href);
         return;
       }
