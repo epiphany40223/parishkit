@@ -58,6 +58,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC
 from pathlib import Path
+from uuid import uuid4
 
 from parishkit.config import ConfigError
 
@@ -3158,9 +3159,10 @@ def trace_failure(error, *, admitted_process):
     ``task_failed`` after it, with the invocation's ``correlation_id`` (also
     in the document, so the two join), the ``failure_kind`` category and the
     exception type's ``error_class``; never exception text. With debug
-    logging on, ``emit_failure`` adds the traceback. The line goes to the
-    process log only, not the operational log table (#617). It runs after
-    admission has released the startup lease and closed its connections.
+    logging on, ``emit_failure`` adds the traceback. It runs after admission
+    has released the startup lease and closed its connections; the durable
+    operational log entry for the same failure was written before that, by
+    ``record_failure`` (#617).
     """
     from .observability import Event, emit_failure
 
@@ -3169,6 +3171,99 @@ def trace_failure(error, *, admitted_process):
     # log must not replace them with a traceback.
     with contextlib.suppress(Exception):
         emit_failure(error, event=event, name_class=True)
+
+
+# The closed ``failure`` word each traced code records durably (#617).
+FAILURE_WORDS = {
+    "internal": "admin_command",
+    "outcome_unknown": "admin_command_outcome_unknown",
+}
+
+
+def failure_context(spec, error, *, changed, committed):
+    """The durable entry's sanitized ``failure`` context, or None.
+
+    Only a failure that ends as ``internal`` or ``outcome_unknown``
+    (``TRACED_CODES``, classified as ``run`` does after admission) has one.
+    It holds closed values only: the ``FAILURE_WORDS`` word, the
+    ``failure_kind`` category and the command's catalog name; never
+    exception text, arguments, the session or personal data.
+    """
+    from .audit.schemas import ContextKind, sanitize
+    from .observability import failure_kind_of
+
+    code = classify(error, admitted_process=True, changed=changed, committed=committed)
+    if code not in TRACED_CODES:
+        return None
+    return sanitize(
+        ContextKind.FAILURE,
+        {
+            "failure": FAILURE_WORDS[code],
+            "failure_kind": failure_kind_of(error),
+            "command": spec.name,
+        },
+    )
+
+
+def write_failure(context):
+    """Insert one ERROR ``admin_command_failed`` row on a private connection.
+
+    The command's own connections are closed first: its transaction may be
+    aborted, and admission holds at most one connection. The row goes
+    through a fresh, short-lived connection with the same (web) login and
+    ``audit.timeouts``'s limits (2 s connect, 2 s statement, 1 s lock), so a
+    slow or unreachable database cannot hold the command's exit. The entry
+    carries the invocation's correlation id, which the document also shows.
+    """
+    from django.db import connections
+
+    from .audit.schemas import ContextKind
+    from .audit.timeouts import _private_connection
+    from .observability import Event, current_correlation
+
+    connections.close_all()
+    db = _private_connection(None)
+    try:
+        with db.cursor() as cursor:
+            cursor.execute("SET statement_timeout = '2s'")
+            cursor.execute("SET lock_timeout = '1s'")
+            cursor.execute(
+                "INSERT INTO stewardship_operational_log "
+                "(id,correlation_id,event,level,schema,context) "
+                "VALUES (%s,%s,%s,'ERROR',%s,%s::jsonb)",
+                [
+                    uuid4(),
+                    current_correlation(),
+                    Event.ADMIN_COMMAND_FAILED.value,
+                    ContextKind.FAILURE.value,
+                    json.dumps(context),
+                ],
+            )
+    finally:
+        db.close()
+
+
+def record_failure(spec, error, *, changed, committed):
+    """Persist one operational log entry for an unexpected failure (#617).
+
+    Called inside admission, after it finished, so the startup lease and the
+    web's SQL login still hold. It never raises: a failure to build or write
+    the entry logs one standard-error line (``admin_command_failed`` with
+    its category), and the command's document and exit code stand.
+    """
+    try:
+        context = failure_context(spec, error, changed=changed, committed=committed)
+        if context is not None:
+            write_failure(context)
+    except Exception as write_error:
+        # The command's own outcome is the contract; losing its log entry
+        # must not change it.
+        with contextlib.suppress(Exception):
+            from .observability import Event, emit_failure
+
+            emit_failure(
+                write_error, event=Event.ADMIN_COMMAND_FAILED, level=logging.WARNING
+            )
 
 
 def document(name, correlation_id, *, ok, final=True, session=None, result=None):
@@ -3237,22 +3332,35 @@ def run(args, *, stdin, stdout, stderr):
             configuration = load_deployment(args.config)
             with ADMISSION(configuration) as runtime:
                 admitted_process = True
-                if spec.scope != "none":
-                    caller = admit_session(spec, preamble, runtime, stderr)
-                    context["caller"] = caller
-                    context["session"] = caller.automation_session
                 try:
-                    if getattr(args, "watch", None) is not None:
-                        result = watch(spec, args, preamble, runtime, context, emit)
-                    else:
-                        result = spec.handler(args, preamble, runtime, context)
-                finally:
-                    if caller is not None:
-                        from .accounts.automation_sessions import (
-                            close_command_session,
-                        )
+                    if spec.scope != "none":
+                        caller = admit_session(spec, preamble, runtime, stderr)
+                        context["caller"] = caller
+                        context["session"] = caller.automation_session
+                    try:
+                        if getattr(args, "watch", None) is not None:
+                            result = watch(spec, args, preamble, runtime, context, emit)
+                        else:
+                            result = spec.handler(args, preamble, runtime, context)
+                    finally:
+                        if caller is not None:
+                            from .accounts.automation_sessions import (
+                                close_command_session,
+                            )
 
-                        close_command_session(caller.portal_session)
+                            close_command_session(caller.portal_session)
+                except Exception as error:
+                    # Record an unexpected failure durably while admission
+                    # still holds the startup lease and the web login (#617);
+                    # the handler below classifies it again, identically, for
+                    # the document and exit code. record_failure never raises.
+                    record_failure(
+                        spec,
+                        error,
+                        changed=spec.changes_state and caller is not None,
+                        committed=context.get("committed", False),
+                    )
+                    raise
             # ``logs export`` leaves its file's bytes for here; ``export
             # download`` has already written them inside its read guard.
             if spec.streams and "stream" in context:

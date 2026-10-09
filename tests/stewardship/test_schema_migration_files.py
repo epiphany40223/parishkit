@@ -144,6 +144,9 @@ FROZEN = {
     "0037_family_test_names.sql": (
         "2a84ed1ee20997311c3a11068e1ceb9b2f4469660e8e3035f04fcc841009d054"
     ),
+    "0038_admin_command_failure_log.sql": (
+        "9e237ca17059679a4f0ff8742a4ce6cd63d5f45fe8d20c3dc51159ac3f8a7bbe"
+    ),
 }
 
 

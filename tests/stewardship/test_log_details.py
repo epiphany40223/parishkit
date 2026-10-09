@@ -88,6 +88,18 @@ def test_alert_mail_names_the_provider_answer():
     assert "Details: a temporary refusal." in text and text.endswith("tried again.")
 
 
+def test_a_failed_admin_command_names_the_command():
+    """#617: the catalog name and the category, and how to report it."""
+    context = {
+        "failure": "admin_command_outcome_unknown",
+        "failure_kind": "unexpected_failure",
+        "command": "export create",
+    }
+    text = explain("failure", context)
+    assert "read the status before retrying" in text
+    assert "Details: command: export create; category: unexpected failure." in text
+
+
 def test_every_failure_word_has_a_sentence():
     for failure in FAILURES:
         assert explain("failure", {"failure": failure})

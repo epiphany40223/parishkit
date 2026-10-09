@@ -10,6 +10,7 @@ import io
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -750,12 +751,13 @@ def test_the_task_state_filter_is_the_pages():
 PRIVATE = "private-value /private/path"
 
 
-def run_failing(monkeypatch, handler, *, changes_state=False, load=None):
+def run_failing(monkeypatch, handler, *, changes_state=False, load=None, written=None):
     """Run a stand-in command whose handler fails; returns (exit, document).
 
     Admission is replaced by an empty context, so the handler runs as an
     admitted, session-less command; ``load`` replaces ``load_deployment`` to
-    fail before admission instead.
+    fail before admission instead. The durable log write (#617) is replaced
+    too: each context it would insert is appended to ``written``.
     """
     import contextlib
     from types import SimpleNamespace
@@ -778,6 +780,9 @@ def run_failing(monkeypatch, handler, *, changes_state=False, load=None):
     )
     monkeypatch.setattr(
         admin_cli, "ADMISSION", lambda configuration: contextlib.nullcontext(None)
+    )
+    monkeypatch.setattr(
+        admin_cli, "write_failure", (written if written is not None else []).append
     )
     out = io.StringIO()
     code = admin_cli.run(
@@ -905,10 +910,90 @@ def test_only_an_unexpected_error_logs_a_failure_line(
         """Fail with the given error."""
         raise error
 
+    written = []
     with caplog.at_level(logging.DEBUG):
-        code, document = run_failing(monkeypatch, failing)
+        code, document = run_failing(monkeypatch, failing, written=written)
     assert document["error"]["code"] == expected
     assert len(failure_lines(caplog)) == (expected in admin_cli.TRACED_CODES)
+    # Only the unexpected is recorded durably, too (#617).
+    assert len(written) == (expected in admin_cli.TRACED_CODES)
+
+
+def test_an_unexpected_read_error_is_recorded_durably(monkeypatch):
+    """#617: one closed context, nothing from the exception but its category."""
+    written = []
+    code, document = run_failing(monkeypatch, broken, written=written)
+    assert code == 3 and document["error"]["code"] == "internal"
+    assert written == [
+        {
+            "failure": "admin_command",
+            "failure_kind": "unexpected_failure",
+            "command": "probe",
+        }
+    ]
+
+
+def test_an_unknown_outcome_is_recorded_as_one(monkeypatch):
+    """A change that may have committed says so in its failure word."""
+
+    def committed(args, preamble, runtime, context):
+        """Commit, then lose the database."""
+        context["committed"] = True
+        raise OperationalError(PRIVATE)
+
+    written = []
+    code, _ = run_failing(monkeypatch, committed, changes_state=True, written=written)
+    assert code == 6
+    assert written == [
+        {
+            "failure": "admin_command_outcome_unknown",
+            "failure_kind": "database_unavailable",
+            "command": "probe",
+        }
+    ]
+
+
+def test_a_failure_before_admission_is_not_recorded_durably(monkeypatch):
+    """No admitted database login exists yet; standard error only."""
+
+    def load(path):
+        """Fail while loading the configuration."""
+        raise AttributeError(PRIVATE)
+
+    written = []
+    code, _ = run_failing(monkeypatch, broken, load=load, written=written)
+    assert code == 3 and written == []
+
+
+def test_a_failure_to_record_keeps_the_exit_code(monkeypatch, caplog):
+    """A lost durable entry logs one line and never masks the command's outcome."""
+    import logging
+
+    def down(context):
+        """The database cannot take the entry."""
+        raise OperationalError(PRIVATE)
+
+    with caplog.at_level(logging.DEBUG):
+        code, document = run_failing(monkeypatch, broken)
+        # run_failing installed its own stand-in; replace it and run again.
+        monkeypatch.setattr(admin_cli, "write_failure", down)
+        caplog.clear()
+        out = io.StringIO()
+        again = admin_cli.run(
+            SimpleNamespace(command_name="probe", config=Path("x")),
+            stdin=io.BytesIO(PREAMBLE),
+            stdout=out,
+            stderr=io.StringIO(),
+        )
+    assert (code, again) == (3, 3)
+    assert json.loads(out.getvalue())["error"] == document["error"]
+    lines = [json.loads(line) for line in failure_lines(caplog)]
+    assert all(PRIVATE not in json.dumps(line) for line in lines)
+    assert [(line["message"], line["level"]) for line in lines] == [
+        ("admin_command_failed", "WARNING"),
+        ("task_failed", "ERROR"),
+    ]
+    assert lines[0]["extra"]["failure_kind"] == "database_unavailable"
 
 
 def test_a_failure_to_log_keeps_the_document(monkeypatch):
@@ -1478,3 +1563,13 @@ def test_the_prompts_ask_the_pages_own_acknowledgement(template, text):
 
     page = Path(accounts.__file__).parent / "templates" / "stewardship" / template
     assert '{% translate "' + text + '" %}' in page.read_text()
+
+
+def test_every_command_name_fits_the_durable_failure_shape():
+    """Migration 0038 admits a failure entry's ``command`` only as lower-case
+    words (letters and hyphens, at most four, at most 64 characters). A
+    catalog name outside that shape would lose its durable entry silently,
+    leaving only a WARNING line (#617)."""
+    shape = re.compile(r"[a-z][a-z-]*( [a-z][a-z-]*){0,3}")
+    for name in admin_cli.BY_NAME:
+        assert len(name) <= 64 and shape.fullmatch(name), name
