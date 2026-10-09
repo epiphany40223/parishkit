@@ -13,6 +13,14 @@ On Dates and mail schedules a saved schedule's form carries schedule_row
 and starts closed unless it holds an error or an unsaved change, and a
 schedule that has already run (data-schedule-past) is never opened. A closed
 editor still posts its saved values, so the formset is unchanged.
-{% endcomment %}<fieldset class="panel" data-schedule-row data-schedule-fields="{{ form.field_rules }}"{% with row=form.schedule_row %}{% if row %} id="{{ row.anchor }}" tabindex="-1" data-schedule-editor{% if row.read_only %} data-schedule-past{% endif %}{% if not row.open %} hidden{% endif %}{% endif %}{% endwith %}><legend>{% if form.schedule_row %}{{ form.schedule_row.label }}{% elif form.initial.id %}{% translate "Schedule" %} <span data-schedule-number>{{ number|number }}</span>{% else %}{% translate "New schedule" %}{% endif %}</legend>
+
+Under the email list, data-email-summary is where ui-v1.js describes the
+chosen email from its option's data- attributes (#446,
+schedule_forms.email_details): the start of its text, the saved schedules
+that send it and, on Dates and mail schedules, links to preview, test and
+edit it. data-schedule-label names this saved schedule (on every page that
+lists schedules), so the summary can tell whether other schedules share the
+email. The script adds the summary's id to the list's aria-describedby.
+{% endcomment %}<fieldset class="panel" data-schedule-row data-schedule-fields="{{ form.field_rules }}"{% if form.schedule_label %} data-schedule-label="{{ form.schedule_label }}"{% endif %}{% with row=form.schedule_row %}{% if row %} id="{{ row.anchor }}" tabindex="-1" data-schedule-editor{% if row.read_only %} data-schedule-past{% endif %}{% if not row.open %} hidden{% endif %}{% endif %}{% endwith %}><legend>{% if form.schedule_row %}{{ form.schedule_row.label }}{% elif form.initial.id %}{% translate "Schedule" %} <span data-schedule-number>{{ number|number }}</span>{% else %}{% translate "New schedule" %}{% endif %}</legend>
 {{ form.non_field_errors }}{% for field in form.hidden_fields %}{{ field.errors }}{{ field }}{% endfor %}
-{% for field in form.visible_fields %}<div{% with classes=field.css_classes %}{% if classes %} class="{{ classes }}"{% endif %}{% endwith %} data-schedule-field="{{ field.name }}">{{ field.as_field_group }}</div>{% endfor %}</fieldset>
+{% for field in form.visible_fields %}<div{% with classes=field.css_classes %}{% if classes %} class="{{ classes }}"{% endif %}{% endwith %} data-schedule-field="{{ field.name }}">{{ field.as_field_group }}{% if field.name == 'template_version' %}<div class="email-summary" id="{{ field.auto_id }}_summary" data-email-summary aria-live="polite"></div>{% endif %}</div>{% endfor %}</fieldset>
