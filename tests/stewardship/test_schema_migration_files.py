@@ -107,6 +107,9 @@ FROZEN = {
     "0025_scheduler_link_preparation.sql": (
         "223644da6fefccaae630af459e1cd7717967501786ac8b311f2d5ad26583b4d8"
     ),
+    "0026_chair_decisions_plan.sql": (
+        "6a5b866a6b188331cbe9266ddb9aeb7aaa9d259b7ab5aeceb0561ba32ee6cbbf"
+    ),
 }
 
 
