@@ -473,8 +473,20 @@ with no actor email or Family DUID, the page's filters, the stream),
 `tests/stewardship/test_pk_admin.py`,
 `tests/stewardship/database/test_admin_logs_cli_postgresql.py` (the page's
 rows, events, counts and download bytes) and the unchanged log view suites.
-8b (the export lifecycle and `export fetch`), 8c (report reads), 8d
-(digests) and 8e (Family-level exports) follow.
+8b adds the export lifecycle (`export create`, `export status`,
+`export cancel`, `export retry`, `export regenerate` and
+`export download --stream`) and the wrapper's `export fetch` and
+`exports clean`, with the download's grant consumption and guarded read
+moved into `export_views.prepare_download`; proven by
+`tests/stewardship/test_admin_exports.py` (golden documents and
+allowlists, the stream), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/test_pk_admin.py` (the owner-only fetch, its digest
+check, no overwrite, no copy, the interrupted fetch and `exports clean`),
+`tests/stewardship/database/test_admin_export_cli_postgresql.py` (the
+page's bytes in csv, png and pdf, the page's events and contexts, repeats
+by key and the refusals) and the unchanged export view suites. 8c (report
+reads), 8d (digests) and 8e (Family-level exports) follow.
 
 ## ADM-12: Admin navigation overhaul
 

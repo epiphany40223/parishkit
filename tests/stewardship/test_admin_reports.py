@@ -266,9 +266,13 @@ def test_every_family_or_member_detail_is_left_out():
 
 
 def test_every_report_command_has_a_golden_document():
-    """The PR 8 commands, and the catalog lists each model's fields."""
+    """The PR 8a commands, and the catalog lists each model's fields.
+
+    The export lifecycle's (PR 8b) are in test_admin_exports.py.
+    """
     entries = {entry["name"]: entry for entry in admin_cli.catalog()}
-    assert {spec.name for spec in admin_cli.COMMANDS if spec.pr == 8} == set(GOLDEN)
+    logs = {spec.name for spec in admin_cli.COMMANDS if spec.name[:5] == "logs "}
+    assert logs == set(GOLDEN)
     for command, (build, _) in GOLDEN.items():
         assert entries[command]["result_fields"] == list(build().field_names())
 
