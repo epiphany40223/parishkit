@@ -1450,11 +1450,15 @@ sending, so a reminder prepared ahead for a Family that joined the WorkGroup
 afterwards is skipped and its unsent email cancelled with the same reason;
 emailed codes and links are never touched. Activation catch-up does not apply
 the WorkGroup (its SQL proof admits only the established skip reasons); a
-reminder it selects is skipped when it is dispatched. Neither does the
-paused-delivery resume planner (`stewardship_delivery_recover_families_v1`):
-its resume preview counts WorkGroup Families as to be emailed, and may
-coalesce their older reminders into one, which the send-time check then
-skips, so nothing is sent but the preview's number is too high ([#866](https://github.com/epiphany40223/parishkit/issues/866)). Family email progress
+reminder it selects is skipped when it is dispatched. The paused-delivery
+resume plan (the `stewardship_delivery_family_recovery` view, behind both the
+resume preview's counts and `stewardship_delivery_recover_families_v1`) reads
+the same recorded membership under the same name rule and skips a WorkGroup
+Family's due reminders as `workgroup_excluded`, in the same order of reasons
+([#866](https://github.com/epiphany40223/parishkit/issues/866)). The preview
+counts them as skipped, confirming the resume writes them so, and none
+coalesces into the Family's due invitation, which is still selected and sent.
+Family email progress
 counts these skips separately ("Skipped: Reminder WorkGroup"), never as owed
 or remaining, and the Family timeline names them.
 

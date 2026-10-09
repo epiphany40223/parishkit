@@ -12,8 +12,9 @@ each end up with. A later change to a replaced function needs a new numbered
 migration file, which then becomes "latest" here. A function an earlier
 migration file created (plain ``CREATE FUNCTION``) is migration-owned: every
 install path runs the migration that replaces it, so no baseline copy exists
-or is compared. Views and constraints have no text check here; the
-upgrade-parity database test catches their drift.
+or is compared. A view a frozen file replaces (``CREATE OR REPLACE VIEW``) is
+checked the same way against its baseline ``CREATE VIEW``. Constraints have no
+text check here; the upgrade-parity database test catches their drift.
 """
 
 import hashlib
@@ -133,6 +134,9 @@ FROZEN = {
     ),
     "0034_setup_without_campaign.sql": (
         "721b40fdf8d0b3a49b3d77d330d833334b2b3df647bb20590dc8428658ac0309"
+    ),
+    "0035_workgroup_recovery_skip.sql": (
+        "caf487471ad981bf360e12c72ca6848607f9dd61492f866130b67123d2123e9a"
     ),
 }
 
@@ -268,6 +272,35 @@ def test_latest_migration_copy_of_each_replaced_function_equals_the_baseline():
             f"{name} is replaced but never created: a new function uses plain "
             "CREATE FUNCTION"
         )
+        assert body == baseline[name], f"{name}: latest migration differs from baseline"
+
+
+def view_bodies(text, *, replace):
+    """Map each view name to its definition text in one SQL file.
+
+    A definition runs from ``CREATE [OR REPLACE] VIEW public.name AS`` to the
+    first line ending in ``;``; the text kept starts after the keyword, so the
+    two forms compare equal.
+    """
+    keyword = "CREATE OR REPLACE VIEW" if replace else "CREATE VIEW"
+    bodies = {}
+    for match in re.finditer(rf"^{re.escape(keyword)} public\.(\w+) AS$", text, re.M):
+        end = text.index(";\n", match.end()) + 1
+        bodies[match[1]] = text[match.start() + len(keyword) : end]
+    return bodies
+
+
+def test_latest_migration_copy_of_each_replaced_view_equals_the_baseline():
+    """A replaced view's latest frozen text is the fresh-install baseline's."""
+    baseline = {}
+    for path in SCHEMA.glob("*.sql"):
+        baseline.update(view_bodies(path.read_text(encoding="utf-8"), replace=False))
+    latest = {}
+    for path in sorted(MIGRATIONS.glob("*.sql")):
+        latest.update(view_bodies(path.read_text(encoding="utf-8"), replace=True))
+    assert "stewardship_delivery_family_recovery" in latest
+    for name, body in latest.items():
+        assert name in baseline, f"{name} is replaced but has no baseline view"
         assert body == baseline[name], f"{name}: latest migration differs from baseline"
 
 
