@@ -307,6 +307,10 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
         for field in ("submitted_at", "first_submitted_at"):
             row[field] = datetime.fromisoformat(row[field])
     summary = result["summary"]
+    # The raw counts by stored key, for the command line's ``report
+    # financial`` (ADM-11 PR 8c); the templates use the labeled pairs below.
+    summary["frequency_counts"] = dict(summary["frequencies"])
+    summary["share_counts"] = dict(summary["shares"])
     summary["annual_total"] = parse_money(summary["annual_total"])
     summary["frequencies"] = [
         (FREQUENCY_LABELS[key], summary["frequencies"].get(key, 0))

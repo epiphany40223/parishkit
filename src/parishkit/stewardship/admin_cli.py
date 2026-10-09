@@ -38,8 +38,9 @@ take ``--watch``. The schedule change commands (``schedule preview`` and
 ``schedule confirm``, in ``admin_changes``) and ``config request show``
 (with ``--watch``) follow (PR 4), then ``task retry`` and the delivery
 commands (PR 9, in ``admin_operations``), ``logs list`` and ``logs
-export`` (PR 8a, in ``admin_reports``) and the export lifecycle (PR 8b, in
-``admin_exports``). A command that streams a file (``logs export`` and
+export`` (PR 8a, in ``admin_reports``), the export lifecycle (PR 8b, in
+``admin_exports``) and the aggregate report reads (PR 8c, in
+``admin_report_reads``). A command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
@@ -1161,6 +1162,81 @@ def export_download(args, preamble, runtime, context):
     )
 
 
+def report_list(args, preamble, runtime, context):
+    """The reports root: the current campaign and the reports offered (PR 8c)."""
+    from .admin_report_reads import read_report_list
+
+    return read_report_list(context["caller"], runtime)
+
+
+def report_participation(args, preamble, runtime, context):
+    """The Participation page's statistics and daily table (PR 8c)."""
+    from .admin_report_reads import read_participation
+
+    return read_participation(context["caller"], runtime, scope=args.scope)
+
+
+def report_responses(args, preamble, runtime, context):
+    """The response dashboard's funnel, counts only (PR 8c)."""
+    from .admin_report_reads import read_responses
+
+    return read_responses(context["caller"], runtime, mode=args.mode, grain=args.grain)
+
+
+def report_financial(args, preamble, runtime, context):
+    """The financial detail report's summary, without its rows (PR 8c)."""
+    from .admin_report_reads import read_financial
+
+    return read_financial(context["caller"], runtime)
+
+
+def report_talents(args, preamble, runtime, context):
+    """The talents and limitations report's summary, without its rows (PR 8c)."""
+    from .admin_report_reads import read_talents
+
+    return read_talents(context["caller"], runtime)
+
+
+def report_information(args, preamble, runtime, context):
+    """How many information queue items match the page's filters (PR 8c)."""
+    from .admin_report_reads import read_information
+
+    return read_information(
+        context["caller"],
+        runtime,
+        {
+            "disposition": args.disposition,
+            "needed": args.needed,
+            "completed": args.completed,
+            "start": args.start,
+            "end": args.end,
+        },
+    )
+
+
+def report_ministry(args, preamble, runtime, context):
+    """The Ministry summary, or one Ministry's request count (PR 8c)."""
+    from .admin_report_reads import read_ministry
+
+    filters = {
+        "activity": args.activity,
+        "history": args.history,
+        "state": args.state,
+        "start": args.start,
+        "end": args.end,
+        "sort": args.sort,
+        "page": None if args.page is None else str(args.page),
+        "size": None if args.size is None else str(args.size),
+    }
+    return read_ministry(
+        context["caller"],
+        runtime,
+        filters,
+        ministry=args.ministry,
+        requests=args.requests,
+    )
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -1558,6 +1634,85 @@ def _export_download_options(parser):
         required=True,
         help="write the file's bytes to standard output (redirect it to a file)",
     )
+
+
+def _report_participation_options(parser):
+    """Options of ``report participation``: the page's scope."""
+    parser.add_argument(
+        "--scope",
+        help="historical (default: each day's population as of that day) or "
+        "current (today's population)",
+    )
+
+
+def _report_responses_options(parser):
+    """Options of ``report responses``: the dashboard's mode and grain."""
+    parser.add_argument(
+        "--mode", help="production (default) or testing (Administrators only)"
+    )
+    parser.add_argument(
+        "--grain", help="the activity buckets: auto (default), hour or day"
+    )
+
+
+def _date_options(parser):
+    """--start and --end: submitted on or after, and on or before, a day."""
+    parser.add_argument(
+        "--start", metavar="DATE", help="submitted on or after this day (YYYY-MM-DD)"
+    )
+    parser.add_argument(
+        "--end", metavar="DATE", help="submitted on or before this day (YYYY-MM-DD)"
+    )
+
+
+def _report_information_options(parser):
+    """Options of ``report information``: the queue's non-identifying filters."""
+    parser.add_argument(
+        "--disposition",
+        help="current_actionable (default), superseded, withdrawn or all",
+    )
+    parser.add_argument("--needed", help="follow-up needed: any (default), yes or no")
+    parser.add_argument("--completed", help="followed up: any (default), yes or no")
+    _date_options(parser)
+
+
+def _ministry_duid(value):
+    """A Ministry DUID option value: a canonical integer.
+
+    Its range (1 through 2**31 - 1) is the page's check, so a value outside
+    it is the page's refusal (``invalid``), not a usage error.
+    """
+    if not value.isascii() or not value.isdecimal() or str(int(value)) != value:
+        raise argparse.ArgumentTypeError("not a Ministry DUID")
+    return int(value)
+
+
+def _report_ministry_options(parser):
+    """Options of ``report ministry``: the summary, or one Ministry's list."""
+    parser.add_argument(
+        "--activity", help="any (default), active, inactive or unavailable"
+    )
+    parser.add_argument(
+        "--sort", help="the summary's order: name (default) or name_desc"
+    )
+    parser.add_argument("--page", type=int, help="summary page number (default 1)")
+    parser.add_argument("--size", type=int, help="rows per page: 25, 50, 100 or 250")
+    parser.add_argument(
+        "--ministry", type=_ministry_duid, help="one Ministry, by its DUID"
+    )
+    parser.add_argument(
+        "--requests",
+        choices=("join", "leave"),
+        help="with --ministry: count its join or leave requests",
+    )
+    parser.add_argument(
+        "--state", help="with --ministry: a request state (default any)"
+    )
+    parser.add_argument(
+        "--history",
+        help="with --ministry: current (default) or all request versions",
+    )
+    _date_options(parser)
 
 
 def _go_live_progress_options(parser):
@@ -2025,9 +2180,19 @@ def _test_specs():
 def _report_specs():
     """The report, export, digest and log commands (PR 8; 8a: the logs).
 
-    PR 8b adds the export lifecycle (``admin_exports``).
+    PR 8b adds the export lifecycle (``admin_exports``) and PR 8c the
+    aggregate report reads (``admin_report_reads``).
     """
     from .admin_exports import ExportChange, ExportDownload, ExportStatus
+    from .admin_report_reads import (
+        FinancialReport,
+        InformationReport,
+        MinistryReport,
+        ParticipationReport,
+        ReportList,
+        ResponseReport,
+        TalentsReport,
+    )
     from .admin_reports import LogExport, LogList
 
     return (
@@ -2122,6 +2287,81 @@ def _report_specs():
             options=(_export_download_options,),
             audit_event="export_downloaded",
             streams=True,
+        ),
+        # The aggregate report reads (PR 8c, ``admin_report_reads``).
+        CommandSpec(
+            "report list",
+            "Show the current campaign and the reports you may read.",
+            report_list,
+            "read_only",
+            False,
+            ReportList.field_names(),
+            8,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "report participation",
+            "Show the Participation report's statistics and daily counts.",
+            report_participation,
+            "read_only",
+            False,
+            ParticipationReport.field_names(),
+            8,
+            options=(_report_participation_options,),
+            audit_event="participation_viewed",
+        ),
+        CommandSpec(
+            "report responses",
+            "Show the response dashboard's counts.",
+            report_responses,
+            "read_only",
+            False,
+            ResponseReport.field_names(),
+            8,
+            options=(_report_responses_options,),
+            audit_event="response_dashboard_viewed",
+        ),
+        CommandSpec(
+            "report financial",
+            "Show the financial report's summary, without Family rows.",
+            report_financial,
+            "read_only",
+            False,
+            FinancialReport.field_names(),
+            8,
+            audit_event="financial_report_viewed",
+        ),
+        CommandSpec(
+            "report talents",
+            "Show the talents and limitations summary, without Member rows.",
+            report_talents,
+            "read_only",
+            False,
+            TalentsReport.field_names(),
+            8,
+            audit_event="talents_report_viewed",
+        ),
+        CommandSpec(
+            "report information",
+            "Count the information queue items that match the filters.",
+            report_information,
+            "read_only",
+            False,
+            InformationReport.field_names(),
+            8,
+            options=(_report_information_options,),
+            audit_event="information_viewed",
+        ),
+        CommandSpec(
+            "report ministry",
+            "Show the Ministry summary, or count one Ministry's requests.",
+            report_ministry,
+            "read_only",
+            False,
+            MinistryReport.field_names(),
+            8,
+            options=(_report_ministry_options,),
+            audit_event="ministry_report_viewed",
         ),
     )
 
