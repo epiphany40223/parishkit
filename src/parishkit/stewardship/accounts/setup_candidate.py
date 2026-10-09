@@ -75,17 +75,34 @@ def compile_candidate(
 ):
     """Produce exact reproducible v7 intent without manufacturing readiness.
 
-    UUIDs for new public records are scoped to the original attempt. Selected
-    content/schedule/option IDs retain their draft identities. The first Campaign
-    uses the attempt UUID already embedded in its temporary children.
+    UUIDs for new public records are scoped to the original attempt. System
+    setup (#142) has no campaign section, so the candidate has no campaign,
+    content or schedules, and any content a draft saved before the upgrade is
+    ignored. Until the wizard stops offering the campaign pages (#142 part b),
+    a draft that staged its first campaign keeps it, and afterwards only an
+    attempt confirmed before the upgrade still has one:
+    selected content/schedule/option IDs retain their draft identities, and
+    the first Campaign uses the attempt UUID already embedded in its
+    temporary children.
     """
     if any(
         not isinstance(value, UUID)
         for value in (attempt_id, candidate_id, operation_id)
     ):
         raise TypeError("Explicit setup compilation identities are required.")
-    required = {*FORMS, "campaign", "schedules"}
-    if type(sections) is not dict or not required <= sections.keys():
+    if type(sections) is not dict or not set(FORMS) <= sections.keys():
+        raise ConfigError("Complete every required setup section before final preview.")
+    if "campaign" not in sections:
+        return _system_candidate(
+            base,
+            attempt_id=attempt_id,
+            candidate_id=candidate_id,
+            operation_id=operation_id,
+            sections=sections,
+            branding=branding,
+            credentials=credentials,
+        )
+    if "schedules" not in sections:
         raise ConfigError("Complete every required setup section before final preview.")
     values = {step: validate_values(step, value) for step, value in sections.items()}
     campaign = deepcopy(values["campaign"]["campaign"])
@@ -104,8 +121,37 @@ def compile_candidate(
     }
     if any(row["values"]["campaign_id"] != str(attempt_id) for row in content):
         raise ConfigError("Setup content belongs to a different campaign.")
-    integrations = _integrations(attempt_id, values, credentials)
-    public = {
+    public = _system_records(
+        base, attempt_id, operation_id, values, branding, credentials
+    )
+    public |= {
+        "campaigns": [{"id": str(attempt_id), "values": campaign}],
+        "content": content,
+        "schedules": values["schedules"]["records"],
+    }
+    selected = {row["id"] for row in content}
+    if any(
+        row["values"].get("template_version") not in selected
+        for row in public["schedules"]
+    ):
+        raise ConfigError("Every setup schedule requires a saved email template.")
+    return _compile(base, public, candidate_id=candidate_id, operation_id=operation_id)
+
+
+def _system_candidate(
+    base, *, attempt_id, candidate_id, operation_id, sections, branding, credentials
+):
+    """The candidate of system-only setup (#142): no campaign, content or schedules."""
+    values = {step: validate_values(step, sections[step]) for step in FORMS}
+    public = _system_records(
+        base, attempt_id, operation_id, values, branding, credentials
+    )
+    return _compile(base, public, candidate_id=candidate_id, operation_id=operation_id)
+
+
+def _system_records(base, attempt_id, operation_id, values, branding, credentials):
+    """The Parish profile, integrations and login rules every setup candidate has."""
+    return {
         "parish": [
             {
                 "id": str(uuid5(attempt_id, "parish")),
@@ -118,18 +164,13 @@ def compile_candidate(
                 | {"branding": dict(branding)},
             }
         ],
-        "integrations": integrations,
+        "integrations": _integrations(attempt_id, values, credentials),
         "login_rules": _rules(base, attempt_id, operation_id, values["access"]),
-        "campaigns": [{"id": str(attempt_id), "values": campaign}],
-        "content": content,
-        "schedules": values["schedules"]["records"],
     }
-    selected = {row["id"] for row in content}
-    if any(
-        row["values"].get("template_version") not in selected
-        for row in public["schedules"]
-    ):
-        raise ConfigError("Every setup schedule requires a saved email template.")
+
+
+def _compile(base, public, *, candidate_id, operation_id):
+    """Build the v7 candidate from its public records and check its login rules."""
     compiled = build_setup_candidate(
         base,
         [

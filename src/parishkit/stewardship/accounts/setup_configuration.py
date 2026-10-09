@@ -99,11 +99,17 @@ def build_setup_candidate(base, patch, *, candidate_id):
 
 
 def _complete_shape(sections):
-    """Require one draft and credential references, never claim provider success."""
+    """Require credential references and at most one draft; never claim success.
+
+    System setup creates no campaign (#142), so a new attempt's candidate has
+    none. An attempt that also staged its first campaign (the wizard before
+    #142, and every historical v7 request) has exactly one, in the Parish
+    timezone.
+    """
     campaigns = sections.get("campaigns", [])
-    if len(campaigns) != 1:
+    if len(campaigns) > 1:
         _invalid()
-    if (
+    if campaigns and (
         campaigns[0]["values"]["timezone"]
         != sections["parish"][0]["values"]["timezone"]
     ):

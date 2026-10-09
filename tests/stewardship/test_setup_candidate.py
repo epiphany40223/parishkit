@@ -94,16 +94,33 @@ def test_compilation_is_stable_detached_and_preserves_bootstrap():
         "mail",
         "testing",
         "slack",
-        "campaign",
         "schedules",
     ],
 )
 def test_all_core_steps_require_explicit_completion(missing):
-    """An omitted optional choice differs from an explicitly completed empty step."""
+    """An omitted optional choice differs from an explicitly completed empty step.
+
+    A staged first campaign (before #142) still needs its schedules step.
+    """
     base, args = compilation()
     del args["sections"][missing]
     with pytest.raises(ConfigError, match="required setup"):
         compile_candidate(base, **args)
+
+
+def test_system_setup_compiles_without_a_campaign():
+    """System setup (#142): no campaign, content or schedules in the candidate.
+
+    Content a draft saved before the upgrade, and an empty schedules step,
+    are ignored once there is no campaign section.
+    """
+    base, args = compilation()
+    del args["sections"]["campaign"]
+    args["sections"]["email_initial"] = {"id": str(uuid4()), "values": {}}
+    sections = compile_candidate(base, **args).candidate.document()["sections"]
+    assert not sections.get("campaigns")
+    assert not sections.get("content") and not sections.get("schedules")
+    assert sections["parish"] and sections["integrations"]
 
 
 @pytest.mark.parametrize(

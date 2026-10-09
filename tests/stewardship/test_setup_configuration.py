@@ -111,12 +111,22 @@ def test_setup_preserves_recovered_bootstrap_admins_too():
     )
 
 
-@pytest.mark.parametrize("section", ["parish", "campaigns", "integrations"])
+@pytest.mark.parametrize("section", ["parish", "integrations"])
 def test_setup_requires_complete_core_sections(section):
     """A partial public profile is staging, not a finalizable candidate."""
     patch = [row for row in setup_patch() if row["section"] != section]
     with pytest.raises(ConfigError):
         build(bootstrap_version(uuid4(), "admin@example.org"), patch)
+
+
+def test_setup_candidate_may_have_no_campaign_but_never_two():
+    """System setup (#142) has no campaign; no setup ever has two."""
+    base = bootstrap_version(uuid4(), "admin@example.org")
+    patch = [row for row in setup_patch() if row["section"] != "campaigns"]
+    assert not build(base, patch).candidate.document()["sections"].get("campaigns")
+    second = {"operation": "add", "section": "campaigns", **campaign()}
+    with pytest.raises(ConfigError):
+        build(base, [*setup_patch(), second])
 
 
 @pytest.mark.parametrize("kind", ["parishsoft", "google_workspace", "email"])

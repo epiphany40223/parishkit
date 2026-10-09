@@ -30,7 +30,7 @@ from .snapshots import promote_snapshot
 
 
 def complete_setup(execution, claim, snapshot_id, *, store, general, mac, public):
-    """Commit exact final source, draft, codes, marker and successful Task together.
+    """Commit exact final source, any first draft and its codes, marker and Task.
 
     Leave the source-renewal scope before entry. The execution control lock drains
     concurrent heartbeats, while both SQL fences remain checked through the final
@@ -65,7 +65,13 @@ def complete_setup(execution, claim, snapshot_id, *, store, general, mac, public
                 )
 
             def reconcile(snapshot):
-                """Select the first draft before population, still wholly invisible."""
+                """Activate the configuration and, for a staged first campaign,
+                its Families, before the snapshot becomes visible.
+
+                System setup (#142) has no campaign: the window has no
+                campaign, so there are no Families or codes to create yet;
+                Create the campaign's refresh adds them later.
+                """
                 nonlocal activation
                 runtime = SystemConfiguration.objects.select_for_update().get()
                 activation = ConfigurationActivation.objects.create(
@@ -76,6 +82,10 @@ def complete_setup(execution, claim, snapshot_id, *, store, general, mac, public
                     actor_id=scope.owner_id,
                     correlation_id=execution.correlation_id,
                 )
+                if scope.window.campaign_id is None:
+                    reconcile_source_chairs(snapshot.pk, claim, campaign_id=None)
+                    reconcile_configuration_chairs(activation)
+                    return True
                 reconcile_source_families(
                     snapshot.pk,
                     claim,

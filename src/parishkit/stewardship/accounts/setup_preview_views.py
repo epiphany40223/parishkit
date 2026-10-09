@@ -25,28 +25,33 @@ def setup_preview(request):
         preview = prepare_preview(request, service)
         document = preview.compiled.candidate.document()
         sections = document["sections"]
-        parish, campaign = (
-            document_parish(document),
-            sections["campaigns"][0]["values"],
-        )
+        # System setup (#142) has no campaign, so nothing to sample; a first
+        # campaign staged before #142 still shows its pages and emails.
+        campaigns = sections.get("campaigns", [])
+        parish = document_parish(document)
+        campaign = campaigns[0]["values"] if campaigns else None
         content = {
             (row["values"]["kind"], row["values"]["slot"]): row["values"]
             for row in sections.get("content", [])
         }
-        samples = [
-            {
-                "label": label,
-                "kind": kind,
-                "sample": sample_render(
-                    content.get((kind, slot)), parish=parish, campaign=campaign
-                ),
-            }
-            for kind, labels in (
-                ("page", page_slots(campaign)),
-                ("email", EMAIL_LABELS),
-            )
-            for slot, label in labels.items()
-        ]
+        samples = (
+            [
+                {
+                    "label": label,
+                    "kind": kind,
+                    "sample": sample_render(
+                        content.get((kind, slot)), parish=parish, campaign=campaign
+                    ),
+                }
+                for kind, labels in (
+                    ("page", page_slots(campaign)),
+                    ("email", EMAIL_LABELS),
+                )
+                for slot, label in labels.items()
+            ]
+            if campaign
+            else []
+        )
         # Showing the whole review is what completes this step, for this exact
         # draft version. Record it first so this page's own stepper and
         # Continue already reflect it; a draft that changes meanwhile has a

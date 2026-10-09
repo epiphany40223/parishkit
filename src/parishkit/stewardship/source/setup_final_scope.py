@@ -81,8 +81,18 @@ def require_prepared_setup(store, preparation_id):
         raise ConfigError("Setup finalization requires exact prepared YAML.")
     document = selected.document()
     campaigns = document["sections"].get("campaigns", [])
-    if len(campaigns) != 1 or campaigns[0]["id"] != str(attempt.pk):
+    if campaigns and (len(campaigns) != 1 or campaigns[0]["id"] != str(attempt.pk)):
         raise ConfigError("Setup finalization requires its first campaign.")
+    # System setup (#142) has no campaign, so its final load reads no giving,
+    # like any load before a campaign exists. An attempt that staged its first
+    # campaign keeps that campaign's window.
+    window = (
+        refresh_window(
+            campaign_id=attempt.pk, state="draft", values=campaigns[0]["values"]
+        )
+        if campaigns
+        else refresh_window(campaign_id=None, state=None, values=None)
+    )
     source = integration_records(document)["parishsoft"]["values"]
     return FinalSetupScope(
         receipt.pk,
@@ -95,7 +105,5 @@ def require_prepared_setup(store, preparation_id):
         int(source["settings"]["organization_id"]),
         source["credential_fingerprint"],
         ZoneInfo(document["sections"]["parish"][0]["values"]["timezone"]),
-        refresh_window(
-            campaign_id=attempt.pk, state="draft", values=campaigns[0]["values"]
-        ),
+        window,
     )
