@@ -74,13 +74,15 @@ def test_operator_password_validation_is_bounded_and_private(tmp_path, value):
 
 
 @pytest.mark.parametrize(
-    "existing", [None, "matching", "foreign", "member", "reader", "reader-admin"]
+    "existing",
+    [None, "matching", "foreign", "member", "reader", "reader-admin", "drift"],
 )
 def test_existing_role_must_match_every_restricted_attribute(existing):
     """An existing role is never adopted merely because its name is expected.
 
     Ordinary logins belong to no role; the backup login belongs to exactly
-    pg_read_all_data with inheritance and without admin option.
+    pg_read_all_data with inheritance and without admin option. A role that
+    shows isolation drift is refused whatever else matches.
     """
     membership = {
         "member": "some_role:true:false",
@@ -102,6 +104,7 @@ def test_existing_role_must_match_every_restricted_attribute(existing):
             True,
             16,
             membership,
+            existing == "drift",
         )
     )
     for reader in (False, True):
@@ -116,6 +119,36 @@ def test_existing_role_must_match_every_restricted_attribute(existing):
         else:
             with pytest.raises(ConfigError):
                 provisioning._check_role(cursor, "web", "marker", 16, reader=reader)
+
+
+def test_isolation_drift_waives_only_the_named_checks():
+    """Provisioning and migrate check every drift; migration skips ownership only.
+
+    The rendered boolean ORs each ``ISOLATION_DRIFT`` check that is not
+    exempt, and only the migration role is exempt from anything.
+    """
+    drift = provisioning.ISOLATION_DRIFT
+    every = provisioning.isolation_drift()
+    owner = provisioning.isolation_drift(
+        provisioning.migration_exemption(ServiceRole.MIGRATION)
+    )
+    for name, check in drift.items():
+        assert check in every
+        assert (check in owner) is (name != provisioning.OWNERSHIP)
+    for role in ServiceRole:
+        expected = {provisioning.OWNERSHIP} if role is ServiceRole.MIGRATION else set()
+        assert provisioning.migration_exemption(role) == expected
+
+
+def test_check_role_renders_the_drift_column_with_its_exemption():
+    """The role query carries the drift column, minus the exempt checks."""
+    owner = provisioning.ISOLATION_DRIFT[provisioning.OWNERSHIP]
+    for exempt in (frozenset(), frozenset({provisioning.OWNERSHIP})):
+        cursor = Cursor([None])
+        provisioning._check_role(cursor, "web", "marker", 16, exempt=exempt)
+        query = cursor.statements[0]
+        assert provisioning.isolation_drift(exempt) in query
+        assert (owner in query) is not bool(exempt)
 
 
 @pytest.mark.parametrize(
@@ -175,10 +208,13 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
     monkeypatch.setattr(provisioning, "_password", lambda path: b"private-password")
     monkeypatch.setattr(provisioning, "_admit_operator", lambda *args, **kwargs: None)
 
-    def role_check(*args, reader=False):
+    def role_check(*args, reader=False, exempt=frozenset()):
         """No mutation may precede completion of every role preflight."""
         assert not cursor.statements
         assert reader is (args[1] == "pk_stewardship_backup_worker")
+        # Only the schema owner is waived, and only from the ownership check.
+        migration = args[1] == "pk_stewardship_migration"
+        assert exempt == ({provisioning.OWNERSHIP} if migration else set())
         admissions.append(args[1])
         return existing
 

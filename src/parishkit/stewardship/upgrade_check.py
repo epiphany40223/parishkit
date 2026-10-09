@@ -34,10 +34,10 @@ from importlib import import_module
 from .database_provisioning import (
     BACKUP_SEQUENCES,
     ISOLATION_DRIFT,
-    OWNERSHIP,
     READER_MEMBERSHIP,
     _writer_guard_digest,
     excess_authority_checks,
+    migration_exemption,
     role_limit,
 )
 from .deployment import ServiceRole
@@ -271,7 +271,7 @@ def upgrade_noop_query(configuration, deployment_id):
                 marker,
                 role_limit(configuration, role),
                 reader=reader,
-                exempt={OWNERSHIP} if role is ServiceRole.MIGRATION else set(),
+                exempt=migration_exemption(role),
             )
         )
         if role is ServiceRole.MIGRATION:

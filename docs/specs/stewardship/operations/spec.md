@@ -538,7 +538,13 @@ that every runtime login's admission refuses (see **Grant admission**
 above), and the backup login's definer, sequence and `CREATE` authority
 that its backup admission refuses, so an upgrade onto a drifted catalog
 stops before its services would all refuse to start or its next backup
-would fail. That upgrade check and the upgrade-parity test are the
+would fail. The migration login has no runtime admission, so the
+`database-roles` and `database-grants` commands' role check and the
+migration profile's own identity check refuse the same drift for it (#389).
+In those checks and in the upgrade check, the migration login owns the
+schema and is exempt from the ownership check, and only from that one.
+The commands' role check refuses the same drift for every other login too.
+That upgrade check and the upgrade-parity test are the
 automated upgrade checks in v1; broader migration checks and upgrade readiness
 checks remain deferred. Migrations must be forward-safe for the
 declared rollout; destructive column removal follows expand/migrate/contract

@@ -156,6 +156,9 @@ READER_MEMBERSHIP = "pg_read_all_data:true:false"
 # nothing. Every login's own admission refuses these
 # (``credential_database._identity``, ``backup_commands``), and the upgrade
 # check refuses them too, so an upgrade stops before its services would.
+# Provisioning (``_check_role``) and migrate's identity query refuse them
+# through ``isolation_drift``, so the migration login, which has no runtime
+# admission of its own, is checked before it runs a migration.
 # The migration login owns the schema, so only the ownership check
 # (``OWNERSHIP``) is waived for it; a member of the schema owner would hold
 # every table, policy and guard, so reverse membership still applies.
@@ -202,6 +205,17 @@ ISOLATION_DRIFT = {
         "ELSE pg_has_role(r.oid,x.grantee,'MEMBER') END)"
     ),
 }
+
+
+def isolation_drift(exempt=frozenset()):
+    """One SQL boolean over a ``pg_roles r`` row, true when any drift is present.
+
+    It ORs every ``ISOLATION_DRIFT`` check whose name is not in ``exempt``.
+    The migration login passes ``{OWNERSHIP}``; every other login none.
+    """
+    checks = (check for name, check in ISOLATION_DRIFT.items() if name not in exempt)
+    return f"({' OR '.join(checks)})"
+
 
 # A routine's signature as admission names it: ``name(argument types)``.
 SIGNATURE = "p.proname||'('||oidvectortypes(p.proargtypes)||')'"
@@ -250,20 +264,24 @@ def excess_authority_checks(role, functions, sequences):
     }
 
 
-def _check_role(cursor, name, marker, limit, *, reader=False):
+def _check_role(cursor, name, marker, limit, *, reader=False, exempt=frozenset()):
     """Idempotent retry never adopts, repairs or silently changes an existing role.
 
     No foundation login is a member of any role or bypasses row-level
     security, except the backup login, whose one membership is exactly
     pg_read_all_data with inheritance and without admin option and which
     bypasses row-level security for pg_dump; anything else is a foreign role.
+    An existing role must also show no ``ISOLATION_DRIFT`` outside
+    ``exempt`` (the migration login's ``OWNERSHIP``), as the upgrade check
+    requires.
     """
     cursor.execute(
         "SELECT shobj_description(oid,'pg_authid'),rolsuper,rolbypassrls,rolcreatedb,"
         "rolcreaterole,rolreplication,rolinherit,rolcanlogin,rolconnlimit,"
         "(SELECT string_agg(m.rolname||':'||am.inherit_option::text||':'"
         "||am.admin_option::text,',' ORDER BY m.rolname) FROM pg_auth_members am "
-        "JOIN pg_roles m ON m.oid=am.roleid WHERE am.member=r.oid) "
+        "JOIN pg_roles m ON m.oid=am.roleid WHERE am.member=r.oid),"
+        f"{isolation_drift(exempt)} "
         "FROM pg_roles r WHERE rolname=%s",
         (name,),
     )
@@ -279,9 +297,15 @@ def _check_role(cursor, name, marker, limit, *, reader=False):
         True,
         limit,
         READER_MEMBERSHIP if reader else None,
+        False,
     ):
         raise ConfigError("Existing database role differs from initial provisioning.")
     return row is not None
+
+
+def migration_exemption(role):
+    """The ``ISOLATION_DRIFT`` names waived for ``role``: ownership for migration."""
+    return frozenset({OWNERSHIP}) if role is ServiceRole.MIGRATION else frozenset()
 
 
 def _connection(configuration, name, password):
@@ -325,6 +349,7 @@ def provision_roles(configuration, deployment_id):
                 marker,
                 role_limit(configuration, role),
                 reader=role is ServiceRole.BACKUP_WORKER,
+                exempt=migration_exemption(role),
             )
             for name, login, role, _ in identities
         }
@@ -429,6 +454,7 @@ def provision_grants(configuration, deployment_id):
                 marker,
                 role_limit(configuration, role),
                 reader=role is ServiceRole.BACKUP_WORKER,
+                exempt=migration_exemption(role),
             ):
                 raise ConfigError("Database roles must be provisioned before grants.")
             if role is ServiceRole.MIGRATION:
