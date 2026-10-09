@@ -6,6 +6,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 from django.db import connection, transaction
+from django.test import Client
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy import Principal
@@ -204,9 +205,12 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         assert response.status_code == 200 and b"Food pantry" in body
         assert b"Choir" not in body and b'aria-sort="descending"' in body
         assert search(browser, root, {"sort": "newest"})[0].status_code == 400
+        # A GET has no Ministry selection: back to the summary (#867),
+        # dropping any query rather than echoing it.
         response, body = read(browser, route + "?search=Private")
-        assert response.status_code == 400 and b"Private" not in body
-        assert read(browser, route)[0].status_code == 400
+        assert response.status_code == 303 and b"Private" not in body
+        assert response["Location"] == root
+        assert read(browser, route)[0].status_code == 303
         for value in ("0", "09", "2147483648", "private@example.org"):
             assert search(browser, route, {"ministry": value})[0].status_code == 400
     contexts = list(
@@ -259,6 +263,27 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         == "applied"
     )
     assert search(browser, route, {"ministry": "9"})[0].status_code == 403
+
+
+def test_a_get_of_joining_or_leaving_returns_to_the_ministry_report(
+    response_service, google
+):
+    """A GET has no Ministry selection: back to the report, not 400 (#867).
+
+    Joining and leaving take a POST from the report's per-Ministry forms; a
+    typed or bookmarked address, a refresh or Back sends a GET instead.
+    """
+    browser, _ = signed_in()
+    report = reverse("admin:ministry_report")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for name in ("ministry_joiners", "ministry_leavers"):
+            route = reverse(f"admin:{name}")
+            for path in (route, route + "?ministry=9"):
+                response = browser.get(path, HTTP_ACCEPT="text/html")
+                assert response.status_code == 303, path
+                assert response["Location"] == report
+            # Someone not signed in is refused first, never redirected.
+            assert Client().get(route).status_code != 303
 
 
 def test_testing_hidden_proposed_and_resolved_intent(response_service):

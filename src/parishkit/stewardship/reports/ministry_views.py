@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
+from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -85,6 +86,12 @@ def report(request, campaign_id, *, action=None):
     try:
         service = runtime()
         actor = _principal(request, service.store)
+        if action is not None and request.method == "GET":
+            # Joining and leaving take a POST from the Ministry report's
+            # per-Ministry forms. A GET (typed or bookmarked address, refresh
+            # or Back) has no Ministry selection, so it goes back to the
+            # report rather than failing as an invalid request (#867).
+            return HttpResponseRedirect(reverse("admin:ministry_report"), status=303)
         if request.GET:
             raise ValueError("Ministry filters require private POST state.")
         if campaign_id is None or campaign_id not in campaign_ids(actor):
