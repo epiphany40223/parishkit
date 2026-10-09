@@ -279,6 +279,7 @@ EXPECTED = {
     "/admin/reports/participation": "/admin/reports/participation/",
     "/admin/reports/financial": "/admin/reports/financial/",
     "/admin/reports/talents": "/admin/reports/talents/",
+    "/admin/reports/census": "/admin/reports/census/",
     "/admin/reports/information": "/admin/reports/information/",
     f"/admin/reports/information/{T}": f"/admin/reports/information/{T}/",
     "/admin/reports/ministries": "/admin/reports/ministries/",

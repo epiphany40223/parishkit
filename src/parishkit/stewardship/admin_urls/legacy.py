@@ -222,6 +222,7 @@ SLASHLESS = (
     ("reports/participation", "participation"),
     ("reports/financial", "financial_report"),
     ("reports/talents", "talents_report"),
+    ("reports/census", "census_changes"),
     ("reports/information", "information_queue"),
     ("reports/information/<uuid:item_id>", "information_item"),
     ("reports/ministries", "ministry_report"),

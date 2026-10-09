@@ -15,6 +15,7 @@ move with NAV-12 and stay in ``urls.py`` until then.
 from django.urls import path
 
 from ..reports import (
+    census_change_views,
     directory_export_views,
     directory_views,
     exact_ui,
@@ -77,6 +78,12 @@ patterns = [
     ),
     _page("reports/talents/", talent_report_views.report, "talents_report"),
     _page("reports/talents/exports/", talent_report_views.export, "talents_export"),
+    _page("reports/census/", census_change_views.report, "census_changes"),
+    _page(
+        "reports/census/exports/",
+        census_change_views.export,
+        "census_changes_export",
+    ),
     _page("reports/information/", information_views.queue, "information_queue"),
     _page(
         "reports/information/exports/",
