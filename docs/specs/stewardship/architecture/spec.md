@@ -878,6 +878,18 @@ Each waits at most one step, and none can deadlock: a step never waits for
 the work lock, and it takes its row locks in the same order (task root,
 task run, lease, snapshot).
 
+A refresh's inputs step reads source corpora outside the lock too, with no
+schema change. A quick update's base is the whole current snapshot, and a
+current snapshot that predates recorded derived counts is counted from its
+rows. Both reads used to run inside the inputs' work-order effect: about
+200 ms of its 220–265 ms hold for a quick update at 1,100 Families. The
+effect now holds the lock for about 50 ms. It still verifies the attempt
+and its scope, and that the snapshot's base is the current snapshot. The
+corpus is read after it commits, through the snapshot read (the promoted,
+uncompacted snapshot row held `FOR SHARE`), and a promoted snapshot's rows
+are immutable. Promotion, and recording an unchanged update, require the base
+to still be current, so nothing read this way can be published stale.
+
 **Change 4** is only an optimization. A hint is advisory, and the consumer
 rechecks admission under its own locks, so a skipped re-check costs nothing.
 However, the due-work health sample counts each admitted row. A row skipped
