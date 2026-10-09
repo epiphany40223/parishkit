@@ -112,7 +112,8 @@ durable ConfigurationChangeRequests and cannot be shown as saved.
 
 There is exactly one materialized `Parish` row for each applied configuration
 version containing the display name, main website URL, IANA timezone, valid US
-main phone number, and branding references. Public origin remains solely
+main phone number, optional HTTPS online giving URL and date format, and
+branding references. Public origin remains solely
 authoritative in deployment configuration and is not duplicated as an editable
 Parish value. Logo uploads produce normalized large, menu, icon, and favicon
 variants. Accepted inputs are PNG, JPEG, or WebP; files are decoded and re-
@@ -150,8 +151,8 @@ operations, which updates current Campaign state and global mode atomically.
 
 Applied integration records materialize non-secret YAML settings and credential
 fingerprints: ParishSoft expected organization, Google OAuth/Workspace delegated
-identity, outgoing sender/reply address, optional Slack channel, and backup
-target. Secret values remain in credential files.
+identity, outgoing sender/reply address, optional Slack channel, backup
+target, and backup encryption key. Secret values remain in credential files.
 
 `SecretReplacementRequest` records target type, sealed-staging reference and
 expiry, actor/reauthentication, expected prior fingerprint, validation/test and
@@ -194,8 +195,11 @@ A `Campaign` includes:
 - the selected set of Ministry DUIDs;
 - financial period, comparison period, and mapped fund DUIDs;
 - configurable share-option versions;
-- additional-information enabled flag; and
-- daily/weekly Admin digest schedules.
+- additional-information enabled flag;
+- daily/weekly Admin digest schedules; and
+- optional Member talent options, theme `artwork` and `reminder_workgroup`
+  (the last two are described under
+  [Parish and integrations](#parish-and-integrations)).
 
 Every configurable Campaign field above is materialized from and references the
 exact `AppliedConfigurationVersion` that defined it. Lifecycle state, global
@@ -258,6 +262,21 @@ that Campaign remains the current-campaign pointer and no other current-state
 Campaign exists. Clearing the pointer through Return to Testing permanently
 makes that archived Campaign historical and ineligible for unarchive.
 
+v1 does not build reopen, archive, unarchive, Return to Testing or purge
+([v1 launch scope](../../plans/stewardship/v1-launch.md#cut-from-v1), items 1
+and 2; the close-out wizard is
+[#527](https://github.com/epiphany40223/parishkit/issues/527)). Their
+lifecycle registry entries (`campaigns/lifecycle.py`) and some storage
+primitives exist, but no Admin page or command calls them. With no purge,
+there is no `PurgeRequest`. Draft creation checks the mode, the pointer, that
+every existing campaign is archived or purged, that no restore review is
+pending, and that no `CampaignWorkGate` (the purge reservation) is preparing
+or running. A post-go-live end-date edit is in the same position:
+its configuration intent, close-occurrence replacement and abort journal
+exist and are tested, but nothing in the product binds that intent, and the
+date editor refuses date changes once the dates are locked
+([#398](https://github.com/epiphany40223/parishkit/issues/398)).
+
 `CampaignBoundaryOccurrence` stores campaign, kind (`start` or `close`),
 resolved UTC boundary, immutable execution revision, state, attempts/lease,
 intended and actual transition times, before/after lifecycle states, and
@@ -287,11 +306,13 @@ retain all relationships. Exceptional purge is defined by the
 
 ### Schedule revisions and fulfillment
 
-`ActivationCatchUpDemand` is campaign-owned and unique by the activating
-ProductionTransitionRequest. It records activation/due cutoff, relevant input
-version references, linked TaskRun/retry chain, current phase, stable target/
-slot cursors, per-group coalescing checkpoints, counts, completion time, and
-sanitized failure evidence. Completion is independent of the current task's
+`ActivationCatchUpDemand` is campaign-owned and unique by its activating
+`CampaignTransition`, which the Production confirmation creates only when it
+moves the campaign straight to `active`. It records activation/due cutoff, the
+applied configuration and pinned source snapshot, linked TaskRun/retry chain,
+current phase, cursor, counts, completion time, and a coded failure; its
+append-only `CatchUpCheckpoint` rows hold the per-group checkpoints and
+`CatchUpFailure` rows the failed attempts. Completion is independent of the current task's
 terminal state. Its existence without completion supplies the durable
 scheduled-mail preparation hold; no rows need to be allocated per Family in
 the activation transaction. The
@@ -299,9 +320,15 @@ the activation transaction. The
 owns batching, claim/dispatch guards, completion, and recovery semantics.
 
 `ScheduleDefinition` gives each initial, reminder, or digest schedule a stable
-logical UUID and campaign/type. Its immutable `ScheduleRevision` rows contain
-the versioned local date/time, template references, and replacement/removal
-metadata; exactly one revision is current unless the definition was removed.
+logical UUID and campaign/type, and points at its current revision or records
+its removal time; exactly one revision is current unless the definition was
+removed. Each applied configuration version materializes immutable
+`ScheduleRevision` rows holding the schedule's values (local date/time and
+template references) and, for Family mail, the resolved due instant. An
+immutable
+`ScheduleSelection` row records each replacement or removal: the
+configuration version, the previous and newly selected revision (none for a
+removal), and a per-definition sequence number.
 
 `ScheduleOccurrence` stores campaign, schedule definition/revision, immutable
 mode/routing class, semantic target and slot, resolved UTC due instant,
@@ -935,9 +962,11 @@ customized. For example, the confirmation email's online-giving sentence no
 longer mentions a pledge (a campaign without the Financial module has none),
 and a slot that still holds the earlier sentence still reads as default (#385).
 
-Initial, reminder, confirmation, daily digest, weekly digest, and critical-alert
-templates have separate subject, sanitized HTML, and generated/edited plain-text
-versions. Sanitizing keeps the author's structure: the line `<div>` wrappers
+Initial, reminder, confirmation, daily digest, and weekly digest templates have
+separate subject, sanitized HTML, and generated/edited plain-text versions. A
+`critical_alert` email slot can also be saved, but nothing sends it:
+operational alerts use fixed content by notification type (see
+[mode routing](../background-processing/spec.md#mode-routing)). Sanitizing keeps the author's structure: the line `<div>` wrappers
 that browser editors write become paragraphs, `<b>`/`<i>` become
 `<strong>`/`<em>`, and markup-free text keeps blank-line paragraphs and line
 breaks; already-sanitized content is unchanged. The visual editor starts new
@@ -1031,8 +1060,12 @@ non-credential content.
 
 `TaskRun` stores task type, optional execution idempotency key, logical-operation
 identity, retry-root/parent references and retry sequence, state, progress phase/
-counts, append-only attempt/transition history, timestamps, initiator, heartbeat,
-summary, and sanitized error. A partial unique constraint on
+counts, append-only attempt/transition history (`TaskRunEvent`), timestamps,
+initiator, and heartbeat. It stores no summary or error text: failures are
+coded operational log entries. The heartbeat and progress events of a run
+that finished more than 30 days ago are pruned by the
+[maintenance task](../admin-automation/spec.md#maintenance-task); every other
+event is kept. A partial unique constraint on
 `(task type, idempotency key)` applies whenever the key is present. Automatic
 retry/recovery claims the existing nonterminal row. Explicit authorized retry
 of a terminal failed run allocates a new linked row and derived execution key,
@@ -1093,15 +1126,23 @@ exception atomically with any linked occurrence and TaskRun retry chain, and
 repeat credential/admission checks before creating fresh sealed substitutions.
 The same contract applies to direct receipts without an occurrence.
 
-`AuditEvent` is append-only and stores ownership scope, actor type/ID, action,
-entity, optional campaign, UTC time, request/task correlation, source IP
-metadata, and redacted structured before/after values. `OperationalLog` stores
+`AuditEvent` is append-only and stores event type, subject ID, ownership scope
+(deployment, or parish with an optional campaign reference), actor ID, UTC
+time, and request/task correlation. An optional one-to-one `AuditContext`
+adds the actor kind and structured context validated against a closed schema
+(before/after states or versions where an event has them). Neither stores a
+source IP address, free text, URL, session key, submitted values, or viewed
+report data. `OperationalLog` stores
 the five standard levels and structured context. The Admin log view queries both
-without pretending DEBUG diagnostics are domain audit events. While a campaign
-purge gate is active, read-only report access uses parish ownership and a plain
-campaign UUID/tombstone reference rather than a campaign-owned foreign key. The
+without pretending DEBUG diagnostics are domain audit events. The campaign
+reference is always a plain UUID rather than a campaign-owned foreign key, so
+audit history survives a purge; while a campaign purge gate is active,
+read-only report access is audited this way too. The
 retained event contains no viewed report data and is outside purge inventory;
 exports and mutations remain blocked.
+
+The purge records below are the target design; v1 has none of their tables
+(see the [campaign status note](#campaign)).
 
 `PurgeRequest` records the selected archived campaign, initiating Admin,
 post-quiescence inventory and completion/expiry times, purge-triggered backup
