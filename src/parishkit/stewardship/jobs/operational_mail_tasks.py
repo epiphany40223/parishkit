@@ -29,7 +29,11 @@ from parishkit.stewardship.sender_name import configured_sender_name
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .dispatch import Handler, RecoveryPlan
-from .family_mail_delivery_tasks import DeliveryCircuit, preparation_attempts
+from .family_mail_delivery_tasks import (
+    DeliveryCircuit,
+    mark_hold,
+    preparation_attempts,
+)
 from .family_mail_dispatch import (
     MAX_ATTEMPTS,
     FamilyDeliveryHeld,
@@ -293,17 +297,24 @@ def _execute(execution, *, store, credential_path, circuit, owner):
             if launched
             else ProviderHealth.UNOBSERVED,
         )
-    outcome = finish_submission(message.pk, execution.claim, result, owner)
+    # The hold's RECONCILING phase commits with the outcome, under the
+    # control lock and SQL fence rather than the process-local flags, as
+    # family_mail_delivery_tasks._settle explains (#382 L3).
+    with execution.control.lock, work_transaction():
+        outcome = finish_submission(message.pk, execution.claim, result, owner)
+        if outcome.state.value == "retry_wait" and (
+            result.limit is not None or result.health is ProviderHealth.UNAVAILABLE
+        ):
+            mark_hold(execution)
     if circuit.observe(result.health):
         # Never feed a failed alert email back into the critical-email producer.
         LOG.error(
             "%s email provider unavailable; further attempts are held.", owner.label
         )
     if outcome.state.value == "retry_wait":
-        if result.limit is not None or result.health is ProviderHealth.UNAVAILABLE:
-            # A Gmail sending-limit or shared-outage deferral is an admission
-            # hold, not a spent preparation attempt (see preparation_attempts).
-            execution.progress(0, 0, phase=TaskPhase.RECONCILING)
+        # A Gmail sending-limit or shared-outage deferral is an admission hold,
+        # not a spent preparation attempt (see preparation_attempts); its phase
+        # was written with the outcome above.
         execution.transition(
             "retryable_failure", retry_seconds=result_retry_seconds(result, attempt)
         )
