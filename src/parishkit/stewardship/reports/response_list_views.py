@@ -103,9 +103,9 @@ def audit_choices(query, snapshot):
 def _audit(action, principal, campaign_id, outcome, count, choices):
     """Record the view or download: who, which campaign, how it ended, how many.
 
-    ``choices`` (``audit_choices``) adds the mode, filter and snapshot; no
-    name or DUID is copied. An append takes no row locks, so it runs after
-    the read guard closes.
+    ``choices`` (``audit_choices`` and ``sort_choice``) adds the mode,
+    filter, order and snapshot; no name or DUID is copied. An append takes
+    no row locks, so it runs after the read guard closes.
     """
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
@@ -128,6 +128,19 @@ def _scope(campaign_id, query):
         return ResponseScope(campaign_id)
     epoch = rehearsal_epoch(campaign_id)
     return None if epoch is None else ResponseScope(campaign_id, "testing", epoch)
+
+
+def sort_choice(spec, values):
+    """The audit context naming the list's order (#851): its closed sort token.
+
+    ``values`` are the table choices already checked by ``paginate``, so the
+    token is one of the list's own (``audit.schemas.REPORT_SORTS``); without
+    one it is the list's default. The page size and page number are not
+    recorded: they choose which slice of the same Families is on screen,
+    and the row count with the mode, filter and order already says which
+    Families the list held.
+    """
+    return {"report_sort": spec.sorting.parse(values)}
 
 
 def page_context(campaign, spec, query, table, as_of, **options):
@@ -242,7 +255,7 @@ def _respond(request, campaign_id, key, *, export):
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     count,
-                    audit_choices(query, snapshot),
+                    audit_choices(query, snapshot) | sort_choice(spec, values),
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)

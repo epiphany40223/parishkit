@@ -147,6 +147,9 @@ FROZEN = {
     "0038_admin_command_failure_log.sql": (
         "9e237ca17059679a4f0ff8742a4ce6cd63d5f45fe8d20c3dc51159ac3f8a7bbe"
     ),
+    "0039_response_list_sort_audit.sql": (
+        "f819e94675c5a67e5c9a2c32661583d3a1bef0cf7e7b2967f180a71993b9e283"
+    ),
 }
 
 
