@@ -105,7 +105,7 @@ def _admit_backup_identity():
     dump or record under it. The backup login alone bypasses row-level
     security and belongs to pg_read_all_data; everything else is refused,
     including the isolation drift every login is checked for (no member
-    roles, no owned objects, no foreign-data USAGE).
+    roles, no owned objects, no foreign-data USAGE, no parameter privilege).
 
     Its grants are checked too (#389 L7), as far as pg_read_all_data leaves
     anything to check: every write privilege must be one ``runtime_grants``

@@ -1,7 +1,8 @@
 """Admission refuses authority a login gains or lends after cluster drift (#389 L7).
 
 Every service login is created by the superuser operator, so it is no role's
-member, owns nothing and has no foreign-data USAGE; the backup login's grants
+member, owns nothing, has no foreign-data USAGE and holds no parameter
+privilege; the backup login's grants
 stop at its own writes. Each case here runs the real admission as the real
 login name, injects one drift as the test's superuser, and expects a refusal,
 then removes the drift and expects admission again.
@@ -108,12 +109,22 @@ IDENTITY_DRIFT = {
         ],
         ["DROP FOREIGN DATA WRAPPER test_drift_fdw CASCADE"],
     ),
+    # Parameter privileges are cluster-wide (#845), so each undo revokes the
+    # grant, which also deletes the catalog row.
+    "a parameter SET privilege": (
+        [f"GRANT SET ON PARAMETER session_replication_role TO {WORKER}"],
+        [f"REVOKE SET ON PARAMETER session_replication_role FROM {WORKER}"],
+    ),
+    "a parameter ALTER SYSTEM privilege through PUBLIC": (
+        ["GRANT ALTER SYSTEM ON PARAMETER log_statement TO PUBLIC"],
+        ["REVOKE ALTER SYSTEM ON PARAMETER log_statement FROM PUBLIC"],
+    ),
 }
 
 
 @pytest.mark.parametrize("case", sorted(IDENTITY_DRIFT))
 def test_the_identity_check_refuses_lent_or_owned_authority(case):
-    """Reverse membership, ownership of any object and foreign-data USAGE."""
+    """Reverse membership, ownership, foreign-data USAGE, parameter privileges."""
     apply, undo = IDENTITY_DRIFT[case]
     with task_login(ServiceRole.WORKER):
         drifted(
@@ -134,6 +145,10 @@ IDENTITY_REFUSAL = {
     "default privileges for the login": "the login owns an object",
     "foreign-data wrapper USAGE": "the login has foreign-data USAGE",
     "foreign server USAGE": "the login has foreign-data USAGE",
+    "a parameter SET privilege": "the login has a parameter privilege",
+    "a parameter ALTER SYSTEM privilege through PUBLIC": (
+        "the login has a parameter privilege"
+    ),
 }
 
 
@@ -285,5 +300,13 @@ BACKUP_DRIFT = [
             ["DROP FOREIGN DATA WRAPPER test_drift_fdw CASCADE"],
         ),
         "the login has foreign-data USAGE",
+    ),
+    (
+        # Through the one membership the backup login may hold (#845).
+        (
+            ["GRANT SET ON PARAMETER session_replication_role TO pg_read_all_data"],
+            ["REVOKE SET ON PARAMETER session_replication_role FROM pg_read_all_data"],
+        ),
+        "the login has a parameter privilege",
     ),
 ]

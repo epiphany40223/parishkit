@@ -344,8 +344,11 @@ measurement is in
   identity check, which every runtime login's admission runs and not only
   the installers' (online services, download, offline profiles and
   backup), also refuses another role's membership in the login, an object
-  of any kind that the login owns, and foreign-data wrapper or server
-  `USAGE` (#389), and its refusal names the checks that failed. The backup
+  of any kind that the login owns, foreign-data wrapper or server
+  `USAGE` (#389), and a `SET` or `ALTER SYSTEM` parameter privilege granted
+  to the login, to `PUBLIC` or to a role the login belongs to (#845; `SET`
+  on `session_replication_role` would skip the row guards), and its
+  refusal names the checks that failed. The backup
   login also has its grants compared, as far as `pg_read_all_data` leaves
   anything to compare, as the
   [backup guide](../../../guides/stewardship-backup.md#the-whole-trees-read-only-by-one-identity)

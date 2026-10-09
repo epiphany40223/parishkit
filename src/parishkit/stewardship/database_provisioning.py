@@ -171,6 +171,16 @@ READER_MEMBERSHIP = "pg_read_all_data:true:false"
 # - Foreign data: USAGE on a wrapper or server lets the login reach outside
 #   the database. Wrappers and servers belong to one database, and a login
 #   may connect only to this one, so this database is the one to check.
+# - Parameter privileges (PostgreSQL 15+, #845): SET or ALTER SYSTEM on a
+#   superuser-only parameter. SET on session_replication_role alone would
+#   let the login skip every ordinary trigger, the row guards among them,
+#   without any table grant changing. pg_parameter_acl is cluster-wide and
+#   readable by every login. A grant counts when it names the login, PUBLIC
+#   (grantee 0) or any role the login is a member of: the backup login's
+#   pg_read_all_data membership is the one a login may have, and MEMBER
+#   ignores INHERIT and SET so a SET ROLE-only path counts too. The CASE
+#   keeps pg_has_role off OID 0 whatever order PostgreSQL evaluates in.
+#   Each row's ACL also lists the granting superuser, never a login.
 OWNERSHIP = "the login owns an object"
 ISOLATION_DRIFT = {
     "another role is a member of the login": (
@@ -185,6 +195,11 @@ ISOLATION_DRIFT = {
         "WHERE has_foreign_data_wrapper_privilege(r.oid,w.oid,'USAGE')) "
         "OR EXISTS(SELECT 1 FROM pg_foreign_server s "
         "WHERE has_server_privilege(r.oid,s.oid,'USAGE')))"
+    ),
+    "the login has a parameter privilege": (
+        "EXISTS(SELECT 1 FROM pg_parameter_acl a, aclexplode(a.paracl) x "
+        "WHERE CASE WHEN x.grantee=0 THEN true "
+        "ELSE pg_has_role(r.oid,x.grantee,'MEMBER') END)"
     ),
 }
 
