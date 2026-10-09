@@ -905,6 +905,22 @@ never includes the opaque email-link token.
 **Access:** Admin/Staff for all selected campaign Ministries; leaders for
 assigned campaign Ministries only.
 
+The database enforces this scope, not only the application. The summary, its
+lists and the
+[Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) queue read
+through `stewardship_ministry_report_v2` and
+`stewardship_ministry_followup_v2` (migration 0040). These take the signed-in
+user and derive the scope from that user's current roles and assignments with
+`stewardship_ministry_scope_v1`, as export captures do. A user with no current
+scope reads nothing. The application's own view of the user's roles and
+Ministries is a pre-check and a cross-check. If the database's scope is wider,
+the page is refused. If it is narrower, the narrower scope applies
+([#389](https://github.com/epiphany40223/parishkit/issues/389) L3). A user the
+application treats as Admin or Staff but the database gives no scope is refused
+rather than shown an empty report. The Admin Home's My Ministries panel and the
+follow-up menu count read through the same function and cross-check, so neither
+shows more than the queue would.
+
 The sorted summary has Ministry name/DUID, join-request count, leave-request
 count, unresolved count, and follow-up progress. Counts use latest live request
 state while retaining links to superseded/history views.

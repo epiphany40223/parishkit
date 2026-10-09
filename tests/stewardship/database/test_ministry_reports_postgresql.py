@@ -6,14 +6,20 @@ from uuid import uuid4
 import psycopg
 import pytest
 from django.db import connection, transaction
+from django.db.models import F
 from django.test import Client
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.work_locks import WORK_ORDER_LOCK
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.reports.ministries import MinistryQuery, ministry_page
+from parishkit.stewardship.reports.ministries import (
+    MinistryQuery,
+    campaign_ids,
+    ministry_page,
+)
 
 from .. import configuration_factory
 from ..campaign_factory import campaign as campaign_record
@@ -31,6 +37,7 @@ from .test_ministry_responses_postgresql import (
     revisit,
     start,
 )
+from .test_policy_postgresql import user
 from .test_report_workspace_postgresql import read
 from .test_response_http_postgresql import answers_for, load_form
 from .test_source_families_postgresql import prepare, promote
@@ -54,16 +61,51 @@ def setup(harness):
     return harness
 
 
+# Real portal users per (campaign, roles, Ministries), so each policy is
+# applied once per test rather than on every read.
+_ACTORS = {}
+
+
+def actor(harness, roles, scope):
+    """Return a Principal backed by a portal user holding exactly this policy.
+
+    The report reads its scope in SQL from the actor
+    (stewardship_ministry_scope_v1, #389 L3), so a Principal invented in
+    Python alone reads nothing. This applies an exact-address rule with the
+    roles and a manual assignment per Ministry, then signs the user up.
+    """
+    key = (harness.campaign.pk, tuple(sorted(roles)), tuple(sorted(scope)))
+    if key not in _ACTORS:
+        email = "report-{}-{}@example.org".format(
+            "-".join(key[1]), "-".join(map(str, key[2])) or "none"
+        )
+        store = harness.service.store
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {"operation": "add", "section": "login_rules", **record}
+                for record in (
+                    address(email, roles=roles),
+                    *(assignment(email, ministry=duid) for duid in scope),
+                )
+            ],
+        )
+        _ACTORS[key] = user(email).pk
+    return Principal(_ACTORS[key], frozenset(roles), frozenset(scope))
+
+
 def page(
     harness, *, roles=("staff",), scope=(), ministry=None, action="join", **filters
 ):
     """Read through actual restricted SQL grants, not the migration owner."""
-    actor = Principal(uuid4(), frozenset(roles), frozenset(scope))
+    principal = actor(harness, roles, scope)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
         return ministry_page(
             harness.campaign.pk,
             MinistryQuery.parse(filters, detail=ministry is not None),
-            actor,
+            principal,
             ministry_id=ministry,
             action=action,
         )
@@ -581,3 +623,97 @@ def test_report_pages_never_wait_behind_the_work_lock(response_service, google):
                 cursor.execute("RESET statement_timeout")
     # The view was still audited: started and succeeded.
     assert AuditContext.objects.count() >= before + 2
+
+
+def sql_report(harness, actor_id, **arguments):
+    """Call the actor-scoped report selection directly as the web login."""
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "SELECT stewardship_ministry_report_v2(campaign_uuid => %s, "
+            "filters => %s::jsonb, actor_uuid => %s, ministry_id => %s, "
+            "request_action => %s)::text",
+            [
+                harness.campaign.pk,
+                json.dumps(MinistryQuery.parse({}, detail=False).form_values()),
+                actor_id,
+                arguments.get("ministry"),
+                arguments.get("action", "join"),
+            ],
+        )
+        return json.loads(cursor.fetchone()[0])
+
+
+def test_sql_scope_comes_from_the_actor_not_python(response_service):
+    """A leader reads only their Ministries even when Python claims more (#389 L3)."""
+    harness = setup(response_service)
+    leader = actor(harness, ("ministry_leader",), (9,))
+    staff = actor(harness, ("staff",), ())
+    # SQL alone derives the scope: a leader's summary and detail name 9 only,
+    # an out-of-scope Ministry selects nothing, and Staff see both.
+    scoped = sql_report(harness, leader.identity)
+    assert scoped["authorization_scope"] == {
+        "capability": "ministry_report",
+        "operational": False,
+        "ministries": [9],
+    }
+    assert [row["duid"] for row in scoped["summaries"]] == [9]
+    outside = sql_report(harness, leader.identity, ministry=4, action="leave")
+    assert outside["authorized"] is False and outside["rows"] == []
+    assert outside["summaries"] == [] and outside["total"] == 0
+    operational = sql_report(harness, staff.identity)
+    assert operational["authorization_scope"]["operational"] is True
+    assert [row["duid"] for row in operational["summaries"]] == [4, 9]
+    # An actor with no portal user, or a disabled leader, reads nothing.
+    disabled = actor(harness, ("ministry_leader",), (4,)).identity
+    assert sql_report(harness, disabled)["authorization_scope"]["ministries"] == [4]
+    PortalUser.objects.filter(pk=disabled).update(
+        disabled=True, version=F("version") + 1
+    )
+    for nobody in (uuid4(), disabled):
+        empty = sql_report(harness, nobody)
+        assert empty["authorized"] is False and empty["summaries"] == []
+        assert empty["authorization_scope"]["operational"] is False
+    # Python claiming Staff for the leader cannot widen the read: the
+    # summary still names 9 only, contact stays redacted, and the other
+    # Ministry's detail is refused.
+    widened = Principal(leader.identity, frozenset({"staff"}))
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        summary = ministry_page(harness.campaign.pk, MinistryQuery(), widened)
+        detail = ministry_page(
+            harness.campaign.pk,
+            MinistryQuery.parse({}, detail=True),
+            widened,
+            ministry_id=9,
+        )
+        with pytest.raises(PermissionError):
+            ministry_page(
+                harness.campaign.pk,
+                MinistryQuery.parse({}, detail=True),
+                widened,
+                ministry_id=4,
+                action="leave",
+            )
+        assert campaign_ids(widened) == ()
+        assert campaign_ids(leader) == (harness.campaign.pk,)
+    assert [row["duid"] for row in summary["summaries"]] == [9]
+    assert detail["rows"][0]["emails"] == []
+    assert detail["rows"][0]["email_visibility"] == "not_published"
+    # SQL wider than Python is drift, and the page is refused: Staff in SQL
+    # whom Python sees as a leader of 9 only.
+    narrowed = Principal(staff.identity, frozenset({"ministry_leader"}), frozenset({9}))
+    # Python claiming Staff for someone SQL gives no scope (no portal user,
+    # or a disabled one) is drift too: refused, not an empty report.
+    for principal in (
+        narrowed,
+        Principal(uuid4(), frozenset({"staff"})),
+        Principal(disabled, frozenset({"staff"})),
+    ):
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            transaction.atomic(),
+            pytest.raises(PermissionError),
+        ):
+            ministry_page(harness.campaign.pk, MinistryQuery(), principal)

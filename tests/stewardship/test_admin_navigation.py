@@ -951,6 +951,8 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     from parishkit.stewardship.reports.ministry_followup import FollowupQuery
 
     statements = []
+    # The Ministries the follow-up selection reports it read (#389 L3).
+    selected = [9]
 
     class Cursor:
         """Records each statement and answers both counts."""
@@ -968,6 +970,7 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
             return (
                 3 if statements[-1]["information"] else None,
                 2 if statements[-1]["ministry"] else None,
+                selected if statements[-1]["ministry"] else None,
             )
 
     monkeypatch.setattr(
@@ -997,15 +1000,23 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
         assert admin_context._open_counts(request, actor, items, campaign) == counts
         assert len(statements) == (1 if expected else 0), role
         if expected:
-            operational = role != "ministry_leader"
-            assert statements[0]["operational"] is operational
-            assert statements[0]["scope"] == ([] if operational else [9])
+            # SQL derives the scope from the viewer alone (#389 L3).
+            assert "operational" not in statements[0]
+            assert "scope" not in statements[0]
             assert statements[0]["campaign"] == campaign.pk
             # The count runs the follow-up page's own default filters.
             assert json.loads(statements[0]["filters"]) == (
                 FollowupQuery().form_values() | {"assignee": "any"}
             )
             assert statements[0]["viewer"] == actor.identity
+    # A count over a Ministry outside the leader's own scope is drift the
+    # follow-up page refuses, so the menu shows no number either.
+    selected[:] = [9, 77]
+    role = "ministry_leader"
+    counts = admin_context._open_counts(
+        SimpleNamespace(), _principal(role), _menu(role, active, "production"), active
+    )
+    assert counts == {}
 
 
 def test_open_counts_are_plain_numbers_with_screen_reader_words():

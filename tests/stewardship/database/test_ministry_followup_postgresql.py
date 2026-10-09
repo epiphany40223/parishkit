@@ -1,5 +1,6 @@
 """Scoped Ministry follow-up history under the real web role and SQL pairing."""
 
+import json
 import re
 from datetime import UTC, datetime, timedelta
 from html import escape
@@ -12,7 +13,7 @@ from django.db import DatabaseError, connection, transaction
 from django.db.models import F
 from django.urls import reverse
 
-from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.accounts.policy import Principal, current_principal
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.models import AuditContext
@@ -22,10 +23,12 @@ from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.reports.ministries import MinistryQuery, ministry_page
 from parishkit.stewardship.reports.ministry_followup import (
     FollowupQuery,
     followup_history,
     followup_page,
+    my_ministries,
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.workflows.followup import (
@@ -41,13 +44,15 @@ from parishkit.stewardship.workflows.models import (
     MinistryWorkflowRevision,
 )
 
+from ..policy_factory import assignment, domain
 from .auth_builders import signed_in, unguarded
+from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
+from .test_ministry_reports_postgresql import actor, setup
 from .test_ministry_reports_postgresql import page as report_page
-from .test_ministry_reports_postgresql import setup
 from .test_ministry_responses_postgresql import respond, revisit
 from .test_policy_postgresql import user
 from .test_report_workspace_postgresql import read as get
@@ -467,6 +472,54 @@ def test_scoped_queue_detail_and_chain_history(response_service, google):
         rows, more = followup_history(successor.pk, 1)
         assert [item.notes for item in rows] == ["PRIVATE-NOTE first call"]
         assert not more and followup_history(successor.pk, 2) == ([], False)
+
+
+def test_followup_scope_comes_from_the_actor_not_python(response_service, google):
+    """Python claiming Staff for a leader cannot widen the queue (#389 L3)."""
+    harness = setup(response_service)
+    _, head, _, _ = leader(harness, google)
+    join, leave = requests()
+    widened = Principal(head, frozenset({"staff"}), frozenset())
+    queue = read(harness, widened)
+    assert [item["duid"] for item in queue["ministries"]] == [9]
+    assert [item["ministry_duid"] for item in queue["rows"]] == [9]
+    assert read(harness, widened, request_id=join.pk)["rows"][0]["id"] == str(join.pk)
+    with pytest.raises(ObjectDoesNotExist):
+        read(harness, widened, request_id=leave.pk)
+    # The SQL selection alone, called as web with the leader as actor.
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "SELECT stewardship_ministry_followup_v2(campaign_uuid => %s, "
+            "filters => %s::jsonb, actor_uuid => %s, request_uuid => %s)::text",
+            [
+                harness.campaign.pk,
+                json.dumps(FollowupQuery().form_values() | {"assignee": "any"}),
+                head,
+                leave.pk,
+            ],
+        )
+        outside = json.loads(cursor.fetchone()[0])
+        cursor.execute(
+            "SELECT stewardship_ministry_followup_v2(campaign_uuid => %s, "
+            "filters => %s::jsonb, actor_uuid => %s)::text",
+            [
+                harness.campaign.pk,
+                json.dumps(FollowupQuery().form_values() | {"assignee": "any"}),
+                uuid4(),
+            ],
+        )
+        nobody = json.loads(cursor.fetchone()[0])
+    assert outside["rows"] == [] and outside["total"] == 0
+    assert [item["duid"] for item in outside["ministries"]] == [9]
+    assert nobody["authorized"] is False and nobody["rows"] == []
+    # SQL wider than Python (Staff in SQL, a leader of 9 in Python) is
+    # drift, and the page is refused.
+    admin = user("admin@example.org").pk
+    with pytest.raises(PermissionError):
+        read(harness, Principal(admin, frozenset({"ministry_leader"}), frozenset({9})))
 
 
 def test_native_queue_detail_and_edit_without_assignment(response_service, google):
@@ -1052,7 +1105,7 @@ def test_a_leaders_open_count_costs_the_chrome_one_query(
             assert _menu_count(body, "Ministry follow-up") is None
     counts, plain = runs
     assert len(counts) == len(plain) + 1, (counts, plain)
-    marker = "stewardship_ministry_followup_v1"
+    marker = "stewardship_ministry_followup_v2"
     assert [marker in sql for sql in counts].count(True) == 1
     assert not any(marker in sql for sql in plain)
 
@@ -1077,17 +1130,28 @@ def test_menu_ministry_count_applies_the_follow_up_pages_filters(response_servic
                 SimpleNamespace(), principal, items, SimpleNamespace(pk=campaign_id)
             ).get("ministry_followup")
 
-    staff = Principal(uuid4(), frozenset({"staff"}), frozenset())
-    own = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
+    staff = actor(harness, ("staff",), ())
+    own = actor(harness, ("ministry_leader",), (9,))
     for principal, total in ((staff, 2), (own, 1)):
         assert read(harness, principal)["total"] == total
         assert count(principal) == total
     # A leader of a Ministry this campaign neither selects nor has a request
     # for: the page refuses, and the menu shows no number.
-    other = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({77}))
+    other = actor(harness, ("ministry_leader",), (77,))
     with pytest.raises(PermissionError):
         read(harness, other)
     assert count(other) is None
+    # The count reads its scope in SQL from the actor (#389 L3): Python
+    # claiming Staff for a leader cannot widen it, and SQL wider than
+    # Python (Staff in SQL, a leader of 9 in Python) is drift the page
+    # refuses, so the menu shows no number either.
+    assert count(Principal(own.identity, frozenset({"staff"}))) == 1
+    narrowed = Principal(staff.identity, frozenset({"ministry_leader"}), frozenset({9}))
+    with pytest.raises(PermissionError):
+        read(harness, narrowed)
+    assert count(narrowed) is None
+    # Someone with no portal user reads nothing, whatever Python claims.
+    assert count(Principal(uuid4(), frozenset({"staff"}))) is None
     # A campaign the selection cannot read: the page says unavailable, and
     # again the menu shows no number.
     missing = uuid4()
@@ -1114,6 +1178,7 @@ def test_a_failing_menu_count_leaves_the_page_and_transaction_usable(
 
     harness = setup(response_service)
     admin_browser, _ = signed_in()
+    staff = actor(harness, ("staff",), ())
     monkeypatch.setattr(
         admin_context, "OPEN_COUNTS", "SELECT 1/0, %(information)s, %(ministry)s"
     )
@@ -1125,7 +1190,6 @@ def test_a_failing_menu_count_leaves_the_page_and_transaction_usable(
         # Read inside one transaction, as an owning view would: the failed
         # count rolls back only its savepoint.
         items = [SimpleNamespace(name="ministry_followup", url="/admin/follow-up/")]
-        staff = Principal(uuid4(), frozenset({"staff"}), frozenset())
         with transaction.atomic():
             counts = admin_context._open_counts(
                 SimpleNamespace(), staff, items, SimpleNamespace(pk=harness.campaign.pk)
@@ -1134,3 +1198,82 @@ def test_a_failing_menu_count_leaves_the_page_and_transaction_usable(
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 assert cursor.fetchone() == (1,)
+
+
+def test_domain_admitted_users_read_through_the_actor_as_before(response_service):
+    """Staff and leaders admitted by a domain sign-in rule keep their reads (#389 L3).
+
+    The actor-scoped selections derive scope in SQL
+    (stewardship_ministry_scope_v1), which must resolve a hosted-domain rule
+    exactly as the application does (an exact address wins, else the
+    matching domain). Each Principal here is the application's own
+    resolution (current_principal), so the report, the follow-up queue, the
+    leader's My Ministries panel and the menu count all read what they did
+    when the application passed the scope. A domain rule can never grant
+    Administrator (the configuration refuses it), so Administrators are
+    always admitted by exact address; the actor() Administrator shows that
+    path is unchanged too.
+    """
+    from parishkit.stewardship.accounts import admin_context
+
+    harness = setup(response_service)
+    store = harness.service.store
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {"operation": "add", "section": "login_rules", **record}
+            for record in (
+                domain("staff.example", roles=("staff",)),
+                domain("leaders.example", roles=("ministry_leader",)),
+                assignment("head@leaders.example", ministry=9),
+            )
+        ],
+    )
+    staff = current_principal(
+        store, user("clerk@staff.example", hosted="staff.example").pk
+    )
+    head = current_principal(
+        store, user("head@leaders.example", hosted="leaders.example").pk
+    )
+    assert staff.roles == {"staff"} and not staff.ministries
+    assert head.roles == {"ministry_leader"} and head.ministries == {9}
+    administrator = actor(harness, ("administrator",), ())
+    items = [SimpleNamespace(name="ministry_followup", url="/admin/follow-up/")]
+    for principal, duids, total in (
+        (staff, [4, 9], 2),
+        (administrator, [4, 9], 2),
+        (head, [9], 1),
+    ):
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            transaction.atomic(),
+        ):
+            summary = ministry_page(harness.campaign.pk, MinistryQuery(), principal)
+            queue = followup_page(harness.campaign.pk, FollowupQuery(), principal)
+            mine = my_ministries(harness.campaign.pk, principal)
+            counts = admin_context._open_counts(
+                SimpleNamespace(), principal, items, harness.campaign
+            )
+        assert summary["authorized"] is True
+        assert summary["authorization_scope"]["operational"] is (principal is not head)
+        assert [row["duid"] for row in summary["summaries"]] == duids
+        assert sorted(row["ministry_duid"] for row in queue["rows"]) == duids
+        assert queue["total"] == total and counts == {"ministry_followup": total}
+        if principal is head:
+            assert [(m["duid"], m["join"]) for m in mine["ministries"]] == [(9, 1)]
+    # A domain sign-in that does not prove the hosted domain gets no
+    # domain authority in either place: Python and SQL both read nothing.
+    unproven = current_principal(store, user("other@staff.example").pk)
+    assert not unproven.roles
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        transaction.atomic(),
+        pytest.raises(PermissionError),
+    ):
+        followup_page(
+            harness.campaign.pk,
+            FollowupQuery(),
+            Principal(unproven.identity, frozenset({"staff"})),
+        )

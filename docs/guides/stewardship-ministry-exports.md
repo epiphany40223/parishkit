@@ -33,6 +33,8 @@ packets, ADM-08 follow-up editing and integrated M5/Gate 3 retain their owners.
 ## Implementation checkpoint
 
 Interactive pages and complete captures now share `stewardship_ministry_report_v1`.
+Since migration 0040 (#389 L3) the pages call it through
+`stewardship_ministry_report_v2`, which derives the scope from the actor.
 SQL derives immutable capture scope and independently enforces it at request,
 attempt, publication, cancellation and download boundaries. The application
 reloads coherent policy for those paths, status, retry and regeneration without

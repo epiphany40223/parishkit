@@ -19,6 +19,7 @@ from parishkit.stewardship.workflows.models import (
 )
 
 from .information import parse_page
+from .ministries import within_principal
 
 PAGE_SIZE = 50
 # The installed selection (schema/ministry_followup.sql) orders and pages the
@@ -149,29 +150,23 @@ def selection_filters(query):
     return json.dumps(query.form_values() | {"assignee": "any"})
 
 
-def ministry_scope(principal):
-    """The viewer's own Ministry DUIDs the selection's bigint scope can hold."""
-    return sorted(value for value in principal.ministries if value < 2**31)
-
-
 def _select(campaign_id, query, principal, *, request_id=None, limit, offset=0):
     """Run the installed follow-up selection for ``principal``; None if absent.
 
-    The selection intersects the principal's current role scope with the
-    campaign's Ministries itself, so every caller sees exactly what the queue
-    would show this person.
+    The selection derives the principal's current role scope in SQL from the
+    signed-in actor (stewardship_ministry_followup_v2, #389 L3) and
+    intersects it with the campaign's Ministries itself, so every caller sees
+    exactly what the queue would show this person. Callers cross-check the
+    result with ``in_scope``.
     """
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT stewardship_ministry_followup_v1("
-            "campaign_uuid => %s, filters => %s::jsonb, operational => %s, "
-            "ministry_scope => %s::bigint[], viewer => %s, request_uuid => %s, "
-            "page_limit => %s, page_offset => %s)::text",
+            "SELECT stewardship_ministry_followup_v2("
+            "campaign_uuid => %s, filters => %s::jsonb, actor_uuid => %s, "
+            "request_uuid => %s, page_limit => %s, page_offset => %s)::text",
             [
                 campaign_id,
                 selection_filters(query),
-                allows(principal, Capability.MINISTRY_FOLLOWUP),
-                ministry_scope(principal),
                 principal.identity,
                 request_id,
                 limit,
@@ -180,6 +175,20 @@ def _select(campaign_id, query, principal, *, request_id=None, limit, offset=0):
         )
         value = cursor.fetchone()
     return None if value is None or value[0] is None else json.loads(value[0])
+
+
+def in_scope(principal, authorized, ministries):
+    """Whether a selection result is authorized and within Python's own scope.
+
+    SQL's scope (from the actor) is authoritative; Python's view of the same
+    actor is a cross-check (#389 L3). A result naming a Ministry Python does
+    not hold means the two have drifted, so it is treated as unauthorized.
+    The result names its Ministries but not an operational flag; an
+    operational principal passes the cross-check before that matters.
+    """
+    return bool(authorized) and within_principal(
+        principal, Capability.MINISTRY_FOLLOWUP, False, ministries
+    )
 
 
 def my_ministries(campaign_id, principal):
@@ -208,7 +217,11 @@ def my_ministries(campaign_id, principal):
         return result, result["total"]
 
     overall, count = total()
-    if overall is None or not overall["authorized"]:
+    if overall is None or not in_scope(
+        principal,
+        overall["authorized"],
+        [item["duid"] for item in overall["ministries"]],
+    ):
         return None
     ministries = []
     for item in overall["ministries"]:
@@ -234,9 +247,11 @@ def my_ministries(campaign_id, principal):
 def followup_page(campaign_id, query, principal, *, request_id=None):
     """Read one coherent page under the response guard's freshly resolved actor.
 
-    SQL intersects the current role scope with the campaign's Ministries before
-    reading any request, so an out-of-scope request UUID yields no row rather
-    than a different error. No contact, address or financial column is selected.
+    SQL derives the actor's current role scope (stewardship_ministry_followup_v2,
+    #389 L3) and intersects it with the campaign's Ministries before reading
+    any request, so an out-of-scope request UUID yields no row rather than a
+    different error. Python's scope is a pre-check and a cross-check. No
+    contact, address or financial column is selected.
     """
     if not can_follow_up(principal):
         raise PermissionError("Ministry follow-up access is unavailable.")
@@ -254,7 +269,11 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
         raise PermissionError("Ministry follow-up is not enabled for this campaign.")
     if result.get("unavailable"):
         raise ReadUnavailable("Ministry follow-up inputs are unavailable.")
-    if not result["authorized"]:
+    if not in_scope(
+        principal,
+        result["authorized"],
+        [ministry["duid"] for ministry in result["ministries"]],
+    ):
         raise PermissionError("Ministry follow-up access is unavailable.")
     if request_id is not None and not result["rows"]:
         raise ObjectDoesNotExist("Ministry request is unavailable.")
