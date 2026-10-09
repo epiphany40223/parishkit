@@ -8,11 +8,15 @@ directory, exclusive create, the tagged 43-character secret), refusal of
 wider modes, malformed or oversize files and bad names before anything runs,
 session selection, the HMAC host digest and exit 2 without a machine
 identity, the preamble sent exactly once, standard input forwarded only for a
-terminal or a `-` input, which outcomes delete the session file, and that a
-streamed file (``logs export``) is never written to a terminal. Export
-fetching arrives with the export commands (ADM-11 PR 8b).
+terminal or a `-` input, which outcomes delete the session file, that a
+streamed file (``logs export``, ``export download``) is never written to a
+terminal, and ``export fetch`` (PR 8b): an owner-only file created
+exclusively, checked against its size and digest, never overwritten, never
+copied elsewhere, and removed when the check, the download or the run fails;
+``exports clean`` deletes only fetched files.
 """
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -733,3 +737,312 @@ def test_the_prompting_list_names_every_prompting_command():
     }
     assert set(listed.split()) == prompting
     assert {"test_sample", "test_families"} <= prompting
+
+
+def test_export_download_is_never_written_to_a_terminal(host):
+    """``export download`` streams too: refused when standard output is a terminal."""
+    host.session()
+    controller, terminal = pty.openpty()
+    try:
+        result = subprocess.run(
+            [str(WRAPPER), "export", "download", EXPORT_ID, "--stream"],
+            env=host.environment,
+            stdin=subprocess.DEVNULL,
+            stdout=terminal,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=20,
+        )
+    finally:
+        os.close(terminal)
+        os.close(controller)
+    assert result.returncode == 2
+    assert b"redirect standard output to a file" in result.stderr
+    assert host.calls() is None
+
+
+# ``export fetch`` (ADM-11 PR 8b). A stand-in docker that answers both runs
+# the wrapper makes: ``export status`` prints its document on standard
+# output; ``export download --stream`` prints the file's bytes on standard
+# output and its document on standard error. Each run's arguments are
+# logged, one line per run.
+EXPORT_ID = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b"
+FETCH_DOCKER = """#!/usr/bin/env bash
+cat > /dev/null
+printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
+case " $* " in
+    *" export status "*)
+        cat "$FAKE_STATUS_DOCUMENT"
+        exit "${FAKE_STATUS_EXIT:-0}" ;;
+esac
+cat "$FAKE_DOCKER_BODY"
+cat "$FAKE_DOCKER_OUTPUT" >&2
+exit "${FAKE_DOCKER_STATUS:-0}"
+"""
+
+
+@pytest.fixture
+def fetching(host):
+    """A host whose docker answers ``export status`` and ``export download``.
+
+    ``fetch(body, state=..., described=...)`` runs ``export fetch`` with the
+    download writing ``body`` and the status describing ``described``
+    (default: ``body`` itself); it returns the result and the logged runs.
+    """
+    state = host.root / "docker"
+    docker = host.root / "bin" / "docker"
+    docker.write_text(FETCH_DOCKER)
+    docker.chmod(0o755)
+    host.session()
+    log = state / "log"
+
+    def fetch(
+        body,
+        *,
+        export_state="ready",
+        described=None,
+        download=None,
+        download_status=0,
+        arguments=(),
+    ):
+        """One ``export fetch`` run; returns (result, logged runs)."""
+        described = body if described is None else described
+        result_document = {
+            "campaign_id": "00000000-0000-4000-8000-000000000001",
+            "can_cancel": False,
+            "content_type": "text/csv",
+            "count": 2,
+            "created_at": "2054-10-05T14:00:00+00:00",
+            "expires_at": "2054-10-06T14:00:00+00:00",
+            "file_name": "participation.csv",
+            "format": "csv",
+            "id": EXPORT_ID,
+            "report": "participation",
+            "sha256": hashlib.sha256(described).hexdigest(),
+            "size": len(described),
+            "state": export_state,
+        }
+        status_document = {
+            "command": "export status",
+            "correlation_id": "00000000-0000-4000-8000-000000000002",
+            "final": True,
+            "ok": True,
+            "result": result_document,
+            "schema": "pk-admin/1",
+            "session": {"expires_at": "2054-11-05T14:00:00+00:00", "id": EXPORT_ID},
+        }
+        (state / "status").write_text(
+            json.dumps(status_document, sort_keys=True) + "\n"
+        )
+        (state / "body").write_bytes(body)
+        host.answer(download or {"ok": True}, status=download_status)
+        log.unlink(missing_ok=True)
+        result = host.run(
+            *arguments,
+            "export",
+            "fetch",
+            EXPORT_ID,
+            FAKE_DOCKER_BODY=str(state / "body"),
+            FAKE_DOCKER_LOG=str(log),
+            FAKE_STATUS_DOCUMENT=str(state / "status"),
+        )
+        runs = log.read_text().splitlines() if log.exists() else []
+        return result, runs
+
+    fetch.directory = host.directory / "exports"
+    fetch.target = fetch.directory / f"{EXPORT_ID}-participation.csv"
+    fetch.partial = fetch.directory / f".{EXPORT_ID}.partial"
+    return fetch
+
+
+def copies(root, body, *, keep):
+    """Every file under ``root`` holding ``body``, but the ones to ``keep``."""
+    return [
+        path
+        for path in root.rglob("*")
+        if path.is_file() and path not in keep and body in path.read_bytes()
+    ]
+
+
+def test_export_fetch_writes_an_owner_only_file_and_prints_only_its_receipt(
+    host, fetching
+):
+    """Status, then the stream straight into a 0600 file in a 0700 directory.
+
+    Only the path, size and SHA-256 are printed; the bytes are on disk once,
+    in the fetched file, and nowhere else (no work directory copy).
+    """
+    body = b"date,family\r\n2054-10-05,Example Family <family@example.org>\r\n\x00"
+    result, runs = fetching(body)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "path": str(fetching.target),
+        "sha256": hashlib.sha256(body).hexdigest(),
+        "size": len(body),
+    }
+    assert body not in result.stdout and body not in result.stderr
+    assert fetching.target.read_bytes() == body
+    assert fetching.target.stat().st_mode & 0o777 == 0o600
+    assert fetching.directory.stat().st_mode & 0o777 == 0o700
+    assert not fetching.partial.exists()
+    assert [" export status " in f" {run} " for run in runs] == [True, False]
+    assert f"export download {EXPORT_ID} --stream" in runs[1]
+    state = host.root / "docker" / "body"
+    assert copies(host.root, body, keep={fetching.target, state}) == []
+
+
+def test_export_fetch_never_overwrites_a_fetched_file(fetching):
+    """A second fetch is refused before it downloads anything."""
+    body = b"a,b\r\n"
+    assert fetching(body)[0].returncode == 0
+    result, runs = fetching(body)
+    assert result.returncode == 2 and b"already exists" in result.stderr
+    assert len(runs) == 1 and " export status " in f" {runs[0]} "
+    assert fetching.target.read_bytes() == body
+
+
+def test_a_fetch_that_does_not_match_its_receipt_is_deleted(fetching):
+    """A wrong size or digest deletes the partial file and exits 3."""
+    result, _ = fetching(b"a,b\r\n", described=b"a,c\r\n")
+    assert result.returncode == 3 and b"did not match" in result.stderr
+    assert not fetching.target.exists() and not fetching.partial.exists()
+
+
+def test_a_failed_download_leaves_no_file_and_ends_a_dead_session(host, fetching):
+    """The download's own exit status; its partial file and dead session go."""
+    result, _ = fetching(
+        b"",
+        download={"ok": False, "error": {"code": "session_ended"}},
+        download_status=5,
+    )
+    assert result.returncode == 5
+    assert not fetching.target.exists() and not fetching.partial.exists()
+    assert not (host.directory / "ops.session").exists()
+
+
+def test_an_export_that_is_not_ready_is_not_downloaded(fetching):
+    """Exit 1 with the state; only the status ran."""
+    result, runs = fetching(b"", export_state="running")
+    assert result.returncode == 1 and b"is running, not ready" in result.stderr
+    assert len(runs) == 1
+    assert not fetching.target.exists() and not fetching.partial.exists()
+
+
+def test_an_interrupted_or_concurrent_fetch_is_refused(fetching):
+    """An existing partial file is never reused or truncated."""
+    fetching.directory.mkdir(mode=0o700)
+    fetching.partial.write_bytes(b"other")
+    result, runs = fetching(b"a,b\r\n")
+    assert result.returncode == 2 and b"another fetch" in result.stderr
+    assert fetching.partial.read_bytes() == b"other" and len(runs) == 1
+
+
+@pytest.mark.parametrize("identifier", ["6F1C2A3B-4D5E-4F60-8A7B-9C0D1E2F3A4B", "x"])
+def test_export_fetch_needs_one_lowercase_export_id(host, identifier):
+    """Anything but one canonical id is refused before docker runs."""
+    host.session()
+    for arguments in (("export", "fetch", identifier), ("export", "fetch")):
+        result = host.run(*arguments)
+        assert result.returncode == 2 and host.calls() is None
+
+
+def test_the_export_directory_must_be_private(host, fetching, tmp_path):
+    """A directory open to others is refused; --export-dir chooses another."""
+    fetching.directory.mkdir(mode=0o755)
+    fetching.directory.chmod(0o755)
+    result, runs = fetching(b"a,b\r\n")
+    assert result.returncode == 2 and runs == []
+    other = tmp_path / "fetched"
+    result, _ = fetching(b"a,b\r\n", arguments=("--export-dir", str(other)))
+    assert result.returncode == 0, result.stderr
+    assert (other / f"{EXPORT_ID}-participation.csv").read_bytes() == b"a,b\r\n"
+    assert other.stat().st_mode & 0o777 == 0o700
+
+
+def test_exports_clean_deletes_fetched_files_only(host, fetching):
+    """Fetched files and partials go; anything else in the directory stays."""
+    assert fetching(b"a,b\r\n")[0].returncode == 0
+    fetching.partial.write_bytes(b"partial")
+    other = fetching.directory / "notes.txt"
+    other.write_text("kept")
+    result = host.run("exports", "clean")
+    assert result.returncode == 0 and json.loads(result.stdout) == {"removed": 2}
+    assert not fetching.target.exists() and not fetching.partial.exists()
+    assert other.exists()
+    assert host.run("exports", "clean", "now").returncode == 2
+
+
+@pytest.mark.parametrize(
+    "name,status,group",
+    [("SIGINT", 130, True), ("SIGTERM", 143, False), ("SIGHUP", 129, False)],
+)
+def test_an_interrupted_fetch_leaves_no_partial_file(
+    host, fetching, name, status, group
+):
+    """Ctrl-C, TERM or a dropped session while the file streams: no partial.
+
+    The wrapper stops at once, without waiting for the download (which here
+    would run for 20 seconds): Ctrl-C reaches the whole process group, TERM
+    and HUP only the wrapper.
+    """
+    import signal
+    import time
+
+    fetching(b"a,b\r\n")  # writes the status document; fetches once
+    fetching.target.unlink()
+    state = host.root / "docker"
+    docker = host.root / "bin" / "docker"
+    docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "cat > /dev/null\n"
+        'case " $* " in *" export status "*)\n'
+        '    cat "$FAKE_STATUS_DOCUMENT"; exit 0 ;;\n'
+        "esac\n"
+        "printf 'a,b'\n"
+        "sleep 20\n"
+    )
+    process = host.popen(
+        "export",
+        "fetch",
+        EXPORT_ID,
+        FAKE_STATUS_DOCUMENT=str(state / "status"),
+    )
+    deadline = time.monotonic() + 10
+    while not (fetching.partial.exists() and fetching.partial.stat().st_size) and (
+        time.monotonic() < deadline
+    ):
+        time.sleep(0.05)
+    assert fetching.partial.exists()
+    started = time.monotonic()
+    try:
+        if group:
+            os.killpg(process.pid, getattr(signal, name))
+        else:
+            os.kill(process.pid, getattr(signal, name))
+        process.communicate(timeout=20)
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+    assert time.monotonic() - started < 10
+    assert process.returncode == status
+    assert not fetching.partial.exists() and not fetching.target.exists()
+
+
+def test_a_planted_partial_link_is_refused(fetching, tmp_path):
+    """A link where the partial file goes is never written through."""
+    fetching.directory.mkdir(mode=0o700)
+    fetching.partial.symlink_to(tmp_path / "elsewhere")
+    result, runs = fetching(b"a,b\r\n")
+    assert result.returncode == 2 and len(runs) == 1
+    assert not (tmp_path / "elsewhere").exists()
+
+
+@pytest.mark.parametrize("name", ['say"hi', "back\\slash", "new\nline"])
+def test_an_export_directory_that_cannot_be_printed_is_refused(
+    host, fetching, tmp_path, name
+):
+    """A quote, backslash or control character is refused before mkdir."""
+    directory = tmp_path / name
+    result, runs = fetching(b"a,b\r\n", arguments=("--export-dir", str(directory)))
+    assert result.returncode == 2 and runs == []
+    assert not directory.exists()

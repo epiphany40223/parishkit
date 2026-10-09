@@ -354,6 +354,16 @@ def retry_export(store, user_id, request_id, *, request_key):
 
 def export_status(store, user_id, request_id):
     """Return only this authorized request, never another operational task's fields."""
+    return export_state(store, user_id, request_id)[0]
+
+
+def export_state(store, user_id, request_id):
+    """This authorized request's status and its publication (None before one).
+
+    The status is what ``export_status`` returns. The publication carries
+    the stored file's size, SHA-256 and row count, which the command line's
+    ``export status`` prints so ``export fetch`` can check what it wrote.
+    """
     with transaction.atomic():
         request = ExportRequest.objects.get(pk=request_id)
         authorize(store, user_id, request=request)
@@ -365,7 +375,7 @@ def export_status(store, user_id, request_id):
             state = "cancelled"
         else:
             state = request.task.chain_runs.order_by("-retry_sequence").first().state
-        return {
+        status = {
             "id": str(request.pk),
             "campaign_id": str(request.campaign_id),
             "report": request.report,
@@ -374,6 +384,7 @@ def export_status(store, user_id, request_id):
             "created_at": request.created_at.isoformat(),
             "expires_at": publication.expires_at.isoformat() if publication else None,
         }
+        return status, publication
 
 
 def issue_download(store, user_id, request_id):

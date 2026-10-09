@@ -145,6 +145,10 @@ class Action(StrEnum):
     ADMIN_CMD_TEST_SAMPLE = "admin_cmd_test_sample"
     ADMIN_CMD_TEST_FAMILIES = "admin_cmd_test_families"
     ADMIN_CMD_DELIVERY_RESOLVE = "admin_cmd_delivery_resolve"
+    ADMIN_CMD_EXPORT_CREATE = "admin_cmd_export_create"
+    ADMIN_CMD_EXPORT_CANCEL = "admin_cmd_export_cancel"
+    ADMIN_CMD_EXPORT_RETRY = "admin_cmd_export_retry"
+    ADMIN_CMD_EXPORT_REGENERATE = "admin_cmd_export_regenerate"
 
 
 # Closed field identifiers are operational metadata, never census values.

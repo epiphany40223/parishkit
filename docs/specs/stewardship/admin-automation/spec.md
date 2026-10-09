@@ -1522,7 +1522,10 @@ signatures:
 - **PR 7:** `delivery_control_commands` onto the caller; the maintenance
   switch from `family_maintenance_views`.
 - **PR 8a:** the log reads and export from `log_views` (`audit.log_reads`).
-- **PR 8b to 8e:** report and export reads and export actions from the
+- **PR 8b:** the download's grant consumption and guarded read from
+  `export_views.download_with_grant` (`prepare_download`), and the status
+  read with its stored file's receipt (`export_services.export_state`).
+- **PR 8c to 8e:** report reads and the Family-level exports from the
   report and export views.
 - **PR 9a:** `delivery_views.preparation_retry` and
   `export_views.retry_cleanup_command`, with the delivery views' admission and
@@ -1596,11 +1599,32 @@ This limits accidents; it does not hide data from the host operator (see
   digest, then `export download --stream`, which writes the file's bytes, and
   nothing else, to standard output and its JSON document to standard error.
   The wrapper writes the stream with `umask 077` and exclusive create to a
-  temporary file in `<root>/reports/admin-exports/` (mode 0700, owned by the
-  wrapper's account), checks the size and digest, renames it to its final
-  name without overwriting, and prints only the path, size and digest. A
-  failed check deletes the temporary file. The wrapper refuses to stream to a
-  terminal. Synchronous exports (the Testing Families list, `--names` for
+  temporary file in its export directory (mode 0700, owned by the
+  wrapper's account), checks the size and digest, hard-links it to its final
+  name (which never overwrites) and removes the temporary name, and prints
+  only the path, size and digest. A failed check deletes the temporary file,
+  as do a failed download and an interruption (INT, TERM or HUP). The
+  wrapper refuses to stream to a terminal. `export fetch` and
+  `exports clean` are wrapper verbs outside the `pk-admin/1` document
+  contract: `export fetch` prints `{"path", "size", "sha256"}` on success,
+  and `exports clean` prints `{"removed"}`. The wrapper's own refusals print
+  no JSON document, only a `pk-admin:` line on standard error: exit 1 when
+  the export is not ready, 2 before anything is downloaded (a bad
+  identifier, no `pgrep`, a file already fetched, an unusable export
+  directory) and also when the final name appeared while the file
+  downloaded, and 3 when the file does not match its size and digest. When
+  the `export status` or `export download` run fails, its own `pk-admin/1`
+  document (on standard output or standard error) and exit status are
+  passed through, so a JSON document tells the two apart: exit 1 or 3 can
+  come from either. The export
+  directory is `--export-dir`, else
+  `PK_ADMIN_EXPORT_DIR`, else `exports` in the
+  [session directory](#session-file), which the wrapper creates; it is not
+  under `<root>/reports`, the application's export store, whose web startup
+  check requires mode 0700 exactly, so the access-control entry an
+  operator account would need to reach a directory inside it would fail
+  that check. The location is a default from PR 8b, pending Administrator
+  confirmation. Synchronous exports (the Testing Families list, `--names` for
   chosen-Family tests) produce an export record and are fetched the same way.
 - The command records the same audit event as the page download.
   `pk-admin exports clean` deletes the fetched files; the operator guide asks
@@ -1896,6 +1920,32 @@ and the stream without an export record are defaults, pending
 Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#system-logs)
 lists the fields.
+
+The export lifecycle commands work on any report export the Administrator
+may see, through the functions the export pages use
+(`reports.export_services`, and `export_views.prepare_download` for the
+download), so an export requested on a page is followed and fetched from
+the command line and the other way round. `export status` admits passively
+like the status page (any session) and records nothing, as the page
+records nothing. `export create` (the Participation page's form, for the
+generation its `--fact-set` names), `export cancel`, `export retry` and
+`export regenerate` admit as the pages' form posts do, so they need a
+full-scope session; each records the page's own events and, only when it
+made the change, its `admin_cmd_export_*` event, keyed as the page's form
+is. Regenerating a directory, mail-merge or financial export is
+[fresh-gated](#fresh-gated-actions-from-the-command-line): as the status
+page (`export_ui.FRESH_REPORTS`, after its owner and capability check),
+`export regenerate` asks at the prompt for those kinds only, then calls
+`require_fresh` in the export lock. `export download --stream` admits as the download does, consumes the
+page's one-use grant and streams the stored file under the page's campaign
+read guard and fresh check, recording the page's `export_downloaded`
+events (opening, then succeeded or failed) and no `admin_cmd_*` event, as
+`logs export` does. The guard runs on the command's own web connection with
+the deployment's download lifetime rather than a download pool slot (a
+default, pending Administrator confirmation, as are the fetch location
+above and `--fact-set` naming the generation). The
+[operator guide](../../../guides/stewardship-admin-automation.md#report-exports)
+lists the fields and refusals.
 
 ### Operations
 

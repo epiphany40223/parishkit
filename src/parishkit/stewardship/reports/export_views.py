@@ -5,6 +5,7 @@ report catalog. Requests and one-use grants are POST bodies, never URL secrets.
 All policy is reloaded by services and again inside the download read guard.
 """
 
+from dataclasses import dataclass
 from uuid import UUID
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -233,63 +234,101 @@ def download(request):
         return _json({"error": "Invalid download grant."}, status=400)
 
 
+@dataclass(frozen=True)
+class Download:
+    """A consumed download grant and what its guarded read needs.
+
+    ``authorize`` is the fresh check the campaign read guard runs,
+    ``open_content`` opens the stored file inside that guard, and
+    ``finish(completed)`` records the closing ``export_downloaded`` once.
+    """
+
+    publication: object
+    job: object
+    file_name: str
+    content_type: str
+    authorize: object
+    open_content: object
+    finish: object
+
+
+def prepare_download(subject, service, principal, grant_id):
+    """Consume one download grant and return what its guarded read needs.
+
+    ``subject`` is the request (the pages) or an ``AdminCaller`` (the
+    command line's ``export download``); the fresh check admits it again
+    inside the read guard. Consuming the grant records the opening
+    ``export_downloaded``; the caller must call ``finish`` exactly as the
+    page's response does, whether or not the bytes were all sent.
+    """
+    publication = consume_download(service.store, principal.identity, grant_id)
+    job = publication.request
+    finalized = False
+
+    def finish(completed):
+        """Server exhaustion is not proof of receipt by the browser."""
+        nonlocal finalized
+        if not finalized:
+            finalized = True
+            with transaction.atomic():
+                audit(
+                    Action.EXPORT_DOWNLOADED,
+                    job,
+                    principal.identity,
+                    outcome=Outcome.SUCCEEDED if completed else Outcome.FAILED,
+                    count=publication.row_count,
+                )
+
+    def fresh(guard):
+        """Recheck session and artifact on the dedicated read connection."""
+        current = _principal(subject, service.store, read_only=True, ministry_jobs=True)
+        if current.identity != principal.identity:
+            raise ReadUnavailable("This export is unavailable.")
+        authorize(service.store, current.identity, request=job)
+        admit_campaign(job.campaign_id, mutating=False)
+        retained = ExportPublication.objects.get(pk=publication.pk)
+        if retained.expires_at <= database_now():
+            raise ReadUnavailable("This export has expired.")
+
+    def content():
+        """Open before response construction, inside the read guard."""
+        from django.conf import settings
+
+        root = getattr(settings, "STEWARDSHIP_REPORTS_ROOT", None)
+        if root is None:
+            raise ConfigError("Export storage is not configured.")
+        return ArtifactChunks(
+            root,
+            job.campaign_id,
+            ArtifactReceipt(
+                publication.attempt_id, publication.size, publication.sha256
+            ),
+        )
+
+    return Download(
+        publication=publication,
+        job=job,
+        file_name=f"{job.report}.{job.format}",
+        content_type=CONTENT_TYPES[job.format],
+        authorize=fresh,
+        open_content=content,
+        finish=finish,
+    )
+
+
 def download_with_grant(request, service, principal, grant_id):
     """Both native and JSON workflows consume the same guarded one-use grant."""
     finish, handed_off = None, False
     try:
-        publication = consume_download(service.store, principal.identity, grant_id)
-        job = publication.request
-        finalized = False
-
-        def finish(completed):
-            """Server exhaustion is not proof of receipt by the browser."""
-            nonlocal finalized
-            if not finalized:
-                finalized = True
-                with transaction.atomic():
-                    audit(
-                        Action.EXPORT_DOWNLOADED,
-                        job,
-                        principal.identity,
-                        outcome=Outcome.SUCCEEDED if completed else Outcome.FAILED,
-                        count=publication.row_count,
-                    )
-
-        def fresh(guard):
-            """Recheck session and artifact on the dedicated read connection."""
-            current = _principal(
-                request, service.store, read_only=True, ministry_jobs=True
-            )
-            if current.identity != principal.identity:
-                raise ReadUnavailable("This export is unavailable.")
-            authorize(service.store, current.identity, request=job)
-            admit_campaign(job.campaign_id, mutating=False)
-            retained = ExportPublication.objects.get(pk=publication.pk)
-            if retained.expires_at <= database_now():
-                raise ReadUnavailable("This export has expired.")
-
-        def content():
-            """Open before response construction, inside the read guard."""
-            from django.conf import settings
-
-            root = getattr(settings, "STEWARDSHIP_REPORTS_ROOT", None)
-            if root is None:
-                raise ConfigError("Export storage is not configured.")
-            return ArtifactChunks(
-                root,
-                job.campaign_id,
-                ArtifactReceipt(
-                    publication.attempt_id, publication.size, publication.sha256
-                ),
-            )
-
+        download = prepare_download(request, service, principal, grant_id)
+        finish = download.finish
         response = campaign_response(
             request,
-            [job.campaign_id],
-            authorize=fresh,
-            open_content=content,
-            filename=f"{job.report}.{job.format}",
-            content_type=CONTENT_TYPES[job.format],
+            [download.job.campaign_id],
+            authorize=download.authorize,
+            open_content=download.open_content,
+            filename=download.file_name,
+            content_type=download.content_type,
             on_close=finish,
         )
         handed_off = response.status_code == 200 and response.streaming

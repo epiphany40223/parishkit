@@ -23,9 +23,9 @@ browser.
 The host wrapper is
 [`tools/stewardship-ops/pk-admin`](../../tools/stewardship-ops/pk-admin), a
 POSIX shell script; copy it to the host (it needs `docker`, `openssl` and
-standard tools such as `stat`, `base64`, `head`, `mktemp` and `tee`, and no
-Python). Run it as the operator account that runs
-Docker Compose, never as the application user (10001).
+standard tools such as `stat`, `base64`, `head`, `mktemp`, `tee`, `wc`,
+`ln` and `pgrep`, and no Python). Run it as the operator account that runs Docker
+Compose, never as the application user (10001).
 
 Session files live in `ROOT/run/admin-automation`, where `ROOT` is
 `PARISHKIT_ROOT` or `/opt/parishkit`. `ROOT/run` belongs to the application
@@ -52,6 +52,7 @@ The wrapper reads these settings (all optional):
 | `PK_ADMIN_PROJECT` | `stewardship` | The Compose project name |
 | `PK_ADMIN_WEB_CONFIG` | `ROOT/config/services/web.yaml` | The web configuration, as the web container sees it |
 | `PK_ADMIN_SESSION` | none | The session to use when `--session` is not given |
+| `PK_ADMIN_EXPORT_DIR` | `SESSION_DIR/exports` | Where `export fetch` saves files (see [report exports](#report-exports)) |
 | `PK_ADMIN_MACHINE_ID` | `/etc/machine-id` | The machine identity file the host digest is computed from |
 
 ## Pairing a session
@@ -105,8 +106,8 @@ The session is `--session NAME`, else `PK_ADMIN_SESSION`, else the only file
 in the directory; with several files and no choice the wrapper lists them
 and exits 2. Each command prints exactly one JSON document (schema
 `pk-admin/1`) on standard output, except one that writes a file there
-(`logs export`, see [System logs](#system-logs)), whose document goes to
-standard error; warnings, such as a session with less than
+(`logs export`, see [System logs](#system-logs), and `export download`, see
+[report exports](#report-exports)), whose document goes to standard error; warnings, such as a session with less than
 72 hours left, and structured logs go to standard error. The document's
 fields, the exit codes and the error codes are in the specification's
 [running a command](../specs/stewardship/admin-automation/spec.md#running-a-command);
@@ -747,6 +748,130 @@ compare `size` and `sha256` with the file (`sha256sum logs.jsonl`). The page
 keeps no record of a download, so neither does the command: there is
 nothing for `export fetch` to fetch.
 
+## Report exports
+
+A report export (the Participation page's **Export**, and the export of
+every other report page) is a file the server makes in the background. From
+the command line, getting one takes three steps: request it, wait until it
+is ready, and fetch it. Each step does what the export's status page does
+and records the same events in System logs. Following an export needs any
+session; every other step, like every export, needs a full-scope session.
+
+```sh
+pk-admin export create --fact-set FACT_SET_ID --format csv \
+  --timezone America/New_York
+pk-admin export status EXPORT_ID --watch 5
+pk-admin export fetch EXPORT_ID
+pk-admin exports clean
+```
+
+- `export create` requests a Participation export, as the page's export
+  form does: `--fact-set` names the participation figures to export (the
+  page exports the ones it shows; until `report participation` prints
+  their `fact_set_id`, take it from the page's chart image link,
+  `.../participation/FACT_SET_ID.png`), `--format` is `csv`, `png`, `pdf`
+  or `xlsx`, and `--timezone` is the time zone of the file's dates. Exports
+  of the other report pages are requested on those pages for now; every
+  command below works on them too. An export's `EXPORT_ID` is in its status
+  page's address, `/admin/reports/exports/EXPORT_ID/`.
+- `export status` shows the export as its status page does. With
+  `--watch SECONDS` it repeats until the export stops changing (anything
+  but queued, running, retry_wait or abandoned).
+- `export cancel`, `export retry` and `export regenerate` are the status
+  page's buttons: cancel an export that is not ready yet, run a failed one
+  again once its cause is fixed, or request an expired one again from the
+  figures it was made from (a new export, with a new `EXPORT_ID`).
+  Regenerating a Family directory, mail-merge or financial export needs a
+  recent Google sign-in on the page, so for those `export regenerate` asks
+  at the [confirmation prompt](#confirmations) (or takes `--yes`); the
+  session stands in for the sign-in, and System logs show
+  `automation_fresh_gate` beside it.
+- `export fetch` saves a ready export's file on the host (see below).
+- `exports clean` deletes every fetched file.
+
+`export create`, `export retry` and `export regenerate` take
+`--request-key`, as [task retries](#task-retries) do: pass your own UUID,
+or the command makes one and writes it to standard error before it acts.
+Repeating a command with the same key, or cancelling an export already
+cancelled, returns the same export and changes nothing (`created` is
+false). Exit 6 (`outcome_unknown`) names the key in `error.request_id`:
+read the export with `export status`, or repeat the command with the key.
+
+While other work holds the export's campaign (a source refresh being
+promoted, for example), the status page turns its buttons off, and
+`export status` shows `changes_available` false. Then `export create`,
+`export cancel`, `export retry` and `export regenerate` are exit 1
+(`denied`). That refusal is temporary, not a permissions problem: try again
+later.
+
+| `export status` field | What it holds |
+| --- | --- |
+| `id`, `campaign_id`, `report`, `format`, `created_at` | The export |
+| `state` | `queued`, `running`, `retry_wait` or `abandoned` (still being made; the worker picks an abandoned run up again), `failed`, `succeeded` (made, file not yet published), `ready`, `expired` or `cancelled`, as the page shows |
+| `changes_available` | Whether the page's buttons may act now; false while other work holds the campaign |
+| `can_cancel` | Whether the page offers **Cancel** now |
+| `expires_at` | When a ready file is deleted |
+| `file_name`, `content_type`, `size`, `sha256`, `count` | The file: its name, type, size in bytes, SHA-256 and number of rows (null until it is published; an expired export keeps them) |
+
+`export create`, `export cancel`, `export retry` and `export regenerate`
+print `created`, `request_key` (none for a cancel) and `export`, the
+export's `export status` fields afterwards (for `export regenerate`, the
+new export's). An unknown export or `--fact-set`, figures that are not
+ready, or a file that has expired is exit 1 (`not_available`). Cancelling a
+ready export, retrying one that has not failed, or regenerating one that has
+not expired is exit 1 (`stale_version`): read it again. A key already used
+for a different export is exit 1 (`invalid`). System logs show the page's
+events (`export_requested`, `export_cancelled`, `export_downloaded`) and,
+for each change, `admin_cmd_export_create`, `admin_cmd_export_cancel`,
+`admin_cmd_export_retry` or `admin_cmd_export_regenerate`, attributed to
+the approving Administrator with the automation session as its subject.
+
+### Fetching an export's file
+
+`pk-admin export fetch EXPORT_ID` reads `export status`, then downloads the
+file as the page's download does (recording the page's `export_downloaded`
+events) straight into a private file on the host, checks its size and
+SHA-256 against `export status`, and prints only its `path`, `size` and
+`sha256`. The file's rows never reach the terminal, and no copy is kept
+anywhere else.
+
+Fetched files go to the export directory: `--export-dir DIR`, else
+`PK_ADMIN_EXPORT_DIR`, else `exports` in the session directory
+(`ROOT/run/admin-automation/exports`), which the wrapper creates owned by
+you with mode `0700`. Each file, `EXPORT_ID-FILE_NAME`, has mode `0600`
+and is never overwritten: a second fetch of the same export is refused.
+While the file arrives it is `.EXPORT_ID.partial`; a failed download, a
+size or digest that does not match (exit 3: fetch again), Ctrl-C, a closed
+terminal or SSH session, and TERM each delete it at once. Each fetch holds
+one database connection of the web's for as long as the download takes, at
+most the deployment's download time limit (five minutes by default).
+
+`export fetch` and `exports clean` are the wrapper's own verbs: they print
+the small JSON object above (`{"removed": N}` for a clean), not a
+`pk-admin/1` document. Their own refusals print no JSON at all, only a
+`pk-admin:` line on standard error: exit 1 when the export is not ready, 2
+before anything is downloaded (a bad id, no `pgrep`, a file already
+fetched, an unusable export directory) or when the file's final name
+appeared while it downloaded, and 3 for a file that does not match. When
+the `export status` or `export download` run itself fails, its
+`pk-admin/1` document and exit status come through unchanged, so exit 1 or
+3 with a JSON document is the command's, and without one the wrapper's.
+`export fetch` needs `pgrep` (the `procps` package on Debian and Ubuntu)
+to stop the download on Ctrl-C.
+
+The files hold the export's rows, which can include Family names,
+addresses, codes and pledges, exactly as the page's download does. Delete
+them once used: `pk-admin exports clean` deletes every fetched file (and
+any partial one) and prints how many it removed.
+
+`export fetch` refuses an export that is not ready (exit 1) and says what
+to do: follow a running one with `export status --watch`, retry a failed
+one, regenerate an expired one, or create a new one for a cancelled one.
+Underneath, `export download EXPORT_ID
+--stream` writes the file's bytes to standard output and its document
+(`id`, `file_name`, `content_type`, `size`, `sha256`, `count`) to standard
+error, as `logs export` does; the wrapper refuses to write it to a terminal.
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -804,3 +929,7 @@ nothing for `export fetch` to fetch.
 - `pk-admin/1` (ADM-11 PR 8a): additive. `logs list` and `logs export`,
   the first command that streams a file (its document on standard error),
   and `streams` in each catalog entry.
+- `pk-admin/1` (ADM-11 PR 8b): additive. `export create`, `export status`,
+  `export cancel`, `export retry`, `export regenerate` and
+  `export download --stream`; the wrapper's `export fetch` and
+  `exports clean`.
