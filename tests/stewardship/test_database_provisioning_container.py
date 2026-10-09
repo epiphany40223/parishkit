@@ -460,6 +460,44 @@ def test_upgrade_check_proves_migration_and_grants_are_no_ops(
             "GRANT pk_upgrade_check_group TO pk_stewardship_web",
             "DROP ROLE pk_upgrade_check_group",
         ),
+        # The isolation drift every runtime login's own admission refuses
+        # (#389 L7), so the upgrade stops before its services would.
+        (
+            "CREATE ROLE pk_upgrade_check_member; "
+            "GRANT pk_stewardship_web TO pk_upgrade_check_member",
+            "DROP ROLE pk_upgrade_check_member",
+        ),
+        (
+            # The schema owner is exempt from the ownership check only.
+            "CREATE ROLE pk_upgrade_check_owner_member; "
+            "GRANT pk_stewardship_migration TO pk_upgrade_check_owner_member",
+            "DROP ROLE pk_upgrade_check_owner_member",
+        ),
+        (
+            "CREATE FUNCTION public.upgrade_check_owned() RETURNS integer "
+            "LANGUAGE sql AS 'SELECT 1'; "
+            "ALTER FUNCTION public.upgrade_check_owned() "
+            "OWNER TO pk_stewardship_backup_worker",
+            "DROP FUNCTION public.upgrade_check_owned()",
+        ),
+        (
+            "CREATE FOREIGN DATA WRAPPER upgrade_check_fdw; "
+            "GRANT USAGE ON FOREIGN DATA WRAPPER upgrade_check_fdw "
+            "TO pk_stewardship_download",
+            "DROP FOREIGN DATA WRAPPER upgrade_check_fdw CASCADE",
+        ),
+        # The backup login's excess authority, as its backup admission
+        # refuses it (#389 L7).
+        (
+            "GRANT CREATE ON SCHEMA public TO pk_stewardship_backup_worker",
+            "REVOKE CREATE ON SCHEMA public FROM pk_stewardship_backup_worker",
+        ),
+        (
+            "CREATE SEQUENCE public.upgrade_check_sequence; "
+            "GRANT USAGE ON SEQUENCE public.upgrade_check_sequence "
+            "TO pk_stewardship_backup_worker",
+            "DROP SEQUENCE public.upgrade_check_sequence",
+        ),
         (
             "ALTER ROLE pk_stewardship_web BYPASSRLS",
             "ALTER ROLE pk_stewardship_web NOBYPASSRLS",

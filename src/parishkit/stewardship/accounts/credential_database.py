@@ -7,6 +7,7 @@ from django.db.backends.signals import connection_created
 
 from parishkit.config import ConfigError
 
+from ..database_provisioning import ISOLATION_DRIFT, SIGNATURE, excess_authority_checks
 from .secret_models import SECRET_TARGETS
 
 # How long one connection's full grant admission stays trusted (#639). The
@@ -61,6 +62,23 @@ def installer_permissions(target):
     return tables, metadata
 
 
+# What each attribute column of the identity query means when it is true,
+# so a refusal can name the checks that failed.
+IDENTITY_CHECKS = (
+    "superuser",
+    "bypasses row-level security",
+    "may create databases",
+    "may create roles",
+    "replication",
+    "inherits role authority",
+    "is a member of a role",
+    "may create in the public schema",
+    "cannot log in",
+    "past its VALID UNTIL",
+    *ISOLATION_DRIFT,
+)
+
+
 def _identity(expected, *, database=None):
     """Reject superusers, SET ROLE impersonation and any inherited role authority.
 
@@ -71,6 +89,10 @@ def _identity(expected, *, database=None):
     service's own code stop on a kept session once its login is withdrawn.
     A compromised process can skip it, so containment still needs the
     backend ended (see the operations spec's installer idle polling).
+
+    The login must also not lend its authority or hold any outside the grant
+    model (``ISOLATION_DRIFT``): no role is a member of it, it owns nothing,
+    and it has no foreign-data wrapper or server USAGE.
 
     Returns the login's role OID, so a caller can tell a recreated role of the
     same name from the one it already admitted.
@@ -85,11 +107,23 @@ def _identity(expected, *, database=None):
             "EXISTS(SELECT 1 FROM pg_auth_members WHERE member=r.oid), "
             "has_schema_privilege(current_user,'public','CREATE'), "
             "NOT rolcanlogin, coalesce(rolvaliduntil<=clock_timestamp(),false), "
-            "r.oid FROM pg_roles r WHERE rolname=current_user"
+            f"{', '.join(ISOLATION_DRIFT.values())}, r.oid "
+            "FROM pg_roles r WHERE rolname=current_user"
         )
         row = cursor.fetchone()
-    if row is None or row[:2] != (expected, expected) or any(row[2:-1]):
-        raise ConfigError("Credential service database identity is not isolated.")
+    if row is None or row[:2] != (expected, expected):
+        raise ConfigError(
+            "Credential service database identity is not isolated: "
+            "the session is not its own login."
+        )
+    if failed := [
+        name for name, bad in zip(IDENTITY_CHECKS, row[2:-1], strict=True) if bad
+    ]:
+        # Names only which checks failed, so an operator can repair the role.
+        raise ConfigError(
+            "Credential service database identity is not isolated: "
+            f"{', '.join(failed)}."
+        )
     return row[-1]
 
 
@@ -210,35 +244,46 @@ def admit_grants(allowed, *, database=None, functions=frozenset()):
                 or owner
                 or privilege not in allowed.get(table, set())
             ):
-                raise ConfigError("Installer database grants are excessive.")
-        signature = "p.proname||'('||oidvectortypes(p.proargtypes)||')'"
+                raise ConfigError(
+                    "Installer database grants are excessive: "
+                    f"{'ownership' if owner else privilege} on {schema}.{table}."
+                )
         cursor.execute(
             "SELECT count(*) FROM pg_proc p JOIN pg_namespace n "
             "ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosecdef "
-            f"AND {signature}=ANY(%s) "
+            f"AND {SIGNATURE}=ANY(%s) "
             "AND has_function_privilege(current_user,p.oid,'EXECUTE')",
             [sorted(functions)],
         )
         if cursor.fetchone()[0] != len(functions):
             raise ConfigError("Required database function grants are missing.")
-        cursor.execute(
-            "SELECT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n "
-            "ON n.oid=p.pronamespace WHERE n.nspname !~ '^pg_' "
-            "AND n.nspname<>'information_schema' AND p.prosecdef "
-            f"AND NOT (n.nspname='public' AND {signature}=ANY(%s)) "
-            "AND has_function_privilege(current_user,p.oid,'EXECUTE')) OR "
-            "EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n "
-            "ON n.oid=c.relnamespace WHERE n.nspname !~ '^pg_' "
-            "AND n.nspname<>'information_schema' AND c.relkind='S' "
-            "AND has_sequence_privilege(current_user,c.oid,'USAGE,SELECT,UPDATE')) OR "
-            "EXISTS(SELECT 1 FROM pg_namespace n WHERE n.nspname !~ '^pg_' "
-            "AND n.nspname<>'information_schema' "
-            "AND has_schema_privilege(current_user,n.oid,'CREATE')) OR "
-            "has_database_privilege(current_user,current_database(),'CREATE')",
-            [sorted(functions)],
-        )
-        if cursor.fetchone()[0]:
-            raise ConfigError("Installer database grants are excessive.")
+        if excess := excess_authority(cursor, functions):
+            raise ConfigError(
+                f"Installer database grants are excessive: {', '.join(excess)}."
+            )
+
+
+# Authority no declared grant gives the current login, keyed by what a
+# refusal names. ``excess_authority`` binds the allowed definer signatures
+# and the sequence privileges, in that order.
+EXCESS_AUTHORITY = excess_authority_checks("current_user", "%s", "%s")
+
+
+def excess_authority(cursor, functions=frozenset(), *, sequences="USAGE,SELECT,UPDATE"):
+    """The names of the authority the login holds that no declared grant gives.
+
+    That is EXECUTE on a definer routine other than the public ``functions``
+    named by signature, a ``sequences`` privilege on any sequence, CREATE on
+    any application schema, or CREATE on the database. The backup login
+    passes ``BACKUP_SEQUENCES`` (``USAGE,UPDATE``): its pg_read_all_data
+    membership reads every sequence by design. An empty list admits the login.
+    """
+    cursor.execute(
+        f"SELECT {', '.join(EXCESS_AUTHORITY.values())}",
+        [sorted(functions), sequences],
+    )
+    row = cursor.fetchone()
+    return [name for name, bad in zip(EXCESS_AUTHORITY, row, strict=True) if bad]
 
 
 def admit_consumer_database(consumer):

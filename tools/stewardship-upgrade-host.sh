@@ -311,6 +311,14 @@ if [ "$advisory" != t ]; then
         # grant change, anything but t is the cue to stop before anything
         # stops.
         echo "The upgrade check expects migration or grants to change something." >&2
+        # The check also answers f when the live catalog has drifted from
+        # what provisioning set up (#389): a login's attributes, membership,
+        # isolation (a member role, an owned object, foreign-data USAGE) or
+        # an excess grant. The services' identity check would refuse that.
+        echo "Or the database has drifted from its provisioned grants or login isolation" >&2
+        echo "(a member role, an owned object, foreign-data USAGE, an excess grant), which" >&2
+        echo "the services' identity check or database-grants would refuse: find and repair" >&2
+        echo "that drift before upgrading; see $runbook#upgrade." >&2
         if [ "$profile" = local ]; then
             echo "If this pull request changes the schema or a grant, re-run as 'deploy --schema-change'." >&2
         else
