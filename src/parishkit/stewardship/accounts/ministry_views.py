@@ -27,6 +27,7 @@ from .admin_editing import (
     editable_configuration,
     error_response,
     form_action,
+    in_place_follow,
     sign_preview,
 )
 from .admin_editing import (
@@ -366,7 +367,12 @@ def ministry_activity(request):
 
 @require_safe
 def configuration_request(request, request_id):
-    """Passive status reads show Applied only for a committed activation receipt."""
+    """Passive status reads show Applied only for a committed activation receipt.
+
+    An in-place settings page (#532) polls this read for its own live status,
+    naming itself with ``in_place``; the status it reads then carries the
+    follow-up that refreshes that page once the change settles.
+    """
     try:
         service = runtime()
         principal = admin_principal(request, service, passive=True)
@@ -391,7 +397,12 @@ def configuration_request(request, request_id):
                 step="apply",
             )
             response = render(
-                request, "stewardship/configuration-request.html", {"receipt": receipt}
+                request,
+                "stewardship/configuration-request.html",
+                {
+                    "receipt": receipt,
+                    "follow_url": in_place_follow(request.GET, receipt.request_id),
+                },
             )
             response["Cache-Control"] = "no-store"
             return response

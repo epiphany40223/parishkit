@@ -1,6 +1,7 @@
 """Draft editor uses real Google sessions, YAML requests, SQL guards and source."""
 
-from uuid import uuid4
+from urllib.parse import parse_qs, urlsplit
+from uuid import UUID, uuid4
 
 import pytest
 from django.test import Client
@@ -8,6 +9,7 @@ from django.test import Client
 from parishkit.stewardship.accounts.campaign_forms import initial_fields
 from parishkit.stewardship.accounts.campaign_views import SALT
 from parishkit.stewardship.accounts.configuration_installation import install_request
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import Campaign
@@ -18,10 +20,10 @@ from ..policy_factory import address
 from ..test_source_corpus import source
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change, command
-from .test_admin_navigation_postgresql import flow_steps
+from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_current_chair_postgresql import publish
-from .test_parish_views_postgresql import token
+from .test_parish_views_postgresql import digest, region, token
 from .test_source_families_postgresql import source_singletons  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -56,12 +58,21 @@ def post(browser, path, values):
     )
 
 
+def requested(response):
+    """The change a confirmation's redirect names.
+
+    Most editors lead to Change status (/changes/<id>/); Campaign and Parish
+    settings answer with themselves, naming it in ``request`` (#532).
+    """
+    assert response.status_code == 302, response.content
+    location = urlsplit(response["Location"])
+    named = parse_qs(location.query).get("request")
+    return UUID(named[0] if named else location.path.rstrip("/").rsplit("/", 1)[-1])
+
+
 def apply(store, response):
     """Installation is a separate process boundary from accepting the web request."""
-    assert response.status_code == 302, response.content
-    row = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
-    )
+    row = ConfigurationChangeRequest.objects.get(pk=requested(response))
     receipt = install_request(store, request_id=row.pk, correlation_id=uuid4())
     assert receipt.state == "applied"
 
@@ -237,7 +248,7 @@ def test_live_lock_invalidates_preview_without_a_yaml_change(auth_service, googl
     assert post(browser, url(row), fields(store, row, name="Locked")).status_code == 409
     response = browser.get(url(row))
     assert response.status_code == 200 and b"read-only" in response.content
-    assert b"Preview changes" not in response.content
+    assert b"Review changes" not in response.content
     # A read-only page is not a step of any flow (#196).
     assert flow_steps(response.content) is None
 
@@ -253,10 +264,11 @@ def test_source_replacement_requires_fresh_preview(auth_service, google):
     values = fields(store, row, ministry="on", ministry_duids=["4"])
     proposal = token(post(browser, url(row), values))
     publish(source())
-    assert (
-        post(browser, url(row), {"action": "confirm", "preview": proposal}).status_code
-        == 409
-    )
+    refused = post(browser, url(row), {"action": "confirm", "preview": proposal})
+    assert refused.status_code == 409
+    # Refused in place (#532): the page again, explained in its review region.
+    assert "This preview is out of date." in region(refused.content)
+    assert b'id="settings-form"' in refused.content
     assert ConfigurationChangeRequest.objects.count() == requests
 
 
@@ -414,3 +426,107 @@ def test_campaign_edit_cannot_strand_existing_initial_mail(auth_service, google)
     assert "start_date=2054-10-02" in response["Location"]
     row.refresh_from_db()
     assert row.active_configuration.start_date.isoformat() == "2054-10-01"
+
+
+def test_review_and_apply_stay_on_campaign_settings(auth_service, google):
+    """Campaign settings reviews, applies and follows a change in place (#532).
+
+    The review keeps its exact content beside the form, the step indicator
+    follows each step, and the confirmed change's status is drawn on the
+    page itself, polling Change status's passive read.
+    """
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    browser, _ = signed_in()
+    page = browser.get(url(row))
+    assert flow_steps(page.content) == (STEPS, "Make changes")
+    assert b"data-in-place data-table-sync" in page.content
+    review = post(browser, url(row), fields(store, row, name="Renamed in place"))
+    assert flow_steps(review.content) == (STEPS, "Review")
+    shown = region(review.content)
+    assert "Review your changes" in shown and "Renamed in place" in shown
+    response = post(browser, url(row), {"action": "confirm", "preview": token(review)})
+    request_id = requested(response)
+    assert response["Location"] == (f"{url(row)}?request={request_id}#settings-review")
+    # Reading the change's status (the page's own quiet refresh once it is
+    # applied) is passive: it never renews idle time, as Change status.
+    activity = PortalSession.objects.get().last_activity_at
+    status = browser.get(response["Location"])
+    assert PortalSession.objects.get().last_activity_at == activity
+    assert flow_steps(status.content) == (STEPS, "Apply")
+    assert "Applying your change" in region(status.content)
+    assert "?in_place=campaign_settings" in region(status.content)
+    apply(store, response)
+    row.refresh_from_db()
+    assert row.active_configuration.name == "Renamed in place"
+    assert "Applied: your change is saved" in region(
+        browser.get(response["Location"]).content
+    )
+
+
+def test_a_refused_apply_keeps_the_reviewed_version(auth_service, google):
+    """A confirmation refused because the settings changed elsewhere keeps the
+    form at the reviewed version (#532 review): the next Review is refused
+    too, until a reload brings the current settings, so it can never quietly
+    propose undoing the other change."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    browser, _ = signed_in()
+    values = fields(store, row, name="Reviewed name")
+    proposal = token(post(browser, url(row), values))
+    parish = store.active().document()["sections"]["parish"][0]
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": parish["id"],
+                "values": {"name": "Changed elsewhere"},
+            }
+        ],
+    )
+    refused = post(browser, url(row), {"action": "confirm", "preview": proposal})
+    assert refused.status_code == 409
+    assert "This preview is out of date." in region(refused.content)
+    assert digest(refused) == values["base_digest"] != store.active().digest
+    again = post(browser, url(row), values | {"base_digest": digest(refused)})
+    assert again.status_code == 409
+    assert digest(browser.get(url(row))) == store.active().digest
+
+
+def test_a_pending_campaign_change_keeps_its_reviewed_version(auth_service, google):
+    """Until it is applied, Apply's answer draws the form at the version the
+    change was reviewed at, not one committed elsewhere (#751 review)."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    browser, _ = signed_in()
+    values = fields(store, row, name="Reviewed name")
+    proposal = token(post(browser, url(row), values))
+    response = post(browser, url(row), {"action": "confirm", "preview": proposal})
+    parish = store.active().document()["sections"]["parish"][0]
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": parish["id"],
+                "values": {"name": "Changed elsewhere"},
+            }
+        ],
+    )
+    page = browser.get(response["Location"], HTTP_X_REQUESTED_WITH="fetch")
+    assert digest(page) == values["base_digest"] != store.active().digest
+    # A full load uses the current version, so a Review is accepted.
+    reloaded = browser.get(response["Location"])
+    assert digest(reloaded) == store.active().digest
+    again = post(browser, url(row), fields(store, row, name="After reload"))
+    assert again.status_code == 200 and "Review your changes" in region(again.content)

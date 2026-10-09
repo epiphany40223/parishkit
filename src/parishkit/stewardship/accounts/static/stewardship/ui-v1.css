@@ -713,6 +713,10 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
 /* While ui-v1.js re-sorts or re-pages a table in place (#478), the rows dim but stay readable. */
 [data-table-region][aria-busy="true"], [data-in-place-region][aria-busy="true"] { cursor: progress; }
 [data-table-region][aria-busy="true"] table { opacity: .55; }
+/* A review withdrawn by a later edit stays in place (#532, #736), greyed
+   out through a colour that still meets contrast (never opacity), except
+   its note saying to review again. */
+[data-review-stale] > :not([data-review-note]) { color: var(--muted); }
 
 /* Compact Admin pages (#227): the page's data should start within a laptop
    screen (about 768px tall) with help collapsed. Scoped to Admin pages, so

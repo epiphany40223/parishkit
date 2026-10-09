@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from django import forms
 from django.core import signing
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
@@ -13,8 +13,8 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import timezone_names, typed
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web import dates
-from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.presentation import parse_us_phone, phone
+from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 
 from . import admin_navigation
 from .admin_editing import (
@@ -23,6 +23,10 @@ from .admin_editing import (
     error_response,
     form_action,
     principal,
+    receipt_base,
+    requested_status,
+    review_region,
+    reviewed_base,
     sign_preview,
 )
 from .authentication import runtime
@@ -32,6 +36,11 @@ from .request_patch import build_candidate
 from .sessions import authenticated_admin
 
 SALT = "stewardship-parish-profile-preview-v1"
+# The review's note when the change includes the timezone.
+TIMEZONE_NOTE = _(
+    "This timezone change is prospective. Existing campaign timezones, "
+    "boundaries, schedules and report buckets remain unchanged."
+)
 PROFILE_FIELDS = (
     "name",
     "website",
@@ -154,10 +163,18 @@ def _profile(configuration):
     ]
 
 
-def _form_page(request, configuration, form, *, status=200):
-    """Render accessible field errors and the prospective timezone warning."""
-    # The first step of edit, review, apply (#196).
-    admin_navigation.place(request, flow="change", step="edit")
+def _form_page(request, configuration, form, *, status=200, **region):
+    """Render the editor and its in-place review region (#532).
+
+    ``region`` is ``review_region``'s ``review``, ``receipt`` or
+    ``refusal``: the reviewed change, a confirmed change's status, or a
+    refusal shown in place. The step indicator follows whichever is shown.
+    """
+    step = "review" if region.get("review") else "edit"
+    if region.get("receipt"):
+        step = "apply"
+    # Edit, review, apply (#196), all on this page.
+    admin_navigation.place(request, flow="change", step=step)
     response = render(
         request,
         "stewardship/parish-settings.html",
@@ -165,12 +182,30 @@ def _form_page(request, configuration, form, *, status=200):
             "form": form,
             "parish_name": _profile(configuration)["values"]["name"],
             "configuration": configuration,
+            **review_region("parish_settings", form, **region),
         },
         status=status,
     )
-    if status == 400:
+    if status != 200:
         response.stewardship_safe_error = True
     return response
+
+
+def _initial_form(configuration, digest=None):
+    """The editor as the applied profile fills it, at its current version.
+
+    A refusal passes the ``digest`` the reader's form was at instead (see
+    ``admin_editing.reviewed_base``), since only the form's hidden fields
+    are taken from an in-place answer.
+    """
+    record = _profile(configuration)["values"]
+    initial = {
+        name: record.get(name, DEFAULTS.get(name, "")) for name in PROFILE_FIELDS
+    }
+    initial["base_digest"] = (
+        configuration.active_configuration.digest if digest is None else digest
+    )
+    return ParishForm(initial=initial)
 
 
 def _shown(name, value):
@@ -187,7 +222,8 @@ def _preview(request, service, actor):
     if not form.is_valid():
         return _form_page(request, configuration, form, status=400)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Reload the profile before changing it.")
+        # Shown in place (#532) with the standard explanation.
+        raise stale_page()
     record = _profile(configuration)
     values = {
         name: form.cleaned_data[name]
@@ -210,7 +246,7 @@ def _preview(request, service, actor):
     ]
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
-        raise StaleRecordError("The applied configuration changed.")
+        raise stale_page()
     try:
         build_candidate(base, patch, candidate_id=uuid4())
     except ConfigError:
@@ -222,56 +258,84 @@ def _preview(request, service, actor):
             ),
         )
         return _form_page(request, configuration, form, status=400)
-    admin_navigation.place(request, flow="change", step="review")
-    return render(
-        request,
-        "stewardship/parish-preview.html",
-        {
-            "configuration": configuration,
-            "changes": [
-                {
-                    "label": form.fields[name].label,
-                    "before": _shown(
-                        name, record["values"].get(name, DEFAULTS.get(name, ""))
-                    ),
-                    "after": _shown(name, value or ""),
-                }
-                for name, value in values.items()
-            ],
-            "preview": sign_preview(
-                actor=actor, configuration=configuration, patch=patch, salt=SALT
-            ),
-            "timezone_changed": "timezone" in values,
-        },
-    )
+    review = {
+        "changes": [
+            {
+                "label": form.fields[name].label,
+                "before": _shown(
+                    name, record["values"].get(name, DEFAULTS.get(name, ""))
+                ),
+                "after": _shown(name, value or ""),
+            }
+            for name, value in values.items()
+        ],
+        "notes": [TIMEZONE_NOTE] if "timezone" in values else [],
+        "preview": sign_preview(
+            actor=actor, configuration=configuration, patch=patch, salt=SALT
+        ),
+    }
+    return _form_page(request, configuration, form, review=review)
+
+
+def _post(request, service, actor):
+    """Review or confirm in place; a stale page or preview is refused in place.
+
+    The refusal is the page again (status 409) with the standard explanation
+    in its review region, so the Administrator keeps their place and typing.
+    Its form stays at the version the reader's values came from (posted, or
+    reviewed), so a page changed elsewhere must be reloaded before the next
+    Review rather than quietly undoing that change.
+    """
+    action = form_action(request.POST, preview_fields={*PROFILE_FIELDS, "base_digest"})
+    try:
+        if action == "preview":
+            return _preview(request, service, actor)
+        return confirm(
+            request, service, actor, salt=SALT, current_scope=_scope, in_place=True
+        )
+    except UserFacingStale as error:
+        configuration = editable_configuration(service)
+        digest = (
+            request.POST.get("base_digest", "")
+            if action == "preview"
+            else reviewed_base(request.POST, SALT)
+        )
+        return _form_page(
+            request,
+            configuration,
+            _initial_form(configuration, digest),
+            status=409,
+            refusal=error.refusal,
+        )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def parish_settings(request):
-    """Preview and enqueue parish edits without granting web configuration writes."""
+    """Preview and enqueue parish edits without granting web configuration writes.
+
+    Review, apply and the change's status all happen on this page (#532).
+    """
     try:
         service = runtime()
-        actor = principal(request, service)
+        # Reading a change's status (the page's own quiet refresh once it is
+        # applied) is passive, as Change status is: it never renews idle time.
+        actor = principal(
+            request,
+            service,
+            passive=request.method != "POST" and "request" in request.GET,
+        )
         if request.method == "POST":
-            action = form_action(
-                request.POST, preview_fields={*PROFILE_FIELDS, "base_digest"}
-            )
-            response = (
-                _preview(request, service, actor)
-                if action == "preview"
-                else confirm(request, service, actor, salt=SALT, current_scope=_scope)
-            )
+            response = _post(request, service, actor)
         else:
-            filters(request.GET, allowed=set())
-            configuration = editable_configuration(service)
-            initial = {
-                name: _profile(configuration)["values"].get(
-                    name, DEFAULTS.get(name, "")
+            with transaction.atomic():
+                receipt = requested_status(request, service, actor, request.GET)
+                configuration = editable_configuration(service)
+                response = _form_page(
+                    request,
+                    configuration,
+                    _initial_form(configuration, receipt_base(request, receipt)),
+                    receipt=receipt,
                 )
-                for name in PROFILE_FIELDS
-            }
-            initial["base_digest"] = configuration.active_configuration.digest
-            response = _form_page(request, configuration, ParishForm(initial=initial))
         if not allows(
             authenticated_admin(request, store=service.store, read_only=True),
             Capability.CONFIGURE,
@@ -285,6 +349,7 @@ def parish_settings(request):
         LimiterUnavailable,
         PermissionError,
         ValueError,
+        LookupError,
         StaleRecordError,
         signing.BadSignature,
     ) as error:

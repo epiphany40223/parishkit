@@ -3,21 +3,7 @@
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Change status" %}</h1>
-<section class="panel" role="status" aria-live="polite" data-live-status="configuration" data-live-state="{{ receipt.state }}"{% if receipt.state != 'applied' and receipt.state != 'failed' and receipt.state != 'cancelled' %} data-live-pending{% endif %}>
-{% if receipt.state == 'applied' %}
-  <h2 class="live-done">{% translate "Applied: your change is saved" %}</h2><p>{% translate "The change has been applied and is now in effect." %}</p>
-{% elif receipt.state == 'failed' or receipt.state == 'cancelled' %}
-  <h2 class="live-failed">{% translate "Not applied" %}</h2>
-  {% if receipt.failure_code == 'invalid_candidate' %}<p>{% translate "This change could not be applied because it did not pass validation against the saved settings. Nothing was changed. Start the change again; if it keeps failing, check System logs." %}</p>
-  {% elif receipt.failure_code == 'stale_base' %}<p>{% translate "The settings changed after you reviewed this change, so it was not applied. Nothing was changed. Start the change again from the current settings." %}</p>
-  {% elif receipt.failure_code == 'actor_unauthorized' %}<p>{% translate "Your account is no longer allowed to make this change, so it was not applied. Nothing was changed." %}</p>
-  {% else %}<p>{% translate "Review the current configuration before starting a new change." %}</p>{% endif %}
-{% else %}
-  {% translate "Applying your change…" as running %}{% include 'stewardship/live-running.html' with message=running %}
-  <p>{% translate "This usually takes a few seconds. The change is not saved until this page says Applied." %}</p>
-{% endif %}
-  <p>{% translate "Request:" %} {{ receipt.request_id }}</p>
-</section>
+{% include 'stewardship/configuration-request-status.html' %}
 {% comment %}
   "Return to" leads to the page the change was confirmed on (the same page
   the breadcrumb trail names), or Home when this sign-in does not know it.

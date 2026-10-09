@@ -400,7 +400,7 @@ def test_a_response_without_the_region_is_shown_without_resending(
         lambda request: posts.append(request.url) if request.method == "POST" else None,
     )
     page.get_by_role("button", name="sort ascending").click()
-    page.wait_for_url(component_origin + "/login#table")
+    page.wait_for_url(component_origin + "/login")
     visible(page.get_by_role("button", name="Sign in with Google"))
     assert posts == [component_origin + "/redirect-to-login"]
 

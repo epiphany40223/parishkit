@@ -1,5 +1,6 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Campaign settings" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Campaign settings" %}</h1>
 {% aboutpage "campaign-settings" %}<p>{% translate "Campaign settings decide what the Family form asks (census, Ministries, a pledge, additional information) and when the campaign runs. Page text and email templates, mail schedules and share choices each have their own page, linked above." %}</p>{% endaboutpage %}
@@ -14,11 +15,12 @@
 {% if editable %}
 {% if form.ministry.value %}<p><a href="{% url 'admin:talent_settings' %}">{% translate "Edit Member talents" %}</a></p>{% endif %}
 {% if form.financial_enabled.value %}<p><a href="{% url 'admin:share_settings' %}">{% translate "Edit Share options" %}</a></p>{% endif %}
-<form method="post" class="panel" data-campaign-form>
+{% comment %}Review and apply happen in place, below the form (#532).{% endcomment %}<form id="settings-form" method="post" action="#settings-review" class="panel" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-campaign-form>
 {% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/campaign-fields.html' %}
-{% button type="submit" %}{% translate "Preview changes" %}{% endbutton %}
+{% button type="submit" %}{% translate "Review changes" %}{% endbutton %}
 </form>
+<div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div>
 {% else %}
 <p role="status">{% translate "These settings can't be changed now. They can change only on the current Testing-mode draft, before it has ever been live, and not while background work or going live is under way. Background work usually finishes in minutes; going live holds them until it completes or is cancelled." %}</p>
 {% if ministries_live %}<section class="panel" id="ministry-selections"><h2>{% translate "Ministry selections" %}</h2>

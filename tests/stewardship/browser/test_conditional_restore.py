@@ -187,7 +187,7 @@ def test_restored_campaign_modules_update_a_save_gate(page, component_origin):
             form.querySelector("[name=financial_start]").required = true;
         }"""
     )
-    save = page.get_by_role("button", name="Preview changes")
+    save = page.get_by_role("button", name="Review changes")
     restore(page, "#id_financial_enabled", "box => { box.checked = true; }")
     assert save.is_disabled()
     restore(page, "#id_financial_enabled", "box => { box.checked = false; }")
