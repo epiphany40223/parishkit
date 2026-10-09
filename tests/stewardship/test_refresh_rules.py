@@ -5,6 +5,7 @@ import pytest
 from parishkit.stewardship.source.refresh_rules import (
     Problem,
     check_schedule,
+    converted_rules,
     daily_times,
     spacing_conflicts,
     stored_settings,
@@ -257,3 +258,109 @@ def test_a_kept_time_excuses_only_a_full_time():
     )
     full = stored_settings(rules(at("full", "02:10")))
     assert check_schedule(full, kept=("02:10",)) == []
+
+
+PRODUCTION = ("00:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00")
+
+
+def test_listed_full_times_are_converted_one_row_each_with_no_rule_inferred():
+    """Decision 20: one "Full at" row per stored time; quick every 15 minutes."""
+    converted = converted_rules(
+        {"nightly_time": "00:00", "full_refresh_times": list(PRODUCTION)}
+    )
+    assert converted == rules(
+        *(at("full", value) for value in PRODUCTION),
+        every("quick", 15, "00:00", "23:45"),
+    )
+    result = daily_times(converted)
+    assert result.full == PRODUCTION
+    # Precedence removes the quick times that equal a full time.
+    assert len(result.quick) == 96 - 8 and not set(result.quick) & set(PRODUCTION)
+
+
+def test_an_empty_document_is_the_default_nightly_and_quarter_hour_quick():
+    """``refresh_settings``'s defaults are filled first."""
+    assert converted_rules({}) == rules(
+        at("full", "02:00"), every("quick", 15, "00:00", "23:45")
+    )
+
+
+@pytest.mark.parametrize(
+    "full,quick,expected",
+    [
+        (
+            "hourly",
+            "quarter_hour",
+            [every("full", 60, "00:00", "23:00"), every("quick", 15, "00:00", "23:45")],
+        ),
+        (
+            "hourly",
+            "hourly",
+            [every("full", 60, "00:00", "23:00"), every("quick", 60, "00:00", "23:00")],
+        ),
+        ("quarter_hour", "off", [every("full", 15, "00:00", "23:45")]),
+        (
+            "daily",
+            "hourly",
+            [at("full", "02:00"), every("quick", 60, "00:00", "23:00")],
+        ),
+        ("daily", "off", [at("full", "02:00")]),
+    ],
+)
+def test_existing_frequencies_convert_to_rules_through_the_day(full, quick, expected):
+    """Hourly and quarter-hour refreshes become rules from 00:00; off has no rule."""
+    converted = converted_rules({"full_refresh": full, "delta_refresh": quick})
+    assert converted == rules(*expected)
+    # The converted rules are a schedule the validator accepts as derived.
+    assert check_schedule(stored_settings(converted)) == []
+
+
+def test_a_converted_hourly_full_refresh_has_no_quick_update_left():
+    """Hourly quick updates all equal an hourly full time, so precedence drops them."""
+    result = daily_times(
+        converted_rules({"full_refresh": "hourly", "delta_refresh": "hourly"})
+    )
+    assert result.full == hours(*range(24)) and result.quick == ()
+
+
+def test_a_kept_off_quarter_hour_time_keeps_the_quick_times_beside_it():
+    """02:00 and 02:15 run today beside 02:10, so they become "Quick at" rows."""
+    converted = converted_rules(
+        {"nightly_time": "02:10", "full_refresh_times": ["02:10"]}
+    )
+    assert converted == rules(
+        at("full", "02:10"),
+        every("quick", 15, "00:00", "23:45"),
+        at("quick", "02:00"),
+        at("quick", "02:15"),
+    )
+    result = daily_times(converted)
+    assert result.full == ("02:10",) and result.covered == ()
+    assert "02:00" in result.quick and "02:15" in result.quick
+    # The Administrator sees them as spacing problems, not covered times.
+    problems = check_schedule(stored_settings(converted), kept=("02:10",))
+    assert Problem("too_close", ("02:00", "02:10")) in problems
+    assert Problem("too_close", ("02:10", "02:15")) in problems
+
+
+def test_an_off_hour_full_time_keeps_the_hourly_quick_update_before_it():
+    """With hourly quick updates, 08:30 would cover 08:00, which runs today."""
+    converted = converted_rules(
+        {
+            "nightly_time": "08:30",
+            "full_refresh_times": ["08:30"],
+            "delta_refresh": "hourly",
+        }
+    )
+    assert converted["rules"][-1] == at("quick", "08:00")
+    result = daily_times(converted)
+    assert result.covered == () and result.quick == hours(*range(24))
+    # 08:00 is 30 minutes before 08:30, so nothing is too close.
+    assert check_schedule(stored_settings(converted)) == []
+
+
+def test_a_schedule_saved_with_rules_is_shown_as_saved():
+    """Only an existing schedule is converted; skip switch starts off for it."""
+    saved = rules(at("full", "00:00"), skip=True)
+    assert converted_rules(stored_settings(saved)) is saved
+    assert converted_rules({})["skip_around_family_emails"] is False

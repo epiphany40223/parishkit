@@ -23,7 +23,7 @@ Everything here is pure: wall times only, no time zone, no database.
 
 from dataclasses import dataclass
 
-from .cadence import MAX_DAILY_TIMES, canonical_time
+from .cadence import MAX_DAILY_TIMES, canonical_time, refresh_settings
 
 # The rule intervals the editor offers, in minutes.
 STEPS = (15, 30, 60, 120, 180, 240, 360, 480, 720)
@@ -112,12 +112,15 @@ class DailyTimes:
     ``full`` and ``quick`` are sorted ``HH:MM`` tuples. ``covered`` pairs each
     quick time that coverage left out with the full time that covers it.
     ``unmatched_skips`` are the indexes of skips that matched no time.
+    ``replaced`` are the quick times precedence dropped because a full time
+    falls at the same time (the preview shows each as covered by it).
     """
 
     full: tuple
     quick: tuple
     covered: tuple = ()
     unmatched_skips: tuple = ()
+    replaced: tuple = ()
 
 
 def _skipped(skip, value):
@@ -177,6 +180,7 @@ def daily_times(refresh_rules):
             unmatched.append(index)
         full -= removed
         quick -= removed
+    replaced = quick & full
     quick -= full
     covered = []
     for value in sorted(quick):
@@ -191,6 +195,7 @@ def daily_times(refresh_rules):
         tuple(clock(value) for value in sorted(quick)),
         tuple(covered),
         tuple(unmatched),
+        tuple(clock(value) for value in sorted(replaced)),
     )
 
 
@@ -291,3 +296,54 @@ def check_schedule(settings, *, kept=()):
     }:
         problems.append(Problem("rules_mismatch"))
     return problems
+
+
+# The rule an existing hourly or quarter-hour refresh is shown as: every
+# UTC hour or quarter hour becomes every local hour or quarter hour of the
+# day, the same instants in any zone whose offset is a whole hour.
+_EVERY = {
+    "hourly": {"every": 60, "from": "00:00", "to": "23:00"},
+    "quarter_hour": {"every": 15, "from": "00:00", "to": "23:45"},
+}
+
+
+def converted_rules(settings):
+    """The ``refresh_rules`` the settings page shows for stored ``settings``.
+
+    A schedule saved with its rules is shown as saved. An existing schedule
+    (no ``refresh_rules``, every schedule before #632) is converted by the
+    mapping in the background-processing spec's "Stored schedule and
+    upgrade", after ``cadence.refresh_settings`` fills its defaults: one
+    "Full at" row per listed full time (kept off-quarter-hour times
+    included, no rule inferred), or a full rule every 60 or 15 minutes
+    through the day; a quick rule every 15 or 60 minutes through the day, or
+    none; no skips; and skipping around Family emails off, since such a
+    schedule never skips.
+
+    The result runs exactly today's times: precedence (``daily_times``)
+    drops only a quick time equal to a full time, as the old scheduler
+    joined the two. Coverage would also drop a rule's quick time near a
+    full time (one the old scheduler runs, e.g. 08:00 beside an 08:30 full
+    time with hourly quick updates), so each such time gets its own "Quick
+    at" row, which coverage never removes; a time too close to a full time
+    then shows as a spacing problem rather than silently disappearing.
+    Pure: the result is never stored by this function.
+    """
+    stored = settings.get("refresh_rules")
+    if stored is not None:
+        return stored
+    schedule = refresh_settings(settings)
+    if schedule["frequency"] == "daily":
+        rules = [
+            {"kind": "full", "at": value} for value in schedule["full_refresh_times"]
+        ]
+    else:
+        rules = [{"kind": "full", **_EVERY[schedule["frequency"]]}]
+    if schedule["delta_refresh"] in _EVERY:
+        rules.append({"kind": "quick", **_EVERY[schedule["delta_refresh"]]})
+    converted = {"rules": rules, "skips": [], "skip_around_family_emails": False}
+    # Keep every quick time coverage would remove: the old scheduler runs it.
+    rules.extend(
+        {"kind": "quick", "at": value} for value, _ in daily_times(converted).covered
+    )
+    return converted
