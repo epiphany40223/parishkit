@@ -766,3 +766,11 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
    Templates keep the panel directly after the h1 (test_admin_help_guards
    checks it). */
 h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem; }
+
+/* Repeat a reminder (#469): the seven weekday choices wrap side by side
+   instead of a tall single column; each keeps its 44px touch target. */
+.repeat-days { display: flex; flex-wrap: wrap; column-gap: 1.25rem; }
+.repeat-days > label { display: inline-block; }
+/* The repeat summary reserves two lines, so its text appearing, changing or
+   wrapping on a phone never moves the Add button below it (#469). */
+.repeat-summary { min-height: 3.2em; min-height: 2lh; margin-block: .5rem 0; font-weight: 600; }

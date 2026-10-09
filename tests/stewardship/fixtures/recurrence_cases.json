@@ -1,0 +1,307 @@
+{
+  "cases": [
+    {
+      "name": "weekly on Monday and Thursday through October",
+      "rule": {
+        "frequency": "weekly",
+        "start": "2054-10-01",
+        "end": "2054-10-31",
+        "weekdays": [
+          0,
+          3
+        ]
+      },
+      "expected": {
+        "dates": [
+          "2054-10-01",
+          "2054-10-05",
+          "2054-10-08",
+          "2054-10-12",
+          "2054-10-15",
+          "2054-10-19",
+          "2054-10-22",
+          "2054-10-26",
+          "2054-10-29"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "name": "every day for four days",
+      "rule": {
+        "frequency": "daily",
+        "start": "2054-10-05",
+        "end": "2054-10-08"
+      },
+      "expected": {
+        "dates": [
+          "2054-10-05",
+          "2054-10-06",
+          "2054-10-07",
+          "2054-10-08"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "name": "every day across the November daylight-saving change",
+      "rule": {
+        "frequency": "daily",
+        "start": "2054-10-31",
+        "end": "2054-11-03"
+      },
+      "expected": {
+        "dates": [
+          "2054-10-31",
+          "2054-11-01",
+          "2054-11-02",
+          "2054-11-03"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "name": "one day",
+      "rule": {
+        "frequency": "daily",
+        "start": "2054-10-05",
+        "end": "2054-10-05"
+      },
+      "expected": {
+        "dates": [
+          "2054-10-05"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "name": "the 31st skips shorter months",
+      "rule": {
+        "frequency": "monthly",
+        "start": "2054-09-01",
+        "end": "2054-12-31",
+        "monthly": {
+          "day": 31
+        }
+      },
+      "expected": {
+        "dates": [
+          "2054-10-31",
+          "2054-12-31"
+        ],
+        "missing": [
+          "2054-09",
+          "2054-11"
+        ]
+      }
+    },
+    {
+      "name": "the 29th in a leap year February",
+      "rule": {
+        "frequency": "monthly",
+        "start": "2056-01-01",
+        "end": "2056-03-31",
+        "monthly": {
+          "day": 29
+        }
+      },
+      "expected": {
+        "dates": [
+          "2056-01-29",
+          "2056-02-29",
+          "2056-03-29"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "name": "the 29th skips a common-year February",
+      "rule": {
+        "frequency": "monthly",
+        "start": "2055-01-01",
+        "end": "2055-03-31",
+        "monthly": {
+          "day": 29
+        }
+      },
+      "expected": {
+        "dates": [
+          "2055-01-29",
+          "2055-03-29"
+        ],
+        "missing": [
+          "2055-02"
+        ]
+      }
+    },
+    {
+      "name": "the second Tuesday",
+      "rule": {
+        "frequency": "monthly",
+        "start": "2054-09-01",
+        "end": "2054-11-30",
+        "monthly": {
+          "ordinal": 2,
+          "weekday": 1
+        }
+      },
+      "expected": {
+        "dates": [
+          "2054-09-08",
+          "2054-10-13",
+          "2054-11-10"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "name": "the last Friday",
+      "rule": {
+        "frequency": "monthly",
+        "start": "2054-09-01",
+        "end": "2054-11-30",
+        "monthly": {
+          "ordinal": -1,
+          "weekday": 4
+        }
+      },
+      "expected": {
+        "dates": [
+          "2054-09-25",
+          "2054-10-30",
+          "2054-11-27"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "name": "the fourth Sunday",
+      "rule": {
+        "frequency": "monthly",
+        "start": "2054-10-01",
+        "end": "2054-10-31",
+        "monthly": {
+          "ordinal": 4,
+          "weekday": 6
+        }
+      },
+      "expected": {
+        "dates": [
+          "2054-10-25"
+        ],
+        "missing": []
+      }
+    },
+    {
+      "name": "a range that ends before the chosen day",
+      "rule": {
+        "frequency": "monthly",
+        "start": "2054-10-01",
+        "end": "2054-10-15",
+        "monthly": {
+          "day": 20
+        }
+      },
+      "expected": {
+        "dates": [],
+        "missing": []
+      }
+    },
+    {
+      "name": "a weekday that never falls in the range",
+      "rule": {
+        "frequency": "weekly",
+        "start": "2054-10-05",
+        "end": "2054-10-06",
+        "weekdays": [
+          4
+        ]
+      },
+      "expected": {
+        "dates": [],
+        "missing": []
+      }
+    },
+    {
+      "name": "the last date before the first",
+      "rule": {
+        "frequency": "daily",
+        "start": "2054-10-08",
+        "end": "2054-10-05"
+      },
+      "expected": {
+        "error": "order"
+      }
+    },
+    {
+      "name": "no day of the week chosen",
+      "rule": {
+        "frequency": "weekly",
+        "start": "2054-10-01",
+        "end": "2054-10-31",
+        "weekdays": []
+      },
+      "expected": {
+        "error": "weekdays"
+      }
+    },
+    {
+      "name": "more than a year",
+      "rule": {
+        "frequency": "daily",
+        "start": "2054-01-01",
+        "end": "2055-01-02"
+      },
+      "expected": {
+        "error": "span"
+      }
+    },
+    {
+      "name": "a date that does not exist",
+      "rule": {
+        "frequency": "daily",
+        "start": "2054-02-30",
+        "end": "2054-03-02"
+      },
+      "expected": {
+        "error": "dates"
+      }
+    },
+    {
+      "name": "a missing date",
+      "rule": {
+        "frequency": "daily",
+        "start": "",
+        "end": "2054-03-02"
+      },
+      "expected": {
+        "error": "dates"
+      }
+    },
+    {
+      "name": "day of the month out of range",
+      "rule": {
+        "frequency": "monthly",
+        "start": "2054-10-01",
+        "end": "2054-10-31",
+        "monthly": {
+          "day": 0
+        }
+      },
+      "expected": {
+        "error": "monthly"
+      }
+    },
+    {
+      "name": "an unknown frequency",
+      "rule": {
+        "frequency": "hourly",
+        "start": "2054-10-01",
+        "end": "2054-10-31"
+      },
+      "expected": {
+        "error": "frequency"
+      }
+    }
+  ]
+}
