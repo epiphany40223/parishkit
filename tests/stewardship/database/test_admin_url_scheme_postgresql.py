@@ -379,8 +379,8 @@ def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, goog
 
 
 # Old report addresses (NAV-11), each with its new page. The old address
-# named the campaign right after /admin/reports/ (Family campaign codes
-# after /admin/campaign/); a query string carries report filters.
+# named the campaign right after /admin/reports/; a query string carries
+# report filters.
 OLD_REPORTS = (
     ("responses/", "response_dashboard", []),
     ("responses/submitted/", "response_list", ["submitted"]),
@@ -414,10 +414,6 @@ def test_old_report_addresses_redirect_only_the_current_campaign(auth_service, g
         assert gone.status_code == 410, path
         assert "no-store" in gone["Cache-Control"]
         assert REFUSAL.encode() in gone.content
-    codes = browser.get(f"/admin/campaign/{current}/family-codes")
-    assert codes.status_code == 301
-    assert codes["Location"] == reverse("admin:family_codes")
-    assert browser.get(f"/admin/campaign/{uuid4()}/family-codes").status_code == 410
     # The retired addresses that named no campaign open their reports.
     for old, name in (
         ("/admin/reports/campaigns/", "participation"),
@@ -479,9 +475,8 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
 ):
     """No current campaign: no moved report page or form is a server error.
 
-    The reports root, Ministry requests and Family campaign codes show the
-    "no campaign" page; the others refuse plainly, and no form starts an
-    export.
+    The reports root and Ministry requests show the "no campaign" page; the
+    others refuse plainly, and no form starts an export.
     """
     from parishkit.stewardship.reports.exact_models import ExactExportRequest
     from parishkit.stewardship.reports.export_models import ExportRequest
@@ -503,12 +498,11 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         ("ministry_followup_item", [item]),
         ("family_directory", []),
         ("family_timeline", [item]),
-        ("family_codes", []),
     )
     for name, args in pages:
         response = browser.get(reverse(f"admin:{name}", args=args))
         assert response.status_code < 500, (name, response.status_code)
-        if name in {"reports", "ministry_report", "family_codes"}:
+        if name in {"reports", "ministry_report"}:
             assert response.status_code == 200, name
         else:
             assert 400 <= response.status_code < 500, (name, response.status_code)

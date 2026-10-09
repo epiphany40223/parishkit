@@ -36,7 +36,7 @@ def test_missing_setup_marker_never_infers_completion_from_prepared_yaml(
     assert b"not configured yet" in setup.content
     assert b"/admin/logout" in setup.content
     # Object lookup and report production cannot run while setup is incomplete.
-    report = browser.get(reverse("admin:family_codes"))
+    report = browser.get(reverse("admin:family_directory"))
     assert report.status_code == 302 and report["Location"] == "/admin/setup"
 
 

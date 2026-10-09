@@ -52,6 +52,8 @@ class Action(StrEnum):
     CONFIGURATION_REQUEST = "configuration_requested"
     ROLES_APPLIED = "roles_applied"
     SECRET_REPLACEMENT = "secret_replacement_requested"
+    # No page records this since the Family codes page was removed (#873);
+    # it stays so past System log rows still validate and read.
     FAMILY_CODES_VIEWED = "family_codes_viewed"
     FAMILY_DIRECTORY_VIEWED = "family_directory_viewed"
     POSTAL_OUTREACH_VIEWED = "postal_outreach_viewed"

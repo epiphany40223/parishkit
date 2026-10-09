@@ -387,9 +387,8 @@ the Admin opens applies the new role. A failed status read (a server error or
 no connection) keeps the countdown going. Privileged operations such
 as Production transition, campaign reopening, ParishSoft publication, secret
 replacement, and purge require fresh Google re-authentication no older than
-five minutes, as do the code-only Family codes listing, Family-directory,
-mail-merge and financial exports, integration setting changes and starting
-Testing cleanup ([#547](https://github.com/epiphany40223/parishkit/issues/547)). The one exception is a full-scope
+five minutes, as do Family-directory, mail-merge and financial exports,
+integration setting changes and starting Testing cleanup ([#547](https://github.com/epiphany40223/parishkit/issues/547)). The one exception is a full-scope
 [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line),
 which an Administrator approved with a fresh sign-in and which stands in for it
 for the actions listed there.

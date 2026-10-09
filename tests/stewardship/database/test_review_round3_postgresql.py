@@ -5,16 +5,15 @@
 
 from datetime import timedelta
 from unittest.mock import Mock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialApp
 from django.core.exceptions import MultipleObjectsReturned
-from django.db import DatabaseError, transaction
+from django.db import transaction
 from django.test import Client
 
-from parishkit.stewardship.accounts import code_reports, sessions
 from parishkit.stewardship.accounts.auth_incidents import record_incident
 from parishkit.stewardship.accounts.auth_models import AuthenticationIncident
 from parishkit.stewardship.accounts.credential_installation import (
@@ -22,8 +21,6 @@ from parishkit.stewardship.accounts.credential_installation import (
 )
 from parishkit.stewardship.accounts.cryptography import CodeMacKeyring, Key
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
-from parishkit.stewardship.accounts.models import PortalSession
-from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.models import AuditEvent
@@ -45,65 +42,8 @@ from .test_credential_isolation_postgresql import (  # noqa: F401
     run,
     stage_for,
 )
-from .test_identity_review_postgresql import report, report_outcomes  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-@pytest.mark.parametrize("complete", [False, True])
-def test_report_terminal_event_keeps_request_correlation(report, complete):
-    """Stream close runs after request middleware restores its context."""
-    browser, path, server = report
-    response = browser.get(path, **{"gunicorn.socket": server})
-    if complete:
-        assert b"".join(response.streaming_content)
-    response.close()
-    rows = list(AuditEvent.objects.filter(event_type="family_codes_viewed"))
-    assert len(rows) == 2
-    assert {row.correlation_id for row in rows} == {UUID(response["X-Correlation-ID"])}
-
-
-def test_changed_authority_can_immediately_open_guarded_report(report, monkeypatch):
-    """A persisted rotation emits its new cookie without writing inside the guard."""
-    browser, path, server = report
-    original = PortalSession.objects.get()
-    cookie = browser.cookies["pk_admin"].value
-    principal = Principal(original.principal_id, frozenset({"staff"}))
-    monkeypatch.setattr(sessions, "current_principal", lambda *args: principal)
-    response = browser.get(path, **{"gunicorn.socket": server})
-    assert response.status_code == 200
-    assert b"".join(response.streaming_content)
-    response.close()
-    assert browser.cookies["pk_admin"].value != cookie
-    current = PortalSession.objects.get(revoked_at__isnull=True)
-    assert current.authenticated_at == original.authenticated_at
-    assert current.expires_at == original.expires_at
-    assert report_outcomes()[-1] == {"outcome": "succeeded", "count": 2}
-
-
-@pytest.mark.parametrize(
-    "error,status",
-    [
-        (UnicodeDecodeError("ascii", b"\xff", 0, 1, "synthetic"), 503),
-        (DatabaseError("synthetic private query"), 503),
-        (ValueError("synthetic template"), 503),
-        (RuntimeError("synthetic renderer"), 500),
-    ],
-)
-def test_report_preheader_failures_always_finish_audit(
-    report, monkeypatch, error, status
-):
-    """Unexpected serializers and malformed decrypted data cannot leave intent alone."""
-    browser, path, server = report
-    browser.raise_request_exception = False
-    monkeypatch.setattr(code_reports, "render_to_string", Mock(side_effect=error))
-    response = browser.get(path, **{"gunicorn.socket": server})
-    assert response.status_code == status
-    assert report_outcomes() == [
-        {"outcome": "started", "page": 1},
-        {"outcome": "failed", "count": 0},
-    ]
-    assert b"synthetic" not in response.content
 
 
 def test_campaign_audit_requires_owner_before_sql():
