@@ -3,6 +3,7 @@
 import json
 import os
 import secrets
+import shutil
 import subprocess
 import time
 from dataclasses import replace
@@ -230,7 +231,24 @@ def test_complete_foundation_bootstrap_and_online_exclusion(
         from .runtime_setup_compose import inject_providers
 
         inject_providers(compose)
+    # One scenario also backs up its completed setup and restores the set
+    # into a fresh PostgreSQL with the image's own tools (#305): Production,
+    # as the host runs it, after the wizard has filled a realistic database.
+    restore = provider_mode == "complete" and production
     try:
+        if restore:
+            from .runtime_backup_restore import install_backup_key
+
+            fingerprint = install_backup_key(
+                IMAGE,
+                tmp_path / "keys",
+                root,
+                configuration,
+                # The record names the rendered Production image, but every
+                # container runs IMAGE; restore-check compares migrations,
+                # not image references, so the mismatch is harmless.
+                recorded_image=PRODUCTION_IMAGE,
+            )
         mountpoint = _fixture_volume(root, IMAGE, volume, owner=10001)
         for service in compose["services"].values():
             for mount in service["volumes"]:
@@ -460,6 +478,22 @@ def test_complete_foundation_bootstrap_and_online_exclusion(
             complete_setup(
                 file, project, configuration, mountpoint, abort=provider_mode == "abort"
             )
+            if restore:
+                from .runtime_backup_restore import check_backup_restore
+                from .runtime_setup_compose import SETUP_PROOF
+
+                check_backup_restore(
+                    file,
+                    project,
+                    configuration,
+                    volume,
+                    deployment,
+                    image=IMAGE,
+                    keys=tmp_path / "keys",
+                    fingerprint=fingerprint,
+                    work=tmp_path / "restore",
+                    invariants=SETUP_PROOF,
+                )
             return
         auth_probe = compose_run(
             file,
@@ -660,3 +694,5 @@ def test_complete_foundation_bootstrap_and_online_exclusion(
             capture_output=True,
             timeout=30,
         )
+        # The throwaway private backup key never outlives the scenario.
+        shutil.rmtree(tmp_path / "keys", ignore_errors=True)
