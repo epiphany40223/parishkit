@@ -195,6 +195,7 @@ LEDGER = {
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
     "talents_report": command("report talents"),
+    "census_changes": pending("PR 8g", "report census"),
     "information_queue": command("report information"),
     # One Family's submission and its follow-up history: read with the
     # follow-up commands, as the Ministry follow-up items are, which print
@@ -219,6 +220,7 @@ LEDGER = {
     # the caller-aware require_fresh, as the page's view does.
     "financial_export": command("export financial"),
     "talents_export": pending("PR 8g", "export talents"),
+    "census_changes_export": pending("PR 8g", "export census"),
     "ministry_export": command("export ministry"),
     "information_export": command("export information"),
     # Both directory exports are fresh-gated (#547), as above.

@@ -181,6 +181,7 @@ PAGES = {
     "participation": Page("reports", _("Participation")),
     "financial_report": Page("reports", _("Financial stewardship")),
     "talents_report": Page("reports", _("Talents and limitations")),
+    "census_changes": Page("reports", _("Census changes")),
     "response_dashboard": Page("reports", _("Response dashboard")),
     "response_list": Page("reports", _("Response list"), "response_dashboard"),
     "information_queue": Page("reports", _("Additional information")),
@@ -348,6 +349,7 @@ FINANCIAL = _module(
     "financial", _("This campaign does not include Financial stewardship")
 )
 MINISTRY = _module("ministry", _("This campaign does not include Ministry stewardship"))
+CENSUS = _module("census", _("This campaign does not include the census"))
 
 
 def _structural(module_reason):
@@ -458,6 +460,7 @@ MENU = (
     Entry("participation", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL),
     Entry("talents_report", Capability.CAMPAIGN_REPORT, MINISTRY),
+    Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _campaign),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
     Entry("ministry_followup", Capability.MINISTRY_FOLLOWUP, MINISTRY, scoped=True),
@@ -549,6 +552,7 @@ NON_PAGES = frozenset(
         "logout",
         "logs_export",
         "talents_export",
+        "census_changes_export",
         "response_list_export",
         "maintenance",
         "ministry_export",
