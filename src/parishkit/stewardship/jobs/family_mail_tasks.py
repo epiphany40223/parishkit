@@ -23,6 +23,10 @@ from .scheduler import SchedulerGuard
 from .storage import TaskStatus, enqueue
 
 TASK_TYPE = "family_mail_prepare"
+# The longest wait before retrying abandoned preparation. At most
+# source.send_hold.RETRY_SOON (pinned by a test), so a send whose
+# preparation is being retried still counts as in progress (#868).
+RECOVERY_RETRY_CAP_SECONDS = 600
 
 
 def _row(identifier):
@@ -289,7 +293,8 @@ def recover_preparation(status):
         RecoveryPlan("recovery_fail")
         if status.attempt >= 5
         else RecoveryPlan(
-            "recovery_retry", min(30 * 2 ** max(status.attempt - 1, 0), 600)
+            "recovery_retry",
+            min(30 * 2 ** max(status.attempt - 1, 0), RECOVERY_RETRY_CAP_SECONDS),
         )
     )
 
