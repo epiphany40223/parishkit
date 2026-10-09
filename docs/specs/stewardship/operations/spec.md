@@ -45,12 +45,19 @@ Release-tag workflow builds the application image from the tagged commit
 after that commit's full validation, pushes
 `ghcr.io/<repository>/stewardship:<version>` plus the immutable commit tag, and
 records the pushed digest in the GitHub Release, since the deployment names
-the image by digest. It preserves existing Python sdist/wheel and GitHub
+the image by digest. Before the digest is recorded, the workflow pulls the
+pushed digest back and runs it offline (its version, `collect-static` and the
+bundled `pg_dump`), then attests its build provenance; a failure of either
+publishes no release (#392). The release helper and the upgrade runbook
+verify that attestation with `gh attestation verify` before the digest is
+deployed. It preserves existing Python sdist/wheel and GitHub
 Release behavior. A human still explicitly authorizes release-tag push. For
-v1 the image is `linux/amd64` only; the `linux/arm64` image, provenance
-attestation, SBOM and vulnerability scanning are
+v1 the image is `linux/amd64` only; the `linux/arm64` image, SBOM and
+vulnerability scanning are
 [deferred](../../../plans/stewardship/v1-launch.md#cut-from-v1) past the
-launch.
+launch. The
+[release image guide](../../../guides/stewardship-release-image.md#the-pushed-digest-is-smoke-tested-and-attested)
+holds the details.
 
 ## Runtime storage
 

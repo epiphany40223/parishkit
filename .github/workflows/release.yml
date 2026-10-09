@@ -160,13 +160,19 @@ jobs:
   # The production runtime admits only ghcr.io/<owner>/<repository>/stewardship
   # by digest, and this is the only job that publishes that image. It runs
   # after the tagged commit passed the full validation above, with the
-  # package scope alone, so no image leaves the workflow unvalidated.
+  # package scope alone, so no image leaves the workflow unvalidated. After
+  # the push it runs the pushed digest (#392 L4) and attests its build
+  # provenance (#392 M2) before the digest becomes release evidence.
   publish-image:
     needs: validate-build
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      # Only this job signs: the OIDC token proves which workflow, ref and
+      # commit built the image, and the attestation is stored with GitHub.
+      id-token: write
+      attestations: write
     steps:
       - name: Check out the tagged commit
         uses: actions/checkout@v4
@@ -210,6 +216,7 @@ jobs:
             | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
 
       - name: Push the image and record its digest
+        id: push
         env:
           IMAGE: ${{ steps.name.outputs.image }}
           VERSION: ${{ steps.name.outputs.version }}
@@ -218,7 +225,54 @@ jobs:
           docker push "${IMAGE}:${VERSION}"
           docker push "${IMAGE}:${COMMIT}"
           digest="$(docker inspect --format '{{index .RepoDigests 0}}' "${IMAGE}:${VERSION}")"
+          # release.sh reads the digest from this exact log line.
           printf '\nApplication image: `%s`\n' "${digest}" | tee image-digest.txt
+          echo "reference=${digest}" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest#*@}" >> "$GITHUB_OUTPUT"
+
+      # A rebuild at release time is not the image CI tested (#392 L4), so
+      # run the pushed digest, pulled back from GHCR as a host pulls it, the
+      # way the runbook runs offline commands: no network, read-only, no
+      # capabilities. collect-static configures Django and imports every
+      # app, so a missing module or broken dependency fails here; the
+      # bundled pg_dump must be the server's major version (backups use it).
+      # A failure stops the job before the attestation and the digest
+      # artifact, so no GitHub Release names the image.
+      - name: Smoke-test the pushed image
+        timeout-minutes: 5
+        env:
+          REFERENCE: ${{ steps.push.outputs.reference }}
+          VERSION: ${{ steps.name.outputs.version }}
+        run: |
+          docker pull --quiet "${REFERENCE}"
+          isolated=(docker run --rm --init --network none --user 10001:10001
+            --read-only --cap-drop ALL --security-opt no-new-privileges:true
+            --tmpfs "/tmp:rw,nosuid,nodev,noexec,mode=1777")
+          reported="$("${isolated[@]}" "${REFERENCE}" --version)"
+          echo "${reported}"
+          test "${reported}" = "pk-stewardship ${VERSION}"
+          collected="$("${isolated[@]}" \
+            --tmpfs "/smoke-static:rw,nosuid,nodev,noexec,mode=0700,uid=10001,gid=10001" \
+            "${REFERENCE}" collect-static --destination /smoke-static)"
+          echo "${collected}"
+          test "${collected}" = '{"static_assets_collected": true}'
+          client="$("${isolated[@]}" --entrypoint pg_dump "${REFERENCE}" --version)"
+          echo "${client}"
+          case "${client}" in
+            "pg_dump (PostgreSQL) 18."*) ;;
+            *) echo "::error::The image's pg_dump is not PostgreSQL 18: ${client}"; exit 1 ;;
+          esac
+
+      # Signed build provenance for the pushed digest (#392 M2), checked by
+      # release.sh and the upgrade runbook with gh attestation verify. It is
+      # kept in GitHub's attestation store, not pushed to GHCR, so the run
+      # log names no second ...@sha256: reference beside the image's.
+      - name: Attest the image's build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: false
 
       - name: Upload the image digest
         uses: actions/upload-artifact@v4

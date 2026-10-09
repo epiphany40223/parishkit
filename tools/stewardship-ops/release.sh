@@ -30,7 +30,12 @@
 #      authorization; running this is that act. git fetch, ls-remote and
 #      push have a two-minute limit each.
 #   5. Wait for the new release.yml run (a push of the tag on that commit)
-#      and print the published image digest on stdout.
+#      and read the published image digest from its "Application image:"
+#      log line.
+#   6. Verify the image's build provenance with gh attestation verify: it
+#      must be signed by this repository's release.yml for the tag, on a
+#      GitHub-hosted runner (#392 M2). Only then print the digest on stdout;
+#      a failed verification prints nothing there and exits 1.
 #
 # Usage: tools/stewardship-ops/release.sh [-h] [--yes] VERSION [CI_RUN_ID]
 #
@@ -337,14 +342,31 @@ if ! watch "$release"; then
     ops_refuse "Release run $release did not pass; the tag $tag stays pushed, see the run"
 fi
 # The complete log can lag the run's completion briefly; try a few times.
+# Only the push step's "Application image:" line names the digest, so no
+# other reference in the log (an attestation's, say) can be mistaken for it.
 pattern="${image_repo//./\\.}@sha256:[0-9a-f]{64}"
 digest=""
 for _ in 1 2 3; do
-    digest=$( (ops_gh run view "$release" --repo "$repo" --log || true) | grep -oE "$pattern" | sort -u || true)
+    digest=$( (ops_gh run view "$release" --repo "$repo" --log || true) |
+        grep -oE "Application image: \`$pattern\`" | grep -oE "$pattern" | sort -u || true)
     [ -z "$digest" ] || break
     sleep "$poll"
 done
 if [ -z "$digest" ]; then
     ops_refuse "Release run $release passed but its log names no $image_repo digest; read the release notes"
 fi
+if [ "$(printf '%s\n' "$digest" | wc -l)" -ne 1 ]; then
+    ops_refuse "Release run $release names more than one $image_repo digest; read the release notes"
+fi
+
+# 6. The image's provenance: signed by this repository's release workflow
+# for this tag, on a GitHub-hosted runner. The package and the repository
+# are public, so gh reads the image and its attestation without a registry
+# login. Its output goes to stderr, so stdout carries only the digest.
+if ! ops_gh attestation verify "oci://$digest" --repo "$repo" \
+    --signer-workflow "$repo/.github/workflows/release.yml" \
+    --source-ref "refs/tags/$tag" --deny-self-hosted-runners >&2; then
+    ops_refuse "The build provenance of $digest did not verify; do not deploy it (see the gh output above and release run $release)"
+fi
+ops_log "verified the build provenance of $digest"
 printf '%s\n' "$digest"

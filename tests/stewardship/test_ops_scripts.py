@@ -207,7 +207,9 @@ def test_sql_state_literals_are_real_states():
 # release_evidence.py reads renders ci_runs as JSON;
 # FAKE_OLD_RELEASE is a release.yml run that always exists, and
 # FAKE_RELEASE_RUN one that exists once the bare remote FAKE_REMOTE holds a
-# tag; a run's log names IMAGE.
+# tag; a run's log names IMAGE on its "Application image:" line, plus
+# FAKE_LOG_EXTRA (another line) when set; `attestation verify` passes unless
+# FAKE_ATTEST_FAIL is set.
 FAKE_GH = rf"""
 echo "gh $*" >>"$FAKE_DIR/gh.calls"
 runs=$FAKE_DIR/ci_runs
@@ -259,7 +261,14 @@ case "$*" in
     "run list"*ci.yml*)
         limit=$(printf '%s\n' "$@" | grep -A1 -x -- --limit | tail -n 1)
         head -n "$limit" "$runs" | cut -d'|' -f1 ;;
-    "run view"*--log*) echo "publish Application image: \`{IMAGE}\`" ;;
+    "run view"*--log*)
+        echo "publish Application image: \`{IMAGE}\`"
+        if [ -n "${{FAKE_LOG_EXTRA-}}" ]; then echo "$FAKE_LOG_EXTRA"; fi ;;
+    "attestation verify"*)
+        if [ -n "${{FAKE_ATTEST_FAIL-}}" ]; then
+            echo "Error: verification failed" >&2; exit 1
+        fi
+        echo "The following policy criteria will be enforced" ;;
     "run view"*status,conclusion,jobs*)
         if [ -n "${{FAKE_NEWER-}}" ] && ! grep -qx "$FAKE_NEWER" "$runs"; then
             prepend "$FAKE_NEWER"
@@ -644,6 +653,56 @@ def test_release_with_a_named_run_tags_and_prints_the_digest(tmp_path):
     # is never the one watched.
     assert "gh run view 99 --repo epiphany40223/parishkit --log" in calls
     assert not any(c.startswith("gh run view 98 ") for c in calls)
+    # The digest printed is the one whose provenance was verified, last.
+    assert calls[-1] == (
+        f"gh attestation verify oci://{IMAGE} --repo epiphany40223/parishkit "
+        "--signer-workflow epiphany40223/parishkit/.github/workflows/release.yml "
+        "--source-ref refs/tags/v1.2.3 --deny-self-hosted-runners"
+    )
+    assert f"verified the build provenance of {IMAGE}" in result.stderr
+
+
+def test_release_refuses_an_image_whose_provenance_does_not_verify(tmp_path):
+    """A failed attestation check prints no digest and exits 1 (#392 M2)."""
+    work, remote, sha = release_repo(tmp_path)
+    result, calls = run_release(
+        tmp_path,
+        work,
+        "--yes",
+        "1.2.3",
+        "77",
+        ci_runs="77\n",
+        FAKE_HEAD=sha,
+        FAKE_RELEASE_RUN="99",
+        FAKE_ATTEST_FAIL="1",
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Error: verification failed" in result.stderr
+    assert f"The build provenance of {IMAGE} did not verify" in result.stderr
+    assert any(c.startswith("gh attestation verify ") for c in calls)
+    # The tag was pushed before the release run; it stays.
+    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+
+
+def test_release_reads_the_digest_only_from_the_application_image_line(tmp_path):
+    """Another reference to the repository in the log is never the digest."""
+    work, remote, sha = release_repo(tmp_path)
+    other = IMAGE.replace("e" * 64, "f" * 64)
+    result, calls = run_release(
+        tmp_path,
+        work,
+        "--yes",
+        "1.2.3",
+        "77",
+        ci_runs="77\n",
+        FAKE_HEAD=sha,
+        FAKE_RELEASE_RUN="99",
+        FAKE_LOG_EXTRA=f"attest Attestation uploaded to registry {other}",
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == IMAGE + "\n"
+    assert not any(other in c for c in calls)
 
 
 def test_release_refuses_a_named_run_the_listing_omits(tmp_path):

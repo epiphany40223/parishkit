@@ -27,10 +27,16 @@ def test_image_job_runs_after_validation_with_only_package_scope():
     assert definition[True]["push"]["tags"] == ["v*"]
     job = definition["jobs"]["publish-image"]
     assert job["needs"] == "validate-build"
-    assert job["permissions"] == {"contents": "read", "packages": "write"}
+    assert job["permissions"] == {
+        "contents": "read",
+        "packages": "write",
+        "id-token": "write",
+        "attestations": "write",
+    }
     for name, other in definition["jobs"].items():
         if name != "publish-image":
-            assert "packages" not in other.get("permissions", {}), name
+            for scope in ("packages", "id-token", "attestations"):
+                assert scope not in other.get("permissions", {}), (name, scope)
     checkout = job["steps"][0]
     assert checkout["uses"].startswith("actions/checkout@")
     assert checkout["with"]["persist-credentials"] is False
@@ -59,6 +65,60 @@ def test_image_job_runs_after_validation_with_only_package_scope():
         "path": "image-digest.txt",
         "if-no-files-found": "error",
     }
+
+
+def test_pushed_digest_is_smoke_tested_and_attested_before_it_is_evidence():
+    """The pushed image must start and carry provenance before any release names it.
+
+    #392 L4 and M2: the smoke run and the attestation both act on the digest
+    the push step recorded, and both precede the digest artifact the publish
+    job turns into the GitHub Release.
+    """
+    job = release()["jobs"]["publish-image"]
+    names = [step.get("name") for step in job["steps"]]
+    steps = steps_of(job)
+    push = steps["Push the image and record its digest"]
+    assert push["id"] == "push"
+    # release.sh reads the digest from this line; keep it as it was.
+    assert "printf '\\nApplication image: `%s`\\n' \"${digest}\"" in push["run"]
+    assert 'echo "reference=${digest}" >> "$GITHUB_OUTPUT"' in push["run"]
+    assert 'echo "digest=${digest#*@}" >> "$GITHUB_OUTPUT"' in push["run"]
+
+    smoke = steps["Smoke-test the pushed image"]
+    assert smoke["env"]["REFERENCE"] == "${{ steps.push.outputs.reference }}"
+    assert 0 < smoke["timeout-minutes"] <= 5
+    run = smoke["run"]
+    # Pulled back by digest and run as the runbook runs offline commands.
+    assert 'docker pull --quiet "${REFERENCE}"' in run
+    for flag in (
+        "--network none",
+        "--user 10001:10001",
+        "--read-only",
+        "--cap-drop ALL",
+        "no-new-privileges:true",
+    ):
+        assert flag in run
+    assert 'test "${reported}" = "pk-stewardship ${VERSION}"' in run
+    assert "collect-static --destination /smoke-static" in run
+    assert "uid=10001,gid=10001" in run
+    assert "--entrypoint pg_dump" in run and '"pg_dump (PostgreSQL) 18."*' in run
+    assert "IMAGE" not in run and ":${VERSION}" not in run
+
+    attest = steps["Attest the image's build provenance"]
+    assert attest["uses"].startswith("actions/attest-build-provenance@")
+    assert attest["with"] == {
+        "subject-name": "${{ steps.name.outputs.image }}",
+        "subject-digest": "${{ steps.push.outputs.digest }}",
+        # Kept in GitHub's store: no second @sha256: reference in the log.
+        "push-to-registry": False,
+    }
+    order = [
+        names.index("Push the image and record its digest"),
+        names.index("Smoke-test the pushed image"),
+        names.index("Attest the image's build provenance"),
+        names.index("Upload the image digest"),
+    ]
+    assert order == sorted(order)
 
 
 def test_release_publication_carries_the_digest_the_runtime_admits():
