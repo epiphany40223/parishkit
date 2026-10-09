@@ -3920,12 +3920,14 @@ BEGIN
          AND NEW.event IN ('task_timed_out','helper_timed_out',
                 'work_budget_reached','task_lease_lost')
          AND NEW.level IN ('INFO','WARNING','ERROR'))
-        -- Web: an unusable source Member on a Family form, and a Family
-        -- engagement record that could not be written.
+        -- Web: an unusable source Member on a Family form, a Family
+        -- engagement record that could not be written, and an Admin
+        -- command-line command that failed unexpectedly (#617).
         OR (current_user='pk_stewardship_web' AND (
             (NEW.schema,NEW.event,NEW.level) IN (
                 ('member_source','source_member_unusable','WARNING'),
-                ('failure','family_engagement_failed','ERROR'))))
+                ('failure','family_engagement_failed','ERROR'),
+                ('failure','admin_command_failed','ERROR'))))
         -- Worker: source refresh, setup load and finalize failures; source
         -- retention; operational collection; fact verification and export
         -- cleanup failures.
@@ -5673,7 +5675,7 @@ BEGIN
         -- failed, the exception's category, the task, message and attempt,
         -- a closed provider reason or HTTP status, and whether it retries.
         WHEN 'failure' THEN ARRAY['failure','failure_kind','task_id','task_type','message_id','version',
-            'attempt','attempt_limit','retry_seconds','status','reason','count','outcome']
+            'attempt','attempt_limit','retry_seconds','status','reason','count','outcome','command']
         -- An operational incident that ended (#633): the incident, its kind,
         -- the entry that opened it, how long it lasted and how often it was seen.
         WHEN 'recovery' THEN ARRAY['incident_id','incident_kind','log_id','elapsed_seconds','count']
@@ -5698,7 +5700,13 @@ BEGIN
                 'source_configuration','organization_changed','source_health_check','mail_health_check',
                 'due_work_health_check','backup_health_check','export_cleanup','fact_verification',
                 'source_retention','family_engagement','alert_mail','security_mail','slack_alert',
-                'smtp_systemic','smtp_unavailable','web_health_check','web_unresponsive') THEN RETURN false; END IF;
+                'smtp_systemic','smtp_unavailable','web_health_check','web_unresponsive',
+                'admin_command','admin_command_outcome_unknown') THEN RETURN false; END IF;
+        -- An Admin command-line command (#617): its catalog name, lower-case
+        -- words such as 'export create' (Python checks the catalog itself).
+        ELSIF key='command' THEN
+            IF jsonb_typeof(value)<>'string' OR length(text_value)>64
+               OR text_value!~'^[a-z][a-z-]*( [a-z][a-z-]*){0,3}$' THEN RETURN false; END IF;
         -- A failure's category and an incident's kind: identifier words whose
         -- closed sets Python owns (observability.FailureKind, IncidentKind).
         ELSIF key IN ('failure_kind','incident_kind') THEN

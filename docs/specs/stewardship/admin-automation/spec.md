@@ -1081,8 +1081,26 @@ exception text. The shared correlation ID joins the line to the document,
 whose shape does not change; with debug logging on, the traceback follows.
 Through the host wrapper, standard error reaches the operator's terminal,
 not the web container's log, so the operator reports that line with the
-document. It goes to the process log only; a durable copy is deferred
-to #617.
+document.
+
+#### Durable failure entry
+
+A failure inside the admitted command also leaves one durable ERROR entry in the
+[system logs](../admin-portal/spec.md#logs) (#617), so it is not lost with the
+operator's terminal: event `admin_command_failed`, schema `failure`, under the
+invocation's correlation ID. Its context holds only closed values: `failure`
+is `admin_command` (`internal`: nothing changed) or
+`admin_command_outcome_unknown` (`outcome_unknown`: a change may have been
+made), `failure_kind` is the category, and `command` is the command's catalog
+name. It never holds exception text, the exception's type, arguments, the
+session, the actor or personal data. It is written while admission still
+holds the startup lease, after the command's own connection is closed, on a
+private short-lived connection with the web login and short connect,
+statement and lock limits. ERROR opens no incident. Writing it is best effort:
+if it fails, one WARNING `admin_command_failed` line with its category goes to
+standard error, and the document and exit code are unchanged. A failure
+before admission has no admitted database login and stays on standard error
+only.
 
 ## Authorization, confirmation and audit
 

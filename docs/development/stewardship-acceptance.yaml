@@ -310,6 +310,7 @@ sections:
     "Watching progress": [ADM-11]
     "Exit codes and errors": [ADM-11]
     "Correlation and logging": [ADM-11, OPS-08]
+    "Durable failure entry": [ADM-11, OPS-08]
     "Authorization, confirmation and audit": [ADM-11, DOM-03]
     "Same checks as the page": [ADM-11, DOM-03]
     "Fresh-gated actions from the command line": [ADM-11, ARC-04, ADM-13]

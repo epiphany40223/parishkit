@@ -106,6 +106,15 @@ FAILURE_TEXT = {
     "smtp_unavailable": gettext_lazy(
         "The mail provider was unavailable for several emails in a row."
     ),
+    "admin_command": gettext_lazy(
+        "An Admin command-line command failed unexpectedly; nothing was "
+        "changed. Retry it once, then report it with its correlation id."
+    ),
+    "admin_command_outcome_unknown": gettext_lazy(
+        "An Admin command-line command failed unexpectedly after it may have "
+        "made its change; read the status before retrying, and report it "
+        "with its correlation id."
+    ),
 }
 
 # A closed provider result (audit.schemas.REASONS), in words.
@@ -257,6 +266,10 @@ def _failure(context):
         return None
     parts = [str(text)]
     facts = []
+    # An Admin command-line command's catalog name, a closed word list.
+    command = context.get("command")
+    if type(command) is str:
+        facts.append(_("command: %(command)s") % {"command": command})
     status = _int(context, "status")
     if status is not None:
         facts.append(_("HTTP status %(status)d") % {"status": status})

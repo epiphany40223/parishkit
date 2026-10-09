@@ -102,6 +102,9 @@ RAW_WRITERS = {
         (RUNTIME, "timeout", {e.value for e in TIMEOUTS}, {"INFO", "WARNING", "ERROR"})
     ],
     "web_supervisor.py": [({"web"}, "timeout", {"helper_timed_out"}, {"ERROR"})],
+    # write_failure: a failed Admin command-line command (#617), which runs
+    # on the web login.
+    "admin_cli.py": [({"web"}, "failure", {"admin_command_failed"}, {"ERROR"})],
     "campaigns/boundary_health.py": [
         ({"scheduler"}, "due_work", {"campaign_boundary_lag"}, {"WARNING"})
     ],
