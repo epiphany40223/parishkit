@@ -29,6 +29,10 @@ from .export_services import admit_campaign, authorize
 
 TASK_TYPE = "report_export_cleanup"
 MAX_CLEANUP_ATTEMPTS = 5
+# Most attempts without a cleanup Task the scheduler lists before its locked
+# pass (#715). Normally only a few recent, still published exports lack one;
+# past this many it goes straight to the locked query, as before.
+UNOWNED_LIMIT = 500
 
 
 def _attempt(status, *, creating=False):
@@ -232,8 +236,44 @@ def cleanup_handler(root=None):
     )
 
 
+def _unowned():
+    """Attempts that no cleanup Task owns yet (a plain indexed anti-join)."""
+    existing = TaskRun.objects.filter(
+        task_type=TASK_TYPE, domain_request_id=OuterRef("pk")
+    )
+    return ExportAttempt.objects.filter(~Exists(existing))
+
+
+def _candidates():
+    """Unowned attempts whose files are disposable under an admitted campaign."""
+    return (
+        _unowned()
+        .alias(
+            disposable=Func(
+                "pk",
+                function="stewardship_export_disposable_v1",
+                output_field=BooleanField(),
+            ),
+            admitted=Func(
+                "request__campaign_id",
+                Value(True),
+                function="stewardship_export_admitted_v1",
+                output_field=BooleanField(),
+            ),
+        )
+        .filter(disposable=True, admitted=True)
+    )
+
+
 def produce_cleanup(guard, *, limit=20):
-    """Bound candidates before enqueue; one root per attempt prevents retry storms."""
+    """Bound candidates before enqueue; one root per attempt prevents retry storms.
+
+    Before the work-order lock (#715), list the attempts no cleanup Task owns
+    yet: the locked path can only enqueue one of them. With none, or none of
+    them disposable and admitted, it is skipped. The SQL admission functions
+    run only for the listed rows; evaluating them for every attempt on every
+    loop was most of this producer's idle cost.
+    """
     if (
         not isinstance(guard, SchedulerGuard)
         or type(limit) is not int
@@ -243,28 +283,15 @@ def produce_cleanup(guard, *, limit=20):
     if connection.in_atomic_block:
         raise StorageInvariantError("Export cleanup production owns its transaction.")
     guard.check()
+    unowned = list(_unowned().values_list("pk", flat=True)[: UNOWNED_LIMIT + 1])
+    if not unowned or (
+        len(unowned) <= UNOWNED_LIMIT
+        and not _candidates().filter(pk__in=unowned).exists()
+    ):
+        return ()
     with work_transaction():
-        existing = TaskRun.objects.filter(
-            task_type=TASK_TYPE, domain_request_id=OuterRef("pk")
-        )
         candidates = (
-            ExportAttempt.objects.alias(
-                disposable=Func(
-                    "pk",
-                    function="stewardship_export_disposable_v1",
-                    output_field=BooleanField(),
-                ),
-                admitted=Func(
-                    "request__campaign_id",
-                    Value(True),
-                    function="stewardship_export_admitted_v1",
-                    output_field=BooleanField(),
-                ),
-            )
-            .filter(disposable=True, admitted=True)
-            .filter(~Exists(existing))
-            .select_related("request")
-            .order_by("created_at", "pk")[:limit]
+            _candidates().select_related("request").order_by("created_at", "pk")[:limit]
         )
         result = []
         for attempt in candidates:

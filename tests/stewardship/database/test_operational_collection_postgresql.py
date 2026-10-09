@@ -82,7 +82,9 @@ def test_python_and_sql_critical_logs_are_consumed_once_with_current_policy(
     operational(Event.TASK_FAILED, level="WARNING", **log_sample(Event.TASK_FAILED))
     identifiers = schedule()
     assert len(identifiers) == 1
-    assert schedule() == identifiers
+    # The minute's task exists, so a repeat allocates nothing new (#715).
+    assert schedule() == ()
+    assert TaskRun.objects.filter(task_type="operational_collect").count() == 1
     assert consume(identifiers[0])
     assert OperationalLogReceipt.objects.count() == 3
     assert OperationalLogReceipt.objects.filter(log=raw).exists()

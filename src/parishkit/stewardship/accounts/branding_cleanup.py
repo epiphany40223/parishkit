@@ -9,7 +9,7 @@ patch explicitly selects; inherited references are already pinned by its base.
 
 from pathlib import Path
 
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import BooleanField, Exists, Func, OuterRef, Q
 from django.db.models.expressions import RawSQL
 
@@ -219,8 +219,30 @@ def cleanup_handler(media_root=None):
     )
 
 
+def _due_bundles(now):
+    """Unpinned, unscrubbed bundles due for cleanup at ``now`` that no Task owns."""
+    expired_setup = SetupAttempt.objects.filter(state="expired").values("pk")
+    existing = TaskRun.objects.filter(
+        task_type=TASK_TYPE, domain_request_id=OuterRef("pk")
+    )
+    return (
+        unpinned_bundles()
+        .exclude(state="scrubbed")
+        .filter(
+            Q(state="cleanup_pending")
+            | Q(expires_at__lte=now)
+            | Q(setup_attempt_id__in=expired_setup)
+        )
+        .filter(~Exists(existing))
+    )
+
+
 def produce_cleanup(guard, *, limit=20):
-    """One durable root per bundle; terminal failure never spawns a new retry loop."""
+    """One durable root per bundle; terminal failure never spawns a new retry loop.
+
+    The locked path enqueues only bundles _due_bundles() returns, so when the
+    same query finds none the work-order lock is skipped (#715).
+    """
     if (
         not isinstance(guard, SchedulerGuard)
         or type(limit) is not int
@@ -230,24 +252,14 @@ def produce_cleanup(guard, *, limit=20):
     if connection.in_atomic_block:
         raise StorageInvariantError("Cleanup production owns its short transaction.")
     guard.check()
+    with transaction.atomic():
+        due = _due_bundles(database_now()).exists()
+    if not due:
+        return ()
     with work_transaction():
         if not available():
             return ()
-        expired_setup = SetupAttempt.objects.filter(state="expired").values("pk")
-        existing = TaskRun.objects.filter(
-            task_type=TASK_TYPE, domain_request_id=OuterRef("pk")
-        )
-        rows = (
-            unpinned_bundles()
-            .exclude(state="scrubbed")
-            .filter(
-                Q(state="cleanup_pending")
-                | Q(expires_at__lte=database_now())
-                | Q(setup_attempt_id__in=expired_setup)
-            )
-            .filter(~Exists(existing))
-            .order_by("expires_at", "pk")[:limit]
-        )
+        rows = _due_bundles(database_now()).order_by("expires_at", "pk")[:limit]
         result = []
         for row in rows:
             guard.check()

@@ -1,8 +1,10 @@
 """Materialize bounded read-only refresh slots under the actual scheduler session."""
 
 import logging
+from typing import NamedTuple
 from uuid import UUID
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, connection, transaction
 from django.db.models import Q
 
@@ -14,7 +16,8 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import ContextKind
 from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.jobs.admission import require_source_refresh
+from parishkit.stewardship.jobs.admission import WorkScope, require_source_refresh
+from parishkit.stewardship.jobs.loop_settings import LoopSettings
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.scanning import ScanCursor
@@ -57,12 +60,17 @@ class SourceProducer:
         # apart from the held ones so each kind of line is logged once.
         self.refused = set()
 
-    def __call__(self, guard):
-        """Retire a bounded stale page before producing current-scope cadence slots."""
+    def __call__(self, guard, *, settings=None):
+        """Retire a bounded stale page before producing current-scope cadence slots.
+
+        ``settings`` is the scheduler loop's LoopSettings (see produce_refreshes).
+        """
         _, self.cursor = sweep_superseded_refreshes(
             guard, worker_id=self.worker_id, cursor=self.cursor
         )
-        return produce_refreshes(guard, skipped=self.skipped, refused=self.refused)
+        return produce_refreshes(
+            guard, skipped=self.skipped, refused=self.refused, settings=settings
+        )
 
 
 def sweep_superseded_refreshes(guard, *, worker_id, cursor=None, limit=100):
@@ -98,7 +106,163 @@ def sweep_superseded_refreshes(guard, *, worker_id, cursor=None, limit=100):
     return cancelled, position
 
 
-def produce_refreshes(guard, *, skipped=None, refused=None):
+class _Cadence(NamedTuple):
+    """The applied refresh inputs and the current regular slots (``_cadence``)."""
+
+    window: object
+    settings: dict
+    schedule: dict
+    timezone: str
+    fingerprint: str
+    now: object
+    slots: tuple
+
+
+def _cadence(scope, organization, now):
+    """The applied refresh inputs and the current regular slots at ``now``.
+
+    Plain reads and pure slot arithmetic, so the same computation runs on the
+    loop's snapshot rows before the work-order lock (``_ticked``) and again
+    under it (#715).
+    """
+    window = _window(scope)
+    integration = AppliedIntegration.objects.get(
+        configuration_id=scope.runtime.active_configuration_id, kind="parishsoft"
+    )
+    timezone = (
+        scope.campaign.active_configuration.timezone
+        if scope.campaign is not None
+        else Parish.objects.values_list("timezone", flat=True).get(
+            configuration_id=scope.runtime.active_configuration_id
+        )
+    )
+    schedule = refresh_settings(integration.settings)
+    fingerprint = scope_fingerprint(organization, window.digest)
+    slots = due_slots(
+        now=now, timezone=timezone, scope_fingerprint=fingerprint, **schedule
+    )
+    return _Cadence(
+        window, integration.settings, schedule, timezone, fingerprint, now, slots
+    )
+
+
+def _listed(cadence):
+    """Every due slot of today and yesterday, oldest first (``_decide``'s input)."""
+    schedule = cadence.schedule
+    return listed_due_slots(
+        now=cadence.now,
+        timezone=cadence.timezone,
+        nightly_time=schedule["nightly_time"],
+        scope_fingerprint=cadence.fingerprint,
+        full_refresh_times=schedule["full_refresh_times"],
+        quick_refresh_times=schedule["quick_refresh_times"],
+    )
+
+
+def _ticked(settings):
+    """The current slots' receipts when the locked pass has nothing to do, else None.
+
+    The locked pass below creates a command only for a current slot with no
+    tick; when every current slot has one it can only return their receipts
+    (or nothing, while the source scope is held). This computes the same
+    slots from the loop's snapshot rows and a fresh clock without the
+    work-order lock (#715). The current slots include the schedule-change
+    catch-up whenever the locked pass would request it (#632), so a pending
+    catch-up always goes to the locked pass. For a schedule that skips
+    refreshes around Family emails, the locked pass may also record a
+    decision for an older due slot (``_decide``); when one may be recorded
+    (``_may_decide``) this returns None too. Anything it cannot compute (no
+    applied configuration, an unconfigured organization, a missing row or an
+    invalid window) returns None, so the locked pass decides as before.
+    """
+    runtime, campaign = settings.runtime, settings.campaign
+    if (
+        runtime is None
+        or runtime.active_configuration_id is None
+        or (settings.campaign_id is not None and campaign is None)
+    ):
+        return None
+    scope = WorkScope(runtime, campaign, None)
+    try:
+        cadence = _cadence(scope, _organization(scope), database_now())
+        catch_up = _catch_up(_catch_up_at(), cadence.timezone, cadence.fingerprint)
+    except (PermissionError, ValueError, ObjectDoesNotExist):
+        return None
+    slots = cadence.slots
+    if catch_up is not None:
+        # In the locked pass's order, so the receipts match it.
+        slots = (*slots[:1], catch_up, *slots[1:])
+    ticks = {
+        tick.slot_key: tick
+        for tick in SourceRefreshTick.objects.select_related("command__request").filter(
+            slot_key__in=[slot.slot_key for slot in slots]
+        )
+    }
+    # A current slot without a tick (including one recorded as skipped, whose
+    # older held slot may run in its place) is the locked pass's to decide.
+    if any(slot.slot_key not in ticks for slot in slots):
+        return None
+    if skips_around_emails(cadence.settings) and _may_decide(cadence):
+        return None
+    return tuple(_receipt(ticks[slot.slot_key].command) for slot in slots)
+
+
+def _may_decide(cadence):
+    """Whether ``_decide`` could record a decision for an older due slot now.
+
+    ``_decide`` writes only for an undecided candidate (``_undecided``) that
+    is inside a Family email's window (skipped) or held by a bulk send
+    (held); any other undecided slot stays undecided and writes nothing.
+    This makes the same test without the lock, on a fresh clock, so a
+    decision is never left unrecorded by the idle shortcut (#715).
+    """
+    from .data_age import skip_setting_since
+    from .send_windows import current_windows, window_cause
+
+    candidates = _listed(cadence)
+    keys = [slot.slot_key for slot in candidates]
+    undecided = _undecided(
+        candidates,
+        ticked=set(
+            SourceRefreshTick.objects.filter(slot_key__in=keys).values_list(
+                "slot_key", flat=True
+            )
+        ),
+        decisions=set(
+            SourceSlotDecision.objects.filter(slot_key__in=keys).values_list(
+                "slot_key", flat=True
+            )
+        ),
+        nightly_time=cadence.schedule["nightly_time"],
+        skip_since=skip_setting_since(),
+    )
+    if not undecided:
+        return False
+    if delta_held(cadence.now):
+        return True
+    windows = current_windows(cadence.now)
+    return any(window_cause(windows, slot.due_at) is not None for slot in undecided)
+
+
+def _undecided(candidates, *, ticked, decisions, nightly_time, skip_since):
+    """The candidates ``_decide`` may record a decision for, oldest first.
+
+    Shared by ``_decide`` and the idle shortcut's ``_may_decide`` so both
+    select the same slots: no refresh and no decision yet, a slot a bulk
+    send would hold (never the nightly refresh), and due no earlier than
+    when the skip setting last took effect.
+    """
+    return [
+        slot
+        for slot in candidates
+        if slot.slot_key not in ticked
+        and slot.slot_key not in decisions
+        and _waits_for_send(slot, nightly_time)
+        and (skip_since is None or slot.due_at >= skip_since)
+    ]
+
+
+def produce_refreshes(guard, *, skipped=None, refused=None, settings=None):
     """Create at most three current slots, without network or a new SQL connection.
 
     The scheduler retains its pinned session throughout. Restore/purge and absent
@@ -119,12 +283,27 @@ def produce_refreshes(guard, *, skipped=None, refused=None):
     ``skipped`` holds the slot keys
     already logged, so each held slot logs one INFO line, and a held full slot
     also writes one durable entry, per scheduler process (#510).
+
+    ``settings`` is the scheduler loop's LoopSettings. When _ticked() shows
+    the locked pass has nothing to create or record (every current slot,
+    including any schedule-change catch-up, has its tick, and no older slot
+    awaits a skip-around-emails decision), the work-order lock is skipped
+    and the slots' receipts are returned (#715).
     """
     if not isinstance(guard, SchedulerGuard):
         raise TypeError("Refresh production requires actual scheduler ownership.")
     if connection.in_atomic_block:
         raise StorageInvariantError("Refresh production must own its slot transaction.")
     guard.check()
+    with transaction.atomic():
+        receipts = _ticked(LoopSettings() if settings is None else settings)
+    if receipts is not None:
+        # As the locked pass leaves them when no slot waits or is refused.
+        if skipped is not None:
+            skipped.clear()
+        if refused is not None:
+            refused.clear()
+        return receipts
     # Decide before joining the work-order lock: a send is what saturates it,
     # and this read takes no lock, so the lock is not held any longer for it.
     # The schedule-change catch-up's reads (about five small queries) are
@@ -146,24 +325,14 @@ def produce_refreshes(guard, *, skipped=None, refused=None):
             organization = _organization(scope)
         except PermissionError:
             return ()
-        window = _window(scope)
-        integration = AppliedIntegration.objects.get(
-            configuration_id=scope.runtime.active_configuration_id, kind="parishsoft"
+        cadence = _cadence(scope, organization, database_now())
+        window, timezone, fingerprint = (
+            cadence.window,
+            cadence.timezone,
+            cadence.fingerprint,
         )
-        timezone = (
-            scope.campaign.active_configuration.timezone
-            if scope.campaign is not None
-            else Parish.objects.values_list("timezone", flat=True).get(
-                configuration_id=scope.runtime.active_configuration_id
-            )
-        )
-        schedule = refresh_settings(integration.settings)
-        nightly_time = schedule["nightly_time"]
-        fingerprint = scope_fingerprint(organization, window.digest)
-        now = database_now()
-        slots = due_slots(
-            now=now, timezone=timezone, scope_fingerprint=fingerprint, **schedule
-        )
+        nightly_time = cadence.schedule["nightly_time"]
+        slots = cadence.slots
         catch_up = _catch_up(effective_at, timezone, fingerprint)
         if catch_up is not None:
             # A full slot of the previous schedule was already overdue when
@@ -183,7 +352,7 @@ def produce_refreshes(guard, *, skipped=None, refused=None):
         )
         if (
             planning is not None
-            and skips_around_emails(integration.settings)
+            and skips_around_emails(cadence.settings)
             # The windows were read before the lock: decide nothing if the
             # mode, the current campaign or its pause has changed since.
             and planning[2] == _delivery_state()
@@ -202,14 +371,7 @@ def produce_refreshes(guard, *, skipped=None, refused=None):
             decisions, extra = _decide(
                 windows=windows,
                 skip_since=skip_since,
-                candidates=listed_due_slots(
-                    now=now,
-                    timezone=timezone,
-                    nightly_time=nightly_time,
-                    scope_fingerprint=fingerprint,
-                    full_refresh_times=schedule["full_refresh_times"],
-                    quick_refresh_times=schedule["quick_refresh_times"],
-                ),
+                candidates=_listed(cadence),
                 latest=slots,
                 held=held,
                 nightly_time=nightly_time,
@@ -425,14 +587,13 @@ def _decide(
             "slot_key", "decision"
         )
     )
-    undecided = [
-        slot
-        for slot in candidates
-        if slot.slot_key not in ticked
-        and slot.slot_key not in decisions
-        and _waits_for_send(slot, nightly_time)
-        and (skip_since is None or slot.due_at >= skip_since)
-    ]
+    undecided = _undecided(
+        candidates,
+        ticked=ticked,
+        decisions=decisions,
+        nightly_time=nightly_time,
+        skip_since=skip_since,
+    )
     for slot in undecided:
         cause = window_cause(windows, slot.due_at)
         if cause is not None:
