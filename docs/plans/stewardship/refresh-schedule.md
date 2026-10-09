@@ -566,7 +566,7 @@ a changed schedule; until then every stored schedule is an existing one.
    resolver, each time that will not run with its reason, the Family email
    windows over the seven days (the `send_windows` window rules, applied to
    every upcoming email rather than only the current one), the cost from the
-   medians of recent successful scheduled runs, the freshness line, and the
+   medians of recent successful runs, the freshness line, and the
    conversion of an existing schedule to rules. A parity test checks the
    preview's instants against the scheduler's slots across both
    daylight-saving days. Read-only; nothing the scheduler runs changes.

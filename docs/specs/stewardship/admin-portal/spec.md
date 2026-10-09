@@ -2059,7 +2059,9 @@ same preview functions, so the two pages never disagree.
   per day of the preview and as an average, for example "About 1 h 34 min
   of ParishSoft time a day (6.5% of the day): 8 full refreshes of about 7.3
   minutes and 16 quick updates of about 2.2 minutes." The durations are the
-  medians of the last seven days' successful scheduled runs of each kind, or
+  medians of the last seven days' successful runs of each kind (manual
+  refreshes included: the Admin pages cannot tell a run's cause, and a median
+  absorbs the odd one), or
   typical values (7.3 and 2.2 minutes, Production's medians in October
   2026), labeled as such, until there are three runs of a kind. Above 25% of
   the day the summary shows a warning; it never refuses.
