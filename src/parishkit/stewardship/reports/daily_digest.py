@@ -21,8 +21,16 @@ from parishkit.stewardship.web.digest_content import CHART_ID, EMAIL_CHART_WIDTH
 from parishkit.stewardship.web.report_markup import BLUE, STYLES, TRACK, button
 
 from .charts import render_participation
+from .digest_funnel import (
+    CAPTION,
+    TESTING_NOTE,
+    figure_rows,
+    funnel_text,
+    stage_rows,
+)
 from .links import report_url
 from .participation import ParticipationDocument
+from .response_metrics import ResponseMetrics
 from .statistics import CampaignStatistics
 
 
@@ -45,6 +53,12 @@ class DailyDigestDocument:
     ``source_age`` is the ParishSoft data age and connection as known at the
     observation (#510), stated as one line in the parish's time zone; the
     compiling worker reads it, and a document without it omits the line.
+
+    ``funnel`` is the response funnel at the end of the report day
+    (``digest_funnel``, #477), counted from durable timestamps by the
+    compiling worker and again by the saved page, so the two agree; ``mode``
+    is the digest's system mode. A Testing digest has no funnel and says
+    where it is instead; a document without a mode shows neither.
     """
 
     snapshot_id: UUID
@@ -53,6 +67,8 @@ class DailyDigestDocument:
     covered_dates: tuple[date, ...]
     date_format: str | None = None
     source_age: DataAge | None = None
+    funnel: ResponseMetrics | None = None
+    mode: str | None = None
 
     def __post_init__(self):
         """Reject mixed cutoffs or incomplete coverage before rendering any output."""
@@ -336,6 +352,49 @@ def report_day_bars(document):
     return tuple(bars)
 
 
+def funnel_html(document, plain):
+    """The response funnel section of the email, or "" when there is none.
+
+    One row per stage like the campaign totals: the stage (with its note),
+    a bar of its share of Invited, and its count and share; then the three
+    figures reported beside it. A Testing digest says where the funnel is.
+    """
+    if document.funnel is None:
+        if document.mode == "testing":
+            return f"<p{_style('caption')}>{plain(TESTING_NOTE)}</p>"
+        return ""
+    metrics = document.funnel
+    invited = metrics.stage("invited")
+    html = f"<h2{_style('heading')}>Response funnel</h2>"
+    html += f"<p{_style('caption')}>{plain(CAPTION)}</p>"
+    html += (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0"{_style("rows")}><tbody>'
+    )
+    for label, count, portion, note in stage_rows(metrics):
+        detail = f" ({note.lower()})" if note else ""
+        html += (
+            f'<tr><td width="34%"{_style("label")}>{plain(label)}{plain(detail)}</td>'
+            f'<td width="40%"{_style("bar")}>{bar(count, invited)}</td>'
+            f'<td width="26%" align="right"{_style("value")}>'
+            f"<strong>{plain(f'{count:,}')}</strong>{plain(f' ({portion})')}</td></tr>"
+        )
+    html += "</tbody></table>"
+    # The three figures as one small table, so they read as a group.
+    html += (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0"{_style("rows")}><tbody>'
+    )
+    html += "".join(
+        f'<tr><td width="74%"{_style("label")}>{plain(label)}</td>'
+        f'<td width="26%" align="right"{_style("value")}>{plain(f"{count:,}")}</td>'
+        "</tr>"
+        for label, count in figure_rows(metrics)
+    )
+    html += "</tbody></table>"
+    return html
+
+
 def chart_alt(document):
     """Alt text that carries the chart's key numbers, not a picture description."""
     chart = document.participation
@@ -394,6 +453,10 @@ def _render_daily_digest(document, *, public_origin):
     as_of, alt = (" ".join(label.split()) for label in (as_of, chart_alt(document)))
     text = as_of
     text += "\n\n" + "\n".join(f"{label}: {value}" for label, value, _b, _n in totals)
+    if document.funnel is not None:
+        text += "\n\n" + funnel_text(document.funnel)
+    elif document.mode == "testing":
+        text += "\n\n" + TESTING_NOTE
     text += "\n\n" + " | ".join(headings)
     text += "\n" + "\n".join(" | ".join(row) for row in rows)
     text += "\n\nOpen this exact report (staff login required): " + url
@@ -416,6 +479,7 @@ def _render_daily_digest(document, *, public_origin):
         for label, value, bar_html, note in totals
     )
     html += "</tbody></table>"
+    html += funnel_html(document, plain)
     html += f"<h2{_style('heading')}>Daily participation</h2>"
     html += (
         f'<img src="cid:{CHART_ID}" alt="{escape(alt, quote=True)}" '

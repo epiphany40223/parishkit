@@ -380,7 +380,9 @@ lists of Families behind any count all come from the same rows. The
 [chart engine](#chart-engine) draws the funnel and the activity series on the
 [response dashboard](#response-dashboard), and the
 [response lists](#response-lists) show the Families behind the counts; the
-[Family timeline](#family-timeline) shows what happened with one Family.
+[Family timeline](#family-timeline) shows what happened with one Family; and
+a Production [daily digest](../background-processing/spec.md#daily-campaign-digest)
+states the funnel at the end of its report day.
 
 ### Funnel stages
 
@@ -1118,4 +1120,5 @@ The linked report opens in an authorized pinned-snapshot mode using exactly
 those inputs and fact generation even when current eligibility later changes.
 Separate implementations that can drift are prohibited. The email simplifies
 interaction into an image/text table but its values must be reproducible from
-those recorded inputs.
+those recorded inputs. Its [response funnel](#response-funnel) is reproduced
+from durable timestamps instead, at the end of the report day.

@@ -26,6 +26,7 @@ from parishkit.stewardship.runtime_grants import (
 
 from .campaign_builders import draft_campaign
 from .credential_builders import family_campaign
+from .response_builders import live_response_service  # noqa: F401
 from .role_grants import grant_runtime
 from .test_work_admission_postgresql import ordinary
 
@@ -215,3 +216,30 @@ def test_empty_source_delete_matches_cleanup_authority(service):
         else:
             cursor.execute("DELETE FROM stewardship_source_family")
             assert cursor.rowcount == 0
+
+
+@pytest.mark.parametrize("service", [ServiceRole.WORKER, ServiceRole.WEB])
+def test_the_response_funnel_reads_with_each_logins_registry_grants(
+    live_response_service,  # noqa: F811
+    service,
+):
+    """The funnel runs as the worker (daily digest) and the web (dashboard) (#477).
+
+    Each login gets exactly its registry's grants, so a change to the funnel's
+    statements that reads a table or column only one of them may read fails
+    here, before every Production digest compile or dashboard view would.
+    """
+    from datetime import UTC, datetime
+
+    from parishkit.stewardship.reports.digest_funnel import digest_funnel
+
+    from .test_fact_materialization_postgresql import respond
+
+    harness = live_response_service
+    respond(harness)
+    # After the fixture campaign's clock, so the response is counted.
+    instant = datetime(2100, 1, 1, tzinfo=UTC)
+    with task_login(service, exact=True, reconnect=True), transaction.atomic():
+        funnel = digest_funnel(harness.campaign.pk, "production", instant)
+    assert funnel.stage("submitted") == 1
+    assert funnel.stage("link_followed") >= 1

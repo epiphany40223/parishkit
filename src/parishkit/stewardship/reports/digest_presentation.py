@@ -12,6 +12,7 @@ from .charts import (
     participation_limits,
 )
 from .daily_digest import PLEDGE_HEADING, participation_row, report_day_cards
+from .digest_funnel import CAPTION, TESTING_NOTE, figure_rows, stage_rows
 
 
 def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOUT):
@@ -26,6 +27,14 @@ def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOU
         "document": document,
         "mode": mode,
         "cards": report_day_cards(document),
+        # The response funnel at the end of the report day, counted again
+        # from the same durable timestamps the email used (#477).
+        "funnel_stages": stage_rows(document.funnel) if document.funnel else (),
+        "funnel_figures": figure_rows(document.funnel) if document.funnel else (),
+        "funnel_caption": CAPTION,
+        "funnel_testing_note": TESTING_NOTE
+        if document.funnel is None and document.mode == "testing"
+        else "",
         "chart_url": chart_url,
         "download_url": download_url,
     }

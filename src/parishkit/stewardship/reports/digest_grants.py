@@ -7,6 +7,21 @@ def add_digest_grants(tables, columns, *, worker):
     tables.setdefault("stewardship_recovery_replacement", set()).add("SELECT")
     tables.setdefault("stewardship_daily_digest_completion_ready", set()).add("SELECT")
     if worker:
+        # The digest's response funnel (#477) reads the durable engagement
+        # record's first instants, as the Response dashboard does: only the
+        # columns the funnel needs, read only, never written.
+        columns.setdefault("stewardship_family_engagement", {}).setdefault(
+            "SELECT", set()
+        ).update(
+            {
+                "family_id",
+                "mode",
+                "rehearsal_epoch_id",
+                "first_link_at",
+                "first_form_at",
+                "first_progress_at",
+            }
+        )
         tables["stewardship_daily_digest_preparation"].add("UPDATE")
         for name in ("snapshot", "ready", "recipient"):
             tables.setdefault("stewardship_daily_digest_" + name, set()).update(

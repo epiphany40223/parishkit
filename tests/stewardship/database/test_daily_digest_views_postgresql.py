@@ -72,6 +72,12 @@ def test_report_and_chart_remain_exact_after_source_changes(family_mail, google)
             pattern, after, re.S
         ).group(1)
         assert changed_chart == chart
+        # This is a Testing digest: no funnel, and the note its email has,
+        # unchanged by the ParishSoft change (#477). The Production page's
+        # funnel is tested in test_daily_digest_as_of_postgresql.py.
+        note = b"Testing digests leave out the response funnel."
+        assert note in before and note in after
+        assert b"data-digest-funnel" not in before + after
         assert (
             AuditEvent.objects.filter(
                 event_type="daily_digest_viewed", subject_id=ready.snapshot_id
