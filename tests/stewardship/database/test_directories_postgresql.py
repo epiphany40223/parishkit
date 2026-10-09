@@ -666,6 +666,48 @@ def test_reach_preset_link_and_dashboard_readiness(live_response_service, google
     )
 
 
+def test_testing_notice_links_the_test_page_only_for_administrators(
+    response_service, google
+):
+    """Staff in Testing mode get the notice but no Administrator-only link (#591).
+
+    The chosen-Family test page admits only Administrators (CONFIGURE), so
+    the directory links it only for them; Staff are told whom to ask.
+    """
+    from parishkit.stewardship.accounts.campaign_family_test import (
+        chosen_family_test_url,
+    )
+
+    harness = response_service
+    system = SystemConfiguration.objects.get()
+    assert system.mode == "testing"
+    test_url = chosen_family_test_url(system, harness.campaign)
+    assert test_url
+    route = reverse("admin:family_directory")
+    link = f'<a href="{test_url}">Try the Family form as a chosen Family</a>'
+    admin, _ = signed_in()
+    store = harness.service.store
+    staff = address("staff@example.org", roles=("staff",))
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "login_rules", **staff}],
+    )
+    google[0].update(email="staff@example.org", sub="synthetic-staff")
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(admin, route)
+        assert response.status_code == 200
+        assert link.encode() in body and b"send yourself a test invitation" in body
+        response, body = read(browser, route)
+        assert response.status_code == 200 and b"work only after go-live" in body
+        assert b"Try the Family form" not in body
+        assert test_url.encode() not in body
+        assert b"ask an Administrator for a test invitation" in body
+
+
 def test_family_name_is_the_surname_not_a_first_name_mailing_name(
     live_response_service,
 ):
@@ -1064,3 +1106,118 @@ def test_search_finds_active_members_and_envelope_numbers(live_response_service)
     assert [head["name"] for head in row["heads"]] == ["Zed Example"]
     # The empty search still lists every Family, matching nothing extra.
     assert page(harness)["total"] == 2
+
+
+def test_find_a_family_lists_exact_envelope_or_duid_matches_first(response_service):
+    """A number's exact Family leads the box, even past page 1 (#712).
+
+    Sixty-one "Aaron" Families with DUIDs 1200 to 1260 match "12" and sort
+    before the "Zimmer" Family whose DUID is exactly 12, which the directory
+    lists after its first page of 50. "125" matches the "Zed" Family through
+    its address and its envelope number, which is exactly 125. The box
+    lists each exact Family first, reading only page 1 plus a direct lookup
+    of the exact Family; the directory keeps its own order. Families the
+    directory does not list (nonparishioners) never move up.
+    """
+    from parishkit.stewardship.reports.directories import FIND_LIMIT, find_families
+
+    harness = response_service
+    data = response_source()
+    template = data.families[1]
+    for duid in range(1200, 1261):
+        data.families[duid] = template | {
+            "familyDUID": duid,
+            "familyID": duid + 10000,
+            "lastName": "Aaron",
+        }
+    data.families[12] = template | {
+        "familyDUID": 12,
+        "familyID": 10012,
+        "lastName": "Zimmer",
+    }
+    data.families[71] = template | {
+        "familyDUID": 71,
+        "familyID": 10071,
+        "lastName": "Zed",
+        "envelopeNumber": 125,
+        "primaryAddress1": "125 Elm Street",
+    }
+    # "130" matches 61 more Families by their address and the "Zane" Family,
+    # whose envelope number is exactly 130, past page 1. Two nonparishioner
+    # Families (not listed by the directory) share that envelope number and
+    # have lower DUIDs, and a third has DUID 13 exactly.
+    for duid in range(1300, 1361):
+        data.families[duid] = template | {
+            "familyDUID": duid,
+            "familyID": duid + 10000,
+            "lastName": "Aaron",
+            "primaryAddress1": "130 Oak Street",
+        }
+    data.families[95] = template | {
+        "familyDUID": 95,
+        "familyID": 10095,
+        "lastName": "Zane",
+        "envelopeNumber": 130,
+        "primaryAddress1": "130 Elm Street",
+    }
+    for duid, envelope in ((81, 130), (82, 130), (13, None)):
+        data.families[duid] = template | {
+            "familyDUID": duid,
+            "familyID": duid + 10000,
+            "lastName": "Outside",
+            "registeredOrganizationID": 999,
+        }
+        if envelope is not None:
+            data.families[duid]["envelopeNumber"] = envelope
+    # A Family is listed only with an active Member, as in the paging test.
+    for duid in (*range(1200, 1261), *range(1300, 1361), 12, 71, 95, 81, 82, 13):
+        data.members[100000 + duid] = data.members[3] | {
+            "memberDUID": 100000 + duid,
+            "familyDUID": duid,
+            "memberType": "Other",
+            "emailAddress": "",
+        }
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+
+    def find(text):
+        """The box's own read under the real web role, and its statement count."""
+        from django.test.utils import CaptureQueriesContext
+
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            transaction.atomic(),
+            CaptureQueriesContext(connection) as queries,
+        ):
+            found = find_families(harness.campaign.pk, DirectoryQuery(search=text))
+        return found, len(queries)
+
+    found, statements = find("12")
+    assert found["total"] > 50 and len(found["rows"]) == FIND_LIMIT
+    # Page 1, the exact-number lookup and the one exact Family: the search
+    # never reads every match, however broad it is.
+    assert statements <= 3, statements
+    assert found["rows"][0]["family_duid"] == 12
+    assert [row["family_duid"] for row in found["rows"][1:]] == list(
+        range(1200, 1200 + FIND_LIMIT - 1)
+    )
+    directory = page(harness, search="12")
+    assert directory["total"] == found["total"]
+    assert 12 not in [row["family_duid"] for row in directory["rows"]]
+    found, _ = find("125")
+    assert found["rows"][0]["family_duid"] == 71
+    assert found["rows"][0]["envelope"] == "125"
+    assert page(harness, search="125")["rows"][-1]["family_duid"] == 71
+    # An envelope match past page 1 moves up; the nonparishioners sharing
+    # its envelope number neither show nor use up the lookup's limit.
+    found, statements = find("130")
+    assert found["total"] > 50 and statements <= 3, statements
+    assert found["rows"][0]["family_duid"] == 95
+    assert found["rows"][0]["envelope"] == "130"
+    assert not {81, 82} & {row["family_duid"] for row in found["rows"]}
+    assert 95 not in [row["family_duid"] for row in page(harness, search="130")["rows"]]
+    # A nonparishioner whose DUID is exactly the text stays hidden.
+    found, statements = find("13")
+    assert found["total"] > 50 and statements <= 3, statements
+    assert 13 not in [row["family_duid"] for row in found["rows"]]
+    assert found["total"] == page(harness, search="13")["total"]

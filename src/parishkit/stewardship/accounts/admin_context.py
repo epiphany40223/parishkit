@@ -1,7 +1,10 @@
 """Capability-filtered Admin chrome; public/Family pages never query this context."""
 
+import contextlib
+import logging
 from datetime import timedelta
 
+from django.db import DatabaseError, connection, transaction
 from django.db.models import Count, Q
 from django.urls import reverse
 
@@ -14,7 +17,11 @@ from parishkit.stewardship.campaigns.credential_models import CampaignCredential
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.jobs.delivery_metadata import alert_counts
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
-from parishkit.stewardship.observability import debug_logging_enabled
+from parishkit.stewardship.observability import (
+    Event,
+    debug_logging_enabled,
+    emit_failure,
+)
 
 from . import admin_navigation, family_maintenance
 from .authentication import runtime
@@ -87,6 +94,10 @@ def portal_chrome(request):
     match = getattr(request, "resolver_match", None)
     placed = admin_navigation.placement(request)
     sections, breadcrumbs = admin_navigation.build(match, items, placed)
+    open_counts = _open_counts(request, actor, items, campaign)
+    for section in sections:
+        for entry in section["items"]:
+            entry["count"] = open_counts.get(entry["name"]) if entry["url"] else None
     return {
         "admin_chrome": {
             "admin": admin,
@@ -222,6 +233,125 @@ def _find_family(actor, items, campaign):
     if not directory or not allows(actor, Capability.CAMPAIGN_REPORT):
         return None
     return {"url": reverse("admin:find_family")}
+
+
+# Menu entries that show how many open items their queue holds (#585).
+COUNTED = frozenset({"information_queue", "ministry_followup"})
+# Both counts in one statement, each only when asked for (NULL otherwise).
+# Additional information counts current requests not yet marked "Follow-up
+# completed" (its default view lists completed ones too). Ministry follow-up
+# runs the page's own selection with its default (Unresolved) filters and no
+# rows, and takes its total, so the count applies every filter the page
+# does: the Ministry module, a promoted and uncompacted source, the
+# campaign's Ministries (plus removed ones with a current request), the
+# viewer's scope and the latest revision. When the page would say the
+# Ministry follow-up is turned off or unavailable, or the viewer has no
+# Ministry in scope, the count is NULL and no number shows.
+OPEN_COUNTS = """
+SELECT
+    CASE WHEN %(information)s THEN (
+        SELECT count(*) FROM stewardship_additional_information i
+        JOIN stewardship_submission s ON s.id=i.submission_id
+        WHERE s.campaign_id=%(campaign)s AND s.mode='live'
+          AND i.disposition='current_actionable' AND i.followed_up_at IS NULL)
+    END,
+    CASE WHEN %(ministry)s THEN (
+        SELECT CASE WHEN (f->>'authorized')::boolean THEN (f->>'total')::bigint END
+        FROM stewardship_ministry_followup_v1(
+            campaign_uuid => %(campaign)s, filters => %(filters)s::jsonb,
+            operational => %(operational)s, ministry_scope => %(scope)s::bigint[],
+            viewer => %(viewer)s, page_limit => 0) f)
+    END
+"""
+
+
+def _open_counts(request, actor, items, campaign):
+    """Open item counts for the menu's queue entries, by entry name (#585).
+
+    Only an entry the viewer's menu offers as a link right now gets a count,
+    so a viewer without either queue (or with both greyed out) pays no
+    query; otherwise one statement reads both. The result is kept on the
+    request, so another render of the chrome in the same request reuses it.
+    A count is never cached longer: a stale number misleads in a work queue.
+
+    The counts only decorate the menu, so they must never take an Admin page
+    down: a database error in their statement (for example inside the
+    follow-up selection) is logged and the menu renders without numbers,
+    and an open view transaction stays usable because the statement runs
+    in its own savepoint there.
+    """
+    cached = getattr(request, "_stewardship_open_counts", None)
+    if cached is not None:
+        return cached
+    offered = {item.name for item in items if item.url and item.name in COUNTED}
+    counts = {}
+    if offered:
+        # Inside a view's transaction the statement gets a savepoint, so a
+        # failure rolls back only the count. Outside one (autocommit), the
+        # statement is its own transaction and a failure leaves nothing
+        # behind, so the savepoint's two extra statements are skipped.
+        isolate = (
+            transaction.atomic if connection.in_atomic_block else contextlib.nullcontext
+        )
+        try:
+            with isolate():
+                counts = _read_open_counts(offered, actor, campaign)
+        except DatabaseError as error:
+            _record_open_counts_failure(error)
+    request._stewardship_open_counts = counts
+    return counts
+
+
+def _read_open_counts(offered, actor, campaign):
+    """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``."""
+    from parishkit.stewardship.reports.ministry_followup import (
+        FollowupQuery,
+        ministry_scope,
+        selection_filters,
+    )
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            OPEN_COUNTS,
+            {
+                "information": "information_queue" in offered,
+                "ministry": "ministry_followup" in offered,
+                "campaign": campaign.pk,
+                "filters": selection_filters(FollowupQuery()),
+                "operational": allows(actor, Capability.MINISTRY_FOLLOWUP),
+                "scope": ministry_scope(actor),
+                "viewer": actor.identity,
+            },
+        )
+        information, ministry = cursor.fetchone()
+    # An entry not asked for, or a Ministry follow-up the page would show as
+    # off or unavailable, reads NULL and gets no count.
+    return {
+        name: count
+        for name, count in (
+            ("information_queue", information),
+            ("ministry_followup", ministry),
+        )
+        if count is not None
+    }
+
+
+def _record_open_counts_failure(error):
+    """Log that the menu's open counts could not be read (#585).
+
+    A WARNING process-log line naming only the failure's closed kind, under
+    the reviewed ``report_shaping_failed`` event (a display-only step
+    failed), as the other report pages log a failed display step
+    (admin_report_reads). No durable System logs entry: the web login may
+    write only its reviewed operational entries (#389 L2), and a failed
+    count must never take the page down with it.
+    """
+    emit_failure(
+        error,
+        event=Event.REPORT_SHAPING_FAILED,
+        level=logging.WARNING,
+        name_class=True,
+    )
 
 
 def _current_campaign(configuration):

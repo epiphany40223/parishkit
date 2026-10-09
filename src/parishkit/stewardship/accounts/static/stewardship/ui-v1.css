@@ -173,6 +173,9 @@ img { max-width: 100%; height: auto; }
 .admin-sidebar a { display: block; min-height: 40px; padding: .5rem .75rem; border-radius: var(--radius-small); color: var(--ink); font-weight: 400; line-height: 1.4; text-decoration: none; }
 .admin-sidebar a:hover, .admin-sidebar a:focus-visible { background: var(--accent-soft); color: var(--accent-strong); }
 .admin-sidebar a[aria-current=page] { background: var(--accent); color: var(--paper); font-weight: 650; }
+/* A queue entry's open count (#585): a small pill after the name. */
+.admin-menu-count { display: inline-block; margin-inline-start: .35rem; padding: 0 .45rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: .8125rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.5; }
+.admin-sidebar a[aria-current=page] .admin-menu-count { background: var(--paper); }
 /* An entry the role may open but that is unavailable right now: greyed out,
    still focusable, and never styled like a link that goes somewhere. Its
    grey (#646e73) keeps 4.5:1 on the page background, so the name stays

@@ -23,6 +23,14 @@
   description. admin-menu-v1.js shows the reason's tip on hover, keyboard
   focus and tap, and Escape or a tap elsewhere hides it.
 
+  Additional information and Ministry follow-up show how many open items
+  their queue holds (#585; admin_context._open_counts) as a plain number
+  after the name. The pill is hidden from screen readers, which read the
+  visually hidden "(N open)" instead: a pill's own box would otherwise split
+  the entry's name ("( 3 open)"). None shows at zero, so the menu stays
+  quiet when there is no work. The pill's title says what the number counts
+  when a sighted user hovers over it.
+
   Sign out is a POST form (logout is CSRF-protected) styled as the last menu
   entry.
 {% endcomment %}<nav class="admin-sidebar" aria-label="{% translate 'Administration' %}">
@@ -38,7 +46,7 @@
         <details class="admin-group" data-menu-group="{{ section.key }}"{% if section.current %} data-menu-current{% endif %} open>
           <summary class="admin-section-title" id="admin-section-{{ section.key }}">{{ section.label }}</summary>
           <ul aria-labelledby="admin-section-{{ section.key }}">
-            {% for item in section.items %}<li>{% if item.url %}<a href="{{ item.url }}"{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}</a>{% else %}<a class="admin-unavailable" role="link" aria-disabled="true" tabindex="0" aria-describedby="admin-tip-{{ item.name }}" data-menu-tip{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}</a><span class="admin-tip" id="admin-tip-{{ item.name }}" role="tooltip">{{ item.reason }}</span>{% endif %}</li>{% endfor %}
+            {% for item in section.items %}<li>{% if item.url %}<a href="{{ item.url }}"{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}{% if item.count %} <span class="admin-menu-count" aria-hidden="true" title="{% blocktranslate with count=item.count|number %}Open items to handle: {{ count }}{% endblocktranslate %}">{{ item.count|number }}</span><span class="visually-hidden">({% blocktranslate with count=item.count|number %}{{ count }} open{% endblocktranslate %})</span>{% endif %}</a>{% else %}<a class="admin-unavailable" role="link" aria-disabled="true" tabindex="0" aria-describedby="admin-tip-{{ item.name }}" data-menu-tip{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}</a><span class="admin-tip" id="admin-tip-{{ item.name }}" role="tooltip">{{ item.reason }}</span>{% endif %}</li>{% endfor %}
           </ul>
         </details>
       </li>

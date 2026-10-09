@@ -375,12 +375,21 @@ def test_testing_note_is_a_report_detail_never_a_csv_row():
     assert render_directory(testing, output, format="pdf")
 
 
+@pytest.mark.parametrize("role", ["administrator", "staff"])
 @pytest.mark.parametrize("mode,shown", [("testing", True), ("production", False)])
-def test_testing_codes_context_follows_the_mode(monkeypatch, mode, shown):
-    """The directory and export pages explain live codes only in Testing mode."""
+def test_testing_codes_context_follows_the_mode_and_role(
+    monkeypatch, mode, shown, role
+):
+    """The directory and export pages explain live codes only in Testing mode.
+
+    Only an Administrator gets the link to the chosen-Family test page, the
+    one role that may open it (#591).
+    """
     from types import SimpleNamespace
+    from uuid import uuid4
 
     from parishkit.stewardship.accounts import campaign_family_test, runtime_models
+    from parishkit.stewardship.accounts.policy import Principal
     from parishkit.stewardship.campaigns import models
     from parishkit.stewardship.reports.directories import testing_codes_context
 
@@ -398,9 +407,15 @@ def test_testing_codes_context_follows_the_mode(monkeypatch, mode, shown):
     monkeypatch.setattr(
         campaign_family_test, "chosen_family_test_url", lambda *_: "/test-send"
     )
-    context = testing_codes_context("campaign")
+    principal = Principal(uuid4(), frozenset({role}), frozenset())
+    context = testing_codes_context("campaign", principal)
+    administrator = role == "administrator"
     assert context["testing_codes"] is shown
-    assert context["family_test_url"] == ("/test-send" if shown else None)
+    assert context["family_test_url"] == (
+        "/test-send" if shown and administrator else None
+    )
+    if shown:
+        assert context["testing_codes_administrator"] is administrator
 
 
 def test_pdf_table_rows_fit_the_page_with_phones_and_emails():
