@@ -7,6 +7,7 @@ body, never a URL) and the keyboard path through the results are checked on
 Chromium and WebKit.
 """
 
+import re
 from contextlib import suppress
 from urllib.parse import parse_qs
 
@@ -14,6 +15,10 @@ import pytest
 
 from .find_family_components import ANSWERS, DIRECTORY, FIND, LONG, NONE, PATH
 from .waits import has_text, hidden, recorded, visible
+
+# The no-match hint names what can be searched; check its key words, not the
+# whole sentence, so rewording it does not break the keyboard tests.
+NO_MATCH = re.compile(r"^No Family matches\..*member's name.*DUID.*envelope number")
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -144,11 +149,7 @@ def test_enter_searches_at_once_and_says_when_nothing_matches(page, component_or
     field.fill("nobody")
     field.press("Enter")
     recorded(page, seen, 1)
-    has_text(
-        status,
-        "No Family matches. Try part of the surname, a head's "
-        "first name, the DUID or the street.",
-    )
+    has_text(status, NO_MATCH)
     visible(results)
     assert results.get_by_role("link").count() == 0
     # Clearing the field closes the results.
@@ -339,8 +340,4 @@ def test_editing_drops_the_answer_still_in_flight(page, component_origin):
     # The edited text's own search follows after the pause.
     recorded(page, seen, 2)
     assert seen[1][2]["search"] == ["example 3x"]
-    has_text(
-        status,
-        "No Family matches. Try part of the surname, a head's "
-        "first name, the DUID or the street.",
-    )
+    has_text(status, NO_MATCH)

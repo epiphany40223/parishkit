@@ -40,7 +40,9 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     ).click()
     visible(page.get_by_role("link", name="head@example.org", exact=True))
     visible(page.get_by_text("1 Example Street", exact=False))
-    search = page.get_by_label("Search by name, head of household, DUID or address")
+    search = page.get_by_label(
+        "Search by Family name, any member's name, DUID, envelope number or address"
+    )
     search.fill("Private name")
     search.focus()
     page.keyboard.press("Tab")
@@ -105,9 +107,9 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
             "America/Detroit" if scripts else "UTC"
         )
         visible(page.get_by_text("51 estimated matching Families", exact=False))
-        page.get_by_label("Search by name, head of household, DUID or address").fill(
-            "Unsaved private edit"
-        )
+        page.get_by_label(
+            "Search by Family name, any member's name, DUID, envelope number or address"
+        ).fill("Unsaved private edit")
         page.get_by_label("Export format").select_option("xlsx")
         page.route(
             "**" + reverse("admin:family_directory_export"),

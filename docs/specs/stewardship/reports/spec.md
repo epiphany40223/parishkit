@@ -728,8 +728,14 @@ head whose surname differs from the Family's is shown in full ("Smith, Anna and
 John Jones"); without heads it is just the surname. The default order is
 surname, then that whole name, then DUID. Search supports full/partial
 case-insensitive match of that name (so a head's first name finds the Family),
-DUID and address. Exact canonicalized-code search uses
-a separate CSRF-protected POST body and never places the candidate in a URL or
+any active Member's first and last name or nickname and last name
+([#664](https://github.com/epiphany40223/parishkit/issues/664)), DUID,
+envelope number and address. A Member match changes nothing in the row: it
+shows the same Family name, heads and columns as any other match, and never
+the matched Member. Searching by a Member's name can still confirm that some
+Family has an active Member by that name, even one the directory does not list
+(for example, with no phone); Staff with report access accept this. Exact
+canonicalized-code search uses a separate CSRF-protected POST body and never places the candidate in a URL or
 query string. The code
 is directly visible to Admin and Staff; there is no per-row reveal action,
 reauthentication ceremony, distinct-Family reveal budget, or Valkey dependency.
