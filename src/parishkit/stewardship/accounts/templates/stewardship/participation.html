@@ -75,7 +75,7 @@
 {% button type="submit" enabled=export_allowed %}{% translate "Queue export with the latest data" %}{% endbutton %}</form>
 {% else %}<p>{% translate "The data for a new export is not available right now, so no export can be queued yet." %}</p>{% endif %}
 <h3>{% translate "Your recent latest-data exports" %}</h3>
-<ul>{% for job in recent_exact_exports %}<li><a href="{% url 'admin:report_exact' job.pk %}">{{ job.format|upper }} — <time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></a></li>{% empty %}<li>{% translate "No latest-data exports yet. Queue one above." %}</li>{% endfor %}</ul>
+<ul>{% for job in recent_exact_exports %}<li><a href="{% url 'admin:report_export' job.pk %}">{{ job.format|upper }} — <time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></a></li>{% empty %}<li>{% translate "No latest-data exports yet. Queue one above." %}</li>{% endfor %}</ul>
 <h3>{% translate "Your recent chart exports" %}</h3>
 <ul>{% for job in recent_exports %}<li><a href="{% url 'admin:report_export' job.pk %}">{{ job.format|upper }} — <time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></a></li>{% empty %}<li>{% translate "No chart exports yet. Use Generate export above." %}</li>{% endfor %}</ul>
 </section>

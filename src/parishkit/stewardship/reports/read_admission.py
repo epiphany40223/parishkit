@@ -3,7 +3,10 @@
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
-from parishkit.stewardship.campaigns.single_campaign import not_current_refused
+from parishkit.stewardship.campaigns.single_campaign import (
+    no_current_refused,
+    not_current_refused,
+)
 
 from .export_services import admit_campaign
 
@@ -19,13 +22,16 @@ def admit_report_read(campaign_id):
     Until the single-campaign change (#145), reports show the current campaign
     only (navigation rule 10): any other campaign is refused with a
     ``UserFacingGone``, which every report view's ``denial()`` answers with
-    the 410 page. Because the guards repeat this check, a report that loses
+    the 410 page; with no current campaign at all the refusal says that
+    instead. Because the guards repeat this check, a report that loses
     its current campaign mid-request is refused too.
     """
     current = SystemConfiguration.objects.values_list(
         "current_campaign_id", flat=True
     ).first()
-    if current is None or current != campaign_id:
+    if current is None:
+        raise no_current_refused()
+    if current != campaign_id:
         raise not_current_refused()
     try:
         admit_campaign(campaign_id, mutating=False)

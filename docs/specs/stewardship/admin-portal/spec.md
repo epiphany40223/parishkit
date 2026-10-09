@@ -540,8 +540,13 @@ response lists and the Family timeline, with the
 campaign choosers and the old Ministry reports root retired), with every old
 address redirecting; the Campaign setup, Mail and Family portal and Parish
 data group roots open their first entry, and `/admin/reports/` keeps its
-meaning. Until the rest of the URL work lands, other pages (the export and
-emailed report pages, NAV-12) keep their
+meaning. Exports and the reports sent by email follow (NAV-12): every export
+shares `/admin/reports/exports/<request>/`, a latest-data export included,
+and the daily and weekly reports sit under `/admin/reports/emailed/`, whose
+old addresses are gone, with no redirect
+([#864](https://github.com/epiphany40223/parishkit/issues/864)), so a link
+in a report email sent before the move no longer opens. Until
+the rest of the URL work lands, other pages keep their
 "Current URL", and so does every other section of this spec and the other
 stewardship specs that name an Admin URL; those follow-up issues update them
 with the code.
@@ -912,8 +917,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `response_list` | _list name_ | Response dashboard | Administrator, Staff | (new, #477) | `/admin/reports/responses/<key>/` | (same; old address redirects) | Object-named (exception): each list behind a dashboard count is named after that list. Its CSV download (`<key>/csv/`) is a non-page action. |
 | `reports` | Participation | Menu: Participation | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | (same) | Not a group root: redirects to Participation, or to Ministry requests for a viewer who may not open Participation (a Ministry leader). |
 | `participation` | Participation | Menu: Participation | Administrator, Staff | Participation and campaign statistics; Campaign reports (via redirect) | `/admin/reports/participation/` | (same; old address redirects) |  |
-| `report_export` | _report name_ export | The report it came from | Administrator, Staff, Ministry leader | Participation export / Financial stewardship export / Ministry export / Additional-information export / Family-directory export; Report export | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). |
-| `report_exact` | Latest-data export | Participation | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exact-exports/<request>/` | `/admin/reports/exports/<request>/` (the shared export page) | Decision 8: folds into the shared export page; old addresses redirect there. |
+| `report_export` | _report name_ export | The report it came from | Administrator, Staff, Ministry leader | Participation export / Financial stewardship export / Ministry export / Additional-information export / Family-directory export; Report export | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). Its actions post to `cancellation/`, `retries/`, `download/` and `regeneration/`. |
+| `report_exact` | Latest-data export | Participation | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same; old address redirects) |  |
 | `talents_report` | Talents and limitations | Menu: Talents and limitations | Administrator, Staff | (same) | `/admin/reports/talents/` | (same; old address redirects) |  |
 | `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX download (`census/exports/`) is a non-page action. |
@@ -927,10 +932,10 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same; old address redirects) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same; old address redirects) |  |
 | `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same; old address redirects) | Opened from each directory row and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
-| `weekly_digest_manual` | Send a weekly report now | Emailed reports (new page) | Administrator | Request a manual information report; Manual information report | `/admin/reports/weekly-digests/request/` | `/admin/reports/emailed/weekly/new/` | Was the Manual information report menu entry; ends on Emailed reports, which links the report it produced. Its address named the campaign until #865; that old address is gone, with no redirect (#864). |
-| `weekly_digest_snapshot` | Weekly report | Emailed reports (new page) | Administrator | Weekly information report; Weekly summary | `/admin/reports/weekly-digests/<snapshot>/` | `/admin/reports/emailed/weekly/<snapshot>/` |  |
-| `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/weekly-digests/<snapshot>/items/<item>/` | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | Links the live Additional information request. |
-| `daily_digest_snapshot` | Daily report | Emailed reports (new page) | Administrator, Staff | (report document title) daily report | `/admin/reports/daily-digests/<snapshot>/` | `/admin/reports/emailed/daily/<snapshot>/` |  |
+| `weekly_digest_manual` | Send a weekly report now | Emailed reports (new page) | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; ends on Emailed reports, which links the report it produced. Its address named the campaign until #865; that old address is gone, with no redirect (#864). |
+| `weekly_digest_snapshot` | Weekly report | Emailed reports (new page) | Administrator | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
+| `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | (same) | Links the live Additional information request. |
+| `daily_digest_snapshot` | Daily report | Emailed reports (new page) | Administrator, Staff | (report document title) daily report | `/admin/reports/emailed/daily/<snapshot>/` | (same) | Its old address, which daily report emails sent before NAV-12 link, is gone, with no redirect (#864). |
 | `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same; old address redirects) | Hand-written Administration link removed. |
 | `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same; old address redirects) |  |
 | `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/parish/logos/<bundle>/` | (same; old address redirects) |  |

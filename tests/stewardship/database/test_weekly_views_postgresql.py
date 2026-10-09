@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from django.test import Client
+from django.urls import reverse
 
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
@@ -36,7 +37,7 @@ def test_weekly_page_and_detail_preserve_capture_but_show_current_status(
     with campaign_clock(INSTANT):
         snapshot = allocated(harness)
         browser, _ = signed_in()
-        path = f"/admin/reports/weekly-digests/{snapshot.pk}/"
+        path = reverse("admin:weekly_digest_snapshot", args=[snapshot.pk])
         detail = path + f"items/{snapshot.information[0]}/"
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             for url in (path, detail):
@@ -83,7 +84,7 @@ def test_private_weekly_reports_deny_non_admins_and_anonymous(
         )
         google[0]["email"] = "reader@example.org"
         browser, _ = signed_in()
-        path = f"/admin/reports/weekly-digests/{snapshot.pk}/"
+        path = reverse("admin:weekly_digest_snapshot", args=[snapshot.pk])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             for suffix in ("", f"items/{snapshot.information[0]}/"):
                 assert browser.get(path + suffix).status_code == 403
@@ -102,7 +103,7 @@ def test_weekly_detail_rejects_unselected_item_even_in_same_observation(
         claim, empty = replacement()
         publish(claim)
         browser, _ = signed_in()
-        path = f"/admin/reports/weekly-digests/{empty.pk}/"
+        path = reverse("admin:weekly_digest_snapshot", args=[empty.pk])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             _, content = read(browser, path)
             assert b"No new requests needing follow-up" in content
@@ -134,7 +135,7 @@ def test_weekly_corrections_do_not_repeat_former_text(live_response_service, goo
         claim, correction = replacement()
         publish(claim)
         browser, _ = signed_in()
-        path = f"/admin/reports/weekly-digests/{correction.pk}/"
+        path = reverse("admin:weekly_digest_snapshot", args=[correction.pk])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             for url in (path, path + f"items/{snapshot.information[0]}/"):
                 _, content = read(browser, url)
@@ -153,7 +154,7 @@ def test_weekly_detail_escapes_full_text_and_overview_is_bounded(
         claim, snapshot = captured(live_response_service)
         publish(claim)
         browser, _ = signed_in()
-        path = f"/admin/reports/weekly-digests/{snapshot.pk}/"
+        path = reverse("admin:weekly_digest_snapshot", args=[snapshot.pk])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             _, overview = read(browser, path)
             _, detail = read(browser, path + f"items/{snapshot.information[0]}/")
@@ -174,7 +175,7 @@ def test_weekly_private_content_waits_for_response_guard(
     with campaign_clock(INSTANT):
         snapshot = allocated(live_response_service)
         browser, _ = signed_in()
-        path = f"/admin/reports/weekly-digests/{snapshot.pk}/"
+        path = reverse("admin:weekly_digest_snapshot", args=[snapshot.pk])
         original = weekly_views._principal
 
         def authorize(*args, **kwargs):

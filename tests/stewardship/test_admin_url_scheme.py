@@ -54,6 +54,9 @@ VERBS = {
     "update",
     "withdraw",
 }
+# Segments the spec's placement table names on purpose: Send a weekly report
+# now is the form for a new weekly report (``emailed/weekly/new/``).
+SPEC_NAMED = {"weekly_digest_manual": {"new"}}
 # JSON reads that scripts poll; they keep their old addresses (decision 8).
 POLLED = {"background_counts", "background_tasks", "background_task"}
 TASK = UUID(int=7)
@@ -78,7 +81,7 @@ def test_moved_routes_follow_the_scheme(pattern):
     )
     assert "campaign_id" not in route
     segments = {segment for segment in route.split("/") if segment}
-    assert not segments & VERBS, route
+    assert not segments & VERBS - SPEC_NAMED.get(pattern.name, set()), route
 
 
 @pytest.mark.parametrize(
@@ -126,7 +129,7 @@ def test_no_admin_page_names_a_campaign():
 def test_weekly_report_request_names_no_campaign():
     """Send a weekly report now is a reports page; its old address is gone."""
     url = reverse("admin:weekly_digest_manual")
-    assert url == "/admin/reports/weekly-digests/request/"
+    assert url == "/admin/reports/emailed/weekly/new/"
     assert resolve(url).url_name == "weekly_digest_manual"
     # No redirect from the old campaign address (#864).
     with pytest.raises(Resolver404):
@@ -329,7 +332,15 @@ EXPECTED = {
     ),
     "/admin/reports/families": "/admin/reports/families/",
     f"/admin/reports/families/{T}": f"/admin/reports/families/{T}/",
-    "/admin/reports/weekly-digests/request": "/admin/reports/weekly-digests/request/",
+    # Exports and emailed reports (NAV-12): each new page's slashless form.
+    # Their old addresses have none (#864).
+    f"/admin/reports/exports/{T}": f"/admin/reports/exports/{T}/",
+    "/admin/reports/emailed/weekly/new": "/admin/reports/emailed/weekly/new/",
+    f"/admin/reports/emailed/weekly/{T}": f"/admin/reports/emailed/weekly/{T}/",
+    f"/admin/reports/emailed/weekly/{T}/items/{T}": (
+        f"/admin/reports/emailed/weekly/{T}/items/{T}/"
+    ),
+    f"/admin/reports/emailed/daily/{T}": f"/admin/reports/emailed/daily/{T}/",
     # Retired addresses that named no campaign (decisions 10 and 19): the
     # two campaign choosers and the old Ministry reports root.
     "/admin/reports/campaigns/": "/admin/reports/participation/",
@@ -534,11 +545,11 @@ def test_reports_root_keeps_its_old_meaning():
 
 
 def test_report_actions_and_records_resolve_to_their_own_routes():
-    """No report route takes another's address (NAV-11 route-order traps).
+    """No report route takes another's address (NAV-11/12 route-order traps).
 
-    The directory's fixed actions are listed before its Family pages, and the
-    export and emailed report pages that stay in ``urls.py`` until NAV-12
-    are not shadowed by the moved report routes or the old report addresses.
+    The directory's fixed actions are listed before its Family pages, Send a
+    weekly report now before the weekly reports, no new route shadows an old
+    emailed report address, and the old export addresses are gone (#864).
     """
     for path, name in (
         ("/admin/reports/families/exports/", "family_directory_export"),
@@ -552,9 +563,11 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
         ("/admin/reports/responses/submitted/", "response_list"),
         ("/admin/reports/responses/submitted/csv/", "response_list_export"),
         (f"/admin/reports/exports/{T}/", "report_export"),
-        (f"/admin/reports/exact-exports/{T}/", "report_exact"),
-        (f"/admin/reports/daily-digests/{T}/", "daily_digest_snapshot"),
-        (f"/admin/reports/weekly-digests/{T}/", "weekly_digest_snapshot"),
+        (f"/admin/reports/exports/{T}/download/", "report_export_download"),
+        ("/admin/reports/emailed/weekly/new/", "weekly_digest_manual"),
+        (f"/admin/reports/emailed/weekly/{T}/", "weekly_digest_snapshot"),
+        (f"/admin/reports/emailed/daily/{T}/", "daily_digest_snapshot"),
+        (f"/admin/reports/emailed/daily/{T}/chart.png", "daily_digest_chart"),
         ("/admin/reports/campaigns/", f"{legacy.PREFIX}participation_chooser"),
         (f"/admin/reports/{T}/families/", f"{legacy.PREFIX}family_directory"),
         (f"/admin/reports/{T}/families/{T}/", f"{legacy.PREFIX}family_timeline"),
@@ -563,15 +576,28 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
     names = [pattern.name for pattern in reports.patterns]
     assert names.index("family_directory_export") < names.index("family_timeline")
     assert names.index("find_family") < names.index("family_timeline")
+    assert names.index("weekly_digest_manual") < names.index("weekly_digest_snapshot")
 
 
-def test_sent_digest_email_links_still_open_their_reports():
-    """Daily and weekly report emails already sent link these exact addresses.
+def test_old_digest_addresses_are_gone():
+    """The daily and weekly reports' old addresses are 404, not redirected (#864).
 
-    The emailed report pages move with NAV-12, which redirects these; until
-    then each still opens its page directly, never an old-report redirect or
-    a 410 (NAV-11 moves the report pages around them).
+    The Administrator dropped old Admin aliases: a link in a report email sent
+    before NAV-12 no longer opens; the report is listed on Emailed reports.
     """
+    for old in (
+        f"/admin/reports/daily-digests/{T}/",
+        f"/admin/reports/daily-digests/{T}/chart.png",
+        f"/admin/reports/daily-digests/{T}/download.png",
+        f"/admin/reports/weekly-digests/{T}/",
+        f"/admin/reports/weekly-digests/{T}/items/{T}/",
+    ):
+        with pytest.raises(Resolver404):
+            resolve(old)
+
+
+def test_new_digest_emails_link_their_emailed_report_pages():
+    """New emails link the Emailed reports addresses, which open the reports."""
     from types import SimpleNamespace
 
     from parishkit.stewardship.reports.links import report_url
@@ -584,7 +610,21 @@ def test_sent_digest_email_links_still_open_their_reports():
         path = document.report_path.fget(sent)
         assert resolve(path).url_name == name, path
         assert path == reverse(f"admin:{name}", args=[TASK])
+        assert path.startswith("/admin/reports/emailed/")
         assert report_url("https://parish.example", path).endswith(path)
-    # A weekly report's item links, as its page renders them.
-    item = f"/admin/reports/weekly-digests/{T}/items/{T}/"
-    assert resolve(item).url_name == "weekly_digest_item"
+
+
+def test_every_export_shares_one_page():
+    """A latest-data export's page is the shared export page (decision 8)."""
+    page = reverse("admin:report_export", args=[TASK])
+    for name in ("report_export_cancel", "report_export_retry"):
+        assert reverse(f"admin:{name}", args=[TASK]).startswith(page)
+    assert "report_exact" not in navigation.PAGES
+    # No old address is kept for them (#864).
+    for old in (
+        f"/admin/reports/exact-exports/{T}/",
+        f"/admin/reports/exports/{T}/cancel",
+        f"/admin/reports/weekly-digests/request/{T}/",
+    ):
+        with pytest.raises(Resolver404):
+            resolve(old)
