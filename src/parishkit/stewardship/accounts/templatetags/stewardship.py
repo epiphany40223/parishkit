@@ -141,6 +141,28 @@ def sort_heading(context, table, column, label, css_class=""):
     }
 
 
+@register.inclusion_tag("stewardship/components/table-actions.html")
+def table_actions(name, edit=None, delete=None, confirm=None, field="id"):
+    """One row's Actions cell in an action table (#879).
+
+    Usage: ``{% table_actions name=row.label edit=row.edit_url
+    delete=row.id confirm="schedule-delete" field="schedule_id" %}``.
+    ``name`` names the row in each button's accessible name and tooltip;
+    ``edit`` is the row's edit page; ``delete`` the value its Delete posts as
+    ``field`` once the dialog ``confirm`` names is confirmed. Leave out an
+    action the row does not offer; a row with none gets an empty cell.
+    """
+    if delete is not None and not confirm:
+        raise template.TemplateSyntaxError("table_actions: Delete needs its dialog.")
+    return {
+        "name": name,
+        "edit": edit,
+        "delete": delete,
+        "confirm": confirm,
+        "field": field,
+    }
+
+
 @register.inclusion_tag("stewardship/components/disabled-control.html")
 def multi_campaign_control(control_id, label):
     """A greyed-out multi-campaign control with the one #145 tip (rule 10).

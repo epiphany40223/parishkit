@@ -2566,6 +2566,242 @@
     if (option.dataset.testNote) line(option.dataset.testNote);
   };
 
+  // Action tables (#879; admin-portal spec, "Row actions and confirmation").
+  // A control marked data-confirm-open="<dialog id>" (a row's Delete in
+  // components/table-actions.html, or the bulk bar's button) opens that
+  // components/confirm-dialog.html <dialog> as a modal, naming the row or the
+  // count of ticked rows. Cancel, Escape or the dialog closing changes
+  // nothing. Confirm posts the table form's fields (its CSRF token and any
+  // base version) plus the chosen rows' values, with fetch and no page load.
+  // The server answers with the configuration change's status page (or a
+  // redirect back to this page when nothing is left to wait for), and this
+  // follows that status until the change is applied, then redraws every
+  // region from the table region's data-refresh-url (the page's own address,
+  // sort included), closes the dialog and announces what was done. A
+  // refusal, or a change that did not apply, is shown inside the dialog,
+  // below its buttons, and nothing is redrawn. Focus stays in the dialog
+  // while it is open (Tab wraps), and returns to the control that opened it,
+  // or to the dialog's data-confirm-fallback element when that row is gone.
+  // The server checks every chosen row itself.
+  const CONFIRM_POLL_MS = 1000;
+  const CONFIRM_WAIT_MS = 30000;
+  const CONFIRM_REFUSED = {
+    403: "This was not done: you are not allowed to do this now, or your sign-in has ended. Reload the page.",
+    409: "This was not done: the page is out of date. Reload the page, then try again.",
+  };
+  const CONFIRM_UNAVAILABLE = "This was not done: the server can't do it right now. Try again in a moment.";
+  const CONFIRM_UNREACHABLE = "The server could not be reached. Reload the page to check whether this was done.";
+  const fillIn = (text, values) => String(text || "").replace(/\{(\w+)\}/g,
+    (whole, key) => (key in values ? String(values[key]) : whole));
+  const pause = (ms) => new Promise((resolve) => { window.setTimeout(resolve, ms); });
+  const focusable = (root) => [...root.querySelectorAll(
+    "a[href], button, input, select, textarea, [tabindex]:not([tabindex='-1'])")]
+    .filter((node) => !node.disabled && !node.hidden && node.getClientRects().length);
+  // The open dialog's request: {dialog, opener, form, chosen, values, busy, done}.
+  let confirming = null;
+  const wiredDialogs = new WeakSet();
+  const wireDialog = (dialog) => {
+    if (wiredDialogs.has(dialog)) return;
+    wiredDialogs.add(dialog);
+    // Escape asks to cancel; not while the request is in flight, since the
+    // change may already be under way.
+    dialog.addEventListener("cancel", (event) => {
+      if (confirming?.dialog === dialog && confirming.busy) event.preventDefault();
+    });
+    dialog.addEventListener("close", () => {
+      const state = confirming?.dialog === dialog ? confirming : null;
+      confirming = null;
+      if (!state || state.done) return;
+      const back = state.opener.isConnected ? state.opener
+        : document.getElementById(dialog.dataset.confirmFallback || "");
+      back?.focus();
+    });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Tab") return;
+      const nodes = focusable(dialog);
+      if (!nodes.length) return;
+      const [first, last] = [nodes[0], nodes[nodes.length - 1]];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+    dialog.querySelector("[data-confirm-cancel]")?.addEventListener("click", () => {
+      if (!confirming?.busy) dialog.close();
+    });
+    dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
+      if (confirming?.dialog === dialog && !confirming.busy) acceptConfirm(confirming);
+    });
+  };
+  const openConfirm = (dialog, opener) => {
+    const form = document.getElementById(dialog.dataset.confirmForm || "");
+    if (!(form instanceof HTMLFormElement)) return;
+    const chosen = opener.hasAttribute("data-bulk-action")
+      ? [...form.querySelectorAll("input[data-select-row]:checked")]
+        .filter((box) => !box.disabled)
+        .map((box) => ({field: box.name, value: box.value, name: box.dataset.confirmName}))
+      : [{field: opener.name, value: opener.value, name: opener.dataset.confirmName}];
+    if (!chosen.length || chosen.some((item) => !item.field || !item.value)) return;
+    wireDialog(dialog);
+    const values = {count: chosen.length.toLocaleString("en-US"), name: chosen[0].name || ""};
+    dialog.querySelector("[data-confirm-title]").textContent = fillIn(
+      chosen.length === 1 ? dialog.dataset.titleOne : dialog.dataset.titleMany, values);
+    const error = dialog.querySelector("[data-confirm-error]");
+    error.hidden = true;
+    error.replaceChildren();
+    dialog.querySelector("[data-confirm-status]").textContent = "";
+    dialog.querySelectorAll("[data-confirm-accept], [data-confirm-cancel]").forEach((button) => {
+      button.disabled = false;
+      button.removeAttribute("aria-disabled");
+      button.classList.remove("is-busy");
+    });
+    confirming = {dialog, opener, form, chosen, values, busy: false, done: false};
+    dialog.showModal();
+    // The safe choice takes focus first.
+    dialog.querySelector("[data-confirm-cancel]")?.focus();
+  };
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const opener = event.target.closest("[data-confirm-open]");
+    if (!opener || opener.disabled) return;
+    const dialog = document.getElementById(opener.dataset.confirmOpen);
+    if (!(dialog instanceof HTMLDialogElement)) return;
+    event.preventDefault();
+    openConfirm(dialog, opener);
+  });
+  // Show why the action was not done, below the dialog's buttons; ``link``
+  // is an optional same-origin {href, text} (a change's status page).
+  const refuseConfirm = (state, text, link) => {
+    const error = state.dialog.querySelector("[data-confirm-error]");
+    const line = document.createElement("p");
+    line.textContent = text;
+    error.replaceChildren(line);
+    if (link && sameOrigin(link.href)) {
+      const anchor = document.createElement("a");
+      anchor.href = link.href;
+      anchor.textContent = link.text;
+      error.append(anchor);
+    }
+    error.hidden = false;
+    state.dialog.querySelector("[data-confirm-status]").textContent = "";
+    const accept = state.dialog.querySelector("[data-confirm-accept]");
+    accept.classList.remove("is-busy");
+    accept.removeAttribute("aria-disabled");
+    // The same request would be refused again; Cancel stays.
+    accept.disabled = true;
+    const cancel = state.dialog.querySelector("[data-confirm-cancel]");
+    cancel.disabled = false;
+    state.busy = false;
+    cancel.focus();
+  };
+  // A refused answer's message: the server's own explanation when it gives
+  // one (a JSON refusal), else a plain one for its status.
+  const refusalText = (status, text) => {
+    try {
+      const refusal = JSON.parse(text)?.refusal;
+      if (refusal?.message) return [refusal.message, refusal.fix].filter(Boolean).join(" ");
+    } catch { /* not JSON: the plain message below */ }
+    return CONFIRM_REFUSED[status] || CONFIRM_UNAVAILABLE;
+  };
+  // A change's status page: {state, text} from its data-live-status region,
+  // or null for any other page (the change needed no waiting).
+  const changeStatus = (text) => {
+    const parsed = new DOMParser().parseFromString(text, "text/html");
+    const region = parsed.querySelector("[data-live-status]");
+    if (!region) return null;
+    return {
+      state: region.getAttribute("data-live-state") || "",
+      text: squeeze([...region.querySelectorAll("h2, p")].slice(0, 2)
+        .map((node) => node.textContent).join(" ")),
+    };
+  };
+  const acceptConfirm = async (state) => {
+    const {dialog, form, chosen} = state;
+    state.busy = true;
+    const accept = dialog.querySelector("[data-confirm-accept]");
+    accept.setAttribute("aria-disabled", "true");
+    accept.classList.add("is-busy");
+    dialog.querySelector("[data-confirm-cancel]").disabled = true;
+    dialog.querySelector("[data-confirm-error]").hidden = true;
+    dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.working || "Working…";
+    // The form's own fields (CSRF, base version), never its row boxes: the
+    // chosen rows are exactly the ones the dialog named.
+    const fields = new Set(chosen.map((item) => item.field));
+    const body = new URLSearchParams();
+    new FormData(form).forEach((value, name) => {
+      if (!fields.has(name) && typeof value === "string") body.append(name, value);
+    });
+    chosen.forEach((item) => body.append(item.field, item.value));
+    const read = async (url, init) => {
+      const response = await fetch(url, {...init, credentials: "same-origin",
+        headers: {"X-Requested-With": "fetch"}});
+      return {response, text: await response.text()};
+    };
+    let answer;
+    try {
+      answer = await read(form.action, {method: "POST", body});
+    } catch {
+      // It may have reached the server: never send it again.
+      refuseConfirm(state, CONFIRM_UNREACHABLE);
+      return;
+    }
+    if (!answer.response.ok) {
+      refuseConfirm(state, refusalText(answer.response.status, answer.text));
+      return;
+    }
+    // Follow the change until it is applied (a passive status read).
+    const statusUrl = answer.response.url;
+    let status = changeStatus(answer.text);
+    const deadline = Date.now() + CONFIRM_WAIT_MS;
+    while (status && !["applied", "failed", "cancelled"].includes(status.state)) {
+      if (Date.now() >= deadline) {
+        refuseConfirm(state, "The change is saved but not applied yet, so the list is unchanged for now.",
+          {href: statusUrl, text: "See the change's status"});
+        return;
+      }
+      await pause(CONFIRM_POLL_MS);
+      try {
+        const next = await read(statusUrl, {method: "GET"});
+        if (next.response.ok) status = changeStatus(next.text) || status;
+      } catch { /* keep waiting until the deadline */ }
+    }
+    if (status && status.state !== "applied") {
+      refuseConfirm(state, status.text || "The change was not applied. Nothing was changed.",
+        {href: statusUrl, text: "See the change's status"});
+      return;
+    }
+    // Applied: redraw every region from the table's own address.
+    const region = form.closest(REGIONS);
+    const address = region?.dataset.refreshUrl || window.location.href;
+    let fresh;
+    try {
+      const page = await read(address, {method: "GET"});
+      if (!page.response.ok) throw new Error("refresh refused");
+      fresh = new DOMParser().parseFromString(page.text, "text/html");
+    } catch {
+      // The change is applied; an ordinary load shows the list.
+      window.location.assign(address);
+      return;
+    }
+    state.done = true;
+    dialog.close();
+    const fallback = dialog.dataset.confirmFallback || "";
+    document.querySelectorAll(REGIONS).forEach((other) => {
+      const copy = fresh.getElementById(other.id);
+      if (isRegion(copy)) swapRegion(other, copy);
+    });
+    syncControls(fresh);
+    const target = (state.opener.isConnected && state.opener)
+      || document.getElementById(fallback) || document.querySelector("main h1");
+    target?.focus({preventScroll: true});
+    target?.scrollIntoView({block: "nearest"});
+    announce(fillIn(chosen.length === 1 ? dialog.dataset.doneOne : dialog.dataset.doneMany,
+      state.values));
+  };
+
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into
   // the campaign-local calendar dates it produces. Dates are civil days,
   // computed with UTC dates so the browser's own zone never shifts them; the

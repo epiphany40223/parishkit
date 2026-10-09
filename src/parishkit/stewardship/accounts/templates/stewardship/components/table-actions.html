@@ -1,0 +1,12 @@
+{% load i18n stewardship %}{% comment %}
+  One row's Actions cell in an action table (the table_actions tag;
+  admin-portal spec, "Row actions and confirmation", #879). Each action is an
+  icon button through the shared {% button %} tag, named for its row ("Edit
+  Reminder 2") with the same words as its tooltip:
+  - Edit (when `edit` is given) links to the row's own edit page.
+  - Delete (when `delete` is given) is a type="button" control that never
+    submits by itself: ui-v1.js opens the confirmation dialog `confirm` names
+    (components/confirm-dialog.html), which posts `delete` as the value of
+    `field` with the table's form once confirmed.
+  A row with neither keeps an empty cell, so the columns stay aligned.
+{% endcomment %}<td class="table-actions">{% if edit %}{% blocktranslate asvar edit_label with name=name %}Edit {{ name }}{% endblocktranslate %}{% button href=edit variant="secondary" class="icon-button" aria-label=edit_label title=edit_label %}{% include "stewardship/components/action-icon.html" with icon="edit" %}{% endbutton %}{% endif %}{% if delete %}{% blocktranslate asvar delete_label with name=name %}Delete {{ name }}{% endblocktranslate %}{% button type="button" variant="secondary" class="icon-button icon-button-danger" name=field value=delete aria-label=delete_label title=delete_label data-confirm-open=confirm data-confirm-name=name %}{% include "stewardship/components/action-icon.html" with icon="delete" %}{% endbutton %}{% endif %}</td>
