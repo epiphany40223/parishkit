@@ -77,7 +77,13 @@ everything again under the lock with its usual row locks and admission
 checks, and the SQL guards, pause and withdrawal checks included, stay
 authoritative. A change another session commits after a loop's read (a
 configuration change, a pause, new work) is seen by the next loop, the same
-bound as a change committed just after a locked read. Export cleanup lists
+bound as a change committed just after a locked read. When no scan is part
+way through the due rows, a loop first publishes the hints for at most 20 of
+them before its producers run, then a full page after them, so newly due work
+is not held up behind slow producers (#394); the second scan continues from
+where the first stopped. A loop in which any step failed waits twice as long
+as the last one, up to 60 seconds, and a clean loop returns to two seconds.
+Export cleanup lists
 the attempts no cleanup task owns yet with a plain indexed query and
 evaluates the export admission functions only for those.
 
@@ -109,6 +115,8 @@ service executes a task type (the worker for the general queue, mail dispatch
 for the mail queue) may claim or transition it. Web only creates tasks and
 cancels an Admin's waiting cleanup task. The scheduler only cancels superseded
 waiting source work. Any login may create only a type that some service executes.
+SECURITY DEFINER commands, such as the delivery recovery commands, run as the
+schema owner and are exempt from this binding.
 
 | TaskRun state | Terminal? | Permitted next states and conditions |
 | --- | --- | --- |
@@ -120,7 +128,10 @@ waiting source work. Any login may create only a type that some service executes
 | `failed` | Yes | None; explicit retry creates a linked new TaskRun |
 | `cancelled` | Yes | None; later independently authorized work is a new operation |
 
-Workers heartbeat and record phases/progress. A worker's lease renewal runs
+Workers heartbeat and record phases/progress; the heartbeat and progress
+events of a run that finished more than 30 days ago are pruned by the
+[maintenance task](../admin-automation/spec.md#maintenance-task). A worker's
+lease renewal runs
 every 20 seconds on its own connection and confirms a 60-second lease. A
 renewal stopped by its own lock or statement limit has not lost the lease:
 it is logged and tried again every 2 seconds while the last confirmed lease
@@ -2365,8 +2376,11 @@ their fields without a sentence.
 ## Shutdown and upgrade behavior
 
 Workers stop claiming new jobs, finish or checkpoint within their termination
-grace, and release/expire leases. The worker container's two processes drain
-together within the one grace period. The scheduler may overlap an old/new process
-during rollout without duplicate work because database occurrence keys are
-unique. Database migrations run before new web/worker versions receive traffic;
-mixed-version compatibility requirements are declared per migration.
+grace, and release/expire leases. The worker container's two processes, and
+the mail-dispatch container's two, drain together within the one grace period.
+Only one scheduler runs: a second one, such as a replacement started during a
+rollout before the old one stopped, cannot take the scheduler's session lock
+and exits at once without scheduling anything, and Compose restarts it until
+the lock is free. Database occurrence keys are unique in any case. Database
+migrations run before new web/worker versions receive traffic; mixed-version
+compatibility requirements are declared per migration.

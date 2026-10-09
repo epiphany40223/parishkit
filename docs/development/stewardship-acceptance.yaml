@@ -68,6 +68,7 @@ sections:
     "In-place controls": [ADM-03]
     "Page help": [ADM-03]
     "Time entry": [ADM-03]
+    "Preview lifetimes": [ADM-03, ADM-05, ADM-06]
     "Button labels": [ADM-03]
     "Shared visual style": [ADM-03]
     "Background indicators": [ADM-03]
