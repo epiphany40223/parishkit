@@ -341,6 +341,7 @@ def emit(
     failure_kind: FailureKind | None = None,
     source_loss: tuple | None = None,
     source_max_drop_percent: int | None = None,
+    source_contact_coverage: tuple | None = None,
     drive_failure: str | None = None,
     timeout: str | None = None,
     limit_seconds: int | None = None,
@@ -359,6 +360,9 @@ def emit(
     ``source_max_drop_percent`` is a source refresh's overridden loss limit,
     only with ``TASK_STARTED``. Event names are mirrored by a SQL constraint,
     so the override rides on that reviewed event rather than a new one.
+    ``source_contact_coverage`` is a full refresh's contact list counts
+    refused as cut short (``source.loading.ShortContactList``), only with
+    ``SOURCE_PROVIDER_FAILED``, which carries it for the same reason.
 
     ``drive_failure`` is an off-site copy's Drive category; ``timeout`` names
     the limit that stopped work, with that limit and the elapsed time in
@@ -398,6 +402,11 @@ def emit(
         event is not Event.TASK_STARTED or not _safe_percent(source_max_drop_percent)
     ):
         raise ValueError("A source loss limit must be a whole percent.")
+    if source_contact_coverage is not None and (
+        event is not Event.SOURCE_PROVIDER_FAILED
+        or not _safe_coverage(source_contact_coverage)
+    ):
+        raise ValueError("Contact list coverage must be its named counts.")
     if drive_failure is not None and drive_failure not in DRIVE_FAILURES:
         raise ValueError("Drive failure categories must be reviewed values.")
     if timeout is not None and timeout not in TIMEOUT_LIMITS:
@@ -442,6 +451,7 @@ def emit(
                 "failure_kind": failure_kind,
                 "source_loss": source_loss,
                 "source_max_drop_percent": source_max_drop_percent,
+                "source_contact_coverage": source_contact_coverage,
                 "drive_failure": drive_failure,
                 "timeout": timeout,
                 "limit_seconds": limit_seconds,
@@ -592,6 +602,17 @@ def _safe_loss(value):
         and value[0] in LOSS_MEASURES
         and all(item is None or (type(item) is int and item >= 0) for item in value[1:])
         and type(value[2]) is int
+    )
+
+
+def _safe_coverage(value):
+    """A contact list refusal's counts: one non-negative int per named field."""
+    from .source.loading import CONTACT_COVERAGE_FIELDS
+
+    return (
+        type(value) is tuple
+        and len(value) == len(CONTACT_COVERAGE_FIELDS)
+        and all(type(item) is int and item >= 0 for item in value)
     )
 
 
@@ -830,6 +851,20 @@ class SafeJsonFormatter(JsonLogFormatter):
             and _safe_percent(context.get("source_max_drop_percent"))
         ):
             safe.extra["source_max_drop_percent"] = context["source_max_drop_percent"]
+        if (
+            record.msg is Event.SOURCE_PROVIDER_FAILED
+            and isinstance(context, dict)
+            and _safe_coverage(context.get("source_contact_coverage"))
+        ):
+            from .source.loading import CONTACT_COVERAGE_FIELDS
+
+            safe.extra["source_contact_coverage"] = dict(
+                zip(
+                    CONTACT_COVERAGE_FIELDS,
+                    context["source_contact_coverage"],
+                    strict=True,
+                )
+            )
         if (
             record.msg is Event.SOURCE_MINISTRY_NAME_REPAIRED
             and isinstance(context, dict)

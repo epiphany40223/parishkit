@@ -420,6 +420,28 @@ one:
   one ParishSoft does not return, such as a roster entry for a removed
   Member or Ministry. Find it in ParishSoft (the debug log names the
   check), fix it there, and use **Refresh now**.
+
+  If only full refreshes fail with `shifted_scan` while quick updates
+  succeed, look for a WARNING `source_provider_failed` line carrying
+  `source_contact_coverage`
+  (`docker compose ... logs worker | grep source_contact_coverage`). It
+  means the Member contact list left out many more Members than the last
+  full refresh's did, so the load looked cut short. Its counts (no parish
+  data) are the Members searched (`members`), the contact records returned
+  (`contact_infos`), the Members the list left out (`missing`), the last
+  full refresh's count left out (`baseline_missing`) and how many more are
+  allowed (`allowance`). A cut-short read passes on retry; a refusal that
+  repeats on every full refresh is a real change, such as a cleanup that
+  inactivated hundreds of Members, which ParishSoft leaves off that list.
+  Confirm the change in ParishSoft, then accept it for one full refresh
+  with the loss limit override as
+  [Accepting a large ParishSoft change](#accepting-a-large-parishsoft-change)
+  describes (any value above `25` turns this check off for that refresh;
+  `26` is enough). The accepted full refresh's count becomes the new
+  baseline. The same refusal can come once after a temporary dip: if
+  ParishSoft briefly left out fewer Members (say, after a fix there) and a
+  full refresh recorded that lower count, the next full refresh back at the
+  usual count is refused the same way. Handle it the same way.
 - `provider_timeout`: ParishSoft did not answer, or the full load did not
   finish within its 15-minute limit. If it repeats on full loads while
   quick updates succeed, the load has grown or ParishSoft has slowed. Check
@@ -473,6 +495,12 @@ before.
    ```text
    docker compose ... up --detach --force-recreate worker
    ```
+
+The same override, for one full refresh, also accepts a large rise in the
+Members the contact list leaves out (`shifted_scan` with
+`source_contact_coverage`, under
+[the refresh failures above](#parishsoft-outage)):
+any value above `25` turns that check off for that refresh.
 
 A malformed value keeps the 25% limit. The accepted refresh records the
 limit it used in its manifest. While any limit other than 25% is in effect,

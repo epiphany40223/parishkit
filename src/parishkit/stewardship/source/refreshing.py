@@ -37,6 +37,7 @@ from .loading import (
     derived_counts,
     load_full_source,
     maximum_drop_percent,
+    recorded_contact_missing,
     valid_derived_counts,
 )
 from .requests import _window
@@ -85,6 +86,9 @@ class RefreshInputs:
     # snapshot recorded for it; see source.workgroups.
     workgroup_name: str | None = None
     base_workgroup: dict | None = None
+    # Members the last full refresh's contact list left out (#387 M4), or
+    # None when that refresh did not record it; see loading.
+    previous_contact_missing: int | None = None
 
 
 # A load's drop check compares with every full refresh promoted in this many
@@ -214,6 +218,7 @@ def _inputs(attempt_id, execution, claim):
         counted = None
         recorded_trend = None
         base_workgroup = None
+        contact_missing = None
         if current.snapshot_id is not None:
             full = (
                 SourceSnapshot.objects.filter(
@@ -228,6 +233,7 @@ def _inputs(attempt_id, execution, claim):
             if full is None:
                 raise InvalidSourcePayload("Refresh has no complete full baseline.")
             trend = _trend(full, snapshot.started_at - timedelta(days=TREND_DAYS))
+            contact_missing = recorded_contact_missing(full.cursor)
             counts = _largest_counts(trend)
             recorded_trend = [_recorded_derived(each) for each in trend]
             if snapshot.kind == "delta":
@@ -281,6 +287,7 @@ def _inputs(attempt_id, execution, claim):
         base,
         workgroup_name,
         base_workgroup,
+        contact_missing,
     )
 
 
@@ -365,7 +372,11 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
             maximum_drop_percent=limit,
         )
         if claim.phase == "full":
-            loaded = load_full_source(client, **options)
+            loaded = load_full_source(
+                client,
+                **options,
+                previous_contact_missing=inputs.previous_contact_missing,
+            )
         else:
             loaded = load_delta_source(
                 client,

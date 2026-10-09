@@ -1336,9 +1336,27 @@ rather than reported as invalid data. So are two kinds of skew between
 collections read minutes apart: a record one collection names but an earlier
 read never returned (a Member's Family, a roster's Member or Ministry, a
 gift's Member or Family), and a gift that changed between two overlapping
-reads. So is a load that ran out of its time budget, which is a slow
-provider, not bad data. Malformed records, and loads past their request or
-byte bounds, stay invalid. It uses shared
+reads. So is a full load whose Member contact list looks cut short. That
+list reports no total to check its pages against, and ParishSoft
+legitimately leaves some Members out of it (mostly inactive ones), so each
+full load records how many Members it searched, how many contact records
+the list returned and how many searched Members it left out. A Member left
+out still gets a contact row from the contact fields on its own search row,
+so only these recorded counts show a short list. The load is retried when
+the count left out exceeds the last promoted full refresh's by more than 10
+Members or 2% of the Members searched, whichever is larger; a list that lost
+a whole 500-row page would be far past that. A full load with no
+recorded count to compare with (a parish's first load, or the first
+after this check was added) only records its counts, and a refresh run with a raised drop limit
+accepts a larger rise and becomes the next baseline. A refusal logs these
+counts, the baseline and the allowance at WARNING in the process log (counts
+only), so an operator can tell a short read from a real change; see the
+[ParishSoft outage runbook](../../../guides/stewardship-launch-runbooks.md#parishsoft-outage).
+Quick updates take
+contacts from each reloaded Family's Member details and do not read the
+contact list. So is a load that ran out of its time budget, which is a
+slow provider, not bad data. Malformed records, and loads past their
+request or byte bounds, stay invalid. It uses shared
 `load_families_and_members` with active/inactive data sufficient for transition
 recognition. Giving detail is limited to the financial and comparison periods
 of the sole current campaign while it is `draft`, `scheduled`, `active`, or

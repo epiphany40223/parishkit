@@ -45,7 +45,7 @@ from .errors import (
     SourceScopeChanged,
 )
 from .leases import SourceLeaseUnavailable, release_source, verify_source
-from .loading import DestructiveSourceChange
+from .loading import DestructiveSourceChange, ShortContactList
 from .models import SourceMutationLease
 from .outcomes import (
     MAX_AUTOMATIC_ATTEMPTS,
@@ -77,6 +77,10 @@ class ReadFailure:
     # For a destructive change: every count the load was checked on
     # (loading.CountCheck), recorded with the refusal (ADM-13).
     checks: tuple = ()
+    # For a contact list refused as cut short (#387 M4): its counts, in
+    # loading.CONTACT_COVERAGE_FIELDS order, logged so the operator can tell
+    # a short read from a real ParishSoft change.
+    coverage: tuple | None = None
 
 
 def classify_read_failure(error, *, has_source_claim):
@@ -109,7 +113,13 @@ def classify_read_failure(error, *, has_source_claim):
         # The provider's paging moved mid-scan (validated 2026-09-28: the same
         # full load failed once and passed on five immediate re-runs). Retry
         # the whole read within the bounded provider-failure allowance.
-        return ReadFailure(True, False, Event.SOURCE_PROVIDER_FAILED, "shifted_scan")
+        return ReadFailure(
+            True,
+            False,
+            Event.SOURCE_PROVIDER_FAILED,
+            "shifted_scan",
+            coverage=error.coverage if isinstance(error, ShortContactList) else None,
+        )
     if isinstance(error, SourceLoadBudgetExceeded):
         # ParishSoft answered too slowly for the load to finish in its time
         # (#387): a provider timeout, retried within the same allowance,
@@ -331,6 +341,16 @@ def settle_failed_read(execution, error, *, source_claim=None):
                 level=logging.CRITICAL,
                 task_id=result.run_id,
                 source_loss=decision.loss,
+            )
+        if decision.coverage is not None:
+            # Likewise for a contact list refused as cut short: without its
+            # counts an operator cannot tell a short read from a real change
+            # that persists and needs the drop-limit override (runbook).
+            emit(
+                decision.event,
+                level=logging.WARNING,
+                task_id=result.run_id,
+                source_contact_coverage=decision.coverage,
             )
         execution.control.finished.set()
         return result
