@@ -544,6 +544,18 @@ def test_upgrade_check_proves_migration_and_grants_are_no_ops(
             "TO pk_stewardship_download",
             "DROP FOREIGN DATA WRAPPER upgrade_check_fdw CASCADE",
         ),
+        # Parameter privileges (#845), for any login including the schema
+        # owner, and through PUBLIC.
+        (
+            "GRANT SET ON PARAMETER session_replication_role "
+            "TO pk_stewardship_migration",
+            "REVOKE SET ON PARAMETER session_replication_role "
+            "FROM pk_stewardship_migration",
+        ),
+        (
+            "GRANT ALTER SYSTEM ON PARAMETER log_statement TO PUBLIC",
+            "REVOKE ALTER SYSTEM ON PARAMETER log_statement FROM PUBLIC",
+        ),
         # The backup login's excess authority, as its backup admission
         # refuses it (#389 L7).
         (

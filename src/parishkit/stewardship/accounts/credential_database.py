@@ -92,7 +92,8 @@ def _identity(expected, *, database=None):
 
     The login must also not lend its authority or hold any outside the grant
     model (``ISOLATION_DRIFT``): no role is a member of it, it owns nothing,
-    and it has no foreign-data wrapper or server USAGE.
+    it has no foreign-data wrapper or server USAGE, and no parameter
+    privilege reaches it.
 
     Returns the login's role OID, so a caller can tell a recreated role of the
     same name from the one it already admitted.
