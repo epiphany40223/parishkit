@@ -232,127 +232,53 @@ changing it clears nothing. The summary loses the item for a field that
 clears, and goes once it lists nothing. This applies to every Admin form,
 Django-rendered ones included, through the shared page script.
 
-The mail schedule page (Dates and mail schedules) starts with a short guide:
-what each mail type is, that exactly one initial invitation is required before
-go-live, that
-reminders and the daily and weekly Admin digests are optional (at most one
-digest of each kind), that submission receipts and critical alerts are sent
-automatically and never scheduled, that times use the campaign time zone, and
-the current campaign dates. Each schedule row shows only the fields its mail
-type uses (initial invitation and reminder: date, time and email; daily
-digest: time and email; weekly digest: weekday, time and email) and offers
-only emails of that type; the page script clears a field it hides. The send
-time is a [time entry](#time-entry) field. A saved schedule's mail type is
-shown but cannot change. The server reports a missing
-or inapplicable value on its own field (for example a weekday on an
-invitation, or a date outside the campaign with the campaign's dates); only
-rules between rows, such as a second initial invitation or a reminder before
-it, are collection errors. "Add another schedule" adds blank rows (with the
-same per-type fields) before saving, and a row added this way can be removed
+The mail schedule pages start with a short guide (in the About panel): what
+each mail type is, that exactly one initial invitation is required before
+go-live, that reminders and the daily and weekly Admin digests are optional (at
+most one digest of each kind), that submission receipts and critical alerts are
+sent automatically and never scheduled, the time zone send times are entered in
+(this computer's on the list and the New and Edit scheduled email pages; the
+campaign's on the first-campaign step and the date-change review, see [time
+entry](#time-entry)), and the current campaign dates. Wherever a schedule is
+edited (the first-campaign Mail schedules step, the date-change review and the
+New and Edit scheduled email pages below), its fields show only those its mail
+type uses (initial invitation and reminder: date, time and email; daily digest:
+time and email; weekly digest: weekday, time and email) and offer only emails of
+that type; the page script clears a field it hides. The send time is a [time
+entry](#time-entry) field. A saved schedule's mail type is shown but cannot
+change. The server reports a missing or inapplicable value on its own field (for
+example a weekday on an invitation, or a date outside the campaign with the
+campaign's dates); only rules between schedules, such as a second initial
+invitation or a reminder before it, are page-level errors. On the first-campaign
+step and the date-change review, "Add another schedule" adds blank rows (with
+the same per-type fields) before saving, and a row added this way can be removed
 again, so several schedules save in one submission and are validated together.
 
 A schedule's **Email to send** list tells look-alike emails apart
-([#446](https://github.com/epiphany40223/parishkit/issues/446)): each choice
-reads its subject and the saved schedules that send it ("sent by Reminder
-1, Reminder 2", or "not sent by any schedule", the same verb as the
-description below it), and two choices that would
-still read the same also show the start of their ID. Under the list, the
-chosen email is described in place: the start of its plain text, the saved
-schedules that send it, and, when another schedule sends it too, that
-editing it changes every one of them. On the regular page the description
-also links to the email's test page (Preview and send a test) and its
-editor (Edit this email), each in a new tab so the page's unsaved schedule
-changes stay; an email saved there makes this page's preview ask for a
-reload, as any concurrent change does. Test emails can be sent only while
-the campaign is a Testing draft, or in Production while live email delivery
-is paused ([Live delivery pause](#live-delivery-pause)); at any other time
-the description says so in place of the test link, and the test page itself
-refuses with the same explanation and a link to Pause and resume mail rather
-than asking for a reload
+([#446](https://github.com/epiphany40223/parishkit/issues/446)). Each email has
+one readable name: its subject, plus the start of its ID only when another
+email of the same mail type has the same subject. The list, the scheduled
+emails table and [Pages and emails](#default-content) all use that name. Each
+choice reads the name and the saved schedules that send it ("sent by Reminder
+1, Reminder 2", or "not sent by any schedule", the same verb as the description
+below it). Under the list, the chosen email is described in place: the start of
+its plain text, the saved schedules that send it, and, when another schedule
+sends it too, that editing it changes every one of them. On the New and Edit
+scheduled email pages the description also links to the email's test page
+(Preview and send a test) and its editor (Edit this email), each in a new tab so
+the page's unsaved changes stay; an email saved there makes this page's review
+ask for a reload, as any concurrent change does. Test emails can be sent only
+while the campaign is a Testing draft, or in Production while live email
+delivery is paused ([Live delivery pause](#live-delivery-pause)); at any other
+time the description says so in place of the test link, and the test page
+itself refuses with the same explanation and a link to Pause and resume mail
+rather than asking for a reload
 ([#923](https://github.com/epiphany40223/parishkit/issues/923)). Choosing an
 email still saves only the schedule's reference to it, exactly as before.
 
-On the regular Dates and mail schedules page, a **Scheduled emails** table
-([#448](https://github.com/epiphany40223/parishkit/issues/448)) lists every
-saved schedule above the editors, one row each, in sending order: dated sends
-by date and time (the Initial invitation first at a tie), then the digests,
-with the saved ID as the final tie-break, so the order never changes between
-loads. Reminders are numbered in that order, as
-[Family email sends](#family-email-sends) numbers them. Each row shows the
-schedule, when it sends (a browser-local time; a digest shows its day and
-its next send), the email to send, a status and, for a Family send with
-results, its delivered and failed counts with a link to Family email
-history. Work that blocks a change (in progress or with an uncertain
-result) makes it Preparing before the send time and Sending after it.
-Otherwise it is Upcoming before the send time; after it, Sending while any
-of its work is pending or running. Once that work is finished it is Sent
-when any of its email was delivered or prepared, "Sent (failed)" when its
-only results are failures (with the same link), and Done when it settled
-every Family without an email of its own (the coalesced and empty
-dispositions). Otherwise it is "Not sent yet" (the scheduler, a hold or
-catch-up may still send it); a digest is Repeats. The status reads the same counts-only schedule work summary
-as the review, never Family data. A short line states the rules between
-schedules. The table is short and shown whole, and its order is its point, so
-its headings do not sort.
-
-Choosing an editable row (its name, or anywhere else on the row) opens that
-schedule's editor in place, without a page load, marks the row as being
-edited and moves focus to the editor; an opened editor stays open, so a
-change never hides while it waits for Preview. Saved schedules' editors start
-closed, except one with an error or an unsaved change after a refused
-preview; the blank new row and added rows show as before, each labelled
-"New schedule". Each row's control reports whether its editor is open
-(`aria-expanded`). To delete a schedule, open it and check Delete. A
-schedule that has run or has work prepared (Preparing, Sending, Sent, Sent
-(failed) or Done) is read-only and cannot be changed or deleted: its row is muted with no
-control and its editor stays closed, because moving a send that already
-happened would make a new revision and plan it again. The one exception is
-an editor holding a posted change or an error after a refused preview (for
-example, the schedule started running while it was being edited): it opens,
-so the change can be seen and undone rather than posted again unseen.
-Showing a row's "editing below" note never moves its control, because the
-note's space is reserved. Closed and read-only editors still post their saved
-values, so the posted formset, its validation, the review and reminder
-planning are unchanged. When the browser restores a value into a closed
-editor (Back), `pageshow` opens that editor again; a value restored into a
-read-only editor is put back to its saved value. The first-campaign step
-keeps its plain list of editors, since nothing has sent there.
-
-**Repeat a reminder**
-([#469](https://github.com/epiphany40223/parishkit/issues/469)) adds several
-reminders at once. A panel below the schedule rows takes how often (every day;
-every week on the chosen days; or every month on a day of the month or on the
-first, second, third, fourth or last chosen weekday), the first and last dates
-(the campaign's dates to start with), one send time (a [time
-entry](#time-entry) field) and the reminder email to send. Only the fields of
-the chosen repeat show. As the Admin types, the panel lists every date the rule
-gives, with its weekday, and says which it will not add and why: outside the
-campaign dates, not after the initial invitation, at the same date and time as
-another invitation or reminder in the form, over 30 reminders from one rule, or
-over the form's 100 schedules (saved schedules marked Delete do not count). A
-short summary above **Add these reminders**, the panel's only live region, says
-how many dates will be added, or what is still missing: "Enter a send time to
-check these dates" until the time reads, since the timed checks cannot run
-without it, and "Choose the email to send" without an email. Two lines are
-reserved for it (a phone wraps the longer messages) and the date list sits
-below the button, so neither moves the button. A month without the chosen day
-(the 31st in September) is skipped and listed as skipped, not moved. Every day
-comes with a note that each reminder goes to every Family that has not
-responded and that sending spreads out or waits near the mailbox's daily limit.
-A rule spans at most a year. Dates are campaign-local calendar days and the
-time is the campaign's wall-clock time, so a 9:00 AM reminder stays at 9:00 AM
-across a daylight-saving change. **Add these reminders** appends one ordinary
-reminder row per date to the form, in place, and moves focus to the first new
-row; each can still be changed or removed before saving. The rule itself is not
-saved: the rows are ordinary reminders, each its own schedule, previewed,
-confirmed and delivered exactly like reminders added one at a time (see [Family
-invitations and
-reminders](../background-processing/spec.md#family-invitations-and-reminders)),
-and the server checks them as it checks any row. The panel's controls have no
-form names, so nothing of the rule is posted. The page script's expansion runs
-the shared case table `tests/stewardship/fixtures/recurrence_cases.json`.
-Remembering a series for later "this and following" edits, and a campaign
-calendar view, are later slices of #469.
+The regular page's list, its row actions and the New and Edit scheduled
+email page are described under
+[Dates and mail schedules](#dates-and-mail-schedules).
 
 The staged ParishSoft load is a complete load of Families, Members, Ministries
 and the fund catalog, with no giving window, as any load is before a campaign
@@ -925,6 +851,9 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `artwork_preview` | Review campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/<bundle>/` | (same; old address redirects) |  |
 | `artwork_remove` | Remove campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/removal/` | (same; old address redirects) |  |
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same; old address redirects) |  |
+| `schedule_new` | New scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/addition/` | (same) | Its review confirms through Dates and mail schedules. |
+| `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. |
+| `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here. |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same; old address redirects) | Gains a Return link and About panel. |
 | `talent_settings` | Member talents | Menu: Member talents | Administrator | Talents Members can share | `/admin/campaign/talents/` | (same; old address redirects) | Gains a Return link and About panel. |
 | `reminder_workgroup` | Reminder WorkGroup | Menu: Reminder WorkGroup | Administrator | (new, #861) | `/admin/campaign/reminder-workgroup/` | (same) | Edit, review, apply; stays editable while live. |
@@ -1339,9 +1268,8 @@ orders. In v1 that covers:
 Extending those vocabularies is a schema change. Columns that are only
 controls (selection, actions, previews) never sort. Two short before/after
 lists of pending setting changes (credential selection and integration
-preview), the campaign mail test's at most ten reviewed Families, the
-scheduled emails table (fixed sending order), and link preparation history
-(panels, not columns) have no sortable columns.
+preview), the campaign mail test's at most ten reviewed Families and link
+preparation history (panels, not columns) have no sortable columns.
 
 A short table shown whole has no navigator: its headings carry only its sort
 token (no page or size), and the page accepts nothing else for it. The two
@@ -1401,6 +1329,46 @@ as their tooltip). Ticking a row never moves a control under the pointer: no
 visible line appears or disappears, and the count and Select all button sit
 after the action buttons, so their changing text cannot push them (#563). The
 server validates every submitted selection.
+
+#### Row actions and confirmation
+
+A table whose rows can be acted on follows one pattern
+([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
+and shared; [Dates and mail schedules](#dates-and-mail-schedules) is its first
+user, and the other Admin tables with per-row actions move to it in later
+changes.
+
+- **Actions column.** The last column holds each row's actions as small icon
+  buttons (`table_actions`): Edit, a link to the item's own page, and Delete.
+  Each has an accessible name and a matching tooltip that name the row ("Edit
+  Reminder 2", "Delete Reminder 2"), and the icons are drawn inline, so they
+  need no request and stay inside the content security policy. A row shows
+  only the actions that apply to it; a row with none shows nothing there.
+- **Edit** opens the item's edit page, which is the same page as New, filled
+  in. Saving it goes through that page's usual review, and its status page
+  returns to the table.
+- **Delete** opens a confirmation dialog in the page: a native modal
+  `<dialog>` that names what it removes and says what cannot be undone, with
+  the destructive action and Cancel. While it is open the rest of the page is
+  inert and Tab stays inside it; Escape or Cancel closes it and changes
+  nothing; focus returns to the control that opened it, or, when that row is
+  gone, to the table's heading. Confirming sends the table form's POST with
+  the chosen rows, without a page load: the confirm button says it is working
+  and the dialog cannot be dismissed until the answer arrives. When the
+  server records a configuration change, the page follows that change's status
+  until it is applied, then redraws every region from the table's own address
+  (keeping its sort) and closes the dialog, announcing what was removed. A
+  refusal, or a change that failed to apply, is shown inside the dialog, below
+  its buttons so they never move, and nothing is redrawn; the server's
+  explanation is shown when it gives one. A page-wide `confirm()` is never
+  used.
+- **Several rows.** A table that allows acting on several rows has the
+  [selection column and bulk bar](#admin-tables) above; its only bulk action
+  is usually Delete selected, which opens the same dialog naming the count.
+  Rows without actions have no selection box.
+- **Server checks** are those of the action itself: the dialog only asks, and
+  the server validates every chosen row and refuses the whole request when
+  any one cannot be acted on.
 
 ### In-place controls
 
@@ -1750,8 +1718,10 @@ the two cannot drift.
 
 **Time zones.** The fields read wall-clock times; each keeps its page's zone
 rule under the [global presentation rules](../spec.md#global-presentation-rules).
-Mail schedule send times stay in the campaign's time zone until their page
-moves to the browser-local rule in its #558 PR. The ParishSoft refresh times
+New and Edit scheduled email take send times in the browser's zone (see [New
+and Edit scheduled email](#new-and-edit-scheduled-email)); the first-campaign
+step and the date-change review still take them in the campaign's time zone
+until their #558 slice. The ParishSoft refresh times
 are in the parish's time zone, the recorded exception to the browser-local
 rule that those rules describe (see also
 [ParishSoft refresh schedule settings](#parishsoft-refresh-schedule-settings)).
@@ -1761,7 +1731,8 @@ rule that those rules describe (see also
 | Page | Field | Entry |
 | --- | --- | --- |
 | ParishSoft settings | At these times (full refresh) | List, parish time |
-| Dates and mail schedules; first-campaign Mail schedules | Send time | One time, campaign time |
+| New and Edit scheduled email | Send time | One time, browser time |
+| The date-change review; first-campaign Mail schedules | Send time | One time, campaign time |
 | Ministry follow-up | Contact attempt time | One time, browser time zone |
 | Logs, reports | Date filters | Dates only, no time of day |
 
@@ -2662,6 +2633,160 @@ command offers it yet. Once go-live locks the dates, the date editor refuses
 any date change, so a live campaign's end date cannot be moved from the portal
 ([#912](https://github.com/epiphany40223/parishkit/issues/912); see the
 [campaign data model](../data/spec.md#campaign)).
+
+### Dates and mail schedules
+
+The regular **Dates and mail schedules** page
+([#878](https://github.com/epiphany40223/parishkit/issues/878)) is a list. Under
+its heading, About panel and campaign name, one line gives the campaign dates
+(with a link to change them in Campaign settings while they may still change).
+There is no separate campaign window panel. **New scheduled email**, above the
+table, opens the [New scheduled email page](#new-and-edit-scheduled-email).
+
+The **Scheduled emails** table
+([#448](https://github.com/epiphany40223/parishkit/issues/448)) is an
+[action table](#row-actions-and-confirmation) with one row per saved schedule.
+It opens in sending order: dated sends by date and time (the Initial invitation
+first at a tie), then the digests, with the saved ID as the final tie-break, so
+the order never changes between loads. Its **When** heading sorts it in place
+(sending order, or the reverse), as any [Admin table](#admin-tables) heading
+does. Reminders are numbered in sending order, as [Family email
+sends](#family-email-sends) numbers them, whichever way the table is sorted. The
+columns are a selection box, the schedule, when it sends (a browser-local time,
+like every time in the Admin portal, so the heading names no zone; a digest
+shows its day and its next send), the email's name, a status, the last send and
+the row's actions. For a Family send with results, the last send gives its
+delivered and failed counts with a link to Family email history. Work that
+blocks a change (in progress or with an uncertain result) makes a schedule
+Preparing before the send time and Sending after it. Otherwise it is Upcoming
+before the send time; after it, Sending while any of its work is pending or
+running. Once that work is finished it is Sent when any of its email was
+delivered or prepared, "Sent (failed)" when its only results are failures (with
+the same link), and Done when it settled every Family without an email of its
+own (the coalesced and empty dispositions). Otherwise it is "Not sent yet" (the
+scheduler, a hold or catch-up may still send it); a digest is Repeats. The
+status reads the same counts-only schedule work summary as the review, never
+Family data. A short line under the table states the rules between schedules.
+
+A schedule that has run or has work prepared (Preparing, Sending, Sent, "Sent
+(failed)" or Done) is read-only: its row is muted and has no selection box and
+no actions, because moving or removing a send that already happened would make
+a new revision and plan it again. Every other row has **Edit** and **Delete**.
+Edit opens the [Edit scheduled email page](#new-and-edit-scheduled-email)
+for that schedule. Delete, and **Delete selected** for the ticked rows, open the
+confirmation dialog. It names the schedule ("Delete Reminder 2?") or the count
+("Delete 3 scheduled emails?") and says that email already sent is not recalled
+and that emailed Family codes and links keep working. Confirming removes the
+schedules in one configuration change. The server builds the change as the
+review does (the same validation of the remaining schedules, the same blocking
+work count and the same signed intent, rechecked under the work lock when it is
+recorded) and refuses, changing nothing, when a chosen schedule is unknown or
+read-only, when another schedule would break a rule without it (reminders left
+without an initial invitation), or when any of its sends is in progress or
+uncertain. Removing a schedule cancels only its planned sends that have not
+started, and never touches sent mail or Family codes and links. Once the change
+is applied the table is redrawn in place and the dialog closes; a refusal, or a
+change that failed to apply, is shown in the dialog and nothing is redrawn. A
+change still waiting after 30 seconds is shown in the dialog with a link to its
+status.
+
+Changing the campaign dates while they may change starts on Campaign settings,
+which sends the proposed dates to this page when schedules exist. With proposed
+dates, the page shows the date-change review instead of the list: the proposed
+dates, the same table, and every schedule's editor (opened from its row, past
+sends read-only), so mailings that would fall outside the new dates are changed
+or deleted in the same reviewed change (see [campaign
+configuration](#campaign-configuration)). Choosing an editable row there (its
+name, or anywhere else on the row) opens that schedule's editor in place,
+without a page load, marks the row as being edited and moves focus to the
+editor; an opened editor stays open. Saved schedules' editors start closed,
+except one with an error or an unsaved change after a refused preview, and each
+row's control reports whether its editor is open (`aria-expanded`). Closed and
+read-only editors still post their saved values, so the posted form, its
+validation, the review and reminder planning are unchanged. When the browser
+restores a value into a closed editor (Back), `pageshow` opens that editor
+again; a value restored into a read-only editor is put back to its saved value.
+The first-campaign step keeps its plain list of editors, since nothing has sent
+there.
+
+#### New and Edit scheduled email
+
+**New scheduled email** (`/admin/campaign/schedules/addition/`) and **Edit
+scheduled email** (`/admin/campaign/schedules/<schedule>/`, opened by a row's
+Edit) are one page: the mail type, send date, send time, day of the week and
+Email to send of one schedule, with the rules above. Edit opens it filled in
+from the saved schedule, whose mail type is fixed; a schedule that is unknown or
+read-only is refused there too, even from an old link (a GET or a POST).
+
+The send date, time and day of the week are shown and typed in the browser's
+time zone, like every Admin time ([#558](https://github.com/epiphany40223/parishkit/issues/558),
+the [global presentation rules](../spec.md#global-presentation-rules)); a note
+beside the fields names the zone, and no field or help text names the
+campaign's. A schedule still keeps campaign-local values, which the scheduler
+resolves. Edit's page carries the schedule's moment (a digest's: its next send)
+and the page script fills the fields from it in the browser's zone; the server
+converts what is posted, with the browser's zone the page sends, back to the
+campaign's zone through the same moment, so the rules above (inside the
+campaign dates, after the initial invitation, no two Family mailings at once)
+compare the moments the Admin chose. A digest's time and weekday are converted
+at its next send; where the two zones change their clocks on different dates, a
+digest keeps its campaign wall-clock time between them. Around a
+daylight-saving change, a typed time that occurs twice in the browser's zone is
+the first occurrence, and a skipped one moves forward (2:30 AM becomes 3:30 AM),
+as every browser-local time is read; a saved campaign-local time that the
+campaign's own change skips stays as saved and the scheduler resolves it. An
+Edit page posted with the date, time and weekday it showed keeps the saved
+values exactly, so saving it unchanged never moves the send, even when the two
+zones change their clocks at different instants. A page posted without a
+usable zone is refused with a hint to check the computer's time zone setting;
+while the browser reports none, Review and save stays unavailable and says why. **Review and save** sends
+the page to the same review as every schedule change: the server builds the
+complete set of schedules (the saved ones unchanged, plus this one added or
+changed) and validates, previews and signs it exactly as the schedule commands
+do. A refusal shows the page again with each problem at its field (or, for a
+rule between schedules, at the top). The review lists the change and its
+affected work, and **Apply all changes** records it; its status page returns to
+Dates and mail schedules. **Cancel** returns to the list without saving.
+
+On New, choosing Reminder offers a **Repeat** checkbox
+([#469](https://github.com/epiphany40223/parishkit/issues/469)); other mail
+types do not repeat (one Initial invitation; the digests repeat by themselves).
+Checking it replaces the send date with the repeat fields: how often (every day;
+every week on the chosen days; or every month on a day of the month or on the
+first, second, third, fourth or last chosen weekday) and the first and last
+dates (the campaign's dates to start with). The send time and Email to send
+apply to every date. Only the fields of the chosen repeat show. As the Admin
+types, the page lists every date the rule gives, with its weekday, and says
+which it will not add and why: outside the campaign dates, not after the
+initial invitation, at the same moment as a saved invitation or reminder, over
+30 reminders from one rule, or over the campaign's limit of schedules (the
+schedule form set's maximum, 100). A short summary above **Review and save**, the only live region of
+the rule, says how many reminders the rule adds, or what is still missing:
+"Enter a send time to check these dates" until the time reads, since the timed
+checks cannot run without it, and "Choose the email to send" without an email.
+Two lines are reserved for it (a phone wraps the longer messages) and the date
+list sits below the button, so neither moves the button. A month without the
+chosen day (the 31st in September) is skipped and listed as skipped, not
+moved. Every day comes with a note that each reminder goes to every Family that
+has not responded and that sending spreads out or waits near the mailbox's
+daily limit. A rule spans at most a year. Dates are calendar days and the time
+is a wall-clock time, both in the browser's zone as above, and each date is
+converted on its own, so a 9:00 AM reminder stays at 9:00 AM in that zone across
+a daylight-saving change. The page compares each date's moment with the saved
+mailings' and the campaign's first and last moments, as the server does. Review and save posts the
+dates that fit as ordinary reminders, each its own schedule, reviewed,
+confirmed and delivered exactly like reminders added one at a time (see [Family
+invitations and
+reminders](../background-processing/spec.md#family-invitations-and-reminders)).
+The server checks each date as it checks any reminder, and refuses more than 30
+at once. The rule itself is not saved; its fields are posted only so a refused
+page shows them again. The page script's expansion runs the shared case table
+`tests/stewardship/fixtures/recurrence_cases.json`. Repeat is offered on New
+only: a saved reminder is changed one at a time. The first-campaign step keeps
+its **Repeat a reminder** panel below the schedule rows, which appends one
+ordinary reminder row per date to its form. Remembering a series for later
+"this and following" edits, and a campaign calendar view, are later slices
+of #469.
 
 ### Default content
 
