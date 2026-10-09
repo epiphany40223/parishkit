@@ -533,6 +533,12 @@ mismatch with nothing made, a read-only session refused, a busy key lock as
 exit 3), and the real admission's keyring wiring in
 `tests/stewardship/test_admin_cli.py`. 8g (the one-Family timeline, the
 in-memory downloads and the exact exports) follows.
+A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
+the web's general and public token keyrings only for that, checked against
+the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_operations.py` and
+`tests/stewardship/database/test_admin_delivery_cli_postgresql.py` (a double
+invoke with one key prepares once; credentials unchanged).
 
 ## ADM-12: Admin navigation overhaul
 

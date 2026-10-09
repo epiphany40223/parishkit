@@ -667,13 +667,16 @@ input: an inline `--note` is visible in shell history and the process
 list.
 Repeating it with the same key returns the same resolution (`created`
 false); the page's form with that key does too. A delivery that changed,
-or a change that collided with another, is exit 1 (`stale_version`); a key used for another resolution is exit 1
-(`invalid`). Retrying a Family email needs the page, which holds the Family
-keys: here it is exit 1 (`not_available`); receipts and report emails retry
-here. The result has `created`, `request_key` and `resolution` (`id`,
-`message_id`, `action`, `expected_version`, `previous_task_id`,
-`retry_task_id`, `created_at`). System logs show it as
-`admin_cmd_delivery_resolve`.
+or a change that collided with another, is exit 1 (`stale_version`); a key
+used for another resolution is exit 1 (`invalid`). Retrying a Family email
+loads the web's Family keys for that one command; if they differ from the
+running web's (a key rotation in progress), it is exit 2
+(`credential_mismatch`): retry after the web service is recreated. While a
+key rotation is being applied it is exit 3 (`unavailable`): retry shortly.
+A retry never changes a Family's code or link. The result has `created`,
+`request_key` and `resolution` (`id`, `message_id`, `action`,
+`expected_version`, `previous_task_id`, `retry_task_id`, `created_at`).
+System logs show it as `admin_cmd_delivery_resolve`.
 
 The duplicate-risk **resend** and clearing a refused address ask you to
 tick an acknowledgement on the page, so they stay on the page until a

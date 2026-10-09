@@ -1343,3 +1343,82 @@ def test_an_unreadable_keyring_is_a_credential_mismatch(tmp_path):
     files.secrets["family_code_mac"].chmod(0o644)
     with pytest.raises(admin_cli.CredentialMismatch):
         admin_cli.load_keyrings(files, receipts, ("family_code_mac",))
+
+
+def family_key_files(tmp_path):
+    """The web's general and public token keyring files, and their receipts."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.cryptography import (
+        GeneralKeyring,
+        Key,
+        TokenPrivateKeyring,
+    )
+    from parishkit.stewardship.accounts.key_files import (
+        serialize_keyring,
+        write_private,
+    )
+    from parishkit.stewardship.accounts.metrics_credentials import (
+        credential_receipt,
+    )
+
+    root = tmp_path.resolve()
+    root.chmod(0o700)
+    secrets, receipts = {}, {}
+    for name, ring in (
+        ("general_encryption", GeneralKeyring([Key("g1", "active", b"g" * 32)])),
+        (
+            "token_public",
+            TokenPrivateKeyring([Key("t1", "active", b"t" * 32)]).public(),
+        ),
+    ):
+        raw = serialize_keyring(ring)
+        secrets[name] = root / name
+        write_private(secrets[name], raw)
+        receipts[name] = credential_receipt(raw, name)
+    return SimpleNamespace(secrets=secrets), receipts
+
+
+def test_family_keys_load_only_the_two_rings_the_web_loaded(tmp_path):
+    """The general and public token rings, matching the web's receipts (#682)."""
+    from parishkit.stewardship.accounts.cryptography import (
+        GeneralKeyring,
+        TokenPublicKeyring,
+    )
+
+    configuration, receipts = family_key_files(tmp_path)
+    general, public = admin_cli.load_keyrings(
+        configuration, receipts, admin_cli.FAMILY_KEYRINGS
+    )
+    assert isinstance(general, GeneralKeyring)
+    assert isinstance(public, TokenPublicKeyring)
+    assert admin_cli.FAMILY_KEYRINGS == ("general_encryption", "token_public")
+
+
+@pytest.mark.parametrize("name", ["general_encryption", "token_public"])
+def test_family_keys_refuse_a_ring_the_web_did_not_load(tmp_path, name):
+    """A rotated or unmounted ring is credential_mismatch (exit 2)."""
+    configuration, receipts = family_key_files(tmp_path)
+    with pytest.raises(admin_cli.CredentialMismatch):
+        admin_cli.load_keyrings(
+            configuration, {**receipts, name: "0" * 64}, admin_cli.FAMILY_KEYRINGS
+        )
+    del configuration.secrets[name]
+    with pytest.raises(admin_cli.CredentialMismatch):
+        admin_cli.load_keyrings(configuration, receipts, admin_cli.FAMILY_KEYRINGS)
+    assert admin_cli.EXIT_CODES["credential_mismatch"] == 2
+
+
+def test_family_keys_refuse_an_unreadable_ring(tmp_path):
+    """A ring file that is not a keyring is credential_mismatch, not invalid."""
+    from parishkit.stewardship.accounts.key_files import write_private
+    from parishkit.stewardship.accounts.metrics_credentials import (
+        credential_receipt,
+    )
+
+    configuration, receipts = family_key_files(tmp_path)
+    bad = b"not a keyring"
+    write_private(configuration.secrets["general_encryption"], bad)
+    receipts["general_encryption"] = credential_receipt(bad, "general_encryption")
+    with pytest.raises(admin_cli.CredentialMismatch):
+        admin_cli.load_keyrings(configuration, receipts, admin_cli.FAMILY_KEYRINGS)
