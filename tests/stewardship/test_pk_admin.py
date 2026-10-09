@@ -13,7 +13,11 @@ streamed file (``logs export``, ``export download``) is never written to a
 terminal, and ``export fetch`` (PR 8b): an owner-only file created
 exclusively, checked against its size and digest, never overwritten, never
 copied elsewhere, and removed when the check, the download or the run fails;
-``exports clean`` deletes only fetched files.
+``exports clean`` deletes only fetched files. An interrupted ``--watch``
+(INT, TERM or HUP; #598) is stopped inside the stand-in container by its
+token, shows its final document (not after HUP) and exits 130, 143 or 129,
+even when its standard error is a hung-up terminal; a failed stop is
+reported; other commands are never signalled there.
 """
 
 import contextlib
@@ -25,6 +29,7 @@ import pty
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -653,6 +658,347 @@ def test_an_interrupted_login_start_leaves_no_session_file(host):
     assert not path.exists()
 
 
+@pytest.mark.parametrize(
+    "arguments,watch",
+    [
+        (("task", "show", "t-1", "--watch", "5"), True),
+        (("task", "show", "t-1", "--watch=5"), True),
+        (("task", "show", "t-1", "--watch", "+5"), True),
+        (("task", "show", "t-1", "--watch=+5"), True),
+        (("whoami",), False),
+        # An option's value, or anything after `--`, is not a watch.
+        (("notes", "add", "--text", "--watch"), False),
+        (("notes", "add", "--", "--watch", "5"), False),
+    ],
+)
+def test_only_a_watch_carries_a_stop_token(host, arguments, watch):
+    """``--watch`` runs get ``-e PK_ADMIN_RUN=TOKEN`` (fresh hex); others don't."""
+    host.answer({"ok": True})
+    host.session()
+    tokens = set()
+    for _ in range(2):
+        assert host.run(*arguments).returncode == 0
+        calls = host.calls()
+        web = calls.index("web")
+        assert calls[web + 1 : web + 3] == ["pk-stewardship", "admin"]
+        if not watch:
+            assert "-e" not in calls[:web]
+            assert not any(call.startswith("PK_ADMIN_RUN") for call in calls)
+            return
+        assert calls[web - 2] == "-e"
+        match = re.fullmatch(r"PK_ADMIN_RUN=([0-9a-f]{32})", calls[web - 1])
+        assert match
+        tokens.add(match[1])
+    assert len(tokens) == 2
+
+
+def test_a_setsid_without_wait_is_not_used(host):
+    """A setsid that refuses ``-w`` (busybox) is probed, not trusted: the
+    watch then runs with plain ``docker`` instead of failing."""
+    fake = host.root / "bin" / "setsid"
+    fake.write_text('#!/bin/sh\n[ "$1" != -w ] || exit 1\nexit 99\n')
+    fake.chmod(0o755)
+    host.answer({"ok": True})
+    host.session()
+    result = host.run("task", "show", "t-1", "--watch", "5")
+    assert result.returncode == 0, result.stderr
+    assert "PK_ADMIN_RUN" in " ".join(host.calls())
+
+
+def needs_linux_signals():
+    """The stop tests need /proc, pgrep and setsid: present on Linux (CI).
+
+    On Linux a missing tool fails rather than skips, since CI runs this file
+    where skips are not otherwise caught; elsewhere (macOS) the tests skip.
+    """
+    missing = [
+        name
+        for name, present in (
+            ("/proc", Path("/proc/self/environ").exists()),
+            ("pgrep", shutil.which("pgrep") is not None),
+            ("setsid", shutil.which("setsid") is not None),
+        )
+        if not present
+    ]
+    if not missing:
+        return
+    if sys.platform.startswith("linux"):
+        pytest.fail(f"this Linux host lacks {', '.join(missing)}")
+    pytest.skip(f"this host lacks {', '.join(missing)}")
+
+
+# The command inside the stand-in container: it records its process id, then
+# the first signal it gets, on which it prints a final document and exits 7,
+# as a watch does on SIGINT.
+FAKE_INNER = """
+import json, os, signal, sys, time
+with open(os.environ["FAKE_INNER_PID"], "w") as pid:
+    pid.write(str(os.getpid()))
+def stop(number, frame):
+    with open(os.environ["FAKE_MARKER"], "w") as marker:
+        marker.write(signal.Signals(number).name)
+    document = {"command": "task show", "final": True, "ok": False,
+                "error": {"code": "watch_interrupted", "message": "text"}}
+    print(json.dumps(document, sort_keys=True), flush=True)
+    sys.exit(7)
+for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(number, stop)
+print(json.dumps({"command": "task show", "final": False}), flush=True)
+time.sleep(30)
+sys.exit(0)
+"""
+
+# The stand-in docker client, as `docker compose exec` behaves: SIGINT ends
+# it at once with 130 even when inherited as ignored, losing whatever the
+# command prints after. The command runs in its own session (no signal to
+# the wrapper's process group reaches a real container), with the token in
+# its environment, and its output is relayed.
+FAKE_CLIENT = """
+import os, signal, subprocess, sys
+signal.signal(signal.SIGINT, lambda number, frame: os._exit(130))
+environment = dict(os.environ)
+if sys.argv[1]:
+    environment["PK_ADMIN_RUN"] = sys.argv[1]
+inner = subprocess.Popen(
+    [sys.executable, "-c", os.environ["FAKE_INNER"]],
+    env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL, start_new_session=True,
+)
+for line in inner.stdout:
+    sys.stdout.buffer.write(line)
+    sys.stdout.flush()
+sys.exit(inner.wait())
+"""
+
+# The stand-in client for the wrapper's stop, as `docker compose exec`
+# behaves: SIGINT ends it at once with 130, so a second Ctrl-C that reached
+# it would lose the stop. FAKE_STOP_DELAY holds it back that many seconds
+# first; then it runs the stop script on this host.
+FAKE_STOPPER = """
+import os, signal, subprocess, sys, time
+signal.signal(signal.SIGINT, lambda number, frame: os._exit(130))
+time.sleep(float(os.environ.get("FAKE_STOP_DELAY") or 0))
+sys.exit(subprocess.run(sys.argv[1:], stdin=subprocess.DEVNULL).returncode)
+"""
+
+# The stand-in docker: `exec ... pk-stewardship` runs the client above;
+# `exec -T web sh -c SCRIPT sh TOKEN` (the wrapper's stop) records its
+# arguments and runs the script through the stop client above on this host,
+# whose /proc stands in for the container's, unless FAKE_STOP_FAILS asks it
+# to fail as docker would. Anything else exits 99.
+FAKE_CONTAINER = """#!/usr/bin/env bash
+case " $* " in
+*" pk-stewardship "*)
+    cat > /dev/null
+    token=""
+    for argument in "$@"; do
+        case $argument in PK_ADMIN_RUN=*) token=${argument#PK_ADMIN_RUN=} ;; esac
+    done
+    exec "$FAKE_PYTHON" -c "$FAKE_CLIENT" "$token"
+    ;;
+*" sh -c "*)
+    while [ "$#" -gt 0 ] && [ "$1" != web ]; do shift; done
+    [ "$#" -gt 1 ] || exit 99
+    shift
+    printf '%s\\n' "$@" > "$FAKE_STOP_ARGS"
+    if [ -n "${FAKE_STOP_FAILS:-}" ]; then
+        echo 'service "web" is not running' >&2
+        exit 1
+    fi
+    exec "$FAKE_PYTHON" -c "$FAKE_STOPPER" "$@"
+    ;;
+esac
+exit 99
+"""
+
+
+@pytest.fixture
+def container(host):
+    """The stand-in container above, its state files, and cleanup.
+
+    ``container.start(*arguments, stderr=...)`` starts the wrapper in its
+    own process group once its first document has arrived; ``container.end``
+    signals it and waits. Whatever the run leaves (an inner command a test
+    meant to outlive the wrapper) is stopped afterwards.
+    """
+    import signal
+
+    state = host.root / "docker"
+    (host.root / "bin" / "docker").write_text(FAKE_CONTAINER)
+    host.session()
+    extra = {
+        "FAKE_PYTHON": sys.executable,
+        "FAKE_INNER": FAKE_INNER,
+        "FAKE_CLIENT": FAKE_CLIENT,
+        "FAKE_STOPPER": FAKE_STOPPER,
+        "FAKE_INNER_PID": str(state / "inner"),
+        "FAKE_MARKER": str(state / "marker"),
+        "FAKE_STOP_ARGS": str(state / "stop"),
+    }
+    processes = []
+
+    class Container:
+        """The test's view of the stand-in container."""
+
+        marker = state / "marker"
+        stop = state / "stop"
+
+        @staticmethod
+        def start(*arguments, stderr=subprocess.PIPE, **more):
+            process = subprocess.Popen(
+                [str(WRAPPER), *arguments],
+                env={**host.environment, **extra, **more},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=stderr,
+                start_new_session=True,
+            )
+            processes.append(process)
+            first = process.stdout.readline()
+            assert json.loads(first)["final"] is False
+            return process
+
+        @staticmethod
+        def end(process, name, group, *, again=None):
+            """Send signal ``name``; return (stdout, stderr, seconds taken).
+
+            ``again`` is a number of seconds after which the same signal is
+            sent a second time (a second Ctrl-C).
+            """
+            import time
+
+            started = time.monotonic()
+            send = os.killpg if group else os.kill
+            send(process.pid, getattr(signal, name))
+            if again is not None:
+                time.sleep(again)
+                send(process.pid, getattr(signal, name))
+            out, err = process.communicate(timeout=20)
+            return out, err or b"", time.monotonic() - started
+
+    yield Container
+    for process in processes:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(process.pid, signal.SIGKILL)
+    with contextlib.suppress(OSError, ValueError):
+        os.kill(int((state / "inner").read_text()), signal.SIGKILL)
+
+
+@pytest.mark.parametrize(
+    "name,status,group",
+    [
+        ("SIGINT", 130, True),
+        ("SIGTERM", 143, False),
+        ("SIGTERM", 143, True),
+        ("SIGHUP", 129, False),
+        ("SIGHUP", 129, True),
+    ],
+)
+def test_an_interrupted_watch_is_stopped_inside_the_container(
+    container, name, status, group
+):
+    """INT, TERM or HUP reaches the watch in the container as SIGINT.
+
+    Ctrl-C reaches the whole process group, as a closed terminal's HUP does;
+    `kill` reaches only the wrapper. The client exits at once on SIGINT, as
+    `docker compose` does, so the watch's last document is shown only
+    because the client is kept out of the terminal's reach. The inner
+    command is in its own session, so only the wrapper's stop (found by its
+    token in /proc) can reach it. Only after Ctrl-C does the wrapper wait
+    for that document: after HUP there is no terminal to show it on, and TERM
+    to the whole group has already ended what relays it.
+    """
+    needs_linux_signals()
+    process = container.start("task", "show", "t-1", "--watch", "5")
+    out, err, seconds = container.end(process, name, group)
+    assert process.returncode == status, err
+    assert seconds < 4, err
+    assert container.marker.read_text() == "SIGINT"
+    stop = container.stop.read_text().splitlines()
+    assert stop[0:2] == ["sh", "-c"] and re.fullmatch(r"[0-9a-f]{32}", stop[-1])
+    assert b"stopping the watch in the web container" in err
+    assert b"did not" not in err and b"could not" not in err
+    if name == "SIGINT":
+        last = json.loads(out.decode().splitlines()[-1])
+        assert last["error"]["code"] == "watch_interrupted" and last["final"]
+
+
+def test_a_second_ctrl_c_does_not_cut_the_stop_off(container):
+    """Ctrl-C twice: the stop command, still running when the second
+    arrives, is out of the terminal's reach, so the watch is still stopped
+    and its last document still shown."""
+    needs_linux_signals()
+    process = container.start(
+        "task", "show", "t-1", "--watch", "5", FAKE_STOP_DELAY="1"
+    )
+    out, err, seconds = container.end(process, "SIGINT", True, again=0.3)
+    assert process.returncode == 130, err
+    assert seconds < 5, err
+    assert container.marker.read_text() == "SIGINT"
+    assert b"could not" not in err and b"did not" not in err
+    last = json.loads(out.decode().splitlines()[-1])
+    assert last["error"]["code"] == "watch_interrupted"
+
+
+def test_a_closed_standard_error_pipe_does_not_end_the_wrapper(container):
+    """Standard error to a pipe whose reader has gone (`2>&1 | jq` ended):
+    the handler's writes fail instead of killing it with SIGPIPE, so it
+    still stops the watch and exits 130 after its own cleanup."""
+    needs_linux_signals()
+    process = container.start("task", "show", "t-1", "--watch", "5")
+    process.stderr.close()
+    process.stderr = None
+    _, _, seconds = container.end(process, "SIGINT", True)
+    assert process.returncode == 130
+    assert seconds < 4
+    assert container.marker.read_text() == "SIGINT"
+
+
+def test_a_closed_terminal_still_stops_the_watch(container):
+    """HUP with standard error on a hung-up terminal: writes fail with EIO,
+    and the stop is sent anyway (it is started before any message)."""
+    needs_linux_signals()
+    controller, terminal = pty.openpty()
+    try:
+        process = container.start(
+            "task", "show", "t-1", "--watch", "5", stderr=terminal
+        )
+    finally:
+        os.close(terminal)
+    os.close(controller)  # hang up: writes to the terminal now fail
+    _, _, seconds = container.end(process, "SIGHUP", False)
+    assert process.returncode == 129
+    assert seconds < 4
+    assert container.marker.read_text() == "SIGINT"
+
+
+def test_a_failed_stop_is_reported(container):
+    """A stop command that fails is reported with its output, at once."""
+    needs_linux_signals()
+    process = container.start(
+        "task", "show", "t-1", "--watch", "5", FAKE_STOP_FAILS="1"
+    )
+    _, err, seconds = container.end(process, "SIGINT", True)
+    assert process.returncode == 130
+    assert seconds < 4
+    assert b"the watch could not be stopped (exit 1)" in err
+    assert b'service "web" is not running' in err
+    assert not container.marker.exists() or container.marker.read_text() != "SIGINT"
+
+
+def test_an_interrupted_command_that_is_not_a_watch_is_not_signalled(container):
+    """Ctrl-C on any other command ends the wrapper at once (130) and sends
+    no stop into the container: an interrupted write must run to its end."""
+    if shutil.which("pgrep") is None:
+        pytest.skip("pgrep is not installed")
+    process = container.start("whoami")
+    _, _, seconds = container.end(process, "SIGINT", True)
+    assert seconds < 4
+    assert process.returncode == 130
+    assert not container.stop.exists()
+    assert not container.marker.exists() or container.marker.read_text() != "SIGINT"
+
+
 def test_the_wrapper_never_traces_the_secret(host):
     """Running it under ``sh -x`` traces nothing after its first command."""
     host.answer({"ok": True})
@@ -1047,3 +1393,51 @@ def test_an_export_directory_that_cannot_be_printed_is_refused(
     result, runs = fetching(b"a,b\r\n", arguments=("--export-dir", str(directory)))
     assert result.returncode == 2 and runs == []
     assert not directory.exists()
+
+
+def test_an_interrupted_prompt_leaves_no_writer_at_the_terminal(host, tmp_path):
+    """Ctrl-C while a command waits at its prompt: the wrapper stops its input
+    writer by name, so nothing is left reading the terminal (and swallowing
+    the next line typed) even where pgrep cannot walk the process tree."""
+    import signal
+    import time
+
+    host.answer({"ok": True})
+    host.session()
+    # A pgrep that finds nothing, as on a host without procps.
+    pgrep = tmp_path / "bin" / "pgrep"
+    pgrep.write_text("#!/bin/sh\nexit 1\n")
+    pgrep.chmod(0o755)
+    controller, terminal = pty.openpty()
+    try:
+        process = subprocess.Popen(
+            [str(prompting(tmp_path)), "test", "act"],
+            # The command reads the preamble, then waits for the answer.
+            env={**host.environment, "FAKE_DOCKER_LINES": "2"},
+            stdin=terminal,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        arguments = Path(host.environment["FAKE_DOCKER_ARGS"])
+        for _ in range(100):
+            if arguments.exists():
+                break
+            time.sleep(0.1)
+        time.sleep(0.5)
+        os.killpg(process.pid, signal.SIGINT)
+        process.communicate(timeout=20)
+        assert process.returncode == 130
+        # Nothing of the run is left in its process group.
+        for _ in range(50):
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+            pytest.fail("a process of the run (the input writer) was left behind")
+    finally:
+        os.close(terminal)
+        os.close(controller)
