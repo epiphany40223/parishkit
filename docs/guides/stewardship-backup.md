@@ -113,8 +113,9 @@ ordinary grant comparison; the command proves that identity before it dumps
 or records, as every other database client does. Before each run it also
 refuses any write grant beyond its own records, `EXECUTE` on a definer
 routine, use or update of a sequence, `CREATE` on a schema or the database,
-another role's membership in the login, any object the login owns, and
-foreign-data `USAGE` (#389). The v1
+another role's membership in the login, any object the login owns,
+foreign-data `USAGE` (#389), and a parameter privilege reaching the login
+(#845). The v1
 launch scope accepts this reduced escrow, a read-only view sealed to a
 human-held key, in place of the deferred operator escrow workflow.
 

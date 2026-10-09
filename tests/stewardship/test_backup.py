@@ -529,6 +529,7 @@ BACKUP_ROW = (
     False,  # another role is a member of the login
     False,  # the login owns an object
     False,  # the login has foreign-data wrapper or server USAGE
+    False,  # the login has a parameter privilege
 )
 
 
@@ -550,6 +551,7 @@ BACKUP_ROW = (
         ({9: True}, False, "another role is a member of the login"),
         ({10: True}, False, "the login owns an object"),
         ({11: True}, False, "the login has foreign-data USAGE"),
+        ({12: True}, False, "the login has a parameter privilege"),
         ({}, True, "temporary-object authority"),
     ],
 )
