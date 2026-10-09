@@ -434,7 +434,7 @@ pages (NAV-9: settings, Copy campaign, content and its history, images,
 schedules, Share options and Member talents; NAV-10: the test email pages,
 the go-live chain, Production activation and Cancel go-live, and Campaign
 Ministries under Ministries) and the report pages (NAV-11: every report, the
-response lists, Family campaign codes and the Family timeline, with the
+response lists and the Family timeline, with the
 campaign choosers and the old Ministry reports root retired), with every old
 address redirecting; the Campaign setup, Mail and Family portal and Parish
 data group roots open their first entry, and `/admin/reports/` keeps its
@@ -771,7 +771,6 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/ministries/follow-up/` | (same; old address redirects) | No assignee column, filter or bulk assignment (#552). |
 | `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same; old address redirects) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same; old address redirects) |  |
-| `family_codes` | Family campaign codes | Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/family-codes/` | (same; old address redirects) | Needs a fresh sign-in (#547). |
 | `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same; old address redirects) | Opened from each directory row and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `weekly_digest_manual` | Send a weekly report now | Emailed reports (new page) | Administrator | Request a manual information report; Manual information report | `/admin/reports/weekly-digests/request/<campaign>/` | `/admin/reports/emailed/weekly/new/` | Was the Manual information report menu entry; ends on Emailed reports, which links the report it produced. |
 | `weekly_digest_snapshot` | Weekly report | Emailed reports (new page) | Administrator | Weekly information report; Weekly summary | `/admin/reports/weekly-digests/<snapshot>/` | `/admin/reports/emailed/weekly/<snapshot>/` |  |

@@ -1063,10 +1063,9 @@ sign-in, with no browser step:
   from the start (see
   [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions));
 - the code and financial reads and files
-  ([#547](https://github.com/epiphany40223/parishkit/issues/547)): the
-  code-only Family codes listing, creating or regenerating a Family-directory,
-  mail-merge or financial export, which PR 8's `export family-codes`,
-  `export directory`, `export postal`, `export financial` and
+  ([#547](https://github.com/epiphany40223/parishkit/issues/547)): creating
+  or regenerating a Family-directory, mail-merge or financial export, which
+  PR 8's `export directory`, `export postal`, `export financial` and
   `export regenerate` run;
 - integration setting changes (PR 10's `integration set`, including removing
   an integration) and starting Testing cleanup (PR 12's `go-live cleanup`)
@@ -1093,7 +1092,7 @@ instant. The call sites that accept automation are `campaign_family_test`,
 both in `delivery_control_commands`, both in `withdrawal_commands`, the Family
 portal maintenance switch, `confirmation_commands`, the `require_fresh`
 call in `confirmation_views` (in `_fresh_after_cleanup`), and the #547 sites:
-`code_reports.family_codes`, `directory_export_views.create`,
+`directory_export_views.create`,
 `financial_export_views.create`, `export_ui.command` (regenerate of a
 directory or financial export), `integration_views.integration_settings`
 (previews, removals and confirmations of settings) and
@@ -1351,7 +1350,7 @@ new context keys:
   fresh-gated, so its `irreversible` notice and incident are recorded by the
   cleanup command itself (PR 12).
 - **Read commands** record exactly the view events the page records (for
-  example `family_codes_viewed`, `delivery_viewed`, `system_logs_viewed`), and
+  example `delivery_viewed`, `system_logs_viewed`), and
   no others.
 - **Session events.** `automation_session_approved` (subject: the new
   session), `automation_session_ended` (subject: the session; the actor is the
@@ -1773,7 +1772,7 @@ pause, and closing work is the closed-campaign resolution. See
 | `participation_chart`, `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
 | `financial_report`, `talents_report`, `information_queue`, `information_item` | Aggregate reads as `report …`; Family-level rows only as exports (PR 8) |
 | `ministry_report`, `ministry_joiners`, `ministry_leavers`, `ministry_packet` | `report ministry …`, counts; rows only as exports (PR 8) |
-| `family_directory`, `postal_directory`, `family_codes`, `find_family` | Export only: `export directory`, `export postal`, `export family-codes` (PR 8); Find a Family is the directory's search |
+| `family_directory`, `postal_directory`, `find_family` | Export only: `export directory`, `export postal` (PR 8); Find a Family is the directory's search |
 | `financial_export`, `talents_export`, `ministry_export`, `information_export`, `family_directory_export`, `postal_directory_export` | `export …` (PR 8) |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download`, `export_create`, `export_status`, `export_cancel`, `export_download`, `export_download_grant` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8) |
 | `report_exact_create`, `report_exact`, `report_exact_cancel`, `report_exact_retry`, `exact_export_create`, `exact_export_status`, `exact_export_cancel`, `exact_export_retry` | `export exact …` (PR 8) |

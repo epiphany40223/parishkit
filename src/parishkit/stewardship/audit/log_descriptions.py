@@ -405,6 +405,7 @@ DESCRIPTIONS = {
         "A Family's sign-in or form opening could not be recorded for response "
         "reporting; the Family was not affected and nothing needs to be done."
     ),
+    # Past rows only: the Family codes page was removed (#873).
     "family_codes_viewed": _("Someone opened the Family codes list."),
     # ParishSoft data (audit).
     "source_compacted": _("Old ParishSoft copies were removed to save space."),

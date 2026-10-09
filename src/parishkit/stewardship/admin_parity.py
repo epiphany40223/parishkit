@@ -190,7 +190,6 @@ LEDGER = {
     # The header's Find a Family box (#561) runs the directory's search.
     "find_family": pending("PR 8", "export directory"),
     "postal_directory": pending("PR 8", "export postal"),
-    "family_codes": pending("PR 8", "export family-codes"),
     "financial_export": pending("PR 8", "export financial"),
     "talents_export": pending("PR 8", "export talents"),
     "ministry_export": pending("PR 8", "export ministry"),
