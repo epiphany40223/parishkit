@@ -24,7 +24,7 @@ from parishkit.parishsoft import (
 )
 from parishkit.stewardship.accounts.policy_schema import normalized_email
 
-from .canonical import InvalidSourcePayload, canonical_payload
+from .canonical import InvalidSourcePayload, SourceReferenceSkew, canonical_payload
 
 KINDS = (
     "family",
@@ -279,7 +279,7 @@ def normalize_core(source, *, as_of):
     for identifier, raw in _entries(source.members, "memberDUID"):
         family_id = _id(raw.get("familyDUID"))
         if family_id not in grouped:
-            raise InvalidSourcePayload("Source Member has no retained Family.")
+            raise SourceReferenceSkew("Source Member has no retained Family.")
         contact = source.member_contactinfos.get(identifier, {})
         if type(contact) is not dict:
             raise InvalidSourcePayload("Source Member contact information is invalid.")
@@ -430,7 +430,7 @@ def _ministries(corpus, source, as_of):
         )
     for identifier, group in source.ministry_type_memberships.items():
         if str(_id(identifier)) not in corpus["ministry"]:
-            raise InvalidSourcePayload("Source roster has no retained Ministry.")
+            raise SourceReferenceSkew("Source roster has no retained Ministry.")
         if type(group) is not dict or type(group.get("membership")) is not list:
             raise InvalidSourcePayload("Source roster membership is not a collection.")
         for row in group["membership"]:
@@ -438,7 +438,7 @@ def _ministries(corpus, source, as_of):
                 raise InvalidSourcePayload("Source roster entry is not a record.")
             member_id = _id(row.get("memberDUID", row.get("memberId")))
             if str(member_id) not in corpus["member"]:
-                raise InvalidSourcePayload("Source roster has no retained Member.")
+                raise SourceReferenceSkew("Source roster has no retained Member.")
             values = _fields(
                 row,
                 (

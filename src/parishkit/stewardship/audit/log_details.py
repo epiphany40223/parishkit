@@ -29,9 +29,7 @@ FAILURE_TEXT = {
         "The ParishSoft data would have removed an unusually "
         "large share of the current data."
     ),
-    "shifted_scan": gettext_lazy(
-        "ParishSoft's pages moved while they were being read."
-    ),
+    "shifted_scan": gettext_lazy("ParishSoft's data changed while it was being read."),
     "invalid_payload": gettext_lazy(
         "ParishSoft returned a record the system could not accept."
     ),
@@ -60,7 +58,11 @@ FAILURE_TEXT = {
         "The ParishSoft key changed while the data was read."
     ),
     "provider_status": gettext_lazy("ParishSoft answered with an error."),
-    "provider_timeout": gettext_lazy("ParishSoft did not answer in time."),
+    "provider_timeout": gettext_lazy(
+        "ParishSoft did not answer, or the load did not finish, in time. Check "
+        "how long full loads take against their 15-minute limit, and whether "
+        "ParishSoft is slow."
+    ),
     "provider_unreachable": gettext_lazy("ParishSoft could not be reached."),
     "source_configuration": gettext_lazy(
         "The configured ParishSoft settings were refused; "

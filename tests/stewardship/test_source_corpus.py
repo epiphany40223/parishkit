@@ -7,6 +7,7 @@ import pytest
 from parishkit.parishsoft import ParishSoftData
 from parishkit.stewardship.source.canonical import (
     InvalidSourcePayload,
+    SourceReferenceSkew,
     canonical_payload,
 )
 from parishkit.stewardship.source.corpus import normalize_core
@@ -202,12 +203,21 @@ def test_roster_uses_parish_civil_date_and_preserves_missing_ministry_activity_f
     )
 
 
-@pytest.mark.parametrize("reference", [0, True, "1", 99])
-def test_member_family_reference_must_be_exact_and_retained(reference):
+@pytest.mark.parametrize(
+    "reference,error",
+    [
+        (0, InvalidSourcePayload),
+        (True, InvalidSourcePayload),
+        ("1", InvalidSourcePayload),
+        # Dangling, not malformed: a retryable skew between reads (#387).
+        (99, SourceReferenceSkew),
+    ],
+)
+def test_member_family_reference_must_be_exact_and_retained(reference, error):
     """No dangling or coerced relationship may enter staging."""
     data = source()
     data.members[3]["familyDUID"] = reference
-    with pytest.raises(InvalidSourcePayload):
+    with pytest.raises(error):
         normalize_core(data, as_of=TODAY)
 
 
@@ -228,7 +238,12 @@ def test_duplicate_or_dangling_roster_records_fail_before_staging():
     with pytest.raises(InvalidSourcePayload, match="repeats"):
         normalize_core(data, as_of=TODAY)
     rows[:] = [{"memberId": 99}]
-    with pytest.raises(InvalidSourcePayload, match="no retained Member"):
+    with pytest.raises(SourceReferenceSkew, match="no retained Member"):
+        normalize_core(data, as_of=TODAY)
+    # A roster naming a Ministry the catalog read never returned.
+    data = source()
+    data.ministry_type_memberships[99] = data.ministry_type_memberships.pop(4)
+    with pytest.raises(SourceReferenceSkew, match="no retained Ministry"):
         normalize_core(data, as_of=TODAY)
 
 

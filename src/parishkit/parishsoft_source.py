@@ -14,6 +14,7 @@ from parishkit.parishsoft import ParishSoftClient
 from parishkit.parishsoft_pagination import (
     IncompleteSourceCollection,
     PageContract,
+    SourceLoadBudgetExceeded,
     read_pages,
 )
 
@@ -130,21 +131,17 @@ class CoherentParishSoftClient(ParishSoftClient):
 
     def _request(self, operation):
         """Apply aggregate body bounds in addition to finite HTTP attempts."""
-        if (
-            self.request_count >= self.maximum_requests
-            or time.monotonic() >= self.deadline
-        ):
-            raise IncompleteSourceCollection(
-                "Source load exceeds its request/time bound."
-            )
+        if self.request_count >= self.maximum_requests:
+            raise IncompleteSourceCollection("Source load exceeds its request bound.")
+        if time.monotonic() >= self.deadline:
+            raise SourceLoadBudgetExceeded("Source load exceeds its time bound.")
         self.request_count += 1
         response = super()._request(operation)
         self.response_bytes += len(response.content)
-        if (
-            self.response_bytes > self.maximum_bytes
-            or time.monotonic() >= self.deadline
-        ):
-            raise IncompleteSourceCollection("Source load exceeds its byte/time bound.")
+        if self.response_bytes > self.maximum_bytes:
+            raise IncompleteSourceCollection("Source load exceeds its byte bound.")
+        if time.monotonic() >= self.deadline:
+            raise SourceLoadBudgetExceeded("Source load exceeds its time bound.")
         return response
 
     def validate_organization(self):
