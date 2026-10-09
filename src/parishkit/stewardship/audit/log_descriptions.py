@@ -112,6 +112,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to mail schedules "
         "or campaign dates, which became a configuration request."
     ),
+    "admin_cmd_delivery_resolve": _(
+        "An automation session resolved an outgoing email, as the email's "
+        "page does: a note, external evidence or a retry."
+    ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
         "Source refresh page's confirmation does."
