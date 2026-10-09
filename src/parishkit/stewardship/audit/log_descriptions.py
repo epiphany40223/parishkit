@@ -116,6 +116,10 @@ DESCRIPTIONS = {
         "An automation session asked for a full ParishSoft refresh, as the "
         "Source refresh page's confirmation does."
     ),
+    "admin_cmd_test_families": _(
+        "An automation session sent a test of one email for chosen Families "
+        "to the Testing recipient, as the Send to chosen Families page does."
+    ),
     "admin_cmd_test_sample": _(
         "An automation session sent a sample test email to the Testing "
         "recipient, as the Preview and test email page does."

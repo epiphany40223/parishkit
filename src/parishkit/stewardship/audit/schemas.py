@@ -143,6 +143,7 @@ class Action(StrEnum):
     ADMIN_CMD_TASK_RETRY = "admin_cmd_task_retry"
     ADMIN_CMD_REFRESH_START = "admin_cmd_refresh_start"
     ADMIN_CMD_TEST_SAMPLE = "admin_cmd_test_sample"
+    ADMIN_CMD_TEST_FAMILIES = "admin_cmd_test_families"
 
 
 # Closed field identifiers are operational metadata, never census values.

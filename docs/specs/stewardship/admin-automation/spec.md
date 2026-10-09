@@ -1313,7 +1313,7 @@ waiting for it once the command has finished. A command declares that it prompts
 host wrapper's `PROMPTING` list so the wrapper forwards a terminal's input.
 `test_pk_admin.py` checks that list against the catalog; a prompting
 command that accepts only `--yes` is left out of it by name. PR 6b's
-`test sample` is a prompting command.
+`test sample` and PR 6c's `test families` are prompting commands.
 
 ### Audit attribution
 
@@ -1404,6 +1404,8 @@ deliberately:
 - Production confirmation: the typed value `Production`;
 - a sample test email while an earlier test's outcome is unknown (PR 6b):
   the page's acknowledgement, answered `yes`;
+- a chosen-Family test (PR 6c): the page's acknowledgement that real Family
+  data goes to the Testing recipient, answered `yes`;
 - a reason where the page asks for one: `--reason` (or `-`), which is input,
   not confirmation, and `--yes` does not supply it;
 - later guarded workflows (reopen, archive, return to Testing): their own
@@ -1574,7 +1576,8 @@ This limits accidents; it does not hide data from the host operator (see
   that they be deleted once used, as for every report export.
 - Chosen-Family tests take ParishSoft Family DUIDs. The preview prints the
   DUIDs with their eligibility, without names; `--names` produces an export
-  with the names.
+  with the names (owed after PR 8b; see
+  [Testing sends](#testing-sends)).
 
 ## Action inventory
 
@@ -1765,7 +1768,7 @@ pause, and closing work is the closed-campaign resolution. See
 | URL names | Command or exemption |
 | --- | --- |
 | `campaign_mail` | `test sample-preview`, `test sample` (PR 6b) |
-| `campaign_mail_families` | `test families-preview --family DUID …`, `test families --token …`, `test status` (PR 6c) |
+| `campaign_mail_families` | `test families-preview REVISION_ID --family DUID …`, `test families --token …`, `test status` (PR 6c); the preview's `--names` export is owed after PR 8b ([#817](https://github.com/epiphany40223/parishkit/issues/817)) |
 
 `test sample-preview REVISION_ID [--request-key UUID]` (PR 6b) is the
 Preview and test email page's review, through the page's own `prepare` and
@@ -1792,6 +1795,37 @@ An expired or out-of-date preview (including one whose revision has since
 left the active configuration), or a test already pending, is
 `stale_version`; an altered token `invalid`; another Administrator's token
 `denied`. Each refusal rolls the send back, so none is `outcome_unknown`.
+
+`test families-preview REVISION_ID --family DUID …` (PR 6c) is the Send to
+chosen Families page's review, through the page's own `prepare` and
+`parse_family_duids` (at most ten distinct DUIDs), for the current Testing
+draft. It returns each DUID given with `eligible` and `eligibility` (the
+page's reason code), `available`, `in_progress`, `held`,
+`credentials_ready`, `testing_recipient_set` and `preview.token`, the page's
+signed binding keyed by the request key, which holds the recipient's
+digest, not its address (as for `test sample`); never a Family name. It admits
+read-only and records no event. An email no current schedule uses, or a
+campaign that is not the current Testing draft, is `denied`. `test families
+--token TOKEN|-` always asks for the page's acknowledgement ("I understand
+that these real Families' names and codes will be sent to the Testing
+recipient.") at the [prompt](#command-line-confirmation) before any
+transaction, then runs the page's `request_tests` in the delivery pages'
+command scope, where the session stands in for the fresh sign-in
+([fresh-gated actions](#fresh-gated-actions-from-the-command-line)) and
+leaves the `automation_fresh_gate` event and notice. It records
+`admin_cmd_test_families` only for a new key, and a repeat, from either
+channel, returns the original tickets (`id`, `sequence`, `state`,
+`task_id`; no DUID or Family id). A stale preview (including one whose
+revision has since left the active configuration), credentials not ready,
+held work, an ineligible Family or too many tests in progress are
+`stale_version`; an email no current schedule uses any more is `denied`, as
+for the preview. Each refusal rolls the send back, so none is
+`outcome_unknown`. `test status` is the page's recent tickets for any session,
+without DUIDs (a default, pending Administrator confirmation), and records
+no event. The worker, not this process, renders each message, which goes
+only to the Testing recipient. The names behind the DUIDs, the preview's
+`--names` export, wait for PR 8b's export lifecycle; until then they are on
+the page.
 
 ### Reports and exports
 
@@ -2244,7 +2278,9 @@ Administrator's approval of that deploy.
   confirmation prompt and `--yes`; the fresh-gated notices.
 - **PR 6, refresh and Testing sends,** in three parts. **PR 6a:**
   `refresh start` and `refresh status`. **PR 6b:** `test sample-preview` and
-  `test sample`, at the prompt. **PR 6c:** chosen-Family tests, after PR 5.
+  `test sample`, at the prompt. **PR 6c:** `test families-preview`,
+  `test families` and `test status` (the preview's `--names` export after
+  PR 8b), after PR 5.
 - **PR 7, delivery controls:** pause, resume, closed-campaign resolution and
   Family portal maintenance.
 - **PR 8, reports and exports:** report reads, exports with streamed fetch
