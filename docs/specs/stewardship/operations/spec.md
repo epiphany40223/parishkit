@@ -803,25 +803,32 @@ database/media/config, run permitted forward migrations, and require the
 restored active Stewardship YAML digest to match an applied/prepared database
 configuration snapshot. A recoverable installer checkpoint is completed
 idempotently; an unexplained mismatch blocks readiness and requires operator
-diagnosis rather than choosing either copy. Restore then validates one parish,
-checks expected ParishSoft organization without mutation, and starts in Testing
-mode with the scheduler, ordinary worker admission, production outbox dispatch,
-and Family mail disabled. Before exposing any web route, restore invalidates
+diagnosis rather than choosing either copy. Restore then validates one parish
+and checks the expected ParishSoft organization without mutation. The mode
+stays as restored: the restore gate, not Testing, keeps the scheduler, ordinary
+worker admission, production outbox dispatch and Family mail off. Before
+exposing any web route, restore invalidates
 all restored administration and Family sessions, pending OAuth state, and
 cached reauthentication evidence, and revokes every
 [automation session](../admin-automation/spec.md#session-rules) (`restore`,
 as `revoke-automation-sessions` does in the v1 manual restore).
 Fresh Google login is required for Admin,
 Staff, and Ministry leaders; neither a saved cookie nor a previously fresh
-reauthentication timestamp survives restore. In the same fenced initialization
-step, restore sets the durable `restore_review_required` gate, assigns a fresh
-Family-link credential epoch generated after loading the backup, clears all
-restored active-token-generation and rehearsal-epoch pointers, and invalidates
-restored prepared generations. This applies to every Family, including those
-currently ineligible, so later reactivation cannot revive a restored link.
-Restarting recovery resumes that restore instance; performing another restore
-creates a new epoch. The credential epoch is never taken from backup state.
-That gate
+reauthentication timestamp survives restore. Before `web` starts, the
+operator runs `pk-stewardship restore-begin --backup-at SET_NAME` in the
+`admin-recovery` profile. It records a `restore_begin` runtime transition that
+sets the durable `restore_review_required` gate with a new restore id and the
+backup's time, and changes nothing else. Restarting recovery keeps that
+review; performing another restore starts a new one. A restore never creates,
+replaces or cancels a Family code or link: the codes and links Families were
+emailed keep working once the site is released (the Administrator's hard
+rule, issue 537). The
+[restore release workflow](../admin-portal/spec.md#restore-release) says how a
+link emailed after the backup is handled. A backup taken under a release
+older than migration 0017 has no `restore-begin` and cannot use the review;
+the backup runbook's limitations give the manual steps for it. A backup taken
+in Testing and restored after go-live releases into Testing, and the next
+go-live invites every Family again. That gate
 blocks every Family authentication, access-token exchange, form, and submit
 route regardless of campaign dates or Testing behavior; public requests receive
 a neutral parish-branded maintenance page without Family-specific information.
@@ -849,35 +856,30 @@ maintenance task carries a type checked at creation, claim, and external-effect
 boundaries; a queue name alone never authorizes work. On release the existing
 services resume their ordinary queue admission under the same credential mounts.
 
-The gate can be cleared only after applicable readiness passes and a freshly
-authenticated Admin reviews and confirms the proposed state-aware release
-defined by the
-[Admin workflow](../admin-portal/spec.md#restore-release), which is the sole
-authority for every current-pointer/lifecycle-to-mode mapping, including the
-archived-current-pointer case and all blocked states. Clearing the gate,
-reconciling lifecycle state, selecting mode, materializing holds, and enabling
-the corresponding work admission are one audited transaction. Failed or
-abandoned review leaves the restore gate, Family access, and live delivery
-disabled while restricted maintenance work remains available.
+The gate can be cleared only by a freshly authenticated Admin through the
+[restore release workflow](../admin-portal/spec.md#restore-release), as a
+`restore_release` runtime transition, refused while any email still needs a
+hold. Clearing the gate is one audited transaction; mode and the current
+campaign stay as restored. Failed or abandoned review leaves the restore gate,
+Family access, and live delivery disabled while restricted maintenance work
+remains available.
 
-Restore review calculates a delivery-uncertainty window from the backup's
-database-snapshot instant through the eventual mail-release instant. It creates
-durable `RestoreDeliveryHold` rows for every reconstructable campaign delivery
-that could have become due in that interval but whose outcome is absent from the
-backup. Full source refresh during the gate expands the inventory to newly
-visible Families whose already-due initial invitation may have been delivered
-after the snapshot. Refresh never materializes or dispatches an ordinary
-initial invitation while the gate is active. Immediately before release, the
-transition recomputes and atomically materializes the applicable initial
-occurrence plus a hold whenever its restored delivery is uncertain; inability
-to complete that inventory leaves the gate closed.
-
-Unreviewed holds are safe at release because they suppress only the uncertain
-semantic occurrence, not future distinct schedules. They never apply to
-operational notifications. The Admin can later resolve each hold as assumed
-delivered or authorize resend after acknowledging duplicate risk; neither the
-restore command nor readiness workflow may globally treat unknown delivery as
-provider success.
+Restore review holds every Production invitation and reminder that was due at
+the restore and may have gone out after the backup, as durable
+`RestoreDeliveryHold` rows whose window runs from the backup's time to the
+restore. The
+[restore release workflow](../admin-portal/spec.md#restore-release) says
+exactly which emails are held. The invitation is held for every Family in the
+campaign, whatever its restored eligibility, so a Family that became eligible
+after the backup is not invited twice. A Family first added to ParishSoft after
+the backup is not in the restored data; if it was invited before the restore,
+a refresh after release invites it again. Holds never apply to operational
+notifications. An undecided hold keeps its own email back for good. An
+undecided invitation also keeps back every reminder of that Family, so the
+release preview counts those Families. Settling holds after release is #757.
+The Admin can resolve each hold as assumed delivered or authorize resend after
+acknowledging duplicate risk; neither the restore command nor the release may
+globally treat unknown delivery as provider success.
 
 Quarterly restore drills restore to an isolated environment, run integrity and
 application checks, and record success/failure metadata. The target recovery

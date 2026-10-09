@@ -344,6 +344,10 @@ class RestoreHoldResolution(ImmutableRecord):
     recovery_occurrence = models.ForeignKey(
         ScheduleOccurrence, null=True, on_delete=models.PROTECT
     )
+    # The deciding Administrator's session and its sign-in instant, which the
+    # guard checks is within five minutes (migration 0017, #537).
+    session_id = models.UUIDField(null=True)
+    authenticated_at = UTCDateTimeField(null=True)
 
     class Meta:
         db_table = "stewardship_restore_hold_resolution"
