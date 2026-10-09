@@ -39,8 +39,9 @@ take ``--watch``. The schedule change commands (``schedule preview`` and
 (with ``--watch``) follow (PR 4), then ``task retry`` and the delivery
 commands (PR 9, in ``admin_operations``), ``logs list`` and ``logs
 export`` (PR 8a, in ``admin_reports``), the export lifecycle (PR 8b, in
-``admin_exports``) and the aggregate report reads (PR 8c, in
-``admin_report_reads``). A command that streams a file (``logs export`` and
+``admin_exports``), the aggregate report reads (PR 8c, in
+``admin_report_reads``) and the digests (PR 8d, in ``admin_digests``). A
+command that streams a file (``logs export`` and
 ``export download --stream``) writes the file's bytes, and nothing else, to
 standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
@@ -1237,6 +1238,42 @@ def report_ministry(args, preamble, runtime, context):
     )
 
 
+def digest_daily(args, preamble, runtime, context):
+    """A retained daily report, as its page reads it (PR 8d)."""
+    from .admin_digests import read_digest
+
+    return read_digest(
+        context["caller"], runtime, args.snapshot_id, kind="daily", page=None
+    )
+
+
+def digest_weekly(args, preamble, runtime, context):
+    """A retained weekly report's items, as its page reads them (PR 8d)."""
+    from .admin_digests import read_digest
+
+    return read_digest(
+        context["caller"], runtime, args.snapshot_id, kind="weekly", page=args.page
+    )
+
+
+def digest_weekly_request(args, preamble, runtime, context):
+    """Request a manual weekly report, as its page's form does (PR 8d).
+
+    The page asks the reader to tick that the report may repeat items
+    already reported; the command asks the same at the prompt (or takes
+    ``--yes``), before a request key is made or any transaction opens.
+    """
+    from .admin_digests import acknowledgement, request_weekly
+
+    confirm(context, ("Queue a new manual weekly report.", acknowledgement()))
+    return request_weekly(
+        context["caller"],
+        runtime,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
 def _uuid(value):
     """A canonical UUID option value; anything else is a usage error."""
     from uuid import UUID
@@ -1715,6 +1752,23 @@ def _report_ministry_options(parser):
     _date_options(parser)
 
 
+def _snapshot_option(parser):
+    """The retained report, by the id in its page's address."""
+    parser.add_argument("snapshot_id", type=_uuid, metavar="SNAPSHOT_ID")
+
+
+def _digest_weekly_options(parser):
+    """Options of ``digest weekly``: the retained report and a page of items."""
+    _snapshot_option(parser)
+    parser.add_argument("--page", help="the page of items (default 1)")
+
+
+def _digest_weekly_request_options(parser):
+    """Options of ``digest weekly-request``: the request key (``--yes`` is
+    added for every prompting command)."""
+    _request_key_option(parser)
+
+
 def _go_live_progress_options(parser):
     """Options of ``go-live progress``: the campaign, and --watch."""
     _schedule_options(parser)
@@ -2180,9 +2234,11 @@ def _test_specs():
 def _report_specs():
     """The report, export, digest and log commands (PR 8; 8a: the logs).
 
-    PR 8b adds the export lifecycle (``admin_exports``) and PR 8c the
-    aggregate report reads (``admin_report_reads``).
+    PR 8b adds the export lifecycle (``admin_exports``), PR 8c the
+    aggregate report reads (``admin_report_reads``) and PR 8d the digests
+    (``admin_digests``).
     """
+    from .admin_digests import DailyDigest, WeeklyDigest, WeeklyRequest
     from .admin_exports import ExportChange, ExportDownload, ExportStatus
     from .admin_report_reads import (
         FinancialReport,
@@ -2287,6 +2343,41 @@ def _report_specs():
             options=(_export_download_options,),
             audit_event="export_downloaded",
             streams=True,
+        ),
+        # The digests (PR 8d, ``admin_digests``).
+        CommandSpec(
+            "digest daily",
+            "Show a retained daily report's figures.",
+            digest_daily,
+            "read_only",
+            False,
+            DailyDigest.field_names(),
+            8,
+            options=(_snapshot_option,),
+            audit_event="daily_digest_viewed",
+        ),
+        CommandSpec(
+            "digest weekly",
+            "Show a retained weekly report's items, without Family text.",
+            digest_weekly,
+            "read_only",
+            False,
+            WeeklyDigest.field_names(),
+            8,
+            options=(_digest_weekly_options,),
+            audit_event="weekly_digest_viewed",
+        ),
+        CommandSpec(
+            "digest weekly-request",
+            "Request a manual weekly report, as its page's form does.",
+            digest_weekly_request,
+            "full",
+            True,
+            WeeklyRequest.field_names(),
+            8,
+            options=(_digest_weekly_request_options,),
+            request_key=True,
+            prompts=True,
         ),
         # The aggregate report reads (PR 8c, ``admin_report_reads``).
         CommandSpec(

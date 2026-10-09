@@ -149,6 +149,7 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_CANCEL = "admin_cmd_export_cancel"
     ADMIN_CMD_EXPORT_RETRY = "admin_cmd_export_retry"
     ADMIN_CMD_EXPORT_REGENERATE = "admin_cmd_export_regenerate"
+    ADMIN_CMD_DIGEST_WEEKLY_REQUEST = "admin_cmd_digest_weekly_request"
 
 
 # Closed field identifiers are operational metadata, never census values.
