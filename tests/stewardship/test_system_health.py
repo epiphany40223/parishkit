@@ -338,6 +338,8 @@ def test_the_status_region_states_problems_and_panels_in_words():
     assert "The background worker has not reported its status" in body
     assert "Families with an email address" in body
     assert "Fell too far (more than 25%)" in body
+    # "Before" is the week's largest full-refresh count (#387), and says so.
+    assert "highest value over the full refreshes of the past week" in body
     assert "Paused by admin@example.org" in body
     assert "Reason: Fixing a typo" in body
     assert "3 Family emails wait to retry" in body
