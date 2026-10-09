@@ -95,6 +95,7 @@ from .live_status_components import components as live_status_components
 from .log_components import components as log_components
 from .menu_components import components as menu_components
 from .ministry_components import components as ministry_components
+from .my_ministries_components import components as my_ministries_components
 from .pause_components import components as pause_components
 from .reminder_workgroup_components import components as workgroup_components
 from .report_components import SLOW_GETS as REPORT_SLOW_GETS
@@ -1932,6 +1933,7 @@ def component_origin():
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
     responses.update(menu_components(context, admin))
+    responses.update(my_ministries_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(step_up_components(context, admin))
     # The in-place form page's POST answers (#519, #562): refusals answer

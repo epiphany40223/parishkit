@@ -1,7 +1,7 @@
 """Bounded, scoped Ministry follow-up queue, detail and history reads."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -154,15 +154,13 @@ def ministry_scope(principal):
     return sorted(value for value in principal.ministries if value < 2**31)
 
 
-def followup_page(campaign_id, query, principal, *, request_id=None):
-    """Read one coherent page under the response guard's freshly resolved actor.
+def _select(campaign_id, query, principal, *, request_id=None, limit, offset=0):
+    """Run the installed follow-up selection for ``principal``; None if absent.
 
-    SQL intersects the current role scope with the campaign's Ministries before
-    reading any request, so an out-of-scope request UUID yields no row rather
-    than a different error. No contact, address or financial column is selected.
+    The selection intersects the principal's current role scope with the
+    campaign's Ministries itself, so every caller sees exactly what the queue
+    would show this person.
     """
-    if not can_follow_up(principal):
-        raise PermissionError("Ministry follow-up access is unavailable.")
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT stewardship_ministry_followup_v1("
@@ -176,14 +174,82 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
                 ministry_scope(principal),
                 principal.identity,
                 request_id,
-                query.page_size,
-                (query.page - 1) * query.page_size,
+                limit,
+                offset,
             ],
         )
         value = cursor.fetchone()
-    if value is None or value[0] is None:
+    return None if value is None or value[0] is None else json.loads(value[0])
+
+
+def my_ministries(campaign_id, principal):
+    """A Ministry leader's Home panel: open join and leave requests per Ministry.
+
+    Reads the same selection as the follow-up queue, with its default
+    filters (open requests: New or In progress, current requests), so a
+    leader is never shown a count the queue would not list for them. Each
+    count is the selection's exact ``total`` for one Ministry and action,
+    read with no rows (``page_limit`` 0), so no request details are read
+    and no count is capped. Returns None when follow-up is off, unavailable
+    or outside this person's scope; otherwise, by name, each Ministry of the
+    campaign in scope, plus any Ministry since removed from the campaign
+    that still has open requests (marked, as the queue marks it).
+    """
+    if not can_follow_up(principal):
+        return None
+
+    def total(**filters):
+        """The open requests matching ``filters``, or None if unreadable."""
+        result = _select(
+            campaign_id, replace(FollowupQuery(), **filters), principal, limit=0
+        )
+        if result is None or result.get("disabled") or result.get("unavailable"):
+            return None, None
+        return result, result["total"]
+
+    overall, count = total()
+    if overall is None or not overall["authorized"]:
+        return None
+    ministries = []
+    for item in overall["ministries"]:
+        entry = {
+            "duid": item["duid"],
+            "name": item["name"],
+            "in_campaign": item["in_campaign"],
+            "join": 0,
+            "leave": 0,
+        }
+        if count:
+            # All reads share one snapshot, so a per-Ministry read can come
+            # back unavailable or disabled only in a very narrow race; it
+            # then shows "No open requests" rather than failing Home.
+            for action in ("join", "leave"):
+                entry[action] = total(ministry=str(item["duid"]), action=action)[1] or 0
+        # A removed Ministry stays only while it still has open requests.
+        if item["in_campaign"] or entry["join"] or entry["leave"]:
+            ministries.append(entry)
+    return {"ministries": ministries}
+
+
+def followup_page(campaign_id, query, principal, *, request_id=None):
+    """Read one coherent page under the response guard's freshly resolved actor.
+
+    SQL intersects the current role scope with the campaign's Ministries before
+    reading any request, so an out-of-scope request UUID yields no row rather
+    than a different error. No contact, address or financial column is selected.
+    """
+    if not can_follow_up(principal):
+        raise PermissionError("Ministry follow-up access is unavailable.")
+    result = _select(
+        campaign_id,
+        query,
+        principal,
+        request_id=request_id,
+        limit=query.page_size,
+        offset=(query.page - 1) * query.page_size,
+    )
+    if result is None:
         raise ReadUnavailable("Ministry follow-up inputs are unavailable.")
-    result = json.loads(value[0])
     if result.get("disabled"):
         raise PermissionError("Ministry follow-up is not enabled for this campaign.")
     if result.get("unavailable"):

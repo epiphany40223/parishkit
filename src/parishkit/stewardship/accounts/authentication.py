@@ -555,7 +555,7 @@ def index(request):
         principal = authenticated_admin(caller, store=service.store, activity=True)
         if principal is None:
             return HttpResponseRedirect("/admin/login")
-        observed = observe(principal, service.store)
+        observed = observe(principal, service.store, home=True)
         if observed is None:
             return denial(status=503, retry=5)
         config, data, now = observed
