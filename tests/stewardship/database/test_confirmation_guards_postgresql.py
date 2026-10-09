@@ -66,7 +66,7 @@ def test_stale_preview_scope_expiry_and_cancellation_never_activate(
             confirm(*arguments, token=token + "x", typed="Production")
         with monkeypatch.context() as patch:
             patch.setattr(signing, "time", SimpleNamespace(time=lambda: time() + 301))
-            with pytest.raises(signing.SignatureExpired):
+            with pytest.raises(StaleRecordError, match="out of date"):
                 confirm(*arguments, token=token, typed="Production")
         with (
             override_settings(STEWARDSHIP_PUBLIC_ORIGIN="http://localhost:8001"),

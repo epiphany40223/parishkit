@@ -13,6 +13,11 @@ from parishkit.stewardship.campaigns.withdrawal_models import ProductionWithdraw
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import (
+    CONTROL_PREVIEW_MAX_AGE,
+    load_preview,
+    return_link,
+)
 
 from .admin_editing import editable_configuration, principal
 from .sessions import require_fresh
@@ -110,11 +115,11 @@ def preview(request, service, campaign_id, *, reason, acknowledged):
         ] else None
 
 
-def _binding(token, *, max_age=None):
+def _binding(token):
     """A signature binds intent; current SQL/session authorization remains required."""
     if type(token) is not str or len(token) > 16384:
         raise ValueError("Invalid withdrawal preview.")
-    value = signing.loads(token, salt=SALT, max_age=max_age)
+    value = signing.loads(token, salt=SALT)
     fields = {
         "actor",
         "campaign",
@@ -179,7 +184,14 @@ def withdraw(request, service, campaign_id, *, token):
             if any(getattr(previous, key) != value for key, value in values.items()):
                 raise PermissionError("Withdrawal replay belongs to another intent.")
             return previous
-        _binding(token, max_age=300)
+        # The parse above has no lifetime so an identical replay still
+        # finds its receipt; a new intent must be under five minutes old.
+        load_preview(
+            token,
+            salt=SALT,
+            link=return_link(request),
+            max_age=CONTROL_PREVIEW_MAX_AGE,
+        )
         if (
             values["confirmation_id"] != confirmation.pk
             or campaign.version != values["expected_campaign_version"]

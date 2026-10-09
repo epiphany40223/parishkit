@@ -11,6 +11,11 @@ from parishkit.stewardship.campaigns.production_models import ProductionTransiti
 from parishkit.stewardship.campaigns.runtime import _now, campaign_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
+from parishkit.stewardship.web.refusals import (
+    CONTROL_PREVIEW_MAX_AGE,
+    load_preview,
+    return_link,
+)
 
 from . import go_live_commands
 from .admin_caller import is_automation
@@ -68,11 +73,11 @@ def verify_preview(request, service, campaign_id, transition_id, preparation_id)
     return preview, verified, token
 
 
-def _binding(token, *, max_age=None):
+def _binding(token):
     """Parse only the server's closed preview shape; signatures do not authorize."""
     if type(token) is not str or len(token) > 8192:
         raise ValueError("Invalid Production confirmation preview.")
-    value = signing.loads(token, salt=SALT, max_age=max_age)
+    value = signing.loads(token, salt=SALT)
     if (
         type(value) is not dict
         or set(value)
@@ -153,7 +158,14 @@ def confirm(
         origin, profile = go_live_commands.configured_origin()
         if (origin, profile.value) != (binding["origin"], binding["profile"]):
             raise StaleRecordError("Public origin changed after preview.")
-        _binding(token, max_age=300)
+        # The parse above has no lifetime so an identical replay still
+        # finds its receipt; a new intent must be under five minutes old.
+        load_preview(
+            token,
+            salt=SALT,
+            link=return_link(request),
+            max_age=CONTROL_PREVIEW_MAX_AGE,
+        )
         state = collect_readiness(
             request, service, campaign_id, transition_id, preparation_id
         )

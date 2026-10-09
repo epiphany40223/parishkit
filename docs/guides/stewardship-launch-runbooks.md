@@ -148,8 +148,10 @@ still the design record for preparation and disposal),
    finished: until the Family eligibility catches up with the new data it
    says the preparation inputs are unavailable, so wait a moment and reload.
    Every button on the cleanup and links pages (prepare, cancel, retry) is
-   refused with a generic "Check this value." error once its page has been
-   open for more than five minutes; reload the page and try again. Preparation sends no email and changes no Family code. If a
+   refused with "This preview is out of date." once its page has been open
+   for more than five minutes; choose **Review the changes again** to reload
+   the page, then try again. Preparation sends no email and changes no Family
+   code. If a
    refresh lands first, the page says the preparation is cancelled or no
    longer current. To prepare again, choose **Cancel and discard these
    inactive links**, wait until its disposal worker finishes (**Retry failed
@@ -603,9 +605,9 @@ only for the current Production campaign.
       the sign-in, the test and the preview. Every input is checked again;
       anything that changed cancels the confirmation without releasing mail,
       and you preview again. If the confirm button is missing, or confirming
-      reports an authentication error, changed inputs or "Check this
-      value." (an expired preview), a clock has run out: confirm with Google
-      again as in step 2, send a new test, and preview again.
+      reports an authentication error, changed inputs or "This preview is
+      out of date.", a clock has run out: confirm with Google again as in
+      step 2, send a new test, and preview again.
 
 If the campaign closes while delivery is paused, resuming no longer applies:
 invitations and reminders follow the ordinary close policy and cannot be
@@ -620,10 +622,10 @@ step 4.1 above. Every resolution (release, cancel or clear) needs a Google
 sign-in from the last five minutes and is confirmed within five minutes of
 its preview, and a release also needs the five-minute sender test, all in
 one go as for a resume. A missing confirm button or an authentication error
-means the sign-in has expired, "Check this value." means the preview has,
-and "This information changed" means something the preview relied on moved
-(the sender test expired, report preparation started, or the held messages
-changed); recover as for a resume. This does not reopen Family access.
+means the sign-in has expired, "This preview is out of date." means the
+preview has, and "This information changed" means something the preview
+relied on moved (the sender test expired, report preparation started, or the
+held messages changed); recover as for a resume. This does not reopen Family access.
 Held invitations and reminders are cancelled by the mail worker under the
 close policy; one with no delivery task left (usually because its
 preparation failed) has no worker to do that, so the page counts it and

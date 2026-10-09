@@ -606,6 +606,31 @@ def test_exceptions_map_to_codes_in_the_specified_order(
     )
 
 
+def test_an_expired_five_minute_preview_is_a_stale_version(monkeypatch):
+    """An expired go-live, Production or delivery preview: preview again (#398).
+
+    ``load_preview`` raises the same refusal for those five-minute previews as
+    for the fifteen-minute ones, so a command line sees ``stale_version``
+    (exit 1, nothing changed), never ``internal`` or ``outcome_unknown``.
+    """
+    from django.core import signing
+
+    from parishkit.stewardship.web import refusals
+
+    token = signing.dumps({"a": 1}, salt="salt")
+    now = signing.time.time()
+    monkeypatch.setattr(signing.time, "time", lambda: now + 301)
+    with pytest.raises(StaleRecordError) as caught:
+        refusals.load_preview(
+            token, salt="salt", max_age=refusals.CONTROL_PREVIEW_MAX_AGE
+        )
+    for changed in (False, True):
+        assert (
+            admin_cli.classify(caught.value, admitted_process=True, changed=changed)
+            == "stale_version"
+        )
+
+
 def test_any_error_after_a_durable_commit_is_an_unknown_outcome():
     """An outage after logout committed is exit 6, never exit 3."""
     for error in (OperationalError("down"), DatabaseError("lost"), RuntimeError("x")):
