@@ -110,6 +110,9 @@ FROZEN = {
     "0026_chair_decisions_plan.sql": (
         "6a5b866a6b188331cbe9266ddb9aeb7aaa9d259b7ab5aeceb0561ba32ee6cbbf"
     ),
+    "0027_recovery_session_grants.sql": (
+        "942522d8d481a4cd9511fccbb667279ae0ad220f48d5633f3b897f13c00a7436"
+    ),
 }
 
 
