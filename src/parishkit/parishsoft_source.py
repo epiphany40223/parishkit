@@ -126,22 +126,32 @@ class CoherentParishSoftClient(ParishSoftClient):
         )
         self.expected_organization_id = organization_id
         self.maximum_requests, self.maximum_bytes = maximum_requests, maximum_bytes
+        self.maximum_seconds = maximum_seconds
         self.deadline = time.monotonic() + maximum_seconds
         self.request_count = self.response_bytes = 0
+
+    def _budget_exceeded(self):
+        """The time-bound error, with the bound and the time the load ran."""
+        elapsed = time.monotonic() - (self.deadline - self.maximum_seconds)
+        return SourceLoadBudgetExceeded(
+            "Source load exceeds its time bound.",
+            limit_seconds=self.maximum_seconds,
+            elapsed_seconds=int(elapsed),
+        )
 
     def _request(self, operation):
         """Apply aggregate body bounds in addition to finite HTTP attempts."""
         if self.request_count >= self.maximum_requests:
             raise IncompleteSourceCollection("Source load exceeds its request bound.")
         if time.monotonic() >= self.deadline:
-            raise SourceLoadBudgetExceeded("Source load exceeds its time bound.")
+            raise self._budget_exceeded()
         self.request_count += 1
         response = super()._request(operation)
         self.response_bytes += len(response.content)
         if self.response_bytes > self.maximum_bytes:
             raise IncompleteSourceCollection("Source load exceeds its byte bound.")
         if time.monotonic() >= self.deadline:
-            raise SourceLoadBudgetExceeded("Source load exceeds its time bound.")
+            raise self._budget_exceeded()
         return response
 
     def validate_organization(self):

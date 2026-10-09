@@ -281,8 +281,13 @@ def test_aggregate_request_byte_and_time_bounds_are_not_partial_success(tmp_path
     # Only running out of time is a slow provider rather than bad data (#387).
     client = initialized(tmp_path)
     client.deadline = 0
-    with pytest.raises(SourceLoadBudgetExceeded, match="time bound"):
+    with pytest.raises(SourceLoadBudgetExceeded, match="time bound") as error:
         client.get("families/group/lookup/list")
+    # It carries the bound and how long the load ran, for the timeout log
+    # (#834): started at deadline - maximum_seconds, so well past 900 here.
+    assert error.value.limit_seconds == 900
+    assert type(error.value.elapsed_seconds) is int
+    assert error.value.elapsed_seconds >= 900
 
 
 def test_shared_full_loader_uses_coherent_contracts_and_retains_inactive_source(
