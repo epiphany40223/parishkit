@@ -50,6 +50,27 @@ def failure_action(attempt, *, retry, contention=False):
     )
 
 
+def counted_attempt(status, claim_fence):
+    """The attempt number the provider-failure allowance counts (#386, L1).
+
+    Every claim increments the run's raw ``attempt``, including claims held
+    for the source lease or a configuration activation before any read.
+    When the claim being settled (``claim_fence``) began a ParishSoft read,
+    it has a ``SourceRefreshAttempt`` row, and only this run's claims with
+    such a row count, so earlier contention holds do not use up the
+    allowance. A claim without a row keeps the raw count: rows alone cannot
+    tell an earlier hold from an earlier pre-read failure that retries (a
+    stale credential), and counting only rows would let that retry forever.
+    Counting per run keeps an explicit retry's fresh allowance.
+    """
+    reached = SourceRefreshAttempt.objects.filter(
+        task_id=status.run_id, task_fence__lte=claim_fence
+    )
+    if not reached.filter(task_fence=claim_fence).exists():
+        return status.attempt
+    return reached.count()
+
+
 def scope_fingerprint(organization_id, window_digest):
     """Audit scope changes without omitting tenant identity or storing provider data."""
     return canonical_payload(
@@ -286,9 +307,11 @@ def _recovery_plan(status, evidence):
         admit_refresh_request("recovery", status)
     except PermissionError:
         return None
-    if status.attempt >= MAX_AUTOMATIC_ATTEMPTS:
+    # Expiry fenced the abandoned claim: lease_expired adds one to the fence.
+    attempt = counted_attempt(status, status.fence - 1)
+    if attempt >= MAX_AUTOMATIC_ATTEMPTS:
         return RecoveryPlan("recovery_fail")
-    return RecoveryPlan("recovery_retry", retry_delay(status.attempt))
+    return RecoveryPlan("recovery_retry", retry_delay(attempt))
 
 
 def superseding_digest(status):
