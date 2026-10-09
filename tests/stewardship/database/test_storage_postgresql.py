@@ -632,6 +632,23 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             f"-interval'{SLOT_DECISION_RETENTION_DAYS}days'THENRETURNOLD;ENDIF;"
             "RAISEEXCEPTION'Historicalrecordsareappend-only'"
         ),
+        # Task event retention (#386, admin-automation spec): only
+        # stewardship_task_event_prune_v1 deletes, as the schema owner with
+        # its transaction-local flag set, and only a finished run's heartbeat
+        # and progress events (its age floor is the function's). Every UPDATE
+        # and any other DELETE is still refused.
+        "stewardship_task_event": (
+            "IFTG_OP='DELETE'"
+            "ANDcurrent_setting('stewardship.event_prune',true)='on'"
+            "ANDpg_has_role(current_user,(SELECTnspownerFROMpg_namespace"
+            "WHEREnspname='public'),'USAGE')"
+            "ANDOLD.actionIN('heartbeat','progress')"
+            "ANDEXISTS(SELECT1FROMpublic.stewardship_task_runr"
+            "WHEREr.id=OLD.run_id"
+            "ANDr.stateIN('succeeded','failed','cancelled'))THEN"
+            "RETURNOLD;ENDIF;"
+            "RAISEEXCEPTION'Historicalrecordsareappend-only'"
+        ),
     }
     response_contracts = {
         "stewardship_submission": (

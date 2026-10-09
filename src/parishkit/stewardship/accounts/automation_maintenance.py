@@ -16,11 +16,15 @@ transactions:
 - removes the service status records of processes that have not reported
   for a day (ADM-13; ``service_status.prune_service_status``);
 - removes refresh slot decisions eight days after their due time (#632;
-  ``source.slot_decisions.prune_slot_decisions``).
+  ``source.slot_decisions.prune_slot_decisions``);
+- deletes the ``heartbeat`` and ``progress`` events of task runs that
+  finished more than EVENT_RETENTION_DAYS ago, in batches, within a time
+  budget (#386; ``prune_task_events``).
 
 Every step is repeat-safe, so an interrupted run is simply retried.
 """
 
+from time import monotonic
 from uuid import UUID, uuid5
 
 from django.db import connection, transaction
@@ -40,6 +44,22 @@ from parishkit.stewardship.storage import StorageInvariantError
 TASK_TYPE = "automation_maintenance"
 NAMESPACE = UUID("b6f0c1f9-5a3e-4bb5-9c1e-3f7a2d6c8e41")
 MAX_ATTEMPTS = 3
+# Task event retention (#386, L2): the liveness events of runs that finished
+# this many days ago are pruned. Changing it is a code change (this
+# constant); the SQL function refuses fewer than 7.
+EVENT_RETENTION_DAYS = 30
+# How far past that the hourly pass looks for finished runs: it keeps up
+# hour by hour, so a week covers any ordinary gap. After a longer outage an
+# operator calls the function with a wider window until it returns 0 (the
+# runtime guide's task event retention step).
+EVENT_PRUNE_WINDOW_DAYS = 7
+# Runs per pruning transaction (their liveness events go together), and the
+# time one hourly pass may spend; the next pass resumes.
+EVENT_PRUNE_RUNS = 20
+EVENT_PRUNE_BUDGET_SECONDS = 60
+# Each batch's own SQL limits, so it can never hold up other work for long;
+# a batch stopped by either is logged and ends the pass.
+EVENT_PRUNE_LIMITS = {"statement_timeout": 5, "lock_timeout": 1}
 
 
 class MaintenanceProducer:
@@ -143,7 +163,78 @@ def _execute(execution):
     execution.check()
     with execution.effect():
         prune_slot_decisions()
+    prune_task_events(execution)
     execution.transition("complete")
+
+
+def prune_task_events(execution):
+    """Delete old liveness events in batches, each in its own short transaction.
+
+    Not under the work-order lock (``execution.effect``): a batch touches only
+    finished runs' heartbeat and progress events, which no writer changes,
+    so it orders against nothing; a repeated pass (a stale owner's) deletes
+    nothing twice. The task is still checked before each batch. Each batch
+    has its own statement and lock limits; a batch stopped by one is logged
+    (what, limit, elapsed) and ends the pass, as does the time budget (an
+    INFO ``retention_budget`` entry). Stops when a batch removes nothing.
+    Returns how many events went.
+    """
+    from django.db import transaction
+
+    from parishkit.stewardship.audit.timeouts import record_timeout
+    from parishkit.stewardship.jobs.broker import sql_timeout_kind
+    from parishkit.stewardship.observability import Event
+
+    started, removed = monotonic(), 0
+    while True:
+        execution.check()
+        batch = monotonic()
+        try:
+            with transaction.atomic(), connection.cursor() as cursor:
+                for kind, seconds in EVENT_PRUNE_LIMITS.items():
+                    cursor.execute(f"SET LOCAL {kind} = '{seconds}s'")
+                cursor.execute(
+                    "SELECT public.stewardship_task_event_prune_v1(%s,%s,%s)",
+                    [EVENT_RETENTION_DAYS, EVENT_PRUNE_WINDOW_DAYS, EVENT_PRUNE_RUNS],
+                )
+                count = cursor.fetchone()[0]
+        except Exception as error:
+            kind = sql_timeout_kind(error)
+            if kind not in EVENT_PRUNE_LIMITS:
+                raise
+            record_timeout(
+                Event.TASK_TIMED_OUT,
+                what=kind,
+                level="WARNING",
+                task_id=execution.claim.run_id,
+                limit_seconds=EVENT_PRUNE_LIMITS[kind],
+                elapsed_seconds=monotonic() - batch,
+            )
+            return removed
+        removed += count
+        if count == 0:
+            _prune_done(removed)
+            return removed
+        if monotonic() - started >= EVENT_PRUNE_BUDGET_SECONDS:
+            record_timeout(
+                Event.WORK_BUDGET_REACHED,
+                what="retention_budget",
+                level="INFO",
+                task_id=execution.claim.run_id,
+                limit_seconds=EVENT_PRUNE_BUDGET_SECONDS,
+                elapsed_seconds=monotonic() - started,
+            )
+            return removed
+
+
+def _prune_done(removed):
+    """Debug-log how many events one pass removed (observation only)."""
+    import json
+    import logging
+
+    debug = logging.getLogger("parishkit.stewardship.debug")
+    if debug.isEnabledFor(logging.DEBUG):
+        debug.debug("task event prune: %s", json.dumps({"removed": removed}))
 
 
 def maintenance_handler(*, scheduler=False):

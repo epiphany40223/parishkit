@@ -189,7 +189,6 @@ UNPINNED = frozenset(
         "stewardship_source_snapshot_guard()",
         "stewardship_source_snapshot_mutable_v1()",
         "stewardship_system_configuration_mutable_v1()",
-        "stewardship_task_event_immutable_v1()",
         "stewardship_task_run_mutable_v1()",
     }
 )

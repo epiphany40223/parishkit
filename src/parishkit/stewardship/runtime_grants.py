@@ -266,6 +266,9 @@ AUTOMATION_SECRET_TARGETS = frozenset({"parishsoft", "google_workspace", "slack"
 # The general worker's export recovery counts a task's read-guard stops
 # (#386, L3) without reading the operational log's context.
 READ_GUARD_KILLS_FUNCTION = "stewardship_read_guard_kills_v1(uuid)"
+# The general worker's hourly maintenance prunes long-finished runs'
+# liveness events (#386, L2).
+TASK_EVENT_PRUNE_FUNCTION = "stewardship_task_event_prune_v1(integer, integer, integer)"
 
 
 def runtime_functions(role, *, target=None):
@@ -274,8 +277,8 @@ def runtime_functions(role, *, target=None):
     Web signs Families in and reads the 24-hour Family mail count (System
     health); the configuration installer checks that a Ministry
     added to a live campaign is in the promoted catalog, without source grants;
-    the general worker purges the Django sessions of ended Admin sessions
-    and counts an export's read-guard stops.
+    the general worker purges the Django sessions of ended Admin sessions,
+    counts an export's read-guard stops and prunes old task events.
     Web and the parishsoft, google_workspace and slack credential installers
     check a secret request's automation sign-in instant (ADM-11 PR 5).
     """
@@ -292,7 +295,11 @@ def runtime_functions(role, *, target=None):
                 AUTOMATION_FRESH_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
-            ServiceRole.WORKER: {SESSION_PURGE_FUNCTION, READ_GUARD_KILLS_FUNCTION},
+            ServiceRole.WORKER: {
+                SESSION_PURGE_FUNCTION,
+                READ_GUARD_KILLS_FUNCTION,
+                TASK_EVENT_PRUNE_FUNCTION,
+            },
         }.get(role, ())
     )
 

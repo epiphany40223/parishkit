@@ -101,6 +101,9 @@ FROZEN = {
     "0023_read_guard_kills.sql": (
         "13b03cb17f7cb3f6e188470818815e172f654e3efdaf4584b229e5fde51cec6a"
     ),
+    "0024_task_event_retention.sql": (
+        "7e09c66ee0b85584955fb902ec21094051f94008f9bf0d82f57738d58a25e6d0"
+    ),
 }
 
 
