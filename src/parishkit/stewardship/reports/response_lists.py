@@ -18,6 +18,9 @@ The fifth, **data-quality**, is a live view of ParishSoft rather than of the
 funnel: the campaign's active Families whose current ParishSoft record has a
 blank mailing name or envelope number 0, the two problems seen on launch day.
 
+Each list downloads as CSV, XLSX or PDF (``list_file``, #850), rendered on
+request from the same rows and columns as the page.
+
 Names, envelope numbers and mailing names come from the current source
 snapshot (``source.snapshot_names``) in two queries for any number of
 Families. Sorting, filtering, searching and paging happen here in memory:
@@ -42,16 +45,46 @@ from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import CampaignWorkGate
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import csv_text
 from parishkit.stewardship.web.exports import csv_cell
 from parishkit.stewardship.web.tables import Sorting, table_parameters
 
+from .directory_rendering import draw_pages, fill_pages, table_heading, table_lines
+from .information_rendering import information_xlsx
 from .response_metrics import MODES, FamilyResponse, response_families
 
 # The filter value that keeps every row of a list; it is left out of URLs.
 EVERYONE = "all"
+# The download formats (#850), each rendered on request, and their types.
+FORMATS = {
+    "csv": "text/csv",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
+}
+PRIVACY = "Sensitive parish report. Share only with authorized recipients."
+# PDF column widths in monospaced characters, by column key: each at least
+# its heading's length, and every list's row (with two spaces between
+# columns) within PDF_LINE, the characters a landscape page holds at 9 pt
+# (see directory_rendering.COLUMN_WIDTHS). Longer cells wrap. A compact
+# time ("Sep 30, 2026 12:04 PM") is 21 characters.
+PDF_WIDTHS = {
+    "submitted": 21,
+    "opened": 21,
+    "progressed": 23,
+    "invited": 21,
+    "link": 21,
+    "last": 21,
+    "family": 36,
+    "duid": 11,
+    "envelope": 15,
+    "submissions": 11,
+    "mailing": 24,
+    "problem": 20,
+}
+PDF_LINE = 138
 
 
 @dataclass(frozen=True)
@@ -521,6 +554,139 @@ def list_csv(spec, rows, zone):
             csv_cell(csv_value(column.value(row), zone)) for column in spec.columns
         )
     return buffer.getvalue().encode("utf-8")
+
+
+@dataclass(frozen=True, repr=False)
+class ListDocument:
+    """One list's file contents for the shared XLSX and table PDF writers.
+
+    ``metadata`` is the (label, value) details the XLSX "Report information"
+    sheet lists and the PDF header draws; ``rows`` hold each format's cell
+    values (``xlsx_value`` or ``pdf_text``); ``widths`` maps each heading to
+    its PDF column width. ``repr=False`` keeps names out of tracebacks.
+    """
+
+    title: str
+    metadata: tuple
+    headings: tuple
+    rows: tuple
+    requested_at: datetime
+    widths: dict
+    sheet_name: str = "Families"
+
+
+def list_details(spec, query, *, parish, campaign, as_of, zone, count):
+    """The file's report details: what was listed, when, and for whom.
+
+    Never the search text, which can name a Family (#849): only whether one
+    was applied. ``as_of`` is the list's Counted at instant, shown in the
+    download's time zone ``zone`` (a ZoneInfo).
+    """
+    return (
+        ("Report", str(spec.title)),
+        ("Parish", parish),
+        ("Campaign", campaign),
+        ("Responses", "Testing" if query.mode == "testing" else "Production"),
+        ("Filter", f"{spec.choice_label}: {spec.choice(query.show).label}"),
+        ("Search applied", "Yes" if query.search else "No"),
+        ("Counted at", as_of.astimezone(zone)),
+        ("Display time zone", zone.key),
+        ("Families in this file", f"{count:,}"),
+        ("Privacy", PRIVACY),
+    )
+
+
+def xlsx_value(column, value, zone):
+    """A cell for the XLSX sheet: a native time in ``zone`` or count, else text.
+
+    A missing value is a truly empty cell (None), blank as in the CSV.
+    Identifiers (DUID, envelope number) stay text, as on the page, so they
+    are never grouped or summed.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.astimezone(zone)
+    return value if column.kind == "count" else str(value)
+
+
+def pdf_text(column, value, zone):
+    """A cell for the PDF, which people read: the page's words for it.
+
+    A missing value reads as on the page ("Not yet", "No"); a time is the
+    parish's compact date format in ``zone`` (the header names the zone);
+    a count is grouped, as on the page.
+    """
+    if value is None or value == "":
+        return str(column.missing)
+    if isinstance(value, datetime):
+        return dates.display_text(value.astimezone(zone), compact=True)
+    if column.kind == "count":
+        return f"{value:,}"
+    return str(value)
+
+
+def list_pdf(document, output):
+    """The list as landscape table pages with its details on every page."""
+    details = dict(document.metadata)
+    header = (
+        " · ".join(
+            (
+                details["Parish"],
+                details["Campaign"],
+                f"Counted at {dates.display_text(details['Counted at'])}",
+                f"Times in {details['Display time zone']}",
+            )
+        ),
+        f"{details['Families in this file']} "
+        f"{'Family' if details['Families in this file'] == '1' else 'Families'} "
+        "in this file. "
+        f"{details['Responses']} responses. {details['Filter']}."
+        + (" Search applied." if details["Search applied"] == "Yes" else ""),
+    )
+    return draw_pages(
+        document,
+        output,
+        list(fill_pages(list(table_lines(document, document.widths)))),
+        header=header,
+        heading=table_heading(document.headings, document.widths),
+        footer=PRIVACY,
+    )
+
+
+def list_file(spec, rows, zone, format, *, details=(), as_of=None):
+    """The list's download in ``format`` (a ``FORMATS`` key), as bytes.
+
+    ``rows`` are already filtered, searched and sorted as on the page, every
+    one of them. CSV is exactly the table (``list_csv``). XLSX and PDF add
+    the report ``details`` (``list_details``): the XLSX through the shared
+    writer, with its "Report information" sheet, and the PDF through the
+    shared table pages. Every text cell is neutralized by its writer: CSV
+    against formulas, XLSX as literal text, PDF escaping what its font
+    cannot draw. ``zone`` is a ZoneInfo; ``as_of`` dates the PDF.
+    """
+    if format == "csv":
+        return list_csv(spec, rows, zone)
+    if format not in FORMATS:
+        raise ValueError("Unsupported response list format.")
+    convert = xlsx_value if format == "xlsx" else pdf_text
+    headings = tuple(str(column.heading) for column in spec.columns)
+    document = ListDocument(
+        title=str(spec.title),
+        metadata=details,
+        headings=headings,
+        rows=tuple(
+            tuple(convert(c, c.value(row), zone) for c in spec.columns) for row in rows
+        ),
+        requested_at=as_of,
+        widths={
+            heading: PDF_WIDTHS[column.key]
+            for heading, column in zip(headings, spec.columns, strict=True)
+        },
+    )
+    output = io.BytesIO()
+    (information_xlsx if format == "xlsx" else list_pdf)(document, output)
+    return output.getvalue()
 
 
 def downloads_paused(campaign_id):

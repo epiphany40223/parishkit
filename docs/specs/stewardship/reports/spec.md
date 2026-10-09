@@ -523,7 +523,7 @@ The charts' PNG and PDF downloads follow in a later increment.
 
 ### Response lists
 
-**Access:** Admin and Staff (`CAMPAIGN_REPORT`; the CSV download also
+**Access:** Admin and Staff (`CAMPAIGN_REPORT`; the downloads also
 `REPORT_EXPORT`); the Testing view is Admin only.
 
 `/admin/reports/responses/<list>/` lists the Families behind one count,
@@ -542,7 +542,7 @@ Each of the first four lists has exactly the Families its count on the
 [response dashboard](#response-dashboard) counts, with the instants the
 [funnel stages](#funnel-stages) define (Link followed includes mail-scanner
 prefetches). A value not reached yet reads in words on the page (Got past the
-first step "Not yet", Link followed "No") and is blank in the CSV.
+first step "Not yet", Link followed "No") and is blank in the CSV and XLSX.
 **ParishSoft data to check** is a live view of the latest ParishSoft data
 rather than a reproducible count, for the launch-day data problems that made
 Family names misleading; the record itself is fixed in ParishSoft, and a
@@ -593,17 +593,47 @@ page size and page, and a reload clears the search. The mode links are plain
 links, so switching mode clears the search too, and the search box then shows
 it cleared.
 
-**Download CSV** posts the list's filter, search and order (CSRF-protected)
-and downloads the complete filtered list, not just the page, rendered on request
-in that order, with the table's columns, in the
-[shared CSV format](#shared-report-behavior), times in a time zone chosen
-beside the button (the browser's by default). Before the download the panel
-states how many Families the file holds and the sensitive-data warning; with
-none, the button is disabled. The file is built in memory on the web
-connection, as the [System logs](#system-logs) download is, and read under the
-interactive campaign read guard (see
+**Download** posts the list's filter, search and order (CSRF-protected) with
+a **Format** (CSV, the default, XLSX or PDF) and a time zone chosen beside the
+button (the browser's by default), and downloads the complete filtered list,
+not just the page, rendered on request in that order with the table's columns
+([#850](https://github.com/epiphany40223/parishkit/issues/850)). The button's
+label names no format, so choosing one changes nothing else on the panel, and
+an in-place refresh keeps the format and time zone chosen. The formats hold
+the same rows and columns:
+
+- **CSV** is exactly the table in the
+  [shared CSV format](#shared-report-behavior): times as ISO text in the
+  chosen time zone, a missing value blank, every cell neutralized.
+- **XLSX** is the shared report workbook: the list's sheet, with native date
+  and time cells in the chosen time zone, counts as numbers, identifiers and
+  names as literal text (never a formula, characters XLSX cannot hold
+  escaped) and a missing value blank, plus the shared "Report information"
+  sheet.
+- **PDF** is landscape table pages in the shared table layout of the
+  [Family-code directory](#active-parishioner-family-directory): each cell as
+  the page shows it (a missing value in the page's words, counts grouped,
+  times in the parish's compact date format in the chosen time zone), with
+  text the font cannot draw escaped.
+
+The XLSX information sheet and every PDF page carry the list's title, parish,
+campaign, Production or Testing, the filter choice, whether a search was
+applied (never its text), **Counted at** and the time zone, the number of
+Families, and the sensitive-data line. The filename is
+`stewardship-responses-<list>-<UTC time>.<format>`, with no search, name or
+choice in it. Before the download the panel states how many Families the file
+holds and the sensitive-data warning; with none, the button is disabled. The
+file is built in memory on the web connection, as the
+[System logs](#system-logs) download is, and read under the interactive
+campaign read guard (see
 [campaign read guards](../data/spec.md#campaign-read-guards) for small
-downloads rendered on request). While the campaign's purge gate is closed
+downloads rendered on request). XLSX and PDF are rendered on request too,
+rather than through the shared export lifecycle (queued, retained,
+regenerable) the issue first proposed: that would need a new export kind and
+snapshot, so a migration, for a list that is a live view anyway, and the
+largest list (about 1,100 Families at launch scale, some 34 pages) renders
+as PDF in about 8 seconds on a development machine, within the read guard's
+60-second deadline. Downloading again regenerates the file. While the campaign's purge gate is closed
 (any purge work gate not released) the download is refused with an
 explanation (409), including when the gate closes as the download starts,
 and its button is disabled with a notice; the list itself stays readable
@@ -632,7 +662,8 @@ and page number are not recorded: they pick which part of the same list is on
 screen, and the row count with these choices already says which Families the
 list held. System logs shows the mode, choice and order in the page's own
 words, the order as the column heading followed by "(ascending)" or
-"(descending)".
+"(descending)". A download's format is not recorded either: the audit context
+allowlist has no key for it, so recording it would need a migration.
 
 ### Family timeline
 

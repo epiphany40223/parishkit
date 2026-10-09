@@ -151,7 +151,7 @@ def test_filter_applies_in_place_and_the_download_posts_it(page, component_origi
     # The download's scope and hidden choices followed the filter.
     has_text(
         page.locator("#list-export-scope"),
-        "CSV of the 1 Family on this list, with the filter chosen.",
+        "The file holds the 1 Family on this list, with the filter chosen.",
     )
     assert hidden_fields(page, "table-export") == {
         "show": "envelope",
@@ -172,7 +172,7 @@ def test_filter_applies_in_place_and_the_download_posts_it(page, component_origi
         "**" + reverse("admin:response_list_export", args=["data-quality"]), download
     )
     page.get_by_label("Time zone").select_option("America/Chicago")
-    page.get_by_role("button", name="Download CSV").click()
+    page.get_by_role("button", name="Download", exact=True).click()
     page.wait_for_timeout(500)
     assert len(downloads) == 1 and downloads[0][0] == "POST"
     body = parse_qs(downloads[0][1])
@@ -202,7 +202,7 @@ def test_search_narrows_in_place_and_never_enters_the_address(page, component_or
     # The download follows the search, as a hidden POST field.
     has_text(
         page.locator("#list-export-scope"),
-        "CSV of the 2 Families on this list that match the search.",
+        "The file holds the 2 Families on this list that match the search.",
     )
     assert hidden_fields(page, "table-export") == {
         "search": "e",
@@ -227,7 +227,7 @@ def test_search_narrows_in_place_and_never_enters_the_address(page, component_or
     box.fill("zzz")
     page.get_by_role("button", name="Search").click()
     visible(page.locator("#table td").get_by_text("No Families on this list match"))
-    assert page.get_by_role("button", name="Download CSV").is_disabled()
+    assert page.get_by_role("button", name="Download", exact=True).is_disabled()
     assert page.evaluate(MARKED) == "kept"
     for body in posted:
         assert "search" in body
@@ -276,7 +276,7 @@ def test_mode_switch_refreshes_in_place(page, component_origin):
         "mode": "testing",
         "sort": "submitted",
     }
-    assert page.get_by_role("button", name="Download CSV").is_disabled()
+    assert page.get_by_role("button", name="Download", exact=True).is_disabled()
     # The way back to the dashboard follows the mode chosen.
     dashboard = page.get_by_role("link", name="Response dashboard").get_attribute(
         "href"
@@ -289,4 +289,53 @@ def test_paused_download_is_disabled_with_its_reason(page, component_origin):
     """While the purge gate is closed the button is disabled and says why."""
     page.goto(component_origin + "/response-list-paused")
     visible(page.get_by_text("Downloads are paused while this campaign"))
-    assert page.get_by_role("button", name="Download CSV").is_disabled()
+    assert page.get_by_role("button", name="Download", exact=True).is_disabled()
+
+
+def test_format_choice_is_kept_in_place_and_posted(page, component_origin):
+    """The format (#850) is kept in place, posted, and never moves the button.
+
+    It is a visible choice of the export form, which an in-place refresh
+    keeps (only hidden fields are synced), and the button's label names no
+    format, so choosing one changes nothing else on the page.
+    """
+    errors = watch(page)
+    page.goto(component_origin + DATA_QUALITY)
+    choice = page.get_by_label("Format")
+    assert choice.input_value() == "csv"
+    assert choice.locator("option").all_inner_texts() == [
+        "CSV",
+        "XLSX",
+        "PDF",
+    ]
+    button = page.get_by_role("button", name="Download", exact=True)
+    before = button.bounding_box()
+    page.evaluate(MARK)
+    choice.select_option("pdf")
+    # Choosing a format changes nothing else on the page (#736).
+    assert button.bounding_box() == before
+    assert button.inner_text() == "Download"
+    # An in-place filter refresh keeps the chosen format.
+    answer_posts(page, component_origin, DATA_QUALITY, lambda _: ENVELOPE_ZERO)
+    page.get_by_label("Check", exact=True).select_option("envelope")
+    page.get_by_role("button", name="Apply").click()
+    visible(page.get_by_text("Showing 1–1 of 1").first)
+    assert page.evaluate(MARKED) == "kept"
+    assert choice.input_value() == "pdf"
+    downloads = []
+
+    def download(route):
+        """Record the download POST; 204 keeps the page (see above)."""
+        downloads.append(parse_qs(route.request.post_data))
+        route.fulfill(status=204)
+
+    page.route(
+        "**" + reverse("admin:response_list_export", args=["data-quality"]), download
+    )
+    button.click()
+    page.wait_for_timeout(500)
+    assert len(downloads) == 1
+    assert downloads[0]["format"] == ["pdf"] and downloads[0]["show"] == ["envelope"]
+    # The format travels in the POST body only, never the address.
+    assert "format" not in page.url
+    assert_clean(page, errors)

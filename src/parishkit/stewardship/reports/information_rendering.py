@@ -110,10 +110,14 @@ def xlsx_cell(sheet, row, column, value):
     $97.57 may be stored as 97.56999999999999. Within 15 significant digits
     that is still accurate to the cent when opened, displayed or summed.
     Unavailable money stays the word, never zero, and an amount beyond
-    those 15 digits stays its exact text rather than rounding. Text is
-    never a formula.
+    those 15 digits stays its exact text rather than rounding. A whole
+    number (an ``int``, never a ``bool``) is a number cell, such as a count.
+    None is a truly empty cell. Text is never a formula.
     """
     from openpyxl.styles.numbers import BUILTIN_FORMATS
+
+    if value is None or type(value) is int:
+        return sheet.cell(row, column, value)
 
     if isinstance(value, MoneyAmount):
         amount = excel_amount(value.canonical) if value.available else None
