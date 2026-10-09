@@ -2628,9 +2628,14 @@
       });
       list.replaceChildren(...(items.length ? [heading, listing] : []));
       button.disabled = !ready.length || !email.value;
-      button.textContent = ready.length > 1
+      // Rewrite the label only when it changes. Pressing the button blurs the
+      // send time, whose change event runs this update between mousedown and
+      // mouseup; replacing the text node under the pointer then makes WebKit
+      // drop the click, so an unchanged label must leave the node alone.
+      const label = ready.length > 1
         ? `Add these ${ready.length.toLocaleString("en-US")} reminders`
         : ready.length ? "Add this reminder" : "Add these reminders";
+      if (button.textContent !== label) button.textContent = label;
     };
     button.addEventListener("click", () => {
       const sendTime = canonicalTime(parseTime(control("time").value).value);
