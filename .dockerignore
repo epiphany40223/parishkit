@@ -61,6 +61,7 @@
 !src/parishkit/stewardship/schema/migrations/0034_setup_without_campaign.sql
 !src/parishkit/stewardship/schema/migrations/0035_workgroup_recovery_skip.sql
 !src/parishkit/stewardship/schema/migrations/0036_go_live_log_events.sql
+!src/parishkit/stewardship/schema/migrations/0037_family_test_names.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

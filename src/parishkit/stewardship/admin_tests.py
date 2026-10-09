@@ -335,7 +335,9 @@ class FamiliesPreview(ReadModel):
     rehearsal epoch); ``held`` whether a restore review or campaign work
     refuses sending for now. ``available``
     is how many more tests may be in progress. ``preview.token`` is valid
-    for the page's preview lifetime.
+    for the page's preview lifetime. ``export`` is None unless ``--names``
+    asked for the names: then it is the ``export status`` document of the
+    export that holds them, for ``export fetch`` (#817).
     """
 
     campaign_id: UUID
@@ -348,9 +350,10 @@ class FamiliesPreview(ReadModel):
     credentials_ready: bool
     testing_recipient_set: bool
     preview: dict
+    export: dict | None = None
 
 
-def families_preview_model(preview, token, revision_id):
+def families_preview_model(preview, token, revision_id, export=None):
     """The command's projection of the page's ``FamilyTestPreview``."""
     return FamiliesPreview(
         campaign_id=preview.campaign.pk,
@@ -370,6 +373,7 @@ def families_preview_model(preview, token, revision_id):
         credentials_ready=preview.epoch_id is not None,
         testing_recipient_set=bool(preview.testing_recipient),
         preview={"token": token},
+        export=export,
     )
 
 
@@ -419,6 +423,96 @@ def preview_families(caller, service, revision_id, duids, *, request_key):
         raise error
     _recheck(caller, service.store, actor, Capability.CONFIGURE)
     return model
+
+
+def preview_families_with_names(
+    caller, service, revision_id, duids, *, request_key, zone, context
+):
+    """``test families-preview --names``: the review, and its names as a file.
+
+    The page shows each Family's name beside its DUID; the command line
+    never prints one (#817). This runs the page's own ``prepare`` and, in
+    the same transaction, captures the names it read
+    (``snapshot_family_names``) into a ``family_test_names`` export keyed by
+    the preview's request key, so the names reach only the file the worker
+    renders and ``export fetch`` downloads. The document is the preview's,
+    with ``export`` the export's ``export status`` document.
+
+    Unlike the plain review this changes state, so it admits as a form post
+    does (recording activity, so a full-scope session) and runs in the
+    export commands' scope: the work order first (``prepare`` joins it, and
+    the export lock is then implied), then the command session's row, with
+    the Administrator rechecked before and after. It records the export
+    service's ``export_requested`` and, only for a new export,
+    ``admin_cmd_export_family_test_names``. The same key again with the same
+    revision, DUIDs and time zone returns the same export (``export``
+    unchanged, no new event); the same key for another selection is
+    ``invalid``, as the export forms' 409.
+    """
+    from django.core import signing
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from .accounts.campaign_family_test import SALT, parse_family_duids, prepare
+    from .accounts.policy import Capability
+    from .admin_exports import (
+        _change,
+        _command_event,
+        _command_scope,
+        _status_document,
+    )
+    from .audit.schemas import Action
+    from .reports.export_models import ExportRequest
+    from .reports.family_test_names import create_family_test_names_export
+
+    parsed = parse_family_duids(" ".join(str(duid) for duid in duids))
+    if not parsed:
+        raise ValueError("Name at least one Family DUID.")
+    actor = _admit(caller, service.store)
+    context["request_id"] = str(request_key)
+
+    def step(written):
+        """The page's preview and the names' export, in one transaction."""
+        with _command_scope(caller, service, actor):
+            campaign_id = _current_campaign(service)
+            try:
+                preview = prepare(
+                    caller,
+                    service,
+                    campaign_id,
+                    revision_id,
+                    parsed,
+                    request_key=request_key,
+                )
+            except ObjectDoesNotExist:
+                raise NotAvailable("No such email revision.") from None
+            except LookupError as error:
+                # Not used by a current schedule: the page's refusal.
+                raise PermissionError(str(error)) from None
+            repeat = ExportRequest.objects.filter(
+                requester_id=actor.identity, request_key=request_key
+            ).exists()
+            job = create_family_test_names_export(
+                service.store,
+                actor.identity,
+                campaign_id=campaign_id,
+                revision_id=revision_id,
+                families=[(choice.duid, choice.name) for choice in preview.families],
+                browser_timezone=zone,
+                request_key=request_key,
+            )
+            if not repeat:
+                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_FAMILY_TEST_NAMES)
+                written.append(True)
+            document = _status_document(service, actor, job.pk)
+        token = signing.dumps(preview.binding(), salt=SALT)
+        return families_preview_model(preview, token, revision_id, export=document)
+
+    try:
+        return _change(caller, service, actor, step, context=context, conflicts=False)
+    except NotAvailable:
+        # As the plain review: the session is checked before the refusal.
+        _recheck(caller, service.store, actor, Capability.CONFIGURE)
+        raise
 
 
 @dataclass(frozen=True)

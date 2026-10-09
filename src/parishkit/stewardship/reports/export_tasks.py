@@ -233,6 +233,10 @@ def load_document(request, *, general=None):
         from .financial_exports import export_document
 
         return export_document(request)
+    if request.report == "family_test_names":
+        from .family_test_names import names_document
+
+        return names_document(request)
     facts = CampaignDailyFactSet.objects.get(
         pk=request.fact_set_id, campaign_id=request.campaign_id, state="ready"
     )
@@ -309,7 +313,12 @@ def _execute(execution, *, store, root, general=None):
                 from .directory_rendering import render_directory
 
                 render_directory(document, stream, format=request.format)
-            elif request.report in {"additional_information", "ministry", "financial"}:
+            elif request.report in {
+                "additional_information",
+                "ministry",
+                "financial",
+                "family_test_names",
+            }:
                 from .information_rendering import render_information
 
                 render_information(document, stream, format=request.format)

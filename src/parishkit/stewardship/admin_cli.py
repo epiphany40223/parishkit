@@ -1033,11 +1033,29 @@ def sample_test(args, preamble, runtime, context):
 
 
 def families_preview(args, preamble, runtime, context):
-    """Review a chosen-Family test, as its page does (PR 6c)."""
+    """Review a chosen-Family test, as its page does (PR 6c).
+
+    With ``--names`` (and its ``--timezone``) it also requests the export of
+    the names the page shows beside the DUIDs (#817). That changes state, so
+    without ``--request-key`` the new key is written to standard error
+    first, so a run that crashes can be repeated with it.
+    """
     from uuid import uuid4
 
-    from .admin_tests import preview_families
+    from .admin_tests import preview_families, preview_families_with_names
 
+    if (args.timezone is not None) != args.names:
+        raise UsageError("--names and --timezone go together.")
+    if args.names:
+        return preview_families_with_names(
+            context["caller"],
+            runtime,
+            args.revision_id,
+            args.family,
+            request_key=_request_key(args, context),
+            zone=args.timezone,
+            context=context,
+        )
     return preview_families(
         context["caller"],
         runtime,
@@ -1713,7 +1731,8 @@ def _duid(value):
 
 
 def _families_preview_options(parser):
-    """Options of ``test families-preview``: the email, the Families, the key."""
+    """Options of ``test families-preview``: the email, the Families, the key
+    and, for the names export (#817), ``--names`` with its time zone."""
     parser.add_argument("revision_id", type=_uuid, metavar="REVISION_ID")
     parser.add_argument(
         "--family",
@@ -1728,6 +1747,17 @@ def _families_preview_options(parser):
         type=_uuid4,
         help="a version 4 UUID the token binds, so a send is safe to repeat "
         "(default: a new one)",
+    )
+    parser.add_argument(
+        "--names",
+        action="store_true",
+        help="also request a CSV export of the Families' names, which the "
+        "page shows, for export fetch (needs --timezone)",
+    )
+    parser.add_argument(
+        "--timezone",
+        help="with --names: the time zone of the file's times, for example "
+        "America/New_York",
     )
 
 
@@ -2570,7 +2600,12 @@ def _test_specs():
             FamiliesPreview.field_names(),
             6,
             options=(_families_preview_options,),
-            audit_event=None,
+            # The review itself changes nothing; --names requests an export
+            # and records this event (#817). The catalog has no per-option
+            # state, so changes_state stays False for the plain review and
+            # the named audit event marks the --names exception (see the
+            # spec's "Discovering commands").
+            audit_event="admin_cmd_export_family_test_names",
         ),
         CommandSpec(
             "test families",
