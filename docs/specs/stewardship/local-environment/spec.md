@@ -778,11 +778,31 @@ offline `migration` identity, a `DO` block that raises unless:
   baselines other than those a review refresh replaced (one per baseline
   event); and live Family engagement rows (one per Family with any event,
   since each signs in). Family session rows are not pinned, because they are
-  deleted an hour after their last activity by design, and neither are the
-  outbox and occurrence counts, which depend on eligibility the real code
-  decides at each instant
-  ([#731](https://github.com/epiphany40223/parishkit/issues/731) derives them
-  from the database);
+  deleted an hour after their last activity by design;
+- each Production Initial and Reminder of the campaign that fell due by the
+  seeded now mailed exactly the right Families
+  ([#731](https://github.com/epiphany40223/parishkit/issues/731)). The
+  timeline states no outbox or occurrence count, because who is mailed
+  depends on eligibility the real code decides at each instant; the check
+  derives the expected Families from the rows instead, as the planner's rule
+  (active, Portal-eligible and email-eligible from before the instant, with no
+  live submission created before it). The expected set is rebuilt from the
+  rows as they are at check time, so it matches the planner only while a
+  Family's eligibility does not change after the due instant, which holds
+  for the seed's synthetic parish. A known false-failure window remains: a
+  Family that submits after the due instant but before its email is sent is
+  skipped at send time and still expected, so the check raises; under the
+  seed's fake clock dispatch follows the due instant at once, so this is not
+  expected to occur, and the full seed run would show it. Each such Family has
+  exactly one
+  occurrence of that revision in the campaign's current Production cycle with
+  an outbox message of the definition's kind that is not skipped, coalesced
+  or failed (a skipped or folded occurrence keeps its cancelled message, and a
+  failed one its resend in a later recovery generation), and it was
+  delivered; no other
+  Family has one (the early responder's Initial occurrence is skipped, and the
+  Family with no eligible email has none); and no Production Initial or
+  Reminder message lacks its occurrence;
 - no timestamp in the tables the seed writes through (sessions, baselines,
   submissions, receipts, outbox messages, occurrences, fulfillments, daily
   facts, Family engagement, task runs and audit events) is later than the
