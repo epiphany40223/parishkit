@@ -13,8 +13,6 @@ from parishkit.stewardship.audit.critical_events import ACKNOWLEDGE_LIMIT
 from parishkit.stewardship.audit.critical_events import WINDOW as CRITICAL_WINDOW
 from parishkit.stewardship.audit.critical_events import sign as critical_sign
 from parishkit.stewardship.audit.critical_events import summary as critical_summary
-from parishkit.stewardship.audit.schemas import ContextKind, Outcome
-from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.jobs.delivery_metadata import alert_counts
@@ -23,7 +21,6 @@ from parishkit.stewardship.observability import (
     Event,
     debug_logging_enabled,
     emit_failure,
-    failure_kind_of,
 )
 
 from . import admin_navigation, family_maintenance
@@ -342,13 +339,12 @@ def _read_open_counts(offered, actor, campaign):
 def _record_open_counts_failure(error):
     """Log that the menu's open counts could not be read (#585).
 
-    A process-log line plus a durable System logs entry, both WARNING and
-    both naming only the failure's closed kind. The entry reuses the
-    reviewed ``report_shaping_failed`` event (a display-only step failed),
-    because a new event or failure word would need a schema migration. The
-    durable write gets its own savepoint and is best effort: a database
-    that just failed the count may refuse it too, and the page must still
-    render.
+    A WARNING process-log line naming only the failure's closed kind, under
+    the reviewed ``report_shaping_failed`` event (a display-only step
+    failed), as the other report pages log a failed display step
+    (admin_report_reads). No durable System logs entry: the web login may
+    write only its reviewed operational entries (#389 L2), and a failed
+    count must never take the page down with it.
     """
     emit_failure(
         error,
@@ -356,19 +352,6 @@ def _record_open_counts_failure(error):
         level=logging.WARNING,
         name_class=True,
     )
-    try:
-        with transaction.atomic():
-            operational(
-                Event.REPORT_SHAPING_FAILED,
-                level="WARNING",
-                schema=ContextKind.FAILURE,
-                context={
-                    "failure_kind": failure_kind_of(error),
-                    "outcome": Outcome.FAILED,
-                },
-            )
-    except DatabaseError:
-        pass
 
 
 def _current_campaign(configuration):

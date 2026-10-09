@@ -1106,12 +1106,11 @@ def test_a_failing_menu_count_leaves_the_page_and_transaction_usable(
     """An error in the menu's counts never breaks an Admin page (#585).
 
     The counts statement is made to fail inside PostgreSQL. The Admin page
-    still renders, its menu shows the entries without numbers, a WARNING
-    System logs entry records the failure, and a transaction the counts ran
-    in stays usable afterwards, because the statement had its own savepoint.
+    still renders, its menu shows the entries without numbers, and a
+    transaction the counts ran in stays usable afterwards, because the
+    statement had its own savepoint.
     """
     from parishkit.stewardship.accounts import admin_context
-    from parishkit.stewardship.audit.models import OperationalLog
 
     harness = setup(response_service)
     admin_browser, _ = signed_in()
@@ -1135,9 +1134,3 @@ def test_a_failing_menu_count_leaves_the_page_and_transaction_usable(
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 assert cursor.fetchone() == (1,)
-    entries = OperationalLog.objects.filter(event="report_shaping_failed")
-    assert entries.count() == 2
-    assert {entry.level for entry in entries} == {"WARNING"}
-    assert {entry.context["failure_kind"] for entry in entries} == {
-        "database_unavailable"
-    }

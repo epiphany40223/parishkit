@@ -1039,7 +1039,7 @@ def test_a_failed_open_counts_query_leaves_the_menu_without_numbers(monkeypatch)
     from django.db import DatabaseError
 
     from parishkit.stewardship.accounts import admin_context
-    from parishkit.stewardship.observability import Event, FailureKind
+    from parishkit.stewardship.observability import Event
 
     class Cursor:
         """Fails the counts statement as the selection would."""
@@ -1074,22 +1074,14 @@ def test_a_failed_open_counts_query_leaves_the_menu_without_numbers(monkeypatch)
         "emit_failure",
         lambda error, **details: calls.append(("emit", details)),
     )
-    monkeypatch.setattr(
-        admin_context,
-        "operational",
-        lambda event, **details: calls.append(("operational", event, details)),
-    )
     campaign = _campaign("active")
     items = _menu("staff", campaign, "production")
     request = SimpleNamespace()
     actor = _principal("staff")
     assert admin_context._open_counts(request, actor, items, campaign) == {}
     assert admin_context._open_counts(request, actor, items, campaign) == {}
-    emit, durable = calls
-    # The count's savepoint, then the durable entry's own.
-    assert savepoints == [True, True]
+    (emit,) = calls
+    # Only the count's own savepoint: the failure is a process-log line.
+    assert savepoints == [True]
     assert emit[1]["event"] is Event.REPORT_SHAPING_FAILED
     assert emit[1]["level"] == logging.WARNING
-    assert durable[1] is Event.REPORT_SHAPING_FAILED
-    assert durable[2]["level"] == "WARNING"
-    assert durable[2]["context"]["failure_kind"] is FailureKind.DATABASE
