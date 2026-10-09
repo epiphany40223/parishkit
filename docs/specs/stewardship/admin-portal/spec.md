@@ -301,6 +301,42 @@ editor (Back), `pageshow` opens that editor again; a value restored into a
 read-only editor is put back to its saved value. The first-campaign step
 keeps its plain list of editors, since nothing has sent there.
 
+**Repeat a reminder**
+([#469](https://github.com/epiphany40223/parishkit/issues/469)) adds several
+reminders at once. A panel below the schedule rows takes how often (every day;
+every week on the chosen days; or every month on a day of the month or on the
+first, second, third, fourth or last chosen weekday), the first and last dates
+(the campaign's dates to start with), one send time (a [time
+entry](#time-entry) field) and the reminder email to send. Only the fields of
+the chosen repeat show. As the Admin types, the panel lists every date the rule
+gives, with its weekday, and says which it will not add and why: outside the
+campaign dates, not after the initial invitation, at the same date and time as
+another invitation or reminder in the form, over 30 reminders from one rule, or
+over the form's 100 schedules (saved schedules marked Delete do not count). A
+short summary above **Add these reminders**, the panel's only live region, says
+how many dates will be added, or what is still missing: "Enter a send time to
+check these dates" until the time reads, since the timed checks cannot run
+without it, and "Choose the email to send" without an email. Two lines are
+reserved for it (a phone wraps the longer messages) and the date list sits
+below the button, so neither moves the button. A month without the chosen day
+(the 31st in September) is skipped and listed as skipped, not moved. Every day
+comes with a note that each reminder goes to every Family that has not
+responded and that sending spreads out or waits near the mailbox's daily limit.
+A rule spans at most a year. Dates are campaign-local calendar days and the
+time is the campaign's wall-clock time, so a 9:00 AM reminder stays at 9:00 AM
+across a daylight-saving change. **Add these reminders** appends one ordinary
+reminder row per date to the form, in place, and moves focus to the first new
+row; each can still be changed or removed before saving. The rule itself is not
+saved: the rows are ordinary reminders, each its own schedule, previewed,
+confirmed and delivered exactly like reminders added one at a time (see [Family
+invitations and
+reminders](../background-processing/spec.md#family-invitations-and-reminders)),
+and the server checks them as it checks any row. The panel's controls have no
+form names, so nothing of the rule is posted. The page script's expansion runs
+the shared case table `tests/stewardship/fixtures/recurrence_cases.json`.
+Remembering a series for later "this and following" edits, and a campaign
+calendar view, are later slices of #469.
+
 The staged ParishSoft load is a complete load of Families, Members, Ministries
 and the fund catalog, with no giving window, as any load is before a campaign
 exists; the campaign's giving arrives with the refresh that

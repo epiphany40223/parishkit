@@ -10,4 +10,5 @@ one submission. The button starts hidden so a page whose script failed to
 load never offers a button that does nothing.{% endcomment %}
 <template data-schedule-template>{% include 'stewardship/schedule-row.html' with form=schedules.empty_form number=0 %}</template>
 <p class="schedule-add" data-schedule-add-row hidden>{% button type="button" variant="secondary" data-schedule-add %}{% translate "Add another schedule" %}{% endbutton %}</p>
+{% include 'stewardship/schedule-repeat.html' %}
 <p class="visually-hidden" role="status" data-schedule-status></p>
