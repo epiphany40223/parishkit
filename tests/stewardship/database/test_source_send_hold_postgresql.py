@@ -386,7 +386,8 @@ def shadow_work(mode="production", paused=False):
         cursor.execute(
             "CREATE TEMP TABLE stewardship_outbox_message "
             "(id uuid PRIMARY KEY, purpose text, state text, pause_hold_id uuid, "
-            "semantic_key uuid)"
+            "semantic_key uuid, not_before timestamptz DEFAULT statement_timestamp(), "
+            "task_id uuid)"
         )
         # Each message's occurrence, for whether it is due yet (BG-12).
         cursor.execute(
@@ -395,7 +396,8 @@ def shadow_work(mode="production", paused=False):
         )
         cursor.execute(
             "CREATE TEMP TABLE stewardship_task_run "
-            "(id uuid PRIMARY KEY, task_type text, state text)"
+            "(id uuid PRIMARY KEY, task_type text, state text, "
+            "not_before timestamptz DEFAULT statement_timestamp())"
         )
     try:
         yield
@@ -408,11 +410,14 @@ def shadow_work(mode="production", paused=False):
             cursor.execute("DROP TABLE pg_temp.stewardship_campaign")
 
 
-def add(table, rows):
+def add(table, rows, retry_in=timedelta(0), deferred=None):
     """Insert ``rows`` of (second column, state[, paused[, due]]) into a shadow table.
 
     A message's occurrence fell due a minute ago, or with ``due`` False
-    falls due in an hour (a reminder prepared ahead, BG-12).
+    falls due in an hour (a reminder prepared ahead, BG-12). Every row's
+    retry time (``not_before``) is ``retry_in`` from now. Each message gets
+    its delivery Task, waiting to retry with it; with ``deferred`` a sending
+    limit put that Task off for that long while the message stays as it is.
     """
     with connection.cursor() as cursor:
         for row in rows:
@@ -429,17 +434,32 @@ def add(table, rows):
                         else timedelta(hours=1),
                     ],
                 )
+                task = uuid4()
+                held = deferred is not None or state == "retry_wait"
+                cursor.execute(
+                    "INSERT INTO pg_temp.stewardship_task_run "
+                    "VALUES (%s,'outbox_delivery',%s,statement_timestamp()+%s)",
+                    [task, "retry_wait" if held else "queued", deferred or retry_in],
+                )
                 cursor.execute(
                     "INSERT INTO pg_temp.stewardship_outbox_message "
-                    "VALUES (gen_random_uuid(),%s,%s,%s,%s)",
-                    [purpose, state, uuid4() if paused else None, occurrence],
+                    "VALUES (gen_random_uuid(),%s,%s,%s,%s,"
+                    "statement_timestamp()+%s,%s)",
+                    [
+                        purpose,
+                        state,
+                        uuid4() if paused else None,
+                        occurrence,
+                        retry_in,
+                        task,
+                    ],
                 )
             else:
                 task_type, state = row
                 cursor.execute(
                     "INSERT INTO pg_temp.stewardship_task_run "
-                    "VALUES (gen_random_uuid(),%s,%s)",
-                    [task_type, state],
+                    "VALUES (gen_random_uuid(),%s,%s,statement_timestamp()+%s)",
+                    [task_type, state, retry_in],
                 )
 
 
@@ -485,6 +505,68 @@ def test_messages_not_yet_due_do_not_hold_deltas():
         assert send_hold.family_send_active()
 
 
+def test_long_retry_waits_do_not_hold_deltas():
+    """Throttled mail waiting hours to retry is not a send in progress (#868).
+
+    Ten or more Families the provider throttled wait 15 minutes to 12 hours
+    between attempts; they count again only once their retry is near.
+    """
+    with transaction.atomic(), shadow_work():
+        add("message", [("reminder", "retry_wait", False)] * 20, timedelta(hours=4))
+        add("task", [(PREPARE, "retry_wait")] * 20, timedelta(hours=1))
+        assert not send_hold.family_send_active()
+        # Pending and submitting work counts wherever its retry time is.
+        add("message", [("reminder", "submitting", False)] * 9, timedelta(hours=4))
+        assert not send_hold.family_send_active()
+        add("message", [("reminder", "retry_wait", False)], send_hold.RETRY_SOON)
+        assert send_hold.family_send_active()
+
+
+def test_a_send_stopped_by_a_sending_limit_does_not_hold_deltas():
+    """A bulk send at the daily cap leaves deltas running until it lifts (#868).
+
+    Over our own daily cap or the provider's mailbox-wide limit, the
+    delivery Task is put off and the message stays pending.
+    """
+    with transaction.atomic(), shadow_work():
+        add(
+            "message",
+            [("initial", "pending", False)] * 30,
+            deferred=timedelta(minutes=15),
+        )
+        assert not send_hold.family_send_active()
+        # A deferral about to end, like a short limit wait, is still sending.
+        add(
+            "message",
+            [("initial", "pending", False)] * 10,
+            deferred=timedelta(minutes=5),
+        )
+        assert send_hold.family_send_active()
+
+
+def test_throttled_stragglers_do_not_hold_quick_slots(tmp_path, monkeypatch):
+    """Twelve throttled Families waiting an hour leave quick slots unheld.
+
+    ``delta_held`` is the scheduler's decision for a quick slot (see the
+    first test here for how it creates or skips the slot). The shadow tables
+    replace the runtime configuration the data-age read needs, so that read
+    is taken first, against the real tables, and pinned.
+    """
+    credential, *_ = configured(tmp_path)
+    publish(credential)
+    with transaction.atomic():
+        now = database_now()
+        overdue = send_hold.current_overdue(now)
+    assert overdue[1] is not None
+    monkeypatch.setattr(send_hold, "current_overdue", lambda _now: overdue)
+    with transaction.atomic(), shadow_work():
+        add("message", [("initial", "retry_wait", False)] * 12, timedelta(hours=1))
+        assert not send_hold.delta_held(now)
+        # The same Families about to be retried are a send in progress.
+        add("message", [("initial", "retry_wait", False)] * 10, timedelta(minutes=1))
+        assert send_hold.delta_held(now)
+
+
 @pytest.mark.parametrize(
     "mode,paused,active",
     [
@@ -503,7 +585,9 @@ def test_paused_production_counts_messages_only(mode, paused, active):
         assert send_hold.family_send_active()
 
 
-@pytest.mark.parametrize("role", [ServiceRole.SCHEDULER, ServiceRole.WORKER])
+@pytest.mark.parametrize(
+    "role", [ServiceRole.SCHEDULER, ServiceRole.WORKER, ServiceRole.WEB]
+)
 def test_restricted_logins_can_read_the_send_check(tmp_path, monkeypatch, role):
     """The scheduler decides skips and the collector's worker samples health."""
     credential, *_ = configured(tmp_path)

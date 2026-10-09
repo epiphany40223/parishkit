@@ -13,13 +13,20 @@ manual refresh still run.
 A send is in progress while at least ``ACTIVE_MINIMUM`` pieces of its work
 remain in durable state: Family messages pending (not paused), waiting to
 retry or being submitted, whose occurrence is due, plus Family preparation
-tasks queued, running or waiting to retry. A reminder prepared ahead of its
+tasks queued, running or waiting to retry. Something waiting to retry counts
+only once its retry is within ``RETRY_SOON`` (#868): a message the mail
+provider throttled waits up to 12 hours between attempts, and ten of those
+must not hold quick refreshes all day. Likewise a pending message whose
+delivery Task a sending limit (the mailbox's or our own daily cap) put off
+for longer: the message stays pending, but its Task waits to retry, so a
+bulk send stopped at the daily cap does not hold refreshes until the cap
+lifts. A reminder prepared ahead of its
 due time (BG-12, #447) does not count until it is due, so it holds deltas
 while it is being prepared, not for the rest of its lead window. A delta
 promoted during preparation marks the population dirty, and preparation
 waits for the rebuild; one promoted after preparation only makes the send
-re-render. The minimum keeps a few stragglers (say, messages in a long
-retry wait) from holding refreshes back. Both reads are bounded by that
+re-render. The minimum keeps a few stragglers from holding refreshes
+back. Both reads are bounded by that
 minimum, use the existing state indexes and take no lock. While Production
 delivery is paused, preparation tasks wait for the pause to end, so only
 messages count: a paused send keeps its deltas, as source refresh is meant
@@ -60,7 +67,8 @@ schema) is never that evidence, and a held quick slot writes none.
 
 from datetime import timedelta
 
-from django.db.models import DateTimeField, Exists, Func, OuterRef
+from django.db.models import DateTimeField, Exists, Func, OuterRef, Q
+from django.db.models.functions import Now
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import OperationalLog
@@ -79,6 +87,13 @@ ACTIVE_MESSAGE_STATES = ("pending", "retry_wait", "submitting")
 # every source import.
 PREPARATION_TASK_TYPE = "family_mail_prepare"
 ACTIVE_PREPARATION_STATES = ("queued", "running", "retry_wait")
+# A message or preparation waiting to retry counts as send work only when its
+# retry is due within this long (#868). It is the cap of the ordinary retry
+# schedule (jobs.family_mail_dispatch.retry_delay, pinned by a test), so a
+# send working through ordinary retries still counts in full; waits for
+# recipient throttling (15 minutes to 12 hours) or a mailbox limit are
+# longer, and nothing competes for the work-order lock during them.
+RETRY_SOON = timedelta(minutes=10)
 # Fewer remaining messages and preparations than this is a send's tail, not
 # a bulk send: deltas run again.
 ACTIVE_MINIMUM = 10
@@ -102,6 +117,37 @@ SCHEDULED_FULL_CAUSES = ("nightly", "catch_up")
 SCHEDULED_CAUSES = (*SCHEDULED_FULL_CAUSES, "delta")
 
 
+def _waits_long(path=""):
+    """A filter: the row at ``path`` waits more than ``RETRY_SOON`` to retry.
+
+    Uses the database clock, as the retry times do.
+    """
+    return Q(
+        **{f"{path}state": "retry_wait", f"{path}not_before__gt": Now() + RETRY_SOON}
+    )
+
+
+def working(rows):
+    """Restrict active Task ``rows`` to work being done now or soon.
+
+    Drops rows waiting longer than ``RETRY_SOON`` to retry; every other
+    active state counts.
+    """
+    return rows.exclude(_waits_long())
+
+
+def working_messages(rows):
+    """Restrict active message ``rows`` to mail being sent now or soon.
+
+    Drops a message waiting longer than ``RETRY_SOON`` to retry, and one
+    whose delivery Task does: a sending limit (``_defer_held`` in
+    jobs.family_mail_delivery_tasks, or the bulk sender's hold) puts off the
+    Task and leaves the message pending. Message metadata, including
+    ``task_id``, and the Task table are readable by every role that asks.
+    """
+    return rows.exclude(_waits_long()).exclude(_waits_long("task__"))
+
+
 def family_send_active(minimum=ACTIVE_MINIMUM):
     """Whether at least ``minimum`` Family messages or preparations remain.
 
@@ -109,7 +155,9 @@ def family_send_active(minimum=ACTIVE_MINIMUM):
     work-order lock, so refreshes need not wait for it. For the same reason
     preparation tasks do not count while Production delivery is paused:
     they stay queued, held, until the pause ends. Nor does a message whose
-    occurrence is not yet due on the campaign clock (prepared ahead, BG-12).
+    occurrence is not yet due on the campaign clock (prepared ahead, BG-12),
+    nor anything waiting longer than ``RETRY_SOON`` to retry, itself or
+    through its delivery Task (``working``, ``working_messages``).
     """
     due = ScheduleOccurrence.objects.filter(
         pk=OuterRef("semantic_key"),
@@ -117,11 +165,13 @@ def family_send_active(minimum=ACTIVE_MINIMUM):
             function="stewardship_campaign_now_v1", output_field=DateTimeField()
         ),
     )
-    messages = OutboxMessage.objects.filter(
-        Exists(due),
-        purpose__in=FAMILY_PURPOSES,
-        state__in=ACTIVE_MESSAGE_STATES,
-        pause_hold__isnull=True,
+    messages = working_messages(
+        OutboxMessage.objects.filter(
+            Exists(due),
+            purpose__in=FAMILY_PURPOSES,
+            state__in=ACTIVE_MESSAGE_STATES,
+            pause_hold__isnull=True,
+        )
     )[:minimum].count()
     if messages >= minimum:
         return True
@@ -129,8 +179,10 @@ def family_send_active(minimum=ACTIVE_MINIMUM):
         mode="production", current_campaign__delivery_paused=True
     ).exists():
         return False
-    preparations = TaskRun.objects.filter(
-        task_type=PREPARATION_TASK_TYPE, state__in=ACTIVE_PREPARATION_STATES
+    preparations = working(
+        TaskRun.objects.filter(
+            task_type=PREPARATION_TASK_TYPE, state__in=ACTIVE_PREPARATION_STATES
+        )
     )[: minimum - messages].count()
     return messages + preparations >= minimum
 
