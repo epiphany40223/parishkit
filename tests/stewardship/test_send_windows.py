@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from parishkit.stewardship.campaigns import family_schedule_planning
-from parishkit.stewardship.source import send_windows
+from parishkit.stewardship.source import send_hold, send_windows
 from parishkit.stewardship.source.send_hold import SEND_ALLOWANCE
 from parishkit.stewardship.source.send_windows import (
     Email,
@@ -21,6 +21,18 @@ ESTIMATES = {"initial": HOUR, "reminder": timedelta(minutes=75)}
 def test_the_lead_window_is_the_bulk_sends_prepare_ahead():
     """The reminder's preparing window is the bulk send's lead window."""
     assert send_windows.PREPARE_AHEAD == family_schedule_planning.PREPARE_AHEAD
+
+
+def test_a_near_retry_is_the_ordinary_retry_schedules_cap():
+    """Ordinary retries count as send work; throttle and limit waits do not (#868)."""
+    from parishkit.stewardship.jobs import family_mail_dispatch as dispatch
+    from parishkit.stewardship.jobs import family_mail_tasks
+
+    soon = send_hold.RETRY_SOON.total_seconds()
+    assert dispatch.retry_delay(100) == soon
+    assert soon >= family_mail_tasks.RECOVERY_RETRY_CAP_SECONDS
+    assert min(dispatch.RECIPIENT_RETRY_SECONDS) > soon
+    assert min(dispatch.LIMIT_RETRY_SECONDS.values()) > soon
 
 
 def test_the_estimate_is_rounded_up_and_bounded():

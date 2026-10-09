@@ -33,6 +33,8 @@ from .send_hold import (
     ACTIVE_PREPARATION_STATES,
     PREPARATION_TASK_TYPE,
     SEND_ALLOWANCE,
+    working,
+    working_messages,
 )
 
 QUARTER_HOUR = timedelta(minutes=15)
@@ -203,7 +205,8 @@ def _active(definition_id, due_at, production_cycle=None, minimum=None):
     The bulk-send hold's states (``send_hold.family_send_active``), counted
     for this email alone: its Family messages pending (not paused), waiting
     to retry or being submitted, plus its preparation tasks queued, running
-    or waiting to retry.
+    or waiting to retry; a retry, or a delivery put off by a sending limit,
+    counts only once it is near (``working``, ``working_messages``).
     """
     from parishkit.stewardship.jobs.family_mail_models import FamilyMailPreparation
     from parishkit.stewardship.jobs.models import TaskRun
@@ -211,22 +214,26 @@ def _active(definition_id, due_at, production_cycle=None, minimum=None):
 
     minimum = ACTIVE_MINIMUM if minimum is None else minimum
     occurrences = _occurrences(definition_id, due_at, production_cycle)
-    messages = OutboxMessage.objects.filter(
-        semantic_key__in=occurrences,
-        mode="production",
-        purpose__in=KINDS,
-        state__in=ACTIVE_MESSAGE_STATES,
-        pause_hold__isnull=True,
+    messages = working_messages(
+        OutboxMessage.objects.filter(
+            semantic_key__in=occurrences,
+            mode="production",
+            purpose__in=KINDS,
+            state__in=ACTIVE_MESSAGE_STATES,
+            pause_hold__isnull=True,
+        )
     )[:minimum].count()
     if messages >= minimum:
         return True
     preparing = FamilyMailPreparation.objects.filter(
         task_id=OuterRef("pk"), occurrence_id__in=occurrences
     )
-    preparations = TaskRun.objects.filter(
-        Exists(preparing),
-        task_type=PREPARATION_TASK_TYPE,
-        state__in=ACTIVE_PREPARATION_STATES,
+    preparations = working(
+        TaskRun.objects.filter(
+            Exists(preparing),
+            task_type=PREPARATION_TASK_TYPE,
+            state__in=ACTIVE_PREPARATION_STATES,
+        )
     )[: minimum - messages].count()
     return messages + preparations >= minimum
 

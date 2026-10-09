@@ -847,7 +847,8 @@ includes its start and excludes its end:
   messages whose semantic key is this occurrence (pending and not paused,
   waiting to retry or being submitted) plus this occurrence's preparation
   tasks (queued, running or waiting to retry), with the same minimum of 10
-  pieces below which a send's tail no longer counts.
+  pieces below which a send's tail no longer counts, and the same rule that
+  a retry or a sending limit's deferral counts only once it is near.
 - **Estimated send length:** for the campaign's most recent completed
   Production occurrence of the same kind (initial invitation or reminder),
   else of the other kind, the time from its due time until its last Family
@@ -1138,6 +1139,16 @@ never run. A send is in progress
 while at least 10 pieces of its work remain, counting messages pending (not
 paused), waiting to retry or being submitted and preparation tasks queued,
 running or waiting to retry, read from durable state with no lock taken.
+Something waiting to retry counts only once its retry is due within 10
+minutes, the cap of the ordinary retry schedule (#868). A message the mail
+provider throttled waits 15 minutes to 12 hours between attempts, and one
+held by a mailbox limit 15 minutes or an hour. A pending message counts the
+same way when a sending limit (the provider's mailbox-wide limit, or the
+deployment's own daily cap) put off its delivery task: the message stays
+pending, but the task waits 15 minutes or more to try again. Nothing
+competes for the lock during those waits, so ten throttled Families do not
+hold quick refreshes for the rest of the day, nor does a bulk send stopped
+at the daily cap until the cap lifts.
 While Production delivery is paused only messages count, so a paused send
 keeps its deltas.
 The nightly full refresh, a legacy hourly or quarter-hour full refresh (see
@@ -2281,8 +2292,9 @@ So while a send is in progress, its waiting delivery tasks are judged by the
 send's own progress instead. "In progress" is the deployment-wide test the
 [delta wait](#deltas-wait-for-a-bulk-family-send) uses, not a per-send count:
 at least 10 pieces of Family send work remain across all sends, counting due
-messages pending, waiting to retry or being submitted and Family preparation
-tasks queued, running or waiting to retry. Each send whose tasks are waiting
+messages pending, waiting to retry or being submitted and Family
+preparation tasks queued, running or waiting to retry, where a retry or a
+sending limit's deferral counts only once it is near. Each send whose tasks are waiting
 is then judged on its own, and is late only when either:
 
 - **it has stalled:** nothing of the send was prepared or settled (sent,

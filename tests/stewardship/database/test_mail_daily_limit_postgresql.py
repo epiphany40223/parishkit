@@ -29,9 +29,10 @@ from parishkit.stewardship.jobs.family_mail_dispatch import (
     sends_in_last_day,
 )
 from parishkit.stewardship.jobs.models import TaskRun, TaskRunEvent
-from parishkit.stewardship.jobs.outbox_models import OutboxEvent
+from parishkit.stewardship.jobs.outbox_models import OutboxEvent, OutboxMessage
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.storage import _status
+from parishkit.stewardship.source.send_hold import working_messages
 
 from .campaign_builders import campaign_clock
 from .test_background_grants_postgresql import task_login
@@ -399,6 +400,9 @@ def test_a_full_day_defers_after_the_claim_without_sending(
         <= timedelta(minutes=21)
     )
     assert TaskPhase(last_retry(task.pk).phase) is TaskPhase.RECONCILING
+    # Still pending, but not mail being sent soon: it does not hold source
+    # refreshes while the cap lasts (#868).
+    assert not working_messages(OutboxMessage.objects.filter(pk=message.pk)).exists()
 
 
 def test_limit_deferrals_never_exhaust_the_preparation_budget(
