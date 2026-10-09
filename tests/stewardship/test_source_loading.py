@@ -12,24 +12,30 @@ from parishkit.parishsoft_pagination import (
     SourceLoadBudgetExceeded,
 )
 from parishkit.parishsoft_source import SourceOrganizationMismatch
+from parishkit.stewardship.source import loading
 from parishkit.stewardship.source.canonical import (
     InvalidSourcePayload,
     SourceReferenceSkew,
 )
 from parishkit.stewardship.source.corpus import KINDS
 from parishkit.stewardship.source.loading import (
+    CONTACT_COVERAGE_KEY,
     DERIVED_COUNTS,
     DROP_OVERRIDE_VARIABLE,
     TREND_COLLECTIONS,
     CountCheck,
     DestructiveSourceChange,
+    check_member_contact_coverage,
     check_source_counts,
+    contact_missing_allowance,
     count_checks,
     derived_baseline,
     derived_checks,
     derived_counts,
     load_full_source,
     maximum_drop_percent,
+    member_contact_coverage,
+    recorded_contact_missing,
     refuse_drops,
 )
 from parishkit.stewardship.source.windows import RefreshWindow
@@ -517,3 +523,137 @@ def test_an_empty_load_is_refused_before_the_eligibility_baseline_is_read():
             maximum_drop_percent=25,
         )
     assert [item.measure for item in refused.value.checks] == list(TREND_COLLECTIONS)
+
+
+def test_contact_coverage_counts_searched_members_the_list_left_out():
+    """#387 M4: counts only; a contact record for an unsearched Member is ignored."""
+    members = dict.fromkeys((1, 2, 3), {})
+    contactinfos = dict.fromkeys((2, 3, 9), {})
+    assert member_contact_coverage(members, contactinfos) == {
+        "members": 3,
+        "contact_infos": 3,
+        "missing": 1,
+    }
+
+
+@pytest.mark.parametrize(
+    ("members", "allowance"), [(0, 10), (1, 10), (549, 10), (1000, 20), (6417, 128)]
+)
+def test_contact_missing_allowance_is_ten_or_two_percent(members, allowance):
+    """The larger of the fixed and proportional margins, in whole Members."""
+    assert contact_missing_allowance(members) == allowance
+
+
+def test_contact_coverage_refuses_only_a_rise_past_the_allowance():
+    """Up to the allowance above the baseline passes; one more is a shifted scan."""
+    coverage = {"members": 6417, "contact_infos": 6253 - 128, "missing": 164 + 128}
+    check_member_contact_coverage(coverage, previous_missing=164)
+    # Fewer left out than before is never a problem.
+    check_member_contact_coverage(coverage | {"missing": 0}, previous_missing=164)
+    with pytest.raises(ShiftedSourceScan, match="left out 293 Members"):
+        check_member_contact_coverage(coverage | {"missing": 293}, previous_missing=164)
+
+
+def test_contact_coverage_without_a_baseline_or_with_a_raised_limit_records_only():
+    """No baseline (first loads) or an operator-raised drop limit never refuses."""
+    coverage = {"members": 6417, "contact_infos": 0, "missing": 6417}
+    check_member_contact_coverage(coverage, previous_missing=None)
+    check_member_contact_coverage(coverage, previous_missing=0, maximum_drop_percent=26)
+    with pytest.raises(ShiftedSourceScan):
+        check_member_contact_coverage(
+            coverage, previous_missing=0, maximum_drop_percent=25
+        )
+
+
+@pytest.mark.parametrize(
+    "cursor",
+    [
+        None,
+        {},
+        {"load": None},
+        {"load": {}},
+        {"load": {CONTACT_COVERAGE_KEY: None}},
+        {"load": {CONTACT_COVERAGE_KEY: {}}},
+        {"load": {CONTACT_COVERAGE_KEY: {"missing": "3"}}},
+        {"load": {CONTACT_COVERAGE_KEY: {"missing": -1}}},
+        {"load": {CONTACT_COVERAGE_KEY: {"missing": True}}},
+    ],
+)
+def test_an_unrecorded_contact_baseline_is_none(cursor):
+    """Snapshots from before #387 M4, or malformed evidence, give no baseline."""
+    assert recorded_contact_missing(cursor) is None
+
+
+def test_a_recorded_contact_baseline_is_read():
+    """The count a full load recorded is the next full load's baseline."""
+    cursor = {"load": {CONTACT_COVERAGE_KEY: {"members": 9, "missing": 4}}}
+    assert recorded_contact_missing(cursor) == 4
+
+
+def with_contact_list(values, *rows):
+    """Replace the fixture's empty contact list pages with ``rows``.
+
+    The zero-origin probe reads page 0 and page 1; equal non-empty pages
+    prove a one-origin list, which then ends on an empty page 2.
+    """
+    probe = 6  # see provider_pages
+    contact_pages = [list(rows), list(rows), []] if rows else [[], []]
+    return values[:probe] + contact_pages + values[probe + 2 :]
+
+
+def test_a_member_the_contact_list_left_out_is_counted_missing(tmp_path):
+    """#387 M4, the realistic case: a search row with a null email still gives
+    the Member a contact row, so only the recorded coverage shows the contact
+    list left it out."""
+    values = provider_pages(member_change={"emailAddress": None})
+    client = client_factory(tmp_path, values)
+    result = load_full_source(client, window=RefreshWindow(None, ()), as_of=TODAY)
+    assert [row["owner_kind"] for row in result.corpus["contact"].values()] == [
+        "member"
+    ]
+    assert result.evidence[CONTACT_COVERAGE_KEY] == {
+        "members": 1,
+        "contact_infos": 0,
+        "missing": 1,
+    }
+
+
+def test_a_complete_contact_list_records_no_missing_member(tmp_path):
+    """A contact record for the searched Member leaves nobody out."""
+    values = provider_pages()
+    member_id = values[4][0]["memberDUID"]
+    values = with_contact_list(values, {"memberDUID": member_id, "emailAddress": None})
+    client = client_factory(tmp_path, values)
+    result = load_full_source(client, window=RefreshWindow(None, ()), as_of=TODAY)
+    assert result.evidence[CONTACT_COVERAGE_KEY] == {
+        "members": 1,
+        "contact_infos": 1,
+        "missing": 0,
+    }
+
+
+def test_a_contact_list_rise_past_the_baseline_is_refused_before_giving(
+    tmp_path, monkeypatch
+):
+    """The full load refuses as a shifted scan before normalizing or reading
+    giving; with no baseline the same load is recorded and returned."""
+    monkeypatch.setattr(loading, "CONTACT_MISSING_MARGIN", 0)
+    values = provider_pages(member_change={"emailAddress": None})
+    client = client_factory(tmp_path, values)
+    with pytest.raises(ShiftedSourceScan, match="left out 1 Members"):
+        load_full_source(
+            client,
+            window=RefreshWindow(None, ()),
+            as_of=TODAY,
+            previous_contact_missing=0,
+        )
+    # The Fund catalog, read after the shared loader, was never requested.
+    assert len(client.session.calls) == len(values) - 1
+    again = client_factory(tmp_path, values)
+    result = load_full_source(
+        again,
+        window=RefreshWindow(None, ()),
+        as_of=TODAY,
+        previous_contact_missing=None,
+    )
+    assert result.evidence[CONTACT_COVERAGE_KEY]["missing"] == 1

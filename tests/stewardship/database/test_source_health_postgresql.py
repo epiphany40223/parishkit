@@ -723,6 +723,42 @@ def test_destructive_refusal_logs_which_count_fell(tmp_path, caplog):
     assert OperationalLog.objects.filter(event="source_destructive_change").exists()
 
 
+def test_short_contact_list_refusal_logs_its_counts(tmp_path, caplog):
+    """#387 M4: a contact list refused as cut short logs its counts.
+
+    A legitimate large ParishSoft change refuses every full refresh the same
+    way, so the operator needs these counts in ordinary output to tell the
+    two apart (runbook: shifted_scan).
+    """
+    import json
+    import logging
+
+    from parishkit.stewardship.observability import SafeJsonFormatter
+    from parishkit.stewardship.source.loading import ShortContactList
+
+    credential, *_ = configured(tmp_path)
+    publish(credential)
+    error = ShortContactList("PRIVATE", coverage=(6417, 6100, 364, 164, 128))
+    with caplog.at_level(logging.INFO, logger="parishkit.stewardship"):
+        settle_failed_read(claim(command()), error)
+    lines = [
+        json.loads(SafeJsonFormatter().format(record))
+        for record in caplog.records
+        if record.msg is Event.SOURCE_PROVIDER_FAILED
+    ]
+    assert [line["extra"]["source_contact_coverage"] for line in lines] == [
+        {
+            "members": 6417,
+            "contact_infos": 6100,
+            "missing": 364,
+            "baseline_missing": 164,
+            "allowance": 128,
+        }
+    ]
+    assert lines[0]["level"] == "WARNING" and "PRIVATE" not in json.dumps(lines)
+    assert OperationalLog.objects.filter(event="source_provider_failed").exists()
+
+
 def test_stale_recovery_requires_a_promoted_full_refresh(tmp_path):
     """A quick update no longer recovers the data-age alarm (#510).
 
