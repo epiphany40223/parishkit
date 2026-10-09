@@ -73,19 +73,52 @@ def _outcome(request):
     return None
 
 
+# How many times an export's read guard may stop the worker at its deadline
+# before recovery gives up (#386, L3): a render that overran once may have
+# met a slow moment and is retried once; a second stop means it always
+# overruns, so it fails instead of hard-stopping the worker three more times.
+GUARD_STOPS_ALLOWED = 1
+# The longest retry delay, used after a guard stop so that one slow spell of
+# up to ten minutes passes before the single retry rather than failing it.
+MAX_RETRY_SECONDS = 600
+
+
+def guard_stops(run_id):
+    """How many read-guard deadline stops the durable log records for a task.
+
+    The guard writes that entry before it stops the process, waiting a few
+    seconds at most, so a stop whose entry did not land is not counted and
+    falls back to the ordinary attempt limit. The function scans the
+    operational log for the task's entries; it runs only when an export is
+    found abandoned (rare), so no index is added for it.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT public.stewardship_read_guard_kills_v1(%s)", [run_id])
+        return cursor.fetchone()[0]
+
+
 def recover_export(status):
-    """Retry a fresh artifact attempt or acknowledge an already committed outcome."""
+    """Retry a fresh artifact attempt or acknowledge an already committed outcome.
+
+    An abandoned export is retried up to five attempts, unless its read
+    guard has already stopped the worker more than GUARD_STOPS_ALLOWED times.
+    After a guard stop the retry waits the longest delay (MAX_RETRY_SECONDS)
+    rather than the attempt's backoff.
+    """
     request = bound_request(status)
     if status.state != "abandoned":
         return None
     outcome = _outcome(request)
     if outcome:
         return RecoveryPlan("recovery_" + outcome)
-    if status.attempt >= 5:
+    stops = guard_stops(status.run_id)
+    if status.attempt >= 5 or stops > GUARD_STOPS_ALLOWED:
         return RecoveryPlan("recovery_fail")
     admit_campaign(request.campaign_id, mutating=True)
+    if stops:
+        return RecoveryPlan("recovery_retry", MAX_RETRY_SECONDS)
     return RecoveryPlan(
-        "recovery_retry", min(30 * 2 ** max(status.attempt - 1, 0), 600)
+        "recovery_retry", min(30 * 2 ** max(status.attempt - 1, 0), MAX_RETRY_SECONDS)
     )
 
 
