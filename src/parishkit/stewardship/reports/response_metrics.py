@@ -35,9 +35,12 @@ Mode is the system's: ``production`` (the default) reads live responses and
 Production mail; ``testing`` reads one rehearsal epoch: its responses and
 engagement, its messages, and the occurrences and skips that fell within the
 epoch's lifetime (occurrences carry no epoch). The statements read only
-tables and columns the restricted web login reads (``runtime_grants``) and
-take no lock: callers run them in ``read_transaction`` after admitting the
-campaign report as the other reports do.
+tables and columns both the restricted web login (the Response dashboard,
+lists and timeline) and the background worker (a Production daily digest's
+funnel, ``digest_funnel``) read (``runtime_grants``; tested for both logins
+in ``test_background_grants_postgresql``), and take no lock: callers run them
+in a read-only transaction after admitting the campaign report as the other
+reports do.
 """
 
 from dataclasses import dataclass
