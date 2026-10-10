@@ -10,12 +10,13 @@
 // the line beside Save (the only live region, changed only when its words
 // change, which also says the problems of the schedule as a whole), the
 // problems at each row, the summary and the seven-day list. Nothing it draws
-// sits above the rows, each row keeps room for a line of messages, and what
-// is under the pointer (else the control being edited) is kept where it
-// was on the screen, so a check never moves it under the pointer (#736;
-// pointedAt). Each row's controls are described by its messages and marked
-// invalid while it has problems. The words this script writes come from the
-// editor's data-*-text attributes, translated by the template.
+// sits above the rows, and each row keeps room for a line of messages.
+// Every change this script makes goes through steady, which scrolls by how
+// much the changed parts above the pointer (else the control being edited)
+// grew or shrank, so nothing moves under the pointer (#736). Each row's
+// controls are described by its messages and marked invalid while it has
+// problems. The words this script writes come from the editor's
+// data-*-text attributes, translated by the template.
 // Only the latest check's answer is shown. While a changed schedule has
 // problems, Save is unavailable; when a check fails, the earlier answer
 // stays, marked as not checked, and Save stays available (saving checks
@@ -120,6 +121,8 @@
       node.textContent = ` ${words("browserTimeText", {time: browserClock.format(new Date(node.dataset.browserTime))})}`;
     });
   };
+  // Drawn as the page loads, before anything is pointed at or focused, so
+  // not through steady (below).
   if (otherZone) {
     const note = root.querySelector("[data-browser-zone-note]");
     note.textContent = words("browserZoneText", {zone: browserZone});
@@ -154,7 +157,7 @@
   };
   const markRows = () => SCOPES.forEach((scope) => rowList(scope).forEach(markRow));
 
-  // The last pointer position on the screen, so a redraw can keep what is
+  // The last pointer position on the screen, so a change can keep what is
   // under the pointer in place (#736). A touch or pen lifts away when it
   // ends or is taken over by a pan (pointercancel), and a mouse that leaves
   // the window points at nothing.
@@ -167,60 +170,101 @@
   });
   document.addEventListener("pointercancel", () => { pointer = null; });
   document.documentElement.addEventListener("pointerleave", () => { pointer = null; });
+  // This script keeps the page steady itself (steady, below). The browser's
+  // own scroll anchoring (Chromium, Firefox, not WebKit) would add its own
+  // adjustment on top, so it is turned off for this page.
+  [document.documentElement, document.body].forEach((node) => { node.style.overflowAnchor = "none"; });
 
-  // What a redraw should keep in place, one rule wherever the pointer is
-  // (#736): the element under the pointer, made stable. Inside something a
-  // redraw replaces or refills, that is its row (rows hold their messages)
-  // or its check part. Over a container that holds rows (the page, the
-  // form, the editor, a rows list), whose top never moves, it is the first
-  // stable block at or below the pointer: a row, or a block after the rows
-  // such as the skips, the switch, "Edit as text" or Save. Below every
-  // block, it is the last row's bottom edge. Anything else, inside or
-  // outside the form, is kept itself: a redraw does not replace it.
-  // Returns {element, edge} to measure, or null with no pointer.
-  const drawn = (element) => element.getClientRects().length > 0;
-  // A container's blocks in page order: its drawn children, with a child
-  // that holds rows (and is not one) opened up into its own blocks.
-  const blocks = (container) => [...container.children].filter(drawn).flatMap((child) =>
-    (!child.matches("[data-schedule-row]") && child.querySelector("[data-schedule-row]") ? blocks(child) : [child]));
-  const pointedAt = () => {
-    const pointed = pointer && document.elementFromPoint(pointer.x, pointer.y);
-    if (!pointed) return null;
-    const stable = pointed.closest("[data-schedule-row], [data-schedule-part]");
-    if (stable) return {element: stable, edge: "top"};
-    if (!pointed.querySelector("[data-schedule-row]")) return {element: pointed, edge: "top"};
-    const below = blocks(pointed).find((block) => block.getBoundingClientRect().bottom >= pointer.y);
-    if (below) return {element: below, edge: "top"};
-    const rows = pointed.querySelectorAll("[data-schedule-row]");
-    return {element: rows[rows.length - 1], edge: "bottom"};
+  // Whether ``node`` or what holds it stays put as the page scrolls.
+  const pinned = (node) => {
+    for (; node; node = node.parentElement) {
+      if (/^(sticky|fixed)$/.test(getComputedStyle(node).position)) return true;
+    }
+    return false;
   };
-
-  // Keep one thing where it is on the screen while ``change`` redraws or
-  // replaces things above it, scrolling by the amount it moved. Each row
-  // keeps room for one line of messages (ui-v1.css), so most messages move
-  // nothing; this covers longer ones and replaced rows. Every candidate is
-  // measured first, and the first still on the page afterwards is kept:
-  // ``anchor`` when given (the button just chosen), else what the pointer
-  // points at (pointedAt), else, with no pointer at all (keyboard only, or
-  // the pointer left the window), the focused control.
-  const keepInPlace = (change, anchor) => {
+  // The height on the screen whose content must not move: the pointer's y,
+  // else ``fallback``'s top, else the focused control's top; null with
+  // none of them, or with the pointer over something sticky or fixed (such
+  // as the Admin sidebar), which does not move with the page anyway. The
+  // pointer's x does not matter: what moves is the content at its height.
+  const referenceY = (fallback) => {
+    if (pointer) return pinned(document.elementFromPoint(pointer.x, pointer.y)) ? null : pointer.y;
     const focused = document.activeElement;
-    const candidates = [anchor && {element: anchor, edge: "top"}, pointedAt(),
-      focused && focused !== document.body ? {element: focused, edge: "top"} : null]
-      .filter(Boolean).map((candidate) => ({...candidate,
-        before: candidate.element.getBoundingClientRect()[candidate.edge]}));
+    const node = fallback || (focused !== document.body ? focused : null);
+    return node ? node.getBoundingClientRect().top : null;
+  };
+  // The chain of nodes from ``region`` down through the child that spans
+  // the height ``y``, at each level, and back again by child index.
+  const spanning = (region, y) => {
+    const chain = [region];
+    for (;;) {
+      const child = [...chain[chain.length - 1].children].find((node) => {
+        const box = node.getBoundingClientRect();
+        return box.top <= y && y < box.bottom;
+      });
+      if (!child) return chain;
+      chain.push(child);
+    }
+  };
+  const indexOf = (node) => [...node.parentElement.children].indexOf(node);
+
+  // Every change this script makes to the page goes through here, so it
+  // never moves what is under the pointer (#736). ``regions`` are the
+  // elements ``change`` may resize (each a block that contains its own
+  // margins, ui-v1.css); nothing else may change size. Measured before and
+  // after the change, against the reference height y (referenceY):
+  // - a region wholly above y (its bottom at or above y) moves everything
+  //   at y by its change in height;
+  // - in the region that spans y, the content at y moves by however far
+  //   the same child (followed by child index, level by level, as deep as
+  //   it is still drawn) moved within the region; where nothing remains,
+  //   the region's top is what stays;
+  // - regions below y move nothing at y.
+  // The page then scrolls by the sum, rounded (WebKit scrolls by whole
+  // pixels and drops a fraction, which would leave up to a pixel).
+  const steady = (regions, change, fallback) => {
+    const y = referenceY(fallback);
+    const before = regions.map((region) => region.getClientRects().length && region.getBoundingClientRect());
+    const at = y === null ? -1 : before.findIndex((box) => box && box.top <= y && y < box.bottom);
+    const chain = at < 0 ? [] : spanning(regions[at], y);
+    const offsets = chain.map((node) => node.getBoundingClientRect().top - before[at].top);
+    const path = chain.slice(1).map(indexOf);
+    const start = window.scrollY;
     change();
-    const kept = candidates.find((candidate) => candidate.element.isConnected);
-    if (!kept) return;
-    // Rounded: WebKit scrolls by whole pixels and drops the fraction, which
-    // would leave up to a pixel of movement; rounding leaves at most half.
-    const shift = Math.round(kept.element.getBoundingClientRect()[kept.edge] - kept.before);
-    if (shift) window.scrollBy(0, shift);
+    if (y === null) return;
+    let shift = 0;
+    regions.forEach((region, index) => {
+      const box = region.getBoundingClientRect();
+      // A region not drawn before (hidden) took no room: it is above y if
+      // it now starts above y.
+      const was = before[index] || {top: box.top, bottom: box.top, height: 0};
+      if (was.bottom <= y) shift += box.height - was.height;
+      if (index !== at) return;
+      let node = region;
+      let depth = 0;
+      while (depth < path.length && node.children[path[depth]]?.getClientRects().length) {
+        node = node.children[path[depth]];
+        depth += 1;
+      }
+      shift += node.getBoundingClientRect().top - box.top - offsets[depth];
+    });
+    // Scrolled to the place, not by the shift, in case the change itself
+    // scrolled the page (a shorter page near its end).
+    const target = Math.round(start + shift);
+    if (target !== Math.round(window.scrollY)) window.scrollTo(window.scrollX, target);
   };
 
   // The check. One request at a time: a newer one aborts the older, and an
   // answer is shown only if it belongs to the latest request.
-  const stale = document.querySelector("[data-schedule-stale] > span");
+  // The "Not checked" line above the seven-day list: its words show while
+  // the latest check failed.
+  const staleLine = document.querySelector("[data-schedule-stale]");
+  const stale = staleLine.querySelector(":scope > span");
+  // What a check's answer may resize: the Save line (the status is a flex
+  // item, so the line around it is what takes up room), the summary, the
+  // "Not checked" line, the seven-day list and each row's messages.
+  const checkRegions = () => [part("status").parentElement, part("summary"), staleLine, part("preview"),
+    ...SCOPES.flatMap((scope) => rowList(scope).map((row) => row.querySelector("[data-row-messages]")))];
   let timer = 0;
   let latest = 0;
   let controller = null;
@@ -235,13 +279,15 @@
     if (!check) throw new Error("No schedule check in the answer.");
     // The line beside Save changes only when its words change, so a screen
     // reader hears it once per change.
-    keepInPlace(() => draw(check));
+    steady(checkRegions(), () => {
+      draw(check);
+      stale.hidden = true;
+    });
     const text = check.querySelector("[data-schedule-text]");
     if (!textEdited && text && text.hasAttribute("data-full")) {
       textLists().forEach((area) => { area.value = text.dataset[area.dataset.scheduleText]; });
     }
     blocking = check.dataset.blocking === "true";
-    stale.hidden = true;
     gate();
   };
   // Put a check's answer in place: the line, the summary, the preview and
@@ -286,7 +332,7 @@
     } catch (error) {
       if (mine !== latest || error.name === "AbortError") return;
       // Keep the earlier answer, say it is out of date, and let Save work.
-      stale.hidden = false;
+      steady([staleLine], () => { stale.hidden = false; });
       blocking = false;
       gate();
     }
@@ -304,12 +350,15 @@
   // Adding and removing rows. Each row's Remove is drawn by the server (and
   // in the row template), so every row, saved or new, can be removed.
   const wireRow = (row) => {
-    row.querySelector('select[name$="-shape"]')?.addEventListener("change", () => applyShape(row));
+    row.querySelector('select[name$="-shape"]')?.addEventListener("change",
+      () => steady([row.querySelector(".schedule-row-fields")], () => applyShape(row)));
     row.querySelector("[data-row-remove]").addEventListener("click", () => {
       const scope = row.dataset.scheduleRow;
-      if (fields) fields.cancel(row);
-      row.remove();
-      renumber(scope);
+      steady([rowsOf(scope)], () => {
+        if (fields) fields.cancel(row);
+        row.remove();
+        renumber(scope);
+      });
       root.querySelector(`[data-row-add="${scope}"]`).focus();
       schedule(0);
     });
@@ -340,7 +389,8 @@
     root.querySelector(`[data-row-add="${scope}"]`).addEventListener("click", () => {
       // A blank row says nothing yet: it is checked once it is first
       // edited, so "Enter a time" does not greet the reader.
-      const row = addRow(scope);
+      let row = null;
+      steady([rowsOf(scope)], () => { row = addRow(scope); });
       row.querySelector("select, input")?.focus();
     });
   });
@@ -350,12 +400,15 @@
   let baseline = state();
   const confirm = root.querySelector("[data-preset-confirm]");
   let chosen = null;
+  const ask = (shown) => steady([confirm], () => { confirm.hidden = !shown; });
   const usePreset = (key) => {
     const preset = presets.find((item) => item.key === key);
     if (!preset) return;
-    clearRows("rules");
-    clearRows("skips");
-    preset.rules.forEach((values) => addRow("rules", values));
+    steady(SCOPES.map(rowsOf), () => {
+      clearRows("rules");
+      clearRows("skips");
+      preset.rules.forEach((values) => addRow("rules", values));
+    });
     baseline = state();
     textEdited = false;
     schedule(0);
@@ -363,24 +416,24 @@
   root.querySelectorAll("[data-preset]").forEach((button) => {
     button.addEventListener("click", () => {
       if (state() === baseline) {
-        confirm.hidden = true;
+        ask(false);
         usePreset(button.dataset.preset);
         return;
       }
       chosen = button;
-      confirm.hidden = false;
+      ask(true);
       confirm.querySelector("[data-preset-replace]").focus();
     });
   });
   confirm.querySelector("[data-preset-replace]").addEventListener("click", () => {
-    confirm.hidden = true;
+    ask(false);
     if (chosen) {
       usePreset(chosen.dataset.preset);
       chosen.focus();
     }
   });
   confirm.querySelector("[data-preset-keep]").addEventListener("click", () => {
-    confirm.hidden = true;
+    ask(false);
     if (chosen) chosen.focus();
   });
 
@@ -388,6 +441,7 @@
   // time, and the skips with none, once the reader chooses Use these lists.
   // Until then, each check refills them from the rows.
   const textError = root.querySelector("[data-schedule-text-error]");
+  const sayTextError = (message) => steady([textError], () => { textError.textContent = message; });
   textLists().forEach((area) => area.addEventListener("input", () => { textEdited = true; }));
   const apply = root.querySelector("[data-schedule-text-apply]");
   apply.addEventListener("click", () => {
@@ -395,7 +449,7 @@
     for (const area of textLists()) {
       const result = window.ParishTimeEntry.parseTimes(area.value, 0, "");
       if (result.error) {
-        textError.textContent = result.message;
+        sayTextError(result.message);
         area.focus();
         return;
       }
@@ -405,13 +459,14 @@
     const count = read.full.length + read.quick.length;
     const most = Number(management("rules", "MAX_NUM_FORMS").value);
     if (count > most) {
-      textError.textContent = words("tooManyTimesText", {count});
+      sayTextError(words("tooManyTimesText", {count}));
       textLists()[0].focus();
       return;
     }
-    textError.textContent = "";
-    // The rows above change in number: keep this button where it is.
-    keepInPlace(() => {
+    // The rows above change in number: with no pointer (a touch, which may
+    // not focus the button), the button is what stays where it is.
+    steady([...SCOPES.map(rowsOf), textError], () => {
+      textError.textContent = "";
       clearRows("rules");
       clearRows("skips");
       read.full.forEach((at) => addRow("rules", {kind: "full", shape: "at", at}));

@@ -575,3 +575,146 @@ def test_a_focused_invalid_field_shows_the_focus_ring_in_forced_colors(
     field.focus()
     assert field.evaluate("node => node.matches(':focus-visible')")
     assert field.evaluate("node => getComputedStyle(node).outlineWidth") == "3px"
+
+
+def type_quietly(page, name, value):
+    """Type ``value`` into the field ``name`` the way a reader does, but
+    without scrolling the page or moving the pointer (Playwright's fill
+    scrolls the field into view first)."""
+    page.locator(f'[name="{name}"]').evaluate(
+        """(node, value) => {
+          node.value = value;
+          node.dispatchEvent(new Event("input", {bubbles: true}));
+        }""",
+        value,
+    )
+
+
+def point_at_height(page, x, y):
+    """Move the pointer to (``x``, ``y``) and return what is under it."""
+    page.mouse.move(x, y)
+    return page.evaluate(
+        "([x, y]) => document.elementFromPoint(x, y).className", [x, y]
+    )
+
+
+def test_a_pointer_over_blank_outlook_space_keeps_the_seven_day_list_in_place(
+    page, component_origin
+):
+    """Over the blank space between the summary and "Next seven days", the
+    summary emptying above the pointer moves nothing under it."""
+    page.set_viewport_size({"width": 1280, "height": 500})
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    heading = page.locator("#refresh-schedule-outlook h2").nth(1)
+    contains(heading, "Next seven days")
+    summary = page.locator('[data-schedule-part="summary"]')
+    scroll_to(page, heading, 400)
+    gap = summary.bounding_box()
+    y = (gap["y"] + gap["height"] + top(heading)) / 2
+    assert top(heading) - y > 2
+    pointed = point_at_height(page, gap["x"] + 5, y)
+    assert "refresh-schedule-outlook" in pointed
+    seven = "#refresh-schedule-outlook h2 >> nth=1"
+    before = tops(page, seven)
+    type_quietly(page, "rules-1-at", "08:10")
+    recorded(page, requests, 1)
+    has_text(summary, "")
+    assert within_half_a_pixel(before, tops(page, seven))
+
+
+@pytest.mark.parametrize("where", ["gap", "right", "sidebar"])
+def test_a_pointer_beside_the_main_column_keeps_its_height_in_place(
+    page, component_origin, where
+):
+    """In the two-column Admin layout only the pointer's height matters: in
+    the gap between the sidebar and the page, or right of the page, the
+    rows at that height stay put while rule 1's long message clears above.
+    Over the sticky sidebar, which does not scroll, nothing is scrolled."""
+    page.set_viewport_size({"width": 1000, "height": 900})
+    requests = answering(page, CLOSE)
+    page.goto(component_origin + "/refresh-schedule-close")
+    message = page.locator("#rules-0-messages")
+    contains(message, "00:00 is only 10 minutes after the 23:50 full refresh")
+    height = message.bounding_box()["height"]
+    scroll_to(page, page.locator("#rules-2"), 300)
+    sidebar = page.locator(".admin-sidebar").bounding_box()
+    main = page.locator("main").bounding_box()
+    x = {
+        "gap": (sidebar["x"] + sidebar["width"] + main["x"]) / 2,
+        "right": main["x"] + main["width"] + 4,
+        "sidebar": sidebar["x"] + sidebar["width"] / 2,
+    }[where]
+    pointed = point_at_height(page, x, 310)
+    assert ("admin-sidebar" in pointed) == (where == "sidebar")
+    start = page.evaluate("window.scrollY")
+    before = tops(page, "#rules-2")
+    type_quietly(page, "rules-1-at", "23:30")
+    recorded(page, requests, 1)
+    has_text(message, "")
+    assert height - message.bounding_box()["height"] > 10
+    if where == "sidebar":
+        assert page.evaluate("window.scrollY") == start
+    else:
+        assert within_half_a_pixel(before, tops(page, "#rules-2"))
+
+
+def test_a_pointer_below_the_save_line_keeps_the_outlook_in_place(
+    page, component_origin
+):
+    """Below the Save line, in the form's own blank space, the line growing
+    with more problems moves nothing under the pointer (#736)."""
+    page.set_viewport_size({"width": 360, "height": 640})
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    status = page.locator(STATUS)
+    type_quietly(page, "rules-1-at", "08:10")
+    recorded(page, requests, 1)
+    contains(status, "Fix 1 problem before saving:")
+    outlook = page.locator("#refresh-schedule-outlook")
+    scroll_to(page, outlook, 460)
+    line = page.locator(".schedule-save").bounding_box()
+    y = (line["y"] + line["height"] + top(outlook)) / 2
+    assert top(outlook) - y > 2
+    pointed = point_at_height(page, 30, y)
+    assert "panel" in pointed
+    height = status.bounding_box()["height"]
+    before = tops(page, "#refresh-schedule-outlook")
+    for index in (0, 2, 3, 4):
+        type_quietly(page, f"rules-{index}-at", f"0{index}:10")
+    recorded(page, requests, 2)
+    contains(status, "Fix 5 problems before saving:")
+    assert status.bounding_box()["height"] - height > 50
+    assert within_half_a_pixel(before, tops(page, "#refresh-schedule-outlook"))
+
+
+def test_the_not_checked_line_moves_nothing_under_the_pointer(page, component_origin):
+    """On a narrow screen the "Not checked" line takes several lines when a
+    check fails: the seven-day list under the pointer stays put. With the
+    line on the screen (below "Next seven days"), the browser's own scroll
+    anchoring would keep the heading, not the list."""
+    page.set_viewport_size({"width": 360, "height": 640})
+    requests = answering(page, PRODUCTION, fail=True)
+    page.goto(component_origin + "/refresh-schedule")
+    scroll_to(page, page.locator("#refresh-schedule-outlook h2").nth(1), 100)
+    time = ".schedule-day[open] li >> nth=3"
+    box = page.locator(time).bounding_box()
+    assert box["y"] < 600
+    point_at_height(page, box["x"] + 5, box["y"] + box["height"] / 2)
+    line = page.locator("[data-schedule-stale]")
+    height = line.bounding_box()["height"]
+    before = tops(page, time)
+    type_quietly(page, "rules-1-at", "08:10")
+    recorded(page, requests, 1)
+    visible(page.get_by_text("Not checked since your last change"))
+    assert line.bounding_box()["height"] - height > 20
+    assert within_half_a_pixel(before, tops(page, time))
+    # The next check answers: the line goes and the list is redrawn, and
+    # the time under the pointer still stays put.
+    page.unroute(f"**{CHECK}")
+    requests = answering(page, PRODUCTION)
+    type_quietly(page, "rules-1-at", "08:15")
+    recorded(page, requests, 1)
+    # Hidden in the same change that redraws the list.
+    hidden(page.get_by_text("Not checked since your last change"))
+    assert within_half_a_pixel(before, tops(page, time))
