@@ -27,12 +27,20 @@ from .contracts import ErrorCode, FieldError, validation_response
 
 @dataclass(frozen=True)
 class Refusal:
-    """The static, reviewed text of one refusal and its optional fix link."""
+    """The static, reviewed text of one refusal and its optional fix link.
+
+    ``title`` replaces the browser error page's heading, which otherwise
+    follows the status (a 409 reads "This information changed"), for a
+    refusal whose status does not describe it, such as a page refused
+    because of the deployment's state rather than an out-of-date form.
+    Scripts have no heading, so it is not part of :meth:`as_dict`.
+    """
 
     message: str
     fix: str | None = None
     link: str | None = None
     link_label: str | None = None
+    title: str | None = None
 
     def as_dict(self):
         """JSON-safe fields for scripts; the link is a same-origin path."""
@@ -52,7 +60,8 @@ class UserFacing:
     ``reverse``); ``link_label`` names where it goes.
     """
 
-    def __init__(self, message, *, fix=None, link=None, link_label=None):
+    def __init__(self, message, *, fix=None, link=None, link_label=None, title=None):
+        """Validate the fix link and keep the refusal's reviewed text."""
         if link is not None and (
             type(link) is not str or not link.startswith("/") or link.startswith("//")
         ):
@@ -60,7 +69,7 @@ class UserFacing:
         if (link is None) != (link_label is None):
             raise TypeError("A refusal link needs a label, and a label a link.")
         super().__init__(str(message))
-        self.refusal = Refusal(message, fix, link, link_label)
+        self.refusal = Refusal(message, fix, link, link_label, title)
 
 
 class UserFacingError(UserFacing, ValueError):

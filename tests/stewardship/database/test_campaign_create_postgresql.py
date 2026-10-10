@@ -134,9 +134,18 @@ def test_creation_is_refused_once_any_campaign_exists(auth_service, google):
 
 
 def test_creation_needs_loaded_parish_data(auth_service, google):
-    """Without a promoted ParishSoft snapshot there is nothing to choose from."""
+    """Without a promoted ParishSoft snapshot there is nothing to choose from.
+    A person loading the page sees it refused under its own heading, not the
+    out-of-date-form heading of its 409 status."""
     browser, _ = signed_in()
     assert browser.get(CREATE).status_code == 409
+    page = browser.get(CREATE, HTTP_ACCEPT="text/html", HTTP_SEC_FETCH_MODE="navigate")
+    assert page.status_code == 409
+    body = page.content.decode()
+    assert "<h1>Create the campaign is unavailable</h1>" in body
+    assert "This information changed" not in body
+    assert "The campaign can&#x27;t be created right now." in body
+    assert f'href="{reverse("admin:campaign_settings")}"' in body
     assert f'href="{CREATE}"'.encode() not in browser.get("/admin/").content
 
 

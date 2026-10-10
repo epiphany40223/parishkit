@@ -102,7 +102,12 @@ def first_campaign_admitted(configuration):
 
 
 def first_campaign_refused():
-    """The refusal when Create the campaign is no longer (or not yet) possible."""
+    """The refusal when Create the campaign is no longer (or not yet) possible.
+
+    It is a 409, whose error page would otherwise be headed "This information
+    changed"; a plain load of the page is refused for the deployment's state,
+    not for an out-of-date form, so it names the page instead.
+    """
     from django.urls import reverse
 
     from parishkit.stewardship.web.refusals import UserFacingStale
@@ -116,4 +121,5 @@ def first_campaign_refused():
         ),
         link=str(reverse("admin:campaign_settings")),
         link_label=_("Open Campaign settings"),
+        title=_("Create the campaign is unavailable"),
     )

@@ -2402,7 +2402,11 @@ configuration request, in the same format as every other campaign save, that
 adds the draft campaign with its [default content](#default-content) and the
 default share options; Member talents show their built-in defaults until
 edited. A refused review or confirmation, including one refused because a
-campaign now exists, is explained in the same region.
+campaign now exists, is explained in the same region. A plain load of the page
+while creation is not admitted is refused whole, on an error page headed
+"Create the campaign is unavailable" (not the out-of-date-form heading its
+409 status would otherwise give), with the same explanation and a link to
+Campaign settings.
 
 **After confirming.** The request's live status replaces the review in
 place, polled from its Change status page. Unlike the settings pages, the

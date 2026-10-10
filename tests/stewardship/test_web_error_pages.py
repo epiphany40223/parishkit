@@ -266,6 +266,25 @@ def test_user_facing_refusals_explain_and_link_the_fix(kind, status):
     assert "Check this value." not in body
 
 
+def test_a_refusal_title_replaces_the_status_heading():
+    """A refused page load whose status does not describe it (a 409 for the
+    deployment's state, not an out-of-date form) is headed by its own title;
+    scripts see no title."""
+    from parishkit.stewardship.web.refusals import UserFacingStale
+
+    titled = UserFacingStale("The campaign exists.", title="Creation is unavailable")
+    response = error_response(titled)
+    assert "title" not in json.loads(response.content)["refusal"]
+    body = through(RequestFactory().get("/admin/x", **PAGE), response).content
+    assert b"<h1>Creation is unavailable</h1>" in body
+    assert b"<h1>This information changed</h1>" not in body
+    plain = through(
+        RequestFactory().get("/admin/x", **PAGE),
+        error_response(UserFacingStale("The campaign exists.")),
+    ).content
+    assert b"<h1>This information changed</h1>" in plain
+
+
 def test_plain_errors_keep_the_closed_generic_text():
     """An ordinary ValueError never exposes its text and has no refusal field."""
     response = error_response(ValueError("secret detail"))

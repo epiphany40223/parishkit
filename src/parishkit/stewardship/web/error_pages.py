@@ -137,6 +137,7 @@ def error_page(request, response):
     if refusal is not None:
         messages = [str(refusal.message)]
         guidance = refusal.fix or guidance
+        title = refusal.title or title
     reauthenticate = admin and getattr(response, "stewardship_reauthenticate", False)
     if reauthenticate:
         title = _("Confirm it's you")
