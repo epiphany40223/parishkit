@@ -39,10 +39,10 @@ from .accounts import (
     user_views,
 )
 from .admin_urls import campaign as admin_campaign
-from .admin_urls import legacy as admin_legacy
 from .admin_urls import mail as admin_mail
 from .admin_urls import parish as admin_parish
 from .admin_urls import reports as admin_reports
+from .admin_urls import slashless as admin_slashless
 from .admin_urls import system as admin_system
 from .jobs import views as job_views
 from .responses import views as response_views
@@ -67,7 +67,8 @@ family_patterns = [
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
-    # Groups already in the URL scheme (ADM-12), then every old address.
+    # Groups already in the URL scheme (ADM-12), then their pages' slashless
+    # forms. Old Admin addresses are not kept (#864).
     *admin_system.patterns,
     *admin_parish.patterns,
     *admin_parish.change_patterns,
@@ -75,7 +76,7 @@ admin_patterns = [
     *admin_mail.polled_patterns,
     *admin_campaign.patterns,
     *admin_reports.patterns,
-    *admin_legacy.patterns,
+    *admin_slashless.patterns,
     path(
         "setup/slack-test",
         setup_notification_views.setup_notification,

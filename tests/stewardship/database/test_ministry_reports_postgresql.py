@@ -501,18 +501,11 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
     )
     google[0]["email"] = "leader@example.org"
     browser, _ = signed_in()
-    # The archived campaign's old address, and Ministry requests, which now
-    # always means the current campaign (the successor).
-    archived = f"/admin/reports/{harness.campaign.pk}/ministries/"
+    # Ministry requests always means the current campaign (the successor).
     current = reverse("admin:ministry_report")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        # The retired root and chooser open Ministry requests (NAV-11).
-        for old in ("/admin/ministry-reports/", "/admin/ministry-reports/campaigns/"):
-            response = browser.get(old)
-            assert response.status_code == 301 and response["Location"] == current
-        # The leader's only assigned Ministry is in the archived campaign.
-        assert read(browser, archived)[0].status_code == 410
-        # The current campaign holds none of the leader's Ministries, so
+        # The leader's only assigned Ministry is in the archived campaign, and
+        # the current campaign holds none of the leader's Ministries, so
         # Ministry requests shows the "no campaign" page (NAV-11).
         response, body = read(browser, current)
         assert response.status_code == 200 and EMPTY in body
@@ -524,11 +517,6 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
         response, body = read(admin, current)
         assert response.status_code == 200 and b"Choir" in body
         assert b"2,147,483,648" not in body and b"9,223,372,036,854,775,807" not in body
-        response, body = read(admin, archived)
-        assert response.status_code == 410
-        assert response.json()["refusal"]["message"] == (
-            "This campaign is no longer the current campaign."
-        )
     # Admin/Staff may inspect unfinished configuration even when a draft has
     # no supported selected Ministry; a leader still needs a real intersection.
     for selected in ([], [2**31, 2**63 - 1]):

@@ -190,14 +190,6 @@ def test_a_slot_refuses_the_wrong_image_kind(auth_service, google, media, monkey
     assert artwork(row) == {}
 
 
-def test_only_the_current_campaign_has_an_images_page(auth_service, google, media):
-    """Unknown campaigns are refused rather than silently edited."""
-    draft(auth_service.store)
-    browser, _ = signed_in()
-    # An old address naming another campaign is gone (#525).
-    assert browser.get(f"/admin/campaign/{uuid4()}/images").status_code == 410
-
-
 def test_upload_rejects_non_images(auth_service, google, media):
     """A non-image upload stays on the page with a field error; nothing is staged."""
     store = auth_service.store

@@ -2,25 +2,27 @@
 
 Groups already moved to the scheme (System, with NAV-6) put every page under
 ``/admin/<group>/`` with a trailing slash, name no campaign and use nouns,
-never GET verbs. Every old address is a legacy route that redirects
+never GET verbs. Each page's form without the trailing slash redirects
 permanently: 301 for GET and HEAD, 308 for other methods, keeping the query
-string. The JSON reads scripts poll keep their addresses (decision 8).
+string. Old addresses are not kept: each is 404 (#864). The JSON reads
+scripts poll keep their addresses (decision 8).
 """
 
 import re
 from uuid import UUID
 
 import pytest
+from django.http import Http404
 from django.test import RequestFactory
 from django.urls import Resolver404, resolve, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.admin_urls import (
     campaign,
-    legacy,
     mail,
     parish,
     reports,
+    slashless,
     system,
 )
 from parishkit.stewardship.reports.daily_digest import DailyDigestDocument
@@ -99,23 +101,23 @@ def test_every_moved_page_reverses_under_its_group(name):
     assert url.endswith("/")
 
 
-# Admin form actions and old bookmark routes that still name a campaign in
-# their address (#865). None is left: #758 retired the JSON export API and
-# the old postal routes, the last ones. A new route naming a campaign fails
-# below instead of slipping in.
+# Admin form actions that still name a campaign in their address (#865).
+# None is left: #758 retired the JSON export API and the old postal routes,
+# the last ones. A new route naming a campaign fails below instead of
+# slipping in.
 CAMPAIGN_ROUTES = set()
 
 
 def test_no_admin_page_names_a_campaign():
     """Single-campaign interim: Admin addresses carry no campaign id (#865).
 
-    Only the old addresses (legacy routes, which redirect for the current
-    campaign) and the known form actions above may still take one.
+    Only the known form actions above may still take one; the old campaign
+    addresses are gone (#864).
     """
     naming = {
         name
         for name, parameters in navigation.route_parameters().items()
-        if "campaign_id" in parameters and not name.startswith(legacy.PREFIX)
+        if "campaign_id" in parameters
     }
     assert naming == CAMPAIGN_ROUTES
     assert not CAMPAIGN_ROUTES & set(navigation.PAGES)
@@ -139,7 +141,7 @@ def test_polled_reads_keep_their_addresses():
         reverse("admin:background_task", args=[TASK])
         == f"/admin/background/tasks/{TASK}"
     )
-    assert not POLLED & set(legacy.TARGETS.values())
+    assert not POLLED & set(slashless.TARGETS.values())
     # The header's presence count; only the page moved (NAV-8).
     assert reverse("admin:presence_count") == "/admin/presence"
     assert reverse("admin:presence") == "/admin/mail/presence/"
@@ -159,83 +161,22 @@ def test_old_presence_address_still_answers_polled_reads(monkeypatch, query):
     assert answered == [request]
 
 
-@pytest.mark.parametrize(
-    ("method", "status"), [("get", 301), ("head", 301), ("post", 308)]
-)
-def test_old_presence_address_redirects_its_page_reads(monkeypatch, method, status):
-    """Without a polled format, the old address is the page: it moved."""
+@pytest.mark.parametrize("query", ["", "?size=25&page=2", "?format=html"])
+def test_old_presence_page_address_is_gone(monkeypatch, query):
+    """Without a polled format, the read would be the moved page: 404 (#864)."""
     monkeypatch.setattr(mail.presence, "active_families", pytest.fail)
-    request = getattr(RequestFactory(), method)("/admin/presence?size=25&page=2")
-    response = mail.presence_reads(request)
-    assert response.status_code == status
-    assert response["Location"] == "/admin/mail/presence/?size=25&page=2"
-    plain = mail.presence_reads(RequestFactory().get("/admin/presence"))
-    assert plain["Location"] == "/admin/mail/presence/"
+    for method in ("get", "head", "post"):
+        request = getattr(RequestFactory(), method)("/admin/presence" + query)
+        with pytest.raises(Http404):
+            mail.presence_reads(request)
 
 
 T = "00000000-0000-0000-0000-000000000007"
-# Every old address (with sample arguments) and the exact page it must reach,
-# written out by hand so a typo in the legacy table cannot hide behind the
-# same table: the spec's placement table and URL scheme are the source.
-EXPECTED = {
-    # Old System addresses (NAV-6).
-    "/admin/configuration/integrations": "/admin/system/integrations/",
-    "/admin/configuration/integrations/parishsoft": (
-        "/admin/system/integrations/parishsoft/"
-    ),
-    "/admin/configuration/integrations/parishsoft/status": (
-        "/admin/system/integrations/parishsoft/status/"
-    ),
-    "/admin/configuration/integrations/parishsoft/dismiss": (
-        "/admin/system/integrations/parishsoft/dismissal/"
-    ),
-    f"/admin/configuration/credentials/{T}": f"/admin/system/key-changes/{T}/",
-    f"/admin/configuration/credentials/{T}/select": (
-        f"/admin/system/key-changes/{T}/selection/"
-    ),
-    "/admin/background": "/admin/system/background/",
-    f"/admin/background/task/{T}": f"/admin/system/background/{T}/",
-    f"/admin/background/task/{T}/status": f"/admin/system/background/{T}/status/",
-    f"/admin/background/tasks/{T}/retry-family-preparation": (
-        f"/admin/system/background/{T}/family-preparation-retry/"
-    ),
-    f"/admin/background/tasks/{T}/retry-daily-digest": (
-        f"/admin/system/background/{T}/daily-digest-retry/"
-    ),
-    f"/admin/background/tasks/{T}/retry-weekly-digest": (
-        f"/admin/system/background/{T}/weekly-digest-retry/"
-    ),
-    f"/admin/background/tasks/{T}/retry-export-cleanup": (
-        f"/admin/system/background/{T}/export-cleanup-retry/"
-    ),
-    "/admin/logs": "/admin/system/logs/",
-    "/admin/logs/export": "/admin/system/logs/export/",
-    # Old Parish data and change-status addresses (NAV-7).
-    "/admin/configuration/parish": "/admin/parish/settings/",
-    "/admin/configuration/branding": "/admin/parish/logos/",
-    f"/admin/configuration/branding/{T}": f"/admin/parish/logos/{T}/",
-    f"/admin/configuration/branding/assets/{T}.png": (
-        f"/admin/parish/logos/assets/{T}.png"
-    ),
-    "/admin/configuration/ministries": "/admin/parish/ministries/",
-    "/admin/files/": "/admin/parish/files/",
-    "/admin/files/upload": "/admin/parish/files/uploads/",
-    "/admin/files/delete": "/admin/parish/files/deletion/",
-    f"/admin/files/{T}/name": f"/admin/parish/files/{T}/name/",
-    "/admin/source/refresh": "/admin/parish/parishsoft-refresh/",
-    f"/admin/configuration/requests/{T}": f"/admin/changes/{T}/",
-    # Old Mail and Family portal addresses (NAV-8).
-    "/admin/deliveries": "/admin/mail/outgoing/",
-    f"/admin/deliveries/{T}": f"/admin/mail/outgoing/{T}/",
-    f"/admin/deliveries/{T}/resolve": f"/admin/mail/outgoing/{T}/resolution/",
-    "/admin/deliveries/refusals": "/admin/mail/refusals/",
-    f"/admin/deliveries/refusals/{T}": f"/admin/mail/refusals/{T}/",
-    f"/admin/deliveries/refusals/{T}/clear": (f"/admin/mail/refusals/{T}/clearance/"),
-    "/admin/deliveries/family-progress": "/admin/mail/family-progress/",
-    "/admin/deliveries/family-progress/status": ("/admin/mail/family-progress/status/"),
-    "/admin/deliveries/family-sends": "/admin/mail/family-history/",
-    "/admin/family-portal": "/admin/mail/family-portal/",
-    # Pages already in the scheme, without their trailing slash.
+# Every page's form without its trailing slash (with sample arguments) and
+# the exact page it must reach, written out by hand so a typo in the
+# slashless table cannot hide behind the same table: the spec's placement
+# table and URL scheme are the source.
+SLASHLESS_EXPECTED = {
     "/admin/system": "/admin/system/",
     "/admin/system/health": "/admin/system/health/",
     "/admin/system/source-form": "/admin/system/source-form/",
@@ -329,8 +270,7 @@ EXPECTED = {
     ),
     "/admin/reports/families": "/admin/reports/families/",
     f"/admin/reports/families/{T}": f"/admin/reports/families/{T}/",
-    # Exports and emailed reports (NAV-12): each new page's slashless form.
-    # Their old addresses have none (#864).
+    # Exports and emailed reports (NAV-12).
     f"/admin/reports/exports/{T}": f"/admin/reports/exports/{T}/",
     "/admin/reports/emailed": "/admin/reports/emailed/",
     "/admin/reports/emailed/weekly/new": "/admin/reports/emailed/weekly/new/",
@@ -339,106 +279,71 @@ EXPECTED = {
         f"/admin/reports/emailed/weekly/{T}/items/{T}/"
     ),
     f"/admin/reports/emailed/daily/{T}": f"/admin/reports/emailed/daily/{T}/",
-    # Retired addresses that named no campaign (decisions 10 and 19): the
-    # two campaign choosers and the old Ministry reports root.
-    "/admin/reports/campaigns/": "/admin/reports/participation/",
-    "/admin/ministry-reports/": "/admin/reports/ministries/",
-    "/admin/ministry-reports/campaigns/": "/admin/reports/ministries/",
 }
 
-
-# Old addresses that name a campaign: they redirect only for the current
-# campaign, which the PostgreSQL suite checks through the real session.
-C = f"/admin/campaign/{T}"
-CAMPAIGN_EXPECTED = {
-    f"{C}/delivery": "/admin/mail/controls/",
-    # Campaign setup, part A (NAV-9).
-    f"{C}/settings": "/admin/campaign/settings/",
-    f"{C}/clone": "/admin/campaign/copy/",
-    f"{C}/content": "/admin/campaign/content/",
-    f"{C}/content/history": "/admin/campaign/content/history/",
-    f"{C}/content/history/{T}": f"/admin/campaign/content/history/{T}/",
-    f"{C}/content/parishsoft/parishsoft": (
-        "/admin/campaign/content/parishsoft/parishsoft/"
-    ),
-    f"{C}/content/parishsoft/parishsoft/{T}": (
-        f"/admin/campaign/content/parishsoft/parishsoft/{T}/"
-    ),
-    f"{C}/images": "/admin/campaign/images/",
-    f"{C}/images/logo": "/admin/campaign/images/logo/",
-    f"{C}/images/logo/remove": "/admin/campaign/images/logo/removal/",
-    f"{C}/images/logo/{T}": f"/admin/campaign/images/logo/{T}/",
-    f"{C}/schedules": "/admin/campaign/schedules/",
-    f"{C}/share-options": "/admin/campaign/share-options/",
-    f"{C}/talents": "/admin/campaign/talents/",
-    # Campaign setup, part B (NAV-10).
-    f"{C}/content/test/{T}": f"/admin/campaign/content/test/{T}/",
-    f"{C}/content/test/{T}/families": f"/admin/campaign/content/test/{T}/families/",
-    f"{C}/go-live": "/admin/campaign/go-live/",
-    f"{C}/go-live/families": "/admin/campaign/go-live/families/",
-    f"{C}/go-live/cleanup/{T}": f"/admin/campaign/go-live/cleanup/{T}/",
-    f"{C}/go-live/cleanup/{T}/links": f"/admin/campaign/go-live/cleanup/{T}/links/",
-    f"{C}/go-live/cleanup/{T}/links/{T}/confirm": (
-        f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation/"
-    ),
-    f"{C}/production": "/admin/campaign/production/",
-    f"{C}/production/withdraw": "/admin/campaign/production/cancellation/",
-    f"{C}/ministries": "/admin/parish/ministries/campaign/",
-}
-# Old report addresses named the campaign under /admin/reports/ (NAV-11).
-R = f"/admin/reports/{T}"
-CAMPAIGN_EXPECTED |= {
-    f"{R}/responses/": "/admin/reports/responses/",
-    f"{R}/responses/logo/": "/admin/reports/responses/logo/",
-    f"{R}/responses/logo/csv/": "/admin/reports/responses/logo/csv/",
-    f"{R}/participation/": "/admin/reports/participation/",
-    f"{R}/participation/{T}.png": f"/admin/reports/participation/{T}.png",
-    f"{R}/participation/export": "/admin/reports/participation/exports/",
-    f"{R}/participation/exact-export": "/admin/reports/participation/exact-exports/",
-    f"{R}/financial/": "/admin/reports/financial/",
-    f"{R}/financial/export": "/admin/reports/financial/exports/",
-    f"{R}/talents/": "/admin/reports/talents/",
-    f"{R}/talents/export": "/admin/reports/talents/exports/",
-    f"{R}/information/": "/admin/reports/information/",
-    f"{R}/information/export": "/admin/reports/information/exports/",
-    f"{R}/information/{T}/": f"/admin/reports/information/{T}/",
-    f"{R}/information/{T}/update": f"/admin/reports/information/{T}/record/",
-    f"{R}/ministries/": "/admin/reports/ministries/",
-    f"{R}/ministries/join/": "/admin/reports/ministries/joining/",
-    f"{R}/ministries/leave/": "/admin/reports/ministries/leaving/",
-    f"{R}/ministries/export/": "/admin/reports/ministries/exports/",
-    f"{R}/ministries/packet/": "/admin/reports/ministries/packets/",
-    f"{R}/ministries/follow-up/": "/admin/reports/ministries/follow-up/",
-    f"{R}/ministries/follow-up/{T}/": f"/admin/reports/ministries/follow-up/{T}/",
-    f"{R}/ministries/follow-up/{T}/update": (
-        f"/admin/reports/ministries/follow-up/{T}/record/"
-    ),
-    f"{R}/families/": "/admin/reports/families/",
-    f"{R}/families/export": "/admin/reports/families/exports/",
-    f"{R}/families/find": "/admin/reports/families/search/",
-    f"{R}/families/{T}/": f"/admin/reports/families/{T}/",
-}
+# Old Admin addresses, one or more per moved group: none is kept (#864).
+OLD_ADDRESSES = (
+    # System (NAV-6).
+    "/admin/configuration/integrations",
+    "/admin/configuration/integrations/parishsoft",
+    f"/admin/configuration/credentials/{T}",
+    "/admin/background",
+    f"/admin/background/task/{T}",
+    f"/admin/background/tasks/{T}/retry-daily-digest",
+    "/admin/logs",
+    "/admin/logs/export",
+    # Parish data and change status (NAV-7).
+    "/admin/configuration/parish",
+    "/admin/configuration/branding",
+    "/admin/files/",
+    "/admin/files/upload",
+    "/admin/source/refresh",
+    f"/admin/configuration/requests/{T}",
+    # Mail and Family portal (NAV-8).
+    "/admin/deliveries",
+    f"/admin/deliveries/{T}/resolve",
+    "/admin/deliveries/family-sends",
+    "/admin/family-portal",
+    # Old addresses that named a campaign (NAV-9 to NAV-11).
+    f"/admin/campaign/{T}/delivery",
+    f"/admin/campaign/{T}/settings",
+    f"/admin/campaign/{T}/content/test/{T}",
+    f"/admin/campaign/{T}/images/logo/remove",
+    f"/admin/campaign/{T}/go-live",
+    f"/admin/campaign/{T}/production/withdraw",
+    f"/admin/campaign/{T}/ministries",
+    f"/admin/reports/{T}/responses/",
+    f"/admin/reports/{T}/participation/",
+    f"/admin/reports/{T}/participation/export",
+    f"/admin/reports/{T}/families/",
+    f"/admin/reports/{T}/families/{T}/",
+    f"/admin/reports/{T}/ministries/follow-up/{T}/update",
+    # Retired addresses that named no campaign (decisions 10 and 19).
+    "/admin/reports/campaigns/",
+    "/admin/ministry-reports/",
+    "/admin/ministry-reports/campaigns/",
+)
 
 
-def test_every_old_address_is_listed_once_and_expected():
-    """One legacy row per old address, and each one is in the expected table."""
-    olds = [old for old, _new, _campaign, _suffix in legacy.ROWS]
+@pytest.mark.parametrize("old", OLD_ADDRESSES)
+def test_old_addresses_are_gone(old):
+    """The Administrator dropped old Admin addresses: each is 404 (#864)."""
+    with pytest.raises(Resolver404):
+        resolve(old)
+
+
+def test_every_slashless_form_is_listed_once_and_expected():
+    """One row per slashless form, each in the expected table, each a page."""
+    olds = [old for old, _new in slashless.SLASHLESS]
     assert len(olds) == len(set(olds))
-    assert {_example(old) for old in olds} == set(EXPECTED) | set(CAMPAIGN_EXPECTED)
-    named = {_example(old) for old, _new, campaign, _ in legacy.ROWS if campaign}
-    assert named == set(CAMPAIGN_EXPECTED)
-    for old, new in CAMPAIGN_EXPECTED.items():
-        match = resolve(old)
-        assert match.func.legacy_campaign
-        arguments = {k: v for k, v in match.kwargs.items() if k != "campaign_id"}
-        assert reverse(f"admin:{match.func.legacy_target}", kwargs=arguments) == new
+    assert {_example(old) for old in olds} == set(SLASHLESS_EXPECTED)
     routes = navigation.route_parameters()
-    for _old, new, _campaign, _suffix in legacy.ROWS:
-        assert new in routes and not new.startswith(legacy.PREFIX)
+    for _old, new in slashless.SLASHLESS:
+        assert new in routes and new not in slashless.TARGETS
 
 
 # Form actions posted only from their own page's script, at the reversed URL,
-# have no slashless form (legacy.SLASHLESS's rule): Delete scheduled emails
+# have no slashless form (slashless.SLASHLESS's rule): Delete scheduled emails
 # answers only the list's confirmation dialog (#878).
 POSTED_ONLY = {"schedule_delete"}
 
@@ -450,15 +355,14 @@ def test_every_moved_page_has_its_slashless_form():
         for pattern in GROUPS
         if pattern.name in navigation.PAGES and pattern.name not in POSTED_ONLY
     }
-    slashless = {old for old, _new in legacy.SLASHLESS}
-    assert pages <= slashless
+    assert pages <= {old for old, _new in slashless.SLASHLESS}
 
 
-@pytest.mark.parametrize(("old", "new"), sorted(EXPECTED.items()))
-def test_old_address_redirects_permanently_keeping_the_query(old, new):
+@pytest.mark.parametrize(("old", "new"), sorted(SLASHLESS_EXPECTED.items()))
+def test_slashless_form_redirects_permanently_keeping_the_query(old, new):
     """GET/HEAD get 301 and POST gets 308 to the expected page, query kept."""
     match = resolve(old)
-    assert match.url_name.startswith(legacy.PREFIX)
+    assert match.url_name.endswith(slashless.SUFFIX)
     factory = RequestFactory()
     for method, status in (("get", 301), ("head", 301), ("post", 308)):
         request = getattr(factory, method)(old + "?state=all&page=2")
@@ -467,13 +371,6 @@ def test_old_address_redirects_permanently_keeping_the_query(old, new):
         assert response["Location"] == new + "?state=all&page=2"
     # Without a query, the target is exactly the new page.
     assert match.func(factory.get(old), **match.kwargs)["Location"] == new
-
-
-def test_old_addresses_name_their_pages_for_remembered_origins():
-    """A change confirmed on an old integration address still leads back to it."""
-    match = resolve("/admin/configuration/integrations/parishsoft")
-    assert navigation.LEGACY_TARGETS[match.url_name] == "integration_settings"
-    assert match.url_name in navigation.LEGACY
 
 
 @pytest.mark.parametrize(
@@ -488,16 +385,16 @@ def test_group_roots_open_their_group(section, name):
     assert name in navigation.NON_PAGES
     # The form without the slash redirects, as /admin/system does.
     slashless = resolve(url.rstrip("/"))
-    assert slashless.url_name == f"{legacy.PREFIX}{name}_slashless"
+    assert slashless.url_name == f"{name}_slashless"
     assert slashless.func(RequestFactory().get(url.rstrip("/")))["Location"] == url
 
 
 def test_test_email_pages_come_before_the_content_editor():
     """content/<kind>/<slot>/ would take content/test/<revision>/ as kind "test".
 
-    The editor route is listed after the test email routes, at every address
-    form: the page, its no-slash form and the old campaign address, so each
-    reaches (or redirects to) the test page, never the editor (NAV-10).
+    The editor route is listed after the test email routes, in both address
+    forms: the page and its no-slash form, so each reaches (or redirects to)
+    the test page, never the editor (NAV-10).
     """
     page = f"/admin/campaign/content/test/{T}/"
     assert resolve(page).url_name == "campaign_mail"
@@ -507,14 +404,12 @@ def test_test_email_pages_come_before_the_content_editor():
     assert names.index("campaign_mail") < names.index("content_edit")
     assert names.index("campaign_mail_families") < names.index("content_edit")
     for old, name in (
-        (page.rstrip("/"), "campaign_mail_slashless"),
-        (page + "families", "campaign_mail_families_slashless"),
-        (f"/admin/campaign/{T}/content/test/{T}", "campaign_mail"),
-        (f"/admin/campaign/{T}/content/test/{T}/families", "campaign_mail_families"),
+        (page.rstrip("/"), "campaign_mail"),
+        (page + "families", "campaign_mail_families"),
     ):
         match = resolve(old)
-        assert match.url_name == f"{legacy.PREFIX}{name}", old
-        assert match.func.legacy_target == name.removesuffix("_slashless")
+        assert match.url_name == f"{name}_slashless", old
+        assert match.func.redirect_target == name
 
 
 def test_the_go_live_chain_names_no_campaign():
@@ -545,8 +440,8 @@ def test_the_go_live_chain_names_no_campaign():
         f"/admin/exports/{T}/cancel",
         f"/admin/exports/{T}/download-grant",
         # The old postal page and export: Admin-only, so no redirect (#864).
-        f"{R}/postal/",
-        f"{R}/postal/export",
+        f"/admin/reports/{T}/postal/",
+        f"/admin/reports/{T}/postal/export",
     ],
 )
 def test_the_retired_json_export_api_and_postal_routes_are_gone(path):
@@ -567,7 +462,7 @@ def test_reports_root_keeps_its_old_meaning():
     assert match.url_name == "reports"
     assert not hasattr(match.func, "group_root")
     slashless = resolve("/admin/reports")
-    assert slashless.url_name == f"{legacy.PREFIX}reports_slashless"
+    assert slashless.url_name == "reports_slashless"
     assert slashless.func(RequestFactory().get("/admin/reports"))["Location"] == url
 
 
@@ -595,9 +490,6 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
         (f"/admin/reports/emailed/weekly/{T}/", "weekly_digest_snapshot"),
         (f"/admin/reports/emailed/daily/{T}/", "daily_digest_snapshot"),
         (f"/admin/reports/emailed/daily/{T}/chart.png", "daily_digest_chart"),
-        ("/admin/reports/campaigns/", f"{legacy.PREFIX}participation_chooser"),
-        (f"/admin/reports/{T}/families/", f"{legacy.PREFIX}family_directory"),
-        (f"/admin/reports/{T}/families/{T}/", f"{legacy.PREFIX}family_timeline"),
     ):
         assert resolve(path).url_name == name, path
     names = [pattern.name for pattern in reports.patterns]

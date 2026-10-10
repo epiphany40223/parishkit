@@ -28,7 +28,7 @@ from typing import NamedTuple
 from django.urls import NoReverseMatch, Resolver404, get_resolver, resolve, reverse
 from django.utils.translation import gettext_lazy as _
 
-from parishkit.stewardship.admin_urls.legacy import TARGETS as LEGACY_TARGETS
+from parishkit.stewardship.admin_urls.slashless import TARGETS as SLASHLESS_TARGETS
 from parishkit.stewardship.campaigns.domain import CampaignState
 from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
@@ -608,10 +608,9 @@ NON_PAGES = frozenset(
 )
 
 
-# Old Admin addresses (the URL scheme, #525): each only redirects to the page
-# that replaced it, so it is neither a page nor a non-page. ``LEGACY_TARGETS``
-# maps each one to its new URL name.
-LEGACY = frozenset(LEGACY_TARGETS)
+# Each page's URL without its trailing slash (the URL scheme, #525): it only
+# redirects to the page, so it is neither a page nor a non-page.
+SLASHLESS = frozenset(SLASHLESS_TARGETS)
 
 
 # Multi-step flows: each is an ordered tuple of (step key, label). A view
@@ -705,9 +704,7 @@ def change_origin(request, request_id):
         match = resolve(path)
     except Resolver404:
         return None
-    # A path remembered before its page moved resolves to the old address's
-    # redirect; it names the same page, so follow it to the new one.
-    name = LEGACY_TARGETS.get(match.url_name, match.url_name)
+    name = match.url_name
     if (
         match.namespace != NAMESPACE
         or name not in PAGES

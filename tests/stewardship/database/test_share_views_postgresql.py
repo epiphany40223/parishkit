@@ -155,15 +155,7 @@ def test_share_noop_stale_base_and_wrong_route_cannot_apply(auth_service, google
         and b"No share options have changed" in response.content
     )
     assert post(browser, path, data | {"base_digest": "a" * 64}).status_code == 409
-    proposal = token(post(browser, path, data | {"options-0-label": "Changed"}))
-    assert (
-        post(
-            browser,
-            f"/admin/campaign/{uuid4()}/share-options",
-            {"action": "confirm", "preview": proposal},
-        ).status_code
-        == 410
-    )
+    assert token(post(browser, path, data | {"options-0-label": "Changed"}))
     assert browser.get(path + "?extra=1").status_code == 400
     assert post(browser, path, fields(store, row)).status_code == 400
 
