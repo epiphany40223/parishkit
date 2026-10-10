@@ -136,7 +136,7 @@ def test_the_tag_renders_the_existing_markup(source, expected):
         ({"ok": True, "busy": False, "who": None}, '<button type="submit">'),
         (
             {"ok": False, "busy": 1, "who": ""},
-            '<button type="submit" disabled hidden name="">',
+            '<button type="submit" disabled data-server-disabled hidden name="">',
         ),
     ],
 )
@@ -147,6 +147,17 @@ def test_boolean_and_optional_attributes(flags, expected):
         **flags,
     )
     assert html.startswith(expected + "x")
+
+
+def test_only_a_disabled_submit_button_is_marked_as_the_servers():
+    """ui-v1.js enables a disabled submit button the server did not mark
+    (Firefox restored a script's disabled, #921); other buttons no gate
+    touches keep their markup."""
+    assert render('{% button type="submit" disabled %}x{% endbutton %}') == (
+        '<button type="submit" disabled data-server-disabled>x</button>'
+    )
+    plain = render('{% button type="button" enabled=no %}x{% endbutton %}', no=False)
+    assert plain == '<button type="button" disabled>x</button>'
 
 
 @pytest.mark.parametrize(

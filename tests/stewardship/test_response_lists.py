@@ -56,6 +56,9 @@ FACTS = {
     5: FamilyFacts("Evans, Eve", None, "Eve Evans"),
 }
 
+# The paused Download CSV button, drawn disabled by the server (#921).
+PAUSED_CSV = '<button type="submit" disabled data-server-disabled>Download CSV</button>'
+
 
 def rows_of(key, show=EVERYONE, active=None):
     """A list's rows over the test rows, with every Family active by default."""
@@ -298,12 +301,12 @@ def test_staff_and_paused_and_empty_testing_pages():
     assert "mode=testing" not in staff
     paused = render(paused=True)
     assert "Downloads are paused while this campaign is prepared for purge." in paused
-    assert '<button type="submit" disabled>Download CSV</button>' in paused
+    assert PAUSED_CSV in paused
     empty = render(query=ListQuery("testing"), rows=False, values={"sort": "family"})
     assert "no Testing responses to show" in empty
     assert "<table" not in empty
     assert "Nothing to download" in empty
-    assert '<button type="submit" disabled>Download CSV</button>' in empty
+    assert PAUSED_CSV in empty
     # Its switch back to Production keeps the chosen order and lands on the
     # table; each switch is an in-place link (#519).
     production = f'<a href="{BASE}submitted/?sort=family#table" data-in-place='
@@ -317,7 +320,7 @@ def test_empty_list_says_so():
     page = render(rows=[])
     assert "No Families on this list." in page
     assert "Nothing to download: no Families are on this list." in page
-    assert '<button type="submit" disabled>Download CSV</button>' in page
+    assert PAUSED_CSV in page
     # A list without a filter does not mention one.
     assert "CSV of the 1 Family on this list.</p>" in render("more-than-once")
 

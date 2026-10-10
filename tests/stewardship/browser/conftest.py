@@ -1856,6 +1856,35 @@ def component_origin():
                 ),
             },
         ),
+        # Campaign settings saved with no module ticked, so the page opens
+        # both unchanged and incomplete: Review waits for both gates (#921).
+        (
+            "/campaign-settings-no-module",
+            "campaign-settings",
+            {
+                "campaign": {
+                    "pk": uuid4(),
+                    "state": "draft",
+                    "active_configuration": {"name": "Sample campaign"},
+                },
+                "editable": True,
+                "form": setup_help.apply(
+                    CampaignForm(
+                        initial={
+                            "name": "Sample campaign",
+                            "timezone": "America/New_York",
+                            "start_date": "2026-10-01",
+                            "end_date": "2026-10-31",
+                            "base_digest": "a" * 64,
+                        },
+                        ministries=[("4", "Community outreach")],
+                        funds=[("9", "Offertory")],
+                    ),
+                    setup_help.ADMIN_CAMPAIGN,
+                    replace=True,
+                ),
+            },
+        ),
         # Campaign settings with its review shown in place (#532).
         (
             "/campaign-preview",

@@ -1,0 +1,12 @@
+{% load i18n stewardship %}{% comment %}
+  An in-place settings form's Review changes button (#532) and the line
+  after it that says why it is unavailable while the form still holds the
+  saved values (#921). The form is marked data-require-change naming its
+  version field and has an id; ui-v1.js disables the button, shows the line
+  (it is drawn data-idle, which keeps its space hidden, so it never moves
+  the page) and gives the line an id from the form's. autocomplete="off"
+  stops Firefox bringing the script's disabled back on a reload. ``hint``
+  overrides the line's words; ``describedby`` names another line the button
+  keeps describing it (a data-require-complete form's hint), which the gate
+  leaves in place beside its own.
+{% endcomment %}{% translate "Change a setting to review it." as default_hint %}{% button type="submit" autocomplete="off" aria-describedby=describedby|default:None %}{% translate "Review changes" %}{% endbutton %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{{ hint|default:default_hint }}</span>

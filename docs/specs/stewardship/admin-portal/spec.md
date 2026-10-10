@@ -196,6 +196,21 @@ refusal pages use this gate, as does the typed "Production" confirmation
 (which, like the server, ignores spaces around the word). The Admin portal
 requires JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
 server validation is unchanged and still refuses an incomplete submission.
+Likewise, an in-place settings form's Review changes button is unavailable
+until the form differs from the saved settings, with the short hint "Change
+a setting to review it." after it; undoing the edit makes it unavailable
+again (`data-require-change`, naming the form's version field,
+[#921](https://github.com/epiphany40223/parishkit/issues/921)). The saved
+settings are the values the server drew for the form's version, so values a
+browser restores are not mistaken for them; once this page's change is
+applied, the reviewed values are the saved ones while the form itself is
+kept, and after an applied change a redrawn form compares with its new
+defaults. The hint keeps its space while hidden, so it never moves the page.
+The server still refuses an unchanged Review ("No settings have changed.").
+Gates that share a button release it only when none of them holds it, and
+never enable a button the server drew disabled (marked
+`data-server-disabled`, so a disabled state Firefox restores on a reload
+is not mistaken for the server's).
 A browser can restore a page from its history (Back or Forward) with the
 reader's values but without the events that set the page up, so these
 states (shown and hidden fields, unavailable buttons and their hints, a
