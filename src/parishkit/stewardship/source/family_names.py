@@ -14,6 +14,15 @@ no SQL counterpart: nothing searches or sorts by it, so only Python builds it.
 Family pages, so both name the same people (#471).
 """
 
+# Every character Python's str.strip() removes (str.isspace). SQL that builds
+# these names trims with this set (snapshot_name_sql binds it), so a name
+# built in SQL matches the one built here even with tabs or no-break spaces.
+WHITESPACE = (
+    " \t\n\x0b\x0c\r\x1c\x1d\x1e\x1f\x85\xa0\u1680"
+    + "".join(chr(code) for code in range(0x2000, 0x200B))
+    + "\u2028\u2029\u202f\u205f\u3000"
+)
+
 
 def _text(values, key):
     """A stripped source string, or an empty string for missing/non-text."""
