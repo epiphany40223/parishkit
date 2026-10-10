@@ -544,6 +544,20 @@ def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
     assert [row["refused"] for row in counted] == [0, 1, 0]
 
 
+def test_outgoing_mail_always_links_refused_addresses(response_service, google):
+    """#935: an Administrator always sees the Review refused addresses link
+    on Outgoing mail, with nothing refused and under any state filter or
+    sort, not only when refusals exist."""
+    activate_response_service(response_service)
+    browser, _ = signed_in()
+    link = '<a href="/admin/mail/refusals/">Review refused addresses</a>'
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for query in ({}, {"state": "all"}, {"state": "delivered"}, {"sort": "name"}):
+            response = browser.get("/admin/mail/outgoing/", query)
+            assert response.status_code == 200, query
+            assert link in response.content.decode(), query
+
+
 def test_an_email_counts_each_refused_address_once(response_service, google):
     """#935: an email to both heads with both addresses refused shows "2
     addresses refused"; a retry refused again at the same address records a

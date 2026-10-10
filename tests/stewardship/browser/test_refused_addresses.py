@@ -47,9 +47,15 @@ def test_outgoing_mail_marks_emails_with_refused_addresses(page, component_origi
 
 
 def test_without_refusals_the_link_line_is_unchanged(page, component_origin):
-    """No count and no mark while nothing is refused."""
+    """No count and no mark while nothing is refused, but the link itself is
+    always there and visible: an Administrator reaches Refused addresses
+    from Outgoing mail whether or not anything is refused."""
+    from playwright.sync_api import expect
+
     page.goto(component_origin + "/deliveries")
-    assert page.get_by_role("link", name="Review refused addresses", exact=True).count()
+    link = page.get_by_role("link", name="Review refused addresses", exact=True)
+    expect(link).to_be_visible()
+    assert link.get_attribute("href") == "/admin/mail/refusals/"
     assert "refused" not in page.locator("[data-table-region] tbody").inner_text()
 
 
