@@ -255,6 +255,11 @@ def _page(
             "editable": editable,
             "end_form": end_form,
             "end_held": end_held,
+            # The end-date live check compares the typed date with this
+            # saved ISO date (ui-v1.js); templates never format dates.
+            "end_saved": None
+            if end_form is None
+            else end_form.initial["end_date"].isoformat(),
             # A live campaign's Ministries keep their own editor (#342).
             "ministries_live": live_ministries_editable(
                 campaign, configuration.current_campaign_id

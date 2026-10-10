@@ -217,6 +217,7 @@ def components(context, admin):
                         funds=[("9", "Offertory")],
                     ),
                     "end_form": end_form,
+                    "end_saved": "2054-10-31",
                 }
                 | values,
             ),
