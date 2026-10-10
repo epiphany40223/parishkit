@@ -132,6 +132,16 @@ PAGES = {
         "campaign", _("Send to chosen Families"), "campaign_mail"
     ),
     "schedule_settings": Page("campaign", _("Dates and mail schedules")),
+    # One schedule's page (#878): New, or Edit filled in from a saved one.
+    "schedule_new": Page("campaign", _("New scheduled email"), "schedule_settings"),
+    "schedule_edit": Page("campaign", _("Edit scheduled email"), "schedule_settings"),
+    # Answers only the list's confirmation dialog, with a change's status.
+    "schedule_delete": Page(
+        "campaign",
+        _("Delete scheduled emails"),
+        "schedule_settings",
+        linkable=False,
+    ),
     "share_settings": Page("campaign", _("Share options")),
     "artwork_settings": Page("campaign", _("Campaign images")),
     # A POST-only re-render of Campaign images with the upload's error, so it
@@ -662,12 +672,13 @@ def placement(request):
     return getattr(request, PLACEMENT_ATTRIBUTE, None)
 
 
-def remember_origin(request, request_id):
+def remember_origin(request, request_id, path=None):
     """Remember the page a configuration change was confirmed on.
 
     ``request.path`` is the editor's own URL (every editor confirms by
-    posting to itself). Only the most recent changes are kept, so the
-    session stays small.
+    posting to itself); an action that posts elsewhere, such as the
+    scheduled emails table's Delete (#878), names its page as ``path``. Only
+    the most recent changes are kept, so the session stays small.
     """
     session = getattr(request, "session", None)
     if session is None:
@@ -676,7 +687,7 @@ def remember_origin(request, request_id):
     origins = {
         name: path for name, path in session.get(ORIGINS_KEY, {}).items() if name != key
     }
-    origins[key] = request.path
+    origins[key] = path or request.path
     session[ORIGINS_KEY] = dict(list(origins.items())[-ORIGINS_KEPT:])
 
 

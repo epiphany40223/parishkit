@@ -774,3 +774,34 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 /* The repeat summary reserves two lines, so its text appearing, changing or
    wrapping on a phone never moves the Add button below it (#469). */
 .repeat-summary { min-height: 3.2em; min-height: 2lh; margin-block: .5rem 0; font-weight: 600; }
+
+/* Action tables (#879, components/table-actions.html and confirm-dialog.html).
+   Each row action is a square icon button with the 44px touch target; the
+   icon is decoration (the button carries the name and tooltip). Delete keeps
+   the secondary look with the error colour, so it stands apart from Edit by
+   shape and colour. The confirmation dialog is anchored near the top, not
+   centred, so its error line appearing below the buttons never moves them. */
+.table-actions { white-space: nowrap; }
+.table-actions .icon-button { margin: 0 .5rem 0 0; }
+.table-actions .icon-button:last-child { margin-inline-end: 0; }
+/* A fixed square, not a minimum: a link (Edit) and a <button> (Delete) must
+   draw the same size, and the `.data-table button` rule's smaller padding and
+   min-height would otherwise shrink only the button. The doubled-up selector
+   outranks it. */
+.icon-button, .data-table .icon-button { display: inline-flex; align-items: center; justify-content: center; width: var(--button-min-height); height: var(--button-min-height); min-width: 0; min-height: 0; padding: 0; line-height: 1; }
+.icon-button .action-icon { width: 1.15rem; height: 1.15rem; }
+.icon-button-danger { color: var(--error-ink); border-color: var(--error-border); }
+.icon-button-danger:not(:disabled):hover { background: var(--error-bg); color: var(--error-ink); }
+.button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
+.button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }
+.confirm-dialog { margin: 12vh auto auto; width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); }
+.confirm-dialog::backdrop { background: rgb(16 24 40 / 45%); }
+.confirm-dialog h2 { margin-top: 0; }
+.dialog-actions { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+.dialog-actions button { margin: 0; }
+.dialog-status { min-height: 1.6em; margin: .5rem 0 0; color: var(--muted); }
+.campaign-dates { margin-block: .25rem .5rem; }
+/* The scheduled emails table keeps readable columns on a phone: it scrolls
+   sideways inside its .table-scroll region rather than breaking words. */
+.schedule-table { min-width: 46rem; }
+.schedule-table :is(th, td) { overflow-wrap: normal; }

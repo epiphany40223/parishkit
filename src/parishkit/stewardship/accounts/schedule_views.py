@@ -1,4 +1,14 @@
-"""Atomic Admin preview of mail schedules and their draft campaign date window."""
+"""Dates and mail schedules: the scheduled emails list, and the date-change review.
+
+A GET without proposed dates shows the list (#878): the campaign dates on one
+line, New scheduled email, and the scheduled emails table with its row
+actions (``schedule_entry_views`` owns the New, Edit and Delete actions).
+Proposed campaign dates (sent here by Campaign settings) and this page's own
+POSTs keep the combined date-change review: every schedule's editor with the
+proposed dates, previewed and confirmed together, as the campaign
+configuration rules require. The review of every schedule change, from any
+of these pages, confirms here.
+"""
 
 from django.core import signing
 from django.db import DatabaseError
@@ -14,6 +24,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.tables import whole_table
 
 from . import admin_navigation
 from .admin_editing import confirm, error_response, principal
@@ -23,15 +34,76 @@ from .content_views import _records
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .schedule_changes import build_preview, confirm_scope, preview_salt
-from .schedule_forms import Schedules, ScheduleWindow, schedule_action
+from .schedule_forms import (
+    KINDS,
+    Schedules,
+    ScheduleWindow,
+    email_names,
+    schedule_action,
+    schedule_order,
+    window_text,
+)
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
-from .schedule_table import attach
+from .schedule_table import SORTING, attach, schedule_rows
 from .sessions import authenticated_admin
 
 
+def campaign_email_names(records):
+    """Readable names of the campaign's schedulable emails, by email ID."""
+    return email_names(
+        [
+            row
+            for row in records
+            if row["values"]["kind"] == "email" and row["values"]["slot"] in KINDS
+        ]
+    )
+
+
+def _list(request, state, campaign, editable, sort):
+    """The scheduled emails list (#878): dates on one line, the table, New.
+
+    The rows are the saved schedules in sending order, described from the
+    counts-only work summary (``schedule_table``); ``sort`` is the When
+    heading's token. ``refresh_url`` is this page's own address, sort
+    included, from which the confirmation dialog redraws the table after a
+    deletion is applied.
+    """
+    configuration = state[0]
+    values = campaign.active_configuration.values
+    previous = sorted(
+        campaign_schedules(configuration, campaign.pk), key=schedule_order
+    )
+    rows = schedule_rows(
+        previous,
+        values,
+        work_summary(campaign.pk),
+        timezone.now(),
+        campaign_email_names(_records(configuration, campaign.pk)),
+    )
+    return render(
+        request,
+        "stewardship/schedule-settings.html",
+        {
+            "campaign": campaign,
+            "values": values,
+            "editable": editable,
+            "base_digest": configuration.active_configuration.digest,
+            "table": whole_table(rows, sorting=SORTING, sort=sort),
+            "refresh_url": request.get_full_path(),
+            "new_url": reverse("admin:schedule_new"),
+            "delete_url": reverse("admin:schedule_delete"),
+            "window_text": window_text(values),
+        },
+    )
+
+
 def _page(request, campaign, window, schedules, digest, *, editable, status=200):
-    """Show civil dates/timezone separately from browser-local audit timestamps."""
+    """The date-change review: proposed dates and every schedule's editor.
+
+    Civil dates and the time zone show separately from browser-local audit
+    timestamps.
+    """
     # Schedules stay editable when the dates are locked: step 1 of 3 (#196).
     admin_navigation.place(request, flow="change", step="edit")
     # The table of saved schedules (#448): what each is, when it sends and
@@ -44,7 +116,7 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
     )
     response = render(
         request,
-        "stewardship/schedule-settings.html",
+        "stewardship/schedule-reconcile.html",
         {
             "campaign": campaign,
             "window": window,
@@ -99,14 +171,24 @@ def _preview(
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def schedule_settings(request, campaign_id):
-    """Current Admins reconcile schedules; dates stay structurally guarded."""
+    """Current Admins list and reconcile schedules; dates stay structurally guarded.
+
+    A GET without proposed dates is the list; proposed dates, or a POST
+    preview, the date-change review. A POST confirm applies any reviewed
+    schedule change, whichever page reviewed it, since every review signs
+    with this campaign's one schedule salt.
+    """
     try:
         service = runtime()
         actor = principal(request, service)
         salt = preview_salt(campaign_id)
         if request.FILES or (request.method == "POST" and request.GET):
             raise ValueError("Invalid schedule parameters.")
-        proposed = filters(request.GET, allowed={"start_date", "end_date", "timezone"})
+        proposed = filters(
+            request.GET, allowed={"start_date", "end_date", "timezone", "sort"}
+        )
+        sort = SORTING.parse(proposed)
+        proposed.pop("sort", None)
         if any(len(value) > 64 for value in proposed.values()):
             raise ValueError("Invalid proposed campaign window.")
         if request.method == "POST" and request.POST.get("action") == "confirm":
@@ -126,6 +208,7 @@ def schedule_settings(request, campaign_id):
             state, campaign, editable = schedule_state(service, campaign_id)
             if proposed and not editable:
                 raise StaleRecordError("Campaign dates are structurally locked.")
+            listing = request.method in {"GET", "HEAD"} and not proposed
             previous = campaign.active_configuration.values
             window = ScheduleWindow(
                 request.POST if request.method == "POST" else None,
@@ -153,7 +236,9 @@ def schedule_settings(request, campaign_id):
                 test_mail=admits_test_mail(state[0].mode, campaign),
             )
             response = (
-                _preview(
+                _list(request, state, campaign, editable, sort)
+                if listing
+                else _preview(
                     request,
                     service,
                     actor,

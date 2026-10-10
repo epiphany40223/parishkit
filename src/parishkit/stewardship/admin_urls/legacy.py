@@ -205,6 +205,8 @@ SLASHLESS = (
     ("campaign/images/<slug:slot>/removal", "artwork_remove"),
     ("campaign/images/<slug:slot>/<uuid:bundle_id>", "artwork_preview"),
     ("campaign/schedules", "schedule_settings"),
+    ("campaign/schedules/addition", "schedule_new"),
+    ("campaign/schedules/<uuid:schedule_id>", "schedule_edit"),
     ("campaign/share-options", "share_settings"),
     ("campaign/talents", "talent_settings"),
     ("campaign/reminder-workgroup", "reminder_workgroup"),

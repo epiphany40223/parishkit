@@ -1,0 +1,27 @@
+{% load i18n stewardship %}{% comment %}
+  The shared confirmation dialog of action tables (admin-portal spec, "Row
+  actions and confirmation", #879): a native modal <dialog> that ui-v1.js
+  opens from a control marked data-confirm-open="<dialog_id>" (a row's
+  Delete, or the bulk bar's button for the ticked rows). It never uses
+  confirm().
+
+  - title_one / title_many and done_one / done_many are the title and the
+    announcement after success, with {name} (the row's data-confirm-name) or
+    {count} filled in by the script.
+  - body and caution say what the action does and what it cannot undo.
+  - form_id names the table's form: confirming posts its fields (CSRF and any
+    base version) plus the chosen rows, without a page load.
+  - The status line ("Working…") is reserved under the buttons, and a
+    refusal is shown below that, so neither ever moves a button. The dialog
+    is anchored to the top of the window (ui-v1.css), so a growing dialog
+    grows downwards.
+  - fallback names the element that takes focus when the control that
+    opened the dialog is gone (its row was removed).
+{% endcomment %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}" data-working="{% translate 'Working…' %}">
+<h2 id="{{ dialog_id }}-title" data-confirm-title>{{ title_many }}</h2>
+<p id="{{ dialog_id }}-body">{{ body }}</p>
+{% if caution %}<p class="notice">{{ caution }}</p>{% endif %}
+<div class="dialog-actions">{% button type="button" class="button-danger" data-confirm-accept %}{{ accept }}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
+<p class="dialog-status" role="status" data-confirm-status></p>
+<div class="notice notice-error" role="alert" data-confirm-error hidden></div>
+</dialog>
