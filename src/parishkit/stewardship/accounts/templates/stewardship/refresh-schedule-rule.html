@@ -1,0 +1,20 @@
+{% load i18n stewardship %}{% comment %}
+One rule row of the refresh schedule editor (#632): "[Full | Quick] every
+[interval] from [time] to [time]" or "[Full | Quick] at [time]". The page
+script (refresh-schedule-v1.js) shows only the fields the chosen shape uses
+and disables the others, so they are not sent. The same markup, rendered
+from the formset's empty form, is what "Add a rule" clones. Messages (the
+row's problems and a kept time's note) come from the server's check.
+{% endcomment %}<fieldset class="schedule-row" id="rules-{{ row.index }}" data-schedule-row="rules">
+<legend><span>{% translate "Rule" %} <span data-row-number>{{ row.number }}</span></span></legend>
+<div class="schedule-row-fields">
+<div data-row-field="kind"><label class="visually-hidden" for="{{ row.form.kind.id_for_label }}">{{ row.form.kind.label }}</label>{{ row.form.kind }}</div>
+<div data-row-field="shape"><label class="visually-hidden" for="{{ row.form.shape.id_for_label }}">{{ row.form.shape.label }}</label>{{ row.form.shape }}</div>
+<div data-row-field="every" data-row-shape="every"><label class="visually-hidden" for="{{ row.form.every.id_for_label }}">{{ row.form.every.label }}</label>{{ row.form.every }}</div>
+<div class="schedule-labelled" data-row-field="start" data-row-shape="every"><label for="{{ row.form.start.id_for_label }}">{% translate "from" %}</label>{{ row.form.start }}</div>
+<div class="schedule-labelled" data-row-field="last" data-row-shape="every"><label for="{{ row.form.last.id_for_label }}">{% translate "to" %}</label>{{ row.form.last }}</div>
+<div data-row-field="at" data-row-shape="at"><label class="visually-hidden" for="{{ row.form.at.id_for_label }}">{% translate "Time" %}</label>{{ row.form.at }}</div>
+<div class="schedule-row-remove">{% button type="button" variant="secondary" data-row-remove %}{% translate "Remove" %}{% endbutton %}</div>
+</div>
+<div class="schedule-row-messages" id="rules-{{ row.index }}-messages" data-row-messages>{% include 'stewardship/refresh-schedule-messages.html' %}</div>
+</fieldset>

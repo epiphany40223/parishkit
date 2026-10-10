@@ -303,6 +303,7 @@ LEDGER = {
         "PR 10", "integration show", "integration set", "integration key replace"
     ),
     "integration_status": pending("PR 10", "integration status"),
+    "refresh_schedule_check": pending("PR 10", "integration schedule-preview"),
     "credential_status": pending("PR 10", "integration key status"),
     "dismiss_credential_result": pending("PR 10", "integration dismiss"),
     "select_credential": pending("PR 10", "integration key finish-switching"),

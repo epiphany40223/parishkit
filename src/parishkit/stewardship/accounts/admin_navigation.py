@@ -554,6 +554,9 @@ NON_PAGES = frozenset(
         "ministry_followup_update",
         "ministry_packet",
         "participation_chart",
+        # The ParishSoft refresh schedule editor's live check (#632), a
+        # fragment the settings page reads.
+        "refresh_schedule_check",
         # Retired multi-campaign address (navigation rule 10, decision 11):
         # New campaign only redirects. The two campaign choosers are old
         # addresses now (NAV-11).

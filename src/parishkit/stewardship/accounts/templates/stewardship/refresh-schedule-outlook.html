@@ -1,0 +1,12 @@
+{% load i18n %}{% comment %}
+What the edited refresh schedule does (#632): the cost and freshness
+summary and the seven-day list, which the live check replaces in place.
+Drawn below the line beside Save, so a longer or shorter preview never
+moves Save or the rows above it.
+{% endcomment %}<section class="panel refresh-schedule-outlook" id="refresh-schedule-outlook" aria-labelledby="refresh-schedule-outlook-heading">
+<h2 id="refresh-schedule-outlook-heading">{% translate "What this schedule does" %}</h2>
+<div data-schedule-part="summary">{% include 'stewardship/refresh-schedule-summary.html' %}</div>
+<h2>{% translate "Next seven days" %}</h2>
+<p class="help schedule-stale" data-schedule-stale><span hidden>{% translate "Not checked since your last change: the check could not reach the server. Saving checks everything again." %}</span></p>
+<div data-schedule-part="preview">{% include 'stewardship/refresh-schedule-preview.html' %}</div>
+</section>
