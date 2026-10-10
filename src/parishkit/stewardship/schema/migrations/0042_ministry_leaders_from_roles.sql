@@ -85,8 +85,8 @@ AS $$
 $$;
 
 -- Every current Ministry leader (#922), the one definition of who leads
--- what: each (address, Ministry, Member) where an active Member, whatever
--- their Family's status, holds a current roster row on a catalog-present
+-- what: each (address, Ministry, Member) where an active Member of an
+-- active Family holds a current roster row on a catalog-present
 -- Ministry of the current campaign (asking about Ministries, the Ministry
 -- selected and not marked inactive here) whose role label is one of the
 -- campaign's leader role names, and the address is a valid email on that
@@ -94,6 +94,13 @@ $$;
 -- stewardship_ministry_leader_role_key_v1; addresses match
 -- case-insensitively with no provider folding. No current campaign or
 -- promoted source means no leaders.
+-- The Administrator decided (2026-10-10) that inactive Members cannot lead
+-- but non-parishioners can. Both flags are the source's own: the Member's
+-- canonical active (not Inactive or Deceased in ParishSoft) and the
+-- Family's canonical active (parishsoft.family_is_active: not in the
+-- "Inactive" Family group and with an active Member), the same flag that
+-- gates Portal eligibility. The Family's parishioner flag (registered at
+-- this parish) is deliberately not read.
 -- Definer: it reads Member contact data no reader of a single scope needs.
 -- No login may EXECUTE it; stewardship_ministry_leader_scope_v1 does.
 CREATE FUNCTION public.stewardship_ministry_leaders_v1()
@@ -154,6 +161,9 @@ BEGIN
     JOIN public.stewardship_snapshot_member mm
         ON mm.snapshot_id=current_snapshot AND mm.source_key=held.member_key
     JOIN public.stewardship_source_member member ON member.id=mm.payload_id
+    JOIN public.stewardship_snapshot_family fm
+        ON fm.snapshot_id=current_snapshot AND fm.source_key=member.family_key
+    JOIN public.stewardship_source_family family ON family.id=fm.payload_id
     JOIN public.stewardship_snapshot_ministry tm
         ON tm.snapshot_id=current_snapshot AND tm.source_key=held.ministry_key
     JOIN public.stewardship_source_ministry ministry ON ministry.id=tm.payload_id
@@ -161,6 +171,7 @@ BEGIN
         ON cm.snapshot_id=current_snapshot AND cm.source_key='member:' || member.source_key
     JOIN public.stewardship_source_contact contact ON contact.id=cm.payload_id
     CROSS JOIN LATERAL (SELECT member.canonical::jsonb AS member_doc,
+        family.canonical::jsonb AS family_doc,
         ministry.canonical::jsonb AS ministry_doc,
         contact.canonical::jsonb AS contact_doc) parsed
     -- Each DUID is a positive signed 32-bit key; CASE orders the cast after
@@ -169,9 +180,11 @@ BEGIN
         THEN ministry.source_key::bigint END AS ministry) duid
     CROSS JOIN LATERAL jsonb_array_elements(parsed.contact_doc->'emails') address(value)
     WHERE parsed.member_doc->'schema_version'='1'::jsonb
+      AND parsed.family_doc->'schema_version'='1'::jsonb
       AND parsed.contact_doc->'schema_version'='1'::jsonb
       AND parsed.ministry_doc->'schema_version'='1'::jsonb
       AND parsed.member_doc->'active'='true'::jsonb
+      AND parsed.family_doc->'active'='true'::jsonb
       AND parsed.ministry_doc->'catalog_present'='true'::jsonb
       AND duid.ministry BETWEEN 1 AND 2147483647
       AND current_values->'ministry_duids' @> jsonb_build_array(duid.ministry)
@@ -415,6 +428,9 @@ BEGIN
                 AND p.prosrc LIKE '%WHERE rm.snapshot_id=current_snapshot%'
                 AND p.prosrc LIKE '%roster.doc->''current''=''true''::jsonb%'
                 AND p.prosrc LIKE '%parsed.member_doc->''active''=''true''::jsonb%'
+                AND p.prosrc LIKE '%fm.source_key=member.family_key%'
+                AND p.prosrc LIKE '%parsed.family_doc->''active''=''true''::jsonb%'
+                AND p.prosrc NOT LIKE '%''parishioner''%'
                 AND p.prosrc LIKE '%address.value->''valid''=''true''::jsonb%'
                 AND p.prosrc LIKE '%current_values->''ministry_duids'' @> jsonb_build_array(duid.ministry)%'
                 AND p.prosrc LIKE '%NOT activity.active%')

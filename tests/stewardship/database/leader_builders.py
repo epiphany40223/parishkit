@@ -1,15 +1,18 @@
 """Ministry leaders as ParishSoft defines them (#922), for PostgreSQL tests.
 
-A Ministry leader is an active Member holding one of the campaign's leader
-roles on a Ministry's current roster, signing in with an email address their
-Member record lists. Tests therefore make leaders the way ParishSoft does:
-they add Members to the synthetic source and promote it.
+A Ministry leader is an active Member of an active Family holding one of
+the campaign's leader roles on a Ministry's current roster, signing in with an
+email address their Member record lists. Tests therefore make leaders the way
+ParishSoft does: they add Members to the synthetic source and promote it.
 
-Leader Members belong to the fixture's memberless Family 2, which is put in
-ParishSoft's "Inactive" Family group so it stays inactive and ineligible as
-before: no Family, code or eligibility changes. Each leader holds the "Staff"
-role by default, one of the default leader roles, so the Choir fixture's
-Chairperson column is untouched.
+Leader Members join the fixture's memberless Family 2 by default, registered
+at another parish: their active Membership makes it an active Family that is
+not a parishioner here, so it never becomes Portal-eligible and no Family
+form, code or eligibility count changes. A leader may instead join the
+fixture's active registered Family 1 (adding a Member to its Family form) or
+an added Family in ParishSoft's "Inactive" Family group. Each leader holds
+the "Staff" role by default, one of the default leader roles, so the Choir
+fixture's Chairperson column is untouched.
 """
 
 from copy import deepcopy
@@ -17,8 +20,12 @@ from uuid import uuid4
 
 from .test_source_families_postgresql import prepare, promote
 
-# The fixture Family that holds every leader Member.
-LEADER_FAMILY = 2
+# The fixture Families a leader Member can belong to: the memberless Family 2
+# registered elsewhere, the active registered Family 1, and an added Family
+# in the "Inactive" Family group.
+FAMILIES = {"non_parishioner": 2, "parishioner": 1, "inactive": 800}
+# Another parish's organization (the fixture's own becomes 12345 when staged).
+ELSEWHERE = 6
 # A Family group the fixture does not use otherwise, named as ParishSoft
 # names its inactive group.
 INACTIVE_GROUP = 8
@@ -26,15 +33,27 @@ INACTIVE_GROUP = 8
 FIRST_LEADER = 900
 
 
-def leader(email, *ministries, role="Staff", status="Active", ended=False):
-    """One leader Member: its address, Ministries, role and state.
+def leader(
+    email,
+    *ministries,
+    role="Staff",
+    status="Active",
+    ended=False,
+    family="non_parishioner",
+):
+    """One leader Member: its address, Ministries, role, state and Family.
 
     ``status`` is the Member's ParishSoft status ("Inactive" makes it an
     inactive Member); ``ended`` gives every roster row a past end date, so
-    none is current.
+    none is current; ``family`` is a ``FAMILIES`` key.
     """
     return dict(
-        email=email, ministries=ministries, role=role, status=status, ended=ended
+        email=email,
+        ministries=ministries,
+        role=role,
+        status=status,
+        ended=ended,
+        family=FAMILIES[family],
     )
 
 
@@ -49,13 +68,21 @@ def with_leaders(data, leaders):
     data = deepcopy(data)
     if isinstance(leaders, dict):
         leaders = [leader(email, *duids) for email, duids in sorted(leaders.items())]
-    data.family_groups[INACTIVE_GROUP] = "Inactive"
-    data.families[LEADER_FAMILY]["famGroupID"] = INACTIVE_GROUP
+    data.families[FAMILIES["non_parishioner"]]["registeredOrganizationID"] = ELSEWHERE
+    if any(item["family"] == FAMILIES["inactive"] for item in leaders):
+        duid = FAMILIES["inactive"]
+        data.family_groups[INACTIVE_GROUP] = "Inactive"
+        data.families[duid] = {
+            "familyDUID": duid,
+            "registeredOrganizationID": 5,
+            "famGroupID": INACTIVE_GROUP,
+            "lastName": "Inactive",
+        }
     for offset, item in enumerate(leaders):
         duid = FIRST_LEADER + offset
         data.members[duid] = {
             "memberDUID": duid,
-            "familyDUID": LEADER_FAMILY,
+            "familyDUID": item["family"],
             "firstName": "Leader",
             "lastName": f"Example {offset}",
             "memberType": "Adult",
