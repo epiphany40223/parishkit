@@ -9,7 +9,7 @@
 {% block head %}<script src="{% static 'stewardship/local-sign-in-v1.js' %}" defer></script>{% endblock %}
 {% block content %}<section class="flow panel">
   <h1>{% translate "Local test sign-in" %}</h1>
-  <p>{% translate "This signs you into the local laptop environment with the one-time link that" %} <code>tools/stewardship-local.sh sign-in --email E</code> {% translate "printed. The link works once, within two minutes of being printed." %}</p>
+  <p>{% translate "This signs you into the local laptop environment with the one-time link that" %} <code>tools/stewardship-local.sh sign-in --email E</code> {% translate "printed. The link works once, within 15 minutes of being printed." %}</p>
   <form method="post" action="/admin/local/sign-in">
     {% csrf_token %}
     <input id="local-sign-in-token" name="token" type="hidden" value="">
