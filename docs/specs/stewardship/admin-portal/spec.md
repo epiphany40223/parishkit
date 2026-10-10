@@ -903,7 +903,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same) |  |
 | `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/parish/ministries/campaign/` | (same) | Moves under Ministries, which links it while the campaign is live; its Return link goes to Ministries. Campaign settings keeps a link. |
 | `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same) |  |
-| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) |  |
+| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) | The table's confirmation dialog posts here (#879); it answers with a redirect or a refusal, never a page. |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same) |  |
 | `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same) |  |
 | `users` | Sign-in rules | Menu: Sign-in rules | Administrator | Portal users | `/admin/users` | `/admin/users/sign-in-rules/` | Portal users is split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
@@ -912,7 +912,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `assignments` | Review Ministry assignment | Ministry assignments (new page) | Administrator | Review Ministry assignment change; Assignments | `/admin/users/assignments` (POST only) | `/admin/users/ministry-assignments/review/` (POST only) |  |
 | `chair_confirmations` | Review Chairperson suggestion | Chairpersons (new page) | Administrator | Review Chairperson confirmation; Chair suggestions | `/admin/users/suggestions` (POST only) | `/admin/users/chairpersons/suggestions/` (POST only) |  |
 | `chair_reviews` | Review Chairperson decision | Chairpersons (new page) | Administrator | Review Chairperson assignment decision; Chair reviews | `/admin/users/reviews` (POST only) | `/admin/users/chairpersons/reviews/` (POST only) |  |
-| `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); revoke posts to `/admin/users/automation/sessions/<session>/`. |
+| `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); the Revoke dialog posts the session to `/admin/users/automation/sessions/` (#879). |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
 | `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. |
@@ -1318,19 +1318,28 @@ server validates every submitted selection.
 
 A table whose rows can be acted on follows one pattern
 ([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
-and shared; [Dates and mail schedules](#dates-and-mail-schedules) is its first
-user, and the other Admin tables with per-row actions move to it in later
-changes.
+and shared. Its users so far are
+[Dates and mail schedules](#dates-and-mail-schedules), the
+[Hosted files](../hosted-files/spec.md#admin-page) library and the live
+sessions of
+[Automation access](../admin-automation/spec.md#revocation-and-listing); the
+other Admin tables with per-row actions move to it in later changes, as the
+inventory on #879 lists.
 
 - **Actions column.** The last column holds each row's actions as small icon
-  buttons (`table_actions`): Edit, a link to the item's own page, and Delete.
-  Each has an accessible name and a matching tooltip that name the row ("Edit
-  Reminder 2", "Delete Reminder 2"), and the icons are drawn inline, so they
-  need no request and stay inside the content security policy. A row shows
-  only the actions that apply to it; a row with none shows nothing there.
+  buttons (`table_actions`), all the same square size: Edit, a link to the
+  item's own page, and Delete. Each has an accessible name and a matching
+  tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"), and the
+  icons are drawn inline, so they need no request and stay inside the
+  content security policy. A destructive action with another name uses its
+  own word and icon in Delete's place and works the same way; so far only
+  Revoke ("Revoke nightly export") on Automation access. A row shows only the
+  actions that apply to it; a row with none shows nothing there.
 - **Edit** opens the item's edit page, which is the same page as New, filled
   in. Saving it goes through that page's usual review, and its status page
-  returns to the table.
+  returns to the table. Where only part of an item can change (a hosted
+  file's placeholder name), Edit opens that part's own page, which returns to
+  the table on save.
 - **Delete** opens a confirmation dialog in the page: a native modal
   `<dialog>` that names what it removes and says what cannot be undone, with
   the destructive action and Cancel. While it is open the rest of the page is
@@ -1340,8 +1349,10 @@ changes.
   the chosen rows, without a page load: the confirm button says it is working
   and the dialog cannot be dismissed until the answer arrives. When the
   server records a configuration change, the page follows that change's status
-  until it is applied, then redraws every region from the table's own address
-  (keeping its sort) and closes the dialog, announcing what was removed. A
+  until it is applied; when it acts at once (Hosted files, Automation access)
+  it redirects back to the page. Either way the page then redraws every
+  region from the table's own address (keeping its sort and page) and closes
+  the dialog, announcing what was removed. A
   refusal, or a change that failed to apply, is shown inside the dialog, below
   its buttons so they never move, and nothing is redrawn; the server's
   explanation is shown when it gives one. A page-wide `confirm()` is never
@@ -1931,7 +1942,8 @@ rules; nothing else about those Families changes.
 Hosted files (Parish data) is the Administrator-only library of
 PDF, Office and image files that page and email content links or shows
 with `{{ file.<slug> }}`: upload, placeholder copy, where each file is used,
-and single or multi-select deletion that is refused while a file is in use.
+and single or multi-select deletion that is refused while a file is in use,
+through the shared [row actions and confirmation](#row-actions-and-confirmation).
 The page and its rules are defined by the
 [hosted files specification](../hosted-files/spec.md#admin-page).
 

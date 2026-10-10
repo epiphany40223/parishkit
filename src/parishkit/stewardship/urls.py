@@ -126,10 +126,12 @@ admin_patterns = [
         automation_views.approval_view,
         name="automation_approval",
     ),
+    # Revoke posts the chosen session to the collection, as the shared
+    # confirmation dialog does (#879).
     path(
-        "users/automation/sessions/<uuid:session_id>/",
-        automation_views.session_view,
-        name="automation_session",
+        "users/automation/sessions/",
+        automation_views.sessions_view,
+        name="automation_sessions",
     ),
     path(
         "users/automation/notices/",

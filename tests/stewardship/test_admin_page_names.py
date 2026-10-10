@@ -76,7 +76,6 @@ TEMPLATES = {
     "branding_preview": "branding-preview.html",
     "ministries": "ministries.html",
     "hosted_files": "hosted-files.html",
-    "hosted_file_delete": "hosted-file-delete.html",
     "hosted_file_rename": "hosted-file-rename.html",
     "source_refresh": "source-refresh.html",
     "users": "users.html",
@@ -129,9 +128,10 @@ OBJECT_NAMED = {
 # report takes the title saved with the emailed report.
 VIEW_NAMED = {"reports", "daily_digest_snapshot"}
 # A sign-in rule change's status answers JSON only (the spec: not a page),
-# and Delete scheduled emails answers the list's dialog with a change's
-# status page, never a page of its own.
-NOT_PAGES = {"rule_request", "schedule_delete"}
+# Delete scheduled emails answers the list's dialog with a change's status
+# page, and Delete hosted files the library's dialog with a redirect or a
+# refusal (#879), never a page of their own.
+NOT_PAGES = {"rule_request", "schedule_delete", "hosted_file_delete"}
 # Pages whose new name waits for a later slice, with that slice. Portal users
 # becomes Sign-in rules when NAV-15 splits it; renaming the combined page now
 # would mislabel its Ministry assignment and Chairperson tables.

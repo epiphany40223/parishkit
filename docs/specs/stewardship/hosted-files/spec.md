@@ -441,11 +441,23 @@ Member update introduction (page)", "2027 Stewardship › Initial invitation
 (email)", "A change that is still being applied" or "3 emails waiting to be
 sent".
 
-Admins may select several files and delete them together. After a
-confirmation step, each selected file is processed in its own transaction, and
-the result page lists every file with its outcome: **Deleted**, **Not deleted —
-in use** (with its uses), or **Already deleted**. One file's refusal never
-blocks the others.
+Admins delete one file from its row, or several ticked files together,
+through the portal's shared
+[row actions and confirmation](../admin-portal/spec.md#row-actions-and-confirmation)
+dialog ([#879](https://github.com/epiphany40223/parishkit/issues/879)); there
+is no separate confirmation or results page. Only unused files offer Delete
+and a selection box. Confirming posts the chosen files, and the server
+refuses the whole request, deleting nothing, when any of them is in use by
+then ("A chosen file is now used by a page, an email or unsent mail, so
+nothing was deleted."). Otherwise each file is deleted in its own
+transaction, which locks it and rechecks its uses; a file already deleted
+counts as deleted. On success the table redraws in place without the files.
+Should one fail after others were deleted (it came into use meanwhile, or the
+storage lock was busy), the dialog says some were deleted but not all and
+asks the Admin to reload; if the first fails, it says nothing was deleted.
+This replaced the earlier per-file results page (where one file's refusal
+never blocked the others), so the library follows the portal-wide rule that a
+request is refused whole when any chosen row cannot be acted on.
 
 ## Admin page
 
@@ -475,7 +487,9 @@ from Family pages and emails.") opens the About panel, following the Admin
   the page redirects back with "Uploaded *name* as `{{ file.slug }}`".
 - **Usage line**: "12 of 100 files, 35.2 MB of 200 MB used."
 - **File table**, built on the shared Admin table component with its
-  selection column and **Delete selected** bulk action. Its headings sort
+  selection column and **Delete selected** bulk action, as an action table
+  ([row actions and confirmation](../admin-portal/spec.md#row-actions-and-confirmation)).
+  Its headings sort
   the whole library on the server (Name, Placeholder, Type, Size, Uploaded,
   and Used in by its number of uses), by placeholder name until a heading is
   chosen. The columns are:
@@ -491,12 +505,16 @@ from Family pages and emails.") opens the About panel, following the Admin
   - Uploaded: the Admin's name and the date, in the parish date format.
   - Used in: the uses from [current content](#current-content), or "Not
     used".
-  - A **Change placeholder name** action. It is offered only for unused
-    files, and otherwise shows "In use" with the uses.
+  - Actions, last: for an unused file, **Edit** (its **Change placeholder
+    name** page) and **Delete**, icon buttons named for the file ("Edit
+    ministry-guide", "Delete ministry-guide"). A file in use has no actions
+    and no selection box; its Used in column says where it is used.
 - **Empty state**: "No files yet. Upload a PDF, Office document or image to
   link it from pages and emails."
 - **About this page** panel: how to write a link and an inline image, with
-  examples; accepted types and limits; why links stay the same after a rename;
+  examples; accepted types and limits; what Edit, Delete and Delete selected
+  do, and that nothing is deleted when a chosen file is in use; why links
+  stay the same after a rename;
   that deleting a file breaks links in emails already sent; alt text and
   email-image advice; and how to replace a file.
 
@@ -637,8 +655,9 @@ Unit and database tests must cover:
    messages. It ignores applied/failed/cancelled requests, delivered mail,
    and archived campaigns that are no longer current.
 9. Deletion and renaming are refused while in use, by both the view and the
-   database triggers, with the uses listed. Multi-select deletion reports
-   each file's outcome separately. A deletion racing a content save
+   database triggers, with the uses listed. A deletion naming any file in use
+   deletes nothing; one that fails part-way says so. A deletion racing a
+   content save
    serializes, so the content save or the deletion fails and never both
    succeed. The token is unchanged after a rename.
 10. Storage: files are written `0600` under `hosted-files/` with no

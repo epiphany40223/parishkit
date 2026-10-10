@@ -3,7 +3,8 @@
 The view's page state (the "Include ended sessions" box and each table's
 sort) is a closed allowlist; the template shows the live table first, the
 ended table only on request and never with Revoke, and every heading,
-Revoke form and the box's form keep the rest of the state. The database
+the revoke form and the box's form keep the rest of the state. Revoke is a
+row action (#879) that confirms in the shared dialog. The database
 side is in ``database/test_automation_access_postgresql.py``.
 """
 
@@ -170,12 +171,13 @@ def test_by_default_live_sessions_come_first_and_ended_ones_are_hidden(page):
     assert 'name="ended" value="yes"' in html and "checked" not in box
     assert '<div id="ended-table" data-table-region></div>' in html
     assert "gamma" not in html and "Your ended sessions" not in html
-    # Every live session is offered Revoke, in place, with a bare address.
-    assert html.count('data-in-place-message="Session revoked."') == 2
-    assert (
-        f'action="/admin/users/automation/sessions/{LIVE_ROWS[0]["id"]}/#live-table"'
-        in (html)
-    )
+    # Every live session is offered Revoke, an icon button that opens the
+    # dialog; the form it posts with has a bare address.
+    assert html.count('data-confirm-open="session-revoke"') == 2
+    assert f'name="session_id" value="{LIVE_ROWS[0]["id"]}"' in html
+    assert 'action="/admin/users/automation/sessions/#live-table"' in html
+    assert 'data-refresh-url="/admin/users/automation/"' in html
+    assert html.count('<dialog id="session-revoke"') == 1
 
 
 def test_the_box_shows_ended_sessions_without_revoke(page):
@@ -188,19 +190,20 @@ def test_the_box_shows_ended_sessions_without_revoke(page):
     ended = html.split('<div id="ended-table" data-table-region>')[1]
     assert "Your ended sessions" in ended
     assert "gamma" in ended and "delta" in ended and "alpha" not in ended
-    assert ">Revoke<" not in ended
+    assert 'aria-label="Revoke' not in ended and "data-confirm-open" not in ended
     assert "Ended from the command line" in ended
-    # Revoke forms in the live table keep the box's choice.
-    live = html.split('<div id="live-table" data-table-region>')[1].split(
+    # The revoke form and the redraw address keep the box's choice.
+    live = html.split('<div id="live-table" data-table-region')[1].split(
         '<div id="ended-table"'
     )[0]
-    assert "?ended=yes#live-table" in live
+    assert 'sessions/?ended=yes#live-table"' in live
+    assert 'data-refresh-url="/admin/users/automation/?ended=yes"' in live
 
 
 def test_both_tables_carry_sortable_headings_with_the_rest_of_the_state(page):
     """Shared sort headings on each table's columns; status and actions never sort."""
     _, html = page("?ended=yes&live_sort=label")
-    live = html.split('<div id="live-table" data-table-region>')[1].split(
+    live = html.split('<div id="live-table" data-table-region')[1].split(
         '<div id="ended-table"'
     )[0]
     ended = html.split('<div id="ended-table" data-table-region>')[1]
@@ -212,7 +215,8 @@ def test_both_tables_carry_sortable_headings_with_the_rest_of_the_state(page):
         assert f'data-sort-column="{column}"' in ended
     assert 'data-sort-column="administrator"' not in ended
     assert ended.count("data-sort-column") == 6 and live.count("data-sort-column") == 6
-    assert '<th scope="col">Revoke</th>' in live
+    # Actions last (#932), never sortable.
+    assert live.split("</tr></thead>")[0].endswith('<th scope="col">Actions</th>')
     assert '<th scope="col">How it ended</th>' in ended
     # An ended heading keeps the box and the live table's sort, and no size.
     link = ended.split('data-sort-column="ended"')[1].split('href="')[1].split('"')[0]

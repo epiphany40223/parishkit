@@ -2,10 +2,12 @@
 
 Automation access opens on its live sessions; its "Include ended sessions"
 box and both tables' sort headings refresh the page in place (#621).
-Revoking a session there and acknowledging the dashboard's
-automation notices act in place (#559): one POST, no reload (a mark outside
-the regions survives), the reader's place kept, the change announced, and
-the address set to the redirect's page. Acknowledging the last notice still
+Revoking a session there is a row action (#879): the row's Revoke icon asks
+in the shared confirmation dialog, then one POST and both tables redraw in
+place. Acknowledging the dashboard's automation notices acts in place
+(#559). Either way: no reload (a mark outside the regions survives), the
+reader's place kept and the change announced; an acknowledgement also sets
+the address to the redirect's page. Acknowledging the last notice still
 swaps, because the notices region is rendered even when empty. The approval
 page offers "Confirm with Google" with its controls unavailable while the
 sign-in is stale, and its review states what was asked in plain words.
@@ -14,7 +16,7 @@ sign-in is stale, and its review states what was asked in plain words.
 import pytest
 
 from .automation_components import ACCESS, APPROVAL, HOME, LOCAL_SIGN_IN, REVOKE
-from .waits import has_text
+from .waits import eventually, has_text, hidden, visible
 
 
 def contains(locator, text):
@@ -96,10 +98,10 @@ def test_live_sessions_are_the_first_table(page, component_origin):
         "Sessions that can act as an Administrator now"
     )
     section = first.locator("xpath=ancestor::section[1]")
-    assert section.locator("h2").inner_text() == "Live sessions"
+    assert section.locator(":scope > h2").inner_text() == "Live sessions"
     # Nothing on the page (pairing, approval) comes before it.
     assert page.locator("h1 ~ :is(section, div, p)").first.locator(
-        "h2"
+        ":scope > h2"
     ).inner_text() == ("Live sessions")
     assert page.locator("table").count() == 1
     assert page.locator("#ended-table").inner_text().strip() == ""
@@ -258,28 +260,6 @@ def test_a_heading_during_a_tick_keeps_the_tick(page, component_origin):
     assert page.evaluate(MARKED) == "kept"
 
 
-def test_a_tick_during_a_revoke_applies_after_the_save(page, component_origin):
-    """A tick while Revoke saves is held back ("Still saving…"), then applied."""
-    page.goto(component_origin + RACE)
-    page.evaluate(MARK)
-    row = page.locator("#live-table tr").filter(has_text="launch <assistant>")
-    row.get_by_role("button", name="Revoke").click()
-    page.get_by_label("Include ended sessions").check()
-    has_text(
-        page.get_by_role("status").filter(has_text="Still saving"), "Still saving…"
-    )
-    # Said beside the box too, while the save runs.
-    contains(page.locator("#automation-filter"), "Still saving")
-    _settled(page, True)
-    assert page.locator("#automation-filter [data-held-note]").count() == 0
-    # The revoked session stays revoked: gone from the live table, and listed
-    # among the ended ones.
-    assert page.locator("#live-table").get_by_text("launch <assistant>").count() == 0
-    assert _labels(page, "live-table") == ["other job"]
-    assert "launch <assistant>" in _labels(page, "ended-table")
-    assert page.evaluate(MARKED) == "kept"
-
-
 @pytest.mark.parametrize("answer", ["none", "refused"])
 def test_a_tick_the_server_cannot_answer_is_tried_once(page, component_origin, answer):
     """No answer (a restart, offline) or a 400: one in-place request and the
@@ -301,37 +281,57 @@ def test_a_tick_the_server_cannot_answer_is_tried_once(page, component_origin, a
 
 
 @pytest.mark.parametrize("query", ["", "?ended=yes"])
-def test_revoking_a_session_acts_in_place(page, component_origin, query):
-    """One POST; the session lists swap; the mark and scroll stay; it is said.
+def test_revoking_a_session_asks_then_acts_in_place(page, component_origin, query):
+    """Revoke asks in the dialog; Cancel changes nothing; confirming posts the
+    one session, the session lists redraw, the mark and scroll stay, and it
+    is said. With ended sessions shown, the revoked session moves to them
+    (#621)."""
+    from urllib.parse import parse_qs
 
-    With ended sessions shown, the revoked session moves to them (#621).
-    """
     page.set_viewport_size({"width": 1280, "height": 400})
     page.goto(component_origin + ACCESS + query)
     page.evaluate(MARK)
     live = page.locator("#live-table")
     # The label is shown as text, never interpreted as markup.
-    assert live.get_by_text("launch <assistant>").count() == 1
+    assert live.locator("tbody").get_by_text("launch <assistant>").count() == 1
     row = live.locator("tr").filter(has_text="launch <assistant>")
-    button = row.get_by_role("button", name="Revoke")
+    button = row.get_by_role("button", name="Revoke launch <assistant>")
+    assert button.get_attribute("title") == "Revoke launch <assistant>"
+    # Actions is the last column (#932).
+    assert live.locator("thead th").last.inner_text() == "Actions"
     button.scroll_into_view_if_needed()
     offset = page.evaluate("window.scrollY")
-    # The page may shrink by the revoked row's own height, which depends on
-    # the platform's fonts (taller on CI's Linux), so measure it.
-    shrink = row.evaluate("row => row.getBoundingClientRect().height")
     posts = posts_to(page, REVOKE)
+    dialog = page.locator("dialog#session-revoke")
     button.click()
+    visible(dialog)
+    assert dialog.locator("h2").inner_text() == "Revoke launch <assistant>?"
+    assert page.evaluate("document.activeElement.textContent.trim()") == "Cancel"
+    page.keyboard.press("Escape")
+    hidden(dialog)
+    assert posts == []
+    assert live.locator("tbody").get_by_text("launch <assistant>").count() == 1
+    button.click()
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        dialog.get_by_role("button", name="Revoke", exact=True).click()
+    fields = parse_qs(sent.value.post_data or "")
+    assert fields["session_id"] == [button.get_attribute("value")]
+    assert set(fields) == {"csrfmiddlewaretoken", "session_id"}
     has_text(
-        page.get_by_role("status").filter(has_text="Session revoked."),
-        "Session revoked.",
+        page.get_by_role("status").filter(has_text="Revoked launch <assistant>."),
+        "Revoked launch <assistant>.",
     )
+    hidden(dialog)
     assert page.evaluate(MARKED) == "kept"
-    # No jump to the top; the page may shrink a little under the reader, as
-    # the revoked session leaves the list of live ones.
+    # No jump to the top: the page scrolls only as far as the live table's
+    # heading, which takes focus because the row is gone.
     assert offset > 0 and page.evaluate("window.scrollY") > 0
-    assert abs(page.evaluate("window.scrollY") - offset) <= shrink + 16
-    assert page.locator("#live-table").get_by_text("other job").count() == 1
-    assert page.locator("#live-table").get_by_text("launch <assistant>").count() == 0
+    body = page.locator("#live-table tbody")
+    assert body.get_by_text("other job").count() == 1
+    assert body.get_by_text("launch <assistant>").count() == 0
+    eventually(page, "document.activeElement.id === 'automation-live-heading'")
+    heading = page.locator("#automation-live-heading").bounding_box()
+    assert -1 <= heading["y"] <= 401 - heading["height"], heading
     ended = page.locator("#ended-table")
     if query:
         contains(ended, "Revoked by you")
@@ -339,9 +339,6 @@ def test_revoking_a_session_acts_in_place(page, component_origin, query):
     else:
         assert ended.inner_text().strip() == ""
     assert posts == [component_origin + REVOKE + query]
-    assert page.url.startswith(
-        component_origin + ACCESS + (query + "&" if query else "?") + "revoked=1"
-    )
 
 
 def test_acknowledging_the_last_notice_acts_in_place(page, component_origin):

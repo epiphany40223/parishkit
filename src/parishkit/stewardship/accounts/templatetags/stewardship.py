@@ -141,25 +141,38 @@ def sort_heading(context, table, column, label, css_class=""):
     }
 
 
+# The destructive row actions table_actions draws: each has its own icon and
+# words ("Delete Reminder 2", "Revoke nightly export"), the same size and the
+# same confirmation dialog.
+TABLE_ACTION_VERBS = {"delete", "revoke"}
+
+
 @register.inclusion_tag("stewardship/components/table-actions.html")
-def table_actions(name, edit=None, delete=None, confirm=None, field="id"):
+def table_actions(
+    name, edit=None, delete=None, confirm=None, field="id", verb="delete"
+):
     """One row's Actions cell in an action table (#879).
 
     Usage: ``{% table_actions name=row.label edit=row.edit_url
     delete=row.id confirm="schedule-delete" field="schedule_id" %}``.
     ``name`` names the row in each button's accessible name and tooltip;
-    ``edit`` is the row's edit page; ``delete`` the value its Delete posts as
-    ``field`` once the dialog ``confirm`` names is confirmed. Leave out an
-    action the row does not offer; a row with none gets an empty cell.
+    ``edit`` is the row's edit page; ``delete`` the value its destructive
+    action posts as ``field`` once the dialog ``confirm`` names is
+    confirmed. ``verb`` names that action: "delete" (the default) or
+    "revoke" (Automation access). Leave out an action the row does not
+    offer; a row with none gets an empty cell.
     """
     if delete is not None and not confirm:
         raise template.TemplateSyntaxError("table_actions: Delete needs its dialog.")
+    if verb not in TABLE_ACTION_VERBS:
+        raise template.TemplateSyntaxError("table_actions: unknown verb.")
     return {
         "name": name,
         "edit": edit,
         "delete": delete,
         "confirm": confirm,
         "field": field,
+        "verb": verb,
     }
 
 
