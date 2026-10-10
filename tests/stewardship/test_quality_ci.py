@@ -176,12 +176,23 @@ def test_cost_balancing_keeps_slow_cases_separate(monkeypatch):
     assert sorted(node for group in groups for node in group) == sorted(nodes)
 
 
-def test_large_suite_reserves_baseline_time(monkeypatch):
-    """The shard with the extra baseline receives less database work."""
+@pytest.mark.parametrize(
+    ("size", "reserved"),
+    [
+        # Large enough that the full baseline reservation applies.
+        (8000, sharding.BASELINE_SECONDS),
+        # Smaller: capped at three quarters of an average shard.
+        (2000, 3 * 2000 // (4 * 8)),
+    ],
+)
+def test_large_suite_reserves_baseline_time(monkeypatch, size, reserved):
+    """The shard with the extra baseline receives less database work, but
+    never so little that it empties."""
     monkeypatch.setattr(sharding, "SLOW_TEST_SECONDS", {})
-    nodes = [f"test_a.py::case[{n}]" for n in range(2000)]
+    nodes = [f"test_a.py::case[{n}]" for n in range(size)]
     groups = [partition(nodes, index, 8) for index in range(1, 9)]
-    assert max(map(len, groups[1:])) - len(groups[0]) == 240
+    assert max(map(len, groups[1:])) - len(groups[0]) == reserved
+    assert len(groups[0]) >= size // 8 // 4
     assert sorted(node for group in groups for node in group) == sorted(nodes)
 
 
