@@ -33,8 +33,6 @@ from .test_user_views_postgresql import URL as PAGE
 from .test_user_views_postgresql import row
 
 pytestmark = pytest.mark.django_db(transaction=True)
-# The start of what a retired leader grant says (#922).
-RETIRED = "Ministry leader roles on sign-in rules and Ministry assignments no longer"
 URL = "/admin/users/reviews"
 
 
@@ -190,9 +188,10 @@ def test_a_suspended_seed_is_listed_and_restored_as_an_administrator_entry(
     assert review.close_reason == "assignment_removed"
     assert not ChairAssignmentReview.objects.filter(closed_by__isnull=True).exists()
     account = user("valid@example.org")
-    # The restored assignment grants nothing since #922.
+    # The restored assignment gives no Ministry since #922; the rule's role
+    # is held (2026-10-10).
     principal = current_principal(store, account.pk)
-    assert not principal.roles and not principal.ministries
+    assert principal.roles == {"ministry_leader"} and not principal.ministries
     (context,) = AuditContext.objects.filter(
         event__event_type="chair_review_decided"
     ).values_list("context", flat=True)
@@ -233,8 +232,8 @@ def test_a_removed_seed_leaves_the_rule_and_closes_the_review(
     with web():
         body = browser.get(PAGE).content.decode()
     assert 'id="chair-reviews"' not in body
-    # The rule's Ministry leader role grants nothing since #922, and says so.
-    assert RETIRED in row(body, "valid@example.org")
+    # The rule and its Ministry leader role stay.
+    assert "<td>Ministry leader</td>" in row(body, "valid@example.org")
     with web():
         # Deciding again about a seed that no longer exists is refused.
         again = post(
@@ -333,7 +332,8 @@ def test_keeping_the_role_independently_survives_the_source(
     """A manual origin beside the seed keeps the role after the Chairperson goes."""
     store, seed = suspended(tmp_path, settings, real_limiter)
     account = user("valid@example.org")
-    assert "ministry_leader" not in current_principal(store, account.pk).roles
+    # A rule's role is held even while its seed is suspended (2026-10-10).
+    assert "ministry_leader" in current_principal(store, account.pk).roles
     browser, login = signed_in()
     assert login.status_code == 302
     with web():
@@ -345,9 +345,10 @@ def test_keeping_the_role_independently_survives_the_source(
         status = browser.get(f"/admin/changes/{request.pk}/").content
     assert b"<li><span>Review Chairperson decision</span></li>" in status
     assert f'<a href="{PAGE}">Return to Portal users</a>'.encode() in status
-    # A rule's Ministry leader role grants nothing since #922.
+    # The kept role is held; Ministries come only from ParishSoft (#922).
     principal = current_principal(store, account.pk)
-    assert not principal.roles and principal.ministries == frozenset()
+    assert "ministry_leader" in principal.roles
+    assert principal.ministries == frozenset()
     with web():
         body = browser.get(PAGE).content.decode()
     kept = address_row(body)

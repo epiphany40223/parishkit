@@ -129,11 +129,11 @@ def test_current_rule_and_assignment_are_shown_from_policy():
         ],
         active=frozenset({4, 9}),
     )
-    # No overlay confirms the seed: the evaluator grants the seeded address
-    # nothing, so the rule shows its role suspended, not held, and the
-    # assignment reads as suspended.
-    assert exact["rule"]["kind"] == "address" and exact["rule"]["roles"] == []
-    assert exact["rule"]["suspended"] is True and exact["rule"]["deny"] is False
+    # The seeded rule's role is held, since a rule admits a Ministry leader
+    # (2026-10-10), while its assignment grants nothing (#922).
+    assert exact["rule"]["kind"] == "address"
+    assert text(exact["rule"]["roles"]) == ["Ministry leader"]
+    assert exact["rule"]["suspended"] is False and exact["rule"]["deny"] is False
     (seed,) = exact["assignments"]
     assert str(seed["source"]) == "Parish source Chairperson"
     assert seed["active"] is False
@@ -148,15 +148,15 @@ def test_current_rule_and_assignment_are_shown_from_policy():
     assert inherited["rule"]["domain"] == "example.org"
     assert text(inherited["rule"]["roles"]) == ["Staff"]
     assert inherited["assignments"] == []
-    # Even a confirmed seed grants nothing now: Ministry leaders come from
-    # ParishSoft roles (#922).
+    # A confirmed seed's assignment grants nothing now: Ministries come from
+    # ParishSoft roles (#922); the rule's role is held either way.
     (confirmed,) = suggestion_rows(
         AppliedPolicy(records, [], active_seeded=frozenset({records[3]["id"]})),
         [relationship()],
         active=frozenset({4}),
     )
-    assert confirmed["rule"]["roles"] == []
-    assert confirmed["rule"]["suspended"] is True
+    assert text(confirmed["rule"]["roles"]) == ["Ministry leader"]
+    assert confirmed["rule"]["suspended"] is False
     assert confirmed["assignments"][0]["active"] is False
 
 
@@ -175,5 +175,5 @@ def test_manual_and_seeded_assignments_are_both_shown_in_fixed_order():
             ("Administrator entry", False),
             ("Parish source Chairperson", False),
         ]
-        assert row["rule"]["roles"] == []
-        assert row["rule"]["suspended"] is True
+        assert text(row["rule"]["roles"]) == ["Ministry leader"]
+        assert row["rule"]["suspended"] is False

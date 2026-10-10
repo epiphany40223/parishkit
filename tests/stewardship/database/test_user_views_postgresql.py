@@ -23,11 +23,10 @@ from .role_grants import seed_user
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
-# What a rule's Ministry leader role or an assignment says it does now (#922).
+# What a Ministry assignment says it does now (#922).
 RETIRED = (
-    "Ministry leader roles on sign-in rules and Ministry assignments no longer "
-    "grant anything: Ministry leaders now come from their ParishSoft Ministry "
-    "roles."
+    "Ministry assignments no longer grant anything: a Ministry leader sees "
+    "the Ministries of their ParishSoft Ministry roles."
 )
 URL = "/admin/users"
 
@@ -126,9 +125,11 @@ def test_administrator_reviews_rules_provenance_and_warnings(auth_service, googl
     assert "Explicit deny" in denied and "None on record" in denied
     assert "data-local-instant" not in denied
     assert "Ministry DUID 9" in row(body, "leader@example.org")
-    # Rule leader roles and assignments grant nothing now (#922), and say so.
+    # A rule's Ministry leader role is held; assignments give no Ministry
+    # now (#922), and say so.
+    assert RETIRED in row(body, "leader@example.org")
     idle = row(body, "idle@example.org")
-    assert RETIRED in idle
+    assert RETIRED not in idle and "<td>Ministry leader</td>" in idle
     assert "is disabled and cannot sign in" in idle
     helper = row(body, "helper@workspace.example")
     assert "Ministry DUID 4" in helper and RETIRED in helper
@@ -177,11 +178,10 @@ def seeded_service(tmp_path, settings, real_limiter):
     return service
 
 
-def test_chairperson_seeds_grant_nothing_on_the_page_or_at_sign_in(
-    seeded_service, google
-):
-    """The page and the evaluator agree that no seed grants anything (#922),
-    whatever the overlay tables say."""
+def test_chairperson_seeds_on_the_page_match_a_sign_in(seeded_service, google):
+    """The page and the evaluator agree, whatever the overlay tables say: a
+    seeded rule's Ministry leader role is held (2026-10-10) and no seeded
+    assignment gives a Ministry (#922)."""
     store = seeded_service.store
     chairs = {
         email: identity(email)
@@ -195,9 +195,10 @@ def test_chairperson_seeds_grant_nothing_on_the_page_or_at_sign_in(
             email: current_principal(store, user.pk) for email, user in chairs.items()
         }
     for email, duid in (("confirmed@example.org", 9), ("missing@example.org", 4)):
-        assert not granted[email].roles and not granted[email].ministries
+        assert granted[email].roles == {"ministry_leader"}
+        assert not granted[email].ministries
         shown = row(body, email)
-        assert RETIRED in shown and "<td>None</td>" in shown
+        assert RETIRED in shown and "<td>Ministry leader</td>" in shown
         assert f"Ministry DUID {duid} (Parish source Chairperson; suspended)" in shown
 
 

@@ -167,10 +167,8 @@ def test_shared_addresses_and_existing_policy_are_shown_not_guessed(
     assert '<select name="member">' in suggestion
     assert '<option value="4:valid@example.org:6">' in suggestion
     assert "2 active Members use this address" in suggestion
-    # What the evaluator grants now, not the configured roles: nothing.
-    assert "Exact-address rule: no role in effect (Ministry leader suspended)" in (
-        suggestion
-    )
+    # What the evaluator grants now: the rule's role is held (2026-10-10).
+    assert "Exact-address rule: Ministry leader" in suggestion
     # The real effect ran and found no retained identity for the seed, so the
     # assignment is suspended, exactly as a sign-in would see it.
     assert "Parish source Chairperson; suspended" in suggestion

@@ -32,7 +32,10 @@ def text(values):
 
 
 def test_rows_state_the_suspension_and_what_the_evaluator_grants_now():
-    """A suspended seed grants nothing; the row says why and since when."""
+    """A suspended seed leads nothing; the row says why and since when.
+
+    The seeded rule's role is still held: a rule admits (2026-10-10).
+    """
     records = [
         address(),
         address("c@example.org", ("ministry_leader",), seeded=True),
@@ -42,7 +45,7 @@ def test_rows_state_the_suspension_and_what_the_evaluator_grants_now():
     assert row["email"] == "c@example.org" and row["ministry_name"] == "Choir"
     assert row["member_duid"] == 3 and row["generation"] == 7
     assert str(row["reason"]).startswith("The parish source no longer shows")
-    assert row["granted"] == [] and row["leading"] is False
+    assert text(row["granted"]) == ["Ministry leader"] and row["leading"] is False
     assert row["manual"] is False and row["last_login"] is None
 
 
@@ -59,7 +62,7 @@ def test_a_manual_assignment_beside_the_seed_keeps_scope_and_forbids_restore():
     )
     # No assignment grants scope now (#922), a manual one included.
     assert row["manual"] is True and row["leading"] is False
-    assert row["granted"] == []
+    assert text(row["granted"]) == ["Ministry leader"]
     assert str(row["reason"]) == "The Ministry is inactive in the applied activity."
 
 

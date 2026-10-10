@@ -249,7 +249,7 @@ def test_a_live_campaigns_leader_roles_are_reviewed_and_applied_in_place(
     roles = page.get_by_role("group", name="Ministry leader roles")
     visible(roles)
     # Its help says what the roles do, in plain words (behind its tip).
-    assert "can sign in and see their Ministry" in (
+    assert "sees the reports and follow-up of each Ministry" in (
         page.locator("#leader-roles").text_content()
     )
     # The other settings stay read-only.

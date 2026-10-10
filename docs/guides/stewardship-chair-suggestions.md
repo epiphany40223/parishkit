@@ -1,7 +1,8 @@
 # Stewardship Chairperson suggestions
 
-Since #922 (migration 0042), Ministry leaders come only from ParishSoft
-roles, and what this guide describes grants nothing; see
+Since #922 (migration 0042), the Ministries a Ministry leader sees come only
+from ParishSoft roles, and the Ministry assignments this guide describes
+grant none; a login rule's role still decides who signs in. See
 [Ministry leaders](../specs/stewardship/data/spec.md#ministry-leaders).
 
 This guide records the fifth slice of

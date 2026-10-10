@@ -1,7 +1,9 @@
 """Ministry leaders come from ParishSoft roster roles (#922, migration 0042).
 
-A person leads a Ministry when an active Member of an active Family (a
-non-parishioner Family included) holds one of the campaign's
+Signing in needs a login rule granting Ministry leader or higher
+(Administrator decision, 2026-10-10). Such a person leads a Ministry when an
+active Member of an active Family (a non-parishioner Family included) holds
+one of the campaign's
 leader roles (by default Chairperson or Staff) on that Ministry's current
 roster, the Ministry is in the current campaign and not marked inactive, and
 the person signs in with a valid email address that Member's record lists.
@@ -86,6 +88,11 @@ def rules(harness, *records):
     assert result.state == "applied"
 
 
+def ruled(harness, *emails):
+    """Give each address an exact-address Ministry leader rule."""
+    rules(harness, *(address(email, roles=("ministry_leader",)) for email in emails))
+
+
 def set_roles(harness, roles):
     """Apply the campaign's Ministry leader roles."""
     store = harness.service.store
@@ -158,26 +165,27 @@ def test_leaders_come_from_current_roster_roles(response_service):
         # No Member lists this address at all.
         "nobody@example.org": [],
     }
+    ruled(harness, *expected)
     users = {email: user(email).pk for email in expected}
     for email, ministries in expected.items():
+        # Every one of them signs in through the rule; only ParishSoft roles
+        # give Ministries, so some see none.
         led, report = scope(users[email])
         assert led == ministries, email
-        assert report == (
-            {"capability": "ministry_report", "operational": False, "ministries": led}
-            if led
-            else None
-        ), email
+        assert report == {
+            "capability": "ministry_report",
+            "operational": False,
+            "ministries": led,
+        }, email
         principal = current_principal(harness.service.store, users[email])
         assert principal.ministries == frozenset(ministries), email
-        assert principal.roles == (
-            frozenset({"ministry_leader"}) if ministries else frozenset()
-        ), email
+        assert principal.roles == frozenset({"ministry_leader"}), email
     # A custom role list replaces the default: the team leader leads, the
     # Staff and Chairperson holders no longer do.
     set_roles(harness, ["Team 1 Leader"])
     assert scope(users["team@example.org"])[0] == [9]
     assert scope(users["spaced@example.org"])[0] == [9]
-    assert scope(users["both@example.org"]) == ([], None)
+    assert scope(users["both@example.org"])[0] == []
     assert effective_roles(
         Campaign.objects.get(pk=harness.campaign.pk).active_configuration.values
     ) == ["Team 1 Leader"]
@@ -262,6 +270,7 @@ def test_inactive_families_never_lead_and_non_parishioners_do(response_service):
         "visitor@example.org": [9],
         "inactivevisitor@example.org": [],
     }
+    ruled(harness, *expected)
     store = harness.service.store
     for email, ministries in expected.items():
         pk = user(email).pk
@@ -269,11 +278,14 @@ def test_inactive_families_never_lead_and_non_parishioners_do(response_service):
         assert current_principal(store, pk).ministries == frozenset(ministries), email
 
 
-def test_rule_roles_assignments_and_denial(response_service):
-    """Rules no longer make leaders; an explicit deny still refuses a leader.
+def test_a_rule_admits_and_parishsoft_decides_the_ministries(response_service):
+    """Only a rule admits; ParishSoft decides a Ministry leader's Ministries.
 
-    Staff and Administrators keep their access; a leader who is also Staff
-    keeps Staff's and gains the Ministries. A disabled identity leads
+    The Administrator decided (2026-10-10) that a ParishSoft role holder
+    with no rule is not admitted, and that a rule's Ministry leader with no
+    ParishSoft role signs in and sees no Ministry; an assignment gives none.
+    A Staff rule keeps Staff, with the led Ministries alongside. An explicit
+    deny refuses everything, as before, and a disabled identity leads
     nothing.
     """
     harness = response_service
@@ -281,6 +293,7 @@ def test_rule_roles_assignments_and_denial(response_service):
         harness,
         source(),
         {
+            "norule@example.org": [9],
             "staffleader@example.org": [9],
             "denied@example.org": [4],
             "disabled@example.org": [4],
@@ -293,17 +306,26 @@ def test_rule_roles_assignments_and_denial(response_service):
         assignment("ruleonly@example.org", ministry=9),
         address("staffleader@example.org", roles=("staff",)),
         address("denied@example.org", roles=()),
+        address("disabled@example.org", roles=("ministry_leader",)),
     )
     store = harness.service.store
-    rule_only = user("ruleonly@example.org").pk
-    assert scope(rule_only) == ([], None)
-    principal = current_principal(store, rule_only)
+    no_rule = user("norule@example.org").pk
+    assert scope(no_rule) == ([], None)
+    principal = current_principal(store, no_rule)
     assert not principal.roles and not principal.ministries
+    rule_only = user("ruleonly@example.org").pk
+    assert scope(rule_only) == (
+        [],
+        {"capability": "ministry_report", "operational": False, "ministries": []},
+    )
+    principal = current_principal(store, rule_only)
+    assert principal.roles == {"ministry_leader"} and not principal.ministries
+    assert not allows(principal, Capability.MINISTRY_REPORT, ministry_id=9)
     staff = user("staffleader@example.org").pk
     led, report = scope(staff)
     assert led == [9] and report["operational"] is True
     principal = current_principal(store, staff)
-    assert principal.roles == {"staff", "ministry_leader"}
+    assert principal.roles == {"staff"} and principal.ministries == {9}
     assert allows(principal, Capability.CAMPAIGN_REPORT)
     denied = user("denied@example.org").pk
     assert scope(denied) == ([], None)
@@ -316,27 +338,34 @@ def test_rule_roles_assignments_and_denial(response_service):
     assert scope(disabled) == ([], None)
 
 
-def test_the_session_guard_admits_a_leader_without_any_rule(response_service):
-    """SQL admits an Admin session for a role-derived leader (#306 guard).
+def test_the_session_guard_admits_by_rule_only(response_service):
+    """SQL admits an Admin session only through a rule (#306 guard).
 
-    A rule's Ministry leader role alone is no longer enough.
+    A ParishSoft leader with no rule is refused; a rule's Ministry leader
+    with no ParishSoft role is admitted.
     """
     harness = response_service
     promote_leaders(harness, source(), {"lead@example.org": [9]})
     configure(harness, selected=(4, 9))
-    rules(harness, address("ruleonly@example.org", roles=("ministry_leader",)))
+    ruled(harness, "ruleonly@example.org")
     lead, rule_only = user("lead@example.org").pk, user("ruleonly@example.org").pk
     with web_login():
-        assert forge(lead).principal_id == lead
+        assert forge(rule_only).principal_id == rule_only
         with pytest.raises(IntegrityError, match="current authorized principal"):
-            forge(rule_only)
+            forge(lead)
 
 
-def test_a_leader_signs_in_with_google_and_no_rule(response_service, google):
-    """A verified Google address on a leader's Member record is admitted."""
+def test_a_ruled_leader_signs_in_with_google(response_service, google):
+    """A ruled Google address on a leader's Member record leads its Ministry.
+
+    A ParishSoft leader the rules do not name is refused.
+    """
     harness = response_service
-    promote_leaders(harness, source(), {"lead@example.org": [9]})
+    promote_leaders(
+        harness, source(), {"lead@example.org": [9], "norule@example.org": [9]}
+    )
     configure(harness, selected=(4, 9))
+    ruled(harness, "lead@example.org")
     claims, _ = google
     claims.update(email="Lead@Example.org", hd=OMIT, sub="leader-subject")
     client, response = signed_in()
@@ -348,10 +377,11 @@ def test_a_leader_signs_in_with_google_and_no_rule(response_service, google):
     assert allows(principal, Capability.MINISTRY_REPORT, ministry_id=9)
     assert not allows(principal, Capability.MINISTRY_REPORT, ministry_id=4)
     assert not allows(principal, Capability.CAMPAIGN_REPORT)
-    # Someone ParishSoft does not list is refused, as before.
-    claims.update(email="stranger@example.org", sub="stranger-subject")
-    _, response = signed_in()
-    assert response.status_code == 403
+    # A ParishSoft leader with no rule, and a stranger, are refused.
+    for email in ("norule@example.org", "stranger@example.org"):
+        claims.update(email=email, sub=email)
+        _, response = signed_in()
+        assert response.status_code == 403, email
 
 
 def test_the_leader_roles_stay_editable_on_a_live_campaign(response_service):
@@ -433,6 +463,7 @@ def test_scope_cost_on_a_history_sized_roster(response_service):
     harness = response_service
     duids = history(harness)
     configure(harness, selected=(4, 9, *duids))
+    ruled(harness, "m10@example.org")
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT count(*) FROM stewardship_source_roster "
@@ -471,11 +502,12 @@ def test_a_draft_campaign_leads_and_one_without_ministries_does_not(
 
     Leaders lead as soon as the current campaign asks about Ministries,
     before it is scheduled or live. A current campaign without the Ministry
-    module has no leaders at all: no scope, no role and no Admin session.
+    module leads no Ministry: the ruled leader still signs in, seeing none.
     """
     harness = response_service
     promote_leaders(harness, source(), {"lead@example.org": [9]})
     configure(harness, selected=(4, 9))
+    ruled(harness, "lead@example.org")
     campaign = Campaign.objects.get(pk=harness.campaign.pk)
     assert campaign.state == "draft"
     assert SystemConfiguration.objects.get().current_campaign_id == campaign.pk
@@ -497,11 +529,14 @@ def test_a_draft_campaign_leads_and_one_without_ministries_does_not(
         ],
     )
     assert result.state == "applied"
-    assert scope(lead) == ([], None)
+    assert scope(lead) == (
+        [],
+        {"capability": "ministry_report", "operational": False, "ministries": []},
+    )
     principal = current_principal(store, lead)
-    assert not principal.roles and not principal.ministries
-    with web_login(), pytest.raises(IntegrityError, match="current authorized"):
-        forge(lead)
+    assert principal.roles == {"ministry_leader"} and not principal.ministries
+    with web_login():
+        assert forge(lead).principal_id == lead
 
 
 def test_sql_and_python_compare_role_names_alike():

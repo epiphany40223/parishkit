@@ -14,8 +14,7 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp A
     SELECT jsonb_build_object('capability','ministry_report',
         'operational',p.roles ?| ARRAY['administrator','staff'],
         'ministries',p.ministries)
-    FROM policy p WHERE p.roles ?| ARRAY['administrator','staff']
-        OR jsonb_array_length(p.ministries)>0
+    FROM policy p WHERE p.roles ?| ARRAY['administrator','staff','ministry_leader']
 $$;
 
 CREATE FUNCTION stewardship_ministry_scope_authorized_v1(user_uuid uuid, recorded jsonb)

@@ -157,10 +157,10 @@ def test_a_confirmation_creates_the_seeded_rule_assignment_and_evidence(
     with web():
         body = browser.get(PAGE).content.decode()
     row = suggestion_row(body, "valid@example.org")
-    # Since #922 a seed grants nothing, so the page shows the seeded role and
-    # assignment as not in effect.
+    # Since #922 a seeded assignment gives no Ministry, so the page shows it
+    # as not in effect; the rule's roles are held (2026-10-10).
     assert "Parish source Chairperson; suspended</td>" in row
-    assert "Exact-address rule: Staff (Ministry leader suspended)" in row
+    assert "Exact-address rule: Staff, Ministry leader" in row
     # Confirming the same Ministry again is refused before anything is signed.
     with web():
         response = post(browser, proposal(store))

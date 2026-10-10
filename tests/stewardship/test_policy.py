@@ -33,7 +33,7 @@ def test_hosted_domain_requires_claim_and_email_suffix(hosted):
     assert roles == (frozenset({"staff"}) if hosted == "example.org" else frozenset())
 
 
-@pytest.mark.parametrize("roles", [(), ("staff",), ("administrator",)])
+@pytest.mark.parametrize("roles", [(), ("ministry_leader",), ("administrator",)])
 def test_exact_rule_replaces_domain_including_denial(roles):
     """Explicit address policy never unions roles inherited from its domain."""
     actual, _ = resolve_roles(
@@ -48,51 +48,50 @@ def test_exact_rule_replaces_domain_including_denial(roles):
 
 
 @pytest.mark.parametrize("seeded", [False, True])
-def test_rule_leader_roles_and_assignments_grant_nothing(seeded):
-    """Ministry leaders come only from ParishSoft roles (#922).
+def test_a_rule_admits_and_assignments_grant_no_ministry(seeded):
+    """A rule's roles are the roles held; Ministries come from ParishSoft (#922).
 
-    A rule's Ministry leader role, seeded or manual, and any assignment,
-    manual or seeded, give neither the role nor any Ministry.
+    A rule's Ministry leader role, seeded or manual, admits a Ministry leader
+    (Administrator decision, 2026-10-10), but no assignment, manual or
+    seeded, gives a Ministry: with no ParishSoft role they see none.
     """
     rule = address("leader@example.org", ("ministry_leader",), seeded=seeded)
     records = [rule, assignment(), assignment(seeded=True)]
     assert resolve_roles("leader@example.org", None, records) == (
-        frozenset(),
+        frozenset({"ministry_leader"}),
         frozenset(),
     )
     staff = address("leader@example.org", ("staff", "ministry_leader"))
     assert resolve_roles("leader@example.org", None, [staff, assignment()]) == (
-        frozenset({"staff"}),
+        frozenset({"staff", "ministry_leader"}),
         frozenset(),
     )
 
 
-def test_role_derived_scope_makes_a_ministry_leader():
-    """A non-empty role-derived scope is the only way to lead (#922).
+def test_role_derived_scope_needs_a_rule():
+    """ParishSoft's scope applies only to someone a rule admits.
 
-    It needs no rule at all and adds to a Staff or Administrator rule
-    without narrowing it. An explicit-deny exact-address rule still refuses
-    everything, as SQL's scope does.
+    SQL's scope is already empty without a rule; Python never turns a scope
+    into a role either, so no rule, or an explicit-deny exact-address rule,
+    means nothing at all. Staff keep Staff with their led Ministries.
     """
     led = frozenset({4, 9})
-    assert resolve_roles("leader@example.org", None, [], led) == (
+    leader = address("leader@example.org", ("ministry_leader",))
+    assert resolve_roles("leader@example.org", None, [leader], led) == (
         frozenset({"ministry_leader"}),
         led,
     )
     staff = address("leader@example.org", ("staff",))
     assert resolve_roles("leader@example.org", None, [staff], led) == (
-        frozenset({"staff", "ministry_leader"}),
+        frozenset({"staff"}),
         led,
     )
     denied = address("leader@example.org", ())
-    assert resolve_roles("leader@example.org", None, [denied], led) == (
-        frozenset(),
-        frozenset(),
-    )
-    assert resolve_roles("leader@example.org", None, [], frozenset()) == (
-        frozenset(),
-        frozenset(),
-    )
+    for records in ([], [denied]):
+        assert resolve_roles("leader@example.org", None, records, led) == (
+            frozenset(),
+            frozenset(),
+        )
 
 
 STAFF = {

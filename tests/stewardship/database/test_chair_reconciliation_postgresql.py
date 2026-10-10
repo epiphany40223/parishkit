@@ -86,12 +86,13 @@ def configured(tmp_path, *, manual_scope=True, manual_role=False):
 @pytest.mark.parametrize(
     "manual_scope,manual_role", [(True, False), (False, False), (False, True)]
 )
-def test_seeds_and_assignments_grant_nothing_whatever_the_source(
+def test_seeds_and_assignments_grant_no_ministry_whatever_the_source(
     tmp_path, manual_scope, manual_role
 ):
-    """Since Ministry leaders come from ParishSoft roles (#922), no seed,
-    manual assignment or rule Ministry leader role grants anything, before or
-    after the source loses or regains the Chairperson."""
+    """Since Ministry leaders' Ministries come from ParishSoft roles (#922),
+    no seed or manual assignment gives a Ministry, before or after the source
+    loses or regains the Chairperson; the rule's Ministry leader role is held
+    throughout (2026-10-10)."""
     from parishkit.stewardship.accounts.policy import current_principal
 
     from .test_policy_postgresql import user
@@ -101,7 +102,7 @@ def test_seeds_and_assignments_grant_nothing_whatever_the_source(
     )
     account = user("valid@example.org")
     before = current_principal(store, account.pk)
-    assert not before.roles and not before.ministries
+    assert before.roles == {"ministry_leader"} and not before.ministries
     data = source()
     data.members[3]["emailAddress"] = ""
     publish(data)

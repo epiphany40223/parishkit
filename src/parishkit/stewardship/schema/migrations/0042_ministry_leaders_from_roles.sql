@@ -10,7 +10,10 @@
 -- The Administrator decided (2026-10-09) that a Ministry's leaders are the
 -- people holding one of the campaign's leader roles (by default Chairperson
 -- or Staff) in that Ministry in ParishSoft, with no manual Ministry
--- assignment or Chairperson confirmation in the Admin portal. This file:
+-- assignment or Chairperson confirmation in the Admin portal. Sign-in still
+-- needs a login rule granting Ministry leader or higher (Administrator
+-- decision, 2026-10-10, on the Portal Users revamp): ParishSoft decides only
+-- which Ministries a Ministry leader sees. This file:
 --
 --   adds stewardship_ministry_leader_roles_v1   the campaign's role names,
 --                                                with the one default
@@ -20,23 +23,20 @@
 --   adds stewardship_ministry_leaders_v1        every current leader (the
 --                                                one definition; definer,
 --                                                executable by no login)
---   adds stewardship_ministry_leader_scope_v1   one user's role-derived
---                                                Ministries (definer; web,
---                                                worker and download)
+--   adds stewardship_ministry_leader_scope_v1   one ruled user's
+--                                                role-derived Ministries
+--                                                (definer; web, worker and
+--                                                download)
 --   replaces stewardship_ministry_scope_v1      Ministries now come only from
---                                                the role-derived scope; a
---                                                rule's Ministry leader role
---                                                and Ministry assignments no
---                                                longer grant anything. Same
---                                                signature, so every caller
---                                                (export authorization and
---                                                capture, follow-up, and the
---                                                report and follow-up v2
+--                                                the role-derived scope;
+--                                                Ministry assignments no
+--                                                longer grant any. Who it
+--                                                answers for is unchanged.
+--                                                Same signature, so every
+--                                                caller (export authorization
+--                                                and capture, follow-up, and
+--                                                the report and follow-up v2
 --                                                functions) follows at once.
---   replaces stewardship_portal_session_admission_v1
---                                                admits Administrator or Staff
---                                                by rule, or a leader with a
---                                                non-empty role-derived scope
 --   replaces stewardship_campaign_pointer_v1    a live campaign's
 --                                                ministry_leader_roles value
 --                                                stays editable (one more
@@ -51,7 +51,8 @@
 -- written (#922's probe), so nobody loses access. No table, row, credential,
 -- code or link changes; the assignment and chair tables stay, unread.
 -- stewardship_export_authorized_v1 is unchanged: it never admitted Ministry
--- leaders. Each replaced body is its latest definition with only the change
+-- leaders. stewardship_portal_session_admission_v1 is unchanged too: it
+-- already admits a rule granting Ministry leader or higher. Each replaced body is its latest definition with only the change
 -- described; none of them is SECURITY DEFINER, and CREATE OR REPLACE keeps
 -- their owners and grants. Reversing needs its own forward migration.
 SET LOCAL check_function_bodies = false;
@@ -202,13 +203,12 @@ REVOKE ALL ON FUNCTION public.stewardship_ministry_leaders_v1() FROM PUBLIC;
 
 -- One portal user's role-derived Ministry scope (#922): the ascending DUIDs
 -- of the Ministries stewardship_ministry_leaders_v1 lists for that user's
--- current address, or [] for an unknown or disabled user or an address an
--- exact-address rule explicitly denies: an empty role set refuses
--- everything, ParishSoft leadership included. (Unticking an address's last
--- role on the Portal users page removes its rule instead, so only a
--- deliberate deny blocks.) One address that several leader Members list
--- gets the union of their Ministries, since whoever controls it can sign
--- in as any of them. Definer, so the web,
+-- current address, or [] for an unknown or disabled user or one whose
+-- current login rule (exact address, else hosted domain, as the session
+-- guard reads it) grants no Ministry leader, Staff or Administrator role:
+-- a ParishSoft role alone admits no one. One address that several leader
+-- Members list gets the union of their Ministries, since whoever controls it
+-- can sign in as any of them. Definer, so the web,
 -- worker and download logins, which call it (directly, through
 -- stewardship_ministry_scope_v1 or through the Admin session guard), learn
 -- only a scope and read no contact data; database-grants grants EXECUTE to
@@ -220,18 +220,22 @@ AS $$
     SELECT coalesce(jsonb_agg(DISTINCT leader.ministry_duid ORDER BY leader.ministry_duid),
         '[]'::jsonb)
     FROM public.stewardship_portal_user u
+    CROSS JOIN public.stewardship_system_configuration r
+    LEFT JOIN public.stewardship_address_rule a
+        ON a.configuration_id=r.active_configuration_id AND a.email=lower(u.email)
+    LEFT JOIN public.stewardship_domain_rule d
+        ON d.configuration_id=r.active_configuration_id
+       AND d.domain=lower(u.hosted_domain) AND d.domain=split_part(lower(u.email),'@',2)
     JOIN public.stewardship_ministry_leaders_v1() leader ON leader.email=lower(u.email)
     WHERE u.id=user_uuid AND NOT u.disabled
-      AND NOT EXISTS (SELECT 1 FROM public.stewardship_system_configuration r
-          JOIN public.stewardship_address_rule a
-            ON a.configuration_id=r.active_configuration_id
-          WHERE a.email=lower(u.email) AND a.roles='[]'::jsonb)
+      AND coalesce(a.roles,d.roles,'[]'::jsonb) ?| ARRAY['administrator','staff','ministry_leader']
 $$;
 ALTER FUNCTION public.stewardship_ministry_leader_scope_v1(uuid) SECURITY DEFINER;
 REVOKE ALL ON FUNCTION public.stewardship_ministry_leader_scope_v1(uuid) FROM PUBLIC;
 
--- Ministries come only from the role-derived scope (#922); Administrator
--- and Staff stay operational by rule.
+-- Ministries come only from the role-derived scope (#922); a rule still
+-- decides who has a scope at all, as before, and Administrator and Staff
+-- stay operational by rule.
 CREATE OR REPLACE FUNCTION public.stewardship_ministry_scope_v1(user_uuid uuid)
 RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     WITH policy AS (
@@ -247,44 +251,8 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp A
     SELECT jsonb_build_object('capability','ministry_report',
         'operational',p.roles ?| ARRAY['administrator','staff'],
         'ministries',p.ministries)
-    FROM policy p WHERE p.roles ?| ARRAY['administrator','staff']
-        OR jsonb_array_length(p.ministries)>0
+    FROM policy p WHERE p.roles ?| ARRAY['administrator','staff','ministry_leader']
 $$;
-
-CREATE OR REPLACE FUNCTION public.stewardship_portal_session_admission_v1() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
-    AS $$
-BEGIN
-    -- #306 M2: the SQL Admin checks trust these rows, so an Admin session
-    -- cannot be minted by a web logic bug that SQL can see. The absolute
-    -- limit is ADMIN_ABSOLUTE (12 hours, accounts/session_policy.py); an
-    -- authority rotation copies the older row's earlier deadline. The
-    -- principal must be a live PortalUser whose current address or domain
-    -- rule grants Administrator or Staff (the same projection as
-    -- stewardship_export_authorized_v1), or who leads at least one Ministry
-    -- through a ParishSoft role (#922, stewardship_ministry_leader_scope_v1).
-    -- A rule's Ministry leader role alone no longer admits anyone. Python
-    -- may grant fewer roles than this, never more.
-    IF NEW.expires_at > statement_timestamp() + interval '12 hours'
-       OR NEW.authenticated_at > statement_timestamp()
-       OR NEW.last_activity_at > statement_timestamp()
-       OR NOT EXISTS (
-        SELECT 1 FROM stewardship_portal_user u
-        CROSS JOIN stewardship_system_configuration r
-        LEFT JOIN stewardship_address_rule a ON a.configuration_id=r.active_configuration_id
-            AND a.email=lower(u.email)
-        LEFT JOIN stewardship_domain_rule d ON d.configuration_id=r.active_configuration_id
-            AND d.domain=lower(u.hosted_domain) AND d.domain=split_part(lower(u.email),'@',2)
-        WHERE u.id=NEW.principal_id AND NOT u.disabled
-            AND (coalesce(a.roles,d.roles,'[]'::jsonb) ?| ARRAY['administrator','staff']
-                 OR jsonb_array_length(public.stewardship_ministry_leader_scope_v1(u.id))>0))
-    THEN
-        RAISE EXCEPTION 'Admin session requires a current authorized principal and bounded lifetime'
-            USING ERRCODE='23514';
-    END IF;
-    RETURN NEW;
-END $$;
 
 -- The live-campaign structural lock exempts ministry_leader_roles too: the
 -- Administrator may change which ParishSoft roles lead while it runs.
@@ -438,7 +406,7 @@ BEGIN
                 AND pg_get_function_identity_arguments(p.oid)='user_uuid uuid'
                 AND p.prorettype='jsonb'::regtype
                 AND p.prosrc LIKE '%public.stewardship_ministry_leaders_v1() leader ON leader.email=lower(u.email)%'
-                AND p.prosrc LIKE '%a.roles=''[]''::jsonb%'))
+                AND p.prosrc LIKE '%coalesce(a.roles,d.roles,''[]''::jsonb) ?| ARRAY[''administrator'',''staff'',''ministry_leader'']%'))
        )<>2 THEN
         RAISE EXCEPTION 'Migration 0042: the Ministry leader functions are not installed as declared';
     END IF;
@@ -469,17 +437,14 @@ BEGIN
                 AND pg_get_function_identity_arguments(p.oid)='user_uuid uuid'
                 AND p.prosrc LIKE '%stewardship_ministry_leader_scope_v1(u.id) AS ministries%'
                 AND p.prosrc NOT LIKE '%stewardship_ministry_assignment%'
-                AND p.prosrc NOT LIKE '%''ministry_leader''%')
-            OR (p.proname='stewardship_portal_session_admission_v1'
-                AND p.prosrc LIKE '%jsonb_array_length(public.stewardship_ministry_leader_scope_v1(u.id))>0%'
-                AND p.prosrc NOT LIKE '%''ministry_leader''%')
+                AND p.prosrc LIKE '%p.roles ?| ARRAY[''administrator'',''staff'',''ministry_leader'']%')
             OR (p.proname='stewardship_campaign_pointer_v1'
                 AND regexp_count(p.prosrc,
                     '''reminder_workgroup'',''ministry_duids'',''ministry_leader_roles''')=2)
             OR (p.proname='stewardship_require_chair_receipt_v1'
                 AND pg_get_function_identity_arguments(p.oid)='configuration uuid, snapshot uuid'
                 AND p.prosrc NOT LIKE '%RAISE%'))
-       )<>6 THEN
+       )<>5 THEN
         RAISE EXCEPTION 'Migration 0042: a replaced function is not installed as declared';
     END IF;
 END

@@ -79,15 +79,14 @@ def assignment_in_force(record, active_seeded):
 def resolve_roles(email, hosted_domain, records, led=frozenset()):
     """The roles and Ministry scope one address holds now.
 
-    An exact-address rule replaces any domain rule. Only a rule's
-    Administrator and Staff roles count: since Ministry leaders come from
-    their ParishSoft Ministry roles (#922), a rule's Ministry leader role and
-    the login rules' Ministry assignments grant nothing. ``led`` is the
-    address's role-derived Ministry scope, ``leader_scope()``'s answer; a
-    non-empty one makes the address a Ministry leader of exactly those
-    Ministries. An exact-address rule with no role still denies everything,
-    leadership included, as SQL's scope does. An Administrator is also Staff
-    and a Ministry leader.
+    An exact-address rule replaces any domain rule, and the rule's roles are
+    the roles held: only a rule admits anyone (Administrator decision,
+    2026-10-10). An Administrator is also Staff and a Ministry leader.
+    ``led`` is the address's role-derived Ministry scope, ``leader_scope()``'s
+    answer: the Ministries it leads in ParishSoft (#922), which SQL already
+    gives only to a user whose rule grants a role. The login rules' Ministry
+    assignments grant nothing. A Ministry leader with no ParishSoft Ministry
+    signs in and sees no Ministry; no role at all means no scope either.
     """
     email = normalized_email(email)
     domain = email.rsplit("@", 1)[1]
@@ -106,8 +105,6 @@ def resolve_roles(email, hosted_domain, records, led=frozenset()):
         ),
         None,
     )
-    if rule is not None and not rule["roles"]:
-        return frozenset(), frozenset()
     if rule is None:
         rule = next(
             (
@@ -118,12 +115,10 @@ def resolve_roles(email, hosted_domain, records, led=frozenset()):
             ),
             {"roles": []},
         )
-    roles = set(rule["roles"]) & {"administrator", "staff"}
-    if led:
-        roles.add("ministry_leader")
+    roles = set(rule["roles"])
     if "administrator" in roles:
         roles.update(("staff", "ministry_leader"))
-    return frozenset(roles), frozenset(led)
+    return frozenset(roles), frozenset(led) if roles else frozenset()
 
 
 def leader_scope(user_id):

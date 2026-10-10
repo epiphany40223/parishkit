@@ -168,14 +168,13 @@ def test_staff_may_open_the_page_and_ministry_leaders_may_not(
     if roles == ("ministry_leader",):
         # A Ministry leader leads through a ParishSoft role (#922).
         promote_leaders(harness, ministry_source(), {"reader@example.org": [9]})
-    else:
-        rule = rule_address("reader@example.org", roles=roles)
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [{"operation": "add", "section": "login_rules", **rule}],
-        )
+    rule = rule_address("reader@example.org", roles=roles)
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "login_rules", **rule}],
+    )
     google[0]["email"] = "reader@example.org"
     browser, login = signed_in()
     assert login.status_code == 302
