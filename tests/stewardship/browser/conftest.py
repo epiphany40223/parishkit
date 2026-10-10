@@ -801,7 +801,7 @@ def component_origin():
             # The same page for a live campaign whose delivery runs: no test
             # email can be sent, so no test link is offered (#923).
             "/schedule-table-live",
-            "schedule-settings",
+            "schedule-reconcile",
             schedule_page(
                 mail_campaign,
                 table_rows,
