@@ -23,7 +23,11 @@ from parishkit.stewardship.jobs.delivery_metadata import (
     DELIVERY_SORTING,
     with_name_keys,
 )
-from parishkit.stewardship.jobs.delivery_reads import read_listing, with_family_names
+from parishkit.stewardship.jobs.delivery_reads import (
+    read_listing,
+    with_family_names,
+    with_refusal_counts,
+)
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.jobs.family_mail_dispatch import (
     begin_submission,
@@ -169,6 +173,9 @@ def test_delivery_pages_and_warning_are_admin_only(
         "/admin/mail/outgoing/",
         f"/admin/mail/outgoing/{message.pk}/",
         "/admin/mail/refusals/",
+        # A refusal's page names its Family too (#935); unknown or not,
+        # the role check refuses it first.
+        f"/admin/mail/refusals/{uuid4()}/",
     ):
         response = browser.get(path)
         assert response.status_code == 403
@@ -407,6 +414,85 @@ def test_tied_family_names_keep_each_familys_emails_together(response_service):
         ):
             rows = read_listing(QueryDict(f"sort={sort}"))["rows"]
             assert [row["id"] for row in rows] == newest[first] + newest[second], sort
+
+
+def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
+    response_service, google
+):
+    """#935: Outgoing mail marks each email with an unresolved refused address
+    and counts them in its link line; Refused addresses names the Family
+    beside its own Family DUID column and links the recording email; and a
+    cleared refusal drops out of both."""
+    harness = activate_response_service(response_service)
+    events = {
+        mailbox: refused(harness, address=mailbox)
+        for mailbox in ("head@example.org", "spouse@example.org")
+    }
+    refusals = {
+        mailbox: remember(event, address=mailbox) for mailbox, event in events.items()
+    }
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    name = snapshot_family_names(snapshot, [1], "Family")[1]
+    assert name
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+        assert "Review refused addresses (2 unresolved)</a>" in html
+        marker = '<a href="/admin/mail/refusals/?duid=1">1 address refused</a>'
+        assert html.count(marker) == 2
+
+        listing = browser.get("/admin/mail/refusals/", {"duid": "1"})
+        assert listing.status_code == 200
+        html = listing.content.decode()
+        # Dates first, then the Family's name, then its own DUID column
+        # (#932), then the address and the recording email.
+        headings = ["Refused at", "Family", "Family DUID", "Address", "Recorded by"]
+        thead = html.split("<thead>")[1].split("</thead>")[0]
+        places = [thead.index(f">{heading}<") for heading in headings]
+        assert places == sorted(places)
+        assert f'<th scope="row">{escape(name)}</th>' in html
+        assert '<td class="numeric nowrap">1</td>' in html
+        for mailbox, refusal in refusals.items():
+            message = events[mailbox].message_id
+            assert f'<a href="/admin/mail/refusals/{refusal.pk}/">{mailbox}</a>' in html
+            assert f'<a href="/admin/mail/outgoing/{message}/">Open email</a>' in html
+        # The name is shown, not searched: the filter stays an exact DUID.
+        assert browser.get("/admin/mail/refusals/", {"duid": name}).status_code == 400
+
+        refusal = refusals["head@example.org"]
+        path = f"/admin/mail/refusals/{refusal.pk}/"
+        html = browser.get(path).content.decode()
+        assert escape(name) in html
+        assert (
+            f'<a href="/admin/mail/outgoing/{events["head@example.org"].message_id}/">'
+        ) in html
+        assert '<a href="/admin/mail/refusals/?duid=1">' in html
+        current = SourceCurrent.objects.get()
+        cleared = browser.post(
+            path + "clearance/",
+            dict(
+                command_id=str(uuid4()),
+                source_snapshot_id=str(current.snapshot_id),
+                source_generation=str(current.generation),
+                verified="yes",
+                note="Called the Family; the mailbox works again.",
+            ),
+            HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
+        )
+        assert cleared.status_code == 302 and cleared["Location"] == path
+        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+        assert "Review refused addresses (1 unresolved)</a>" in html
+        assert html.count(marker) == 1
+        html = browser.get("/admin/mail/refusals/").content.decode()
+        assert "head@example.org" not in html and "spouse@example.org" in html
+
+    # One grouped query counts the shown page's refusals, however many rows.
+    rows = [dict(id=event.message_id) for event in events.values()]
+    rows.append(dict(id=uuid4()))
+    with CaptureQueriesContext(connection) as queries:
+        counted = with_refusal_counts(rows)
+    assert len(queries) == 1
+    assert [row["refused"] for row in counted] == [0, 1, 0]
 
 
 @pytest.mark.parametrize(

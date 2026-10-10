@@ -2,8 +2,10 @@
 {% block title %}{% translate "Refused address" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Refused address" %}</h1>
-{% aboutpage "delivery-refusal" %}<p>{% translate "The same address may have other refusals that still stop email to it; check the Refused addresses list afterward. Clearing does not send any email." %}</p>{% endaboutpage %}
-<p>{{ refusal.address }} · {% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
+{% aboutpage "delivery-refusal" %}<p>{% translate "The same address may have other refusals that still stop email to it; check the Refused addresses list afterward. Clearing does not send any email." %}</p>
+<p>{% translate "The Family's name comes from the latest ParishSoft data. Open the email that recorded the refusal to see its delivery history; it may show Delivered, because another address of the Family accepted it." %}</p>{% endaboutpage %}
+<p>{{ refusal.address }} · {% if family_name %}{{ family_name }}{% else %}<span class="help">{% translate "Not in current ParishSoft data" %}</span>{% endif %} · {% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
+<p><a href="{% url 'admin:delivery_refusals' %}?duid={{ refusal.family_duid }}">{% translate "See this Family's refused addresses" %}</a>{% if message_id %} · <a href="{% url 'admin:delivery' message_id %}">{% translate "Open the email that recorded this refusal" %}</a>{% endif %}</p>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Refusal ID" %}</dt><dd>{{ refusal.id }}</dd></dl></details>
 <p class="notice">{% translate "Clearing removes only this refusal, not any other refusal for the same address." %} {% translate "It does not resend an invitation another member of the Family already received." %}</p>
 {% if resolved %}

@@ -48,7 +48,9 @@ from .delivery_reads import (
     read_refusal,
     read_refusals,
     read_sending_holds,
+    unresolved_refusals,
     with_family_names,
+    with_refusal_counts,
 )
 from .delivery_resolution import resolve_delivery
 from .models import TaskRun
@@ -242,7 +244,7 @@ def delivery_list(request):
             table=_table(
                 request,
                 data["window"],
-                with_family_names(data["rows"]),
+                with_refusal_counts(with_family_names(data["rows"])),
                 data["has_next"],
                 total=data["total"],
                 sorting=DELIVERY_SORTING,
@@ -253,6 +255,8 @@ def delivery_list(request):
             query=values["q"],
             send=data["send"],
             holds=read_sending_holds(database_now()),
+            # The link line's count (#935), drawn once per page load.
+            refusal_count=unresolved_refusals().count(),
             bulk_overview=delivery_bulk.overview(),
             **bulk,
         ), len(data["rows"])
@@ -386,7 +390,7 @@ def refusal_list(request):
             table=_table(
                 request,
                 data["window"],
-                data["rows"],
+                with_family_names(data["rows"], key="family_duid"),
                 data["has_next"],
                 total=data["total"],
                 sorting=REFUSAL_SORTING,
@@ -403,8 +407,12 @@ def refusal_detail(request, refusal_id):
     """Pin the source generation in a CSRF-protected explicit verification form."""
 
     def load():
-        """Capture retained evidence and the generation the Admin must verify."""
-        return read_refusal(refusal_id, request.GET), 1
+        """Capture retained evidence and the generation the Admin must verify,
+        with the Family's name from the latest ParishSoft data (#935)."""
+        data = read_refusal(refusal_id, request.GET)
+        duid = data["refusal"].family_duid
+        named = with_family_names([dict(family_duid=duid)], key="family_duid")
+        return data | {"family_name": named[0]["family_name"]}, 1
 
     return _page(request, "stewardship/delivery-refusal.html", load, subject=refusal_id)
 
