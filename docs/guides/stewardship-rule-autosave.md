@@ -43,11 +43,7 @@ whichever path made the change. Only a rule the page shows autosaves: a
 target another Administrator has since removed is refused as stale whichever
 way the tick went, so a retry never recreates a deleted rule implicitly, and
 an intent that changes nothing is refused rather than recorded. Because the
-patch names an existing record, identical intents build identical patches.
-Withdrawing an exact address's last role removes its rule rather than
-leaving an explicit deny (#939), since a deny also blocks ParishSoft Ministry
-leadership; the row then says so and its checkboxes are disabled until the
-page is redrawn, and a tick queued for it meanwhile is dropped, never sent.
+patch updates an existing record, identical intents build identical patches.
 
 ### The request is the confirmation, keyed by the client
 
@@ -122,8 +118,7 @@ No schema change.
 
 - Two database-free cases: a role granted and withdrawn over the configured
   roles, preserving every other grant's origin, building the same patch for
-  the same intent, the last role's withdrawal removing the rule while a
-  deliberate deny stays one; and a missing target refused
+  the same intent, down to an explicit deny; and a missing target refused
   either way, an unchanged intent, the domain-rule fences, an unknown role
   and an invalid target refused.
 - Two PostgreSQL cases under the real web and restricted installer roles:

@@ -200,35 +200,6 @@ def test_ticks_autosave_in_order_and_adopt_the_applied_digest(page, component_or
     page.close(run_before_unload=True)
 
 
-def test_withdrawing_the_last_role_removes_the_rule_in_place(page, component_origin):
-    """The row's last role withdrawn removes its rule, not a deny (#939).
-
-    The row says so and its boxes are disabled until the page is redrawn,
-    since the server never recreates a removed rule; a tick queued for the
-    row meanwhile is dropped visibly, never sent.
-    """
-    # The withdrawal stays in flight for a few polls, so a tick can queue.
-    states = {"request-2": ["staged"] * 5 + ["applied"]}
-    sent, _, _ = serve(page, states=states, fast=True)
-    leader = leader_row(page, component_origin)
-    leader.get_by_label("Ministry leader").uncheck()
-    leader.get_by_text("Applied", exact=True).wait_for()
-    leader.get_by_label("Staff").uncheck()
-    leader.get_by_label("Administrator").check()
-    visible(leader.get_by_text("Queued — not saved", exact=True))
-    visible(leader.get_by_text("with no role left", exact=False))
-    visible(leader.get_by_text("this address's rule was removed. Reload", exact=False))
-    assert [(item["role"], item["checked"]) for item in sent] == [
-        ("ministry_leader", "0"),
-        ("staff", "0"),
-    ]
-    for name in ("Administrator", "Staff", "Ministry leader"):
-        assert leader.get_by_label(name).is_disabled()
-        assert not leader.get_by_label(name).is_checked()
-    # Nothing is left to send, so leaving does not warn.
-    page.close(run_before_unload=True)
-
-
 def test_a_refusal_pauses_the_queue_and_leaving_warns(page, component_origin):
     """A refused intent restores its tick; later intents stay visibly unsaved."""
     sent, _, _ = serve(

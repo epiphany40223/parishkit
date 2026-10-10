@@ -22,13 +22,10 @@ def autosave_patch(records, *, kind, identity, role, checked, operation_id):
     whichever way the tick went, so a retry never recreates a deleted rule
     implicitly; creating one is the add forms' explicit, reviewed action. An
     unknown role is refused as invalid. Withdrawing the last role of an exact
-    address removes its rule (#939): an empty role set is an explicit deny,
-    which also blocks ParishSoft Ministry leadership (#922), so a cleared
-    checkbox must mean "no rule, default access", never a deny. A deliberate
-    deny is made only through the reviewed add form. A domain rule with no
-    role is refused by the rule builder as the specification requires. The
-    patch names the existing record, so identical intents build identical
-    patches and a resubmitted key binds to the same request.
+    address leaves an explicit deny, which policy admits, while a domain rule
+    with no role is refused by the rule builder as the specification requires.
+    The patch updates the existing record, so identical intents build
+    identical patches and a resubmitted key binds to the same request.
     """
     if role not in ROLES or type(checked) is not bool:
         raise RuleRefused("invalid")
@@ -37,14 +34,11 @@ def autosave_patch(records, *, kind, identity, role, checked, operation_id):
         raise RuleRefused("missing")
     configured = set(current["values"]["roles"])
     roles = configured | {role} if checked else configured - {role}
-    # Only a withdrawal that empties a non-empty set removes the rule; an
-    # unchanged intent (the role was not there) is still refused as such.
-    removes = kind == "address" and not roles and bool(configured) and not checked
     return rule_patch(
         records,
         kind=kind,
         identity=identity,
         roles=sorted(roles),
-        operation="remove" if removes else "set",
+        operation="set",
         operation_id=operation_id,
     )
