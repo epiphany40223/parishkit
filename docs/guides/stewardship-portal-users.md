@@ -36,13 +36,13 @@ them.
 
 ### One evaluator
 
-Row shaping is pure and decides nothing. Every role and Ministry scope shown
-comes from `resolve_roles`, the evaluator every sign-in uses, over the same
-applied canonical records. The confirmed Chairperson assignments come from
-`confirmed_seeded`, one query that sign-in and this page now share, so the two
-cannot drift apart. A Chairperson-only Ministry leader role therefore shows as
-suspended exactly when sign-in would drop it, and an Administrator shows the
-roles Administrator implies.
+Row shaping is pure and decides nothing. Every role shown comes from
+`resolve_roles`, the evaluator every sign-in uses, over the same applied
+canonical records, so the page and sign-in cannot drift apart. Only a rule's
+roles are held: a Ministry leader role stays in effect whether or not the
+person leads a Ministry in ParishSoft, and an Administrator shows the roles
+Administrator implies. The page shows no Ministry scope; which Ministries a
+Ministry leader sees comes from their ParishSoft leader roles (#922).
 
 The evaluator is given the hosted-domain claim a recorded Google identity really
 presented, never an email ending. A domain rule's evidence counts only accounts
