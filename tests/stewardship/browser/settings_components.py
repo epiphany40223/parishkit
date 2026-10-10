@@ -26,6 +26,7 @@ at a newer version, with the refusal in the review region (#768). Apply's
 answer on Share options is ``SHARE_PENDING`` (polling ``SHARE_STATUS``, which
 answers Applied and follows to ``SHARE_SETTLED``, the applied list at version
 ``"b" * 64``), or, when the change has already settled, ``SHARE_APPLIED``.
+Member talents' editor is served at ``TALENTS`` with the stock talents.
 """
 
 from types import SimpleNamespace
@@ -41,6 +42,7 @@ from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
     default_share_options,
 )
+from parishkit.stewardship.responses.service import default_talent_options
 
 SETTINGS = "/settings-in-place"
 REVIEW = "/settings-in-place-review"
@@ -51,6 +53,7 @@ PENDING = f"{SETTINGS}?request={REQUEST}"
 SETTLED = f"{SETTINGS}?request={REQUEST}&settled=1"
 CAMPAIGN = "/campaign-in-place"
 SHARE = "/share-in-place"
+TALENTS = "/talents-in-place"
 SHARE_REVIEW = "/share-in-place-review"
 SHARE_REFUSED = "/share-in-place-refused"
 SHARE_APPLIED = "/share-in-place-applied"
@@ -168,11 +171,19 @@ def components(context, admin):
 
     options = default_share_options()
 
-    def share(data, step, previous=None, digest="a" * 64, **region):
+    def share(
+        data,
+        step,
+        previous=None,
+        digest="a" * 64,
+        template="stewardship/share-settings.html",
+        **region,
+    ):
         """Share options at ``step``, its formset bound to ``data`` if given.
 
         ``previous`` (default the stock options) is the saved list, at
-        version ``digest``.
+        version ``digest``. Member talents uses the same editor, drawn by
+        its own ``template``.
         """
         formset = ShareOptions(data, prefix="options", previous=previous or options)
         values = review_region("share_settings", None, **region)
@@ -182,7 +193,7 @@ def components(context, admin):
         return (
             "text/html",
             render_to_string(
-                "stewardship/share-settings.html",
+                template,
                 context
                 | {
                     "admin_chrome": admin | {"flow_steps": _steps(step)},
@@ -208,6 +219,8 @@ def components(context, admin):
         sent[f"options-{index}-id"] = option["id"]
         sent[f"options-{index}-label"] = option["label"]
         sent[f"options-{index}-ORDER"] = str(index + 1)
+        if option["free_text"]:
+            sent[f"options-{index}-free_text"] = "on"
     sent["options-0-label"] = "Renamed option"
     renamed = [dict(options[0], label="Renamed option"), *options[1:]]
     pending = SimpleNamespace(state="staged", request_id=REQUEST, failure_code="")
@@ -246,6 +259,12 @@ def components(context, admin):
         SETTLED: page(editor("b" * 64), 2, receipt=applied),
         CAMPAIGN: campaign(None, 0),
         SHARE: share(None, 0),
+        TALENTS: share(
+            None,
+            0,
+            previous=default_talent_options(),
+            template="stewardship/talent-settings.html",
+        ),
         SHARE_REVIEW: share(
             sent,
             1,

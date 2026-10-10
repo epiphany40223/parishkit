@@ -9,6 +9,8 @@ load could lose.
 
 import pytest
 
+from parishkit.stewardship.accounts.share_forms import default_share_options
+
 from .settings_components import (
     CAMPAIGN,
     CAMPAIGN_REVIEW,
@@ -22,6 +24,7 @@ from .settings_components import (
     SHARE_REFUSED,
     SHARE_REVIEW,
     SHARE_STATUS,
+    TALENTS,
 )
 from .test_in_place import MARK, MARKED, count_requests
 from .waits import has_attribute, has_text, hidden, recorded, visible
@@ -467,3 +470,87 @@ def test_typing_dropped_by_a_refused_review_is_said_to_be_lost(page, component_o
     held[0].fulfill(response=fetched, status=409)
     visible(page.locator("#settings-review [data-error-summary]"))
     visible(page.locator("#settings-review").get_by_text("were not kept"))
+
+
+OPTION_HINT = "Change an option to review it."
+
+
+@pytest.mark.parametrize("address", [SHARE, TALENTS])
+def test_option_lists_review_only_a_change(page, component_origin, address):
+    """Share options and Member talents keep Review changes unavailable
+    until the list differs from the saved one (#921): a renamed label, a
+    deletion or a new row in the blank last row makes it available, undoing
+    each makes it unavailable again, and a restore is noticed on pageshow."""
+    page.goto(component_origin + address)
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+    # The review region, right under the button and its hint, never moves
+    # (filling the last row may scroll, so this is measured in the page).
+    below = "document.getElementById('settings-review').offsetTop"
+    before = page.evaluate(below)
+    label = page.locator("#id_options-0-label")
+    saved = label.input_value()
+    label.fill("Renamed option")
+    expect_review(page, enabled=True, hint=OPTION_HINT)
+    label.fill(saved)
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+    delete = page.locator("#id_options-0-DELETE")
+    delete.check()
+    expect_review(page, enabled=True, hint=OPTION_HINT)
+    delete.uncheck()
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+    total = int(page.locator("[name=options-TOTAL_FORMS]").input_value())
+    blank = page.locator(f"#id_options-{total - 1}-label")
+    assert blank.input_value() == ""
+    blank.fill("A new option")
+    expect_review(page, enabled=True, hint=OPTION_HINT)
+    blank.fill("")
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+    label.evaluate("field => { field.value = 'Restored label'; }")
+    page.evaluate(RESTORE)
+    expect_review(page, enabled=True, hint=OPTION_HINT)
+    assert page.evaluate(below) == before
+
+
+def test_share_review_follows_the_saved_list_through_review_and_apply(
+    page, component_origin
+):
+    """Share options' form is redrawn by each answer (#768): a Review's
+    answer draws the values sent at the same version, which are still a
+    change, so Review stays available; once the change is applied the list
+    drawn at the new version is the saved one, so Review is unavailable."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+    share_review(page, component_origin)
+    expect_review(page, enabled=True, hint=OPTION_HINT)
+    # Back to the saved label, in the redrawn form: nothing to review.
+    page.locator("#id_options-0-label").fill(default_share_options()[0]["label"])
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+
+
+@pytest.mark.parametrize("edit", ["add", "delete"])
+def test_share_review_is_unavailable_after_applying_a_row_change(
+    page, component_origin, edit
+):
+    """Applying a new row or a deletion redraws Share options with the
+    applied list and a fresh blank row, whose rows no longer line up with
+    the ones sent; that redrawn list is the saved one, so Review changes is
+    unavailable (#921)."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+    page.goto(component_origin + SHARE)
+    if edit == "add":
+        total = int(page.locator("[name=options-TOTAL_FORMS]").input_value())
+        page.locator(f"#id_options-{total - 1}-label").fill("A new option")
+    else:
+        page.locator("#id_options-1-DELETE").check()
+    page.get_by_role("button", name="Review changes").click()
+    visible(page.get_by_role("heading", name="Proposed order and labels"))
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    expect_review(page, enabled=False, hint=OPTION_HINT)

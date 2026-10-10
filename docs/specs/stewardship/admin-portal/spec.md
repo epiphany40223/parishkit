@@ -1638,7 +1638,11 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   form `data-in-place-always` and the form is redrawn at the applied
   version; otherwise a refused Apply keeps the reader's rows at the version
   they were reviewed at (the next Review is refused until a reload), and the
-  quiet follow-up refresh draws the applied list. Parish and Campaign
+  quiet follow-up refresh draws the applied list. Their Review changes
+  waits for a change like the other settings forms (#921), with the hint
+  "Change an option to review it."; a form redrawn at the same version keeps
+  the saved list it is compared with, and the list an applied change is
+  redrawn with (its fresh blank row included) is the saved one. Parish and Campaign
   settings' forms are never redrawn; until the change is applied, Apply's
   answer hands them the version it was reviewed at. The other editors keep
   their review and Change status pages until issue 750 reaches them.
