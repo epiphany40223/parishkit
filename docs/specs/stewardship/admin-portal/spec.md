@@ -176,17 +176,25 @@ tests of the exact reviewed revision.
 
 Wherever a form requires an acknowledgment checkbox (finishing setup, a test
 that may already have arrived, chosen-Family tests, Testing cleanup,
-withdrawal, refusal removal, manual reports, duplicate resends), the page
-script keeps the form's primary button disabled until the box is checked,
-and the server refuses a missing acknowledgment.
+withdrawal, refusal removal, manual reports, duplicate resends, resetting all
+pages and emails to their default text), the page script keeps the form's
+primary button disabled until the box is checked, and the server refuses a
+missing acknowledgment. While the button waits, a short hint directly after
+it (named by the button's `aria-describedby`) says to tick the confirmation,
+so only content below the button moves when it clears. A form that arrives
+through an in-place update is gated the same way (#563).
 
 More generally, a form whose fields depend on other choices keeps its submit
 button unavailable until every visible required field is complete, with a
 short hint by the button saying what is missing (`data-require-complete` in
 the page script; first used by
 [Ministry follow-up](#follow-up-workflows), #553). Fields required only in
-some states are required only while shown. The Admin portal requires
-JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
+some states are required only while shown. A required text field holding
+only spaces counts as empty, as the server trims it: the reason for
+cancelling go-live and the evidence notes on Mail delivery and delivery
+refusal pages use this gate, as does the typed "Production" confirmation
+(which, like the server, ignores spaces around the word). The Admin portal
+requires JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
 server validation is unchanged and still refuses an incomplete submission.
 A browser can restore a page from its history (Back or Forward) with the
 reader's values but without the events that set the page up, so these

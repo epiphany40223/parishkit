@@ -960,6 +960,12 @@ def component_origin():
                 },
             },
         ),
+        # The content list, for its acknowledged reset (#563).
+        (
+            "/setup-content",
+            "setup-content",
+            {"draft": setup_draft, "campaign_name": "Sample campaign", "groups": []},
+        ),
         # Load parish data before the load starts (#227: its time-zone caution).
         ("/setup-source", "setup-source", {"draft": setup_draft}),
         (
