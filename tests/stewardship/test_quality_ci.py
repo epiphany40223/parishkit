@@ -176,12 +176,23 @@ def test_cost_balancing_keeps_slow_cases_separate(monkeypatch):
     assert sorted(node for group in groups for node in group) == sorted(nodes)
 
 
-def test_large_suite_reserves_baseline_time(monkeypatch):
-    """The shard with the extra baseline receives less database work."""
+@pytest.mark.parametrize(
+    ("size", "reserved"),
+    [
+        # Large enough that the full baseline reservation applies.
+        (8000, sharding.BASELINE_SECONDS),
+        # Smaller: capped at three quarters of an average shard.
+        (2000, 3 * 2000 // (4 * 8)),
+    ],
+)
+def test_large_suite_reserves_baseline_time(monkeypatch, size, reserved):
+    """The shard with the extra baseline receives less database work, but
+    never so little that it empties."""
     monkeypatch.setattr(sharding, "SLOW_TEST_SECONDS", {})
-    nodes = [f"test_a.py::case[{n}]" for n in range(2000)]
+    nodes = [f"test_a.py::case[{n}]" for n in range(size)]
     groups = [partition(nodes, index, 8) for index in range(1, 9)]
-    assert max(map(len, groups[1:])) - len(groups[0]) == 240
+    assert max(map(len, groups[1:])) - len(groups[0]) == reserved
+    assert len(groups[0]) >= size // 8 // 4
     assert sorted(node for group in groups for node in group) == sorted(nodes)
 
 
@@ -350,7 +361,7 @@ def test_failed_shard_never_publishes_receipt(
             subprocess.CompletedProcess([], database),
         ]
     )
-    monkeypatch.setattr(ci.subprocess, "run", run)
+    monkeypatch.setattr(ci, "run_child", run)
     output = tmp_path / "shard"
     failed = baseline or database
     # A signalled child is a named, shell-safe failure at both call sites.
@@ -394,15 +405,82 @@ def test_fatal_child_signal_is_named_not_an_opaque_status(capsys, code, status, 
     assert (named in message and "hang diagnostic" in message) if named else not message
 
 
+class HungChild:
+    """Stand in for a shard child that outlives its deadline.
+
+    The first wait times out; later waits time out too unless ``aborts`` is
+    True, meaning SIGABRT (the faulthandler dump) ends the child.
+    """
+
+    def __init__(self, command, *, aborts=True, **options):
+        self.command, self.aborts, self.signals, self.waits = command, aborts, [], 0
+
+    def wait(self, timeout=None):
+        """Time out until the child has been aborted (or killed)."""
+        self.waits += 1
+        if self.waits == 1 or not (
+            self.signals and (self.aborts or "kill" in self.signals)
+        ):
+            raise subprocess.TimeoutExpired(self.command, timeout)
+        return -6
+
+    def send_signal(self, number):
+        """Record a signal sent to the child."""
+        self.signals.append(number)
+
+    def kill(self):
+        """Record the final kill."""
+        self.signals.append("kill")
+
+
+@pytest.mark.parametrize("aborts", [True, False])
+def test_timed_out_child_dumps_stacks_then_says_what_was_stopped(
+    monkeypatch, capsys, aborts
+):
+    """A late child gets SIGABRT (its faulthandler dump) before any kill, and
+    the log names the phase, the limit and the elapsed time (#961)."""
+    children = []
+
+    def launch(command, **options):
+        """Create one hung child."""
+        children.append(HungChild(command, aborts=aborts, **options))
+        return children[-1]
+
+    monkeypatch.setattr(ci.subprocess, "Popen", launch)
+    with pytest.raises(subprocess.TimeoutExpired):
+        ci.run_child(["pytest"], phase="database", timeout=600)
+    expected = [ci.signal.SIGABRT] + ([] if aborts else ["kill"])
+    assert children[0].signals == expected
+    message = capsys.readouterr().err
+    assert "CI shard timeout" in message and "database pytest run" in message
+    assert "limit 600s" in message and "after " in message
+
+
+def test_timed_out_child_writes_its_stacks(tmp_path):
+    """A real late interpreter with faulthandler enabled, as pytest enables it,
+    writes the stack of the code it was stuck in before it dies."""
+    log = tmp_path / "child.log"
+    with log.open("wb") as stream, pytest.raises(subprocess.TimeoutExpired):
+        ci.run_child(
+            [
+                sys.executable,
+                "-X",
+                "faulthandler",
+                "-c",
+                "import time\ndef stuck_here():\n    time.sleep(60)\nstuck_here()",
+            ],
+            phase="baseline",
+            timeout=1,
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+        )
+    dump = log.read_text()
+    assert "Fatal Python error: Aborted" in dump and "stuck_here" in dump
+
+
 def test_hung_child_fails_without_receipt(repository, tmp_path, monkeypatch):
     """The finite subprocess deadline cannot create passing coverage evidence."""
-    monkeypatch.setattr(
-        ci.subprocess,
-        "run",
-        Mock(
-            side_effect=subprocess.TimeoutExpired([], 1),
-        ),
-    )
+    monkeypatch.setattr(ci.subprocess, "Popen", HungChild)
     output = tmp_path / "shard"
     assert (
         ci.main(
@@ -511,7 +589,7 @@ def test_packed_job_stops_started_children_when_a_launch_fails(
 def test_shard_passes_its_private_temporary_root(repository, tmp_path, monkeypatch):
     """Both of a shard's pytest runs use the temporary root it was given."""
     run = Mock(return_value=subprocess.CompletedProcess([], 1))
-    monkeypatch.setattr(ci.subprocess, "run", run)
+    monkeypatch.setattr(ci, "run_child", run)
     ci.run_shard(repository, tmp_path / "shard", 1, 8, tmp_path / "temporary")
     assert f"--basetemp={tmp_path / 'temporary'}" in run.call_args.args[0]
 
@@ -607,7 +685,7 @@ def test_successful_shard_baseline_and_deadline(
         return subprocess.CompletedProcess(command, 0)
 
     run = Mock(side_effect=execute)
-    monkeypatch.setattr(ci.subprocess, "run", run)
+    monkeypatch.setattr(ci, "run_child", run)
     assert ci.run_shard(repository, output, index, 2) == 0
     assert run.call_count == (2 if index == 1 else 1)
     assert ("--cov-append" in run.call_args.args[0]) is (index == 1)
@@ -622,7 +700,7 @@ def test_baseline_exhausting_budget_prevents_database(
     clock = iter([0, ci.SHARD_TIMEOUT + 1])
     monkeypatch.setattr(ci.time, "monotonic", lambda: next(clock))
     run = Mock(return_value=subprocess.CompletedProcess([], 0))
-    monkeypatch.setattr(ci.subprocess, "run", run)
+    monkeypatch.setattr(ci, "run_child", run)
     output = tmp_path / "shard"
     with pytest.raises(subprocess.TimeoutExpired):
         ci.run_shard(repository, output, 1, 8)
@@ -766,7 +844,7 @@ def selected_shard(repository, tmp_path, monkeypatch, index, nodes, subset, **op
         return subprocess.CompletedProcess(command, 0)
 
     run = Mock(side_effect=execute)
-    monkeypatch.setattr(ci.subprocess, "run", run)
+    monkeypatch.setattr(ci, "run_child", run)
     assert ci.run_shard(repository, output, index, 14, **options) == 0
     return run, output
 
