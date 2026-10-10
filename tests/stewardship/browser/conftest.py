@@ -91,6 +91,7 @@ from .find_family_components import components as find_family_components
 from .followup_components import POSTS as FOLLOWUP_POSTS
 from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
+from .go_live_families_components import components as go_live_families_components
 from .hosted_file_components import IMAGE_TOKEN
 from .hosted_file_components import components as hosted_file_components
 from .in_place_components import FORM as IN_PLACE_FORM
@@ -2115,6 +2116,7 @@ def component_origin():
     responses.update(ministry_components(context, admin))
     responses.update(followup_components(context, admin))
     responses.update(source_form_components(context, admin))
+    responses.update(go_live_families_components(context, admin))
     responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(chart_components(context, admin))

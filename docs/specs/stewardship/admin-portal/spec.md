@@ -2943,7 +2943,11 @@ re-reads the same check.
 
 The Admin-only Family list (the **Testing submissions** page) opens only
 while the campaign is the current Testing draft, as does Go-live readiness,
-the only page that links to it. Afterwards the list answers with a plain
+the only page that links to it. It names each Family as the other Admin
+tables do, the surname then the heads ("Squyres, Tracy and Jeff"), with the
+Family DUID in its own column; both columns sort on the server, the name by
+surname and then the whole name, as the Family codes directory sorts
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). Afterwards the list answers with a plain
 notice, "Testing submissions are only available before go-live.", as a 410
 refusal: signing in again cannot help, so it never shows the generic
 sign-in-again refusal
