@@ -128,9 +128,9 @@ locks as the page; the throughput work is
   applies as for the page.
 - **Fresh-gated actions accept a full-scope automation session** in place of a
   recent Google sign-in, including integration key and backup key
-  replacement. Six SQL guards (plus any ADM-13 System health guard already
-  installed) and the Python freshness checks change to say so
-  explicitly; only the one-time setup wizard stays browser-only (see
+  replacement. Six SQL guards and the Python freshness checks change to
+  say so explicitly, and each ADM-13 System health guard includes the same
+  clause when it is built; only the one-time setup wizard stays browser-only (see
   [SQL guards that accept automation sessions](#sql-guards-that-accept-automation-sessions)).
 - Previews become **preview and confirm commands** carrying the same signed
   tokens as the page; the typed value or acknowledgement the page asks for is
@@ -141,9 +141,10 @@ locks as the page; the throughput work is
   [notifications](#notifications)).
 - Views and commands share **one service layer** through a request-free
   `AdminCaller` and shared read models.
-- **Schema change:** four new tables and three new functions; the incident-kind
-  constraint and three operational and task-type functions extended; and six
-  amended guards (plus any ADM-13 guard already installed), in two forward migrations under the
+- **Schema change:** four new tables and four new functions (besides their
+  guard triggers); the incident-kind constraint and three operational and
+  task-type functions extended; and six amended guards, in two forward
+  migrations under the
   [post-launch schema policy](../operations/spec.md#post-launch-schema-policy)
   (see [schema impact](#schema-impact)).
 
@@ -673,6 +674,10 @@ registry (`runtime_background.py`), `jobs/queue_wait.py`, the task labels in
 - deletes the
   [service status records](../admin-portal/spec.md#service-status-records)
   of processes that have not reported for a day (ADM-13);
+- deletes the refresh slot decision records due more than eight days ago
+  ([#632](https://github.com/epiphany40223/parishkit/issues/632); see the
+  operations specification's
+  [temporary retention and housekeeping](../operations/spec.md#temporary-retention-and-housekeeping));
 - deletes the `heartbeat` and `progress` task events of task runs that
   finished (succeeded, failed or cancelled) more than 30 days ago, through
   `stewardship_task_event_prune_v1`
@@ -842,13 +847,20 @@ them unnotified; the Administrator accepted that (decision 13).
 | --- | --- | --- |
 | Session approved | Yes | `automation_approved` |
 | Production confirmation, withdrawal or Testing cleanup through a session | Yes | `automation_irreversible` |
-| Other fresh-gated action through a session (pause, resume, resolution, chosen-Family test, Family portal maintenance) | Yes | No |
+| Other fresh-gated action through a session (pause, resume, resolution, chosen-Family test, Family portal maintenance, Testing cleanup's sign-in, a Family-code, mail-merge or financial export and its regeneration) | Yes | No |
 | A session changes user rules, replaces an integration key or the backup key, or changes Slack or other notification settings | Yes | `automation_policy_change`, observed when the session submits the change, before the configuration installer applies it; dispatch re-checks Administrator status, so an Administrator the change removes is not reached |
 | Refused use (an unknown secret, first per host digest per hour; host mismatch; web misuse) | Yes | `automation_refused` |
 | Session ended by revocation, role loss, recovery or restore | Yes | No |
 
 Every event also appears in the [system logs](../admin-portal/spec.md#logs).
 Nothing carries the secret, digests or Family data.
+
+A row applies once a command can take its action. On `main` no command yet
+confirms Production, withdraws, runs Testing cleanup (PR 12) or changes
+user rules, keys or notification settings (PR 10 and PR 11), so nothing
+records an `irreversible` or `policy_change` notice or observes
+`automation_irreversible` or `automation_policy_change` yet; the
+[delivery plan](#delivery-plan) says which commands have landed.
 
 ### High-impact changes
 
@@ -1055,7 +1067,7 @@ Exceptions map in this order, and the first match wins. Order matters:
 | Usage errors, other `ConfigError` raised during admission, credential receipt mismatch | 2 |
 | Confirmation declined, or end of input at the prompt | 4 |
 | Automation session missing, ended, expired or revoked, a host mismatch, a command session ended by a role change, or pairing not finished, including `UserFacingDenied` for an ended session | 5 |
-| `PermissionError` (including `FreshAuthenticationRequired`), `ValueError`, `StaleRecordError`, other `ConfigError` raised by a domain function | 1 |
+| `PermissionError` (including `FreshAuthenticationRequired`), `ValueError`, `StaleRecordError`, other `ConfigError` raised by a domain function, and a database guard's refusal (SQLSTATE class 23, 42501 or P0001) that its command does not map otherwise, as `denied` | 1 |
 | `admin_reads.NotAvailable` (an unknown task or campaign, or no current campaign), and `ObjectDoesNotExist` from a command that changes nothing, as `not_available`; a bare `LookupError` or `KeyError` is a bug (`internal`) | 1 |
 | Any error after a durable commit (for example an export queued but its download failed), or an unexpected error in a state-changing command | 6 |
 | An unexpected error in a read | 3, with `internal`; retry at most once, then report it |
@@ -1133,10 +1145,10 @@ sign-in, with no browser step:
   (see [secret replacement](#secret-replacement));
 - the [System health](../admin-portal/spec.md#health-actions) actions
   (ADM-13): take a backup now, clear a halted mail sender, accept a large
-  ParishSoft change once, and turn off debug logging. PR 5's migration
-  amends any of their SQL guards already installed to accept
-  `stewardship_automation_fresh_v1`, and a guard installed later includes it
-  from the start (see
+  ParishSoft change once, and turn off debug logging. None of them is built
+  yet (ADM-13 PR 3 to PR 6), so PR 5's migration amended no ADM-13 guard,
+  and each action's SQL guard accepts `stewardship_automation_fresh_v1` from
+  the start (see
   [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions));
 - the code and financial reads and files
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)): creating
@@ -1236,7 +1248,9 @@ Integration key replacement and the backup encryption key change run from the
 command line (decision 15) through the same service functions, validation,
 sealing, confirmation and audit as the portal, and the same
 [credential installer protocol](../../../guides/stewardship-credential-installers.md),
-unchanged.
+unchanged. The database and `require_fresh` side below is built (PR 5a);
+the commands and the wrapper's secret input come with PR 10 and are not
+built yet.
 
 - **Reading a secret file.** `--secret-file <path>` first refuses a path that
   is not a regular file (`test -f` and not `test -p`), so opening a FIFO
@@ -1425,9 +1439,10 @@ new context keys:
   record=False)`) records neither. One per invocation and kind: a notice of
   the same kind for the session and the invocation's correlation ID already
   recorded suppresses a second, so an irreversible gate after a fresh-gated
-  one still records its own notice and incident. Testing cleanup is not
-  fresh-gated, so its `irreversible` notice and incident are recorded by the
-  cleanup command itself (PR 12).
+  one still records its own notice and incident. Testing cleanup's fresh
+  gate (#547, in `go_live_commands.start_cleanup`) is not marked
+  irreversible, so it records `fresh_gated`; its `irreversible` notice and
+  incident are recorded by the cleanup command itself (PR 12).
 - **Read commands** record exactly the view events the page records (for
   example `delivery_viewed`, `system_logs_viewed`), and
   no others.
@@ -1763,7 +1778,7 @@ none.
 | --- | --- |
 | `schedule_settings` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4) |
 | `configuration_request` | `config request show --watch` (PR 4) |
-| `campaign_settings`, `campaign_new`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
+| `campaign_settings`, `campaign_new`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `campaign_ministries`, `share_settings`, `talent_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign talents`, `campaign reminder-workgroup` (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |
@@ -2131,10 +2146,10 @@ lists the fields and refusals.
 | `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form` (PR 8), counts and DUIDs only; until then the host's `pk-stewardship source-form-check` lists the same Families |
 
 `system health` covers the page, its fragment and `/admin/system/`
-(ADM-13 PR 2b). The other ADM-13 rows are pending exemptions until their
-commands land: each action's command lands with its own ADM-13 pull
-request (PR 3 to PR 6), once ADM-11 PR 5 lets automation pass the
-fresh-sign-in check. The ADM-13 action routes are
+(ADM-13 PR 2b). The other ADM-13 rows name routes and commands that do not
+exist yet: each action, its route and its command land together in their
+own ADM-13 pull request (PR 3 to PR 6); ADM-11 PR 5, which lets automation
+pass the fresh-sign-in check, has landed. The ADM-13 action routes will be
 POSTs to the [System health](../admin-portal/spec.md#health-actions) page,
 `system_health_status` is its passive status fragment, and `system`
 (`/admin/system/`) only redirects to it.
@@ -2206,11 +2221,6 @@ returns the receipt before any preparation, and a retry or resend with
 another key on the version already retried is `stale_version`, so one key
 never prepares or sends twice.
 
-The ADM-13 rows are pending exemptions until ADM-11 PR 3 (the read) and
-PR 5 (the actions) land. The ADM-13 action routes are POSTs to the
-[System health](../admin-portal/spec.md#health-actions) page, and
-`system_health_status` is its passive status fragment.
-
 ### Users and follow-up
 
 | URL names | Command or exemption |
@@ -2220,7 +2230,7 @@ PR 5 (the actions) land. The ADM-13 action routes are POSTs to the
 | `chair_confirmations`, `chair_reviews` | `chairs …` (PR 11) |
 | `assignments` | `assignments …` (PR 11) |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` (PR 11) |
-| `information_update`, `ministry_followup`, `ministry_followup_assign`, `ministry_followup_item`, `ministry_followup_update` | `followup …` (PR 11) |
+| `information_update`, `ministry_followup`, `ministry_followup_item`, `ministry_followup_update` | `followup …` (PR 11); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 
 ### Integrations and credentials
 
@@ -2281,10 +2291,14 @@ as the host operator (`actor_kind` `operator`), not as a portal user:
   `installer-healthcheck`, `upgrade-check`;
 - one-off data repair: `engagement-backfill`;
 - lifecycle: `bootstrap`, `migrate`, `database-roles`, `database-grants`,
-  `provision-runtime`, `retarget-image`, `acknowledge-credential`;
+  `provision-runtime`, `retarget-image`, `acknowledge-credential`,
+  `config-check`, `validate-deployment`, `confirm-deployment`,
+  `collect-static`;
 - recovery: `preview-admin-recovery`, `recover-admin` (see
   [offline Admin-access recovery](../operations/spec.md#offline-admin-access-recovery));
   a recovery also ends every automation session approved before it;
+- restore: `restore-check`, `restore-compare` and `restore-begin` (see
+  [restore](../operations/spec.md#restore));
 - automation: `revoke-automation-sessions` (see [session rules](#session-rules)),
   run in every restore and available to end every session at once;
 - backup: `backup` (including the request mode that
@@ -2292,9 +2306,11 @@ as the host operator (`actor_kind` `operator`), not as a portal user:
   `backup-keygen`, `backup-open`, `backup-prove`;
 - debug logging: `debug-off-clear`, which clears the System health
   [debug-off switch](../admin-portal/spec.md#turn-off-debug-logging)
-  (ADM-13);
+  (ADM-13; not built yet, it lands with that switch);
 - smoke tests: `smoke`;
-- LOCAL only: `local-sign-in`, `local-seed`, `fake-parishsoft`.
+- LOCAL and development only: `prepare-development`, `local-sign-in`,
+  `local-seed`, `local-spike`, `local-spike-report`,
+  `local-rehearsal-report`, `fake-parishsoft`.
 
 Operator commands are host maintenance that the portal cannot express.
 `pk-stewardship admin` commands are portal actions and are attributed to a
@@ -2322,7 +2338,7 @@ Extending `stewardship_portal_session` instead (a kind column and a 30-day
 cap) was rejected: it would relax the 12-hour insert guard for every session
 and require every one of the many 60-minute activity checks in the schema to
 special-case automation, a far wider change than new tables and six amended
-guards (plus any installed ADM-13 guards). Valkey is not a durable credential store.
+guards. Valkey is not a durable credential store.
 
 The changes, each a forward migration under the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy)
@@ -2338,7 +2354,10 @@ time:
      `stewardship_automation_fresh_v1`; `stewardship_automation_live_v1`,
      the one definition of [liveness](#session-records) that the guards,
      `stewardship_automation_fresh_v1` and Python's listings and checks all
-     read; and `stewardship_admin_session_purge_v1(uuid[])`, a `SECURITY
+     read; `stewardship_portal_session_cleanup_guard_v1`, a trigger on
+     `stewardship_portal_session` that lets the worker end or delete only an
+     Admin session that has already ended; and
+     `stewardship_admin_session_purge_v1(uuid[])`, a `SECURITY
      DEFINER` function, revoked from `PUBLIC` and granted to the worker
      through `runtime_functions`, that deletes the Django sessions of the
      named Admin session rows that have already ended, so the
@@ -2436,7 +2455,13 @@ with contexts limited to `outcome`, which `stewardship_safe_context_v1`
 already accepts. No applied migration changes, and no baseline table gains or
 loses a column; the baseline changes are the one constraint and the nine
 functions named above. Any further schema need found during implementation
-amends this specification first.
+amends this specification first. Two later features did, each with its own
+forward migration specified where the feature is:
+`0037_family_test_names.sql` for the chosen-Family test names export
+([#817](https://github.com/epiphany40223/parishkit/issues/817); see
+[Testing sends](#testing-sends)) and `0038_admin_command_failure_log.sql`
+for the [durable failure entry](#durable-failure-entry)
+([#617](https://github.com/epiphany40223/parishkit/issues/617)).
 
 ## Testing requirements
 
@@ -2551,8 +2576,8 @@ MUST prove:
   stale-inventory token is refused with nothing changed; a repeated confirm
   returns the original record;
 - **scopes:** read-only sessions are refused every state-changing, fresh-gated
-  and export command, in Python and, for the six changed guards and any
-  amended ADM-13 guard, in SQL;
+  and export command, in Python and, for the six changed guards and each
+  ADM-13 action guard, in SQL;
 - **output:** golden documents for each read model's `to_document()`; a
   field allowlist test proving no personal-data field appears; the page and
   the command read through the same function; the exception-to-exit mapping in its stated
@@ -2580,6 +2605,13 @@ follow PR 5, which makes fresh-gated actions accept automation. PR 2 and PR 5
 carry the schema changes, and PR 10 handles secrets; all three get
 security-focused reviews, and none is deployed to Production without the
 Administrator's approval of that deploy.
+
+On `main`, PR 0 to PR 6, PR 8a to PR 8f and PR 9 have landed; PR 7, PR 8g,
+PR 10, PR 11 and PR 12 have not, so their commands are pending exemptions in
+the [action inventory](#action-inventory), and the
+[ADM-11 checklist](../../../tasks/stewardship/admin-portal.md#adm-11-admin-automation-interface)
+records each landed part's evidence. `pk-stewardship admin commands` lists
+exactly the commands that exist.
 
 - **PR 0:** this specification, the ADM-11 package and its checklist.
 - **PR 1, seam only:** `AdminCaller` with its web constructor, and the PR 1

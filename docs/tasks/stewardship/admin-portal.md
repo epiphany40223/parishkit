@@ -307,8 +307,8 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [x] ADM-11.03 — PR 2: add durable browser-approved automation sessions, notices and the maintenance task (migration), the host wrapper and session file, restore revocation, refusals and audit.
 - [x] ADM-11.04 — PR 3: add read models, read-only status commands and the route-parity test.
 - [x] ADM-11.05 — PR 4: add schedule preview and confirm and configuration request status.
-- [ ] ADM-11.06 — PR 5: let fresh-gated SQL guards and checks accept full-scope automation sessions (migration) and add the confirmation prompt.
-- [ ] ADM-11.07 — PR 6: add refresh and Testing send commands.
+- [x] ADM-11.06 — PR 5: let fresh-gated SQL guards and checks accept full-scope automation sessions (migration) and add the confirmation prompt.
+- [x] ADM-11.07 — PR 6: add refresh and Testing send commands.
 - [ ] ADM-11.08 — PR 7: add delivery control and Family portal maintenance commands.
 - [ ] ADM-11.09 — PR 8: add report, export, digest and log commands.
 - [x] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
