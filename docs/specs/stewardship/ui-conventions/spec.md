@@ -1037,7 +1037,11 @@ Reports whose filters are private (the active parishioner family directory, Syst
 campaign reports) keep them in POST state: their navigator and headings are
 small CSRF-protected forms that carry the filters as hidden fields, so no
 private value reaches a URL. System logs also accept a link carrying only its
-non-private filters ([Logs](../admin-portal/spec.md#logs)). A report whose rows an installed SQL selection
+non-private filters ([Logs](../admin-portal/spec.md#logs)). A control on
+another page that opens such a report narrowed by a private value (a Users
+row's "Sign-in activity", narrowed to one Google identity) is a link-styled
+button posting a small CSRF form with that value as a hidden field, never a
+link carrying it. A report whose rows an installed SQL selection
 orders offers that selection's sort orders on the columns they order and its
 page sizes; its other columns do not sort, since the schema owns those
 orders. In v1 that covers:
