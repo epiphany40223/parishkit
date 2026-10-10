@@ -1010,7 +1010,7 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
   other in-container operator commands take), refuses unless the profile is
   LOCAL and the configured origin's host is `localhost`; it checks both
   before contacting Valkey. A missing option is a usage error naming it. It creates a random 256-bit token and stores, under
-  `stewardship:auth:v1:local-sign-in:<sha256 of token>` with a 120-second
+  `stewardship:auth:v1:local-sign-in:<sha256 of token>` with a 15-minute
   expiry, the email and the current revocation epoch (no schema change). It
   prints `https://localhost:8443/admin/local/sign-in#<token>`. The token is in
   the fragment so it never reaches access logs or a `Referer` header.

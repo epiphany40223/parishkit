@@ -5,7 +5,7 @@
   {% if local_environment %}
   <p>{% translate "Google sign-in is not available in the local laptop environment." %}</p>
   <ol><li>{% translate "On the laptop, run" %} <code>tools/stewardship-local.sh sign-in --email you@example.org</code></li>
-  <li>{% translate "Open the printed link in this browser. The link works once, within two minutes of being printed." %}</li></ol>
+  <li>{% translate "Open the printed link in this browser. The link works once, within 15 minutes of being printed." %}</li></ol>
   {% else %}
   <p>{% translate "Use your authorized Google account to continue." %}</p>
   <form method="post" action="{% url 'admin:login' %}">

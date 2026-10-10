@@ -163,8 +163,23 @@ def test_token_is_single_use(local):
     assert PortalSession.objects.count() == 1
 
 
+def test_link_just_under_fifteen_minutes_old_still_signs_in(local):
+    """A fresh link lives 15 minutes; one near the end of that still works.
+
+    Valkey keeps real time, so the link is aged by shortening its expiry to
+    what a link minted 14 minutes ago would have left (#954). A minute keeps
+    the sign-in well inside the window on a slow runner.
+    """
+    token = mint(local)
+    client = local.limiter.client
+    assert 14 * 60 < client.ttl(key_for(local, token)) <= 15 * 60
+    client.pexpire(key_for(local, token), 60_000)
+    assert post_token(browser(), token).status_code == 302
+    assert PortalSession.objects.count() == 1
+
+
 def test_expired_token_is_refused(local):
-    """Once the key has expired the link is as good as unknown."""
+    """Once the key has expired (15 minutes after minting) the link is unknown."""
     token = mint(local)
     local.limiter.client.pexpire(key_for(local, token), 1)
     time.sleep(0.05)
