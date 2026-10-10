@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.information_rendering import (
     visible_text,
 )
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_FULL
 from parishkit.stewardship.web.dates import Span, csv_text
 
 MOMENT = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
@@ -61,6 +62,7 @@ def result(rows, *, proven=True):
             "source_id": str(UUID(int=95)),
             "source_generation": 12,
             "source_as_of": MOMENT,
+            "family_names": FAMILY_NAMES_FULL,
             "giving_observed_at": (
                 MOMENT.replace(day=10).isoformat() if proven else None
             ),
@@ -137,6 +139,7 @@ def test_rows_word_money_status_shares_and_local_instants():
     assert metadata["Report"] == "Financial stewardship detail"
     # Typed display-zone values; each renderer formats them (see #221).
     assert metadata["Source as of"] == datetime(2026, 9, 19, 11, 4, tzinfo=NEW_YORK)
+    assert metadata["Family names"] == FAMILY_NAMES_FULL
     # The money's own read time is stated apart from the source promotion time.
     assert metadata["ParishSoft giving read as of"] == datetime(
         2026, 9, 10, 11, 4, tzinfo=NEW_YORK

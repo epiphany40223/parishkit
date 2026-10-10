@@ -174,14 +174,13 @@ def substitute(monkeypatch, answer):
     # The directory's name from the snapshot SQL read, without a database.
     cursor.named = []
 
-    def name_rows(snapshot_id, rows):
+    def name_file_rows(metadata, rows):
         """Record the snapshot and add the heads, as the shared helper does."""
-        cursor.named.append(snapshot_id)
+        cursor.named.append(metadata["source_id"])
         for row in rows:
             row["family_name"] += ", Ann and Bo"
-        return rows
 
-    monkeypatch.setattr(financial, "name_rows", name_rows)
+    monkeypatch.setattr(financial, "name_file_rows", name_file_rows)
     # The immutable configuration the row's Family answered, without a database.
     monkeypatch.setattr(
         financial,

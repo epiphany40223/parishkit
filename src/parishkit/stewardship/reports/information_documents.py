@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_DETAIL
+
 from .weekly_presentation import DISPOSITIONS
 
 # Rows carry no internal references (Administrator, 2026-10-09, PR #929): an
@@ -73,6 +75,7 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
         ("Source reference", source["source_id"]),
         ("Source generation", f"{source['source_generation']:,}"),
         ("Source as of", instant(source["source_as_of"])),
+        (FAMILY_NAMES_DETAIL, source["family_names"]),
         ("Captured at", instant(source["observed_at"])),
         ("Requested at", instant(requested_at)),
         ("Display timezone", timezone),

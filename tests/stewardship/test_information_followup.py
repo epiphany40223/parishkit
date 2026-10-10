@@ -134,14 +134,13 @@ def test_name_families_names_rows_from_their_snapshot_as_the_sql_does(monkeypatc
 
     calls = []
 
-    def name_rows(snapshot_id, rows, default):
+    def name_file_rows(metadata, rows, default):
         """Record the call and add heads, as the shared helper does."""
-        calls.append((snapshot_id, default))
+        calls.append((metadata["source_id"], default))
         for row in rows:
             row["family_name"] += ", Ann and Bo"
-        return rows
 
-    monkeypatch.setattr(information, "name_rows", name_rows)
+    monkeypatch.setattr(information, "name_file_rows", name_file_rows)
     result = {
         "metadata": {"source_id": "snap"},
         "rows": [{"family_duid": 1, "family_name": "Example"}],

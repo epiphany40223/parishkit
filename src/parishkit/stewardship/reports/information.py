@@ -10,7 +10,7 @@ from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.models import AdditionalInformationRevision
-from parishkit.stewardship.source.snapshot_names import name_rows
+from parishkit.stewardship.source.snapshot_names import name_file_rows
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import PageWindow, filters
 from parishkit.stewardship.web.tables import Sorting
@@ -108,9 +108,10 @@ def name_families(result):
     the page and for an export rendered later from its capture alike; SQL
     still searches and orders by the surname that leads it. A Family without
     a surname is "Family", as the SQL names it. Once that snapshot has been
-    compacted, a late export render keeps the captured surname.
+    compacted, a late export render keeps the captured surname for every
+    row, and the file's "Family names" detail says which form it used.
     """
-    name_rows(result["metadata"]["source_id"], result["rows"], default="Family")
+    name_file_rows(result["metadata"], result["rows"], default="Family")
     return result
 
 

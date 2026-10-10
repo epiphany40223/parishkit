@@ -20,7 +20,7 @@ from parishkit.stewardship.responses.financial_inputs import (
 )
 from parishkit.stewardship.responses.financial_presentation import option_labels
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
-from parishkit.stewardship.source.snapshot_names import name_rows
+from parishkit.stewardship.source.snapshot_names import name_file_rows
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.tables import Sorting
@@ -280,9 +280,11 @@ def name_families(result):
     from, so the page and an export rendered later from its capture name a
     Family alike. SQL still searches and orders by the surname, which leads
     that name. Once the 15-minute refresh has compacted that snapshot, a late
-    export render keeps the captured surname rather than mixing in later data.
+    export render keeps the captured surname for every row rather than mixing
+    in later data, and the file's "Family names" detail says which form it
+    used.
     """
-    name_rows(result["metadata"]["source_id"], result["rows"])
+    name_file_rows(result["metadata"], result["rows"])
     return result
 
 
