@@ -104,12 +104,15 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
 
 The application uses application-owned authorization after Google verifies an
 administration user's identity. It does not delegate campaign RBAC to an
-external identity-policy service.
+external identity-policy service. Each Admin portal user has one role, and the
+roles are levels: Ministry leader, then Staff, then Administrator, each
+including everything below it
+([Portal user management](admin-portal/spec.md#portal-user-management)).
 
 | Capability | Administrator | Staff | Ministry leader | Family |
 | --- | --- | --- | --- | --- |
 | Configure parish/campaign/integrations | Yes | No | No | No |
-| Manage login rules and Ministry assignments | Yes | No | No | No |
+| Manage Admin portal users | Yes | No | No | No |
 | View/export Family manual codes | Yes | Yes | No | Own code through login or campaign invitation email |
 | Trigger/view operational background work | Yes | No | No | No |
 | Trigger/view own authorized report exports | Yes | Yes | Assigned Ministries only | No |

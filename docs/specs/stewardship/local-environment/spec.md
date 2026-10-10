@@ -1031,14 +1031,14 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
     get-or-create and the disabled check, `reauthenticate_admin` or
     `issue_admin`, the session-guard `IntegrityError` handling and
     `rotate_token`. The local path MUST NOT call `issue_admin` or
-    `reauthenticate_admin` directly. Sessions, audit, login rules and step-up
+    `reauthenticate_admin` directly. Sessions, audit, user roles and step-up
     therefore behave as after Google sign-in (see
     [identity and session security](../architecture/spec.md#identity-and-session-security)).
   - The subject stored in `PortalUser.google_subject` is
     `local-test:<normalized email>`, which cannot collide with Google's
-    numeric subjects. The email must still satisfy the deployment's login
-    rules. A local sign-in carries no hosted-domain evidence (there is no
-    Google `hd` claim), so only email rules admit it; domain rules do not.
+    numeric subjects. The email must still be one of the deployment's
+    [Admin portal users](../admin-portal/spec.md#portal-user-management),
+    which is the only way anyone signs in.
   - The route is one of the access gate's authentication routes, so it
     works before setup completes and during restore review, when the
     developer needs it to reach the setup wizard. In LOCAL the login page

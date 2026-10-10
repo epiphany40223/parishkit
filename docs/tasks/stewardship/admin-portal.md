@@ -313,7 +313,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [ ] ADM-11.09 — PR 8: add report, export, digest and log commands.
 - [x] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
 - [ ] ADM-11.11 — PR 10: add the remaining configuration commands, including secret replacement.
-- [ ] ADM-11.12 — PR 11: add user, rule (including high-impact changes), assignment, acknowledgement and follow-up commands.
+- [ ] ADM-11.12 — PR 11: add acknowledgement (`events list`, `events acknowledge`) and follow-up (`followup …`) commands. The users commands (`users list`, `users preview-upgrade`, `users preview`, `users confirm`, `users import-leaders`, including high-impact changes) move to the #952 slices; rule and assignment commands are retired by #952 and #922.
 - [ ] ADM-11.13 — PR 12: add go-live and withdrawal commands.
 
 Evidence: In progress. ADM-11.01 merged in PR #511, which added the
@@ -578,7 +578,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.15 — NAV-12: move export and digest URLs and fold the latest-data export into the shared export page.
 - [ ] ADM-12.16 — NAV-13 (optional): add trailing slashes to sign-in, setup and maintenance URLs.
 - [x] ADM-12.17 — NAV-14: add the Emailed reports page.
-- [ ] ADM-12.18 — NAV-15: split Portal users into Sign-in rules, Ministry assignments and Chairpersons (#535).
+- [ ] ~~ADM-12.18 — NAV-15~~ — Dropped, not done: the Users revamp (#952) replaces the planned Portal users split (#535).
 - [ ] ADM-12.19 — NAV-16: add the ways back (#521), including the test-email origin kept in the session.
 - [ ] ADM-12.20 — NAV-17: add the reachability and no-UUID crawl test.
 - [ ] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
@@ -680,7 +680,7 @@ and System pages (Ministries, Review parish logos, Refresh from ParishSoft,
 Change status, Background task and the sign-in rule, Ministry assignment and
 Chairperson reviews) and every setup wizard step after its stepper label; the
 data-entry and connection steps take their heading from the stepper entry
-itself. Portal users keeps its name until NAV-15 splits it. Parish settings
+itself. Portal users keeps its name until the Users revamp (#952). Parish settings
 loses its hand-written Administration link, and "Back to" links become
 "Return to" links naming their page. It is proven by the extended
 `tests/stewardship/test_admin_page_names.py` (the new groups, Home, Change
@@ -719,7 +719,7 @@ ADM-12.10 (NAV-7, in part) moves the Parish data pages under
 change's status page to `/admin/changes/<request>/`, each old address and
 no-slash form redirecting. The ingress admits large uploads at both upload
 addresses, and the two hard-coded redirects are reversed. The Users and
-access URLs move with the Portal users split (NAV-15), so this task stays
+access URLs move with the Users revamp (#952), so this task stays
 open until then. It is proven by the expected-redirect table in
 `tests/stewardship/test_admin_url_scheme.py`, the Caddyfile render tests and
 golden files, and the updated Parish data and change suites.

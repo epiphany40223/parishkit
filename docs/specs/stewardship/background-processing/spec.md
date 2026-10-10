@@ -755,7 +755,7 @@ Safety-critical operational notifications are exempt. Operational incident
 alerts (see [critical errors](#critical-errors-and-notification)) and
 security-event alerts have routing class `operational` and are sent
 individually regardless of global mode: an incident alert to every current
-Administrator's exact address, a security alert to the Administrators
+Administrator user's address, a security alert to the Administrators
 recorded when its event was raised. Optional Slack routing is likewise
 unchanged. Their subject identifies the current deployment mode, but their
 content contains no Family/Member data, credentials, rendered campaign content,
@@ -2126,8 +2126,8 @@ visible/retryable to Admins. In Testing, it routes only to the test recipient.
 
 ## Administrator digests
 
-Recipients are the current normalized exact-address rules granting
-Administrator at execution time. Each Admin receives an individual message so
+Recipients are the current Administrator users at execution time. Each
+Admin receives an individual message so
 addresses are not exposed to other recipients.
 
 The generation-time recipient cohort is immutable. Before each submission,
