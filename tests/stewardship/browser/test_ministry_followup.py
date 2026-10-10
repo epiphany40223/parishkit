@@ -295,8 +295,8 @@ def test_followup_edit_posts_privately(page, component_origin):
 @pytest.mark.parametrize(
     ("zone", "typed", "shown"),
     [
-        ("America/Los_Angeles", "08:04", "September 19, 2026 at 8:04 AM"),
-        ("UTC", "15:04", "September 19, 2026 at 3:04 PM"),
+        ("America/Los_Angeles", "8:04 am", "September 19, 2026 at 8:04 AM"),
+        ("UTC", "3:04pm", "September 19, 2026 at 3:04 PM"),
     ],
 )
 def test_followup_contact_time_round_trips_in_browser_time(
@@ -364,9 +364,13 @@ def test_followup_contact_waits_for_a_known_browser_zone(
         "saved. Check your computer's time zone setting.",
     )
     assert page.locator("[name=contact_zone]").input_value() == ""
-    for label in ("Date", "Time"):
+    # Time is also described by its time-entry reading line (#398).
+    for label, described in (
+        ("Date", "followup-save-hint"),
+        ("Time", "followup-save-hint contact-time_reading"),
+    ):
         field = page.get_by_label(label, exact=True)
-        assert field.get_attribute("aria-describedby") == "followup-save-hint"
+        assert field.get_attribute("aria-describedby") == described
     assert not page.locator("#contact-zone-help").is_visible()
     # The note is never shown with an empty zone ("time zone: .").
     assert not page.get_by_text("time zone: .", exact=False).is_visible()

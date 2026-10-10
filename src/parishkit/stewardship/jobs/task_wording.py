@@ -19,10 +19,13 @@ from .models import NONTERMINAL_STATES, TaskRunEvent
 
 REFRESH = "source_refresh"
 
-# A refresh request's kind, as stored on its immutable request row.
+# A refresh request's kind, as stored on its immutable request row. A delta
+# run is a "Quick update" whatever the configured cadence (every 15 minutes,
+# hourly or at set times): the request row does not record the cadence it ran
+# under, so naming one could be wrong (#398).
 REFRESH_LABELS = {
     "full": _("Full refresh"),
-    "delta": _("15-minute update"),
+    "delta": _("Quick update"),
 }
 
 # What a ParishSoft refresh is doing in each phase it reports.

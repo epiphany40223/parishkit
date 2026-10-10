@@ -312,11 +312,50 @@ def test_every_refusal_code_names_its_fields():
         "contact_incomplete": ("contact_date", "contact_time"),
         "contact_future": ("contact_date", "contact_time"),
         "contact_zone": ("contact_date", "contact_time"),
+        "contact_time": ("contact_time",),
     }
     assert {code: fields for code, (_, fields) in REFUSALS.items()} == expected
     assert {name for _, fields in REFUSALS.values() for name in fields} == set(
         FIELD_IDS
     )
+
+
+@pytest.mark.parametrize(
+    ("typed", "message"),
+    [
+        ("25:00", "“25:00” has no hour 25: hours run from 0 to 23."),
+        ("2:30 pmx", "“2:30 pmx” isn't a time. Try 2:00 PM, 2pm, 14:00 or 1400."),
+        (
+            "14:30:15",
+            "“14:30:15” has seconds: these times are to the minute, so "
+            "leave the seconds out.",
+        ),
+    ],
+)
+def test_unreadable_contact_time_is_refused_at_the_time_field(typed, message):
+    """A contact time the shared time-of-day parser refuses (#398) is shown
+    in place at Time alone, in the parser's own words."""
+    with pytest.raises(FollowupRefusal) as refused:
+        change(
+            MINIMAL | {"contact_channel": "phone"} | CONTACT | {"contact_time": typed}
+        )
+    error = _refusal_error(refused.value, {})
+    assert error["code"] == "contact_time"
+    assert str(error["message"]) == message
+    assert error["fields"] == ("contact_time",)
+    assert error["field_id"] == "contact-time"
+
+
+def test_contact_time_longer_than_the_field_is_a_malformed_form():
+    """The page bounds the entry at 32 characters; more is not a refusal."""
+    with pytest.raises(ValueError) as refused:
+        change(
+            MINIMAL
+            | {"contact_channel": "phone"}
+            | CONTACT
+            | {"contact_time": "1" * 33}
+        )
+    assert not isinstance(refused.value, FollowupRefusal)
 
 
 @pytest.mark.parametrize(
@@ -388,7 +427,10 @@ def test_refused_fields_are_marked_at_the_field(code):
     beside it (a date and time share one message after the time); the
     summary links to the first. Fields the refusal does not concern, and
     every field on an unrefused page, are left alone."""
-    details = {"outcome": "joined", "action": "join"} if code == "outcome_kind" else {}
+    details = {
+        "outcome_kind": {"outcome": "joined", "action": "join"},
+        "contact_time": {"message": "“25:00” has no hour 25: hours run from 0 to 23."},
+    }.get(code, {})
     error = _refusal_error(FollowupRefusal(code, **details), {})
     page = render_refused(error)
     message = re.escape(str(error["message"]).replace("'", "&#x27;"))

@@ -21,6 +21,12 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
+from parishkit.stewardship.time_entry import (
+    TimeEntryError,
+    canonical,
+    is_blank,
+    parse_time,
+)
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.dates import UnknownZone, browser_instant
 from parishkit.stewardship.web.responses import campaign_response
@@ -190,6 +196,9 @@ REFUSALS = {
         _("Enter the date and time of the contact attempt."),
         ("contact_date", "contact_time"),
     ),
+    # A typed time the shared time-of-day parser cannot read (#398); its
+    # message is the parser's own, from the refusal's details.
+    "contact_time": (None, ("contact_time",)),
     "contact_future": (
         # The server checks this because the browser's clock can be wrong.
         _(
@@ -249,7 +258,9 @@ def _refusal_error(refusal, submitted):
     concerns (marked in error beside the message) and the field the
     summary links to, the first of them."""
     message = REFUSALS[refusal.code][0]
-    if refusal.code == "outcome_kind":
+    if refusal.code == "contact_time":
+        message = refusal.details["message"]
+    elif refusal.code == "outcome_kind":
         message = _("%(outcome)s doesn't apply to a request to %(action)s.") % {
             "outcome": OUTCOMES.get(refusal.details["outcome"], ""),
             "action": ACTIONS[refusal.details["action"]],
@@ -526,6 +537,24 @@ def _text(parameters, key):
     return parameters.get(key, "").replace("\r\n", "\n").replace("\r", "\n")
 
 
+def _contact_clock(text):
+    """A typed contact time as ``HH:MM``; blank stays blank.
+
+    The page bounds the entry at 32 characters, so a longer one is a
+    malformed form, not a correctable refusal. An entry the parser refuses
+    is refused in place with the parser's own message; a blank one is left
+    for ``browser_instant`` to refuse as an incomplete contact attempt.
+    """
+    if len(text) > 32:
+        raise ValueError("Invalid follow-up form.")
+    if is_blank(text):
+        return ""
+    try:
+        return canonical(parse_time(text))
+    except TimeEntryError as error:
+        raise FollowupRefusal("contact_time", message=error.message) from None
+
+
 def change_values(parameters):
     """Strict closed form grammar; fields that do not apply are ignored.
 
@@ -540,7 +569,9 @@ def change_values(parameters):
 
     A contact date and time are typed in the browser's time zone, which
     ui-v1.js sends in ``contact_zone`` (#558); a contact attempt without a
-    known zone is refused rather than guessed.
+    known zone is refused rather than guessed. The time is typed in any
+    common form (2:30 PM, 1430, noon) and read by the shared time-of-day
+    parser, as every Admin time is (#398).
     """
     required = {"expected_version", "request_key", "state", "notes", "contact_channel"}
     optional = {
@@ -563,10 +594,13 @@ def change_values(parameters):
     channel = parameters["contact_channel"] or None
     moment = None
     if channel is not None:
+        # Read before the try below: its refusal (a ValueError) must not be
+        # turned into an incomplete contact attempt.
+        clock = _contact_clock(parameters.get("contact_time", ""))
         try:
             moment = browser_instant(
                 parameters.get("contact_date", ""),
-                parameters.get("contact_time", ""),
+                clock,
                 parameters.get("contact_zone", ""),
             )
         except UnknownZone:
