@@ -59,9 +59,10 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_role("button", name="Next", exact=True).count() == 2
     assert page.get_by_role("button", name="Previous", exact=True).count() == 0
     visible(page.get_by_text("Page 1 of 2", exact=True).first)
-    # Family, Annual pledge and Responses sort through the SQL selection.
+    # Family, Family DUID (#960), Annual pledge and Responses sort through the
+    # SQL selection.
     assert page.locator("th[aria-sort=ascending]").inner_text().startswith("Family")
-    assert page.locator("th button.sort-link").count() == 3
+    assert page.locator("th button.sort-link").count() == 4
     # The complete export is offered beside the page, with its own controls.
     assert page.get_by_role("button", name="Queue complete export").count() == 1
     assert page.get_by_label("Export format").input_value() == "csv"

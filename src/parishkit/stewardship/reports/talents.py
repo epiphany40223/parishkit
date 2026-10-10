@@ -36,6 +36,10 @@ MEMBER_HEADINGS = (
     "Talents",
     "Cannot participate in ministries",
     "Latest response",
+    # Appended last so earlier columns keep their places in existing
+    # downloads; blank for a Member added on the form, as in the Ministry
+    # export (#960).
+    "Member DUID",
 )
 FAMILY_HEADINGS = ("Family", "Family DUID", "Cannot attend Mass", "Latest response")
 
@@ -169,6 +173,7 @@ def export_tables(result, zone):
             *(("; ".join(row["talents"]),) if talents else ()),
             "Yes" if row["cannot_serve"] else "",
             instant(row["submitted_at"]),
+            str(row["member_duid"]) if row["member_duid"] else "",
         )
         for row in result["members"]
     ]

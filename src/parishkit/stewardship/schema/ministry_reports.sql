@@ -3,7 +3,7 @@
 -- never fetch contact payloads. Select latest intent before filtering states,
 -- including hidden Ministries, so history cannot resurrect replaced requests.
 -- NULL page_limit selects every matching row for an immutable export capture.
-CREATE FUNCTION stewardship_ministry_report_v1(
+CREATE FUNCTION public.stewardship_ministry_report_v1(
     campaign_uuid uuid, filters jsonb, operational boolean, ministry_scope bigint[],
     ministry_id integer DEFAULT NULL, request_action text DEFAULT 'join',
     page_limit integer DEFAULT NULL, page_offset integer DEFAULT 0
@@ -131,11 +131,17 @@ WITH selected AS MATERIALIZED (
         OR position(lower((filters->>'search')) IN lower(member_name))>0
         OR (entity_kind='member' AND position((filters->>'search') IN entity_key)>0)
 ), page AS MATERIALIZED (
+    -- A Member DUID sort lists Members the Family added on the form (no
+    -- DUID yet) last in either direction (#960).
     SELECT *,row_number() OVER (ORDER BY
         CASE WHEN (filters->>'sort')='name' THEN lower(member_name) END,
         CASE WHEN (filters->>'sort')='name_desc' THEN lower(member_name) END DESC,
         CASE WHEN (filters->>'sort')='newest' THEN submitted_at END DESC,
-        CASE WHEN (filters->>'sort')='oldest' THEN submitted_at END,id) AS ordinal
+        CASE WHEN (filters->>'sort')='oldest' THEN submitted_at END,
+        CASE WHEN (filters->>'sort')='duid' AND entity_kind='member'
+            THEN entity_key::bigint END NULLS LAST,
+        CASE WHEN (filters->>'sort')='duid_desc' AND entity_kind='member'
+            THEN entity_key::bigint END DESC NULLS LAST,id) AS ordinal
     FROM filtered ORDER BY ordinal
     LIMIT page_limit OFFSET page_offset
 ), detail AS (
@@ -204,6 +210,8 @@ WITH selected AS MATERIALIZED (
     ) a ON true
 ), summary_page AS (
     SELECT * FROM summary_filtered ORDER BY
+        CASE WHEN (filters->>'sort')='duid' THEN duid END,
+        CASE WHEN (filters->>'sort')='duid_desc' THEN duid END DESC,
         CASE WHEN (filters->>'sort')='name_desc' THEN lower(name) END DESC,lower(name),duid
     LIMIT page_limit OFFSET CASE WHEN ministry_id::integer IS NULL
         THEN page_offset ELSE 0 END
@@ -224,6 +232,8 @@ SELECT CASE WHEN NOT z.values->'modules' ? 'ministry'
         THEN (SELECT count(*) FROM summary_filtered)
         ELSE (SELECT count(*) FROM filtered) END,
     'summaries',coalesce((SELECT jsonb_agg(to_jsonb(p) ORDER BY
+        CASE WHEN (filters->>'sort')='duid' THEN duid END,
+        CASE WHEN (filters->>'sort')='duid_desc' THEN duid END DESC,
         CASE WHEN (filters->>'sort')='name_desc' THEN lower(name) END DESC,lower(name),duid)
         FROM summary_page p),'[]'::jsonb),
     'rows',coalesce((SELECT jsonb_agg(to_jsonb(d)-'ordinal' ORDER BY ordinal)

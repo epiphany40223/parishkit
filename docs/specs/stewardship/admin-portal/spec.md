@@ -1244,12 +1244,20 @@ orders. In v1 that covers:
 
 - the active parishioner family directory (Family and DUID, 50 rows; Family code would need
   every code decrypted per view);
-- Financial stewardship detail (Family, Annual pledge and latest response);
-- the Additional information queue (Family and Submitted);
-- the Ministry report (Ministry; Member and Submitted in one Ministry's view);
+- Financial stewardship detail (Family, Family DUID, Annual pledge and latest
+  response);
+- the Additional information queue (Family, Family DUID and Submitted);
+- the Ministry report (Ministry and Ministry DUID; Member, Member DUID and
+  Submitted in one Ministry's view, a Member added on the form, with no DUID
+  yet, last either way);
 - the Ministry follow-up queue (Request, Member and Ministry).
 
-Extending those vocabularies is a schema change. Columns that are only
+Extending those vocabularies is a schema change; the DUID sorts on the
+financial, Additional information and Ministry tables came with one
+([#960](https://github.com/epiphany40223/parishkit/issues/960)). Where such a
+selection sorts or searches by Family name, it uses the name the page shows,
+the surname and then the heads of household, and sorts by surname first, as
+the directory does. Columns that are only
 controls (selection, actions, previews) never sort. Two short before/after
 lists of pending setting changes (credential selection and integration
 preview), the campaign mail test's at most ten reviewed Families and link

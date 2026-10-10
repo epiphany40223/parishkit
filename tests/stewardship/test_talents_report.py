@@ -29,6 +29,7 @@ def result(talents, counts):
                 "family_name": "Example",
                 "family_duid": 10,
                 "member_name": "Alex Example",
+                "member_duid": 31,
                 "proposed": False,
                 "cannot_serve": False,
                 "talents": talents,
@@ -120,11 +121,12 @@ def test_campaign_without_talents_reports_only_limitations():
         "Member",
         "Cannot participate in ministries",
         "Latest response",
+        "Member DUID",
     ]
-    assert rows[1][3] == "Yes"
+    assert rows[1][3] == "Yes" and rows[1][5] == "31"
     book = load_workbook(io.BytesIO(talents_xlsx(shaped, ZoneInfo("UTC"))))
     headings = [cell.value for cell in book["Members"][1]]
-    assert "Talents" not in headings and len(headings) == 5
+    assert "Talents" not in headings and len(headings) == 6
     # A campaign that does collect talents keeps its Talents column.
     kept = shape_result(
         result({PAINTER: ""}, {PAINTER: 1}), configuration={"modules": ["ministry"]}
@@ -162,7 +164,7 @@ def test_report_page_says_plainly_that_no_talents_are_collected():
     html = page({"modules": ["ministry"], "talent_options": []}, result({}, {}))
     assert "This campaign does not collect talents" in html
     assert "Talents</" not in html and "Members with talents" not in html
-    assert "Painter" not in html and 'colspan="4"' in html
+    assert "Painter" not in html and 'colspan="5"' in html
     html = page({"modules": ["ministry"]}, result({PAINTER: ""}, {PAINTER: 1}))
     assert "does not collect talents" not in html
     assert "Members with talents or limitations" in html and "Painter" in html
@@ -181,3 +183,22 @@ def test_a_talent_filter_no_longer_offered_reads_as_everything():
         assert query.offered(emptied) is query
     stale = TalentQuery(search="Alex", talent=RETIRED).offered(defaults)
     assert stale.form_values() == {"search": "Alex", "talent": "any"}
+
+
+def test_member_duid_is_the_last_download_column():
+    """Downloads end with the Member DUID column the page shows (#960).
+
+    It is appended so earlier columns keep their places; a Member the Family
+    added on the form has no DUID yet, so its cell is blank.
+    """
+    raw = result({PAINTER: ""}, {PAINTER: 2})
+    raw["members"].append(
+        raw["members"][0]
+        | {"member_name": "Ari Example", "member_duid": None, "proposed": True}
+    )
+    shaped = shape_result(raw, configuration={"modules": ["ministry"]})
+    rows = list(csv.reader(io.StringIO(talents_csv(shaped, UTC).decode())))
+    assert rows[0][-1] == "Member DUID" and rows[0][3] == "Talents"
+    assert [row[-1] for row in rows[1:3]] == ["31", ""]
+    book = load_workbook(io.BytesIO(talents_xlsx(shaped, ZoneInfo("UTC"))))
+    assert [cell.value for cell in book["Members"]["G"][:2]] == ["Member DUID", "31"]

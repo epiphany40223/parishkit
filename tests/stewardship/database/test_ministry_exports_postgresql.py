@@ -133,6 +133,21 @@ def test_capture_scope_and_revocation(response_service, google):
     )
     admin = user("admin@example.org").pk
     leaving = create(harness, admin, ministry_id=4, action="leave")
+    # An export keeps a DUID sort (#960): the summary by Ministry DUID and a
+    # list by Member DUID, both accepted by the capture.
+    summary = create(
+        harness,
+        admin,
+        ministry_id=None,
+        action="summary",
+        query=MinistryQuery(sort="duid_desc"),
+    )
+    summary = MinistryExportSnapshot.objects.get(pk=summary.ministry_snapshot_id)
+    assert [row["duid"] for row in summary.document["summaries"]] == [9, 4]
+    assert summary.parameters["filters"]["sort"] == "duid_desc"
+    listed = create(harness, admin, query=MinistryQuery(sort="duid"))
+    listed = MinistryExportSnapshot.objects.get(pk=listed.ministry_snapshot_id)
+    assert listed.row_count == 1 and listed.parameters["filters"]["sort"] == "duid"
     leaving.refresh_from_db()
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         capture = leaving.ministry_snapshot.document

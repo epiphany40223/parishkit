@@ -20,18 +20,29 @@ from .information import parse_page
 
 PAGE_SIZE = 50
 # The installed selection (schema/ministry_reports.sql) orders and pages the
-# rows, so a heading can only choose one of its existing sort values; the
-# schema is frozen for v1. The summary sorts by Ministry name only; Joining,
-# Leaving, Unresolved and Follow-up progress are not sortable because the
-# selection has no order for them. Detail rows sort by Member name or by
-# submission time; the status and contact columns have no selection order.
+# rows, so a heading can only choose one of its sort values. The summary sorts
+# by Ministry name or Ministry DUID (#960); Joining, Leaving, Unresolved and
+# Follow-up progress are not sortable because the selection has no order for
+# them. Detail rows sort by Member name, Member DUID (a Member added on the
+# form, with no DUID yet, last either way) or submission time; the status and
+# contact columns have no selection order. The same ``duid`` tokens mean the
+# Ministry DUID in the summary and the Member DUID in one Ministry's view.
+SUMMARY_TOKENS = {"name", "name_desc", "duid", "duid_desc"}
 SUMMARY_SORTING = Sorting(
-    {"name": ("ministry", False), "name_desc": ("ministry", True)}, "name"
+    {
+        "name": ("ministry", False),
+        "name_desc": ("ministry", True),
+        "duid": ("ministry_duid", False),
+        "duid_desc": ("ministry_duid", True),
+    },
+    "name",
 )
 DETAIL_SORTING = Sorting(
     {
         "name": ("member", False),
         "name_desc": ("member", True),
+        "duid": ("member_duid", False),
+        "duid_desc": ("member_duid", True),
         "newest": ("submitted", True),
         "oldest": ("submitted", False),
     },
@@ -100,7 +111,7 @@ class MinistryQuery:
             query.activity not in {"any", "active", "inactive", "unavailable"}
             or query.history not in {"current", "all"}
             or query.state not in STATES
-            or query.sort not in {"name", "name_desc", "newest", "oldest"}
+            or query.sort not in SUMMARY_TOKENS | {"newest", "oldest"}
             or query.size not in {str(size) for size in PAGE_SIZES}
             or (
                 not detail
@@ -109,7 +120,7 @@ class MinistryQuery:
                     or query.state != "any"
                     or query.start
                     or query.end
-                    or query.sort not in {"name", "name_desc"}
+                    or query.sort not in SUMMARY_TOKENS
                 )
             )
         ):

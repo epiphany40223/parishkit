@@ -855,7 +855,9 @@ than one Family's.
 
 One row per distinct `AdditionalInformationItem` shows submission time, Family
 name/DUID, text excerpt/full detail, follow-up-needed, followed-up time/actor,
-disposition, replacement/withdrawal link, and Staff notes. The default queue
+disposition, replacement/withdrawal link, and Staff notes. The Family name and
+Family DUID columns both sort, in the queue's
+[SQL-owned order](../admin-portal/spec.md#admin-tables). The default queue
 shows only `current_actionable`; history filters expose superseded/withdrawn
 items. Search covers authorized text, Family name/DUID, notes, date, disposition,
 and workflow state. Exports include complete text and workflow history option.
@@ -1067,7 +1069,13 @@ follow-up menu count read through the same function and cross-check, so neither
 shows more than the queue would.
 
 The sorted summary has Ministry name/DUID, join-request count, leave-request
-count, unresolved count, and follow-up progress. Counts use latest live request
+count, unresolved count, and follow-up progress. The summary sorts by Ministry
+name or Ministry DUID, and each list by Member name, Member DUID or request
+date ([Admin tables](../admin-portal/spec.md#admin-tables)). A Member the Family
+added on the form, with no DUID yet, reads "New Member" in the Member DUID
+column, with "New household member added on the form (not yet in ParishSoft)"
+as its tooltip; the Talents report uses the same words.
+Counts use latest live request
 state while retaining links to superseded/history views.
 
 Each Ministry links to:
@@ -1249,7 +1257,8 @@ source comparison pledge/contribution aggregates with as-of time. The page and
 every export format (CSV, XLSX, PDF) head those two aggregates "ParishSoft
 pledged" and "ParishSoft contributed", and say "ParishSoft" rather than
 "Source" in the export metadata that describes them, so a downloaded file names
-its figures as the page does.
+its figures as the page does. The Family name and Family DUID columns both
+sort ([Admin tables](../admin-portal/spec.md#admin-tables)).
 
 Filters include active/inactive, first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method. Summary shows
@@ -1269,11 +1278,15 @@ who shared a talent (with any Other text, worded from the campaign's current
 talent list) or who cannot participate in any ministries, and a second lists
 Families who cannot attend Mass or prayer services (see
 [Family portal](../parishioner-portal/spec.md#talents-and-cannot-participate)).
-Testing responses are excluded. Filters are a name or Family DUID search and
-one choice of everything, cannot participate, cannot attend, or a single
-talent; a summary counts each. The filtered result downloads immediately as CSV
-(Members, then Families) or XLSX (one sheet each), in a chosen display
-timezone. A download is rendered in memory on the web connection under the
+Testing responses are excluded. The Members table shows each listed Member's
+DUID in its own sortable column; a Member the Family added on the form has none
+yet, reads "New Member" (as in the Ministry report) and sorts last. Filters are
+a name or Family DUID search and one choice of everything, cannot participate,
+cannot attend, or a single talent; a summary counts each. The filtered result
+downloads immediately as CSV (Members, then Families) or XLSX (one sheet each),
+in a chosen display timezone; the Members table ends with the Member DUID
+column, blank for a new Member.
+A download is rendered in memory on the web connection under the
 interactive campaign read guard, not through the dedicated download pool, whose
 login cannot read the response and source data the report needs. Viewing and
 downloading are audited with the row count, the Show choice (`report_filter`:

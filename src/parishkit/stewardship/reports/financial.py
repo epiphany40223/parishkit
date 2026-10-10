@@ -32,15 +32,18 @@ PAGE_SIZE = 50
 PAGE_SIZES = (25, 50, 100)
 # The installed selection (stewardship_financial_report_v1) orders and pages
 # the pledges itself, so its closed ``sort`` vocabulary is the whole list of
-# column sorts: Family by name, Annual pledge and Responses (by the latest
-# response time), each either way, largest and newest first on a first
-# click. Frequency, share methods and the source pledge and contribution
-# totals cannot be sorted without changing that frozen SQL (schema freeze,
-# #203); share methods are also a list with no single value to order by.
+# column sorts: Family by name (the shown surname-and-heads name), Family
+# DUID (#960), Annual pledge and Responses (by the latest response time),
+# each either way, largest and newest first on a first click. Frequency,
+# share methods and the source pledge and contribution totals cannot be
+# sorted without a schema change; share methods are also a list with no
+# single value to order by.
 FINANCIAL_SORTING = Sorting(
     {
         "name": ("family", False),
         "name_desc": ("family", True),
+        "duid": ("duid", False),
+        "duid_desc": ("duid", True),
         "pledge_desc": ("pledge", True),
         "pledge": ("pledge", False),
         "newest": ("responses", True),

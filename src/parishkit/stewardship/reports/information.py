@@ -16,25 +16,23 @@ from parishkit.stewardship.web.tables import Sorting
 
 from .weekly_presentation import DISPOSITIONS
 
-ORDERS = {
-    "newest": "submitted_at DESC,id",
-    "oldest": "submitted_at,id",
-    "name": "lower(family_name),id",
-    "name_desc": "lower(family_name) DESC,id",
-}
+# The selection's closed ``sort`` vocabulary; it owns the order itself.
+SORTS = {"newest", "oldest", "name", "name_desc", "duid", "duid_desc"}
 PAGE_SIZE = 50
 # Rows per page the queue offers; the selection accepts 1-100.
 PAGE_SIZES = (25, 50, 100)
 # The installed selection (stewardship_information_report_v1) orders and
-# pages the queue itself (ORDERS above mirrors it for exports), so its closed
-# ``sort`` vocabulary is the whole list of column sorts: Family by name and
-# Submitted by time, each either way, newest first on a first click.
-# Disposition, text, follow-up needed and completion cannot be sorted without
-# changing that frozen SQL (schema freeze, #203).
+# pages the queue itself, so its closed ``sort`` vocabulary (SORTS) is the
+# whole list of column sorts: Family by name (the shown surname-and-heads
+# name), Family DUID (#960) and Submitted by time, each either way, newest
+# first on a first click. Disposition, text, follow-up needed and completion
+# cannot be sorted without a schema change.
 INFORMATION_SORTING = Sorting(
     {
         "name": ("family", False),
         "name_desc": ("family", True),
+        "duid": ("duid", False),
+        "duid_desc": ("duid", True),
         "newest": ("submitted", True),
         "oldest": ("submitted", False),
     },
@@ -72,7 +70,7 @@ class InformationQuery:
             query.disposition not in {*DISPOSITIONS, "all"}
             or query.needed not in {"any", "yes", "no"}
             or query.completed not in {"any", "yes", "no"}
-            or query.sort not in ORDERS
+            or query.sort not in SORTS
         ):
             raise ValueError("Invalid information filters.")
         bounded_text(query.search)

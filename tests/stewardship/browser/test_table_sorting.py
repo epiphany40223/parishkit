@@ -671,3 +671,28 @@ def test_followup_filter_refreshes_in_place_without_assignment(page, component_o
     assert table.get_by_role("columnheader", name="Select").count() == 0
     assert table.get_by_role("columnheader", name="Assigned to").count() == 0
     assert page.get_by_role("button", name="Assign selected").count() == 0
+
+
+@pytest.mark.parametrize(
+    "path, heading, action, token",
+    [
+        ("/financial-report", "Family DUID", "**/financial/", "sort=duid"),
+        ("/information", "Family DUID", "**/information/", "sort=duid"),
+        ("/ministry-summary", "Ministry DUID", "**/ministries/", "sort=duid"),
+        ("/ministry-detail", "Member DUID", "**/joining/", "sort=duid"),
+        ("/talents-report", "Member DUID", "**" + TALENTS, "members_sort=member_duid"),
+    ],
+)
+def test_duid_headings_sort_the_sql_ordered_reports(
+    page, component_origin, path, heading, action, token
+):
+    """The DUID columns of the SQL-ordered reports sort (#960): each heading
+    posts its sort token with the report's private filters."""
+    page.goto(component_origin + path)
+    page.route(action, lambda route: route.fulfill(body="Sorted"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("columnheader", name=heading).get_by_role("button").click()
+    assert token in sent.value.post_data.split("&")
+    assert "?" not in sent.value.url
+    # Let the routed answer finish loading before the page closes.
+    visible(page.get_by_text("Sorted", exact=True))
