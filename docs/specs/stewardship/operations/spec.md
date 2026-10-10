@@ -806,8 +806,8 @@ In v1 the restore itself is the backup runbook's operator procedure,
 the operator opens and checks the set and restores the database and files
 by hand, so the two restore modes, their automated precondition checks and
 the secret-escrow step below are not application commands, and the
-restricted maintenance queues are named (`jobs/queues.py`) but no service
-claims them yet (v1 launch scope,
+restricted maintenance queues are named and consumed (`jobs/queues.py`), but
+nothing routes work to them yet (v1 launch scope,
 [cut item 2](../../../plans/stewardship/v1-launch.md#cut-from-v1)). What
 the application does provide is the compatibility check and comparison
 below, `restore-begin` and its restore gate, the held-email review and the

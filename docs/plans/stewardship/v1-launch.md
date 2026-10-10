@@ -173,8 +173,9 @@ live database must be upgraded in place instead of reinstalled.
   [schema baseline guide](../../guides/stewardship-schema.md) already requires.
 - **After the freeze**, every schema change is a reviewed forward Django
   migration, tested by installing the frozen baseline, loading representative
-  data and migrating. Each production upgrade takes a verified backup first,
-  then pulls the new image, runs migration checks and migrations, and
+  data and migrating. Each production upgrade pulls the new image, stops the
+  background services, takes a verified backup, runs migration checks and
+  migrations, and
   restarts services, as in the operations spec's
   [production upgrades](../../specs/stewardship/operations/spec.md#production-upgrades)
   section. Downgrade is by database restore only; automated upgrade readiness
