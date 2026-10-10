@@ -8,7 +8,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.test import Client
 
 from parishkit.config import ConfigError
@@ -46,6 +46,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 ORIGIN = "https://parish.example.org"
 LIBRARY = "/admin/parish/files/"
 UPLOAD = "/admin/parish/files/uploads/"
+DELETE = "/admin/parish/files/deletion/"
 
 
 @pytest.fixture
@@ -322,16 +323,14 @@ def test_placeholders_render_on_pages_and_guard_rename_and_delete(
         f"{campaign.active_configuration.values['name']} › Family welcome (page)"
     ]
     library = unescape(browser.get(LIBRARY).content.decode())
-    assert "Family welcome (page)" in library and "In use" in library
+    assert "Family welcome (page)" in library
+    # A file in use offers no Delete, Edit or selection box (#879).
+    assert f'value="{guide.pk}"' not in library
+    assert f"/admin/parish/files/{guide.pk}/name/" not in library
     # Deletion and renaming are refused while the content uses the files.
-    delete = post(
-        browser,
-        "/admin/parish/files/deletion/",
-        {"action": "confirm", "file_id": [str(guide.pk), str(picnic.pk)]},
-    )
-    result = unescape(delete.content.decode())
-    assert result.count("Not deleted — in use:") == 2
-    assert "Family welcome (page)" in result
+    delete = post(browser, DELETE, {"file_id": [str(guide.pk), str(picnic.pk)]})
+    assert delete.status_code == 409
+    assert "so nothing was deleted" in unescape(delete.content.decode())
     rename = post(
         browser, f"/admin/parish/files/{guide.pk}/name/", {"slug": "handbook"}
     )
@@ -364,27 +363,20 @@ def test_placeholders_render_on_pages_and_guard_rename_and_delete(
     assert AuditContext.objects.get(event=changed).context["previous_file_slug"] == (
         "guide"
     )
-    preview = post(
-        browser,
-        "/admin/parish/files/deletion/",
-        {"action": "preview", "file_id": [str(guide.pk), str(picnic.pk)]},
-    )
-    assert "This cannot be undone" in unescape(preview.content.decode())
-    deleted = post(
-        browser,
-        "/admin/parish/files/deletion/",
-        {"action": "confirm", "file_id": [str(guide.pk), str(picnic.pk)]},
-    )
-    assert unescape(deleted.content.decode()).count("Deleted") == 2
+    # Unused now: each row offers Edit and Delete, named for the file.
+    library = unescape(browser.get(LIBRARY).content.decode())
+    assert 'aria-label="Edit handbook"' in library
+    assert f'name="file_id" value="{guide.pk}" aria-label="Delete handbook"' in library
+    # The dialog's post deletes both and returns to the library, which it
+    # then redraws in place.
+    deleted = post(browser, DELETE, {"file_id": [str(guide.pk), str(picnic.pk)]})
+    assert deleted.status_code == 302 and deleted["Location"] == LIBRARY
     assert not HostedFile.objects.exists()
     assert not (media / storage.DIRECTORY / guide.pk.hex).exists()
     assert AuditEvent.objects.filter(event_type="hosted_file_deleted").count() == 2
-    again = post(
-        browser,
-        "/admin/parish/files/deletion/",
-        {"action": "confirm", "file_id": [str(guide.pk)]},
-    )
-    assert "Already deleted" in unescape(again.content.decode())
+    # A file already deleted counts as deleted.
+    again = post(browser, DELETE, {"file_id": [str(guide.pk)]})
+    assert again.status_code == 302
     assert Client().get(f"/files/{guide.token}").status_code == 404
 
 
@@ -545,14 +537,7 @@ def test_staff_cannot_use_the_library(auth_service, google, media):
     browser, _ = signed_in()
     assert browser.get(LIBRARY).status_code == 403
     assert upload(browser, "b.pdf", samples.pdf()).status_code == 403
-    assert (
-        post(
-            browser,
-            "/admin/parish/files/deletion/",
-            {"action": "confirm", "file_id": row.pk},
-        ).status_code
-        == 403
-    )
+    assert post(browser, DELETE, {"file_id": row.pk}).status_code == 403
     assert browser.get(f"/admin/parish/files/{row.pk}/name/").status_code == 403
     assert HostedFile.objects.filter(pk=row.pk).exists()
 
@@ -563,8 +548,45 @@ def test_the_library_page_uses_the_shared_table(auth_service, google, media):
     uploaded(browser, "a.pdf", samples.pdf())
     page = browser.get(LIBRARY).content.decode()
     assert "data-select-table" in page and "data-select-row" in page
-    assert re.search(r'<button type="submit"[^>]*data-bulk-action>', page)
+    # Delete selected opens the shared dialog; it never submits by itself.
+    assert re.search(
+        r'<button type="button"[^>]*data-bulk-action data-confirm-open='
+        r'"hosted-file-delete">',
+        page,
+    )
+    assert '<dialog id="hosted-file-delete"' in page
+    assert f'data-refresh-url="{LIBRARY}"' in page
     assert 'data-copy="placeholder-' in page
+    # The redraw address keeps the sort, page and upload notice; the notice
+    # and the usage line sit outside the region, so each is synced (#879).
+    shown = browser.get(LIBRARY, {"sort": "-size", "uploaded": "x"}).content.decode()
+    assert f'data-refresh-url="{LIBRARY}?sort=-size&amp;uploaded=x"' in shown
+    assert '<div id="hosted-file-uploaded" data-table-sync>' in shown
+    assert '<p id="hosted-file-usage" data-table-sync>' in shown
+
+
+def test_a_deletion_naming_a_file_in_use_deletes_nothing(auth_service, google, media):
+    """One chosen file in use refuses the whole request (#879); bad posts too."""
+    store = auth_service.store
+    _, catalog = draft(store)
+    browser, _ = signed_in()
+    guide = uploaded(browser, "guide.pdf", samples.pdf(), slug="guide")
+    spare = uploaded(browser, "spare.pdf", samples.pdf(), slug="spare")
+    save_page(store, browser, catalog, '<p><a href="{{ file.guide }}">Guide</a></p>')
+    refused = post(browser, DELETE, {"file_id": [str(spare.pk), str(guide.pk)]})
+    assert refused.status_code == 409
+    assert HostedFile.objects.count() == 2
+    assert not AuditEvent.objects.filter(event_type="hosted_file_deleted").exists()
+    for fields in (
+        {},
+        {"file_id": [str(spare.pk), str(spare.pk)]},
+        {"file_id": "not-a-file"},
+        {"file_id": str(spare.pk), "action": "confirm"},
+    ):
+        assert post(browser, DELETE, fields).status_code == 400, fields
+    assert HostedFile.objects.count() == 2
+    assert post(browser, DELETE, {"file_id": str(spare.pk)}).status_code == 302
+    assert list(HostedFile.objects.values_list("slug", flat=True)) == ["guide"]
 
 
 def test_the_library_sorts_every_column_on_the_server(auth_service, google, media):
@@ -825,26 +847,63 @@ def test_unsent_family_mail_holds_its_files(family_mail):  # noqa: F811
         assert f"'{state}'" not in unsent
 
 
-def test_bulk_delete_reports_a_busy_library_and_continues(auth_service, google, media):
-    """A busy storage lock refuses each file with "try again", not an error page."""
+def test_bulk_delete_reports_a_busy_library(auth_service, google, media):
+    """A busy storage lock is a "try again" refusal, nothing deleted; a retry works."""
     browser, _ = signed_in()
     first = uploaded(browser, "a.pdf", samples.pdf(), slug="a")
     second = uploaded(browser, "b.pdf", samples.pdf(), slug="b")
     with storage.storage_lock(media):
-        response = post(
-            browser,
-            "/admin/parish/files/deletion/",
-            {"action": "confirm", "file_id": [str(first.pk), str(second.pk)]},
-        )
-    assert response.status_code == 200
-    assert unescape(response.content.decode()).count("the library was busy") == 2
+        response = post(browser, DELETE, {"file_id": [str(first.pk), str(second.pk)]})
+    assert response.status_code == 409
+    assert "The library was busy" in unescape(response.content.decode())
     assert HostedFile.objects.count() == 2
-    done = post(
-        browser,
-        "/admin/parish/files/deletion/",
-        {"action": "confirm", "file_id": [str(first.pk), str(second.pk)]},
-    )
-    assert unescape(done.content.decode()).count("Deleted") == 2
+    done = post(browser, DELETE, {"file_id": [str(first.pk), str(second.pk)]})
+    assert done.status_code == 302
+    assert not HostedFile.objects.exists()
+
+
+def test_a_bulk_deletion_is_all_or_nothing(auth_service, google, media, monkeypatch):
+    """One transaction: a failure on the second file leaves the first too; on
+    success every file is audited, its bytes go and the library is swept once."""
+    from parishkit.stewardship.accounts import hosted_file_uses
+
+    browser, _ = signed_in()
+    first = uploaded(browser, "a.pdf", samples.pdf(), slug="a")
+    second = uploaded(browser, "b.pdf", samples.pdf(), slug="b")
+    chosen = {"file_id": [str(first.pk), str(second.pk)]}
+    real_audit = hosted_file_uses.audit
+
+    def fail_second(action, actor, row, **extra):
+        """Audit the first deletion, then fail as the database might."""
+        if row.pk == second.pk:
+            raise DatabaseError("brief outage")
+        return real_audit(action, actor, row, **extra)
+
+    monkeypatch.setattr(hosted_file_uses, "audit", fail_second)
+    response = post(browser, DELETE, chosen)
+    assert response.status_code == 409
+    assert "so nothing was deleted" in unescape(response.content.decode())
+    assert HostedFile.objects.count() == 2
+    assert not AuditEvent.objects.filter(event_type="hosted_file_deleted").exists()
+    assert (media / storage.DIRECTORY / first.pk.hex).exists()
+    monkeypatch.setattr(hosted_file_uses, "audit", real_audit)
+    sweeps = []
+    real_sweep = storage.sweep
+
+    def counted(root, keep):
+        """Count each sweep, and check it runs after the rows are gone."""
+        sweeps.append(list(keep))
+        return real_sweep(root, keep)
+
+    monkeypatch.setattr(storage, "sweep", counted)
+    assert post(browser, DELETE, chosen).status_code == 302
+    assert sweeps == [[]]
+    assert not HostedFile.objects.exists()
+    assert not (media / storage.DIRECTORY / first.pk.hex).exists()
+    assert not (media / storage.DIRECTORY / second.pk.hex).exists()
+    assert AuditEvent.objects.filter(event_type="hosted_file_deleted").count() == 2
+    # The per-file service still answers for one file.
+    assert hosted_file_uses.delete(None, first.pk) == "already_deleted"
 
 
 def test_a_large_upload_spills_to_disk_and_is_stored_exactly(

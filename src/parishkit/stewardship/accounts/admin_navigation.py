@@ -226,7 +226,10 @@ PAGES = {
         "parish", _("Review parish logos"), "branding_settings", linkable=False
     ),
     "hosted_files": Page("parish", _("Hosted files")),
-    "hosted_file_delete": Page("parish", _("Delete hosted files"), "hosted_files"),
+    # Answers only the library's confirmation dialog (#879), never a page.
+    "hosted_file_delete": Page(
+        "parish", _("Delete hosted files"), "hosted_files", linkable=False
+    ),
     "hosted_file_rename": Page("parish", _("Change placeholder name"), "hosted_files"),
     "ministries": Page("parish", _("Ministries")),
     # A live campaign's one editable structural setting (#342). One home per
@@ -527,7 +530,7 @@ NON_PAGES = frozenset(
         "background_task_status",
         "background_tasks",
         "automation_notices",
-        "automation_session",
+        "automation_sessions",
         "branding_asset",
         "content_plain_text",
         "critical_events_acknowledge",
