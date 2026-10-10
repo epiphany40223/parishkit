@@ -13,6 +13,8 @@ from .send_history_components import PAGE as HISTORY
 pytestmark = pytest.mark.parametrize("browser_engine", ["chromium"], indirect=True)
 
 OUTGOING = "/deliveries-names"
+# Refused addresses, with its Family name and recording email (#935).
+REFUSALS = "/delivery-refusals"
 
 # Every time cell of the table, and whether any spans more than one line.
 # A single-line inline element has exactly one client rect; a wrapped one has
@@ -45,7 +47,7 @@ def assert_accessible(page, axe_source):
     )
 
 
-@pytest.mark.parametrize("path", [OUTGOING, HISTORY])
+@pytest.mark.parametrize("path", [OUTGOING, HISTORY, REFUSALS])
 def test_a_phone_scrolls_the_table_not_the_page(
     page, component_origin, axe_source, path
 ):
@@ -59,7 +61,7 @@ def test_a_phone_scrolls_the_table_not_the_page(
     assert_accessible(page, axe_source)
 
 
-@pytest.mark.parametrize("path", [OUTGOING, HISTORY])
+@pytest.mark.parametrize("path", [OUTGOING, HISTORY, REFUSALS])
 def test_a_desktop_never_wraps_dates(page, component_origin, axe_source, path):
     """At 1280 px the table fits beside the Admin menu without scrolling, and
     every date and time cell reads on one line."""
@@ -68,7 +70,7 @@ def test_a_desktop_never_wraps_dates(page, component_origin, axe_source, path):
     assert page.locator(".table-scroll").evaluate(
         "node => node.scrollWidth <= node.clientWidth"
     )
-    assert table.locator("tbody time").count() >= 3
+    assert table.locator("tbody time").count() >= (1 if path == REFUSALS else 3)
     assert table.evaluate(WRAPPED_TIMES) == []
     # Cells wrap only between words: no heading breaks inside a word, so
     # each heading word is no wider than its cell.

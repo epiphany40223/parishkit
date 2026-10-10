@@ -2,7 +2,10 @@
 {% block title %}{% translate "Refused addresses" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Refused addresses" %}</h1>
-{% aboutpage "refused-addresses" %}<p>{% translate "A refused address is one the mail service rejected permanently, so the system stops sending campaign email to it for that Family. Check that the mailbox works again before clearing a refusal. Clearing does not send any email." %}</p>{% endaboutpage %}
+{% aboutpage "refused-addresses" %}<p>{% translate "A refused address is one the mail service rejected permanently, so the system stops sending campaign email to it for that Family. Check that the mailbox works again before clearing a refusal. Clearing does not send any email." %}</p>
+<p>{% translate "Each row shows when the address was refused, the Family's name from the latest ParishSoft data (as in the Family directory) and, in its own column, the Family DUID. Select the address to check it and clear the refusal. Open email shows the email whose delivery recorded the refusal; that email may still show Delivered, because another address of the Family accepted it." %}</p>
+<p>{% translate "On Outgoing mail, each email with a refused address that is still being skipped is marked, and the mark leads here, showing only that Family's refused addresses. The name column does not sort; sort by Family DUID to keep each Family's addresses together." %}</p>{% endaboutpage %}
+<p><a href="{% url 'admin:deliveries' %}">{% translate "See all outgoing mail" %}</a></p>
 <form id="table-filters" data-table-sync method="get" class="filter-bar">
   <div class="short"><label for="family-duid">{% translate "Exact Family DUID" %}</label>
   <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25"></div>
@@ -13,21 +16,25 @@
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="refusal-table-caption">
-<table class="data-table">
+<table class="data-table whole-words">
   <caption id="refusal-table-caption">{% translate "Unresolved refused addresses" %}</caption>
   <thead><tr>
-    {% translate "Address" as heading %}{% sort_heading table "address" heading %}
-    {% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}
     {% translate "Refused at" as heading %}{% sort_heading table "refused" heading %}
+    <th scope="col">{% translate "Family" %}</th>
+    {% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}
+    {% translate "Address" as heading %}{% sort_heading table "address" heading %}
+    <th scope="col">{% translate "Recorded by" %}</th>
     {% translate "Refusal ID" as heading %}{% sort_heading table "id" heading %}
   </tr></thead>
   <tbody>
   {% for refusal in table.rows %}<tr>
-    <th scope="row"><a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a></th>
-    <td class="numeric">{{ refusal.family_duid|duid }}</td>
-    <td><time datetime="{{ refusal.created_at|instant }}" data-local-instant data-compact>{{ refusal.created_at|instant }}</time></td>
+    <td class="nowrap"><time datetime="{{ refusal.created_at|instant }}" data-local-instant data-compact>{{ refusal.created_at|instant }}</time></td>
+    <th scope="row">{% if refusal.family_name %}{{ refusal.family_name }}{% else %}<span class="cell-detail">{% translate "Not in current ParishSoft data" %}</span>{% endif %}</th>
+    <td class="numeric nowrap">{{ refusal.family_duid|duid }}</td>
+    <td><a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a></td>
+    <td class="nowrap">{% if refusal.message_id %}<a href="{% url 'admin:delivery' refusal.message_id %}">{% translate "Open email" %}</a>{% else %}—{% endif %}</td>
     <td><code>{{ refusal.id }}</code></td>
-  </tr>{% empty %}<tr><td colspan="4">{% translate "No unresolved refusals match this view. That is good news: no address is being skipped." %}</td></tr>{% endfor %}
+  </tr>{% empty %}<tr><td colspan="6">{% translate "No unresolved refusals match this view. That is good news: no address is being skipped." %}</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>
