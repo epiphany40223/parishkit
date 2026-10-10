@@ -23,6 +23,7 @@ import pytest
 
 from parishkit.stewardship import admin_cli, admin_reports
 from parishkit.stewardship.audit.log_rows import (
+    ACTIVITY_TYPES,
     DETAIL_FIELDS,
     LEVELS,
     LogQuery,
@@ -280,6 +281,31 @@ def test_every_report_command_has_a_golden_document():
 def test_the_kinds_of_entry_are_the_pages():
     """Spelled out before Django is set up; kept equal to the page's six."""
     assert (*(level.lower() for level in LEVELS), "audit") == admin_cli.LOG_KINDS
+
+
+def test_the_activity_groups_are_the_pages():
+    """Spelled out before Django is set up; kept equal to the page's (#953)."""
+    assert tuple(sorted(ACTIVITY_TYPES)) == admin_cli.LOG_ACTIVITIES
+
+
+@pytest.mark.parametrize("command", ["list", "export"])
+def test_activity_is_the_pages_choice(command):
+    """``--activity`` reaches LogQuery as the page's Activity choice (#953),
+    on both commands, and refuses a group the page does not list."""
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser()
+    options = {"list": admin_cli._logs_list_options}
+    options["export"] = admin_cli._logs_export_options
+    options[command](parser)
+    args = parser.parse_args(["--activity", "sign_in", "--show", "audit"])
+    query = admin_reports.log_query(admin_cli._log_filters(args))
+    assert query.activity == "sign_in" and query.audits and not query.levels
+    assert query.activity_types == ACTIVITY_TYPES["sign_in"]
+    unchosen = admin_reports.log_query(admin_cli._log_filters(parser.parse_args([])))
+    assert unchosen.activity == "" and unchosen.activity_types is None
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--activity", "admin_login"])
 
 
 def test_no_kind_shown_is_the_pages_first_visit_default():

@@ -50,6 +50,10 @@ ZONE_HINT = (
     "Your browser didn't report a time zone, so these dates can't be used. "
     "Clear From and Through, or check your computer's time zone setting."
 )
+# Where the table starts on the page: the filter hint keeps its line
+# reserved, so its showing or going never moves the table (no layout shift).
+TABLE_TOP = """() => document.getElementById("table").getBoundingClientRect().top
+    + window.scrollY"""
 
 
 @pytest.mark.parametrize("width", [320, 1280])
@@ -109,14 +113,16 @@ def test_logs_mobile_keyboard_and_accessibility(
     time = page.get_by_role("columnheader", name="Time", exact=False)
     assert time.get_attribute("aria-sort") == "descending"
     assert time.get_by_role("button", name="sort ascending").count() == 1
-    # Audit record is the last of the Show choices; the type field follows.
+    # Audit record is the last of the Show choices; the Activity choice
+    # (#953) and then the type field follow.
     page.get_by_label("Audit record", exact=True).focus()
-    # The type's help bubble sits between its label and its field. WebKit's
+    # Each help bubble sits between its label and its field. WebKit's
     # default Tab order skips buttons (a macOS setting), so allow either.
-    page.keyboard.press("Tab")
-    if page.locator(":focus").get_attribute("aria-controls") == "log-event-tip":
+    for name, tip in (("activity", "log-activity-tip"), ("event", "log-event-tip")):
         page.keyboard.press("Tab")
-    assert page.locator(":focus").get_attribute("name") == "event"
+        if page.locator(":focus").get_attribute("aria-controls") == tip:
+            page.keyboard.press("Tab")
+        assert page.locator(":focus").get_attribute("name") == name
 
     page.goto(component_origin + "/logs-default")
     # DEBUG is excluded until chosen; audit records are included.
@@ -409,7 +415,7 @@ def test_log_dates_wait_for_a_known_browser_zone(page, component_origin, reporte
     page.goto(component_origin + "/logs-default")
     apply = page.get_by_role("button", name="Apply filters")
     hint = page.locator("#log-filter-hint")
-    assert apply.is_enabled() and not hint.is_visible()
+    assert apply.is_enabled() and hint.text_content() == ""
     assert page.locator("#table-filters [name=zone]").input_value() == ""
     assert not page.locator("#log-zone-help").is_visible()
     # The note is never shown with an empty zone ("time zone: .").
@@ -421,7 +427,7 @@ def test_log_dates_wait_for_a_known_browser_zone(page, component_origin, reporte
         assert apply.is_disabled()
         has_text(hint, ZONE_HINT)
         field.fill("")
-        assert apply.is_enabled() and not hint.is_visible()
+        assert apply.is_enabled() and hint.text_content() == ""
 
 
 def test_a_mistyped_event_type_says_why_apply_waits(page, component_origin):
@@ -507,12 +513,12 @@ def test_a_half_typed_date_says_why_apply_waits(page, component_origin, label):
     else:
         # The keys were ignored: no date, so nothing to wait for.
         assert state == ["", False]
-        assert apply.is_enabled() and not hint.is_visible()
+        assert apply.is_enabled() and hint.text_content() == ""
     field.fill("2026-09-19")
-    assert apply.is_enabled() and not hint.is_visible()
+    assert apply.is_enabled() and hint.text_content() == ""
     field.fill("")
     page.get_by_label("Event or action type", exact=False).focus()
-    assert apply.is_enabled() and not hint.is_visible()
+    assert apply.is_enabled() and hint.text_content() == ""
 
 
 @pytest.mark.parametrize("reported", [None, "", "Etc/Unknown"])
@@ -560,22 +566,25 @@ def test_banner_log_link_sends_its_day_only_with_a_zone(
 def test_no_ticked_kind_says_why_apply_waits(page, component_origin):
     """Apply is unavailable while none of the six Show choices is ticked,
     and says why; ticking any one, Audit record included, lets it apply
-    (#601)."""
+    (#601). The hint's line is reserved, so the table never moves (#953)."""
     page.goto(component_origin + "/logs-default")
     apply = page.get_by_role("button", name="Apply filters")
     hint = page.locator("#log-filter-hint")
     choices = page.locator(".log-level-choices input[type=checkbox]")
     assert choices.count() == 6 and apply.is_enabled()
+    top = page.evaluate(TABLE_TOP)
     for index in range(6):
         choices.nth(index).uncheck()
     assert apply.is_disabled()
     has_text(hint, NONE_HINT)
+    assert page.evaluate(TABLE_TOP) == top
     page.get_by_label("Audit record", exact=True).check()
-    assert apply.is_enabled() and not hint.is_visible()
+    assert apply.is_enabled() and hint.text_content() == ""
+    assert page.evaluate(TABLE_TOP) == top
     page.get_by_label("Audit record", exact=True).uncheck()
     has_text(hint, NONE_HINT)
     page.get_by_label("Warning", exact=True).check()
-    assert apply.is_enabled() and not hint.is_visible()
+    assert apply.is_enabled() and hint.text_content() == ""
 
 
 @pytest.mark.parametrize(

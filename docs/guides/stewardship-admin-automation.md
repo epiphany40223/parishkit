@@ -739,14 +739,18 @@ pk-admin logs list
 pk-admin logs list --correlation CORRELATION_ID
 pk-admin logs list --show error --show critical --start 2026-10-01 --zone America/New_York
 pk-admin logs list --through THROUGH --page 2
+pk-admin logs list --activity sign_in --show audit
 (umask 077; pk-admin logs export --show audit --format jsonl > logs.jsonl)
 ```
 
 The filters are the page's: `--show` (`debug`, `info`, `warning`, `error`,
 `critical` or `audit`, repeated for more; without it, every level but debug
-plus audit records, as the page first shows), `--event` (one type, exactly),
-`--actor`, `--correlation`, `--campaign` and `--subject` (UUIDs; a campaign
-or subject keeps only audit records), `--text` (the page's search phrase,
+plus audit records, as the page first shows), `--activity` (the page's
+Activity choice; `sign_in` lists every Admin portal sign-in event together,
+audit records only, so keep `audit` among the `--show` kinds), `--event`
+(one type, exactly), `--actor`, `--correlation`, `--campaign` and
+`--subject` (UUIDs; a campaign or subject keeps only audit records),
+`--text` (the page's search phrase,
 without an email address), `--ministry` (one Ministry's DUID), and
 `--start` and `--end` (days), which need `--zone`, the time zone the days
 fall in. Search text stays in your shell's history, so use `--text` only

@@ -182,7 +182,7 @@ def _choices(html):
     fieldset = re.search(
         r'<fieldset class="log-level-choices"[^>]*>(.*?)</fieldset>', html, re.S
     ).group(1)
-    return re.findall(r"<label>(.*?)</label>", fieldset, re.S)
+    return re.findall(r"<label[^>]*>(.*?)</label>", fieldset, re.S)
 
 
 def test_six_kinds_of_entry_are_one_row_of_checkboxes():
@@ -234,6 +234,8 @@ def test_the_choices_gate_apply_until_one_is_ticked():
     assert 'data-missing-hint="Tick at least one kind of entry to show."' in fieldset
     # The hint names the group too, as it does the gated Apply button.
     assert 'aria-describedby="log-filter-hint"' in fieldset
+    # Its line stays reserved, never hidden, so the table never moves (#953).
+    assert '<p class="help" id="log-filter-hint" data-complete-hint="reserve">' in html
 
 
 @pytest.mark.parametrize(
@@ -383,3 +385,83 @@ def test_search_and_ministry_fields_gate_apply_with_their_own_hints():
     # The subject filter sits with the other identifiers, opened when used.
     subject = _render(LogQuery.parse({"subject": str(UUID(int=5))}))
     assert re.search(r'<details id="log-identifier-filters"[^>]* open>', subject)
+
+
+def test_the_activity_choice_offers_sign_in_activity_in_plain_words():
+    """The filter bar's Activity choice (#953) shows its applied group, and
+    its explanation never asks the reader to type a type name."""
+    plain = _render()
+    select = re.search(
+        r'<select id="log-activity" name="activity">(.*?)</select>', plain
+    )
+    assert select is not None
+    assert re.findall(r'<option value="([^"]*)"', select.group(1)) == ["", "sign_in"]
+    assert '<option value="" selected>All activity</option>' in plain
+    chosen = _render(LogQuery.parse({"activity": "sign_in"}))
+    assert '<option value="sign_in" selected>Sign-in activity</option>' in chosen
+    assert '<label for="log-activity" id="log-activity-label">Activity</label>' in plain
+    # The control sits in the filter bar before the type, so nothing appears
+    # or moves when it is chosen.
+    assert plain.index('id="log-activity"') < plain.index('id="log-event"')
+
+
+def test_same_actor_keeps_the_sign_in_activity_choice():
+    """Same actor on a sign-in view lists that person's sign-in activity
+    only (#953); without a group it sends the actor alone, as before."""
+    row = _audit()
+    grouped = _render(LogQuery.parse({"activity": "sign_in"}), rows=[row])
+    form = re.search(r'name="actor" value="[^"]+">(<input[^>]*>)?', grouped)
+    assert form.group(1) == '<input type="hidden" name="activity" value="sign_in">'
+    plain = _render(rows=[row])
+    form = re.search(r'name="actor" value="[^"]+">(<input[^>]*>)?', plain)
+    assert form.group(1) is None
+
+
+@pytest.mark.parametrize(
+    ("values", "activity_note"),
+    [
+        ({"applied": "yes", "info": "yes", "activity": "sign_in"}, True),
+        ({"applied": "yes", "audit": "yes", "activity": "sign_in"}, False),
+    ],
+)
+def test_sign_in_activity_without_audit_says_why(values, activity_note):
+    """Sign-in activity is audit records, so with Audit record unticked the
+    empty table says to tick it."""
+    html = _render(LogQuery.parse(values), rows=[])
+    note = "Sign-in activity is made of audit records; tick Audit record."
+    empty = re.search(r'<td colspan="6">(.*?)</td>', html).group(1)
+    assert (note in empty) is activity_note
+    assert ("clearing the activity, type" in html) is not activity_note
+
+
+def test_the_link_and_download_carry_the_activity_choice():
+    """A sign-in view's own link and its download form both carry the group,
+    so a bookmark and the file match the page."""
+    html = _render(
+        LogQuery.parse({"applied": "yes", "audit": "yes", "activity": "sign_in"})
+    )
+    link = re.search(r'<a href="([^"]*)" data-page-address>', html).group(1)
+    assert link == "/admin/system/logs/?activity=sign_in&amp;applied=yes&amp;audit=yes"
+    export = re.search(r'<form id="table-export".*?</form>', html, re.S).group(0)
+    assert '<input type="hidden" name="activity" value="sign_in">' in export
+
+
+def test_sign_in_activity_greys_the_levels_and_waits_for_audit():
+    """While Sign-in activity is chosen (#953) the five level boxes stay in
+    place but are disabled (data-enabled-when), and Apply waits for Audit
+    record (data-required-when), its label naming why."""
+    labels = _choices(_render())
+    marks = {re.search(r'name="(\w+)"', label).group(1): label for label in labels}
+    for level in ("debug", "info", "warning", "error", "critical"):
+        assert 'data-enabled-when="activity="' in marks[level], level
+        assert "data-required-when" not in marks[level]
+    audit = marks["audit"]
+    assert 'data-required-when="activity=sign_in"' in audit
+    assert "data-enabled-when" not in audit
+    html = _render()
+    label = re.search(
+        r'<label data-missing-hint="([^"]*)"><input[^>]*name="audit"', html
+    )
+    assert label.group(1) == (
+        "Sign-in activity is made of audit records; tick Audit record."
+    )

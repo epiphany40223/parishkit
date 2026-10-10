@@ -243,6 +243,13 @@ def components(context, admin):
             | {"text": "lag", "ministry": "42", "correlation": str(UUID(int=302))},
             [audit[0]],
         ),
+        # Sign-in activity (#953): the bare login entry alone. The page sends
+        # no level then (the boxes are disabled), so Audit record alone.
+        (
+            "/logs-sign-in",
+            {"applied": "yes", "audit": "yes", "activity": "sign_in"},
+            [audit[1]],
+        ),
     ):
         result[path] = ("text/html", live(LogQuery.parse(parameters), found))
     # A followed link whose days were applied in Tokyo (#536).

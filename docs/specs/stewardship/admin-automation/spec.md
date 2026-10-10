@@ -2007,7 +2007,8 @@ file is regenerated from the retained capture.
 
 `logs list` and `logs export` read through `audit.log_reads`, the functions
 the System logs page and its download use, with every one of the page's
-filters (including #536's text, Ministry and subject), so a filter the page
+filters (including #536's text, Ministry and subject, and #953's
+Activity, `--activity`), so a filter the page
 refuses is `invalid`, and under the page's statement limit
 (`log_reads.bounded_read`), whose stop is recorded as a timeout and is
 `unavailable`. `logs list` admits passively (any

@@ -327,6 +327,10 @@ input[data-time-entry=time] { max-width: 12rem; }
 input[data-time-entry=list] { max-width: 24rem; }
 .time-reading { color: var(--muted); font-size: .925rem; margin: .25rem 0 0; min-height: 1.6em; min-height: 1lh; }
 .time-reading.is-error { color: var(--error-ink); font-weight: 600; }
+/* A complete gate's hint that keeps its space (data-complete-hint="reserve",
+   ui-v1.js): one line's height while empty, so the hint coming and going
+   never moves the content after it (#953, the System logs table). */
+[data-complete-hint=reserve] { min-height: 1.6em; min-height: 1lh; }
 select:not([multiple]):not([size]) { max-width: 26rem; }
 select[multiple], select[size] { max-width: 40rem; }
 textarea { max-width: 56rem; }

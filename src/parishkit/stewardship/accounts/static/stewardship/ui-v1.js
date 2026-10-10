@@ -1104,7 +1104,11 @@
   // draws it ("Filter by identifier" opens when one is set), and the Apply
   // gate checks again. Only then: any other swap keeps filters the reader
   // has typed but not applied. The browser-zone field holds this browser's
-  // zone and is left alone (see syncHidden).
+  // zone and is left alone (see syncHidden). A field whose value this
+  // changes gets its own (non-bubbling) change event, so a rule listening
+  // on it runs again: the System logs level boxes come back when a
+  // cross-link's answer clears the Activity choice (data-enabled-when,
+  // #953); the form's own change event below covers the form-wide gates.
   const syncFilters = (parsed) => {
     const form = document.getElementById("table-filters");
     const fresh = parsed.getElementById("table-filters");
@@ -1113,8 +1117,11 @@
     [...form.elements].forEach((field) => {
       if (!field.name || field.type === "hidden" || field.matches("[data-browser-zone]")) return;
       const copy = copies.find((node) => node.name === field.name);
+      const before = field.type === "checkbox" ? field.checked : field.value;
       if (field.type === "checkbox") field.checked = Boolean(copy?.checked);
       else if (copy && "value" in field) field.value = copy.value;
+      const after = field.type === "checkbox" ? field.checked : field.value;
+      if (after !== before) field.dispatchEvent(new Event("change"));
     });
     form.querySelectorAll("details[id]").forEach((node) => {
       node.open = Boolean(fresh.querySelector(`#${CSS.escape(node.id)}`)?.open);
@@ -2240,7 +2247,11 @@
       && (node.hasAttribute("data-client-error") || !node.validity.valid || blank(node)));
     const hint = form.querySelector("[data-complete-hint]");
     if (hint) {
-      hint.hidden = !missing;
+      // A hint marked data-complete-hint="reserve" stays in the layout and
+      // only empties, keeping its line's height (ui-v1.css), so it appearing
+      // or going never moves what follows it (no layout shift: the System
+      // logs table under its filter bar, #953). Any other hint hides.
+      hint.hidden = !missing && hint.dataset.completeHint !== "reserve";
       hint.textContent = missing
         ? (missing.dataset.clientError
           // An unreadable time entry says why itself (#398).
@@ -2275,6 +2286,11 @@
   // without a change event (the back/forward cache, or autofill after load),
   // so every rule is applied again on pageshow, not only at load.
   //
+  // data-enabled-when takes the same rule but never hides: the field stays
+  // where it is, disabled (greyed and not sent) while the rule does not
+  // hold, so choosing a value moves nothing on the page (no layout shift,
+  // #953: the System logs level boxes while Sign-in activity is chosen).
+  //
   // Both this and the complete-before-submit gate are wired for the page and
   // again for content an in-place swap brings in (a follow-up form saved or
   // refused in place, #519), which arrives as fresh elements with no
@@ -2287,8 +2303,9 @@
   let showWhenUpdates = []; // {node, update} for each data-show-when mark
   let completeForms = []; // every form[data-require-complete] wired so far
   const wireShowWhen = (root) => {
-    within(root, "[data-show-when]").forEach((node) => {
-      const rule = node.dataset.showWhen;
+    within(root, "[data-show-when], [data-enabled-when]").forEach((node) => {
+      const hides = node.hasAttribute("data-show-when");
+      const rule = hides ? node.dataset.showWhen : node.dataset.enabledWhen;
       const negated = rule.includes("!=");
       const [name, value] = rule.split(negated ? "!=" : "=");
       const field = node.matches("input, select, textarea");
@@ -2305,7 +2322,7 @@
         // A control outside a swapped region outlives the marks it served.
         if (!node.isConnected) return;
         const shown = (ruleValue(control) === value) !== negated;
-        wrapper.hidden = !shown;
+        if (hides) wrapper.hidden = !shown;
         // A hidden field is not sent, so an error marked on it no longer
         // applies: it clears, with its message and summary item.
         if (!shown) {

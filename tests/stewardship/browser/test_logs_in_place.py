@@ -13,7 +13,7 @@ import pytest
 
 from .log_components import LIVE
 from .test_in_place import MARK, MARKED, VIEWPORT, count_requests, scroll_below
-from .test_system_logs import posted
+from .test_system_logs import TABLE_TOP, posted
 from .waits import eventually, has_text, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -236,3 +236,124 @@ def test_a_followed_links_other_zone_is_noted(
             assert note.is_hidden()
     finally:
         context.close()
+
+
+# Where each filter control sits, so a choice that moved anything shows.
+BOXES = """() => [...document.getElementById("table-filters").querySelectorAll(
+    "input:not([type=hidden]), select, button"
+)].map((node) => {
+    const box = node.getBoundingClientRect();
+    return [node.name || node.textContent.trim(), box.x, box.y, box.width, box.height];
+})"""
+
+
+def test_sign_in_activity_applies_in_place(page, component_origin):
+    """Choosing Sign-in activity (#953) moves nothing: the five level boxes
+    stay in place, greyed and unsent, and Apply waits, saying why, while
+    Audit record is unticked. Apply then sends the choice in the POST body
+    and lists the sign-in entries in place: no reload, the choice kept, and
+    the address carrying it so a bookmark keeps it. Same actor on one of
+    them then keeps the choice. The hint's line is reserved, so the table
+    never moves as it comes and goes."""
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + LIVE)
+    page.evaluate(MARK)
+    levels = ("debug", "info", "warning", "error", "critical")
+
+    def box(level):
+        """The filter form's checkbox for one level."""
+        return page.locator(f"#table-filters input[name={level}]")
+
+    activity = page.get_by_label("Activity", exact=True)
+    audit = page.get_by_label("Audit record", exact=True)
+    apply = page.get_by_role("button", name="Apply filters")
+    hint = page.locator("#log-filter-hint")
+    before = page.evaluate(BOXES)
+    top = page.evaluate(TABLE_TOP)
+    activity.select_option("sign_in")
+    assert page.evaluate(BOXES) == before
+    for level in levels:
+        assert box(level).is_disabled(), level
+    assert audit.is_enabled() and apply.is_enabled() and hint.text_content() == ""
+    # Audit record unticked: Apply waits, its hint saying to tick it.
+    audit.uncheck()
+    assert apply.is_disabled()
+    assert hint.text_content() == (
+        "Sign-in activity is made of audit records; tick Audit record."
+    )
+    # The hint's line was reserved, so the table did not move (#953).
+    assert page.evaluate(TABLE_TOP) == top
+    # All activity gives the levels back, ticks kept; a level then counts.
+    activity.select_option("")
+    for level in levels:
+        assert box(level).is_enabled(), level
+    assert apply.is_enabled() and hint.text_content() == ""
+    activity.select_option("sign_in")
+    assert apply.is_disabled()
+    audit.check()
+    assert apply.is_enabled() and hint.text_content() == ""
+    assert page.evaluate(BOXES) == before and page.evaluate(TABLE_TOP) == top
+    answer_with(page, component_origin, "/logs-sign-in")
+    with page.expect_request(lambda request: request.method == "POST") as request:
+        apply.click()
+    sent = posted(request.value)
+    assert sent["activity"] == ["sign_in"] and sent["audit"] == ["yes"]
+    # The disabled level boxes are not sent; the server ignores levels then.
+    assert not set(levels) & set(sent)
+    visible(page.locator("#table").get_by_text(COUNT).first)
+    assert page.evaluate(MARKED) == "kept"
+    assert page.locator("#table tbody").get_by_text("admin_login").count() == 1
+    assert page.get_by_label("Activity", exact=True).input_value() == "sign_in"
+    eventually(
+        page,
+        "() => window.location.search",
+        "?activity=sign_in&applied=yes&audit=yes",
+    )
+    # Same actor on a sign-in entry sends the actor with the choice, so it
+    # lists that person's sign-in activity, still in place.
+    with page.expect_request(lambda request: request.method == "POST") as request:
+        page.locator(f"#log-audit-{UUID(int=310)}-actor").click()
+    assert posted(request.value) == {
+        "actor": [str(UUID(int=311))],
+        "activity": ["sign_in"],
+    }
+    # The status may still hold the Apply's count when this one is added,
+    # so the message is looked for within it.
+    from playwright.sync_api import expect
+
+    message = "Entries by the same actor shown."
+    expect(page.get_by_role("status").filter(has_text=message)).to_contain_text(
+        f"{message} {COUNT}"
+    )
+    assert page.evaluate(MARKED) == "kept"
+    assert page.get_by_label("Activity", exact=True).input_value() == "sign_in"
+
+
+def test_a_cross_link_clearing_the_activity_gives_the_levels_back(
+    page, component_origin
+):
+    """Show related entries sends no Activity (#953), so its answer shows
+    All activity; the level boxes the Sign-in choice had greyed out come
+    back, ticked as the answer draws them, and the next Apply sends them."""
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + LIVE)
+    page.get_by_label("Activity", exact=True).select_option("sign_in")
+    levels = page.locator("#table-filters .log-level-choices input:disabled")
+    assert levels.count() == 5
+    answer_with(page, component_origin, "/logs-related")
+    page.locator(f"#log-audit-{AUDIT}-related").click()
+    visible(page.locator("#table").get_by_text(COUNT).first)
+    eventually(page, "() => document.getElementById('log-activity').value", "")
+    assert levels.count() == 0
+    filters = page.evaluate(f"() => ({FILTERS})(document)")
+    assert filters == fixture_filters(page, component_origin, "/logs-related")
+    apply = page.get_by_role("button", name="Apply filters")
+    with page.expect_response(
+        lambda response: response.request.method == "POST"
+    ) as answer:
+        apply.click()
+    sent = posted(answer.value.request)
+    # The answer's default kinds, levels included, and no activity.
+    for kind in ("info", "warning", "error", "audit"):
+        assert sent[kind] == ["yes"], kind
+    assert sent.get("activity", [""]) == [""]

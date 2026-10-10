@@ -103,6 +103,17 @@ def test_administrator_reviews_rules_provenance_and_warnings(auth_service, googl
         assert response.status_code == 200
         assert response["Cache-Control"] == "no-store"
         body = response.content.decode()
+        # The minimal link beside the heading (#953) opens System logs'
+        # Sign-in activity, carrying only closed link filters.
+        link = re.search(
+            r'<p id="users-sign-in-activity"><a href="([^"]+)">'
+            r"See sign-in activity in System logs</a></p>",
+            body,
+        )
+        assert link and link.group(1) == (
+            "/admin/system/logs/?applied=yes&amp;audit=yes&amp;activity=sign_in"
+        )
+        assert browser.get(link.group(1).replace("&amp;", "&")).status_code == 200
         # Identifying values never travel in a URL.
         assert browser.get(URL + "?email=blocked@example.org").status_code == 400
         # With a genuine CSRF token, so the view itself refuses the method.

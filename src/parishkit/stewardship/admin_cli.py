@@ -1100,6 +1100,7 @@ def _log_filters(args):
     """The System logs page's filter fields from ``logs`` options."""
     return {
         "show": args.show,
+        "activity": args.activity,
         "event": args.event,
         "actor": args.actor,
         "correlation": args.correlation,
@@ -1830,6 +1831,9 @@ def _delivery_resolve_options(parser):
 # levels and audit records. Spelled out because the parser is built before
 # Django is set up; a test keeps it equal to the page's.
 LOG_KINDS = ("debug", "info", "warning", "error", "critical", "audit")
+# The page's Activity groups (#953, ``audit.log_rows.ACTIVITY_TYPES``),
+# spelled out for the same reason; a test keeps them equal to the page's.
+LOG_ACTIVITIES = ("sign_in",)
 
 
 def _log_filter_options(parser):
@@ -1840,6 +1844,12 @@ def _log_filter_options(parser):
         choices=LOG_KINDS,
         help="a kind of entry to show; repeat for more (default: every "
         "level but debug, and audit records)",
+    )
+    parser.add_argument(
+        "--activity",
+        choices=LOG_ACTIVITIES,
+        help="a fixed group of audit types listed together, as the page's "
+        "Activity choice (sign_in: every Admin portal sign-in event)",
     )
     parser.add_argument("--event", metavar="TYPE", help="one event type, exactly")
     parser.add_argument("--actor", type=_uuid, help="the acting user or process")
