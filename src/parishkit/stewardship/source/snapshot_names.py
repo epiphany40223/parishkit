@@ -1,7 +1,8 @@
 """Family names ("Squyres, Tracy and Jeff") read from one source snapshot.
 
 Admin pages that list Families by DUID (the chosen-Families send page, the
-"Families on the form now" page) name them the way the Family codes directory
+"Families on the form now" page, and the reports whose SQL reads only a
+surname, through ``name_rows``) name them the way the Family codes directory
 does (``family_names.family_heads_name``): the surname, then the active heads
 of household. Two queries serve any number of Families. The response lists
 also show each Family's envelope number and ParishSoft mailing name
@@ -37,6 +38,22 @@ def snapshot_family_names(snapshot_id, duids, default=""):
     """
     facts = snapshot_family_facts(snapshot_id, duids, default)
     return {duid: fact.name for duid, fact in facts.items()}
+
+
+def name_rows(snapshot_id, rows, default="Unavailable Family"):
+    """Rename each row's ``family_name`` to the directory's surname-and-heads name.
+
+    For report rows whose SQL read gives only the Family's surname, so every
+    Admin table names a Family the same way (#932). ``rows`` are dicts with
+    ``family_duid`` and ``family_name``, renamed in place and returned. A
+    Family missing from the snapshot keeps the name it was read with.
+    """
+    names = snapshot_family_names(
+        snapshot_id, {row["family_duid"] for row in rows}, default
+    )
+    for row in rows:
+        row["family_name"] = names.get(row["family_duid"], row["family_name"])
+    return rows
 
 
 def _envelope(value):
