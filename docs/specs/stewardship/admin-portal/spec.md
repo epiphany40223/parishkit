@@ -4955,7 +4955,8 @@ Only Admins access the combined log screen. It supports:
   out, `both` includes them), and carries only the checkboxes from then on.
   The critical-events banner's link ticks Critical alone, without audit
   records, and "Same campaign" ticks Audit record alone;
-- action/type, Activity ([sign-in activity](#sign-in-activity)), campaign,
+- action/type, Activity ([sign-in activity](#sign-in-activity) and the
+  other [activity groups](#activity-groups)), campaign,
   entity, actor, task/request correlation, text, Ministry, date range, and
   the six Show (level and audit record) filters.
   The entity filter is the audit subject identifier (audit records only, like
@@ -5136,6 +5137,67 @@ like every other audit event, indefinitely by default
 seen only by Administrators.
 
 A list of live Admin sessions is a later slice of #953.
+
+### Activity groups
+
+The Activity choice offers three more groups after Sign-in activity, in this
+order ([#953](https://github.com/epiphany40223/parishkit/issues/953)). Each
+group is a closed list of types kept in one place, `audit.log_rows.ACTIVITY_TYPES`,
+which `pk-admin logs --activity` shares. Every member is a type the system
+writes: an audit `Action`, a directly written audit type, a trigger-built type
+whose closed states `audit.log_descriptions.BUILT_TYPES` lists, or an operational
+entry on the log-writer manifest. A unit test keeps every member in that set,
+and a PostgreSQL test compares each `BUILT_TYPES` list with the installed CHECK
+constraint or guard function.
+
+- **Configuration changes** (`configuration`, audit records only): settings
+  requests (`configuration_requested` and `config_request_*` from staged
+  through validating, prepared and applied to failed, the refused record, or
+  cancelled), `configuration_activated`, what an applied change did to access
+  (`policy_security_event`, `policy_denial_namespace_reset`), mail schedules
+  and live campaign changes (`schedule_selected`, `admin_cmd_schedule_confirm`,
+  `admin_cmd_config_request_cancel`, `campaign_ministries_requested`,
+  `campaign_end_date_requested`), portal user roles (`roles_applied`), hosted
+  files (`hosted_file_*`) and stored key replacements
+  (`secret_replacement_requested`, `secret_request_*`).
+- **Family mail** (`family_mail`): each outgoing email's steps (`outbox_*`:
+  created, prepared, held, sent, accepted, retried, refused, delivery unknown,
+  cancelled, resend authorized), the Administrator's resolutions
+  (`delivery_resolution_*`, `delivery_held_*`, `delivery_bulk_resolved`,
+  `restore_hold_resolved`, `admin_cmd_delivery_*`), cleared refused addresses
+  (`recipient_refusal_cleared`), skipped receipts
+  (`submission_receipt_skipped`), delivery pauses and the first live send
+  (`campaign_pause`, `campaign_resume`, `campaign_first_delivery`), test
+  emails (`family_mail_test_*`, `campaign_mail_*`, `admin_cmd_test_sample`,
+  `admin_cmd_test_families`) and the operational `mail_provider_failed`. An
+  `outbox_*` record does not say whom its email was for, so staff report and
+  alert emails are listed too; the page's help says so.
+- **ParishSoft refreshes** (`parishsoft`): full refreshes and quick updates
+  promoted, rejected, superseded or turned into a full reload
+  (`source_promoted`, `source_rejected`, `source_superseded`,
+  `source_fallback_requested`), `chair_reconciled`, `admin_cmd_refresh_start`
+  and the setup load (`setup_source_started`, `setup_source_completed`), and
+  the operational failures and holds (`source_refresh_invalid`,
+  `source_provider_failed`, `source_credential_failed`,
+  `source_tenant_mismatch`, `source_destructive_change`,
+  `source_refresh_held`).
+
+Time limits are not in ParishSoft refreshes: `task_timed_out` and the other
+timeout types are shared by every kind of background work, so a type list
+cannot pick a refresh's; the type filter lists them. Types written only to
+the process log, such as `go_live_refresh_held` and
+`refresh_lead_window_conflict`, never reach this page and are in no group.
+
+Sign-in activity and Configuration changes are audit records only, and behave
+as [Sign-in activity](#sign-in-activity) describes: the level boxes are greyed
+and Apply waits for Audit record. Family mail and ParishSoft refreshes hold
+operational entries too, so the level boxes stay available and the Show
+choices apply to their operational members as to any entry
+(`data-enabled-when` and `data-required-when` list alternatives,
+[conditional fields](../ui-conventions/spec.md#conditional-fields)). Every
+other rule is Sign-in activity's: a typed type narrows within the group,
+"Same actor" keeps it, the choice travels in links, and the CSV and JSON Lines
+downloads hold exactly the entries the page lists.
 
 ## Campaign purge
 

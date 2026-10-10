@@ -250,6 +250,19 @@ def components(context, admin):
             {"applied": "yes", "audit": "yes", "activity": "sign_in"},
             [audit[1]],
         ),
+        # ParishSoft refreshes (#953) holds operational entries, so the page
+        # sends the ticked levels with it, and here Audit record unticked.
+        (
+            "/logs-parishsoft",
+            {
+                "applied": "yes",
+                "info": "yes",
+                "warning": "yes",
+                "error": "yes",
+                "activity": "parishsoft",
+            },
+            [operational[2]],
+        ),
     ):
         result[path] = ("text/html", live(LogQuery.parse(parameters), found))
     # A followed link whose days were applied in Tokyo (#536).

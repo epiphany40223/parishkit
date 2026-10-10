@@ -713,6 +713,11 @@ around it, two gates keep it in place instead:
   (greyed and not sent). It is re-checked on `pageshow` and after in-place
   filter syncs. First use: System logs' level boxes while Sign-in activity is
   chosen.
+- A rule's value may list alternatives separated by `|` (#953):
+  `activity=|family_mail|parishsoft` holds while the control is empty or
+  either value. It applies to `data-show-when`, `data-enabled-when` and
+  `data-required-when` alike. First use: System logs' level boxes and Audit
+  record across the [activity groups](../admin-portal/spec.md#activity-groups).
 - `data-locked-when` (open #957) shows a fixed value, disabled, while its
   rule holds, with the reason in the field's toggletip (never a line under
   the field), and gives back the reader's own value (kept in a hidden field)

@@ -21,7 +21,13 @@ from parishkit.stewardship.web.dates import UnknownZone, browser_day_start
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting, TablePage
 
 from .log_contract import SERIOUS
-from .log_descriptions import ACTOR_KINDS, describe, field_label, field_value
+from .log_descriptions import (
+    ACTOR_KINDS,
+    built_types,
+    describe,
+    field_label,
+    field_value,
+)
 from .log_details import explain
 from .schemas import FIELDS, Action
 
@@ -107,15 +113,32 @@ LEGACY_SOURCES = frozenset({"both", "operational", "audit"})
 # SQL triggers, such as `admin_login`, so the two vocabularies here are not the
 # whole set; hiding the rest behind a fixed list would make them unsearchable.
 EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in Event}))
-# Fixed groups of audit types the Activity choice lists together (#953), so a
-# reader never types internal type names one at a time. Sign-in activity is
-# every recorded Admin portal sign-in, re-confirmation and session ending
-# (including a session replaced because the person's roles changed),
-# plus refused sign-ins: a verified Google account policy refused, named
-# and bounded per account, and the sampled, anonymous record of any other
-# refusal (no actor, by design). Both are ``accounts.auth_incidents``. All
-# are audit records; no operational
-# entry belongs to a group, so choosing one leaves operational entries out.
+# Fixed groups of types the Activity choice lists together (#953), so a
+# reader never types internal type names one at a time. Each is a closed
+# list kept only here (``pk-admin logs --activity`` and the page take its
+# keys), and every member is a type something writes: an ``Action``, a
+# directly written audit type, a trigger-built type from ``BUILT_TYPES`` or an
+# operational entry on the writer manifest (test_log_rows guards it).
+#
+# - Sign-in activity: every recorded Admin portal sign-in, re-confirmation
+#   and session ending (including a session replaced because the person's
+#   roles changed), plus refused sign-ins: a verified Google account policy
+#   refused, named and bounded per account, and the sampled, anonymous
+#   record of any other refusal (no actor, by design). Both are
+#   ``accounts.auth_incidents``.
+# - Configuration changes: settings requests through Review and Apply to
+#   applied, refused (``config_request_failed``) or cancelled, and what an
+#   applied change did to access; mail schedules and live campaign changes;
+#   portal user roles; hosted files; and stored key replacements.
+# - Family mail: each outgoing email's steps (sent, retried, refused,
+#   delivery unknown), the Administrator's resolutions, cleared refused
+#   addresses, delivery pauses, test emails and the mail provider failing.
+#   An email's own steps do not say whom it was for, so staff report and
+#   alert emails are listed too; the page's help says so.
+# - ParishSoft refreshes: full refreshes and quick updates accepted,
+#   rejected, replaced or fallen back to a full reload, their failures and
+#   holds. Timeouts are left out: every kind of background work shares their
+#   types, so a type list cannot pick a refresh's (#953 comment).
 ACTIVITY_TYPES = {
     "sign_in": (
         "admin_login",
@@ -128,9 +151,76 @@ ACTIVITY_TYPES = {
         "admin_step_up",
         "admin_timeout",
     ),
+    "configuration": (
+        "configuration_requested",
+        *built_types("config_request_"),
+        "configuration_activated",
+        "policy_security_event",
+        "policy_denial_namespace_reset",
+        "schedule_selected",
+        "admin_cmd_schedule_confirm",
+        "admin_cmd_config_request_cancel",
+        "campaign_ministries_requested",
+        "campaign_end_date_requested",
+        "roles_applied",
+        "hosted_file_uploaded",
+        "hosted_file_slug_changed",
+        "hosted_file_deleted",
+        "secret_replacement_requested",
+        *built_types("secret_request_"),
+    ),
+    "family_mail": (
+        *built_types("outbox_"),
+        *built_types("delivery_resolution_"),
+        *built_types("delivery_held_"),
+        "delivery_bulk_resolved",
+        "restore_hold_resolved",
+        "recipient_refusal_cleared",
+        "admin_cmd_delivery_resolve",
+        "admin_cmd_delivery_resend",
+        "admin_cmd_delivery_refusal_clear",
+        "submission_receipt_skipped",
+        *built_types("campaign_", "pause", "resume", "first_delivery"),
+        *built_types("family_mail_test_"),
+        *built_types("campaign_mail_"),
+        "admin_cmd_test_sample",
+        "admin_cmd_test_families",
+        "mail_provider_failed",
+    ),
+    "parishsoft": (
+        "source_promoted",
+        "source_rejected",
+        "source_superseded",
+        "source_fallback_requested",
+        "chair_reconciled",
+        "admin_cmd_refresh_start",
+        "setup_source_started",
+        "setup_source_completed",
+        "source_refresh_invalid",
+        "source_provider_failed",
+        "source_credential_failed",
+        "source_tenant_mismatch",
+        "source_destructive_change",
+        "source_refresh_held",
+    ),
 }
+# The groups that hold operational entries as well as audit records. The
+# others are audit records only: while one is chosen the page greys the five
+# level boxes and waits for Audit record, and the read leaves operational
+# entries out.
+OPERATIONAL_ACTIVITIES = frozenset(
+    key
+    for key, types in ACTIVITY_TYPES.items()
+    if set(types) & {item.value for item in Event}
+)
 # The Activity choice's options, in the order the filter bar lists them.
-ACTIVITY_LABELS = (("", _("All activity")), ("sign_in", _("Sign-in activity")))
+ACTIVITY_LABELS = (
+    ("", _("All activity")),
+    ("sign_in", _("Sign-in activity")),
+    ("configuration", _("Configuration changes")),
+    ("family_mail", _("Family mail")),
+    ("parishsoft", _("ParishSoft refreshes")),
+)
 # A type is searched as an exact identifier, never as free text: the same shape
 # the audit table's own check constraint enforces on every stored type.
 EVENT = re.compile(r"[a-z][a-z0-9_]{0,63}")
@@ -323,8 +413,13 @@ class LogQuery:
 
     @property
     def activity_types(self):
-        """The audit types the Activity choice lists, or None for all activity."""
+        """The types the Activity choice lists, or None for all activity."""
         return ACTIVITY_TYPES.get(self.activity)
+
+    @property
+    def activity_audit_only(self):
+        """Whether the chosen Activity group is audit records only (#953)."""
+        return bool(self.activity) and self.activity not in OPERATIONAL_ACTIVITIES
 
     @property
     def bounds(self):
@@ -496,6 +591,14 @@ def page_context(query, table, *, depth_limited=False, linked=False):
         ],
         "events": EVENTS,
         "activities": ACTIVITY_LABELS,
+        # The conditional-field rules for the Show boxes (#953): the levels
+        # are enabled for all activity and the groups with operational
+        # entries, and Audit record is required for the audit-only groups.
+        "levels_rule": "activity=" + "|".join(["", *sorted(OPERATIONAL_ACTIVITIES)]),
+        "audit_rule": "activity="
+        + "|".join(
+            sorted(key for key in ACTIVITY_TYPES if key not in OPERATIONAL_ACTIVITIES)
+        ),
     }
 
 

@@ -10,7 +10,8 @@ Every type the application itself defines (the audit ``Action`` and operational
 ``Event`` vocabularies, plus the audit types written directly by Python owners
 and SQL triggers, listed in ``DIRECT_AUDIT_TYPES``) has a sentence; a guard test
 enforces that. Types built from a prefix and a state, such as
-``config_request_applied``, are explained by ``PREFIXES``.
+``config_request_applied``, are explained by ``PREFIXES``; ``BUILT_TYPES``
+closes the states of the prefixes System logs' Activity groups list.
 """
 
 from django.utils.text import format_lazy
@@ -702,7 +703,110 @@ PREFIXES = (
     ("secret_request_", _("A key replacement request moved to a new step")),
     ("campaign_mail_", _("A campaign email batch moved to a new step")),
     ("campaign_", _("A campaign was changed")),
+    # Each outgoing email's own steps (stewardship_outbox_history_v1), the
+    # Administrator's decisions on uncertain or failed emails and on emails
+    # held when a campaign closed, and test emails to chosen Families (#953).
+    ("outbox_", _("An outgoing email moved to a new step")),
+    ("delivery_resolution_", _("An Administrator resolved an outgoing email")),
+    ("delivery_held_", _("An Administrator decided on emails held at campaign close")),
+    ("family_mail_test_", _("A test email to a chosen Family moved to a new step")),
 )
+
+# The closed second halves of the trigger-built types the System logs
+# Activity groups list (#953, ``log_rows.ACTIVITY_TYPES``): for each prefix,
+# where the database closes the list (a CHECK constraint, or the guard
+# function that refuses any other value) and the values it allows. A
+# PostgreSQL test compares each list with the installed database, so a group
+# can never name a type no trigger writes, or miss a new one. ``campaign_``
+# lists only the delivery controls; campaign transitions build that prefix
+# too, but no group lists them.
+BUILT_TYPES = {
+    "config_request_": (
+        ("constraint", "config_checkpoint_installer_states"),
+        (
+            "staged",
+            "validating",
+            "prepared",
+            "yaml_activated",
+            "applied",
+            "failed",
+            "cancelled",
+        ),
+    ),
+    "secret_request_": (
+        ("constraint", "secret_checkpoint_state"),
+        (
+            "staged",
+            "testing",
+            "installing",
+            "awaiting_ack",
+            "cleanup_pending",
+            "cancelled",
+            "expired",
+            "failed",
+            "applied",
+        ),
+    ),
+    "outbox_": (
+        ("constraint", "outbox_action"),
+        (
+            "created",
+            "prepared",
+            "hold",
+            "release_hold",
+            "submit",
+            "accept",
+            "retry_unaccepted",
+            "fail_unaccepted",
+            "mark_unknown",
+            "cancel_unsent",
+            "retry_failed",
+            "authorize_resend",
+            "retry_idempotent",
+        ),
+    ),
+    "delivery_resolution_": (
+        ("constraint", "delivery_resolution_action"),
+        ("note", "accept", "resend", "retry_failed", "retry_unsent", "confirm_unsent"),
+    ),
+    # The decision a closed campaign's held-email command carries.
+    "delivery_held_": (
+        ("function", "stewardship_delivery_control_guard_v1"),
+        ("release", "cancel", "clear"),
+    ),
+    "family_mail_test_": (
+        ("constraint", "family_mail_test_known_state"),
+        ("queued", "prepared", "cancelled", "failed"),
+    ),
+    "campaign_mail_": (
+        ("constraint", "campaign_mail_known_state"),
+        (
+            "queued",
+            "submitting",
+            "accepted",
+            "not_sent",
+            "delivery_unknown",
+            "cancelled",
+        ),
+    ),
+    "campaign_": (
+        ("function", "stewardship_control_guard_v1"),
+        ("pause", "resume", "first_delivery", "first_submission"),
+    ),
+}
+
+
+def built_types(prefix, *values):
+    """Trigger-built types: ``prefix`` with each of ``values``, or every one.
+
+    Refuses a value the database does not allow for that prefix, so a group
+    cannot name a type that is never written.
+    """
+    allowed = BUILT_TYPES[prefix][1]
+    if not set(values) <= set(allowed):
+        raise ValueError(f"Not a {prefix} type: {sorted(set(values) - set(allowed))}")
+    return tuple(prefix + value for value in values or allowed)
+
 
 # Who, in words, when the actor is not a portal user the page can name. Audit
 # contexts record this kind; operational entries do not.
