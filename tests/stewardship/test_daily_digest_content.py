@@ -534,18 +534,21 @@ def funnel_metrics():
 
 
 def test_a_production_digest_shows_the_response_funnel():
-    """Five stages with counts and shares, the scanner note, three figures (#477)."""
+    """Five stages with counts and shares, the scanner note, one figure (#477)."""
     result = render(replace(document(), funnel=funnel_metrics(), mode="production"))
     for body in (visible(result.html), result.text):
         assert "Response funnel" in body
         assert "Invited" in body and "100%" in body
         assert "Submitted" in body and "401" in body and "40%" in body
         assert "includes mail-scanner prefetches" in body
-        assert "Invitations not sent (already responded)" in body and "12" in body
         assert "::" not in body
-        assert "Percentages are of the Families invited." in body
-    # The figures: "label: count" in the text part, a two-cell row in HTML.
-    assert "Submitted without a delivered invitation: 3" in result.text
+        # Trimmed by the Administrator (#969): no caption and no "already
+        # responded" or "without a delivered invitation" figures.
+        assert "Families at each stage" not in body
+        assert "Percentages are of" not in body
+        assert "already responded" not in body
+        assert "without a delivered invitation" not in body
+    # The figure: "label: count" in the text part, a two-cell row in HTML.
     assert "Submitted more than once: 7" in result.text
     assert ">Submitted more than once</td>" in result.html
     # After the campaign totals, before the participation chart.
@@ -575,6 +578,9 @@ def test_the_saved_page_shows_the_same_funnel():
     )
     assert [row[1] for row in context["funnel_stages"]] == [1000, 640, 512, 480, 401]
     assert context["funnel_testing_note"] == ""
+    # Trimmed like the email (#969): one figure and no caption.
+    assert context["funnel_figures"] == (("Submitted more than once", 7),)
+    assert "funnel_caption" not in context
     testing = snapshot_context(
         replace(document(), mode="testing"),
         mode="testing",

@@ -22,7 +22,6 @@ from parishkit.stewardship.web.report_markup import BLUE, STYLES, TRACK, button
 
 from .charts import render_participation
 from .digest_funnel import (
-    CAPTION,
     TESTING_NOTE,
     figure_rows,
     funnel_text,
@@ -361,8 +360,9 @@ def funnel_html(document, plain):
     """The response funnel section of the email, or "" when there is none.
 
     One row per stage like the campaign totals: the stage (with its note),
-    a bar of its share of Invited, and its count and share; then the three
-    figures reported beside it. A Testing digest says where the funnel is.
+    a bar of its share of Invited, and its count and share; then the
+    figures reported beside it (``figure_rows``). A Testing digest says
+    where the funnel is.
     """
     if document.funnel is None:
         if document.mode == "testing":
@@ -371,7 +371,6 @@ def funnel_html(document, plain):
     metrics = document.funnel
     invited = metrics.stage("invited")
     html = f"<h2{_style('heading')}>Response funnel</h2>"
-    html += f"<p{_style('caption')}>{plain(CAPTION)}</p>"
     html += (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'border="0"{_style("rows")}><tbody>'
@@ -385,7 +384,7 @@ def funnel_html(document, plain):
             f"<strong>{plain(f'{count:,}')}</strong>{plain(f' ({portion})')}</td></tr>"
         )
     html += "</tbody></table>"
-    # The three figures as one small table, so they read as a group.
+    # The side figures as one small table, so they read as a group.
     html += (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'border="0"{_style("rows")}><tbody>'
