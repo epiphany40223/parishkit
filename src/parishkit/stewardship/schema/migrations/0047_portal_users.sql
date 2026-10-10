@@ -43,8 +43,11 @@
 --   adds stewardship_portal_identities_v1   each recorded Google identity
 --                                            and whether it ever signed in
 --                                            (definer; admin-recovery)
---   adds stewardship_member_names_v1        the ParishSoft Member names that
---                                            list one address, in the Name
+--   adds stewardship_member_names_v1        the ParishSoft Member names of
+--                                            each address the upgrade names
+--                                            (its rules and recorded
+--                                            identities; no address
+--                                            argument), in the Name
 --                                            default's order (definer;
 --                                            admin-recovery)
 --
@@ -586,29 +589,33 @@ ALTER FUNCTION public.stewardship_portal_identities_v1() SECURITY DEFINER;
 REVOKE ALL ON FUNCTION public.stewardship_portal_identities_v1() FROM PUBLIC;
 
 -- The distinct names of the ParishSoft Members in the current promoted data
--- whose contact record lists one address (#952, "Name from ParishSoft"),
--- best first: a Member of an active Family, then a head of household, then
--- by name, then by Member DUID, so the choice is always the same. Addresses
--- match trimmed and case-insensitively, with no provider folding. A name is
--- "Last, First" (the Member-name rule), or whichever part the Member has.
--- No promoted source means no names. Definer: it reads Member contact data
--- that its callers otherwise cannot; database-grants grants EXECUTE to the
--- offline admin-recovery login, which converts users.
-CREATE FUNCTION public.stewardship_member_names_v1(address text)
-    RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
+-- whose contact record lists an address (#952, "Name from ParishSoft"), one
+-- row per address that has any, best first: a Member of an active Family,
+-- then a head of household, then by name, then by Member DUID, so the
+-- choice is always the same. Only the addresses the users upgrade names are
+-- looked up: the active configuration's address rules (deny rules included)
+-- and every recorded Google identity. It takes no address argument, so its
+-- callers cannot ask about any other address. Addresses match trimmed and
+-- case-insensitively, with no provider folding. A name is "Last, First"
+-- (the Member-name rule), or whichever part the Member has. No promoted
+-- source means no rows. Definer: it reads Member contact data that its
+-- callers otherwise cannot; database-grants grants EXECUTE to the logins
+-- that run or preview the users upgrade.
+CREATE FUNCTION public.stewardship_member_names_v1()
+    RETURNS TABLE(address text, names jsonb)
+    LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO pg_catalog, public, pg_temp
 AS $$
-DECLARE
-    current_snapshot uuid;
-    result jsonb;
-BEGIN
-    SELECT pointer.snapshot_id INTO current_snapshot
-    FROM public.stewardship_source_current pointer WHERE pointer.singleton;
-    IF current_snapshot IS NULL OR address IS NULL THEN
-        RETURN '[]'::jsonb;
-    END IF;
-    WITH listed AS (
-        SELECT concat_ws(', ',
+    WITH wanted AS (
+        SELECT lower(btrim(rule.email)) AS address
+        FROM public.stewardship_address_rule rule
+        JOIN public.stewardship_system_configuration runtime
+            ON rule.configuration_id=runtime.active_configuration_id
+        UNION
+        SELECT lower(btrim(portal.email)) FROM public.stewardship_portal_user portal
+    ), listed AS (
+        SELECT wanted.address,
+            concat_ws(', ',
                 nullif(btrim(parsed.member_doc->>'lastName'), ''),
                 nullif(btrim(parsed.member_doc->>'firstName'), '')) AS name,
             coalesce(parsed.family_doc->'active'='true'::jsonb, false) AS active_family,
@@ -617,37 +624,40 @@ BEGIN
                     WHERE head.duid = member.source_key) AS head,
             CASE WHEN member.source_key ~ '^[0-9]{1,18}$'
                 THEN member.source_key::bigint END AS duid
-        FROM public.stewardship_snapshot_member mm
+        FROM public.stewardship_source_current pointer
+        JOIN public.stewardship_snapshot_member mm ON mm.snapshot_id=pointer.snapshot_id
         JOIN public.stewardship_source_member member ON member.id=mm.payload_id
         JOIN public.stewardship_snapshot_contact cm
-            ON cm.snapshot_id=current_snapshot AND cm.source_key='member:' || member.source_key
+            ON cm.snapshot_id=pointer.snapshot_id AND cm.source_key='member:' || member.source_key
         JOIN public.stewardship_source_contact contact ON contact.id=cm.payload_id
         LEFT JOIN public.stewardship_snapshot_family fm
-            ON fm.snapshot_id=current_snapshot AND fm.source_key=member.family_key
+            ON fm.snapshot_id=pointer.snapshot_id AND fm.source_key=member.family_key
         LEFT JOIN public.stewardship_source_family family ON family.id=fm.payload_id
         CROSS JOIN LATERAL (SELECT member.canonical::jsonb AS member_doc,
             family.canonical::jsonb AS family_doc,
             contact.canonical::jsonb AS contact_doc) parsed
-        WHERE mm.snapshot_id=current_snapshot
+        JOIN wanted ON EXISTS (
+            SELECT 1 FROM jsonb_array_elements(parsed.contact_doc->'emails') listed_email(value)
+            WHERE jsonb_typeof(listed_email.value->'value')='string'
+              AND lower(btrim(listed_email.value->>'value'))=wanted.address)
+        WHERE pointer.singleton
           AND parsed.member_doc->'schema_version'='1'::jsonb
           AND parsed.contact_doc->'schema_version'='1'::jsonb
-          AND EXISTS (SELECT 1 FROM jsonb_array_elements(parsed.contact_doc->'emails') listed_email(value)
-                      WHERE jsonb_typeof(listed_email.value->'value')='string'
-                        AND lower(btrim(listed_email.value->>'value'))=lower(btrim(address)))
     ), ranked AS (
-        SELECT listed.name, row_number() OVER (
+        SELECT listed.address, listed.name, row_number() OVER (
+            PARTITION BY listed.address
             ORDER BY listed.active_family DESC, listed.head DESC, listed.name,
                 listed.duid NULLS LAST) AS position
         FROM listed WHERE listed.name <> ''
+    ), best AS (
+        SELECT ranked.address, ranked.name, min(ranked.position) AS position
+        FROM ranked GROUP BY ranked.address, ranked.name
     )
-    SELECT coalesce(jsonb_agg(best.name ORDER BY best.position), '[]'::jsonb)
-      INTO result
-    FROM (SELECT ranked.name, min(ranked.position) AS position
-          FROM ranked GROUP BY ranked.name) best;
-    RETURN result;
-END $$;
-ALTER FUNCTION public.stewardship_member_names_v1(text) SECURITY DEFINER;
-REVOKE ALL ON FUNCTION public.stewardship_member_names_v1(text) FROM PUBLIC;
+    SELECT best.address, jsonb_agg(best.name ORDER BY best.position)
+    FROM best GROUP BY best.address
+$$;
+ALTER FUNCTION public.stewardship_member_names_v1() SECURITY DEFINER;
+REVOKE ALL ON FUNCTION public.stewardship_member_names_v1() FROM PUBLIC;
 
 -- Refuse to commit unless everything above is installed as declared.
 DO $check$
@@ -722,20 +732,27 @@ BEGIN
               AND t.tgfoid='public.stewardship_users_form_v1()'::regprocedure) THEN
         RAISE EXCEPTION 'Migration 0047: the users activation guard is not installed as declared';
     END IF;
-    -- The two definers: SECURITY DEFINER, the fixed search_path and no
-    -- EXECUTE for PUBLIC.
+    -- The two definers: SECURITY DEFINER, the fixed search_path, no
+    -- EXECUTE for PUBLIC and no arguments; the names lookup is set-returning
+    -- and limited to the active rules' and recorded identities' addresses,
+    -- and no other overload of either exists.
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.prosecdef
           AND p.proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
           AND NOT has_function_privilege('public', p.oid, 'EXECUTE')
+          AND pg_get_function_identity_arguments(p.oid)=''
           AND ((p.proname='stewardship_portal_identities_v1'
-                AND pg_get_function_identity_arguments(p.oid)=''
                 AND p.prosrc LIKE '%e.event_type=''admin_login''%')
             OR (p.proname='stewardship_member_names_v1'
-                AND pg_get_function_identity_arguments(p.oid)='address text'
-                AND p.prorettype='jsonb'::regtype
-                AND p.prosrc LIKE '%lower(btrim(listed_email.value->>''value''))=lower(btrim(address))%'))
-       )<>2 THEN
+                AND p.proretset
+                AND pg_get_function_result(p.oid)='TABLE(address text, names jsonb)'
+                AND p.prosrc LIKE '%ON rule.configuration_id=runtime.active_configuration_id%'
+                AND p.prosrc LIKE '%FROM public.stewardship_portal_user portal%'
+                AND p.prosrc LIKE '%lower(btrim(listed_email.value->>''value''))=wanted.address)%'))
+       )<>2
+       OR (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+           WHERE n.nspname='public' AND p.proname IN
+               ('stewardship_portal_identities_v1', 'stewardship_member_names_v1'))<>2 THEN
         RAISE EXCEPTION 'Migration 0047: the users definers are not installed as declared';
     END IF;
 END

@@ -172,7 +172,7 @@ FROZEN = {
         "251f9db9d1a23e5ac9326e9f1034c9bf3c4b299b68b32c036634fa681c988e62"
     ),
     "0047_portal_users.sql": (
-        "fc40930dff05f44daa38d5f17a862fa7a68ceaa4695c79a9ee6723f9c1d19dba"
+        "e90737d9b5386d9edf85de132185fc536f6334161b7a95ce6e96125f0c69eb97"
     ),
 }
 

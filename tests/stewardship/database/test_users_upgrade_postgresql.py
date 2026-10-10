@@ -266,7 +266,7 @@ def test_sql_refuses_an_ordinary_activation_into_the_users_form(tmp_path, monkey
     """
     store, version, actor = initialized(tmp_path, rules())
     records = version.document()["sections"]["login_rules"]
-    plan = upgrade.plan_upgrade(records, [], lambda email: [])
+    plan = upgrade.plan_upgrade(records, [], {})
 
     def converting(base, patch, *, candidate_id):
         """An ordinary policy format that writes the users form."""
@@ -319,7 +319,13 @@ def test_the_upgrade_runs_as_the_admin_recovery_login(tmp_path):
 
 
 def test_member_names_follow_the_default_order(tmp_path):
-    """Active Family first; the address matches trimmed and case-insensitively."""
+    """Active Family first; the address matches trimmed and case-insensitively.
+
+    The one lookup covers exactly the active rules' addresses (a deny rule's
+    too) and the recorded identities' addresses: a Member address outside
+    them yields nothing, so no caller can use it to learn who an arbitrary
+    address belongs to.
+    """
     from parishkit.stewardship.campaigns.models import Campaign
     from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
 
@@ -329,13 +335,19 @@ def test_member_names_follow_the_default_order(tmp_path):
     from .test_source_families_postgresql import prepare, promote
 
     store, _, _ = initialized(
-        tmp_path, [address(), address("shared@example.org", ("staff",))]
+        tmp_path,
+        [
+            address(),
+            address("shared@example.org", ("staff",)),
+            address("denied@example.org", ()),
+        ],
     )
-    assert upgrade.member_names("shared@example.org") == []
+    assert upgrade.member_names() == {}
     add_draft(store, store.active(), uuid4())
     campaign = Campaign.objects.get(
         pk=SystemConfiguration.objects.get().current_campaign_id
     )
+    identity("signed@example.org")
     SourceMutationLease.objects.get_or_create(singleton=True)
     SourceCurrent.objects.get_or_create(singleton=True)
     snapshot, claim = prepare(
@@ -343,16 +355,21 @@ def test_member_names_follow_the_default_order(tmp_path):
             response_source(),
             [
                 leader("shared@example.org", 9, family="inactive"),
-                leader("shared@example.org", 9),
+                leader(" Shared@Example.org ", 9),
+                leader("denied@example.org", 9),
+                leader("signed@example.org", 9),
+                # A Member address no rule or identity names.
+                leader("outside@example.org", 9),
             ],
         )
     )
     promote(snapshot, claim, campaign, keys())
-    assert upgrade.member_names(" Shared@Example.org ") == [
-        "Example 1, Leader",
-        "Example 0, Leader",
-    ]
-    assert upgrade.member_names("nobody@example.org") == []
+    names = upgrade.member_names()
+    assert names == {
+        "shared@example.org": ["Example 1, Leader", "Example 0, Leader"],
+        "denied@example.org": ["Example 2, Leader"],
+        "signed@example.org": ["Example 3, Leader"],
+    }
     # The conversion names the user from ParishSoft.
     assert upgrade.upgrade_users(store, **arguments(["admin@example.org"])).state == (
         "applied"

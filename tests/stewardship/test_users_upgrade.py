@@ -41,9 +41,8 @@ def user(email="admin@example.org", role="administrator", name="Admin"):
     }
 
 
-def no_names(email):
-    """No ParishSoft Member lists any address."""
-    return []
+# No ParishSoft Member lists any address.
+NO_NAMES = {}
 
 
 def identity(email, hosted="example.org", *, disabled=False, signed_in=True):
@@ -151,7 +150,7 @@ def test_plan_keeps_administrators_and_highest_roles():
         address("staff@example.org", ("ministry_leader", "staff")),
         address("leader@example.org", ("ministry_leader",)),
     ]
-    plan = plan_upgrade(records, [], no_names)
+    plan = plan_upgrade(records, [], NO_NAMES)
     assert plan["administrators"] == ["admin@example.org", "second@example.org"]
     assert {item["email"]: item["role"] for item in plan["users"]} == {
         "admin@example.org": "administrator",
@@ -190,7 +189,13 @@ def test_plan_converts_signed_in_domain_identities_only():
         identity("denied@example.org"),
         identity("leader@example.org"),
     ]
-    plan = plan_upgrade(records, identities, lambda email: ["Smith, Ann"])
+    # Every address the plan names has one ParishSoft name; an address that
+    # converts nowhere still has one, which the plan never reads.
+    names = {
+        f"{local}@example.org": ["Smith, Ann"]
+        for local in ("admin", "denied", "leader", "signed", "twice", "never")
+    }
+    plan = plan_upgrade(records, identities, names)
     roles = {item["email"]: item["role"] for item in plan["users"]}
     assert roles == {
         "admin@example.org": "administrator",
@@ -233,7 +238,7 @@ def test_plan_keeps_administrators_whatever_their_identities():
         identity("second@example.org", disabled=True),
         identity("second@example.org", hosted=None, signed_in=False),
     ]
-    plan = plan_upgrade(records, identities, no_names)
+    plan = plan_upgrade(records, identities, NO_NAMES)
     assert plan["administrators"] == ["admin@example.org", "second@example.org"]
     assert {item["email"]: item["role"] for item in plan["users"]} == {
         "admin@example.org": "administrator",
@@ -252,7 +257,7 @@ def test_plan_fails_closed_on_an_invalid_identity_email(email):
         plan_upgrade(
             [address("admin@example.org"), domain("example.org", ("staff",))],
             identities,
-            no_names,
+            NO_NAMES,
         )
     if email.strip():
         assert email.strip() not in str(caught.value)
@@ -261,7 +266,7 @@ def test_plan_fails_closed_on_an_invalid_identity_email(email):
 def test_upgrade_patch_replaces_every_rule_with_new_user_ids():
     """The one request removes each old rule and adds each user with a new ID."""
     records = [address(), domain()]
-    plan = plan_upgrade(records, [identity("staff@example.org")], no_names)
+    plan = plan_upgrade(records, [identity("staff@example.org")], NO_NAMES)
     patch = upgrade_patch(records, plan)
     assert [item["operation"] for item in patch] == ["remove", "remove", "add", "add"]
     assert {item["id"] for item in patch[:2]} == {record["id"] for record in records}
@@ -287,7 +292,7 @@ def test_upgrade_builder_converts_into_the_users_form():
     """The upgrade format writes a users-v10 candidate, other sections unchanged."""
     records = [address(), address("staff@example.org", ("staff",)), domain()]
     base = version(records)
-    plan = plan_upgrade(records, [], no_names)
+    plan = plan_upgrade(records, [], NO_NAMES)
     result = build_candidate(
         base,
         upgrade_patch(records, plan),
@@ -312,7 +317,7 @@ def test_upgrade_builder_refuses_to_drop_an_administrator():
     """Independently of the plan, an Administrator cannot be lost."""
     records = [address(), address("second@example.org")]
     base = version(records)
-    plan = plan_upgrade(records, [], no_names)
+    plan = plan_upgrade(records, [], NO_NAMES)
     plan["users"] = [
         item | {"role": "staff"} if item["email"] == "second@example.org" else item
         for item in plan["users"]
@@ -338,7 +343,7 @@ def test_upgrade_builder_refuses_a_new_administrator():
     """The upgrade never grants Administrator to an address that lacked it."""
     records = [address(), address("staff@example.org", ("staff",))]
     base = version(records)
-    plan = plan_upgrade(records, [], no_names)
+    plan = plan_upgrade(records, [], NO_NAMES)
     plan["users"] = [item | {"role": "administrator"} for item in plan["users"]]
     with pytest.raises(ConfigError):
         build_candidate(
@@ -353,7 +358,7 @@ def test_upgrade_builder_refuses_a_partial_conversion():
     """Every old rule goes: a leftover rule is not the users form."""
     records = [address(), domain()]
     base = version(records)
-    plan = plan_upgrade(records, [], no_names)
+    plan = plan_upgrade(records, [], NO_NAMES)
     patch = [
         item for item in upgrade_patch(records, plan) if item["id"] != records[1]["id"]
     ]

@@ -275,10 +275,10 @@ TASK_EVENT_PRUNE_FUNCTION = "stewardship_task_event_prune_v1(integer, integer, i
 # the scope, never the Member contact data that decides it.
 LEADER_SCOPE_FUNCTION = "stewardship_ministry_leader_scope_v1(uuid)"
 # The offline users upgrade (#952) reads each recorded Google identity and
-# whether it ever signed in, and the ParishSoft Member names that list an
-# address (a new user's default Name), without audit-log or source grants.
+# whether it ever signed in, and the ParishSoft Member names of the addresses
+# it names (a new user's default Name), without audit-log or source grants.
 PORTAL_IDENTITIES_FUNCTION = "stewardship_portal_identities_v1()"
-MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1(text)"
+MEMBER_NAMES_FUNCTION = "stewardship_member_names_v1()"
 
 
 def runtime_functions(role, *, target=None):

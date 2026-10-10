@@ -646,7 +646,9 @@ Administrator may override.
       new columns while every SQL function still joins
       `stewardship_domain_rule`, and `database-grants` has given the
       `admin-recovery` login the two narrow read functions the conversion
-      uses (recorded identities and ParishSoft Member names); the command
+      uses (recorded identities, and the ParishSoft Member names of only the
+      active rules' and recorded identities' addresses, with no address
+      argument, so it is no lookup for any other address); the command
       then activates the converted configuration. SQL's activation guard
       refuses it, and any other activation into the users form, unless every
       address that held Administrator keeps an Administrator user.

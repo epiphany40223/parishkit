@@ -74,7 +74,7 @@ def highest_role(roles):
 def default_name(email, names):
     """The first usable ParishSoft name for the address, else its local part.
 
-    ``names`` is the ordered list ``stewardship_member_names_v1`` returns. A
+    ``names`` is one address's ordered list from ``member_names``. A
     name the users schema would refuse (too long, or with control
     characters) is skipped rather than failing the conversion.
     """
@@ -91,8 +91,9 @@ def plan_upgrade(records, identities, names):
 
     ``records`` are the active configuration's ``login_rules``; ``identities``
     are ``Identity`` values; ``names`` maps an address to its ordered
-    ParishSoft names (a callable). Returns the preview dict, whose ``users``
-    list (sorted by address) is what the conversion writes.
+    ParishSoft names (``member_names``'s mapping; an absent address has
+    none). Returns the preview dict, whose ``users`` list (sorted by address)
+    is what the conversion writes.
     """
     rules = [record["values"] for record in records]
     addresses = {rule["email"]: rule for rule in rules if rule["kind"] == "address"}
@@ -164,7 +165,7 @@ def plan_upgrade(records, identities, names):
             {
                 "email": email,
                 "overrides_identity": email in overridden,
-                "name": default_name(email, names(email)),
+                "name": default_name(email, names.get(email, [])),
             }
             for email, rule in sorted(addresses.items())
             if not rule["roles"]
@@ -174,7 +175,11 @@ def plan_upgrade(records, identities, names):
             "never_signed_in": sorted(never),
         },
         "users": [
-            {"email": email, "name": default_name(email, names(email)), "role": role}
+            {
+                "email": email,
+                "name": default_name(email, names.get(email, [])),
+                "role": role,
+            }
             for email, role in sorted(users.items())
         ],
     }
@@ -210,14 +215,23 @@ def recorded_identities():
         return [Identity(*row) for row in cursor.fetchall()]
 
 
-def member_names(email):
-    """The ordered ParishSoft Member names that list ``email``."""
+def member_names():
+    """Map each address the upgrade names to its ordered ParishSoft names.
+
+    One call for every address: the definer looks up only the active
+    configuration's address rules and the recorded Google identities, and
+    returns a row only for an address some Member lists.
+    """
     with connection.cursor() as cursor:
-        cursor.execute("SELECT public.stewardship_member_names_v1(%s)", [email])
-        value = cursor.fetchone()[0]
+        cursor.execute(
+            "SELECT address, names FROM public.stewardship_member_names_v1()"
+        )
+        rows = cursor.fetchall()
     # Django's database connection returns jsonb as its text.
-    value = json.loads(value) if isinstance(value, str) else value
-    return value if isinstance(value, list) else []
+    return {
+        address: json.loads(names) if isinstance(names, str) else names
+        for address, names in rows
+    }
 
 
 def upgrade_preview(version):
@@ -226,7 +240,7 @@ def upgrade_preview(version):
     if uses_users(version.document()):
         return {"already_users": True}
     plan = plan_upgrade(
-        sections.get("login_rules", []), recorded_identities(), member_names
+        sections.get("login_rules", []), recorded_identities(), member_names()
     )
     return {"already_users": False} | plan
 
@@ -306,7 +320,7 @@ def upgrade_users(
             if base.validation_schema not in UPGRADE_BASES:
                 raise ConfigError("Finish setup before converting sign-in rules.")
             records = version.document()["sections"].get("login_rules", [])
-            plan = plan_upgrade(records, recorded_identities(), member_names)
+            plan = plan_upgrade(records, recorded_identities(), member_names())
             if plan["administrators"] != confirmed:
                 raise ConfigError(
                     "The confirmed Administrators do not match the preview."
