@@ -357,11 +357,7 @@ def test_sends_count_like_the_panel_and_link_to_exactly_their_emails(
         # the reminder, and counts it the same way.
         assert panel == rows[keys["reminder"]].send.counts
         # Two of the invitation's 5 failures have no email to list.
-        failed = next(
-            o
-            for o in rows[keys["invitation"]].outcomes
-            if o.state == "permanent_failure"
-        )
+        failed = rows[keys["invitation"]].failed
         assert (failed.count, failed.listed) == (5, 3)
 
         # Every linked count opens exactly the emails it counts: Family 31's

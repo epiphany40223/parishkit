@@ -220,32 +220,49 @@ class SendRow:
             return None
         return max(0, round((self.last_at - self.first_at).total_seconds() / 60))
 
+    def _outcome(self, label, state, count):
+        """One ``Outcome``: ``count`` Families in ``state``, with its filter."""
+        return Outcome(
+            label,
+            state,
+            count,
+            self.emails.get(state, 0),
+            urlencode({"send": self.listed.key.token, "state": state}),
+            f"{self.listed.name}, {self.listed.mode_label}",
+        )
+
+    @property
+    def sent(self):
+        """The send's delivered emails."""
+        return self._outcome(_("sent"), "delivered", self.send.counts.sent)
+
+    @property
+    def failed(self):
+        """The send's failures, some of which may have no email to list."""
+        return self._outcome(_("failed"), "permanent_failure", self.send.counts.failed)
+
+    @property
+    def not_sure(self):
+        """The send's emails the mail service did not confirm either way."""
+        return self._outcome(
+            _("uncertain"), "delivery_unknown", self.send.counts.uncertain
+        )
+
+    @property
+    def cancelled(self):
+        """The send's emails that were prepared and then cancelled.
+
+        For example by a schedule change; those Families are also among
+        Couldn't be emailed or Not needed, so this is not part of the total.
+        """
+        return self._outcome(
+            _("cancelled"), "cancelled", self.emails.get("cancelled", 0)
+        )
+
     @property
     def outcomes(self):
-        """Sent, failed, uncertain and cancelled, each with its Outgoing mail filter.
-
-        Cancelled counts the send's emails that were prepared and then
-        cancelled (for example by a schedule change); those Families are
-        also among Couldn't be emailed or Not needed.
-        """
-        counts = self.send.counts
-        send = f"{self.listed.name}, {self.listed.mode_label}"
-        return [
-            Outcome(
-                label,
-                state,
-                count,
-                self.emails.get(state, 0),
-                urlencode({"send": self.listed.key.token, "state": state}),
-                send,
-            )
-            for label, state, count in (
-                (_("sent"), "delivered", counts.sent),
-                (_("failed"), "permanent_failure", counts.failed),
-                (_("uncertain"), "delivery_unknown", counts.uncertain),
-                (_("cancelled"), "cancelled", self.emails.get("cancelled", 0)),
-            )
-        ]
+        """Sent, failed, not sure and cancelled, for callers that check them all."""
+        return (self.sent, self.failed, self.not_sure, self.cancelled)
 
 
 def reminder_numbers(cursor, campaign_id):
