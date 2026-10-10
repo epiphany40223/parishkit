@@ -225,15 +225,6 @@ def _preview(request, service, principal):
                 "values": values,
             }
         )
-    duids = {row["duid"] for row in changing}
-    assignments = [
-        row["values"]
-        for row in configuration.active_configuration.canonical_document["sections"][
-            "login_rules"
-        ]
-        if row["values"].get("kind") == "assignment"
-        and row["values"]["ministry_duid"] in duids
-    ]
     token = (
         sign_preview(
             actor=principal,
@@ -257,8 +248,6 @@ def _preview(request, service, principal):
             "unchanged": [row for row in rows if row["active"] == active],
             "new_active": active,
             "preview": token,
-            "seeded_count": sum(row["source"] == "chair-seed" for row in assignments),
-            "manual_count": sum(row["source"] == "manual" for row in assignments),
         },
     )
 

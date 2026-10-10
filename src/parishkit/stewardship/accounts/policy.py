@@ -65,17 +65,6 @@ class Principal:
             raise ValueError("Family and administration principals are separate.")
 
 
-def assignment_in_force(record, active_seeded):
-    """Whether an assignment record is current under the retired assignment model.
-
-    A manual assignment always is; a Chairperson-seeded one only while the
-    promoted source confirms it. Since Ministry leaders come from ParishSoft
-    roles (#922) no assignment grants any scope; only the remaining review
-    pages still describe their records with this.
-    """
-    return record["values"]["source"] == "manual" or record["id"] in active_seeded
-
-
 def resolve_roles(email, hosted_domain, records, led=frozenset()):
     """The roles and Ministry scope one address holds now.
 
@@ -232,26 +221,3 @@ def current_principal(store, user_id):
         email, user.hosted_domain, records, leader_scope(user.pk)
     )
     return Principal(user.pk, roles, ministries)
-
-
-def confirmed_seeded(configuration, *, email=None):
-    """Chairperson-seeded assignment identities the promoted source confirms now.
-
-    The one definition of "confirmed", shared by every sign-in and by the
-    Administrator's review of portal users, so that page can never show a
-    Ministry scope a sign-in would not receive. All addresses when `email` is
-    None. A missing promoted-source overlay is not proof of a current
-    Chairperson.
-    """
-    from .policy_models import AssignmentOverlay, MinistryAssignment
-
-    seeded = MinistryAssignment.objects.filter(
-        configuration=configuration, source="chair-seed"
-    )
-    if email is not None:
-        seeded = seeded.filter(email=email)
-    active = AssignmentOverlay.objects.filter(
-        assignment_record_id__in=seeded.values_list("record_id", flat=True),
-        active=True,
-    ).values_list("assignment_record_id", flat=True)
-    return frozenset(str(identifier) for identifier in active)

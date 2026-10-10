@@ -17,11 +17,10 @@ rules show their roles, how many recorded Google accounts the rule really
 authorizes, the latest successful sign-in by any recorded account at that
 domain, and warnings. Exact-address
 rules show the rule's origin, the configured roles with each grant's origin, the
-roles current policy grants now, Ministry assignments with their source and
-whether the parish source currently confirms them, the last successful sign-in
-and warnings. An empty role set is labelled **Explicit deny**. A third table
-appears only when an assignment belongs to someone with no exact rule, who
-relies on a domain rule, and says whether it is in effect now.
+roles current policy grants now, the last successful sign-in and warnings. An
+empty role set is labelled **Explicit deny**. (Ministry assignments and their
+table were shown here until #922 made Ministry leaders come from ParishSoft
+roles.)
 
 This slice reviewed and changed nothing. Role edits, rule creation and removal
 followed as the

@@ -23,11 +23,6 @@ from .role_grants import seed_user
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
-# What a Ministry assignment says it does now (#922).
-RETIRED = (
-    "Ministry assignments no longer grant anything: a Ministry leader sees "
-    "the Ministries of their ParishSoft Ministry roles."
-)
 URL = "/admin/users"
 
 
@@ -124,21 +119,19 @@ def test_administrator_reviews_rules_provenance_and_warnings(auth_service, googl
     denied = row(body, "blocked@example.org")
     assert "Explicit deny" in denied and "None on record" in denied
     assert "data-local-instant" not in denied
-    assert "Ministry DUID 9" in row(body, "leader@example.org")
-    # A rule's Ministry leader role is held; assignments give no Ministry
-    # now (#922), and say so.
-    assert RETIRED in row(body, "leader@example.org")
+    # A rule's Ministry leader role is held (2026-10-10); Ministry
+    # assignments are not shown at all (#922).
+    assert "<td>Ministry leader</td>" in row(body, "leader@example.org")
     idle = row(body, "idle@example.org")
-    assert RETIRED not in idle and "<td>Ministry leader</td>" in idle
+    assert "<td>Ministry leader</td>" in idle
     assert "is disabled and cannot sign in" in idle
-    helper = row(body, "helper@workspace.example")
-    assert "Ministry DUID 4" in helper and RETIRED in helper
+    assert "helper@workspace.example" not in body and "Ministry DUID" not in body
     assert 'href="/admin/users"' in body
     contexts = views()
     # One audit row for the one successful view, and none for the refused query
-    # string or POST. It counts every row of all three tables, naming none.
-    listed = sum(record["values"]["kind"] != "assignment" for record in rules) + 1
-    assert contexts == [{"outcome": "succeeded", "count": listed}] and listed >= 7
+    # string or POST. It counts every row of both tables, naming none.
+    listed = sum(record["values"]["kind"] != "assignment" for record in rules)
+    assert contexts == [{"outcome": "succeeded", "count": listed}] and listed >= 6
     assert "@" not in str(contexts) and "example" not in str(contexts)
 
 
@@ -198,8 +191,8 @@ def test_chairperson_seeds_on_the_page_match_a_sign_in(seeded_service, google):
         assert granted[email].roles == {"ministry_leader"}
         assert not granted[email].ministries
         shown = row(body, email)
-        assert RETIRED in shown and "<td>Ministry leader</td>" in shown
-        assert f"Ministry DUID {duid} (Parish source Chairperson; suspended)" in shown
+        assert "<td>Ministry leader</td>" in shown
+        assert f"Ministry DUID {duid}" not in shown
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
@@ -230,17 +223,17 @@ def test_access_lost_during_the_request_discloses_and_audits_nothing(
     # Ordinary admission must succeed, so the later 403 is the recheck's alone.
     assert login.status_code == 302
     admin = PortalUser.objects.get(email="admin@example.org")
-    genuine, observed = user_views.confirmed_seeded, []
+    genuine, observed = user_views.policy_identities, []
 
     settings = connection.settings_dict
 
-    def disabling(configuration):
+    def disabling(records):
         """Observe as usual while another session disables the identity.
 
         The observation is a read-only snapshot, so the demotion arrives the
         way a real one does: committed by a separate connection.
         """
-        observed.append(configuration.pk)
+        observed.append(len(records))
         with psycopg.connect(
             host=settings["HOST"],
             port=settings["PORT"],
@@ -253,9 +246,9 @@ def test_access_lost_during_the_request_discloses_and_audits_nothing(
                 "version=version+1 WHERE id=%s",
                 [admin.pk],
             )
-        return genuine(configuration)
+        return genuine(records)
 
-    monkeypatch.setattr(user_views, "confirmed_seeded", disabling)
+    monkeypatch.setattr(user_views, "policy_identities", disabling)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response = browser.get(URL)
     # The observation ran, in its snapshot, before the identity was lost.
@@ -360,8 +353,8 @@ def test_long_tables_page_independently(auth_service, google):
     browser, _ = signed_in()
     body = browser.get(URL + "?addresses_size=25&addresses_page=2").content.decode()
     assert "Showing 26–31 of 31" in body
-    # The address navigator keeps the suggestion table's place.
-    assert 'type="hidden" name="suggestions_page" value="1"' in body
+    # The address navigator keeps the domain table's place.
+    assert 'type="hidden" name="domains_page" value="1"' in body
     assert "person29@example.org" in body and "person00@example.org" not in body
     assert browser.get(URL + "?addresses_size=7").status_code == 400
 
@@ -385,3 +378,18 @@ def test_every_table_sorts_on_the_server_and_keeps_the_others(auth_service, goog
     assert "addresses_sort=-email" in body
     assert browser.get(URL + "?addresses_sort=email%20desc").status_code == 400
     assert browser.get(URL + "?sort=email").status_code == 400
+
+
+def test_retired_assignment_and_chairperson_addresses_are_gone(auth_service, google):
+    """The Ministry assignment and Chairperson reviews are removed (#922).
+
+    Their old addresses answer 404 to an Administrator, with no redirect
+    (#864), whether a stale page links or posts to them.
+    """
+    browser, login = signed_in()
+    assert login.status_code == 302
+    token = browser.cookies["pk_admin_csrf"].value
+    for path in ("/admin/users/assignments", "/admin/users/suggestions"):
+        assert browser.get(path).status_code == 404
+        assert browser.post(path, {"csrfmiddlewaretoken": token}).status_code == 404
+    assert browser.get("/admin/users/reviews").status_code == 404

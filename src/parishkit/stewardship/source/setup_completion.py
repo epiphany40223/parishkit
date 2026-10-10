@@ -7,10 +7,6 @@ the normal task/source lock order. No provider call belongs in this transaction.
 
 from django.db import transaction
 
-from parishkit.stewardship.accounts.chair_reconciliation import (
-    reconcile_configuration_chairs,
-    reconcile_source_chairs,
-)
 from parishkit.stewardship.accounts.installation_lock import installation_lock
 from parishkit.stewardship.accounts.runtime_models import (
     ConfigurationActivation,
@@ -83,8 +79,6 @@ def complete_setup(execution, claim, snapshot_id, *, store, general, mac, public
                     correlation_id=execution.correlation_id,
                 )
                 if scope.window.campaign_id is None:
-                    reconcile_source_chairs(snapshot.pk, claim, campaign_id=None)
-                    reconcile_configuration_chairs(activation)
                     return True
                 reconcile_source_families(
                     snapshot.pk,
@@ -98,10 +92,6 @@ def complete_setup(execution, claim, snapshot_id, *, store, general, mac, public
                         campaign.pk == scope.attempt_id and campaign.state == "draft"
                     ),
                 )
-                reconcile_source_chairs(
-                    snapshot.pk, claim, campaign_id=scope.attempt_id
-                )
-                reconcile_configuration_chairs(activation)
                 return True
 
             snapshot = promote_snapshot(

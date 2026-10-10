@@ -214,27 +214,3 @@ def test_new_domain_rule_waits_for_a_domain_and_a_role(page, component_origin):
     assert review.is_disabled()
     visible(hint)
     assert not failures
-
-
-def test_chair_review_waits_for_a_usable_reason(page, component_origin):
-    """A blank reason, or one with an email address, keeps both Reviews unavailable."""
-    page.goto(component_origin + "/portal-users-review")
-    form = page.locator('form:has(input[name="reason"])')
-    reason = form.locator('input[name="reason"]')
-    buttons = [
-        form.get_by_role("button", name="Review restore as Administrator entry"),
-        form.get_by_role("button", name="Review removal"),
-    ]
-    hint = form.locator("[data-complete-hint]")
-    assert all(button.is_disabled() for button in buttons)
-    visible(hint)
-    assert all(described_by_hint(button, hint) for button in buttons)
-    reason.fill("   ")
-    assert all(button.is_disabled() for button in buttons)
-    reason.fill("Asked by chair@example.org")
-    assert all(button.is_disabled() for button in buttons)
-    reason.fill("The Ministry is active again")
-    assert all(button.is_enabled() for button in buttons)
-    hidden(hint)
-    restore(reason, "field => { field.value = ''; }")
-    assert all(button.is_disabled() for button in buttons)

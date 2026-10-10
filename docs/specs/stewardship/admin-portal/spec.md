@@ -3534,9 +3534,12 @@ Ministry pages to show, never the generic sign-in denial. The
 [data specification](../data/spec.md#ministry-leaders) defines the rule. A
 change in ParishSoft reaches the portal with the next full refresh.
 
-Ministry assignments and the Chairperson suggestion, confirmation and review
-flows remain from the earlier model until they are removed (#922). They
-grant no Ministry: the Portal users page says so beside each assignment.
+The Ministry assignments editor and the Chairperson suggestion, confirmation
+and review pages are removed (#922), and nothing reconciles Chairperson-seeded
+assignments at a refresh or a configuration change. Older configurations keep
+their assignment records and seeded grants, unread and not shown, and their
+tables stay until a later release drops them. A sign-in rule's roles,
+Ministry leader included, still decide who signs in, whatever their origin.
 
 ### ParishSoft Ministry leaders without a user
 

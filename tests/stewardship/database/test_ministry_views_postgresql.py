@@ -22,8 +22,10 @@ from .auth_builders import signed_in
 from .campaign_builders import change
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
-from .test_current_chair_postgresql import publish
-from .test_source_families_postgresql import source_singletons  # noqa: F401
+from .test_source_families_postgresql import (
+    publish,
+    source_singletons,  # noqa: F401
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = "/admin/parish/ministries/"

@@ -1911,8 +1911,6 @@ def component_origin():
                 "unchanged": [],
                 "new_active": False,
                 "preview": "synthetic-signed-intent",
-                "seeded_count": 2,
-                "manual_count": 1,
             },
         ),
         (
