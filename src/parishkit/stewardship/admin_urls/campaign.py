@@ -15,6 +15,7 @@ from django.urls import path
 from ..accounts import (
     activation_views,
     artwork_views,
+    campaign_create_views,
     campaign_family_test_views,
     campaign_mail_views,
     campaign_views,
@@ -42,6 +43,12 @@ patterns = [
     # The group root opens the first entry the viewer may open now.
     path("campaign/", group_root("campaign"), name="campaign_root"),
     _page("campaign/settings/", campaign_views.campaign_settings, "campaign_settings"),
+    # The deployment's first campaign (#142); it names no campaign to wrap.
+    path(
+        "campaign/first/",
+        campaign_create_views.campaign_create,
+        name="campaign_create",
+    ),
     _page("campaign/copy/", clone_views.campaign_clone, "campaign_clone"),
     _page("campaign/content/", content_views.content_settings, "content_catalog"),
     # History before the editor: "history/<revision>/" also has two segments.

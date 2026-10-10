@@ -10,7 +10,8 @@
     the change's notes, and Apply, which posts the signed preview. Editing
     the form again withdraws it in place (data-review-of; ui-v1.js greys it
     out, removes Apply and puts its note in the data-review-note line), so
-    Apply can only ever apply what is shown;
+    Apply can only ever apply what is shown. A review may name its own
+    Apply button (apply_label: Create the campaign's "Create the campaign");
   - the status of the change just applied (receipt), polled live from
     Change status (status_url) until it settles.
 {% endcomment %}{% if review_errors %}{% include 'stewardship/components/errors.html' with errors=review_errors %}{% endif %}
@@ -20,9 +21,9 @@
 {% for change in review.changes %}<section><h3>{{ change.label }}</h3>
 <p>{% translate "Current:" %} {{ change.before|default_if_none:'—'|linebreaksbr }}</p>
 <p>{% translate "Proposed:" %} {{ change.after|default_if_none:'—'|linebreaksbr }}</p></section>{% endfor %}
-<p data-review-note>{% translate "Nothing is saved until you choose Apply changes." %}</p>
+<p data-review-note>{% if review.apply_label %}{% blocktranslate with label=review.apply_label %}Nothing is saved until you choose {{ label }}.{% endblocktranslate %}{% else %}{% translate "Nothing is saved until you choose Apply changes." %}{% endif %}</p>
 <form method="post" action="#settings-review" data-in-place data-in-place-message="{% translate 'Change sent.' %}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ review.preview }}">
-{% button type="submit" %}{% translate "Apply changes" %}{% endbutton %}</form>
+{% button type="submit" %}{% if review.apply_label %}{{ review.apply_label }}{% else %}{% translate "Apply changes" %}{% endif %}{% endbutton %}</form>
 </section>{% elif receipt %}<section class="panel" aria-labelledby="settings-status-title">
 <h2 id="settings-status-title" tabindex="-1" data-in-place-focus>{% translate "Change status" %}</h2>
 {% include 'stewardship/configuration-request-status.html' %}

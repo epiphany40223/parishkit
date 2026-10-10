@@ -20,6 +20,10 @@ from parishkit.stewardship.accounts import setup_help
 from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoForm
+from parishkit.stewardship.accounts.campaign_create_views import (
+    CREATES_TESTING_DRAFT,
+    DEFAULT_TEXT,
+)
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
 from parishkit.stewardship.accounts.campaign_views import REMOVES_SHARE_OPTIONS
@@ -1858,6 +1862,57 @@ def component_origin():
                     setup_help.ADMIN_CAMPAIGN,
                     replace=True,
                 ),
+            },
+        ),
+        # Create the campaign (#142): the first campaign's form and its review in place.
+        (
+            "/campaign-create",
+            "campaign-create",
+            {
+                "form": setup_help.apply(
+                    CampaignForm(
+                        initial={
+                            "timezone": "America/New_York",
+                            "census": True,
+                            "additional_information": True,
+                            "base_digest": "a" * 64,
+                        },
+                        previous={},
+                        ministries=[("4", "Community outreach"), ("5", "Choir")],
+                        funds=[("9", "Offertory")],
+                    ),
+                    setup_help.ADMIN_CAMPAIGN,
+                    replace=True,
+                ),
+            },
+        ),
+        (
+            "/campaign-create-preview",
+            "campaign-create",
+            {
+                "form": setup_help.apply(
+                    CampaignForm(
+                        initial={
+                            "timezone": "America/New_York",
+                            "census": True,
+                            "additional_information": True,
+                            "base_digest": "a" * 64,
+                        },
+                        previous={},
+                        ministries=[("4", "Community outreach"), ("5", "Choir")],
+                        funds=[("9", "Offertory")],
+                    ),
+                    setup_help.ADMIN_CAMPAIGN,
+                    replace=True,
+                ),
+                "review": {
+                    "preview": "synthetic-signed-intent",
+                    "changes": [
+                        {"label": "Campaign name", "before": None, "after": "Annual"}
+                    ],
+                    "notes": [CREATES_TESTING_DRAFT, DEFAULT_TEXT],
+                    "apply_label": "Create the campaign",
+                },
             },
         ),
         # Campaign settings with its review shown in place (#532).

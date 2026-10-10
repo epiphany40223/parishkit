@@ -1,0 +1,15 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% block title %}{% translate "Create the campaign" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
+{% block content %}
+<h1>{% translate "Create the campaign" %}</h1>
+{% aboutpage "campaign-create" %}<p>{% translate "This creates the campaign as a draft in Testing mode. Families see nothing and no email is sent until you go live." %}</p>
+<p>{% translate "Every page and email starts with built-in default text. After the campaign is created you can change its pages and emails, share options, mail schedules and images, then check Go-live readiness." %}</p>
+<p>{% translate "The campaign uses the parish time zone; you can change it on Campaign settings while the campaign is a draft. Its Families and Family codes are added by the next full ParishSoft refresh." %}</p>{% endaboutpage %}
+{% comment %}Review and create happen in place, below the form, as on Campaign settings (#532).{% endcomment %}<form id="settings-form" method="post" action="#settings-review" class="panel" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-campaign-form data-new-campaign>
+{% csrf_token %}<input type="hidden" name="action" value="preview">
+{% include 'stewardship/campaign-fields.html' %}
+{% button type="submit" %}{% translate "Review changes" %}{% endbutton %}
+</form>
+<div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div>
+{% endblock %}

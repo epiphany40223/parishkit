@@ -110,6 +110,11 @@ PAGES = {
     "index": Page(None, _("Home")),
     # Campaign
     "campaign_settings": Page("campaign", _("Campaign settings")),
+    # Create the campaign (#142) is offered from Home only while there is no
+    # campaign, so its trail runs from Home, outside the Campaign setup group;
+    # once a campaign exists it refuses, so a change's status page names it
+    # but never links it.
+    "campaign_create": Page(None, _("Create the campaign"), "index", linkable=False),
     # Copy campaign is refused until the single-campaign change (#145), so a
     # change's status page names it but never links it. (New campaign is
     # retired outright; its old address is a non-page redirect below.)

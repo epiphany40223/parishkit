@@ -120,3 +120,21 @@ def test_gone_refusal_is_still_a_permission_error():
     """A handler that does not know the 410 still refuses, never serves."""
     assert isinstance(single_campaign.not_current_refused(), PermissionError)
     assert isinstance(single_campaign.copy_refused(), PermissionError)
+
+
+ADD = {"operation": "add", "section": "campaigns", "values": {}}
+
+
+def test_the_first_campaign_patch_adds_exactly_one_campaign():
+    """Create the campaign (#142) may add one campaign record, never two or none.
+
+    Whether a first campaign may be created at all is checked separately,
+    under the work lock (``first_campaign_admitted``).
+    """
+    single_campaign.refuse_campaign_creation(
+        [ADD | {"id": "x"}, {"operation": "add", "section": "content", "id": "y"}],
+        first=True,
+    )
+    for patch in ([], [ADD | {"id": "x"}, ADD | {"id": "y"}]):
+        with pytest.raises(UserFacingGone):
+            single_campaign.refuse_campaign_creation(patch, first=True)

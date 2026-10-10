@@ -82,6 +82,15 @@ def summary(actor, configuration, now, *, home=False):
         # open background task pages; others see the notice alone.
         "can_view_task": allows(actor, Capability.BACKGROUND_WORK),
     }
+    if campaign is None and allows(actor, Capability.CONFIGURE):
+        # Just after system setup there is no campaign yet; Home's next step
+        # for an Administrator is Create the campaign (#142). It is offered
+        # only while the deployment has never had one.
+        from parishkit.stewardship.campaigns.single_campaign import (
+            first_campaign_admitted,
+        )
+
+        result["can_create_campaign"] = first_campaign_admitted(configuration)
     if campaign is not None:
         result["next_mail"] = (
             ScheduleRevision.objects.filter(
