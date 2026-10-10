@@ -26,9 +26,9 @@
 {% if ministries_live %}<section class="panel" id="ministry-selections"><h2>{% translate "Ministry selections" %}</h2>
 <p>{% translate "This campaign is live, but its Ministries can still be added or removed while it is open. Answers Families already gave are never deleted." %}</p>
 <p>{% url 'admin:campaign_ministries' as button_href %}{% button variant="primary" href=button_href %}{% translate "Change Campaign Ministries" %}{% endbutton %}</p></section>{% endif %}
-{% if leader_form %}{% comment %}A live campaign's Ministry leader roles stay editable (#922); review and apply happen in place, below the form (#532).{% endcomment %}<section class="panel" id="leader-roles" aria-labelledby="leader-roles-title"><h2 id="leader-roles-title">{% translate "Ministry leader roles" %}</h2>
+{% if leader_form %}{% comment %}A live campaign's Ministry leader roles stay editable (#922); review and apply happen in place, below the form (#532). Review changes is available only once a role changes, as on the other settings forms (data-require-change, #921).{% endcomment %}<section class="panel" id="leader-roles" aria-labelledby="leader-roles-title"><h2 id="leader-roles-title">{% translate "Ministry leader roles" %}</h2>
 <p>{% translate "This campaign is live, but you can still change which ParishSoft Ministry roles make someone a leader of that Ministry." %}</p>
-<form id="settings-form" method="post" action="#settings-review" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}">
+<form id="settings-form" method="post" action="#settings-review" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-require-change="base_digest">
 {% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="editor" value="leader_roles">
 {{ leader_form.non_field_errors }}{{ leader_form.base_digest }}{{ leader_form.base_digest.errors }}
 <div>{{ leader_form.ministry_leader_roles.as_field_group }}</div>
