@@ -548,8 +548,18 @@ form and `export family-timeline`; proven by
 page and the command making the same record and event, the worker's file
 with the code, the stream equal to the page's download, Staff denied, the
 capture's SQL refusals), the schema baseline and upgrade parity suites and
-the timeline browser test. 8h (the in-memory downloads and the exact
-exports) follows.
+the timeline browser test. 8h adds the exact daily exports
+(`export exact create`, `export exact status`, `export exact cancel`,
+`export exact retry`) through the page's own exact-export services; proven
+by `tests/stewardship/test_admin_exact_exports.py` (the documents, when a
+watch stops, the catalog), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_exact_export_cli_postgresql.py`
+(create, repeat and the page's form with the same key, a bound key, retry
+by key, the real calculation and render, a read-only watch to the end, the
+handed-off file, cancel before handoff and after publication, unknown
+requests). The in-memory downloads (talents, response lists) follow when
+PR #752 lands.
 A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
 the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,

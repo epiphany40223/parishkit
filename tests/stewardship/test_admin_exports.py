@@ -171,10 +171,20 @@ def test_every_export_command_has_a_golden_document():
         "export directory",
         "export postal",
         "export family-timeline",
+        "export exact create",
+        "export exact status",
+        "export exact cancel",
+        "export exact retry",
     }
+    from parishkit.stewardship import admin_exact_exports
+
     models = {
         "export status": admin_exports.ExportStatus,
         "export download": admin_exports.ExportDownload,
+        "export exact status": admin_exact_exports.ExactStatus,
+        "export exact create": admin_exact_exports.ExactChange,
+        "export exact cancel": admin_exact_exports.ExactChange,
+        "export exact retry": admin_exact_exports.ExactChange,
     }
     for name in exports:
         model = models.get(name, admin_exports.ExportChange)

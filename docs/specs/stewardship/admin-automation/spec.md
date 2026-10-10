@@ -1997,8 +1997,8 @@ file is regenerated from the retained capture.
 | `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0044); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `talents_export` | `export talents` (PR 8h, with #752's audit fields) |
 | `census_changes`, `census_changes_export` | `report census`, counts; Family-level rows only as `export census` (PR 8h) |
-| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b) |
-| `report_exact_create` | `export exact …` (PR 8h) |
+| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
+| `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
 | `weekly_digest_snapshot`, `weekly_digest_item` | `digest weekly SNAPSHOT_ID`: each item's identifier and states; an item's text stays on the page (PR 8d) |
 | `weekly_digest_manual` | `digest weekly-request` (PR 8d) |
@@ -2112,9 +2112,23 @@ id, the opaque id in the page's address; a Family of another campaign is
 `not_available`. The file can hold the Family's code, so it is
 [fresh-gated](#fresh-gated-actions-from-the-command-line), as on its page:
 it asks at the prompt, then calls `require_fresh` in the export lock. The
-file is fetched with `export fetch`. The in-memory downloads (talents and
-response lists, after #752's audit fields) and the exact daily exports
-follow in PR 8h.
+file is fetched with `export fetch`.
+
+The exact daily export commands (PR 8h) are the Participation page's
+exact-export form and its status page, through the page's own services
+(`reports.exact_services`): `export exact create` freezes the current
+campaign's inputs (`--scope`, `--format`, `--timezone`, keyed), `export
+exact status` is the status page's passive read with no view event, as the
+page records none, `--watch` following it until the calculation has handed
+off and its file settled (or it failed or was cancelled), and `export exact
+cancel` and `export exact retry` are its buttons, before or after the
+handoff, as the page delegates them. Each change admits as the page's form
+post does and runs in the export lifecycle's command scope, recording the
+services' own events and, when it made the change,
+`admin_cmd_export_exact_<verb>`. Once handed off, `export exact status`
+names the `export_id` that `export fetch` saves. The in-memory downloads
+(talents and response lists, after #752's audit fields) follow in PR 8h's
+second part.
 
 The export lifecycle commands work on any report export the Administrator
 may see, through the functions the export pages use
@@ -2666,7 +2680,8 @@ exactly the commands that exist.
   **PR 8f:** the Family directory's exports (`export directory`, `export
   postal`). **PR 8g:** the one-Family timeline export (`export
   family-timeline`, with the page's export form and migration 0044).
-  **PR 8h:** the rest of the Family-level exports.
+  **PR 8h:** the exact daily exports (`export exact …`), then the
+  in-memory downloads (talents and response lists) after #752.
 - **PR 9, operations,** in three parts. **PR 9a:** task retries. **PR 9b:**
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.
