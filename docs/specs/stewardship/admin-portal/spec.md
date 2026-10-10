@@ -5146,9 +5146,15 @@ group is a closed list of types kept in one place, `audit.log_rows.ACTIVITY_TYPE
 which `pk-admin logs --activity` shares. Every member is a type the system
 writes: an audit `Action`, a directly written audit type, a trigger-built type
 whose closed states `audit.log_descriptions.BUILT_TYPES` lists, or an operational
-entry on the log-writer manifest. A unit test keeps every member in that set,
-and a PostgreSQL test compares each `BUILT_TYPES` list with the installed CHECK
-constraint or guard function.
+entry on the log-writer manifest. Every written type is either in a group or
+in `audit.log_rows.UNGROUPED`, listed under the reason it is left out (for
+example page views, exports, Family portal activity, the campaign lifecycle
+and Production steps, and background-work health shared by every kind of
+work). A unit test requires the groups and `UNGROUPED` together to be exactly
+the written types, so a newly written type fails until it is placed, and a
+PostgreSQL test compares each `BUILT_TYPES` list with the installed CHECK
+constraints or guard functions closing it (`campaign_*` both the delivery
+controls and the lifecycle transitions; `production_*` the Production steps).
 
 - **Configuration changes** (`configuration`, audit records only): settings
   requests (`configuration_requested` and `config_request_*` from staged
@@ -5158,8 +5164,11 @@ constraint or guard function.
   and live campaign changes (`schedule_selected`, `admin_cmd_schedule_confirm`,
   `admin_cmd_config_request_cancel`, `campaign_ministries_requested`,
   `campaign_end_date_requested`), portal user roles (`roles_applied`), hosted
-  files (`hosted_file_*`) and stored key replacements
-  (`secret_replacement_requested`, `secret_request_*`).
+  files (`hosted_file_*`), stored key replacements
+  (`secret_replacement_requested`, `secret_request_*`,
+  `credential_consumer_acknowledged`) and initial setup, which is
+  configuration too (`setup_started`, `setup_credential_staged`,
+  `setup_credential_scrubbed`, `setup_frozen`, `setup_expired`).
 - **Family mail** (`family_mail`): each outgoing email's steps (`outbox_*`:
   created, prepared, held, sent, accepted, retried, refused, delivery unknown,
   cancelled, resend authorized), the Administrator's resolutions
@@ -5169,7 +5178,8 @@ constraint or guard function.
   (`submission_receipt_skipped`), delivery pauses and the first live send
   (`campaign_pause`, `campaign_resume`, `campaign_first_delivery`), test
   emails (`family_mail_test_*`, `campaign_mail_*`, `admin_cmd_test_sample`,
-  `admin_cmd_test_families`) and the operational `mail_provider_failed`. An
+  `admin_cmd_test_families`) and the operational `delivery_unknown` and
+  `mail_provider_failed`. An
   `outbox_*` record does not say whom its email was for, so staff report and
   alert emails are listed too; the page's help says so.
 - **ParishSoft refreshes** (`parishsoft`): full refreshes and quick updates
@@ -5184,7 +5194,9 @@ constraint or guard function.
 
 Time limits are not in ParishSoft refreshes: `task_timed_out` and the other
 timeout types are shared by every kind of background work, so a type list
-cannot pick a refresh's; the type filter lists them. Types written only to
+cannot pick a refresh's; the type filter lists them. For the same reason
+`admin_cmd_task_retry` is in no group: its record names the automation session,
+not the task it retried. Types written only to
 the process log, such as `go_live_refresh_held` and
 `refresh_lead_window_conflict`, never reach this page and are in no group.
 

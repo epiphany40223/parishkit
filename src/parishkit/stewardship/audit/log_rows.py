@@ -118,7 +118,9 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 # list kept only here (``pk-admin logs --activity`` and the page take its
 # keys), and every member is a type something writes: an ``Action``, a
 # directly written audit type, a trigger-built type from ``BUILT_TYPES`` or an
-# operational entry on the writer manifest (test_log_rows guards it).
+# operational entry on the writer manifest (test_log_rows guards it). Every
+# written type is either in a group or in ``UNGROUPED`` below with its
+# reason, and a test fails on a new one until it is placed.
 #
 # - Sign-in activity: every recorded Admin portal sign-in, re-confirmation
 #   and session ending (including a session replaced because the person's
@@ -129,7 +131,9 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 # - Configuration changes: settings requests through Review and Apply to
 #   applied, refused (``config_request_failed``) or cancelled, and what an
 #   applied change did to access; mail schedules and live campaign changes;
-#   portal user roles; hosted files; and stored key replacements.
+#   portal user roles; hosted files; stored key replacements (and each
+#   process acknowledging the new key); and initial setup, from starting it
+#   and entering its credentials to locking it or letting it expire.
 # - Family mail: each outgoing email's steps (sent, retried, refused,
 #   delivery unknown), the Administrator's resolutions, cleared refused
 #   addresses, delivery pauses, test emails and the mail provider failing.
@@ -168,9 +172,16 @@ ACTIVITY_TYPES = {
         "hosted_file_deleted",
         "secret_replacement_requested",
         *built_types("secret_request_"),
+        "credential_consumer_acknowledged",
+        "setup_started",
+        "setup_credential_staged",
+        "setup_credential_scrubbed",
+        "setup_frozen",
+        "setup_expired",
     ),
     "family_mail": (
         *built_types("outbox_"),
+        "delivery_unknown",
         *built_types("delivery_resolution_"),
         *built_types("delivery_held_"),
         "delivery_bulk_resolved",
@@ -204,6 +215,184 @@ ACTIVITY_TYPES = {
         "source_refresh_held",
     ),
 }
+# Written types no Activity group lists, under the reason each is left
+# out. A reader still finds them with the type search. Together with the
+# groups these are exactly the written types (test_log_rows), so a newly
+# written type fails until it joins a group or is listed here. Not written
+# to either log, so in neither: ``authentication_limits_weakened`` goes only
+# to the process log at startup (``AuthenticationPolicy.warn_if_weaker``).
+UNGROUPED_REASONS = {
+    "Opening a page or report reads; it changes nothing": (
+        "background_viewed",
+        "census_changes_viewed",
+        "daily_digest_viewed",
+        "dashboard_viewed",
+        "delivery_viewed",
+        "family_codes_viewed",
+        "family_directory_viewed",
+        "family_presence_viewed",
+        "family_timeline_viewed",
+        "financial_report_viewed",
+        "information_viewed",
+        "ministry_followup_viewed",
+        "ministry_report_viewed",
+        "participation_viewed",
+        "portal_users_viewed",
+        "postal_outreach_viewed",
+        "response_dashboard_viewed",
+        "response_data_quality_list_viewed",
+        "response_not_opened_list_viewed",
+        "response_repeat_list_viewed",
+        "response_started_list_viewed",
+        "response_submitted_list_viewed",
+        "source_form_viewed",
+        "system_health_viewed",
+        "system_logs_viewed",
+        "talents_report_viewed",
+        "weekly_digest_viewed",
+    ),
+    "Requesting, making or downloading a report or export": (
+        *(
+            "admin_cmd_export_" + verb
+            for verb in (
+                "cancel",
+                "create",
+                "directory",
+                "family_test_names",
+                "financial",
+                "information",
+                "ministry",
+                "ministry_packet",
+                "postal",
+                "regenerate",
+                "retry",
+            )
+        ),
+        "admin_cmd_digest_weekly_request",
+        "weekly_manual_requested",
+        "export_requested",
+        "export_cancelled",
+        "export_downloaded",
+        "census_changes_exported",
+        "response_data_quality_list_exported",
+        "response_not_opened_list_exported",
+        "response_repeat_list_exported",
+        "response_started_list_exported",
+        "response_submitted_list_exported",
+        "talents_report_exported",
+        "system_logs_exported",
+    ),
+    "Staff follow-up on Family requests, not a setting": (
+        "chair_review_decided",
+        "information_updated",
+        "ministry_request_updated",
+    ),
+    "Families' own access and responses, and closing their portal": (
+        "family_login",
+        "family_logout",
+        "family_session_ended",
+        "family_submission",
+        "family_link_invalid",
+        "family_link_rotated",
+        "family_link_population_extended",
+        "family_tokens_preparing",
+        "family_tokens_ready",
+        "family_tokens_cancelled",
+        "family_maintenance_started",
+        "family_maintenance_ended",
+        *built_types("campaign_", "first_submission"),
+    ),
+    "The campaign's lifecycle and going live; no group covers them yet": (
+        *built_types(
+            "campaign_",
+            "activate",
+            "start",
+            "close",
+            "withdraw",
+            "reopen",
+            "archive",
+            "unarchive",
+        ),
+        "campaign_boundary_completed",
+        "campaign_boundary_skipped",
+        *built_types("production_"),
+        "production_cancel_requested",
+        "runtime_transition",
+        "rehearsal_gate_released",
+        "rehearsal_invalidated",
+        "catchup_failed",
+    ),
+    "Reviewing a restore from backup, an operator's recovery": (
+        "restore_review_started",
+        "restore_review_released",
+    ),
+    "Command-line automation sessions; each command records its own type": (
+        "automation_session_approved",
+        "automation_session_refused",
+        "automation_session_ended",
+        "automation_notices_acknowledged",
+        "automation_fresh_gate",
+    ),
+    "Acknowledging a notice or confirming another, separately recorded action": (
+        "security_event_acknowledged",
+        "critical_events_acknowledged",
+        "credential_result_dismissed",
+        "destructive_confirmation",
+    ),
+    # A stored key replacement (Configuration changes) changes a provider
+    # credential through the portal; these rotate the installation's own
+    # encryption keys on the host.
+    "Rotating the installation's encryption keys on the host": (
+        "credential_key_activated",
+        "credential_keys_retired",
+        "credential_cipher_batch_migrated",
+    ),
+    "Recovering the service: sign-in limiting, or Administrator access": (
+        "limiter_recovered",
+        "operator_admin_recovered",
+    ),
+    "One-time data upgrades": (
+        "family_mac_backfilled",
+        "family_mac_migration_verified",
+        "family_engagement_backfilled",
+        "family_engagement_failed",
+    ),
+    "Retention and verification housekeeping, not a ParishSoft refresh": (
+        "facts_compacted",
+        "facts_verified",
+        "source_compacted",
+        "source_retention_skipped",
+    ),
+    # Its record names only the automation session, never which task it
+    # retried (a refresh, a preparation or an export clean-up), so no group
+    # can claim it.
+    "Retries any failed background task without saying which": (
+        "admin_cmd_task_retry",
+    ),
+    "Shared by every kind of background work; a type cannot say which": (
+        "task_failed",
+        "task_timed_out",
+        "task_lease_lost",
+        "helper_timed_out",
+        "work_budget_reached",
+        "due_work_lag",
+        "campaign_boundary_lag",
+    ),
+    "Service health and command-line failures, shown on System health": (
+        "admin_command_failed",
+        "configuration_digest_mismatch",
+        "fact_drift",
+        "incident_recovered",
+        "web_unhealthy",
+    ),
+    "Found while using already-loaded ParishSoft data, not in a refresh": (
+        "source_member_unusable",
+    ),
+    "In the Action vocabulary, but nothing records it today": (
+        "privileged_reauthentication",
+    ),
+}
+UNGROUPED = frozenset().union(*UNGROUPED_REASONS.values())
 # The groups that hold operational entries as well as audit records. The
 # others are audit records only: while one is chosen the page greys the five
 # level boxes and waits for Audit record, and the read leaves operational

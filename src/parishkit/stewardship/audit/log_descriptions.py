@@ -714,15 +714,15 @@ PREFIXES = (
 
 # The closed second halves of the trigger-built types the System logs
 # Activity groups list (#953, ``log_rows.ACTIVITY_TYPES``): for each prefix,
-# where the database closes the list (a CHECK constraint, or the guard
-# function that refuses any other value) and the values it allows. A
-# PostgreSQL test compares each list with the installed database, so a group
-# can never name a type no trigger writes, or miss a new one. ``campaign_``
-# lists only the delivery controls; campaign transitions build that prefix
-# too, but no group lists them.
+# where the database closes the list (each CHECK constraint, or guard
+# function that refuses any other value, that a trigger building the prefix
+# reads) and the values they allow together. A PostgreSQL test compares each
+# list with the installed database, so a group can never name a type no
+# trigger writes, and a new one must be placed in a group or in
+# ``log_rows.UNGROUPED`` before the tests pass.
 BUILT_TYPES = {
     "config_request_": (
-        ("constraint", "config_checkpoint_installer_states"),
+        (("constraint", "config_checkpoint_installer_states"),),
         (
             "staged",
             "validating",
@@ -734,7 +734,7 @@ BUILT_TYPES = {
         ),
     ),
     "secret_request_": (
-        ("constraint", "secret_checkpoint_state"),
+        (("constraint", "secret_checkpoint_state"),),
         (
             "staged",
             "testing",
@@ -748,7 +748,7 @@ BUILT_TYPES = {
         ),
     ),
     "outbox_": (
-        ("constraint", "outbox_action"),
+        (("constraint", "outbox_action"),),
         (
             "created",
             "prepared",
@@ -766,20 +766,20 @@ BUILT_TYPES = {
         ),
     ),
     "delivery_resolution_": (
-        ("constraint", "delivery_resolution_action"),
+        (("constraint", "delivery_resolution_action"),),
         ("note", "accept", "resend", "retry_failed", "retry_unsent", "confirm_unsent"),
     ),
     # The decision a closed campaign's held-email command carries.
     "delivery_held_": (
-        ("function", "stewardship_delivery_control_guard_v1"),
+        (("function", "stewardship_delivery_control_guard_v1"),),
         ("release", "cancel", "clear"),
     ),
     "family_mail_test_": (
-        ("constraint", "family_mail_test_known_state"),
+        (("constraint", "family_mail_test_known_state"),),
         ("queued", "prepared", "cancelled", "failed"),
     ),
     "campaign_mail_": (
-        ("constraint", "campaign_mail_known_state"),
+        (("constraint", "campaign_mail_known_state"),),
         (
             "queued",
             "submitting",
@@ -789,9 +789,44 @@ BUILT_TYPES = {
             "cancelled",
         ),
     ),
+    # Two triggers build this prefix: the delivery controls (pause, resume
+    # and the first live email or response) and the campaign's lifecycle
+    # transitions (activate through unarchive).
     "campaign_": (
-        ("function", "stewardship_control_guard_v1"),
-        ("pause", "resume", "first_delivery", "first_submission"),
+        (
+            ("function", "stewardship_control_guard_v1"),
+            ("function", "stewardship_campaign_transition_v1"),
+        ),
+        (
+            "pause",
+            "resume",
+            "first_delivery",
+            "first_submission",
+            "activate",
+            "start",
+            "close",
+            "withdraw",
+            "reopen",
+            "archive",
+            "unarchive",
+        ),
+    ),
+    # Each step of a Production cleanup and activation request.
+    "production_": (
+        (("constraint", "production_known_action"),),
+        (
+            "created",
+            "start",
+            "recover",
+            "checkpoint",
+            "retry_later",
+            "fail",
+            "recovery_fail",
+            "retry_failed",
+            "complete",
+            "activate",
+            "cancel",
+        ),
     ),
 }
 

@@ -22,6 +22,8 @@ from parishkit.stewardship.audit.log_rows import (
     EVENTS,
     LEVELS,
     OPERATIONAL_ACTIVITIES,
+    UNGROUPED,
+    UNGROUPED_REASONS,
     LogQuery,
     NothingShown,
     audit_row,
@@ -475,13 +477,53 @@ def test_every_activity_member_is_written_and_explained():
     assert {"mail_provider_failed", "source_refresh_held"} <= operational
 
 
+def test_every_written_type_is_grouped_or_ungrouped_with_a_reason():
+    """The Activity groups (#953) and ``UNGROUPED`` together are exactly the
+    written types, without overlap: a newly written type fails here until
+    it joins a group or is listed, with its reason, as left out."""
+    audit, operational = _written_types()
+    grouped = [event for types in ACTIVITY_TYPES.values() for event in types]
+    listed = [event for types in UNGROUPED_REASONS.values() for event in types]
+    assert len(set(listed)) == len(listed)
+    assert set(listed) == UNGROUPED
+    assert not set(grouped) & UNGROUPED, sorted(set(grouped) & UNGROUPED)
+    written = audit | operational
+    assert not written - set(grouped) - UNGROUPED, sorted(
+        written - set(grouped) - UNGROUPED
+    )
+    assert not UNGROUPED - written, sorted(UNGROUPED - written)
+    assert all(reason.strip() for reason in UNGROUPED_REASONS)
+    # The campaign transitions and Production steps are covered by the
+    # closed lists, so their prefixes cannot hide a new action.
+    assert {"campaign_activate", "campaign_close", "campaign_reopen"} <= UNGROUPED
+    assert {"production_created", "production_activate"} <= UNGROUPED
+    # Not written to either log: startup process log only.
+    assert "authentication_limits_weakened" not in written
+
+
 @pytest.mark.parametrize(
     ("key", "members", "outsiders", "audit_only"),
     [
         (
             "configuration",
-            {"config_request_applied", "config_request_failed", "roles_applied"},
-            {"admin_login", "outbox_submit", "source_promoted"},
+            {
+                "config_request_applied",
+                "config_request_failed",
+                "roles_applied",
+                "setup_started",
+                "setup_frozen",
+                "setup_expired",
+                "setup_credential_staged",
+                "setup_credential_scrubbed",
+                "credential_consumer_acknowledged",
+            },
+            {
+                "admin_login",
+                "outbox_submit",
+                "source_promoted",
+                "credential_keys_retired",
+                "admin_cmd_task_retry",
+            },
             True,
         ),
         (
@@ -492,8 +534,14 @@ def test_every_activity_member_is_written_and_explained():
                 "delivery_resolution_resend",
                 "recipient_refusal_cleared",
                 "mail_provider_failed",
+                "delivery_unknown",
             },
-            {"config_request_applied", "source_refresh_held", "task_timed_out"},
+            {
+                "config_request_applied",
+                "source_refresh_held",
+                "task_timed_out",
+                "campaign_first_submission",
+            },
             False,
         ),
         (
@@ -526,4 +574,4 @@ def test_built_types_refuse_a_value_the_database_does_not_allow():
         "delivery_held_clear",
     )
     with pytest.raises(ValueError):
-        built_types("campaign_", "activate")
+        built_types("campaign_", "suspend")

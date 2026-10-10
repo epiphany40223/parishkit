@@ -42,24 +42,33 @@ def _function(name):
     return body
 
 
-@pytest.mark.parametrize("prefix", sorted(BUILT_TYPES))
-def test_each_built_list_is_the_databases(prefix):
-    """A constraint-closed list equals its constraint's values; a guard-
-    closed list is exactly the values the guard names and admits."""
-    (kind, name), values = BUILT_TYPES[prefix]
+def _allowed(kind, name):
+    """The values one closing source admits: a CHECK constraint's list, a
+    ``CASE NEW.action`` guard's WHEN arms, or a held-email command's
+    allowed decisions."""
     if kind == "constraint":
-        assert _constraint(name) == set(values)
-        return
+        return _constraint(name)
     body = _function(name)
-    if name == "stewardship_control_guard_v1":
-        # CASE NEW.action WHEN 'pause' ... WHEN 'first_delivery','first_submission'
-        # ... ELSE RAISE: the WHEN arms are the whole list.
-        arms = re.findall(r"WHEN ('[a-z_]+'(?:\s*,\s*'[a-z_]+')*) THEN", body)
-        found = {value for arm in arms for value in re.findall(r"'([a-z_]+)'", arm)}
-        assert found == set(values)
-    else:
+    if name == "stewardship_delivery_control_guard_v1":
         # A held-email command's decision outside this list is refused.
         listed = re.search(
             r"selection->>'decision'\s*,\s*''\s*\)\s*NOT IN \(([^)]*)\)", body
         )
-        assert set(re.findall(r"'([a-z_]+)'", listed.group(1))) == set(values)
+        return set(re.findall(r"'([a-z_]+)'", listed.group(1)))
+    # CASE NEW.action WHEN 'pause' ... WHEN 'first_delivery','first_submission'
+    # ... ELSE RAISE: the WHEN arms are the whole list.
+    arms = re.findall(r"WHEN ('[a-z_]+'(?:\s*,\s*'[a-z_]+')*) THEN", body)
+    return {value for arm in arms for value in re.findall(r"'([a-z_]+)'", arm)}
+
+
+@pytest.mark.parametrize("prefix", sorted(BUILT_TYPES))
+def test_each_built_list_is_the_databases(prefix):
+    """Each prefix's list is exactly what its closing sources admit
+    together, so a new state or action fails here until it is placed."""
+    sources, values = BUILT_TYPES[prefix]
+    found = set()
+    for kind, name in sources:
+        admitted = _allowed(kind, name)
+        assert admitted, (prefix, name)
+        found |= admitted
+    assert found == set(values)
