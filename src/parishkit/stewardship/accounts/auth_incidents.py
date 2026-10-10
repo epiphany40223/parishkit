@@ -10,6 +10,10 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 
 from .auth_models import AuthenticationIncident
+from .policy_models import PortalUser
+
+# How often one refused account is named in the audit log at most (#953).
+ACCOUNT_REFUSAL_INTERVAL = timedelta(minutes=10)
 
 
 def record_login_rejection(event_type):
@@ -54,6 +58,44 @@ def _record_login_rejection(event_type):
             )
         else:
             AuditEvent.objects.create(event_type=event_type)
+
+
+def record_account_refusal(user_id):
+    """Name a refused verified Google account, at most once per ten minutes.
+
+    Unlike the anonymous samples above, this follows a sign-in Google has
+    already verified, which policy then refused (no rule, a rule with no
+    role, or a disabled identity), so the ``admin_login_refused`` entry
+    names the account: its actor is the account's ``PortalUser``, which the
+    sign-in has just recorded, and System logs shows its address (#953). It
+    carries no context, so nothing new is stored about the person.
+
+    The bound is per account, not per deployment: the account's row is
+    locked while the last ten minutes are checked, so concurrent refusals
+    of one account write one entry, and only verified identities, which an
+    attacker cannot mint freely, reach here at all. Database failure is the
+    same typed, retryable outage as the samples. Returns whether an entry
+    was written.
+    """
+    from .limiting import LimiterUnavailable
+
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            PortalUser.objects.select_for_update().filter(pk=user_id).exists()
+            cursor.execute("SELECT statement_timestamp()")
+            since = cursor.fetchone()[0] - ACCOUNT_REFUSAL_INTERVAL
+            if AuditEvent.objects.filter(
+                event_type="admin_login_refused",
+                actor_id=user_id,
+                created_at__gte=since,
+            ).exists():
+                return False
+            AuditEvent.objects.create(
+                event_type="admin_login_refused", actor_id=user_id
+            )
+            return True
+    except DatabaseError:
+        raise LimiterUnavailable() from None
 
 
 def record_link_rejection():
