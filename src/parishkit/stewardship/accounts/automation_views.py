@@ -17,8 +17,10 @@ another Administrator's address, get the same reply, which names nothing
 about any pairing. The approval page follows the Admin confirmation guidance
 (#523): one plain sentence, the result shown in place, and a link back.
 
-Revoke and acknowledge are ``form[data-in-place]`` posts (#559): each
-redirects back to its own page, and the page's regions are swapped in place.
+Acknowledge is a ``form[data-in-place]`` post (#559) that redirects back to
+the dashboard, whose regions are swapped in place. Revoke is a row action
+(#879): its icon button opens the shared confirmation dialog, which posts the
+session to the collection and then redraws both session tables in place.
 """
 
 from urllib.parse import urlencode
@@ -234,7 +236,7 @@ def _access_state(parameters):
 def _state_fields(include_ended, live_sort, ended_sort):
     """The page state as (name, value) pairs, defaults left out.
 
-    Every heading, the filter form and each Revoke form carry these, so no
+    Every heading, the filter form and the revoke form carry these, so no
     control resets another's choice and a default page keeps a bare URL.
     """
     return [
@@ -290,8 +292,10 @@ def access_context(state, identity, everyone, ended):
         "include_ended": include_ended,
         # The box's form keeps both sorts; the box itself gives "ended".
         "sort_fields": [pair for pair in fields if pair[0] != "ended"],
-        # Each Revoke form's query, so the page it returns to is unchanged.
+        # The revoke form's query, so the page it returns to is unchanged,
+        # and the address the confirmation dialog redraws both tables from.
         "state_query": urlencode(fields),
+        "refresh_url": _access_url(fields, ""),
         "approval_url": reverse("admin:automation_approval"),
     }
 
@@ -330,20 +334,23 @@ def access_view(request):
 
 
 @require_POST
-def session_view(request, session_id):
-    """Revoke one live session, then return to Automation access as it was.
+def sessions_view(request):
+    """Revoke the one live session the confirmation dialog names (#879).
 
-    Revoking one's own session records ``revoked_by_owner``; any other
-    Administrator's, ``revoked_by_administrator``. It takes effect at that
-    session's next command. The form's query carries the page's filter and
-    sorts, validated as the page validates them, so the page it returns to
-    (swapped in place) keeps the reader's view.
+    The dialog on Automation access posts ``session_id`` here. Revoking one's
+    own session records ``revoked_by_owner``; any other Administrator's,
+    ``revoked_by_administrator``. It takes effect at that session's next
+    command; one that has already ended is left as it is. The form's query
+    carries the page's filter and sorts, validated as the page validates
+    them, so the redirect returns to the reader's view; the dialog then
+    redraws both tables in place.
     """
     try:
         service = runtime()
         actor = _administrator(request, service)
         state = _state_fields(*_access_state(request.GET))
-        _fields(request.POST, {"csrfmiddlewaretoken"})
+        _fields(request.POST, {"csrfmiddlewaretoken", "session_id"})
+        session_id = UUID(request.POST.get("session_id", ""))
         session = AutomationSession.objects.filter(pk=session_id).first()
         if session is None:
             raise LookupError("Automation session is unavailable.")
