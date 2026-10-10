@@ -1024,7 +1024,7 @@ orders offers that selection's sort orders on the columns they order and its
 page sizes; its other columns do not sort, since the schema owns those
 orders. In v1 that covers:
 
-- the active parishioner family directory (Family and DUID, 50 rows; Family code would need
+- the active parishioner family directory (Family and Family DUID, 50 rows; Family code would need
   every code decrypted per view);
 - Financial stewardship detail (Family, Annual pledge and latest response);
 - the Additional information queue (Family and Submitted);
