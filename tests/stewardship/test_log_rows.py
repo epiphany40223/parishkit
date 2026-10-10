@@ -497,6 +497,8 @@ def test_every_written_type_is_grouped_or_ungrouped_with_a_reason():
     # closed lists, so their prefixes cannot hide a new action.
     assert {"campaign_activate", "campaign_close", "campaign_reopen"} <= UNGROUPED
     assert {"production_created", "production_activate"} <= UNGROUPED
+    # Every background task step is shared by every kind of work.
+    assert {"task_created", "task_explicit_retry", "task_recovery_cancel"} <= UNGROUPED
     # Not written to either log: startup process log only.
     assert "authentication_limits_weakened" not in written
 
@@ -515,10 +517,14 @@ def test_every_written_type_is_grouped_or_ungrouped_with_a_reason():
                 "setup_expired",
                 "setup_credential_staged",
                 "setup_credential_scrubbed",
+                "setup_mail_accepted",
+                "setup_mail_scrubbed",
+                "setup_slack_not_sent",
                 "credential_consumer_acknowledged",
             },
             {
                 "admin_login",
+                "task_claim",
                 "outbox_submit",
                 "source_promoted",
                 "credential_keys_retired",

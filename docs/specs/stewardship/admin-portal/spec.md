@@ -5149,12 +5149,15 @@ whose closed states `audit.log_descriptions.BUILT_TYPES` lists, or an operationa
 entry on the log-writer manifest. Every written type is either in a group or
 in `audit.log_rows.UNGROUPED`, listed under the reason it is left out (for
 example page views, exports, Family portal activity, the campaign lifecycle
-and Production steps, and background-work health shared by every kind of
-work). A unit test requires the groups and `UNGROUPED` together to be exactly
-the written types, so a newly written type fails until it is placed, and a
-PostgreSQL test compares each `BUILT_TYPES` list with the installed CHECK
-constraints or guard functions closing it (`campaign_*` both the delivery
-controls and the lifecycle transitions; `production_*` the Production steps).
+and Production steps, and background-work health and task steps (`task_*`)
+shared by every kind of work). A unit test requires the groups and
+`UNGROUPED` together to be exactly the written types, so a newly written type
+fails until it is placed. PostgreSQL tests compare each `BUILT_TYPES` list
+with the installed CHECK constraints or functions closing it (`campaign_*`
+both the delivery controls and the lifecycle transitions; `production_*` the
+Production steps; `setup_mail_*` its states plus `scrubbed`), and require
+every `'<prefix>_'||` an installed audit-writing function builds to be a
+`BUILT_TYPES` prefix, so a new trigger-built family cannot be missed.
 
 - **Configuration changes** (`configuration`, audit records only): settings
   requests (`configuration_requested` and `config_request_*` from staged
@@ -5168,7 +5171,8 @@ controls and the lifecycle transitions; `production_*` the Production steps).
   (`secret_replacement_requested`, `secret_request_*`,
   `credential_consumer_acknowledged`) and initial setup, which is
   configuration too (`setup_started`, `setup_credential_staged`,
-  `setup_credential_scrubbed`, `setup_frozen`, `setup_expired`).
+  `setup_credential_scrubbed`, the test email's `setup_mail_*` and Slack
+  message's `setup_slack_*` steps, `setup_frozen`, `setup_expired`).
 - **Family mail** (`family_mail`): each outgoing email's steps (`outbox_*`:
   created, prepared, held, sent, accepted, retried, refused, delivery unknown,
   cancelled, resend authorized), the Administrator's resolutions

@@ -17,6 +17,12 @@ closes the states of the prefixes System logs' Activity groups list.
 from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.accounts.setup_delivery_models import SETUP_MAIL_STATES
+from parishkit.stewardship.accounts.setup_notification_models import (
+    SETUP_SLACK_STATES,
+)
+from parishkit.stewardship.jobs.models import TASK_ACTIONS
+
 DESCRIPTIONS = {
     # Background work: the worker claims a task, reports progress, finishes.
     "task_created": _("A background task was queued."),
@@ -710,16 +716,29 @@ PREFIXES = (
     ("delivery_resolution_", _("An Administrator resolved an outgoing email")),
     ("delivery_held_", _("An Administrator decided on emails held at campaign close")),
     ("family_mail_test_", _("A test email to a chosen Family moved to a new step")),
+    # Initial setup's test email and Slack message, and each Production
+    # cleanup and activation request (#953).
+    ("setup_mail_", _("The setup test email moved to a new step")),
+    ("setup_slack_", _("The setup test Slack message moved to a new step")),
+    (
+        "production_",
+        _("A Production cleanup or activation request moved to a new step"),
+    ),
+    # Each step of a background task (stewardship_task_history_v1).
+    ("task_", _("A background task moved to a new step")),
 )
 
-# The closed second halves of the trigger-built types the System logs
-# Activity groups list (#953, ``log_rows.ACTIVITY_TYPES``): for each prefix,
-# where the database closes the list (each CHECK constraint, or guard
-# function that refuses any other value, that a trigger building the prefix
-# reads) and the values they allow together. A PostgreSQL test compares each
-# list with the installed database, so a group can never name a type no
-# trigger writes, and a new one must be placed in a group or in
-# ``log_rows.UNGROUPED`` before the tests pass.
+# The closed second halves of every trigger-built audit type (#953): for
+# each prefix, where the database closes the list (each CHECK constraint,
+# or function that refuses or builds any other value, that a trigger
+# building the prefix reads) and the values they allow together. A list
+# whose constraint is generated from a Python constant (the setup mail and
+# Slack states, ``TASK_ACTIONS``) uses that constant. PostgreSQL tests
+# compare each list with the installed database, and require every
+# ``'<prefix>_'||`` an installed audit-writing function builds to be a key
+# here. So a group can never name a type no trigger writes, and a new
+# prefix, state or action must be placed in a ``log_rows.ACTIVITY_TYPES``
+# group or in ``log_rows.UNGROUPED`` before the tests pass.
 BUILT_TYPES = {
     "config_request_": (
         (("constraint", "config_checkpoint_installer_states"),),
@@ -828,6 +847,22 @@ BUILT_TYPES = {
             "cancel",
         ),
     ),
+    # Initial setup's test email: each state, plus ``scrubbed`` when its
+    # stored credential is cleared (stewardship_setup_mail_audit_v1).
+    "setup_mail_": (
+        (
+            ("constraint", "setup_mail_known_state"),
+            ("function", "stewardship_setup_mail_audit_v1"),
+        ),
+        (*SETUP_MAIL_STATES, "scrubbed"),
+    ),
+    # Initial setup's test Slack message (stewardship_setup_slack_audit_v1).
+    "setup_slack_": (
+        (("constraint", "setup_slack_known_state"),),
+        SETUP_SLACK_STATES,
+    ),
+    # Each step of a background task (stewardship_task_history_v1).
+    "task_": ((("constraint", "task_known_action"),), TASK_ACTIONS),
 }
 
 

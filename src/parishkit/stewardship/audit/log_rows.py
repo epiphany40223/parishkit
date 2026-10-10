@@ -133,7 +133,8 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 #   applied change did to access; mail schedules and live campaign changes;
 #   portal user roles; hosted files; stored key replacements (and each
 #   process acknowledging the new key); and initial setup, from starting it
-#   and entering its credentials to locking it or letting it expire.
+#   and entering its credentials, through its test email and Slack message,
+#   to locking it or letting it expire.
 # - Family mail: each outgoing email's steps (sent, retried, refused,
 #   delivery unknown), the Administrator's resolutions, cleared refused
 #   addresses, delivery pauses, test emails and the mail provider failing.
@@ -176,6 +177,8 @@ ACTIVITY_TYPES = {
         "setup_started",
         "setup_credential_staged",
         "setup_credential_scrubbed",
+        *built_types("setup_mail_"),
+        *built_types("setup_slack_"),
         "setup_frozen",
         "setup_expired",
     ),
@@ -373,6 +376,7 @@ UNGROUPED_REASONS = {
         "task_failed",
         "task_timed_out",
         "task_lease_lost",
+        *built_types("task_"),
         "helper_timed_out",
         "work_budget_reached",
         "due_work_lag",

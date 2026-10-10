@@ -4,6 +4,18 @@ from django.db import models
 
 from parishkit.stewardship.storage import MutableRecord, UTCDateTimeField
 
+# Each state a setup test Slack message can be in; its audit types
+# (``setup_slack_`` plus a state, ``audit.log_descriptions.BUILT_TYPES``)
+# read the same list.
+SETUP_SLACK_STATES = (
+    "queued",
+    "cancelled",
+    "submitting",
+    "accepted",
+    "not_sent",
+    "delivery_unknown",
+)
+
 
 class SetupSlackDelivery(MutableRecord):
     """One immutable request binding and one irreversible provider submission.
@@ -59,16 +71,7 @@ class SetupSlackDelivery(MutableRecord):
                 name="setup_slack_digest_shape",
             ),
             models.CheckConstraint(
-                condition=models.Q(
-                    state__in=[
-                        "queued",
-                        "cancelled",
-                        "submitting",
-                        "accepted",
-                        "not_sent",
-                        "delivery_unknown",
-                    ]
-                ),
+                condition=models.Q(state__in=list(SETUP_SLACK_STATES)),
                 name="setup_slack_known_state",
             ),
             models.CheckConstraint(
