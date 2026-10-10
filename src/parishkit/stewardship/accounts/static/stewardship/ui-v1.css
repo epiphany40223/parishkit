@@ -784,7 +784,11 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .table-actions { white-space: nowrap; }
 .table-actions .icon-button { margin: 0 .5rem 0 0; }
 .table-actions .icon-button:last-child { margin-inline-end: 0; }
-.icon-button { display: inline-flex; align-items: center; justify-content: center; min-width: var(--button-min-height); padding: .5rem; }
+/* A fixed square, not a minimum: a link (Edit) and a <button> (Delete) must
+   draw the same size, and the `.data-table button` rule's smaller padding and
+   min-height would otherwise shrink only the button. The doubled-up selector
+   outranks it. */
+.icon-button, .data-table .icon-button { display: inline-flex; align-items: center; justify-content: center; width: var(--button-min-height); height: var(--button-min-height); min-width: 0; min-height: 0; padding: 0; line-height: 1; }
 .icon-button .action-icon { width: 1.15rem; height: 1.15rem; }
 .icon-button-danger { color: var(--error-ink); border-color: var(--error-border); }
 .icon-button-danger:not(:disabled):hover { background: var(--error-bg); color: var(--error-ink); }

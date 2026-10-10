@@ -105,6 +105,21 @@ def test_list_has_one_line_of_dates_and_actions_only_on_unsent_rows(
     assert not failures
 
 
+@pytest.mark.parametrize("width", [320, 1280])
+def test_row_action_icons_are_the_same_size(page, component_origin, width):
+    """The Edit link and Delete button draw as equal squares (#879 pattern)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + LIST)
+    reminder = rows(page).nth(1)
+    edit = reminder.get_by_role("link", name="Edit Reminder 1").bounding_box()
+    delete = reminder.get_by_role("button", name="Delete Reminder 1").bounding_box()
+    sizes = [(round(b["width"], 1), round(b["height"], 1)) for b in (edit, delete)]
+    assert sizes[0] == sizes[1], sizes
+    assert sizes[0][0] == sizes[0][1], sizes
+    # Side by side on one line, top edges aligned.
+    assert abs(edit["y"] - delete["y"]) < 0.5, (edit, delete)
+
+
 def test_when_heading_sorts_the_table_in_place(page, component_origin):
     """Sending order reversed and back, without a reload."""
     page.set_viewport_size({"width": 1280, "height": 900})
