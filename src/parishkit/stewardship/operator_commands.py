@@ -281,6 +281,8 @@ def restore_begin_command(configuration, *, backup_at, reason):
     Family mail and ordinary background work stay stopped until an
     Administrator releases the site from the Restore review page. No Family
     code or link changes. Prints the new review's id and the backup time.
+    Re-running it for the backup whose review is open changes nothing and
+    reports that review as already open (#799).
     """
     instant = parse_backup_time(backup_at)
     if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
@@ -294,7 +296,7 @@ def restore_begin_command(configuration, *, backup_at, reason):
 
         try:
             admit_offline_database(configuration)
-            transition = begin_review(
+            review = begin_review(
                 backup_at=instant,
                 reason=reason or "restore",
                 correlation_id=uuid4(),
@@ -302,9 +304,10 @@ def restore_begin_command(configuration, *, backup_at, reason):
         finally:
             connection.close()
     return {
-        "restore_review_started": True,
-        "restore_id": str(transition.restore_id),
-        "backup_at": instant.isoformat(),
+        "restore_review_started": review.started,
+        "restore_review_already_open": not review.started,
+        "restore_id": str(review.restore_id),
+        "backup_at": review.backup_at.isoformat(),
     }
 
 

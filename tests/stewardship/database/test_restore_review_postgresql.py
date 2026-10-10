@@ -8,6 +8,7 @@ Administrator chose "send again".
 """
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -49,6 +50,11 @@ from .test_background_grants_postgresql import task_login
 from .test_family_schedule_planning_postgresql import add_reminders
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+MIGRATION = (
+    Path(__file__).resolve().parents[3]
+    / "src/parishkit/stewardship/schema/migrations/0046_restore_begin_keeps_review.sql"
+)
 
 # The campaign is open from 2054-10-01; the initial invitation and two
 # reminders (October 3 and 4) are due by this instant, the third (October 20)
@@ -130,7 +136,7 @@ def restored_occurrence(
 
 
 def begin(backup_at=BACKUP):
-    """Start a review as the operator's admin-recovery login."""
+    """Start a review as the operator's admin-recovery login; a ReviewStart."""
     with task_login(ServiceRole.ADMIN_RECOVERY, exact=True):
         return begin_review(
             backup_at=backup_at, reason="restore", correlation_id=uuid4()
@@ -180,7 +186,7 @@ def test_operator_closes_the_site_and_nothing_else_changes(auth_service):
         FamilyAccessTokenGeneration.objects.order_by("pk").values_list("pk", "state")
     )
     with campaign_clock(NOW):
-        transition = begin()
+        transition = begin().transition
     runtime = SystemConfiguration.objects.get()
     assert runtime.restore_review_required and runtime.restore_released_at is None
     assert runtime.restore_id == transition.restore_id
@@ -206,7 +212,87 @@ def test_operator_closes_the_site_and_nothing_else_changes(auth_service):
     # A second restore starts a new review with a new id.
     with campaign_clock(NOW):
         second = begin(BACKUP - timedelta(days=1))
-    assert second.restore_id != transition.restore_id
+    assert second.started and second.restore_id != transition.restore_id
+
+
+def restore_begin_row(runtime, backup_at=BACKUP):
+    """A restore_begin transition as the operator command would write it."""
+    return dict(
+        request_id=uuid4(),
+        expected_version=runtime.version,
+        action="restore_begin",
+        before_mode=runtime.mode,
+        after_mode=runtime.mode,
+        before_campaign_id=runtime.current_campaign_id,
+        after_campaign_id=runtime.current_campaign_id,
+        restore_id=uuid4(),
+        backup_at=backup_at,
+        reason="restore",
+        correlation_id=uuid4(),
+    )
+
+
+def test_rerunning_restore_begin_keeps_the_open_review(auth_service, google):
+    """A re-run for the same backup writes nothing; SQL refuses one (#799).
+
+    A new transition would replace the review's restore id and move
+    restore_activated_at, the cutoff of the held-email list.
+    """
+    live_campaign(auth_service)
+    with campaign_clock(NOW):
+        first = begin()
+    opened = SystemConfiguration.objects.get()
+    later = NOW + timedelta(hours=2)
+    with campaign_clock(later):
+        again = begin()
+    assert (again.started, again.transition) == (False, None)
+    assert (again.restore_id, again.backup_at) == (first.restore_id, BACKUP)
+    runtime = SystemConfiguration.objects.get()
+    assert (
+        runtime.version,
+        runtime.restore_id,
+        runtime.restore_backup_at,
+        runtime.restore_activated_at,
+    ) == (opened.version, first.restore_id, BACKUP, NOW)
+    assert RuntimeTransition.objects.filter(action="restore_begin").count() == 1
+    assert AuditEvent.objects.filter(event_type="restore_review_started").count() == 1
+    # The SQL guard is the backstop: an insert that skipped the check fails
+    # closed for the operator's login and the schema owner alike.
+    for login in (ServiceRole.ADMIN_RECOVERY, None):
+        with (
+            campaign_clock(later),
+            task_login(login, exact=True) if login else transaction.atomic(),
+            pytest.raises(DatabaseError, match="already open for this backup"),
+            transaction.atomic(),
+        ):
+            RuntimeTransition.objects.create(**restore_begin_row(runtime))
+    assert SystemConfiguration.objects.get().restore_activated_at == NOW
+    # A different backup is another restore: it starts a new review.
+    with campaign_clock(later):
+        other = begin(BACKUP - timedelta(hours=1))
+    runtime = SystemConfiguration.objects.get()
+    assert other.started and other.restore_id != first.restore_id
+    assert (runtime.restore_id, runtime.restore_activated_at) == (
+        other.restore_id,
+        later,
+    )
+
+
+def test_migration_check_refuses_the_0017_guard():
+    """The frozen file's DO block fails against the pre-#799 definition."""
+    text = MIGRATION.read_text(encoding="utf-8")
+    check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
+    earlier = (MIGRATION.parent / "0017_restore_review.sql").read_text(encoding="utf-8")
+    start = earlier.index(
+        "CREATE OR REPLACE FUNCTION public.stewardship_runtime_transition_v1()"
+    )
+    old = earlier[start : earlier.index("END $$;", start) + len("END $$;")]
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(check)  # The installed definition passes.
+        with pytest.raises(DatabaseError, match="Migration 0046"), transaction.atomic():
+            cursor.execute(old)
+            cursor.execute(check)
+        cursor.execute(check)  # Rolled back to the new definition.
 
 
 def test_only_the_operator_starts_a_review(auth_service, google):
@@ -457,6 +543,43 @@ def test_release_reopens_the_site_and_keeps_unsettled_holds(auth_service, google
             request_id=uuid4(),
             expected_runtime_version=after.version,
         )
+
+
+def test_restoring_the_same_backup_after_release_starts_a_new_review(
+    auth_service, google
+):
+    """Once a review is released, the same backup restored again reopens it.
+
+    Only an open review is kept (#799): restoring the same backup a second
+    time after release is another restore, with a new restore id and cutoff.
+    """
+    live_campaign(auth_service)
+    signed_in()
+    with campaign_clock(NOW):
+        first = begin()
+    runtime = SystemConfiguration.objects.get()
+    released_at = NOW + timedelta(hours=1)
+    with campaign_clock(released_at):
+        as_web(list_held_emails_for)
+        as_web(
+            release_review,
+            request_id=uuid4(),
+            expected_runtime_version=runtime.version,
+        )
+    assert not SystemConfiguration.objects.get().restore_review_required
+    later = NOW + timedelta(hours=2)
+    with campaign_clock(later):
+        again = begin()
+    assert again.started and again.transition is not None
+    assert again.restore_id != first.restore_id
+    runtime = SystemConfiguration.objects.get()
+    assert runtime.restore_review_required and runtime.restore_released_at is None
+    assert (
+        runtime.restore_id,
+        runtime.restore_backup_at,
+        runtime.restore_activated_at,
+    ) == (again.restore_id, BACKUP, later)
+    assert RuntimeTransition.objects.filter(action="restore_begin").count() == 2
 
 
 def test_release_needs_a_fresh_administrator(auth_service, google):

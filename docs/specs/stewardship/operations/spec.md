@@ -1020,7 +1020,14 @@ operator runs `pk-stewardship restore-begin --backup-at SET_NAME` in the
 `admin-recovery` profile. It records a `restore_begin` runtime transition that
 sets the durable `restore_review_required` gate with a new restore id and the
 backup's time, and changes nothing else. Restarting recovery keeps that
-review; performing another restore starts a new one. A restore never creates,
+review: running `restore-begin` again with the same backup while its review
+is open writes nothing and reports the open review, and the runtime
+transition guard refuses a second `restore_begin` for that backup, so the
+review's restore id and its held-email cutoff never move (issue 799). Such a
+re-run is a success: it exits 0 and prints `restore_review_started: false`
+with `restore_review_already_open: true` and the open review's restore id and
+backup time; the operator continues the recovery. Performing another
+restore, from a different backup, starts a new review. A restore never creates,
 replaces or cancels a Family code or link: the codes and links Families were
 emailed keep working once the site is released (the Administrator's hard
 rule, issue 537). The
