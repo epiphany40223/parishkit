@@ -215,8 +215,13 @@ Where a rule can be checked in the browser, the page checks it too, and
 shows its error at the field the same way. The browser's own checks (a
 required field, a format) mark a field when the reader leaves it, and clear
 once the value is valid. A page can also check a rule live, as the value is
-entered (a follow-up contact time in the future). Save is held while such an
-error stands only on forms that use the complete-before-submit gate above.
+entered (a follow-up contact time in the future), or have the server check
+one field as it is typed (`data-live-check` in the page script, a
+single-field check first used by a live campaign's
+[end date](#campaign-configuration), #944; the ParishSoft refresh
+schedule's multi-row editor, #920, checks its whole formset with its own
+mechanism for now). Save is held while such an error stands only on forms
+that use the complete-before-submit gate above.
 The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).
@@ -2638,16 +2643,27 @@ it can be reviewed. While the field is empty or holds the saved date,
 Review waits, with the gate's hint after it saying to choose a (different)
 end date, and no error is shown. Any other date is posted, after a short
 pause, to a no-save live check that applies the Review's own checks,
-including stranded mail, and records nothing. While it answers, Review waits;
-when it finds a problem, the field is marked in error (`aria-invalid`,
-described by the message) and the problem's words show in a line reserved
-under the field, so the message never moves Review, with the link to the
-combined review for stranded mail; Review waits with the same words as its
-hint. A date the check clears takes the error away. Calendar dates in these
-messages are the campaign's own and are never shifted into the browser's
-time zone. A check that cannot answer leaves Review available, and every
-Review is still checked in full by the server, whose refusals above still
-apply. Either Apply records
+including stranded mail, and records nothing. Typing another date takes any
+earlier error away at once, since it was about the earlier date. While the
+check answers, Review waits; when it finds a problem, the field is marked in
+error (`aria-invalid`, described by the message) and the problem's words
+show in a line reserved under the field, so the message never moves Review,
+with the link to the combined review for stranded mail; Review waits with
+the same words as its hint. A date the check clears takes the error away.
+The reserved line is a polite live region (`role="status"`), so a screen
+reader hears each answer. Calendar dates in these messages are the
+campaign's own and are never shifted into the browser's time zone.
+
+Review is offered only when the change is known to be possible, so a check
+that cannot answer (the network, a page out of date, the service
+unavailable) keeps Review held: the reserved line and the hint say "Couldn't
+check this end date. Check your connection, then change the date or reload
+the page.", or, when the answer is that the sign-in has ended (401 or 403),
+"Your sign-in has ended. Sign in again, then reload the page." The field is
+not marked invalid, as nothing is known to be wrong with the date. The next
+edit, or showing the page again (`pageshow`), checks again. Every Review is
+still checked in full by the server, whose refusals above still apply.
+Either Apply records
 the request and, in the same transaction, binds its exceptional end-edit
 intent and a `campaign_end_date_requested` audit event (subject: the
 request). The configuration installer applies it with that intent's owning

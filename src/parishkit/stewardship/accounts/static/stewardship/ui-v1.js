@@ -2450,17 +2450,21 @@
   };
   // A field checked by the server as it is typed (#944): a live campaign's
   // end date, whose Review changes stays unavailable while the date cannot
-  // be reviewed. The form is marked data-live-check="<check URL>", names
-  // its field in data-live-check-field and the saved value in
-  // data-live-check-saved, and holds the field's error line
-  // ([data-live-check-error], an .errorlist in a reserved .field-error-line,
-  // so the message coming and going never moves Review). As the value
-  // changes:
+  // be reviewed. It is a single-field check: the form is marked
+  // data-live-check="<check URL>", names its one field in
+  // data-live-check-field and the saved value in data-live-check-saved, and
+  // holds that field's error line ([data-live-check-error], an .errorlist in
+  // a reserved .field-error-line, so the message coming and going never
+  // moves Review). The reserved line is a polite live region (role=status),
+  // so a screen reader hears each answer. (The ParishSoft refresh schedule's
+  // multi-row editor, #920, checks a whole formset with its own mechanism
+  // for now.) As the value changes:
   //   - empty: the data-require-complete gate holds Review with the form's
   //     data-missing-hint;
   //   - the saved value: Review is held with data-unchanged-hint, and no
   //     error is shown (nothing is wrong, there is just nothing to do);
-  //   - otherwise Review is held (data-checking-hint) while, after a short
+  //   - otherwise any earlier error is taken away (it was about another
+  //     value) and Review is held (data-checking-hint) while, after a short
   //     pause, the whole form is posted to the check, which saves nothing.
   //     Its answer ([data-live-check-answer]) either clears the field or
   //     marks it in error (data-field-error="client", aria-invalid,
@@ -2468,9 +2472,12 @@
   //     where to resolve it, and holds Review with its data-hint (the words
   //     without the link) as the hint.
   // Each change makes every earlier answer out of date, so a late one is
-  // dropped. A check that cannot answer (the network, a signed-out session)
-  // leaves Review available: the server checks the Review in full and its
-  // refusal says why.
+  // dropped. Review is offered only when the change is known to be
+  // possible, so a check that cannot answer fails closed: Review stays
+  // held, and the line and hint say so (data-signed-out-hint for a 401 or
+  // 403, data-check-failed-hint otherwise). The field is not marked
+  // invalid then, as nothing is known to be wrong with it. The next edit,
+  // or showing the page again (pageshow), checks again.
   let liveChecks = []; // {form, check} for each wired form
   const wireLiveCheck = (root) => {
     within(root, "form[data-live-check]").forEach((form) => {
@@ -2489,19 +2496,29 @@
       const unmark = () => {
         if (field.hasAttribute("data-field-error")) clearFieldError(field);
       };
-      const mark = (answer) => {
+      // Show ``nodes`` in the line, described by the field; ``invalid``
+      // marks the field in error (a refusal, not a check that failed).
+      const mark = (nodes, invalid) => {
         line.hidden = false;
-        line.dataset.source = "client";
         const item = line.querySelector("li") || line.appendChild(document.createElement("li"));
-        item.replaceChildren(...[...answer.childNodes].map((node) => document.importNode(node, true)));
-        field.setAttribute("aria-invalid", "true");
+        item.replaceChildren(...nodes);
+        if (invalid) field.setAttribute("aria-invalid", "true");
         field.setAttribute("data-field-error", "client");
         const ids = (field.getAttribute("aria-describedby") || "").split(/\s+/)
           .filter((id) => id && id !== line.id);
         field.setAttribute("aria-describedby", [...ids, line.id].join(" "));
       };
+      // The check could not answer: say so at the field and hold Review.
+      const failed = (status) => {
+        const words = (status === 401 || status === 403)
+          ? form.dataset.signedOutHint : form.dataset.checkFailedHint;
+        unmark();
+        mark([document.createTextNode(words)], false);
+        hold(words);
+      };
       const ask = async (mine) => {
         controller = new AbortController();
+        let status = 0;
         try {
           const response = await fetch(form.dataset.liveCheck, {
             method: "POST",
@@ -2509,23 +2526,23 @@
             credentials: "same-origin",
             signal: controller.signal,
           });
+          status = response.status;
           const text = await response.text();
           if (mine !== latest) return;
           if (!response.ok) throw new Error(`Check answered ${response.status}.`);
           const answer = new DOMParser().parseFromString(text, "text/html")
             .querySelector("[data-live-check-answer]");
           if (!answer) throw new Error("Check gave no answer.");
+          unmark();
           if (answer.dataset.blocking === "true") {
-            unmark();
-            mark(answer);
+            mark([...answer.childNodes].map((node) => document.importNode(node, true)), true);
             hold(answer.dataset.hint || answer.textContent.trim());
           } else {
-            unmark();
             hold("");
           }
         } catch (error) {
           if (mine !== latest || error.name === "AbortError") return;
-          hold("");
+          failed(status);
         }
       };
       const check = () => {
@@ -2534,8 +2551,9 @@
         latest += 1;
         if (controller) controller.abort();
         const value = field.value;
+        // Any error shown was about an earlier value.
+        unmark();
         if (!value || value === form.dataset.liveCheckSaved) {
-          unmark();
           hold(value ? form.dataset.unchangedHint : "");
           return;
         }
