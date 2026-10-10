@@ -10,5 +10,4 @@
 <h2>{% translate "New mail schedules" %}</h2>{{ schedules.management_form }}{{ schedules.non_form_errors }}
 {% for form in schedules %}{% include 'stewardship/schedule-row.html' with number=forloop.counter %}{% endfor %}
 {% button type="submit" %}{% translate "Preview new campaign" %}{% endbutton %}</form>
-<p><a href="{% url 'admin:campaign_new' %}">{% translate "Start empty instead" %}</a></p>
 {% endblock %}

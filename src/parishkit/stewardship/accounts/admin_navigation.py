@@ -558,10 +558,6 @@ NON_PAGES = frozenset(
         "ministry_followup_update",
         "ministry_packet",
         "participation_chart",
-        # Retired multi-campaign address (navigation rule 10, decision 11):
-        # New campaign only redirects. The two campaign choosers are old
-        # addresses now (NAV-11).
-        "campaign_new",
         "report_exact_create",
         "report_export_cancel",
         "report_export_create",

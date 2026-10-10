@@ -123,7 +123,6 @@ LEDGER = {
     "campaign_settings": pending(
         "PR 10", "campaign show", "campaign preview", "campaign confirm"
     ),
-    "campaign_new": pending("PR 10", "campaign preview", "campaign confirm"),
     "campaign_clone": pending("PR 10", "campaign clone"),
     "campaign_ministries": pending("PR 10", "campaign ministries"),
     "share_settings": pending("PR 10", "campaign shares"),
