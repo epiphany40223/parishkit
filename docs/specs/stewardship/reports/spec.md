@@ -462,7 +462,12 @@ deletes, and reports no value that later activity rewrites, such as the
 furthest form step reached or a Family's current eligibility; those belong to
 live views. The query returns one row per Family of the campaign with each
 instant as it stood at the cutoff, so the totals, the series below and the
-lists of Families behind any count all come from the same rows. The
+lists of Families behind any count all come from the same rows. It is the
+installed SQL function `stewardship_family_response_v1` (migration 0043,
+[#933](https://github.com/epiphany40223/parishkit/issues/933)), which the
+dashboard, the digest and the
+[directory's Response filter](#response-filters) all read, so their counts
+cannot drift apart. The
 [chart engine](#chart-engine) draws the funnel and the activity series on the
 [response dashboard](#response-dashboard), and the
 [response lists](#response-lists) show the Families behind the counts; the
@@ -609,6 +614,11 @@ per-Family rows as the [funnel](#response-funnel):
 | `not-opened` | a delivered invitation, form never opened | Invitation delivered, Link followed, Family, Family DUID, Envelope number | link followed or not |
 | `more-than-once` | more than one submission (Submitted more than once) | Submissions, First submitted, Last submitted, Family, Family DUID, Envelope number | none |
 | `data-quality` | active Families of the campaign whose current ParishSoft record has a blank mailing name or envelope number 0 | Family, Family DUID, Envelope number, Mailing name, What to check, First submitted | blank mailing name, or envelope number 0 |
+
+The [active parishioner family directory's Response filters](#response-filters)
+now reproduce every list, with Family codes, contact details and the queued
+export ([#933](https://github.com/epiphany40223/parishkit/issues/933)). The
+list pages stay until a later change removes them.
 
 Each of the first four lists has exactly the Families its count on the
 [response dashboard](#response-dashboard) counts, with the instants the
@@ -885,8 +895,13 @@ Families, are left out by design, and the page's name says so
 ([#870](https://github.com/epiphany40223/parishkit/issues/870)). The page
 shows no population summary or separate code-privacy line above its filters;
 the page's About help covers code privacy. Each row has the Family's name,
-Family DUID, manual code, current email eligibility/deliverability, and
-response status. The name is the Family's
+Family DUID, envelope number, manual code, current email
+eligibility/deliverability, and whether the Family has a current live
+response (Responded). The columns follow the shared order
+([#932](https://github.com/epiphany40223/parishkit/issues/932)): any
+[response dates](#response-filters) first, then Family (the row header),
+Family DUID, Envelope number, any Submissions and What to check, and then the
+directory's own columns. The name is the Family's
 surname followed by its heads of household, so same-surname Families can be
 told apart: "Smith, Anna and John" (three or more heads read "A, B and C"); a
 head whose surname differs from the Family's is shown in full ("Smith, Anna and
@@ -953,10 +968,15 @@ is being read, that request fails (the next one reads the new data) rather
 than show a head as having no email.
 
 Without [mailing columns](#mailing-columns), CSV, XLSX, and PDF exports are
-one header row plus one row per Family, with exactly the columns Family (the
-same surname-and-heads name as the page), ParishSoft DUID, Family code and
-Family head emails. The list filtered to Families no campaign mail can reach
-adds Phone numbers for follow-up calls, before Family head emails. Family
+one header row plus one row per Family, with the page's columns: any
+response dates, Family (the same surname-and-heads name as the page), Family
+DUID, Envelope number, any Submissions and What to check (see
+[Response filters](#response-filters)), Family code and Family head emails.
+The list filtered to Families no campaign mail can reach
+adds Phone numbers for follow-up calls, before Family head emails. A
+Family no longer active in ParishSoft has "(No longer active in ParishSoft)"
+after its name. The PDF narrows its widest columns, and wraps their text and
+headings, so a file with many columns still fits the landscape page. Family
 head emails reads like the Contact details: "Anna Example and Ben Example:
 family@example.org; Cara Example: (no email)", with invalid source text
 followed by "(not a valid address; fix in ParishSoft)". The emails are not
@@ -981,9 +1001,10 @@ Authorized recipients only.") are in the PDF header and footer and the XLSX
 the file's columns for the current filters and mailing-columns choice. The
 export's retained capture keeps only the private contact columns its file
 renders (#388 L6): the address for the mailing-columns file, phones for the
-list filtered to Families no campaign mail can reach, and never the envelope
-number. The rest are stored empty, and captures made before this rule are
-kept as they were until their exports expire. Exports use the standard asynchronous, short-lived, requester-authorized export
+list filtered to Families no campaign mail can reach, and the envelope number
+for the Family-code file only (#933). The rest are stored empty, and captures
+made before these rules are kept as they were until their exports expire (a
+code-list file from an older capture has a blank Envelope number column). Exports use the standard asynchronous, short-lived, requester-authorized export
 pipeline, including its explicitly accepted plaintext storage and owner-only
 permissions under the
 [export retention policy](../operations/spec.md#temporary-retention-and-housekeeping).
@@ -1000,6 +1021,120 @@ report, campaign, actor, filter, and row-count granularity without copying
 codes into the audit payload. Exact-code-search audit records omit the raw filter and store
 only a keyed fingerprint when correlation is operationally necessary.
 
+### Response filters
+
+The directory folds in the [response lists](#response-lists)
+([#933](https://github.com/epiphany40223/parishkit/issues/933)). Its
+**Response** filter is a closed choice: Any (the default); Submitted;
+Submitted more than once; Not submitted; Started, not submitted; Started, got
+past the first step; Opened the form only; Invited, never opened; Invited,
+link followed but never opened; Invited, link not followed; and No invitation
+delivered. It replaces the earlier Campaign response filter (Responded / Not
+yet responded); Not submitted is the old Not yet responded list in one step.
+Each choice
+except Any reads the [funnel](#response-funnel)'s per-Family rows at the
+moment of the request, shown as **Counted at** beside the matching count, and
+chooses Families by the rules the lists used, from the same
+[funnel stages](#funnel-stages):
+
+| Response | Families listed | The list it reproduces |
+| --- | --- | --- |
+| Submitted | a submission | `submitted` |
+| Submitted more than once | more than one submission | `more-than-once` |
+| Started, not submitted | form opened, nothing submitted | `started` |
+| Started, got past the first step | as Started, and got past the first step | `started`, got past the first step |
+| Opened the form only | as Started, and not past the first step | `started`, opened the form only |
+| Invited, never opened | a delivered invitation, form never opened | `not-opened` |
+| Invited, link followed but never opened | as Invited, never opened, with the link followed | `not-opened`, link followed |
+| Invited, link not followed | as Invited, never opened, without the link followed | `not-opened`, link not followed |
+| Not submitted | active Families with nothing submitted | none (the old Not yet responded) |
+| No invitation delivered | active Families with a campaign record, no delivered invitation and the form never opened | none (new) |
+
+No invitation delivered is a response status only: no invitation email was
+delivered to the Family. It is not a postal list. Who gets a postal invitation
+is the Administrator's rule in [mailing columns](#mailing-columns)
+([#951](https://github.com/epiphany40223/parishkit/issues/951)), and neither
+Response choice applies that rule. Not submitted includes active Families with
+no campaign record (no Family code for this campaign and nothing delivered or
+submitted), as the old Not yet responded did. No invitation delivered leaves
+them out: with no Family code, no invitation could be sent, and the funnel
+and the dashboard count only campaign Families. Its earlier inclusion was for
+a postal use that no longer applies. For the active Families with a campaign
+record, Started, not submitted; Invited, never opened; and No invitation
+delivered split Not submitted with no overlap: a Family that opened the form
+without a delivered invitation (from a test or a resent link, say) counts as
+started, not as uninvited. An active Family with no campaign record is in Not
+submitted only.
+
+Population: with Response Any, Not submitted or No invitation delivered the
+rows are active Families only, and the page header reads "Active registered
+Families from ParishSoft data load N". Under every other choice the header
+reads "Families from ParishSoft data load N" and the rows are every campaign
+Family the funnel selects, so the matching count equals the
+[dashboard](#response-dashboard)'s figure. A campaign Family the current
+ParishSoft data no longer lists as active and registered is then listed too,
+marked **No longer active in ParishSoft**. Its name and envelope number come
+from the current data when that data still has the Family; otherwise it
+reads "Not in the latest ParishSoft data". Campaign mail reaches it neither
+way: its email availability reads "No longer active in ParishSoft", it
+counts as reachable by neither email nor postal mail, and the mail-merge file
+leaves its address blank. Its code is still shown when the campaign has one,
+but without an Open form link. The active and unreachable totals still count
+active Families only.
+
+**ParishSoft data to check** is a second closed filter: Any (the default),
+Anything to check, Blank mailing name, or Envelope number 0. It selects
+active Families whose current ParishSoft record has a missing or blank
+mailing name (whitespace only counts as blank) or an envelope number of
+exactly 0, the launch-day problems the `data-quality` list showed. When it is
+applied, a **What to check** column names the problems. "Active" here is the
+directory's own rule: registered and active (`portal_eligible`) in the
+current ParishSoft data. The `data-quality` list instead took the campaign
+Families whose campaign record was marked active at the last refresh, so the
+two can differ slightly: the directory also checks an active Family with no
+campaign record, and follows a change in ParishSoft before the campaign's
+records are refreshed.
+
+An **Include response columns** checkbox, off by default, adds the columns
+the chosen Response's list showed: Any shows Invitation delivered, Form
+opened, First submitted and Submissions; Submitted shows First submitted and
+Submissions; Submitted more than once shows First submitted, Last submitted
+and Submissions; the Started choices show Form opened and Got past the first
+step; the Invited choices show Invitation delivered and Link followed; Not
+submitted shows Invitation delivered, Form opened and Got past the first
+step; No invitation delivered shows Link followed and Form opened. The dates lead the row and
+Submissions follows Envelope number. Times are shown in the browser's time
+zone; a stage not reached reads "Not yet" (Link followed reads "No"). The
+checkbox never changes which Families are listed,
+and the Family-code export gets the same columns; the mail-merge file keeps
+its fixed columns. Turning the response columns on, choosing a Response or
+sorting by a response column reads the funnel; otherwise the directory does
+not.
+
+Each response column sorts both ways (newest or largest first on the first
+click, Families that have not reached the stage last, then by name). These
+orders are part of the installed selection, so they page and export like
+the name and DUID orders. A response column orders the rows only while it is
+shown: when Include response columns is off, or the chosen Response does not
+show that column, the order falls back to Family (by name), for the page, the
+export and the audit entry alike.
+
+The selection is `stewardship_directory_report_v2` (migration 0043). It reads
+the funnel through `stewardship_family_response_v1`, so the directory and the
+dashboard share one definition. Version 1 stays installed and unused. The
+selection also takes an optional mode and rehearsal epoch so a Testing view
+can read one rehearsal's funnel; the page reads Production only until the
+Testing switch is added. An export's captured parameters keep the Response,
+data check and response columns choices, and its report details add
+**Responses counted at** and name each applied choice. Each view is audited
+with the closed values `directory_response`, `directory_data_check`,
+`directory_response_columns` and `directory_sort` (older entries' `yes` and
+`no` Response values still read correctly), never a name or search text.
+The selection itself still accepts v1's `yes` and `no` Response values, read
+as Submitted and Not submitted for active Families only, so the previous
+release's application can still queue directory exports if it is ever
+restored after migration 0043.
+
 ### Mailing columns
 
 An **Include mailing columns** checkbox, off by default, lists the Families
@@ -1009,10 +1144,11 @@ table and makes the export a postal mail merge. By Administrator decision
 delivery of invitations is only for active parishioner Families where no head
 of household has a deliverable email address: a valid address that has not
 been permanently refused (or whose refusal was resolved), the rule the
-invitation sender uses. The directory already lists only active parishioner
-Families, so with mailing columns on, Campaign mail can reach is always "By
-postal mail only" (no deliverable email and a usable mailing address),
-whatever reach was chosen. While the box is ticked, the Campaign mail can
+invitation sender uses. So with mailing columns on, Campaign mail can reach
+is always "By postal mail only" (no deliverable email and a usable mailing
+address), whatever reach was chosen. Only active parishioner Families have
+that reach, so a campaign Family no longer active in ParishSoft, which some
+[Response](#response-filters) choices list, is left out. While the box is ticked, the Campaign mail can
 reach select shows "By postal mail only", disabled, with a short reason in
 space the page always keeps for it, so nothing moves (the page script's
 `data-locked-when`, re-applied on `pageshow`; #563, #736). The rule is
