@@ -31,6 +31,7 @@ from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
 from parishkit.stewardship.responses.member_requests import REQUEST_FIELDS
 from parishkit.stewardship.schema_primitives import timezone_names
+from parishkit.stewardship.source.snapshot_names import name_rows
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import UnknownZone, browser_day_start
@@ -156,8 +157,10 @@ class CensusQuery:
 
 
 # One row per proposal of this campaign's live responses. Family names come
-# from the current ParishSoft source, as in the talents report; a Member's
-# name is the Family's own corrected one first, then the parish record's.
+# from the current ParishSoft source, as in the talents report (the surname
+# here; ``census_changes`` adds the heads from the returned snapshot); a
+# Member's name is the Family's own corrected one first, then the parish
+# record's.
 ROWS = """
 SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
     p.baseline_available, p.baseline_value::text, p.submitted_value::text,
@@ -172,7 +175,8 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
             nullif(btrim(s.answers->'members'->p.entity_key->>'last_name'),''))),''),
         nullif(btrim(concat_ws(' ',
             nullif(btrim(sm.canonical::jsonb->>'firstName'),''),
-            nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),'')) AS member_name
+            nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),'')) AS member_name,
+    sc.snapshot_id
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -207,6 +211,7 @@ COLUMNS = (
     "family_duid",
     "family_name",
     "member_name",
+    "snapshot_id",
 )
 
 JSON_COLUMNS = ("baseline_value", "submitted_value", "current_value", "admin_value")
@@ -227,6 +232,11 @@ def census_changes(campaign_id, query, principal):
         # own JSON handling, and are decoded once here.
         for name in JSON_COLUMNS:
             row[name] = None if row[name] is None else json.loads(row[name])
+    if rows:
+        # Name each Family "Squyres, Jeff and Tracy", as every Admin table
+        # does (#932), from the same snapshot this read used; the search,
+        # sort and downloads all use that name.
+        name_rows(rows[0]["snapshot_id"], rows)
     administrator = allows(principal, Capability.PUBLISH_CENSUS)
     return select([shape(row) for row in rows], query, administrator=administrator)
 

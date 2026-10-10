@@ -59,7 +59,7 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_role("button", name="Next", exact=True).count() == 2
     assert page.get_by_role("button", name="Previous", exact=True).count() == 0
     visible(page.get_by_text("Page 1 of 2", exact=True).first)
-    # Family, Annual pledge and Responses sort through the SQL selection.
+    # Family, Annual pledge and Latest response sort through the SQL selection.
     assert page.locator("th[aria-sort=ascending]").inner_text().startswith("Family")
     assert page.locator("th button.sort-link").count() == 3
     # The complete export is offered beside the page, with its own controls.
@@ -147,3 +147,40 @@ def test_financial_filters_and_pages_post_privately(page, component_origin):
     assert "page=" not in body and sent.value.url.endswith(
         reverse("admin:financial_export")
     )
+
+
+def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
+    page, component_origin
+):
+    """Family first, Latest response last; the ParishSoft year has a tip (#932).
+
+    Opening the tip must not move the table: the bubble floats over it.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/financial-report")
+    headings = page.locator("table thead th").all_inner_texts()
+    assert headings[0].startswith("Family") and headings[1] == "Family DUID"
+    assert headings[-1].startswith("Latest response")
+    # Each also holds its tip's "i" button.
+    assert headings[5].startswith("ParishSoft pledged (2025–2026)")
+    assert headings[6].startswith("ParishSoft contributed (2025–2026)")
+    # Only the latest response time: no First time or Version in the row.
+    row = page.locator("table tbody tr").first
+    assert row.locator("td").last.locator("time").count() == 1
+    assert "Version" not in row.inner_text()
+    table = page.locator("table")
+
+    def placed():
+        """The table's box in page coordinates, whatever the scroll."""
+        return table.evaluate(
+            "t => { const r = t.getBoundingClientRect();"
+            " return [r.left + scrollX, r.top + scrollY, r.width, r.height]; }"
+        )
+
+    before = placed()
+    tip = page.locator("#financial-source-pledged .toggletip-button")
+    tip.click()
+    bubble = page.locator("#financial-source-pledged-tip")
+    visible(bubble)
+    assert "July 1, 2025" in bubble.inner_text()
+    assert placed() == before

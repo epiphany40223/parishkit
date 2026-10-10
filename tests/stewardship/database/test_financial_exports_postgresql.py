@@ -264,7 +264,11 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
             assert "financial." + format in response["Content-Disposition"]
             if format == "csv":
                 # CSV money is the canonical amount (#388 L5).
-                assert name in body and b",1234.50," in body and b",1200.00," in body
+                # The file keeps the surname its capture read; only the page
+                # adds the heads (#932), and its name leads with that surname.
+                surname = name.partition(b",")[0]
+                assert b"\r\n" + surname + b"," in body
+                assert b",1234.50," in body and b",1200.00," in body
                 assert b"$" not in body
                 assert b"Financial stewardship detail" in body
                 # The comparison columns carry the page's labels (#404).
