@@ -37,6 +37,6 @@
 {% if paused %}<p class="notice">{% translate "Downloads are paused while this campaign is prepared for purge. The list can still be read here." %}</p>{% endif %}
 <form id="table-export" data-table-sync method="post" action="{{ export_action }}">{% csrf_token %}{% for name, value in export_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <label for="list-timezone">{% translate "Time zone" %}</label> <select id="list-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-<span id="list-export-button" data-table-sync><button type="submit"{% if paused or no_rehearsal or not table.count %} disabled{% endif %}>{% translate "Download CSV" %}</button></span></form></section>
+<span id="list-export-button" data-table-sync><button type="submit"{% if paused or no_rehearsal or not table.count %} disabled data-server-disabled{% endif %}>{% translate "Download CSV" %}</button></span></form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>{% endif %}
 {% endblock %}

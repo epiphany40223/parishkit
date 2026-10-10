@@ -156,6 +156,10 @@ def multi_campaign_control(control_id, label):
 BUTTON_ARGUMENT = re.compile(r"([a-z][a-z0-9-]*)(?:=(.+))?\Z", re.S)
 # Present or absent by truthiness, never rendered with a value.
 BOOLEAN_ATTRIBUTES = {"disabled", "hidden", "formnovalidate", "autofocus"}
+# A submit button the server draws disabled says so (data-server-disabled):
+# Firefox brings a script-set disabled back on a reload, and ui-v1.js enables
+# any disabled submit button without this mark when it starts (#921).
+SERVER_DISABLED = " data-server-disabled"
 
 
 @register.tag
@@ -172,11 +176,13 @@ def button(parser, token):
     link; primary by default) and ``class`` (extra classes) render one class
     attribute where the first of them appears. ``enabled=x`` renders
     ``disabled`` when ``x`` is false; ``disabled``, ``hidden`` and the other
-    boolean attributes render by truthiness. A bare name (``data-bulk-action``)
-    or a value of True renders as a bare attribute, except that an ``aria-*``
-    attribute always spells its state: True and False render as "true" and
-    "false" (ARIA reads a bare aria-pressed as an empty, invalid token). Any
-    other value is escaped, and omitted only when it is None or False.
+    boolean attributes render by truthiness; a submit button's ``disabled``
+    comes with ``data-server-disabled`` (see SERVER_DISABLED). A bare name
+    (``data-bulk-action``) or a value of True renders as a bare attribute,
+    except that an ``aria-*`` attribute always spells its state: True and
+    False render as "true" and "false" (ARIA reads a bare aria-pressed as an
+    empty, invalid token). Any other value is escaped, and omitted only when
+    it is None or False.
     ``href`` makes the button a link styled as one, which takes no ``type``
     and cannot be disabled (a link has no disabled state); a <button> must
     name its ``type``.
@@ -229,13 +235,17 @@ class ButtonNode(template.Node):
         # A link always has a class; put it first when no argument places it.
         placed = not classes or any(name in values for name in ("variant", "class"))
         parts = [] if placed else [f' class="{classes}"']
+        submit = values.get("type") == "submit"
+        disabled = " disabled" + (SERVER_DISABLED if submit else "")
         for name, value in values.items():
             if name in ("variant", "class"):
                 if classes:
                     parts.append(f' class="{conditional_escape(classes)}"')
                     classes = ""
             elif name == "enabled":
-                parts.append("" if value else " disabled")
+                parts.append("" if value else disabled)
+            elif name == "disabled":
+                parts.append(disabled if value else "")
             elif name in BOOLEAN_ATTRIBUTES:
                 parts.append(f" {name}" if value else "")
             elif name.startswith("aria-") and isinstance(value, bool):

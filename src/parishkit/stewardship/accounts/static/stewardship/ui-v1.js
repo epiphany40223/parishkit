@@ -514,9 +514,42 @@
   };
   const isSubmit = (node) => (node instanceof HTMLButtonElement
     || node instanceof HTMLInputElement) && node.type === "submit";
+  // Several gates can hold one submit button (the time entry, acknowledgment
+  // and complete gates below, and the change gate, #921). Each marks a button
+  // it holds with its own attribute, and a button is enabled again only once
+  // no gate holds it. A button that is disabled without any gate's mark (the
+  // server drew it disabled, or another script disabled it: a pending test)
+  // is never taken over, so no gate ever enables it.
+  //
+  // Firefox brings a script-set disabled back when the page is reloaded,
+  // without the gate's mark, which would leave a held button disabled for
+  // good. Two defences: a held button is marked autocomplete="off", which
+  // tells Firefox not to keep its state, and the server marks every submit
+  // button it draws disabled with data-server-disabled (the {% button %}
+  // tag), so a disabled submit button without that mark when this script
+  // starts (before any script could have disabled it) came back from an
+  // earlier visit and is enabled again, as the server drew it.
+  const GATE_MARKS = [
+    "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
+  ];
+  const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
+  document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {
+    if (isSubmit(node) && !node.hasAttribute("data-server-disabled")) node.disabled = false;
+  });
+  const holdButton = (node, mark) => {
+    if (node.disabled && !gated(node)) return;
+    node.setAttribute("autocomplete", "off");
+    node.disabled = true;
+    node.setAttribute(mark, "");
+  };
+  const releaseButton = (node, mark) => {
+    if (!node.hasAttribute(mark)) return;
+    node.removeAttribute(mark);
+    node.disabled = gated(node);
+  };
   // Keep a form's submit buttons unavailable while a shown time entry cannot
   // be read, with a hint after them saying why. As with the complete gate,
-  // real disabled is used and only buttons this gate disabled are re-enabled.
+  // real disabled is used (holdButton and releaseButton, above).
   // A data-require-complete form is left to that gate: the entry's custom
   // validity is set in a capture-phase listener (below), before the gate's
   // own input listener runs, so it counts the current keystroke.
@@ -547,13 +580,8 @@
     buttons.forEach((node) => {
       const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
         .filter((id) => id && id !== hint?.id);
-      if (unread && !node.disabled) {
-        node.disabled = true;
-        node.setAttribute("data-time-gated", "");
-      } else if (!unread && node.hasAttribute("data-time-gated")) {
-        node.disabled = false;
-        node.removeAttribute("data-time-gated");
-      }
+      if (unread) holdButton(node, "data-time-gated");
+      else releaseButton(node, "data-time-gated");
       if (explain && hint) described.push(hint.id);
       if (described.length) node.setAttribute("aria-describedby", described.join(" "));
       else node.removeAttribute("aria-describedby");
@@ -1368,6 +1396,9 @@
     });
     if (!anywhere) syncControls(parsed);
     if (owner?.hasAttribute("data-in-place-filters")) syncFilters(parsed);
+    // Every swap and the synced hidden version are in place: a Review that
+    // was applied makes its values the saved ones (the change gate, #921).
+    gateChanges();
     // A GET choice belongs in the address bar, so reload, bookmarks and
     // returning to the page keep it; a POST table's private filters never
     // reach a URL. A server redirect chose the address itself (a saving
@@ -1536,6 +1567,7 @@
     }
     inFlight.add(form);
     editedInFlight.delete(form.id);
+    noteSent(form); // the change gate's record of what was sent (#921)
     const submitter = event.submitter;
     submitter?.setAttribute("aria-disabled", "true");
     // A save shows its button busy, as an ordinary submission does.
@@ -1598,6 +1630,127 @@
       withdraw(review);
     });
   });
+  // Review only what changed (#921): a settings form marked
+  // data-require-change="<version field>" keeps its submit buttons (Review
+  // changes) disabled while its enabled controls all hold the saved values,
+  // with its [data-unchanged-hint] line after them saying why; restoring the
+  // saved values disables Review again. The hint always keeps its space
+  // (data-idle hides it with visibility), so it never moves the page (#736).
+  // The server still answers an unchanged Review with its refusal.
+  //
+  // The saved values are the form's server-drawn defaults (defaultValue,
+  // defaultChecked, defaultSelected), never its live values at load, which a
+  // browser may have restored from an earlier visit. They are kept by form
+  // id for each version the hidden version field names, so a form an answer
+  // redraws at the same version keeps the saved values it had. When the
+  // version moves on because this page's Apply was applied, and the answer
+  // kept the very form element the Apply was sent from (a data-table-sync
+  // form, which keeps the reader's typing and takes only the new version),
+  // the saved values become those that Review sent. Any other new version,
+  // such as a form redrawn after an applied change, takes the form's new
+  // defaults. The gate runs on every edit, after every in-place answer (see
+  // refresh) and on pageshow.
+  const savedStates = new Map(); // form id → {version, state} it was saved at
+  const reviewSent = new Map(); // form id → the state its last Review sent
+  // form id → {form, state}: the form element when its Apply was sent, and
+  // the state the Review behind that Apply sent.
+  const reviewApplied = new Map();
+  // The form's state as a Map of "name#n" (the nth control of that name) to
+  // {value, disabled}: its defaults or its live values. Hidden fields carry
+  // versions and tokens, not settings; text is trimmed as the server trims it.
+  // :disabled, not the disabled property, so a control inside a disabled
+  // fieldset (which is not sent either) counts as disabled.
+  const formState = (form, defaults) => {
+    const state = new Map();
+    const seen = new Map();
+    [...form.elements].forEach((node) => {
+      if (!node.name || !(node instanceof HTMLInputElement || node instanceof HTMLSelectElement
+        || node instanceof HTMLTextAreaElement)) return;
+      if (["hidden", "submit", "button", "reset", "image", "file"].includes(node.type)) return;
+      const index = seen.get(node.name) || 0;
+      seen.set(node.name, index + 1);
+      let value;
+      if (node.type === "checkbox" || node.type === "radio") {
+        value = String(defaults ? node.defaultChecked : node.checked);
+      } else if (node instanceof HTMLSelectElement) {
+        const options = [...node.options];
+        let chosen = options.filter((option) => (defaults ? option.defaultSelected : option.selected));
+        // A single select drawn with no option marked selected shows its first.
+        if (defaults && !node.multiple && !chosen.length) chosen = options.slice(0, 1);
+        value = JSON.stringify(chosen.map((option) => option.value));
+      } else {
+        value = (defaults ? node.defaultValue : node.value).trim();
+      }
+      state.set(`${node.name}#${index}`, {value, disabled: node.matches(":disabled")});
+    });
+    return state;
+  };
+  // Whether the form's enabled controls hold exactly the saved values, with
+  // no control added or removed (a new or deleted option row). A control
+  // that is disabled (a hidden module's field) is not sent, so its value
+  // does not count; the control that hid it differs instead.
+  const matchesSaved = (form, saved) => {
+    const now = formState(form, false);
+    if ([...saved.keys()].some((key) => !now.has(key))) return false;
+    return [...now].every(([key, {value, disabled}]) => disabled
+      || (saved.has(key) && saved.get(key).value === value));
+  };
+  const gateChange = (form) => {
+    if (!(form instanceof HTMLFormElement) || !form.id || !form.hasAttribute("data-require-change")) {
+      return;
+    }
+    const field = form.elements.namedItem(form.dataset.requireChange);
+    const version = field instanceof HTMLInputElement ? field.value : "";
+    let saved = savedStates.get(form.id);
+    if (!saved || saved.version !== version) {
+      const applied = saved && reviewApplied.get(form.id);
+      const kept = applied?.form === form;
+      saved = {version, state: kept ? applied.state : formState(form, true)};
+      savedStates.set(form.id, saved);
+      reviewApplied.delete(form.id);
+    }
+    const unchanged = matchesSaved(form, saved.state);
+    const hint = form.querySelector("[data-unchanged-hint]");
+    // The hint's id comes from its form's, so two gated forms on one page
+    // never describe their buttons with the same line.
+    if (hint) hint.id = `${form.id}-unchanged-hint`;
+    hint?.toggleAttribute("data-idle", !unchanged);
+    // isSubmit, not submitControls (defined below, after this first runs).
+    [...form.elements].filter(isSubmit).forEach((node) => {
+      if (node.formNoValidate) return;
+      if (unchanged) holdButton(node, "data-change-gated");
+      else releaseButton(node, "data-change-gated");
+      if (!hint?.id) return;
+      const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && id !== hint.id);
+      if (unchanged) described.push(hint.id);
+      if (described.length) node.setAttribute("aria-describedby", described.join(" "));
+      else node.removeAttribute("aria-describedby");
+    });
+  };
+  const gateChanges = () => document.querySelectorAll("form[data-require-change]").forEach(gateChange);
+  // Note what each Review sends, and which Review an Apply applies: an Apply
+  // sits in the review of its form (data-review-of names it). The in-place
+  // handler (above) calls this only once a request really starts, so a
+  // repeated submission it ignores while one is in flight (Enter pressed
+  // again after an edit) is never taken for what was sent.
+  const noteSent = (form) => {
+    if (form.id && form.hasAttribute("data-require-change")) {
+      reviewSent.set(form.id, formState(form, false));
+    }
+    const of = form.closest("[data-review-of]")?.getAttribute("data-review-of");
+    if (of && reviewSent.has(of)) {
+      reviewApplied.set(of, {form: document.getElementById(of), state: reviewSent.get(of)});
+    }
+  };
+  // Listening on the document, after each form's own listeners, keeps the
+  // input that just happened in view; the other gates share the buttons'
+  // bookkeeping, so the order does not decide what is enabled.
+  ["input", "change"].forEach((type) => document.addEventListener(type, (event) => {
+    if (event.target instanceof Element) gateChange(event.target.closest("form"));
+  }));
+  window.addEventListener("pageshow", gateChanges);
+  gateChanges();
   // A checkbox marked data-submit-on-change applies at once (Automation
   // access's "Include ended sessions", #621): it submits its own
   // form[data-in-place], which the handler above sends in place, and is
@@ -1705,9 +1858,10 @@
   // portal requires JavaScript, #565, but a crafted request still reaches the
   // server). Real disabled is used, unlike
   // the busy state above, because no submission should start at all; only
-  // buttons disabled here (data-acknowledgment-gated) are ever re-enabled, so
-  // a button the server or another script disabled (a pending test, setup
-  // that is not ready) stays disabled. formnovalidate buttons are never gated.
+  // buttons disabled by a gate are ever re-enabled (holdButton and
+  // releaseButton), so a button the server or another script disabled (a
+  // pending test, setup that is not ready) stays disabled. formnovalidate
+  // buttons are never gated.
   //
   // While this gate holds a button, a hint after it (the unticked box's
   // data-missing-hint, or a generic line) says why, named by the button's
@@ -1747,13 +1901,8 @@
     const unticked = boxes.find((box) => !box.checked && !box.closest("[hidden]"));
     const controls = submitControls(form).filter((node) => !node.formNoValidate);
     controls.forEach((node) => {
-      if (unticked && !node.disabled) {
-        node.disabled = true;
-        node.setAttribute("data-acknowledgment-gated", "");
-      } else if (!unticked && node.hasAttribute("data-acknowledgment-gated")) {
-        node.disabled = false;
-        node.removeAttribute("data-acknowledgment-gated");
-      }
+      if (unticked) holdButton(node, "data-acknowledgment-gated");
+      else releaseButton(node, "data-acknowledgment-gated");
     });
     const holding = controls.some((node) => node.hasAttribute("data-acknowledgment-gated"));
     // No hint element is made until one is needed.
@@ -2143,8 +2292,8 @@
   //     (the System logs Show choices, #601): while none is, each box is
   //     marked invalid with the group's data-missing-hint.
   // The hint is the first missing control's data-missing-hint, or that of
-  // the nearest element around it. As with acknowledgments below, real
-  // disabled is used and only buttons this gate disabled are re-enabled.
+  // the nearest element around it. As with acknowledgments above, real
+  // disabled is used (holdButton and releaseButton).
   const requiredWhen = (form) => {
     form.querySelectorAll("[data-required-when]").forEach((node) => {
       const [name, value] = node.dataset.requiredWhen.split("=");
@@ -2193,13 +2342,8 @@
     }
     submitControls(form).forEach((node) => {
       if (node.formNoValidate) return;
-      if (missing && !node.disabled) {
-        node.disabled = true;
-        node.setAttribute("data-complete-gated", "");
-      } else if (!missing && node.hasAttribute("data-complete-gated")) {
-        node.disabled = false;
-        node.removeAttribute("data-complete-gated");
-      }
+      if (missing) holdButton(node, "data-complete-gated");
+      else releaseButton(node, "data-complete-gated");
     });
   };
 
