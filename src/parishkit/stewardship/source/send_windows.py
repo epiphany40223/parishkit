@@ -131,6 +131,19 @@ def current_windows(now):
     estimated send length of each kind. A handful of short queries; the
     scheduler reads them before it takes the work-order lock.
     """
+    return upcoming_windows(now, now)
+
+
+def upcoming_windows(now, until):
+    """Every Family email window, as known at ``now``, for slots due by ``until``.
+
+    ``current_windows`` with a later horizon: the emails due up to
+    ``PREPARE_AHEAD`` after ``until`` are read too, each window computed by
+    the same rules at ``now`` (an email not yet due ends at its estimate).
+    The settings page's seven-day preview (``schedule_preview``) reads the
+    windows the scheduler will apply this way, so the two cannot disagree
+    about any email known today.
+    """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 
@@ -154,7 +167,7 @@ def current_windows(now):
         kind__in=KINDS,
         removed_at__isnull=True,
         current_revision__due_at__gte=now - LOOKBACK - SEND_ALLOWANCE,
-        current_revision__due_at__lte=now + PREPARE_AHEAD,
+        current_revision__due_at__lte=until + PREPARE_AHEAD,
     ).values_list("pk", "kind", "current_revision__due_at")
     emails = [
         Email(kind, due, due <= now and _active(pk, due, campaign.production_cycle))
