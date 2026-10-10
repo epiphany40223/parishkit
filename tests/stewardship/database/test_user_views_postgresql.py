@@ -389,7 +389,10 @@ def test_retired_assignment_and_chairperson_addresses_are_gone(auth_service, goo
     browser, login = signed_in()
     assert login.status_code == 302
     token = browser.cookies["pk_admin_csrf"].value
-    for path in ("/admin/users/assignments", "/admin/users/suggestions"):
+    for path in (
+        "/admin/users/assignments",
+        "/admin/users/suggestions",
+        "/admin/users/reviews",
+    ):
         assert browser.get(path).status_code == 404
         assert browser.post(path, {"csrfmiddlewaretoken": token}).status_code == 404
-    assert browser.get("/admin/users/reviews").status_code == 404
