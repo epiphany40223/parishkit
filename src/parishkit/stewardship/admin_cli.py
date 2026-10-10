@@ -1058,8 +1058,9 @@ def sample_test(args, preamble, runtime, context):
 def families_preview(args, preamble, runtime, context):
     """Review a chosen-Family test, as its page does (PR 6c).
 
-    With ``--names`` (and its ``--timezone``) it also requests the export of
-    the names the page shows beside the DUIDs (#817). That changes state, so
+    With ``--names`` (and its ``--timezone``, and optionally ``--format``)
+    it also requests the export of the names the page shows beside the
+    DUIDs (#817), as CSV, XLSX or PDF (#966). That changes state, so
     without ``--request-key`` the new key is written to standard error
     first, so a run that crashes can be repeated with it.
     """
@@ -1069,6 +1070,8 @@ def families_preview(args, preamble, runtime, context):
 
     if (args.timezone is not None) != args.names:
         raise UsageError("--names and --timezone go together.")
+    if args.format is not None and not args.names:
+        raise UsageError("--format goes with --names.")
     if args.names:
         return preview_families_with_names(
             context["caller"],
@@ -1077,6 +1080,7 @@ def families_preview(args, preamble, runtime, context):
             args.family,
             request_key=_request_key(args, context),
             zone=args.timezone,
+            format=args.format or "csv",
             context=context,
         )
     return preview_families(
@@ -1780,7 +1784,8 @@ def _duid(value):
 
 def _families_preview_options(parser):
     """Options of ``test families-preview``: the email, the Families, the key
-    and, for the names export (#817), ``--names`` with its time zone."""
+    and, for the names export (#817), ``--names`` with its time zone and
+    file format (#966)."""
     parser.add_argument("revision_id", type=_uuid, metavar="REVISION_ID")
     parser.add_argument(
         "--family",
@@ -1799,13 +1804,18 @@ def _families_preview_options(parser):
     parser.add_argument(
         "--names",
         action="store_true",
-        help="also request a CSV export of the Families' names, which the "
+        help="also request an export of the Families' names, which the "
         "page shows, for export fetch (needs --timezone)",
     )
     parser.add_argument(
         "--timezone",
         help="with --names: the time zone of the file's times, for example "
         "America/New_York",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf"),
+        help="with --names: the file format (default csv)",
     )
 
 
@@ -1940,7 +1950,10 @@ def _logs_export_options(parser):
     """Options of ``logs export``: the page's filters, format and time zone."""
     _log_filter_options(parser)
     parser.add_argument(
-        "--format", choices=("csv", "jsonl"), default="csv", help="default csv"
+        "--format",
+        choices=("csv", "xlsx", "jsonl"),
+        default="csv",
+        help="default csv",
     )
     parser.add_argument(
         "--timezone",

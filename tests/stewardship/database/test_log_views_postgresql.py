@@ -1,5 +1,6 @@
 """The Administrator-only combined log screen under the real web database role."""
 
+import io
 import json
 import re
 from collections import Counter
@@ -11,6 +12,7 @@ import pytest
 from django.db import connection, transaction
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
+from openpyxl import load_workbook
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -616,6 +618,17 @@ def test_export_downloads_filtered_entries_as_csv_or_json_lines(auth_service, go
     )
     records = [json.loads(line) for line in jsonl.content.decode().splitlines()]
     assert [record["level"] for record in records] == ["CRITICAL"]
+    # XLSX: the CSV's columns and the same entries in one sheet (#966).
+    workbook = export(browser, {"applied": "yes", "critical": "yes", "format": "xlsx"})
+    assert workbook.status_code == 200
+    assert workbook["Content-Type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert ".xlsx" in workbook["Content-Disposition"]
+    sheet = list(load_workbook(io.BytesIO(workbook.content)).active.values)
+    assert ",".join(sheet[0]) == lines[0] and len(sheet) == 1 + len(records)
+    assert sheet[1][2] == "CRITICAL"
+    assert sheet[1][-1] == "count=8; failure=alert_mail; outcome=failed"
     assert records[0]["details"] == {
         "count": "8",
         "failure": "alert_mail",
@@ -627,6 +640,7 @@ def test_export_downloads_filtered_entries_as_csv_or_json_lines(auth_service, go
         ).values_list("context", flat=True)
     ) == [
         {"outcome": "succeeded", "count": len(lines) - 1},
+        {"outcome": "succeeded", "count": 1},
         {"outcome": "succeeded", "count": 1},
     ]
 
@@ -646,7 +660,7 @@ def test_export_times_use_the_chosen_timezone(auth_service, google):
 
 @pytest.mark.parametrize(
     "values",
-    [{"format": "xlsx"}, {"timezone": "Mars/Base"}, {"level": "x"}],
+    [{"format": "pdf"}, {"timezone": "Mars/Base"}, {"level": "x"}],
 )
 def test_export_refuses_unknown_choices(auth_service, google, values):
     """Only the closed formats, supported zones and screen filters are accepted."""

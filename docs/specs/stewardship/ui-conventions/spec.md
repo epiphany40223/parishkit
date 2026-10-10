@@ -1342,8 +1342,8 @@ detail, Additional information and Ministry report CSV and XLSX files still
 carry internal columns (Family version, Response reference, Row type,
 Version, Proposed Member reference), and several files' report information
 still lists campaign and source references; the participation and System
-logs CSVs carry raw ids; Census changes and Talents lack PDF; Family test
-names is CSV only; and System logs lacks XLSX.
+logs CSVs carry raw ids; and Talents lacks PDF (Talents is being removed
+under [#970](https://github.com/epiphany40223/parishkit/issues/970)).
 
 ## Family portal
 

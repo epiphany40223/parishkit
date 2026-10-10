@@ -32,12 +32,11 @@ from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
 from parishkit.stewardship.responses.member_requests import REQUEST_FIELDS
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.snapshot_names import name_rows
+from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import UnknownZone, browser_day_start
 from parishkit.stewardship.web.exports import csv_cell
-
-from .information_rendering import xlsx_cell
 
 # Plain labels for "What changed", from the census forms' own field labels.
 LABELS = {
@@ -91,6 +90,24 @@ HEADINGS = (
     "Submitted",
     "Member DUID",
 )
+# Relative PDF column widths, in percent of the page's body width. A
+# compact time ("Sep 30, 2026 12:04 PM") and the longest status ("Being
+# published") stay on one line; the values Families typed and ParishSoft
+# holds share the rest, long ones wrapping within their column.
+PDF_WEIGHTS = {
+    "Family": 8,
+    "Family DUID": 7,
+    "Who": 9,
+    "What changed": 8,
+    "ParishSoft now": 9,
+    "Family's answer": 9,
+    "Edited value": 7,
+    "How it reaches ParishSoft": 7,
+    "Status": 12,
+    "Submitted": 16,
+    "Member DUID": 8,
+}
+PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 
 
 @dataclass(frozen=True, repr=False)
@@ -433,8 +450,17 @@ def export_member_duid(row):
     return "New Member" if row["entity_kind"] == "proposed_member" else ""
 
 
-def export_rows(result, zone):
-    """The filtered rows as plain text, times in the requested timezone."""
+def iso_time(moment):
+    """A file's machine-readable time: ISO 8601 to the second, with offset."""
+    return moment.isoformat(timespec="seconds")
+
+
+def export_rows(result, zone, *, time_text=iso_time):
+    """The filtered rows as plain text, times in the requested timezone.
+
+    ``time_text`` words the Submitted time already placed in ``zone``: ISO
+    8601 for CSV and XLSX, the parish's compact date format for the PDF.
+    """
     return [
         (
             row["family_name"],
@@ -446,7 +472,7 @@ def export_rows(result, zone):
             row["edited"],
             row["route_label"],
             row["status_label"],
-            row["submitted_at"].astimezone(zone).isoformat(timespec="seconds"),
+            time_text(row["submitted_at"].astimezone(zone)),
             export_member_duid(row),
         )
         for row in result["rows"]
@@ -467,18 +493,42 @@ def census_csv(result, zone):
 def census_xlsx(result, zone):
     """A workbook with one literal-text sheet of the filtered rows."""
     # Imported here, like the other export writers, to keep web startup light.
-    from openpyxl import Workbook
+    from .xlsx_design import table_workbook
 
-    from .xlsx_design import style_table
+    return table_workbook(
+        HEADINGS,
+        export_rows(result, zone),
+        sheet_title="Census changes",
+        freeze_first_column=True,
+    )
 
-    book = Workbook()
-    sheet = book.active
-    sheet.title = "Census changes"
-    for row_number, values in enumerate((HEADINGS, *export_rows(result, zone)), 1):
-        for column, value in enumerate(values, start=1):
-            # Literal text: a Family-typed "=..." is never a formula.
-            xlsx_cell(sheet, row_number, column, value)
-    style_table(sheet, freeze_first_column=True, title="Census changes")
+
+def census_pdf(result, zone, *, parish, campaign, as_of):
+    """The filtered rows as the shared framed zebra table (``pdf_design``).
+
+    The table is ``HEADINGS`` over ``export_rows``: the CSV's and XLSX's
+    columns and values, so the three files never disagree (#966); only the
+    Submitted time reads in the parish's compact date format.
+    The page frame names the parish and campaign, the download time
+    ``as_of`` in ``zone`` and the row count; values are drawn in full, long
+    ones wrapping within their column. The caller lends the parish's date
+    format (``dates.using``) for the header's time.
+    """
+    from .pdf_design import PdfFrame, Table, draw_table, table_pages
+
+    count = len(result["rows"])
+    frame = PdfFrame(
+        title="Census changes",
+        eyebrow=f"{parish} · {campaign}",
+        stamp=f"Downloaded {dates.display_text(as_of.astimezone(zone))} ({zone.key})",
+        details=(f"{count:,} {'change' if count == 1 else 'changes'} in this file.",),
+        notice=PRIVACY,
+    )
+    table = Table.weighted(HEADINGS, [PDF_WEIGHTS[name] for name in HEADINGS])
+    rows = export_rows(
+        result, zone, time_text=lambda moment: dates.display_text(moment, compact=True)
+    )
+    pages = list(table_pages(table, rows, frame))
     output = io.BytesIO()
-    book.save(output)
+    frame.write(output, pages, len(pages), draw_table(table, frame), requested_at=as_of)
     return output.getvalue()

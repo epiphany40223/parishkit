@@ -203,7 +203,7 @@ def export_logs(caller, service, filters, *, fmt, zone_name, context):
     """``logs export``: the System logs page's download, as bytes.
 
     The page's filters (its snapshot and paging are not offered, as the page
-    ignores them), ``fmt`` (``csv`` or ``jsonl``) and ``zone_name`` (UTC or
+    ignores them), ``fmt`` (``csv``, ``xlsx`` or ``jsonl``) and ``zone_name`` (UTC or
     a supported timezone name) for the times in the file. Admits as the
     page's form post does, reads the newest matching entries (at most the
     page's limit), rechecks the session and records the page's
@@ -223,7 +223,7 @@ def export_logs(caller, service, filters, *, fmt, zone_name, context):
         with bounded_read():
             _configured()
             rows = export_rows(query)
-        body = export_body(rows, fmt, zone).encode("utf-8")
+        body = export_body(rows, fmt, zone)
         with transaction.atomic():
             current = _recheck(caller, service.store, actor, Capability.SYSTEM_LOGS)
             _audit(Action.SYSTEM_LOGS_EXPORTED, current, count=len(rows))

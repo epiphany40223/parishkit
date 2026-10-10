@@ -576,9 +576,9 @@ pk-admin test status
 | `tickets` | `test status`: recent tickets' `id`, `created_at`, `request_key`, `sequence`, `state` and `message_state`, without DUIDs |
 
 The preview never shows Family names. To check them, add `--names` with
-`--timezone`: the preview also requests a CSV export of each DUID with the
-name the page shows, and `export fetch` downloads it. Delete the file once
-used.
+`--timezone`: the preview also requests an export of each DUID with the
+name the page shows, and `export fetch` downloads it. The file is CSV unless
+you add `--format xlsx` or `--format pdf`. Delete the file once used.
 
 ```sh
 pk-admin test families-preview REVISION_ID --family 1234 --family 5678 \
@@ -799,8 +799,9 @@ the page shows, and a Family's or member's DUID in `details` are left out.
 Open the page, or export, to see them.
 
 `logs export` writes the page's download, the newest 10,000 matching
-entries at most, to standard output, byte for byte as the page's file. It
-takes the filters above, `--format` (`csv`, the default, or `jsonl`) and
+entries at most, to standard output, as the page's file (CSV and JSON Lines
+byte for byte). It takes the filters above, `--format` (`csv`, the default,
+`xlsx` or `jsonl`; CSV and XLSX have the same columns) and
 `--timezone` (UTC, the default, or a time zone name, for the file's times).
 Redirect standard output to a file: the wrapper refuses to write the file
 to a terminal.
@@ -1195,6 +1196,8 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   `export postal`.
 - `pk-admin/1` (#817): additive. `test families-preview --names` with
   `--timezone`, and its `export` field (null without `--names`).
+- `pk-admin/1` (#966): additive. `test families-preview --names --format`
+  (`csv`, the default, `xlsx` or `pdf`), and `logs export --format xlsx`.
 - `pk-admin/1` (ADM-11 PR 9c): additive. `delivery resend` and
   `delivery refusal-clear`, which prompt. `delivery show`'s `actions` may
   now include `resend` (it listed only `delivery resolve` actions); an
