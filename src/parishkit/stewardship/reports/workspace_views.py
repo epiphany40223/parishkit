@@ -37,7 +37,7 @@ from .export_models import ExportRequest
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable, read_fact_set
-from .ministries import can_report
+from .ministries import can_report, unscoped
 from .read_admission import admit_report_read
 from .selection import guarded_participation
 from .statistics import StatisticsUnavailable, calculate_statistics
@@ -71,7 +71,7 @@ def index(request):
         actor = authenticated_admin(request, store=service.store, activity=True)
         if not allows(actor, Capability.CAMPAIGN_REPORT):
             if not can_report(actor):
-                raise PermissionError("Campaign reporting is unavailable.")
+                raise unscoped(actor, "Campaign reporting is unavailable.")
             response = redirect("admin:ministry_report")
             response["Cache-Control"] = "no-store"
             return response

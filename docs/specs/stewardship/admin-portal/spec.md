@@ -3953,9 +3953,11 @@ hold one of the campaign's [Ministry leader roles](#ministry-leader-roles) in
 ParishSoft, matched by an email address their ParishSoft Member record lists.
 A ParishSoft role without a login rule admits no one, and a Ministry leader
 who holds no such role signs in and sees no Ministry (Administrator decision,
-2026-10-10). The [data specification](../data/spec.md#ministry-leaders)
-defines the rule. A change in ParishSoft reaches the portal with the next full
-refresh.
+2026-10-10). Opening a Ministry page then answers 403 with a plain sentence
+saying they lead no Ministry in the current ParishSoft data, so there are no
+Ministry pages to show, never the generic sign-in denial. The
+[data specification](../data/spec.md#ministry-leaders) defines the rule. A
+change in ParishSoft reaches the portal with the next full refresh.
 
 Ministry assignments and the Chairperson suggestion, confirmation and review
 flows remain from the earlier model until they are removed (#922). They

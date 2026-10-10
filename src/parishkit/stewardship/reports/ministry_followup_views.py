@@ -48,6 +48,7 @@ from parishkit.stewardship.workflows.models import (
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .information import parse_page
+from .ministries import unscoped
 from .ministry_followup import (
     CHANNELS,
     HISTORY_STATES,
@@ -104,7 +105,7 @@ def _principal(request, store, *, read_only=False):
         request, store=store, activity=not read_only, read_only=read_only
     )
     if not can_follow_up(principal):
-        raise PermissionError("Ministry follow-up is unavailable.")
+        raise unscoped(principal, "Ministry follow-up is unavailable.")
     return principal
 
 

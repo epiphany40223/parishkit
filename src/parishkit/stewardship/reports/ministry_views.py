@@ -34,6 +34,7 @@ from .ministries import (
     campaign_ids,
     can_report,
     ministry_page,
+    unscoped,
 )
 from .read_admission import admit_report_read
 from .report_paging import clamp_query
@@ -45,7 +46,7 @@ def _principal(request, store, *, read_only=False):
         request, store=store, activity=not read_only, read_only=read_only
     )
     if not can_report(actor):
-        raise PermissionError("Ministry report access is unavailable.")
+        raise unscoped(actor, "Ministry report access is unavailable.")
     return actor
 
 

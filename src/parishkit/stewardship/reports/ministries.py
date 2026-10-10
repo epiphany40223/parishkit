@@ -6,6 +6,7 @@ from datetime import date, datetime
 
 from django.db import connection
 from django.utils.datastructures import MultiValueDict
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.domain import Percentage
@@ -13,6 +14,7 @@ from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.presentation import out_of
+from parishkit.stewardship.web.refusals import UserFacingDenied
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting
 
 from .directories import address_lines
@@ -145,6 +147,26 @@ def can_report(principal):
         allows(principal, Capability.MINISTRY_REPORT, ministry_id=duid)
         for duid in getattr(principal, "ministries", ())
     )
+
+
+def unscoped(principal, message):
+    """The refusal for a reader no Ministry page admits (#939).
+
+    A Ministry leader admitted by a login rule may lead no Ministry in the
+    current ParishSoft data (no leader role on a current campaign
+    Ministry's roster). That person is told so plainly, still with a 403,
+    rather than given the generic sign-in denial, which suggests signing in
+    again would help. Anyone else keeps the generic denial (``message`` is
+    internal and never shown).
+    """
+    if "ministry_leader" in getattr(principal, "roles", ()):
+        return UserFacingDenied(
+            _(
+                "You don't lead any Ministry in the current ParishSoft data, "
+                "so there are no Ministry pages to show."
+            )
+        )
+    return PermissionError(message)
 
 
 def campaign_ids(principal):
