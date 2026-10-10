@@ -3,7 +3,9 @@
 The answer is recorded alongside the Ministry page, in a per-Member entry
 that also holds a ``talents`` map. The Family form no longer asks for
 talents (#970): every campaign resolves to no talent options, so each new
-entry's map is empty. Older submissions keep the talents they recorded.
+entry's map is empty, though a form opened before then may still send a
+configured talent, which is stored and never shown. Older submissions keep
+the talents they recorded.
 ``DEFAULT_TALENTS`` stays because the installed SQL guard's
 ``stewardship_talent_defaults_v1()`` still lists the same options.
 """
@@ -36,12 +38,15 @@ class InvalidServiceAnswers(ValueError):
 
 
 def configured_talent_options(configuration):
-    """The talent list a campaign's configuration names, for its digest only.
+    """The talent list a campaign's configuration names; never offered.
 
     No campaign offers talents now (#970), but ``inputs.definition_digest``
     still hashes this list exactly as before: a Family's form issued earlier
     keeps its stored definition digest, and a different digest for the same
-    configuration would refuse that Family's submission as unverifiable. Only
+    configuration would refuse that Family's submission as unverifiable.
+    Submissions are also validated against it, so a talent sent from a form
+    opened before #970 is still stored rather than refusing the whole
+    response; malformed or unknown values are still refused. Only
     Ministry-enabled campaigns name talents; a never-edited list resolves to
     ``DEFAULT_TALENTS``. Never use this to offer talents.
     """
@@ -57,8 +62,8 @@ def talent_options(configuration):
     """No campaign offers talents any more (#970), whatever its configuration.
 
     An older campaign's ``talent_options`` value stays as inert history. With
-    no options offered, the Family form shows no Talents question and only an
-    empty talents map validates.
+    no options offered, the Family form shows no Talents question and sends
+    an empty talents map.
     """
     return ()
 

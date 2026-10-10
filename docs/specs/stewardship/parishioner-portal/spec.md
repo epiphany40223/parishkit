@@ -345,9 +345,12 @@ The form no longer asks for talents
 Member's answer is stored beside an empty `talents` map, which the database
 guard accepts. A response from before then keeps the talents it recorded,
 read-only, with no page that shows them, and a revisit prefills none. A
-talent sent from a form opened before the change is refused like any choice
-the form does not offer. The parish's "time, talent and treasure" wording in
-the default content is stewardship language, not this question, and stays.
+form opened before the change may still send talents from the campaign's
+configured list; the response is accepted and stores them, read-only and
+unreported, so no Family loses an answer mid-campaign. An unknown or
+malformed talent is refused. The parish's "time, talent and treasure"
+wording in the default content is stewardship language, not this question,
+and stays.
 
 ## Financial stewardship
 

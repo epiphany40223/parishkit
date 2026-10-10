@@ -100,6 +100,11 @@ class CensusInputs:
     # The offered talents: none since #970. definition_digest covers the
     # configured list, so it is not repeated in the projection digest.
     talent_options: tuple[ShareOption, ...] = ()
+    # The configured talents a submission may still carry: a form opened
+    # before #970 may send them, and refusing would lose that Family's whole
+    # response. They are stored (the SQL guard accepts them) and never shown.
+    # Also covered by definition_digest.
+    accepted_talent_options: tuple[ShareOption, ...] = ()
 
     @property
     def projection_digest(self):
@@ -446,6 +451,7 @@ def census_inputs(
         financial,
         parish_name,
         talent_options(configuration),
+        configured_talent_options(configuration),
     )
     # Detect a malformed typed source before issuing a baseline, not on Submit.
     _ = result.projection_digest

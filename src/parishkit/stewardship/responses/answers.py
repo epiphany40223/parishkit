@@ -177,7 +177,9 @@ def validate_answers(
                 payload["service"],
                 ministries,
                 inputs.ministries,
-                inputs.talent_options,
+                # Not inputs.talent_options (none since #970): a form opened
+                # before then may still send a configured talent.
+                inputs.accepted_talent_options,
             )
         except InvalidServiceAnswers as error:
             errors.update(error.fields)

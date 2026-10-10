@@ -325,8 +325,7 @@ def test_set_aside_talents_no_longer_offered_are_not_restored(page, component_or
 
     A tab opened before talents were retired (#970) sets Painter aside under
     the lock; another tab saves the Member locked, and the refresh offers no
-    talents. Painter must not come back with no checkbox left to remove it
-    (the server would refuse it).
+    talents. Painter must not come back with no checkbox left to remove it.
     """
     form, submissions = old_form(), []
     fresh = deepcopy(form)

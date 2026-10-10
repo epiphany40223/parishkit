@@ -105,6 +105,45 @@ def test_talent_list_still_shapes_the_form_definition():
     assert definition_digest(base) != definition_digest(base | {"talent_options": []})
 
 
+# A fixed configuration whose definition digest is pinned below.
+PINNED = {
+    "modules": ["ministry"],
+    "ministry_duids": [7, 8],
+    "content_versions": {"welcome": 1, "ministry": 2},
+    "name": "Stewardship 2027",
+    "start_date": "2026-10-03",
+    "end_date": "2026-11-15",
+    "timezone": "America/New_York",
+    "additional_information": False,
+}
+
+
+def test_definition_digest_is_pinned_across_the_talent_retirement():
+    """The digests equal those computed before #970 for the same configuration.
+
+    A Family's open form holds its definition digest; if a later change to
+    configured_talent_options (or the digest) altered it for an unchanged
+    configuration, that Family's submission would be refused as
+    unverifiable. Change these values only with a deliberate form-definition
+    change.
+    """
+    assert definition_digest(PINNED) == (
+        "fa0c1d0de638b21f2475290c888fcc9207965feb63419e4b0395f17957944b8d"
+    )
+    edited = PINNED | {
+        "talent_options": [
+            {
+                "id": "7f000000-0000-4000-8000-000000000001",
+                "label": "Musician",
+                "free_text": False,
+            }
+        ]
+    }
+    assert definition_digest(edited) == (
+        "a57514d5dd9e2f402ccb2919c38d8cbe32b4156c5956f0c80c050735bea13b63"
+    )
+
+
 def test_campaign_configuration_accepts_an_optional_talent_list():
     """Older configurations hold one (#970); a stored list still validates."""
     values = campaign(modules=["ministry"], ministry_duids=[7])["values"]
@@ -240,30 +279,44 @@ def test_disabled_ministry_module_accepts_only_an_empty_section():
 
 
 def test_no_offered_talents_still_validates():
-    """With no talents offered (#970), answers carry no talents.
-
-    "Cannot participate" still works, and a stale talent from a form opened
-    before talents were retired is refused rather than silently stored.
-    """
+    """With no talents offered (#970), "Cannot participate" still works."""
     locked = {"1": {"cannot_serve": True, "talents": {}}}
     result = validate_service_answers(
         service(**locked),
         ministries(**{"1": {"join": [], "leave": [7, 8]}}),
         INPUTS,
-        (),
+        configured_talent_options({"modules": ["ministry"]}),
     )
     assert result["members"] == {
         "1": {"cannot_serve": True, "talents": {}},
         "2": {"cannot_serve": False, "talents": {}},
     }
-    with pytest.raises(InvalidServiceAnswers) as caught:
-        validate_service_answers(
-            service(**{"1": {"cannot_serve": False, "talents": {PAINTER: ""}}}),
-            ministries(),
-            INPUTS,
-            (),
-        )
-    assert set(caught.value.fields) == {"service.members.1.talents"}
+
+
+def test_stale_talent_from_an_older_form_is_accepted():
+    """A form opened before #970 may still send a configured talent.
+
+    Refusing it would lose that Family's whole response mid-campaign, so it
+    validates against the configured list and is stored (never shown).
+    Unknown or malformed talents are still refused.
+    """
+    configured = configured_talent_options({"modules": ["ministry"]})
+    result = validate_service_answers(
+        service(**{"1": {"cannot_serve": False, "talents": {PAINTER: ""}}}),
+        ministries(),
+        INPUTS,
+        configured,
+    )
+    assert result["members"]["1"] == {"cannot_serve": False, "talents": {PAINTER: ""}}
+    for talents in ({str(uuid4()): ""}, {PAINTER: "text"}, {OTHER: ""}, [PAINTER]):
+        with pytest.raises(InvalidServiceAnswers) as caught:
+            validate_service_answers(
+                service(**{"1": {"cannot_serve": False, "talents": talents}}),
+                ministries(),
+                INPUTS,
+                configured,
+            )
+        assert set(caught.value.fields) == {"service.members.1.talents"}
 
 
 def test_prior_talents_drop_now_that_none_is_offered():

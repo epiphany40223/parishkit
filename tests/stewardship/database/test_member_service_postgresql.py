@@ -10,7 +10,11 @@ from uuid import uuid4
 import pytest
 from django.db import IntegrityError, connection, transaction
 
-from parishkit.stewardship.responses.service import DEFAULT_TALENTS
+from parishkit.stewardship.responses import inputs as form_inputs
+from parishkit.stewardship.responses.service import (
+    DEFAULT_TALENTS,
+    configured_talent_options,
+)
 
 from .campaign_builders import change as change_configuration
 from .test_ministry_responses_postgresql import (
@@ -45,18 +49,9 @@ def test_limitations_round_trip_and_no_talents_are_offered(response_service):
     answers = answers_for(form)
     answers["cannot_attend"] = True
     answers["service"] = {
-        "members": {"3": {"cannot_serve": False, "talents": {PAINTER: ""}}},
+        "members": {"3": {"cannot_serve": False, "talents": {}}},
         "proposed_members": {},
     }
-    # A talent from a form opened before talents were retired is refused.
-    result = post(
-        harness.client,
-        "/family/submit",
-        {"baseline": form["baseline"], "answers": answers},
-    )
-    assert result.status_code == 422
-    assert "service.members.3.talents" in result.json()["fields"]
-    answers["service"]["members"]["3"]["talents"] = {}
     first = respond(harness, form, answers)
     assert first.answers["cannot_attend"] is True
     assert first.answers["service"]["members"]["3"] == {
@@ -87,6 +82,46 @@ def test_cannot_serve_requires_leaving_every_current_ministry(response_service):
     answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
     submission = respond(harness, form, answers)
     assert submission.answers["service"]["members"]["3"]["cannot_serve"] is True
+
+
+def test_a_form_opened_before_the_deploy_still_submits_talents(
+    response_service, monkeypatch
+):
+    """A baseline issued before #970 deployed keeps working with its talents.
+
+    The pre-deploy code offered the configured talents, so a Family's open
+    tab may send one. Refusing it would lose the whole response mid-campaign;
+    instead it is stored (the SQL guard accepts it) and never shown.
+    Unknown talents are still refused.
+    """
+    harness = response_service
+    # Issue the baseline as the pre-deploy code did: offering the talents.
+    monkeypatch.setattr(form_inputs, "talent_options", configured_talent_options)
+    form = start(harness)
+    assert [option["id"] for option in form["service"]["talent_options"]] == [
+        option.id for option in DEFAULT_TALENTS
+    ]
+    monkeypatch.undo()
+    answers = answers_for(form)
+    answers["service"] = {
+        "members": {"3": {"cannot_serve": False, "talents": {str(uuid4()): ""}}},
+        "proposed_members": {},
+    }
+    result = post(
+        harness.client,
+        "/family/submit",
+        {"baseline": form["baseline"], "answers": answers},
+    )
+    assert result.status_code == 422
+    assert "service.members.3.talents" in result.json()["fields"]
+    talents = {PAINTER: "", OTHER: "Organ"}
+    answers["service"]["members"]["3"]["talents"] = talents
+    submission = respond(harness, form, answers)
+    assert submission.answers["service"]["members"]["3"] == {
+        "cannot_serve": False,
+        "talents": talents,
+    }
+    assert revisit(harness)["service"]["members"]["3"]["talents"] == {}
 
 
 @pytest.mark.parametrize(
