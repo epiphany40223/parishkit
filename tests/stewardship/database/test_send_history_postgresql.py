@@ -357,11 +357,7 @@ def test_sends_count_like_the_panel_and_link_to_exactly_their_emails(
         # the reminder, and counts it the same way.
         assert panel == rows[keys["reminder"]].send.counts
         # Two of the invitation's 5 failures have no email to list.
-        failed = next(
-            o
-            for o in rows[keys["invitation"]].outcomes
-            if o.state == "permanent_failure"
-        )
+        failed = rows[keys["invitation"]].failed
         assert (failed.count, failed.listed) == (5, 3)
 
         # Every linked count opens exactly the emails it counts: Family 31's
@@ -409,10 +405,15 @@ def test_sends_count_like_the_panel_and_link_to_exactly_their_emails(
         body = browser.get(PAGE).content.decode()
         token = keys["invitation"].token.replace(":", "%3A")
         assert f"send={token}&amp;state=permanent_failure" in body
-        assert ">5<br><a " in body and "show 3" in body
+        assert '>5<span class="cell-line"><a ' in body and "show 3" in body
         name = "Invitation, " + ("Testing" if mode == "testing" else "Production")
         assert f'aria-label="21 sent emails of {name}: show them">21</a>' in body
-        assert re.search(r"Reminder 1\s*<br>\(schedule changed later\)", body)
+        # The mode, then the change, are muted lines under the name (#931).
+        assert re.search(
+            r"Reminder 1</span>\s*<span class=\"cell-detail\">[^<]+</span>\s*"
+            r"<span class=\"cell-detail\">Schedule changed later</span>",
+            body,
+        )
         failures = browser.get(
             DELIVERIES
             + "?"

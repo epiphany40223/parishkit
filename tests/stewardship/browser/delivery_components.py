@@ -15,13 +15,16 @@ def components(now):
     message = dict(
         id=uuid4(),
         family__family_duid=12345,
+        # The Family's name beside its DUID (#931), long enough to wrap.
+        family_name="Castellanos, Maximiliana and Bartholomew",
         state="delivery_unknown",
         purpose="initial",
         mode="production",
         version=4,
         attempt=1,
         updated_at=now,
-        created_at=now,
+        # Outgoing mail shows only the last change (#931), never this.
+        created_at=now - timedelta(hours=3),
     )
     refusal = dict(
         id=uuid4(), family_duid=12345, address="head@example.org", created_at=now
@@ -42,6 +45,37 @@ def components(now):
             ),
             states=["all", "delivery_unknown"],
             selected_state="delivery_unknown",
+            query="",
+        ),
+    )
+    # Each kind of recipient (#931): a named Family, a Family the latest
+    # ParishSoft data no longer has, and an Administrator report.
+    yield (
+        "/deliveries-names",
+        "deliveries",
+        dict(
+            table=window_table(
+                PageWindow(1, 25),
+                [
+                    message,
+                    message
+                    | dict(id=uuid4(), family__family_duid=4021, family_name=None),
+                    message
+                    | dict(
+                        id=uuid4(),
+                        family__family_duid=None,
+                        family_name=None,
+                        purpose="daily_digest",
+                        state="delivered",
+                    ),
+                ],
+                False,
+                total=(3, False),
+                sorting=DELIVERY_SORTING,
+                sort=DELIVERY_SORTING.default,
+            ),
+            states=["all", "delivery_unknown"],
+            selected_state="all",
             query="",
         ),
     )
@@ -182,6 +216,29 @@ def components(now):
         ],
     )
     yield "/delivery", "delivery", delivery
+    # A message retried after a failure: each recorded change is one short
+    # row of the attempt history table, newest first (#934).
+    yield (
+        "/delivery-attempts",
+        "delivery",
+        delivery
+        | dict(
+            events=[
+                dict(
+                    attempt=attempt,
+                    action=action,
+                    state=state,
+                    created_at=now - timedelta(minutes=minutes),
+                )
+                for attempt, action, state, minutes in (
+                    (2, "mark_unknown", "delivery_unknown", 0),
+                    (2, "submit", "submitting", 5),
+                    (1, "retry_unaccepted", "retry_wait", 30),
+                    (1, "submit", "submitting", 35),
+                )
+            ]
+        ),
+    )
     # The evidence and attempt history over two pages, as Next page and
     # Previous page fetch them in place (#519 PR 6).
     first = delivery | dict(next_query="page=2")

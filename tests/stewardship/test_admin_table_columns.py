@@ -39,9 +39,7 @@ NOT_SHOWN = re.compile(r"<option\b.*?</option>|<[^>]*>", re.DOTALL)
 # Tables that still combine a name and a DUID, each with the number of
 # combined cells it holds and the work that splits it. Lower a count, or
 # remove the entry, when that work lands; the guard then holds it.
-PENDING = {
-    "deliveries.html": (1, "#934 (Outgoing mail)"),
-}
+PENDING: dict[str, tuple[int, str]] = {}
 
 
 def combined(cell):

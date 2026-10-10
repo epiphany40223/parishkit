@@ -5,10 +5,12 @@ import re
 from uuid import UUID
 
 from django.db import connection
-from django.db.models import Q
+from django.db.models import F, Q
+from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
 
-from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
+from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
+from parishkit.stewardship.web.tables import Fixed, Sorting, bounded_count, read_window
 
 from .outbox_models import OutboxMessage
 from .send_history import email_ids
@@ -37,17 +39,33 @@ PURPOSES = (
     "daily_digest",
     "weekly_digest",
 )
-# Every Outgoing mail column sorts on the server. Recipient sorts by Family
-# DUID (Administrator reports, which have no Family, sort last either way);
-# Created is the default, newest first. Only the state filter is indexed
+# Outgoing mail is a log of emails (#931): it sorts on the server by When
+# (changed: the time of the email's current state, its last change; the
+# default, newest first), Family (name), Family DUID (duid), Purpose, Mode,
+# State and Provider attempts. The command line's --sort takes these same
+# tokens, plus created (when the email was created), which the page no
+# longer shows. Administrator reports, which have no Family, sort last
+# under name and duid in either direction, as do, under name, Families the
+# latest ParishSoft data no longer has. Only the state filter is indexed
 # (outbox_due, outbox_campaign_state); the orderings themselves are not, so
 # a page is a top-N sort of the filtered messages. The default "all" view
 # therefore scans the outbox, as its newest-first order always did; the
 # outbox grows by about one message per Family per mailing and is not
-# purged. id is the unique tiebreak.
+# purged. Under name, Families that show the same name then sort by Family
+# DUID, so each Family's emails stay together, as the Family codes directory
+# orders tied names (directory_reports.sql). Under name and duid, one
+# Family's emails then read newest change first in either direction (#934),
+# as the log's default does. id is the unique tiebreak.
+_FAMILY_EMAILS = (Fixed("-updated_at"), Fixed("-id"))
 DELIVERY_SORTING = Sorting.by_column(
     {
-        "recipient": ("family__family_duid",),
+        "name": (
+            "family_sort_surname",
+            "family_sort_name",
+            "family__family_duid",
+            *_FAMILY_EMAILS,
+        ),
+        "duid": ("family__family_duid", *_FAMILY_EMAILS),
         "purpose": ("purpose",),
         "mode": ("mode",),
         "state": ("state",),
@@ -55,10 +73,45 @@ DELIVERY_SORTING = Sorting.by_column(
         "changed": ("updated_at",),
         "created": ("created_at",),
     },
-    default="-created",
+    default="-changed",
     descending_first={"attempts", "changed", "created"},
     tiebreak=("id",),
 )
+
+
+def with_name_keys(selected, snapshot, duid="family__family_duid"):
+    """Annotate the Family name sort keys DELIVERY_SORTING's name orders by.
+
+    ``family_sort_surname`` is the surname and ``family_sort_name`` the
+    whole "Squyres, Tracy and Jeff" name, both lowercased, as the Family
+    codes directory orders them. Both come from ``SnapshotFamilyName``, the
+    shared SQL twin of the ``snapshot_family_names`` name ``with_family_names``
+    shows, read from ``snapshot``: the caller reads the current snapshot id
+    once and passes it here and to ``with_family_names``, so the sort and the
+    shown names agree. ``duid`` names each row's Family DUID: an outbox
+    message's by default. NULL (sorted last) for an Administrator report,
+    which has no Family, or a Family the snapshot lacks.
+
+    An email stores no name, so this runs per row, and only when the name
+    sort is chosen: a few index lookups and small JSON parses each. Computing
+    the keys once per Family would repeat less work for a Family with many
+    emails, but at a parish's few emails per Family the repeats are cheap.
+    """
+    return selected.annotate(
+        **{
+            field: Lower(
+                SnapshotFamilyName(
+                    snapshot, F(duid), surname_only=surname_only, default="Family"
+                )
+            )
+            for field, surname_only in (
+                ("family_sort_surname", True),
+                ("family_sort_name", False),
+            )
+        }
+    )
+
+
 STATES = (
     "all",
     "delivery_unknown",
@@ -155,7 +208,9 @@ def alert_counts(since, *, limit):
     return counts, [UUID(str(value)) for value in ids], unknown, ended
 
 
-def listing(window, *, state, query, sort=DELIVERY_SORTING.default, send=None):
+def listing(
+    window, *, state, query, sort=DELIVERY_SORTING.default, send=None, snapshot=None
+):
     """Accept a bounded exact Family DUID or delivery UUID, not arbitrary SQL.
 
     Returns (window, rows, has_next, total): ``total`` is a bounded count of
@@ -164,6 +219,9 @@ def listing(window, *, state, query, sort=DELIVERY_SORTING.default, send=None):
     ``sort`` is a DELIVERY_SORTING token the caller already validated.
     ``send``, a ``send_history.SendKey``, keeps only that Family email send's
     emails: each Family's newest one, exactly those its history counts read.
+    ``snapshot`` is the ParishSoft snapshot id the Family name sort reads
+    (``read_listing`` passes the current one, which the page also names its
+    Families from); without one every name key is NULL.
     """
     if state not in STATES or type(query) is not str or len(query) > 64:
         raise ValueError("Invalid delivery filter.")
@@ -184,6 +242,8 @@ def listing(window, *, state, query, sort=DELIVERY_SORTING.default, send=None):
                 raise ValueError("Use an exact Family DUID or delivery ID.") from None
             selected = selected.filter(Q(pk=identifier) | Q(family_id=identifier))
     total = bounded_count(selected)
+    if DELIVERY_SORTING.tokens[sort][0] == "name":
+        selected = with_name_keys(selected, snapshot)
     window, rows, has_next = read_window(
         window, DELIVERY_SORTING.order(selected, sort).values(*FIELDS), total
     )
