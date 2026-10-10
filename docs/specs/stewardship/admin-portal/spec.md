@@ -2018,17 +2018,23 @@ and removes rows, fills presets and reads times through the shared
   cost and freshness summary and the seven-day list are drawn below Save,
   so neither the line nor a longer preview moves Save or the rows under the
   pointer. A row's messages are drawn under its controls, in room kept for
-  one line, so a one-line message that comes or goes moves nothing. When
-  a longer message changes what is above, the page scrolls by the same
-  amount, so what is under the pointer stays where it was on the screen,
-  wherever the pointer is on the page. Inside a row or a part the check
-  redraws, that is the row or the part; over blank space beside or between
-  rows, it is the first row or later block (the skips, the switch, "Edit
-  as text", Save) at or below the pointer, and below all of them the last
-  row's bottom edge. With no pointer (keyboard only, or the pointer has
-  left the window), the control being edited stays in place. "Use these
-  lists" keeps its own button in place, even with the pointer elsewhere. The "Edit as text" error is drawn after Use these
-  lists, in room kept for one line.
+  one line, so a one-line message that comes or goes moves nothing. Every
+  other change the page's script makes (messages, the line beside Save,
+  the summary, the seven-day list, the "Not checked" line, the "Edit as
+  text" error, and rows added, removed or replaced) keeps the page steady
+  at one height on the screen: the pointer's, whatever is beside it; with
+  no pointer (keyboard only, a lifted touch, or the pointer has left the
+  window), the top of the control being edited, or of Use these lists
+  when it replaces the rows. The script measures each part it changes
+  before and after the change and scrolls by the sum of the height
+  changes of the parts wholly above that height. In a part that spans it,
+  it adds how far the same piece of content (followed by position) moved
+  within the part, or nothing where that content is gone. So what is under
+  the pointer stays where it was on the screen, within half a pixel. Over
+  something that does not scroll with the page (the sticky Admin menu),
+  nothing is scrolled. The browser's own scroll anchoring is turned off on
+  this page so it does not add a second adjustment. The "Edit as text"
+  error is drawn after Use these lists, in room kept for one line.
   The preview and the problems at each row are not live regions. This is
   the same pattern as the mail schedules' repeat panel
   ([#469](https://github.com/epiphany40223/parishkit/issues/469)).

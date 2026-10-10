@@ -777,6 +777,10 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .schedule-switch label { display: inline; margin: 0; }
 .schedule-text textarea { min-height: 3.5rem; }
 .schedule-stale, .schedule-text-error { min-height: 1lh; }
+/* What refresh-schedule-v1.js redraws or resizes holds its children's
+   margins, so its box's height is all the room it takes: the script keeps
+   the page steady by those heights (#736). */
+[data-schedule-part], [data-schedule-rows], [data-row-messages] { display: flow-root; }
 .schedule-day-times { list-style: none; padding: 0; margin: 0; columns: 14rem auto; }
 .schedule-day-times s { color: var(--muted); }
 .schedule-time-full { font-weight: 600; }
