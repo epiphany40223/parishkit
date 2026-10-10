@@ -158,7 +158,7 @@ def test_editing_after_a_review_withdraws_it(page, component_origin):
         }"""
     )
     visible(page.get_by_text("Choose Review changes again"))
-    assert page.evaluate(FORM_TOP) == before
+    assert page.evaluate(FORM_TOP) == pytest.approx(before, abs=0.5)
     assert page.locator("#settings-review [data-review-stale]").count() == 1
     assert page.locator("#settings-review [data-review-of]").count() == 0
     assert page.get_by_role("button", name="Apply changes").count() == 0
@@ -557,28 +557,84 @@ def test_share_review_is_unavailable_after_applying_a_row_change(
     expect_review(page, enabled=False, hint=OPTION_HINT)
 
 
-def test_a_shorter_status_never_moves_the_form(page, component_origin):
-    """A reader watching Change status at the foot of the page sees nothing
-    move when Applied (shorter than the running indicator) replaces it, or
-    when the quiet refresh redraws the region: the review region keeps its
-    height (data-keep-height), so the page never gets shorter under them
-    (#736)."""
-    answer_reviews(page, component_origin)
+def hold_status(page, component_origin):
+    """Hold Change status's polls; returns the list of held routes."""
     held = []
     page.route(
         lambda url: url.split("?")[0] == component_origin + STATUS,
         lambda route: held.append(route),
     )
-    review(page, component_origin)
-    page.get_by_role("button", name="Apply changes").click()
-    visible(page.get_by_role("heading", name="Change status"))
-    recorded(page, held, 1)
+    return held
+
+
+def to_the_foot(page, height=400):
+    """Scroll to the foot of a short window; returns the form's top edge."""
+    page.set_viewport_size({"width": 800, "height": height})
     page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
     # Only a page scrolled to its foot can be pulled down by a shorter one.
     assert page.evaluate("scrollY") > 0
-    before = page.evaluate(FORM_TOP)
+    return page.evaluate(FORM_TOP)
+
+
+def test_a_shorter_status_never_moves_the_form(page, component_origin):
+    """A reader at the foot of the page sees nothing move when Apply swaps
+    the review for Change status, when Applied (shorter than the running
+    indicator) replaces it, or when the quiet refresh redraws the region:
+    the review region keeps the height their place needs (data-keep-height),
+    so the page never gets shorter under them (#736)."""
+    answer_reviews(page, component_origin)
+    held = hold_status(page, component_origin)
+    review(page, component_origin)
+    # Tall enough to show the whole review region, so moving focus to the
+    # status's heading has no reason to scroll.
+    before = to_the_foot(page, 600)
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Change status"))
+    recorded(page, held, 1)
+    assert page.evaluate(FORM_TOP) == pytest.approx(before, abs=0.5)
     held[0].continue_()
     visible(page.get_by_role("heading", name="Applied: your change is saved"))
     has_attribute(page.locator(DIGEST), "value", "b" * 64)
-    assert page.evaluate(FORM_TOP) == before
+    assert page.evaluate(FORM_TOP) == pytest.approx(before, abs=0.5)
     assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_status_loaded_with_the_page_never_moves_the_form(page, component_origin):
+    """A page loaded with Change status already in its region (a reload of
+    the change's address) holds its place the same way when Applied
+    replaces the running indicator (#736)."""
+    held = hold_status(page, component_origin)
+    page.goto(component_origin + PENDING)
+    visible(page.get_by_role("heading", name="Change status"))
+    recorded(page, held, 1)
+    before = to_the_foot(page)
+    held[0].continue_()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.evaluate(FORM_TOP) == pytest.approx(before, abs=0.5)
+
+
+def test_a_long_review_leaves_no_gap_above_the_foot(page, component_origin):
+    """The review region holds only what the reader's place needs: a long
+    review followed by Applied, read from the top of the page, leaves no
+    gap the height of the review below the status (#736)."""
+    answer_reviews(page, component_origin)
+    review(page, component_origin)
+    page.evaluate(
+        """() => {
+            const tall = document.createElement("div");
+            tall.style.height = "2000px";
+            document.querySelector("[data-review-of]").prepend(tall);
+            window.scrollTo(0, 0);
+        }"""
+    )
+    # Apply is pressed without scrolling to it, so the reader stays at the top.
+    page.get_by_role("button", name="Apply changes").evaluate(
+        "button => button.click()"
+    )
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    height = page.evaluate(
+        "document.getElementById('settings-review').getBoundingClientRect().height"
+    )
+    assert height < 1000

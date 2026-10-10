@@ -1022,6 +1022,23 @@
     enhanceTable(fresh);
     fresh.dispatchEvent(new CustomEvent("parishkit:swap", {bubbles: true}));
   };
+  // The min-height (a CSS length, or "" for none) that keeps `element` tall
+  // enough that the page's foot stays at or below the viewport's bottom edge
+  // however its content shrinks. A reader scrolled to the foot of the page
+  // would otherwise see the browser pull everything above it down under the
+  // pointer (#736); a reader higher up needs less, often nothing, so a long
+  // review followed by a short status leaves no gap below them. The height
+  // is measured unrounded and rounded up (offsetHeight can round down), and
+  // never exceeds the element's present height. The element is a flow root
+  // (ui-v1.css), so its children's margins count in its height. A copy lives
+  // in live-status-v1.js, which does not depend on this file.
+  const heldHeight = (element) => {
+    const root = document.documentElement;
+    const height = element.getBoundingClientRect().height;
+    const below = window.scrollY + root.clientHeight - (root.scrollHeight - height);
+    const need = Math.min(Math.ceil(height), Math.ceil(below));
+    return need > 0 ? `${need}px` : "";
+  };
   // Swap one region for its fresh copy. Selections are restored on the copy
   // before it enters the document, so wireSelection's first update already
   // counts them and no change event fires for a tick the reader did not make.
@@ -1033,11 +1050,9 @@
     });
     // Charts keep their space until the fresh ones are drawn (chart-v1.js).
     if (window.ParishCharts) window.ParishCharts.hold(region, fresh);
-    // A data-keep-height region (a settings page's review region) never gets
-    // shorter while the page stays loaded: the reader may have scrolled down
-    // to it at the foot of the page, where a shorter page would make the
-    // browser pull everything above it down under the pointer (#736).
-    if (region.hasAttribute("data-keep-height")) fresh.style.minHeight = `${region.offsetHeight}px`;
+    // A data-keep-height region (a settings page's review region) keeps the
+    // height the reader's place needs (heldHeight, above) (#736).
+    if (region.hasAttribute("data-keep-height")) fresh.style.minHeight = heldHeight(region);
     region.replaceWith(fresh);
     enhanceSwapped(fresh);
   };
@@ -1603,9 +1618,9 @@
   // the review out of date, and Apply would still apply the reviewed values,
   // so the review is withdrawn at once: its Apply is removed, the rest is
   // greyed out (data-review-stale), and its data-review-note line says to
-  // review again. The review stays in place at no less than its height, so
-  // the page never gets shorter under the reader's caret: when they have
-  // scrolled down to the review, a shorter page would pull the form under
+  // review again. The review stays in place, and its region keeps the
+  // height the reader's place needs (heldHeight), so a reader scrolled down
+  // to the review at the foot of the page never sees the form pulled under
   // the pointer (#736). The server's signed preview stays the authority for
   // what is applied. An edit made while Review is still in flight is not in
   // the review that answer brings, so that review is withdrawn as soon as
@@ -1617,7 +1632,10 @@
   // so a line at the top of the review region says they were not kept; a
   // review that arrives with it matches the redrawn form, so it stays.
   const withdraw = (review) => {
-    review.style.minHeight = `${review.offsetHeight}px`;
+    // Hold the review region (else the review) at what the reader's place
+    // needs, which also lets go of any hold an earlier swap no longer needs.
+    const keep = review.closest("[data-keep-height]") || review;
+    keep.style.minHeight = heldHeight(keep);
     review.removeAttribute("data-review-of");
     review.setAttribute("data-review-stale", "");
     review.querySelectorAll("form").forEach((apply) => apply.remove());

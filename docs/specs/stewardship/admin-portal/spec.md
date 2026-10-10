@@ -1625,12 +1625,17 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   concurrency, capability and session rechecks, the durable request and its
   audit are unchanged; a refusal that needs a fresh sign-in still shows its
   page whole. Apply is marked `data-in-place-only="flow-steps"`: its answer
-  replaces only the review region and the step indicator. The review
-  region (`data-keep-height`) never gets shorter while the page stays
-  loaded, through its own swaps and Change status's live updates alike: a
-  reader scrolled down to it at the foot of the page would otherwise see
-  the form pulled down under the pointer when a shorter status (Applied)
-  replaces a longer one. Share options and
+  replaces only the review region and the step indicator. Whenever the
+  review region (`data-keep-height`) changes (its own swaps, a withdrawn
+  review and Change status's live updates alike), it is held at just the
+  height that keeps the page's foot at or below the bottom of the window
+  where the reader is: a reader scrolled down to it at the foot of the
+  page would otherwise see the form pulled down under the pointer when a
+  shorter status (Applied) replaces a longer one. The trade-off is blank
+  space below a shorter status for a reader at the foot, which stays until
+  the next change to the region (or a reload); a reader higher up the page
+  needs little or no hold, so a long review followed by Applied leaves no
+  large gap. Share options and
   Member talents (#750) work the same way, except that their form, to which
   no script is bound, is an in-place region of its own: a Review's answer
   redraws it with the values sent and their field errors. Edits typed into
