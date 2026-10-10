@@ -162,6 +162,9 @@ FROZEN = {
     "0043_alert_local_time.sql": (
         "b30abe5ec194cd8071485a3225eb21d96fe1c571706ba9e3601273e95524aae0"
     ),
+    "0044_corpus_evidence_from_snapshot.sql": (
+        "17f7b2eaee06e950f8e091f41cb270b8fc68a2332780f0efe8da259e9cba068f"
+    ),
 }
 
 
