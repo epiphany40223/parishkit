@@ -115,16 +115,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     )
     from parishkit.stewardship.reports import workspace_views
 
-    unknown = uuid4()
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for endpoint in (
-            f"/admin/reports/{unknown}/participation/",
-            f"/admin/reports/{unknown}/participation/{setup[2].pk}.png",
-        ):
-            # Until #145 any campaign but the current one is gone (410).
-            assert read(browser, endpoint)[0].status_code == 410
     assert events.count() == 6
-    assert not AuditEvent.objects.filter(campaign_reference=unknown).exists()
 
     from parishkit.stewardship.reports import read_admission
 
@@ -152,8 +143,6 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     ):
         for endpoint in (
             reverse("admin:reports"),
-            # The retired chooser's old address (NAV-11).
-            "/admin/reports/campaigns/",
             path,
             chart_path,
         ):
@@ -172,10 +161,6 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     monkeypatch.setattr(tables, "PAGE_SIZES", (2, *tables.PAGE_SIZES))
     monkeypatch.setattr(workspace, "PAGE_SIZES", (2, *tables.PAGE_SIZES))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        # The retired chooser (rule 10) opens Participation, filters kept.
-        response, _ = read(browser, "/admin/reports/campaigns/?scope=current")
-        assert response.status_code == 301
-        assert response["Location"] == path + "?scope=current"
         options = "?sort=date_desc&inactive=yes&size=2"
         # A bookmark from before #728 removed the inactive subtotal still
         # loads: the parameter is ignored and no subtotal is shown.

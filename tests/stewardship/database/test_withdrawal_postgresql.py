@@ -144,18 +144,6 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
         assert receipt.confirmation_id == item.confirmation.pk
         assert post(item.browser, item.path, confirm_values).status_code == 302
         assert ProductionWithdrawal.objects.count() == 1
-        # A cancellation left open on the old address (NAV-10): one 308 to the
-        # page, which keeps its CSRF and reviewed-token checks and cancels
-        # nothing twice; another campaign's old address is gone (410).
-        old = f"/admin/campaign/{campaign.pk}/production/withdraw"
-        assert item.browser.post(old, confirm_values).status_code == 403
-        csrf = {"csrfmiddlewaretoken": item.browser.cookies["pk_admin_csrf"].value}
-        again = item.browser.post(old, confirm_values | csrf, follow=True)
-        assert again.redirect_chain[0] == (item.path, 308)
-        assert ProductionWithdrawal.objects.count() == 1
-        gone = post(item.browser, f"/admin/campaign/{uuid4()}/production/withdraw", {})
-        assert gone.status_code == 410 and "no-store" in gone["Cache-Control"]
-        assert ProductionWithdrawal.objects.count() == 1
         with monkeypatch.context() as patch:
             patch.setattr(signing, "time", SimpleNamespace(time=lambda: time() + 301))
             with pytest.raises(signing.SignatureExpired):

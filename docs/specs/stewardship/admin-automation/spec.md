@@ -1709,9 +1709,10 @@ This limits accidents; it does not hide data from the host operator (see
 This is the parity ledger: every `admin:` URL name at the time of writing,
 and the separate actions some pages carry, grouped by area. "Command" names
 the planned command and its PR; "Permanent", "Pending" and "Deferred" are
-exemptions. The old addresses kept as redirects (#525, every `legacy_…`
-name in `admin_urls/legacy.py`) are permanent exemptions: each only
-redirects to its new page, whose row covers it. `test_admin_route_parity`
+exemptions. Each page's form without its trailing slash (#525, every
+`…_slashless` name in `admin_urls/slashless.py`) is a permanent exemption:
+it only redirects to its page, whose row covers it. Old Admin addresses are
+not kept (#864). `test_admin_route_parity`
 checks that every other ledger route is named here.
 
 ### Status and session routes
@@ -1778,7 +1779,7 @@ none.
 | --- | --- |
 | `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules |
 | `configuration_request` | `config request show --watch` (PR 4) |
-| `campaign_settings`, `campaign_new`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
+| `campaign_settings`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `campaign_ministries`, `share_settings`, `talent_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign talents`, `campaign reminder-workgroup` (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |

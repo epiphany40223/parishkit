@@ -74,12 +74,10 @@ def test_templates_grey_out_their_multi_campaign_control(template, control, reti
 def test_no_template_links_a_retired_multi_campaign_page():
     """Nothing links New campaign or the two choosers any more.
 
-    The clone templates are exempt: Copy campaign refuses before rendering
-    them, and #145 removes them with the rest of multi-campaign support.
+    The clone templates are checked too: Copy campaign refuses before
+    rendering them, so a page render would never catch a stale link there.
     """
     for path in TEMPLATES.rglob("*.html"):
-        if path.name in {"clone-settings.html", "clone-preview.html"}:
-            continue
         source = path.read_text()
         for name in ("campaign_new", "report_campaigns", "ministry_report_campaigns"):
             for quote in "'\"":

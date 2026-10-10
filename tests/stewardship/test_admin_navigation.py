@@ -67,8 +67,8 @@ def test_every_admin_route_is_either_a_page_or_explicitly_not_one():
     """A new Admin route must be placed in the navigation or listed as a non-page."""
     pages = set(navigation.PAGES)
     assert not pages & navigation.NON_PAGES
-    assert not (pages | navigation.NON_PAGES) & navigation.LEGACY
-    known = pages | navigation.NON_PAGES | navigation.LEGACY
+    assert not (pages | navigation.NON_PAGES) & navigation.SLASHLESS
+    known = pages | navigation.NON_PAGES | navigation.SLASHLESS
     assert set(ROUTES) == known, set(ROUTES) ^ known
 
 
@@ -393,6 +393,8 @@ def test_change_origins_are_remembered_per_request_and_bounded():
         "/family/",
         "/admin/no-such-page",
         "/admin/logout",
+        # An old address (#864), remembered before its page moved.
+        "/admin/configuration/integrations/parishsoft",
         # A fixed id keeps the test ID the same wherever it is collected.
         "/admin/changes/00000000-0000-4000-8000-000000000001/",
         None,

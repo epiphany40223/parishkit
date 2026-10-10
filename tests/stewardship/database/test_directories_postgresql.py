@@ -1008,11 +1008,7 @@ def test_find_a_family_runs_the_directory_search_privately(
         )
         assert read(browser, find)[0].status_code == 405
         assert browser.post(find, {"search": "examp"}).status_code == 403
-        # Another campaign's old address is gone (NAV-11), before any search;
-        # a signed-out browser gets the bare refusal the box's script words.
-        other = f"/admin/reports/{uuid4()}/families/find"
-        response, body = search(browser, other, {"search": "examp"})
-        assert response.status_code == 410 and b"examp" not in body
+        # A signed-out browser gets the bare refusal the box's script words.
         anonymous = Client()
         response = anonymous.post(find, {"search": "examp"})
         assert response.status_code == 403 and response.content == b""

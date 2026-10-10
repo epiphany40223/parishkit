@@ -4,16 +4,17 @@ Pages end in ``/``; their form actions and status fragment sit under them as
 nouns (``resolution/``, ``clearance/``, ``status/``). Pause and resume mail
 acts on the current campaign, so its campaign-free route hands the view the
 current campaign's id. The header's presence count is a JSON read that a
-script polls, so it keeps the old ``/admin/presence`` address (decision 8):
-only the page moves, and that old address still redirects its page reads.
+script polls, so it keeps the ``/admin/presence`` address (decision 8);
+only the page moved, and any other read there is 404 (#864).
 """
 
+from django.http import Http404
 from django.urls import path
 
 from ..accounts import delivery_control_views, family_maintenance_views, presence
 from ..accounts.group_root_views import group_root
 from ..jobs import delivery_views, send_history_views, send_progress_views
-from ..web.admin_routes import current_campaign, legacy
+from ..web.admin_routes import current_campaign
 
 patterns = [
     # The group root opens the first entry the viewer may open now.
@@ -70,20 +71,19 @@ patterns = [
 
 # The JSON formats of the presence read that scripts poll (the header count).
 POLLED_PRESENCE = frozenset({"count", "json"})
-_presence_page_moved = legacy("presence")
 
 
 def presence_reads(request):
-    """The old presence address: polled JSON reads stay, the page redirects.
+    """The polled presence address: only its JSON reads answer here.
 
-    ``?format=count`` (the header) and ``?format=json`` keep answering here,
-    so a page loaded before the move still polls; any other read is the page
-    itself, which moved to ``/admin/mail/presence/``. Any requested JSON
-    format keeps the read here, so the view still refuses a bad combination.
+    ``?format=count`` (the header) and ``?format=json`` answer; any other
+    read would be the page, which lives at ``/admin/mail/presence/``, so it
+    is 404 (#864). Any requested JSON format keeps the read here, so the view
+    still refuses a bad combination.
     """
     if POLLED_PRESENCE & set(request.GET.getlist("format")):
         return presence.active_families(request)
-    return _presence_page_moved(request)
+    raise Http404
 
 
 polled_patterns = [

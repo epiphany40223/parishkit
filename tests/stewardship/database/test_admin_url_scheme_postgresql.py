@@ -1,24 +1,22 @@
-"""Old Admin addresses keep working against the real database (ADM-12, #525).
+"""The Admin URL scheme against the real database (ADM-12, #525).
 
-``legacy(…, campaign=True)`` redirects an old address that names the current
-campaign and refuses any other campaign with 410, both never cached;
 ``current_campaign`` hands a view the current campaign's id. Through the
-real middleware, an old System address answers a signed-in Administrator
-with a permanent redirect to its page, and the page opens. The report roots'
-"no campaign" page is named after the report opened (NAV-5b review).
+real middleware, a page's slashless form answers a signed-in Administrator
+with a permanent redirect to the page, and an old Admin address is 404
+(#864). The report roots' "no campaign" page is named after the report
+opened (NAV-5b review).
 """
 
 from uuid import UUID, uuid4
 
 import pytest
-from django.test import Client, RequestFactory, override_settings
+from django.test import Client, RequestFactory
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.production_models import (
     ProductionTransitionRequest,
 )
-from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.web.admin_routes import current_campaign
 
 from ..policy_factory import address, assignment
@@ -40,62 +38,12 @@ def _current(store):
     return current
 
 
-# A campaign-scoped old address, routed through the real middleware.
-CAMPAIGN_URLS = "tests.stewardship.database.legacy_campaign_urls"
-
-
 def post(browser, url):
     """POST with the real Admin CSRF cookie, set by opening a page first."""
     if "pk_admin_csrf" not in browser.cookies:
         browser.get("/admin/system/logs/")
     token = browser.cookies["pk_admin_csrf"].value
     return browser.post(url, {"csrfmiddlewaretoken": token})
-
-
-def _old(campaign):
-    """The test-only old address naming ``campaign``."""
-    return f"/admin/campaign/{campaign}/test-old-logs"
-
-
-@override_settings(ROOT_URLCONF=CAMPAIGN_URLS)
-def test_campaign_legacy_redirects_only_the_current_campaign(auth_service, google):
-    """The current campaign redirects; another campaign is gone; neither cached."""
-    current = _current(auth_service.store)
-    browser, _ = signed_in()
-    moved = browser.get(_old(current) + "?actor=a")
-    assert moved.status_code == 301
-    assert moved["Location"] == "/admin/system/logs/?actor=a"
-    assert "no-store" in moved["Cache-Control"]
-    posted = post(browser, _old(current))
-    assert posted.status_code == 308 and "no-store" in posted["Cache-Control"]
-    for answer in (browser.get(_old(uuid4())), post(browser, _old(uuid4()))):
-        assert answer.status_code == 410
-        assert "no-store" in answer["Cache-Control"]
-        assert REFUSAL.encode() in answer.content
-        assert "Location" not in answer
-
-
-@override_settings(ROOT_URLCONF=CAMPAIGN_URLS)
-def test_campaign_legacy_says_nothing_before_sign_in(auth_service, google):
-    """Signed out, the current and another campaign get the same answer."""
-    current = _current(auth_service.store)
-    answers = [Client().get(_old(campaign)) for campaign in (current, uuid4())]
-    for answer in answers:
-        assert answer.status_code in {302, 401, 403}
-        assert "/admin/system/logs/" not in answer.get("Location", "")
-        assert REFUSAL.encode() not in answer.content
-    assert answers[0].status_code == answers[1].status_code
-
-
-@override_settings(ROOT_URLCONF=CAMPAIGN_URLS)
-def test_campaign_legacy_refuses_when_there_is_no_current_campaign(
-    auth_service, google
-):
-    """With no current campaign, every campaign address is gone."""
-    setup(auth_service.store)
-    assert SystemConfiguration.objects.get().current_campaign_id is None
-    browser, _ = signed_in()
-    assert browser.get(_old(uuid4())).status_code == 410
 
 
 def test_current_campaign_supplies_the_current_id(auth_service):
@@ -112,19 +60,14 @@ def test_current_campaign_supplies_the_current_id(auth_service):
     assert seen == {"campaign_id": current, "slot": "logo"}
 
 
-def test_old_system_addresses_redirect_through_the_middleware(auth_service, google):
-    """A signed-in Administrator's bookmark lands on the moved page."""
+def test_slashless_forms_redirect_and_old_addresses_are_gone(auth_service, google):
+    """A slashless page URL lands on the page; an old address is 404 (#864)."""
+    current = _current(auth_service.store)
     browser, _ = signed_in()
     for old, new in (
-        ("/admin/logs?source=audit", "/admin/system/logs/?source=audit"),
-        ("/admin/background", "/admin/system/background/"),
-        ("/admin/system/logs", "/admin/system/logs/"),
+        ("/admin/system/logs?source=audit", "/admin/system/logs/?source=audit"),
         ("/admin/users/automation", "/admin/users/automation/"),
-        ("/admin/configuration/integrations", "/admin/system/integrations/"),
-        (
-            "/admin/configuration/integrations/parishsoft",
-            "/admin/system/integrations/parishsoft/",
-        ),
+        ("/admin/mail/outgoing", "/admin/mail/outgoing/"),
     ):
         response = browser.get(old)
         assert response.status_code == 301, old
@@ -132,14 +75,32 @@ def test_old_system_addresses_redirect_through_the_middleware(auth_service, goog
         # The filter only demonstrates that the query string is kept.
         page = new.split("?")[0]
         assert browser.get(page).status_code == 200, page
+    for old in (
+        "/admin/logs",
+        "/admin/background",
+        "/admin/configuration/integrations/parishsoft",
+        "/admin/deliveries",
+        "/admin/family-portal",
+        "/admin/presence?size=25",
+        f"/admin/campaign/{current}/delivery",
+        f"/admin/campaign/{current}/settings",
+        f"/admin/campaign/{uuid4()}/go-live",
+        f"/admin/reports/{current}/participation/",
+        f"/admin/reports/{uuid4()}/families/",
+        "/admin/reports/campaigns/",
+        "/admin/ministry-reports/",
+    ):
+        assert browser.get(old).status_code == 404, old
+    # A form left open on an old address is not re-posted anywhere.
+    assert post(browser, f"/admin/campaign/{current}/go-live").status_code == 404
+    # The header's presence count still polls its address.
+    polled = browser.get("/admin/presence?format=count")
+    assert polled.status_code == 200
+    assert set(polled.json()) == {"count", "as_of"}
 
 
 def test_empty_report_roots_are_named_after_their_report(auth_service, google):
-    """With no current campaign, each report root names its own report.
-
-    The retired Ministry reports root now redirects to Ministry requests,
-    which shows the same page (NAV-11).
-    """
+    """With no current campaign, each report root names its own report."""
     setup(auth_service.store)
     browser, _ = signed_in()
     for root, name in (
@@ -150,92 +111,6 @@ def test_empty_report_roots_are_named_after_their_report(auth_service, google):
         assert response.status_code == 200, root
         assert b"<h1>" + name + b"</h1>" in response.content, root
         assert b"Return to Home" in response.content
-
-
-def test_old_pause_and_resume_address_redirects_only_the_current_campaign(
-    auth_service, google
-):
-    """Pause and resume mail's old address named a campaign (NAV-8)."""
-    current = _current(auth_service.store)
-    browser, _ = signed_in()
-    moved = browser.get(f"/admin/campaign/{current}/delivery")
-    assert moved.status_code == 301
-    assert moved["Location"] == "/admin/mail/controls/"
-    assert "no-store" in moved["Cache-Control"]
-    posted = post(browser, f"/admin/campaign/{current}/delivery")
-    assert posted.status_code == 308
-    assert posted["Location"] == "/admin/mail/controls/"
-    for answer in (
-        browser.get(f"/admin/campaign/{uuid4()}/delivery"),
-        post(browser, f"/admin/campaign/{uuid4()}/delivery"),
-    ):
-        assert answer.status_code == 410
-        assert "no-store" in answer["Cache-Control"]
-        assert REFUSAL.encode() in answer.content
-
-
-def test_old_mail_addresses_redirect_through_the_middleware(auth_service, google):
-    """Mail bookmarks land on the moved pages; the header count still polls."""
-    _current(auth_service.store)
-    browser, _ = signed_in()
-    for old, new in (
-        ("/admin/deliveries?state=all", "/admin/mail/outgoing/?state=all"),
-        ("/admin/deliveries/refusals", "/admin/mail/refusals/"),
-        ("/admin/deliveries/family-sends", "/admin/mail/family-history/"),
-        ("/admin/family-portal", "/admin/mail/family-portal/"),
-        ("/admin/presence?size=25", "/admin/mail/presence/?size=25"),
-        ("/admin/mail/outgoing", "/admin/mail/outgoing/"),
-    ):
-        response = browser.get(old)
-        assert response.status_code == 301, old
-        assert response["Location"] == new
-        assert browser.get(new).status_code == 200, new
-    polled = browser.get("/admin/presence?format=count")
-    assert polled.status_code == 200
-    assert set(polled.json()) == {"count", "as_of"}
-
-
-def test_old_mail_form_with_a_bad_csrf_token_is_refused(auth_service, google):
-    """A form left open on an old address still needs its CSRF token (#525)."""
-    from parishkit.stewardship.accounts import family_maintenance
-
-    _current(auth_service.store)
-    browser, _ = signed_in()
-    browser.get("/admin/mail/family-portal/")
-    response = browser.post(
-        "/admin/family-portal",
-        {"csrfmiddlewaretoken": "x" * 64, "action": "close", "message": ""},
-        follow=True,
-    )
-    assert response.status_code == 403
-    # Refused at the old address or after the 308: either way nothing changed.
-    assert not family_maintenance.current_state(cached=False).closed
-
-
-def test_old_campaign_setup_addresses_redirect_only_the_current_campaign(
-    auth_service, google
-):
-    """Campaign setup's old addresses named a campaign (NAV-9)."""
-    current = _current(auth_service.store)
-    browser, _ = signed_in()
-    old = f"/admin/campaign/{current}"
-    for path, new in (
-        ("settings", "/admin/campaign/settings/"),
-        ("content", "/admin/campaign/content/"),
-        ("content/email/initial", "/admin/campaign/content/email/initial/"),
-        ("content/history", "/admin/campaign/content/history/"),
-        ("images", "/admin/campaign/images/"),
-        ("schedules", "/admin/campaign/schedules/"),
-    ):
-        moved = browser.get(f"{old}/{path}?start=default")
-        assert moved.status_code == 301, path
-        assert moved["Location"] == f"{new}?start=default"
-        assert "no-store" in moved["Cache-Control"]
-        assert browser.get(new).status_code == 200, new
-    for path in ("settings", "content", "images/logo/remove", "share-options"):
-        gone = browser.get(f"/admin/campaign/{uuid4()}/{path}")
-        assert gone.status_code == 410, path
-        assert REFUSAL.encode() in gone.content
 
 
 def test_group_roots_open_the_first_entry_the_viewer_may_open(auth_service, google):
@@ -288,55 +163,6 @@ def test_group_roots_without_an_open_entry_go_home(auth_service, google):
         assert response["Location"] == "/admin/"
 
 
-def test_old_campaign_setup_part_b_addresses_redirect_only_the_current_campaign(
-    auth_service, google
-):
-    """The test email, go-live and Campaign Ministries old addresses (NAV-10)."""
-    current = _current(auth_service.store)
-    browser, _ = signed_in()
-    revision = uuid4()
-    for path, new in (
-        (f"content/test/{revision}", reverse("admin:campaign_mail", args=[revision])),
-        (
-            f"content/test/{revision}/families",
-            reverse("admin:campaign_mail_families", args=[revision]),
-        ),
-        ("go-live", reverse("admin:go_live")),
-        ("go-live/families", reverse("admin:go_live_families")),
-        ("production", reverse("admin:production_progress")),
-        ("production/withdraw", reverse("admin:production_withdrawal")),
-        ("ministries", reverse("admin:campaign_ministries")),
-    ):
-        moved = browser.get(f"/admin/campaign/{current}/{path}?size=25")
-        assert moved.status_code == 301, path
-        assert moved["Location"] == f"{new}?size=25"
-        assert "no-store" in moved["Cache-Control"]
-        gone = browser.get(f"/admin/campaign/{uuid4()}/{path}")
-        assert gone.status_code == 410, path
-        assert "no-store" in gone["Cache-Control"]
-
-
-def test_old_go_live_form_never_acts_before_its_page(auth_service, google):
-    """A readiness form left open on an old address starts nothing by itself.
-
-    Another campaign's address answers 410 before any effect; the current
-    one's answers a 308 to the page, which keeps its own checks.
-    """
-    current = _current(auth_service.store)
-    browser, _ = signed_in()
-    tasks = TaskRun.objects.count()
-    values = {"action": "cleanup", "preview_token": "x", "acknowledge": "yes"}
-    browser.get(reverse("admin:logs"))
-    values["csrfmiddlewaretoken"] = browser.cookies["pk_admin_csrf"].value
-    gone = browser.post(f"/admin/campaign/{uuid4()}/go-live", values)
-    assert gone.status_code == 410 and "Location" not in gone
-    moved = browser.post(f"/admin/campaign/{current}/go-live", values)
-    assert moved.status_code == 308
-    assert moved["Location"] == reverse("admin:go_live")
-    assert not ProductionTransitionRequest.objects.exists()
-    assert TaskRun.objects.count() == tasks
-
-
 def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, google):
     """No current campaign: each moved page refuses plainly, never a server error."""
     setup(auth_service.store)
@@ -376,98 +202,6 @@ def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, goog
         response = browser.post(reverse(f"admin:{name}", args=args), values | csrf)
         assert 400 <= response.status_code < 500, (name, response.status_code)
     assert not ProductionTransitionRequest.objects.exists()
-
-
-# Old report addresses (NAV-11), each with its new page. The old address
-# named the campaign right after /admin/reports/; a query string carries
-# report filters.
-OLD_REPORTS = (
-    ("responses/", "response_dashboard", []),
-    ("responses/submitted/", "response_list", ["submitted"]),
-    ("participation/", "participation", []),
-    ("financial/", "financial_report", []),
-    ("talents/", "talents_report", []),
-    ("information/", "information_queue", []),
-    ("ministries/", "ministry_report", []),
-    ("ministries/follow-up/", "ministry_followup", []),
-    ("families/", "family_directory", []),
-)
-
-
-def test_old_report_addresses_redirect_only_the_current_campaign(auth_service, google):
-    """Bookmarks and links to an old report page reach the current campaign's."""
-    current = _current(auth_service.store)
-    browser, _ = signed_in()
-    item = uuid4()
-    for path, name, args in (
-        *OLD_REPORTS,
-        (f"information/{item}/", "information_item", [item]),
-        (f"ministries/follow-up/{item}/", "ministry_followup_item", [item]),
-        (f"families/{item}/", "family_timeline", [item]),
-    ):
-        new = reverse(f"admin:{name}", args=args)
-        moved = browser.get(f"/admin/reports/{current}/{path}?size=25")
-        assert moved.status_code == 301, path
-        assert moved["Location"] == f"{new}?size=25"
-        assert "no-store" in moved["Cache-Control"]
-        gone = browser.get(f"/admin/reports/{uuid4()}/{path}")
-        assert gone.status_code == 410, path
-        assert "no-store" in gone["Cache-Control"]
-        assert REFUSAL.encode() in gone.content
-    # The retired addresses that named no campaign open their reports.
-    for old, name in (
-        ("/admin/reports/campaigns/", "participation"),
-        ("/admin/ministry-reports/", "ministry_report"),
-        ("/admin/ministry-reports/campaigns/", "ministry_report"),
-    ):
-        moved = browser.get(old)
-        assert moved.status_code == 301, old
-        assert moved["Location"] == reverse(f"admin:{name}")
-
-
-def test_old_report_forms_never_act_before_their_page(auth_service, google):
-    """A report form left open on an old address starts nothing by itself.
-
-    Another campaign's address answers 410 before any effect; the current
-    one's answers a 308 that keeps the method and body, so the page's own
-    checks (its CSRF token first) decide; a missing token is refused.
-    """
-    from parishkit.stewardship.reports.exact_models import ExactExportRequest
-    from parishkit.stewardship.reports.export_models import ExportRequest
-
-    current = _current(auth_service.store)
-    browser, _ = signed_in()
-    browser.get(reverse("admin:logs"))
-    values = {
-        "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
-        "request_key": str(uuid4()),
-        "format": "csv",
-        "browser_timezone": "UTC",
-    }
-    item = uuid4()
-    for path, name, args in (
-        ("participation/export", "report_export_create", []),
-        ("participation/exact-export", "report_exact_create", []),
-        ("financial/export", "financial_export", []),
-        ("information/export", "information_export", []),
-        (f"information/{item}/update", "information_update", [item]),
-        ("ministries/export/", "ministry_export", []),
-        ("ministries/packet/", "ministry_packet", []),
-        (f"ministries/follow-up/{item}/update", "ministry_followup_update", [item]),
-        ("families/export", "family_directory_export", []),
-        ("families/find", "find_family", []),
-        ("responses/submitted/csv/", "response_list_export", ["submitted"]),
-    ):
-        gone = browser.post(f"/admin/reports/{uuid4()}/{path}", values)
-        assert gone.status_code == 410 and "Location" not in gone, path
-        moved = browser.post(f"/admin/reports/{current}/{path}", values)
-        assert moved.status_code == 308, path
-        assert moved["Location"] == reverse(f"admin:{name}", args=args)
-        # Without its CSRF token the old address refuses the form outright.
-        refused = browser.post(f"/admin/reports/{current}/{path}", {"x": "1"})
-        assert refused.status_code == 403, path
-    assert not ExportRequest.objects.exists()
-    assert not ExactExportRequest.objects.exists()
 
 
 def test_new_report_pages_refuse_or_explain_without_a_current_campaign(

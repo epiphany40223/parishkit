@@ -77,7 +77,6 @@ def test_history_is_get_only_and_revision_is_campaign_scoped(auth_service, googl
     )
     assert browser.get(f"{path}{uuid4()}/").status_code == 404
     assert browser.get(path, {"configuration": str(uuid4())}).status_code == 400
-    assert browser.get(f"/admin/campaign/{uuid4()}/content/history").status_code == 410
     assert ConfigurationChangeRequest.objects.count() == count
 
 

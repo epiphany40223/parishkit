@@ -60,7 +60,6 @@ from .campaign_preview import describe_changes
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
-from .runtime_models import SystemConfiguration
 from .sessions import authenticated_admin
 
 SALT = "stewardship-campaign-structure-preview-v1"
@@ -339,33 +338,6 @@ def _preview(request, service, actor, state, campaign, form):
         ),
     }
     return _page(request, configuration, campaign, form, editable=True, review=review)
-
-
-@require_http_methods(["GET", "HEAD", "POST"])
-def retired_new(request):
-    """The retired New campaign address: go to the current campaign's settings.
-
-    New campaign is removed (admin-portal spec, decision 11). Every method,
-    including a form left open on the old page, is sent to Campaign settings
-    without recording anything, so a creation preview posted here is never
-    confirmed. With no current campaign the reader lands on Home, which
-    explains that. Only an Administrator who may open Campaign settings is
-    redirected, so the address never reveals the campaign's identifier to
-    anyone else. A temporary redirect, because the target follows whichever
-    campaign is current.
-    """
-    try:
-        principal(request, runtime())
-        current = SystemConfiguration.objects.values_list(
-            "current_campaign_id", flat=True
-        ).first()
-    except (ConfigError, DatabaseError, LimiterUnavailable, PermissionError) as error:
-        return error_response(error)
-    response = HttpResponseRedirect(
-        reverse("admin:campaign_settings") if current else reverse("admin:index")
-    )
-    response["Cache-Control"] = "no-store"
-    return response
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

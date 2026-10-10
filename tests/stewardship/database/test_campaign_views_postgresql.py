@@ -77,33 +77,25 @@ def apply(store, response):
     assert receipt.state == "applied"
 
 
-def test_new_campaign_address_redirects_and_records_nothing(auth_service, google):
-    """New campaign is retired (decision 11): its address only redirects.
+def test_new_campaign_address_is_gone_and_records_nothing(auth_service, google):
+    """New campaign is retired (decision 11) and its address is 404 (#864).
 
-    With no current campaign it leads Home, otherwise to the current
-    campaign's settings. A form left open on the old page, even one carrying
-    a valid signed creation preview, is redirected without recording anything.
+    A form left open on the old page, even one carrying a valid signed
+    creation preview, records nothing.
     """
     from .test_clone_views_postgresql import added_campaign, signed_preview
 
     browser, _ = signed_in()
     store = auth_service.store
-    response = browser.get(NEW)
-    assert response.status_code == 302 and response["Location"] == "/admin/"
+    assert browser.get(NEW).status_code == 404
     proposal = signed_preview(SALT, added_campaign())
     for response in (
         post(browser, NEW, fields(store)),
         post(browser, NEW, {"action": "confirm", "preview": proposal}),
     ):
-        assert response.status_code == 302 and response["Location"] == "/admin/"
-        assert response["Cache-Control"] == "no-store"
+        assert response.status_code == 404
     assert not ConfigurationChangeRequest.objects.exists()
     assert not Campaign.objects.exists()
-    add_draft(store, store.active(), uuid4())
-    row = Campaign.objects.get()
-    response = browser.get(NEW)
-    assert response.status_code == 302 and response["Location"] == url(row)
-    assert b"Campaign settings" in browser.get(url(row)).content
 
 
 def test_signed_creation_preview_is_refused_by_campaign_settings(auth_service, google):
@@ -390,8 +382,6 @@ def test_non_admin_cannot_read_or_write_campaign_settings(auth_service, google, 
     )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
-    assert browser.get(NEW).status_code == 403
-    assert post(browser, NEW, fields(store)).status_code == 403
     assert browser.get("/admin/campaign/settings/").status_code == 403
 
 
@@ -409,7 +399,6 @@ def test_noop_bad_signature_missing_target_and_query_are_closed(auth_service, go
         post(browser, url(row), {"action": "confirm", "preview": "forged"}).status_code
         == 400
     )
-    assert browser.get(f"/admin/campaign/{uuid4()}/settings").status_code == 410
     assert browser.get(url(row) + "?extra=value").status_code == 400
     assert Client().get(url(row)).status_code == 403
 

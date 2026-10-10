@@ -482,15 +482,14 @@ schedules, Share options and Member talents; NAV-10: the test email pages,
 the go-live chain, Production activation and Cancel go-live, and Campaign
 Ministries under Ministries) and the report pages (NAV-11: every report, the
 response lists and the Family timeline, with the
-campaign choosers and the old Ministry reports root retired), with every old
-address redirecting; the Campaign setup, Mail and Family portal and Parish
-data group roots open their first entry, and `/admin/reports/` keeps its
-meaning. Exports and the reports sent by email follow (NAV-12): every export
-shares `/admin/reports/exports/<request>/`, a latest-data export included,
-and the daily and weekly reports sit under `/admin/reports/emailed/`, whose
-old addresses are gone, with no redirect
-([#864](https://github.com/epiphany40223/parishkit/issues/864)), so a link
-in a report email sent before the move no longer opens. Until
+campaign choosers and the old Ministry reports root retired); the Campaign
+setup, Mail and Family portal and Parish data group roots open their first
+entry, and `/admin/reports/` keeps its meaning. Exports and the reports sent
+by email follow (NAV-12): every export shares
+`/admin/reports/exports/<request>/`, a latest-data export included, and the
+daily and weekly reports sit under `/admin/reports/emailed/`. No old address
+is kept ([#864](https://github.com/epiphany40223/parishkit/issues/864)), so
+a link in a report email sent before the move no longer opens. Until
 the rest of the URL work lands, other pages keep their
 "Current URL", and so does every other section of this spec and the other
 stewardship specs that name an Admin URL; those follow-up issues update them
@@ -830,82 +829,83 @@ names it replaces, and its current and new URL under the
 [URL scheme](#url-scheme). "Reached from" is also the page's breadcrumb
 parent. Pages "outside the menu" are the sign-in, maintenance and error pages,
 which the access gate shows; "setup stepper" pages are the wizard's;
-"retired" pages leave the portal and their old URLs redirect.
+"retired" pages leave the portal and their old URLs answer 404
+([#864](https://github.com/epiphany40223/parishkit/issues/864)).
 
 | Page | Name | Reached from | Roles | Current names | Current URL | New URL | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. |
-| `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same; old address redirects) |  |
-| `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/settings/` | (same; old address redirects) |  |
+| `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same) |  |
+| `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/settings/` | (same) |  |
 | `campaign_create` | Create the campaign | Home | Administrator | (new, #142) | `/admin/campaign/create/` | (same) | Not built yet (#786). Offered on Home only while the deployment has never had a campaign; refused once one exists. Not linked from a change's status page. |
-| `campaign_clone` | Copy campaign | Campaign settings | Administrator | Clone archived campaign | `/admin/campaign/copy/` | (same; old address redirects) | Decision 18: until #145 removes it, Campaign settings shows Copy campaign greyed out, not an action, with the tip "Disabled; will be removed with the single-campaign change (#145)". The server refuses the clone action. |
-| `content_history` | Content history | Campaign settings | Administrator | Retained campaign content | `/admin/campaign/content/history/` | (same; old address redirects) |  |
-| `content_history_revision` | Earlier version | Content history | Administrator | Retained campaign content; Revision | `/admin/campaign/content/history/<revision>/` | (same; old address redirects) |  |
-| `content_catalog` | Pages and emails | Menu: Pages and emails | Administrator | Campaign content and templates | `/admin/campaign/content/` | (same; old address redirects) |  |
-| `content_edit` | _page or email name_ | Pages and emails | Administrator | Edit page or email | `/admin/campaign/content/<kind>/<slot>/` | (same; old address redirects) | Object-named (exception). |
-| `content_revision` | _email name_ | Pages and emails | Administrator | _email template name_; Content revision | `/admin/campaign/content/email/<slot>/<revision>/` | (same; old address redirects) | Object-named (exception); links its own test page. |
-| `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/content/test/<revision>/` | (same; old address redirects) | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
-| `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/content/test/<revision>/families/` | (same; old address redirects) |  |
-| `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/images/` | (same; old address redirects) |  |
-| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same; old address redirects) | POST-only error re-render of Campaign images; reclassify as a form action. |
-| `artwork_preview` | Review campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/<bundle>/` | (same; old address redirects) |  |
-| `artwork_remove` | Remove campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/removal/` | (same; old address redirects) |  |
-| `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same; old address redirects) |  |
+| `campaign_clone` | Copy campaign | Campaign settings | Administrator | Clone archived campaign | `/admin/campaign/copy/` | (same) | Decision 18: until #145 removes it, Campaign settings shows Copy campaign greyed out, not an action, with the tip "Disabled; will be removed with the single-campaign change (#145)". The server refuses the clone action. |
+| `content_history` | Content history | Campaign settings | Administrator | Retained campaign content | `/admin/campaign/content/history/` | (same) |  |
+| `content_history_revision` | Earlier version | Content history | Administrator | Retained campaign content; Revision | `/admin/campaign/content/history/<revision>/` | (same) |  |
+| `content_catalog` | Pages and emails | Menu: Pages and emails | Administrator | Campaign content and templates | `/admin/campaign/content/` | (same) |  |
+| `content_edit` | _page or email name_ | Pages and emails | Administrator | Edit page or email | `/admin/campaign/content/<kind>/<slot>/` | (same) | Object-named (exception). |
+| `content_revision` | _email name_ | Pages and emails | Administrator | _email template name_; Content revision | `/admin/campaign/content/email/<slot>/<revision>/` | (same) | Object-named (exception); links its own test page. |
+| `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/content/test/<revision>/` | (same) | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
+| `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/content/test/<revision>/families/` | (same) |  |
+| `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/images/` | (same) |  |
+| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only error re-render of Campaign images; reclassify as a form action. |
+| `artwork_preview` | Review campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/<bundle>/` | (same) |  |
+| `artwork_remove` | Remove campaign image | Campaign images | Administrator | (same) | `/admin/campaign/images/<slot>/removal/` | (same) |  |
+| `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same) |  |
 | `schedule_new` | New scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/addition/` | (same) | Its review confirms through Dates and mail schedules. |
 | `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. |
 | `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here. |
-| `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same; old address redirects) | Gains a Return link and About panel. |
-| `talent_settings` | Member talents | Menu: Member talents | Administrator | Talents Members can share | `/admin/campaign/talents/` | (same; old address redirects) | Gains a Return link and About panel. |
+| `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
+| `talent_settings` | Member talents | Menu: Member talents | Administrator | Talents Members can share | `/admin/campaign/talents/` | (same) | Gains a Return link and About panel. |
 | `reminder_workgroup` | Reminder WorkGroup | Menu: Reminder WorkGroup | Administrator | (new, #861) | `/admin/campaign/reminder-workgroup/` | (same) | Edit, review, apply; stays editable while live. |
-| `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/go-live/` | (same; old address redirects) |  |
-| `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same; old address redirects) |  |
-| `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (same; old address redirects) |  |
-| `go_live_links` | Prepare Family links | Testing cleanup | Administrator | Family links | `/admin/campaign/go-live/cleanup/<request>/links/` | (same; old address redirects) |  |
-| `production_confirmation` | Confirm Production | Prepare Family links | Administrator | Final Production confirmation | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` | (same; old address redirects) |  |
-| `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/production/` | (same; old address redirects) | Links its cleanup request and Outgoing mail. |
-| `production_withdrawal` | Cancel go-live | Production activation | Administrator | Withdraw from Production; Return to Testing | `/admin/campaign/production/cancellation/` | (same; old address redirects) | Links Pause and resume mail and Outgoing mail where it names them. |
-| `delivery_control` | Pause and resume mail | Menu: Pause and resume mail | Administrator | Campaign delivery controls; Delivery controls | `/admin/mail/controls/` | (same; old address redirects) |  |
-| `family_email_progress` | Family email progress | Menu: Family email progress | Administrator | (same) | `/admin/mail/family-progress/` | (same; old address redirects) |  |
-| `family_email_sends` | Family email history | Menu: Family email history | Administrator | Family email sends | `/admin/mail/family-history/` | (same; old address redirects) |  |
-| `deliveries` | Outgoing mail | Menu: Outgoing mail | Administrator | (same) | `/admin/mail/outgoing/` | (same; old address redirects) |  |
-| `delivery` | Mail message | Outgoing mail | Administrator | Mail delivery; Message | `/admin/mail/outgoing/<message>/` | (same; old address redirects) |  |
-| `delivery_refusals` | Refused addresses | Outgoing mail | Administrator | (same) | `/admin/mail/refusals/` | (same; old address redirects) |  |
-| `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/mail/refusals/<refusal>/` | (same; old address redirects) |  |
-| `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same; old address redirects) |  |
-| `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same; old address redirects) | The header's count is still polled at `/admin/presence?format=count` (decision 8); only page reads of that address redirect. |
-| `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same) | `/admin/reports/responses/` | (same; old address redirects) |  |
-| `response_list` | _list name_ | Response dashboard | Administrator, Staff | (new, #477) | `/admin/reports/responses/<key>/` | (same; old address redirects) | Object-named (exception): each list behind a dashboard count is named after that list. Its download (`<key>/csv/`: CSV, XLSX or PDF, #850; the address predates the other two formats) is a non-page action. |
+| `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/go-live/` | (same) |  |
+| `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same) |  |
+| `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (same) |  |
+| `go_live_links` | Prepare Family links | Testing cleanup | Administrator | Family links | `/admin/campaign/go-live/cleanup/<request>/links/` | (same) |  |
+| `production_confirmation` | Confirm Production | Prepare Family links | Administrator | Final Production confirmation | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` | (same) |  |
+| `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/production/` | (same) | Links its cleanup request and Outgoing mail. |
+| `production_withdrawal` | Cancel go-live | Production activation | Administrator | Withdraw from Production; Return to Testing | `/admin/campaign/production/cancellation/` | (same) | Links Pause and resume mail and Outgoing mail where it names them. |
+| `delivery_control` | Pause and resume mail | Menu: Pause and resume mail | Administrator | Campaign delivery controls; Delivery controls | `/admin/mail/controls/` | (same) |  |
+| `family_email_progress` | Family email progress | Menu: Family email progress | Administrator | (same) | `/admin/mail/family-progress/` | (same) |  |
+| `family_email_sends` | Family email history | Menu: Family email history | Administrator | Family email sends | `/admin/mail/family-history/` | (same) |  |
+| `deliveries` | Outgoing mail | Menu: Outgoing mail | Administrator | (same) | `/admin/mail/outgoing/` | (same) |  |
+| `delivery` | Mail message | Outgoing mail | Administrator | Mail delivery; Message | `/admin/mail/outgoing/<message>/` | (same) |  |
+| `delivery_refusals` | Refused addresses | Outgoing mail | Administrator | (same) | `/admin/mail/refusals/` | (same) |  |
+| `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/mail/refusals/<refusal>/` | (same) |  |
+| `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same) |  |
+| `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same) | The header's count is still polled at `/admin/presence?format=count` (decision 8); any other read of that address is 404. |
+| `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same) | `/admin/reports/responses/` | (same) |  |
+| `response_list` | _list name_ | Response dashboard | Administrator, Staff | (new, #477) | `/admin/reports/responses/<key>/` | (same) | Object-named (exception): each list behind a dashboard count is named after that list. Its download (`<key>/csv/`: CSV, XLSX or PDF, #850; the address predates the other two formats) is a non-page action. |
 | `reports` | Participation | Menu: Participation | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | (same) | Not a group root: redirects to Participation, or to Ministry requests for a viewer who may not open Participation (a Ministry leader). |
-| `participation` | Participation | Menu: Participation | Administrator, Staff | Participation and campaign statistics; Campaign reports (via redirect) | `/admin/reports/participation/` | (same; old address redirects) |  |
+| `participation` | Participation | Menu: Participation | Administrator, Staff | Participation and campaign statistics; Campaign reports (via redirect) | `/admin/reports/participation/` | (same) |  |
 | `report_export` | _report name_ export | The report it came from | Administrator, Staff, Ministry leader | Participation export / Financial stewardship export / Ministry export / Additional-information export / Family-directory export; Report export | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). Its actions post to `cancellation/`, `retries/`, `download/` and `regeneration/`. |
 | `report_exact` | Latest-data export | Participation | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). |
-| `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same; old address redirects) |  |
-| `talents_report` | Talents and limitations | Menu: Talents and limitations | Administrator, Staff | (same) | `/admin/reports/talents/` | (same; old address redirects) |  |
+| `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
+| `talents_report` | Talents and limitations | Menu: Talents and limitations | Administrator, Staff | (same) | `/admin/reports/talents/` | (same) |  |
 | `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX download (`census/exports/`) is a non-page action. |
-| `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same; old address redirects) |  |
-| `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same; old address redirects) | Return to the queue keeps its filters and page. |
-| `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | (redirects) Ministry requests; Ministry reports | `/admin/ministry-reports/` | (retired; redirects to `/admin/reports/ministries/`) | The old address redirects permanently to Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
-| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report | `/admin/reports/ministries/` | (same; old address redirects) |  |
-| `ministry_joiners` | Members joining | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining | `/admin/reports/ministries/joining/` | (same; old address redirects) | Becomes a bookmarkable view of Ministry requests (#521). |
-| `ministry_leavers` | Members leaving | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving | `/admin/reports/ministries/leaving/` | (same; old address redirects) | Becomes a bookmarkable view of Ministry requests (#521). |
-| `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/ministries/follow-up/` | (same; old address redirects) | No assignee column, filter or bulk assignment (#552). |
-| `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same; old address redirects) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
-| `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same; old address redirects) |  |
-| `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same; old address redirects) | Opened from each directory row and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
+| `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
+| `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |
+| `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
+| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report | `/admin/reports/ministries/` | (same) |  |
+| `ministry_joiners` | Members joining | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining | `/admin/reports/ministries/joining/` | (same) | Becomes a bookmarkable view of Ministry requests (#521). |
+| `ministry_leavers` | Members leaving | Ministry requests | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving | `/admin/reports/ministries/leaving/` | (same) | Becomes a bookmarkable view of Ministry requests (#521). |
+| `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/ministries/follow-up/` | (same) | No assignee column, filter or bulk assignment (#552). |
+| `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). |
+| `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
+| `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same) | Opened from each directory row and response list row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
 | `weekly_digest_manual` | Send a weekly report now | Emailed reports | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; now a button on Emailed reports, where it ends, linking the report it produced (or its background task until it is ready). Its address named the campaign until #865; that old address is gone, with no redirect (#864). |
 | `weekly_digest_snapshot` | Weekly report | Emailed reports | Administrator | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
 | `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | (same) | Links the live Additional information request. |
 | `daily_digest_snapshot` | Daily report | Emailed reports | Administrator, Staff | (report document title) daily report | `/admin/reports/emailed/daily/<snapshot>/` | (same) | Its old address, which daily report emails sent before NAV-12 link, is gone, with no redirect (#864). |
-| `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same; old address redirects) | Hand-written Administration link removed. |
-| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same; old address redirects) |  |
-| `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/parish/logos/<bundle>/` | (same; old address redirects) |  |
-| `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same; old address redirects) |  |
-| `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/parish/ministries/campaign/` | (same; old address redirects) | Moves under Ministries, which links it while the campaign is live; its Return link goes to Ministries. Campaign settings keeps a link. |
-| `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same; old address redirects) |  |
-| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same; old address redirects) |  |
-| `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same; old address redirects) |  |
-| `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same; old address redirects) |  |
+| `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same) | Hand-written Administration link removed. |
+| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same) |  |
+| `branding_preview` | Review parish logos | Parish logos | Administrator | Logo preview | `/admin/parish/logos/<bundle>/` | (same) |  |
+| `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same) |  |
+| `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/parish/ministries/campaign/` | (same) | Moves under Ministries, which links it while the campaign is live; its Return link goes to Ministries. Campaign settings keeps a link. |
+| `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same) |  |
+| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) |  |
+| `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same) |  |
+| `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same) |  |
 | `users` | Sign-in rules | Menu: Sign-in rules | Administrator | Portal users | `/admin/users` | `/admin/users/sign-in-rules/` | Portal users is split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
 | `user_rules` | Review sign-in rules | Sign-in rules | Administrator | Review login rule change; Sign-in rules | `/admin/users/rules` (POST only) | `/admin/users/sign-in-rules/review/` (POST only) |  |
 | `rule_request` | (not a page) | Sign-in rules | Administrator | Rule change (status); Rule change | `/admin/users/rules/requests/<request>` | `/admin/users/sign-in-rules/requests/<request>/` (JSON) | Answers JSON only; reclassify as a non-page. |
@@ -916,16 +916,16 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
 | `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. |
-| `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/system/integrations/` | (same; old address redirects) |  |
-| `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/system/integrations/<target>/` | (same; old address redirects) | Object-named (exception); hand-written Integrations link removed. |
-| `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/` | (same; old address redirects) |  |
-| `select_credential` | Finish switching to the new key | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/selection/` | (same; old address redirects) |  |
-| `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/system/background/` | (same; old address redirects) |  |
-| `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/system/background/<task>/` | (same; old address redirects) |  |
-| `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/system/logs/` | (same; old address redirects) |  |
-| `campaign_new` | (retired) | (retired) | Administrator | Create campaign draft; New campaign | `/admin/campaign/new` | (retired; redirects to `/admin/campaign/settings/`) | Decision 11: no New campaign control; the one campaign is created by Create the campaign (#142). The old address redirects to Campaign settings. |
-| `report_campaigns` | (retired) | (retired) | Administrator, Staff | Choose a retained campaign; Choose a campaign | `/admin/reports/campaigns/` | (retired; redirects to `/admin/reports/participation/`) | Decisions 10 and 19: no campaign chooser; reports show the current campaign. Its link on Participation is greyed out with the #145 tip until removed. The old address redirects to Participation. |
-| `ministry_report_campaigns` | (retired) | (retired) | Administrator, Staff, Ministry leader | Choose a retained campaign; Choose a campaign | `/admin/ministry-reports/campaigns/` | (retired; redirects to `/admin/reports/ministries/`) | Decisions 10 and 19: no campaign chooser. Its link on Ministry requests is greyed out with the #145 tip until removed. The old address redirects to Ministry requests. |
+| `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/system/integrations/` | (same) |  |
+| `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/system/integrations/<target>/` | (same) | Object-named (exception); hand-written Integrations link removed. |
+| `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/` | (same) |  |
+| `select_credential` | Finish switching to the new key | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/selection/` | (same) |  |
+| `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/system/background/` | (same) |  |
+| `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/system/background/<task>/` | (same) |  |
+| `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/system/logs/` | (same) |  |
+| `campaign_new` | (retired) | (retired) | Administrator | Create campaign draft; New campaign | `/admin/campaign/new` | (retired; 404) | Decision 11: no New campaign control; the one campaign is created by Create the campaign (#142). |
+| `report_campaigns` | (retired) | (retired) | Administrator, Staff | Choose a retained campaign; Choose a campaign | `/admin/reports/campaigns/` | (retired; 404) | Decisions 10 and 19: no campaign chooser; reports show the current campaign. Its link on Participation is greyed out with the #145 tip until removed. |
+| `ministry_report_campaigns` | (retired) | (retired) | Administrator, Staff, Ministry leader | Choose a retained campaign; Choose a campaign | `/admin/ministry-reports/campaigns/` | (retired; 404) | Decisions 10 and 19: no campaign chooser. Its link on Ministry requests is greyed out with the #145 tip until removed. |
 | `chrome` | (shared header and banners) | Every page | Administrator, Staff, Ministry leader | Every Admin page (header and banners) | `/admin/*` | (same) | Acknowledge stays on the current page (#519). |
 | `login` | Administration sign-in | (outside the menu) | Anyone | (same) | `/admin/login` | `/admin/login/` |  |
 | `local_sign_in` | Local test sign-in | (outside the menu) | Anyone | (same) | `/admin/local/sign-in` | `/admin/local/sign-in/` | LOCAL only. |
@@ -975,8 +975,10 @@ Admin URLs follow the menu, so the address says where the reader is
   (an export, a digest snapshot, a cleanup request) are addressed by their
   own identifier, which already names their campaign.
 - **One trailing-slash rule:** every Admin page URL ends in `/`, and the other
-  form redirects. The sign-in, setup wizard and maintenance pages move to it
-  last, in an optional pull request (NAV-13 in
+  form redirects permanently to it (301 for GET and HEAD, 308 otherwise),
+  keeping the query string, where report filters live. The sign-in, setup
+  wizard and maintenance pages move to it last, in an optional pull request
+  (NAV-13 in
   [ADM-12](../../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul));
   until then they keep their current addresses.
 - **Non-page routes move with their page:** a page's form actions and
@@ -986,33 +988,16 @@ Admin URLs follow the menu, so the address says where the reader is
 - **Nouns, not verbs:** plural nouns for collections, a noun for each item,
   and actions are POSTs to the item or collection (no GET target such as
   `/delete` or `/remove`).
-- **Old URLs keep working** as permanent redirects to the new ones: 301 for
-  pages, 308 for form actions, so a page left open still submits. A redirect
-  keeps the query string, where report filters live. An old URL with a
-  campaign UUID redirects only when that UUID is the current campaign; for any
-  other campaign it shows a plain refusal ("This campaign is no longer the
-  current campaign") with status 410 Gone and never redirects, so a form left
-  open on an earlier campaign is never re-posted into the current one. 410
-  rather than 404 because the address was valid and will not work again: it is
-  not a typo, and the reader should not retry it. This removes read access to
-  an earlier campaign's pages and records for now: records from another
-  campaign addressed by their own identifier (exports, digest snapshots) are
-  refused as well, until the single-campaign change (#145). Because the target
-  of a campaign-UUID redirect depends on which campaign is current, and
-  browsers cache 301 and 308 responses indefinitely, those redirects (and the
-  410 refusals) are sent with `Cache-Control: no-store`; redirects that name
-  no campaign may be cached. Only a signed-in Admin portal user gets either
-  answer: anyone else gets the sign-in refusal before the campaign is
-  compared, so the choice between redirect and 410 never tells a stranger
-  which campaign is current. Likewise a page for one record (an export, a
-  digest snapshot, a cleanup request) refuses a record whose campaign is not
-  current. Sent digest emails, bookmarks and the operator runbooks link the
-  old forms. A test lists every old pattern with its target. The
-  Administrator has since decided to drop these old addresses, so each
-  answers 404, keeping only Family-facing addresses and any address operator
-  tools or guides still use
-  ([#864](https://github.com/epiphany40223/parishkit/issues/864)); until that
-  lands they redirect as described here.
+- **Old URLs are not kept:** the Administrator dropped the old Admin
+  addresses ([#864](https://github.com/epiphany40223/parishkit/issues/864)),
+  so each answers 404: the addresses from before the scheme, those that named
+  a campaign, the retired campaign choosers and the daily and weekly report
+  links in report emails sent before NAV-12. Family-facing addresses (the
+  emailed codes and links, the Family portal and its sign-in) are not Admin
+  addresses and do not change. A page for one record (an export, a digest
+  snapshot, a cleanup request) refuses a record whose campaign is not current
+  ("This campaign is no longer the current campaign", 410 Gone) until the
+  single-campaign change (#145).
 
 #### Navigation rules
 
@@ -1072,8 +1057,7 @@ registry and the rendered pages.
     (#527), so until it does the server's refusal alone covers it. The server
     refuses the matching actions: cloning, creating a successor draft, and
     choosing a campaign other than the current one for a report. The retired
-    chooser addresses themselves redirect (to Participation and to Ministry
-    requests) rather than refuse. New campaign is removed outright ([decision
+    chooser addresses are gone (404, #864). New campaign is removed outright ([decision
     11](#navigation-decisions)), not greyed.
 
 #### Breadcrumbs and flows
@@ -1177,13 +1161,12 @@ follows them.
 15. **How should the campaign appear in Admin URLs?** No campaign identifier in
     Admin URLs: the current campaign is implied. Old URLs with campaign UUIDs
     redirect permanently. No schema change, and nothing to undo after #145.
-    (Refined in the URL scheme: an old campaign-UUID URL redirects only when it
-    names the current campaign; any other campaign gets a 410 refusal.)
+    (Superseded by #864: old URLs are not kept, so each is 404.)
 16. **Where does the campaign sit in the path?** Nowhere (see 15): every page
     is `/admin/<group>/<page>/`.
 17. **Which trailing-slash rule?** Every Admin page URL ends in a slash; the
     other form redirects; old URLs redirect permanently (301 pages, 308 form
-    actions) (as proposed).
+    actions) (as proposed). (Old URLs superseded by #864: each is 404.)
 18. **What happens to Copy campaign until the single-campaign change?** Keep it
     until #145, greyed out (disabled, not a link or action) with a hover and
     keyboard-focus tip saying it is disabled and will be removed with the
@@ -1218,7 +1201,8 @@ follows them.
 27. **Trailing slashes on sign-in, setup and maintenance?** (Administrator.)
     An optional last pull request.
 28. **Old campaign identifiers?** (Administrator.) Refused with 410 for now;
-    access to earlier campaigns returns with #145.
+    access to earlier campaigns returns with #145. (Superseded by #864: an
+    old address naming a campaign is 404.)
 29. **A Home Today line?** (Administrator.) Yes, one per role; its contents
     are confirmed in NAV-18.
 30. **Where is the test email's origin kept?** (Coordinator.) In the
@@ -3238,10 +3222,9 @@ pre-start withdrawal after confirmation, described above.
 
 **Navigation and old addresses.** The Campaign setup menu keeps one **Go live**
 entry while the campaign is a Testing draft or a go-live is in progress, and
-**Production activation** afterwards. A GET to the retired cleanup, links or
-confirmation addresses redirects to the Go live page; their POST endpoints
-keep working for one release so a form left open still completes, then are
-removed. The
+**Production activation** afterwards. The retired cleanup, links and
+confirmation addresses are removed with no redirect
+([#864](https://github.com/epiphany40223/parishkit/issues/864)). The
 [command line](../admin-automation/spec.md#production-transition-and-withdrawal)
 follows the same two actions.
 

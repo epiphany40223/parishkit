@@ -64,12 +64,12 @@ def test_every_command_of_this_release_covers_a_route():
 
 def test_every_ledger_route_is_in_the_spec_inventory():
     """The admin-automation spec's Action inventory names every ledger route
-    (old redirect addresses aside, which one rule covers), so a new page's
+    (pages' slashless forms aside, which one rule covers), so a new page's
     ledger entry cannot drift from the spec (#843 review)."""
     import re
     from pathlib import Path
 
-    from parishkit.stewardship.admin_urls.legacy import TARGETS
+    from parishkit.stewardship.admin_urls.slashless import TARGETS
 
     spec = (
         Path(__file__).resolve().parents[2]

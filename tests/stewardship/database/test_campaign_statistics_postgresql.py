@@ -373,11 +373,7 @@ def test_archived_financial_observation_does_not_follow_a_new_global_source(
             response, body = read(browser, reverse("admin:participation"))
             assert response.status_code == 200
             assert b"Archived campaign" in body and b"$11,199.00" in body
-            # An archived campaign that is still current is reported; the
-            # retired chooser (rule 10) opens Participation (NAV-11).
-            response, _ = read(browser, "/admin/reports/campaigns/")
-            assert response.status_code == 301
-            assert response["Location"] == reverse("admin:participation")
+            # An archived campaign that is still current is reported.
     assert result.source_id == retained.pk
     assert result.comparison_pledge_all.canonical == "11199.00"
     assert result.giving is not None
