@@ -37,21 +37,22 @@ PURPOSES = (
     "daily_digest",
     "weekly_digest",
 )
-# Every Outgoing mail column but Family sorts on the server. Family DUID
-# keeps its older token, recipient, so saved links and the command line's
-# --sort still work (Administrator reports, which have no Family, sort last
-# either way). The Family name is not a column of the email: it is built
-# from the latest ParishSoft data for the shown page only
-# (delivery_reads.with_family_names), so it cannot order the whole outbox
-# (#931). Created is the default, newest first. Only the state filter is indexed
-# (outbox_due, outbox_campaign_state); the orderings themselves are not, so
-# a page is a top-N sort of the filtered messages. The default "all" view
-# therefore scans the outbox, as its newest-first order always did; the
+# Outgoing mail sorts on the server by When (created, the default, newest
+# first), Family DUID (duid; Administrator reports, which have no Family,
+# sort last either way), Purpose, Mode, State and Provider attempts. The
+# page's When cell also shows when the email last changed; changed sorts by
+# that for the command line's --sort, which takes these same tokens. The
+# Family name is not a column of the email: it is built from the latest
+# ParishSoft data for the shown page only (delivery_reads.with_family_names),
+# so it cannot order the whole outbox (#931). Only the state filter is
+# indexed (outbox_due, outbox_campaign_state); the orderings themselves are
+# not, so a page is a top-N sort of the filtered messages. The default "all"
+# view therefore scans the outbox, as its newest-first order always did; the
 # outbox grows by about one message per Family per mailing and is not
 # purged. id is the unique tiebreak.
 DELIVERY_SORTING = Sorting.by_column(
     {
-        "recipient": ("family__family_duid",),
+        "duid": ("family__family_duid",),
         "purpose": ("purpose",),
         "mode": ("mode",),
         "state": ("state",),

@@ -472,6 +472,9 @@ td > :last-child { margin-bottom: 0; }
 .data-table .nowrap, .data-table .cell-line { white-space: nowrap; }
 .data-table .cell-line { display: block; }
 .data-table .cell-detail { display: block; color: var(--muted); font-size: .875rem; font-weight: 400; }
+/* A muted label leading a .cell-line, such as Outgoing mail's "Changed"
+   before a time, stays on that line. */
+.data-table .cell-line > .cell-detail { display: inline; }
 .data-table dl.cell-pairs { display: grid; grid-template-columns: auto max-content; gap: .1rem .6rem; margin: 0; }
 .data-table dl.cell-pairs dt { grid-column: 1; color: var(--muted); font-weight: 400; }
 .data-table dl.cell-pairs dd { grid-column: 2; margin: 0; white-space: nowrap; }

@@ -104,9 +104,9 @@ def with_family_names(rows):
     latest ParishSoft data (``snapshot_family_names``, as the Family
     timeline names a Family), or None for an Administrator report and for a
     Family the latest data no longer has. The email itself stores no name,
-    so the names are read for the shown page only: two snapshot reads,
-    however many rows. The command line's ``delivery list`` does not read
-    them.
+    so the names are read for the shown page only: at most three small
+    queries (the current snapshot, its Families and their heads), however
+    many rows. The command line's ``delivery list`` does not read them.
     """
     from parishkit.stewardship.source.snapshot_models import SourceCurrent
     from parishkit.stewardship.source.snapshot_names import snapshot_family_names
