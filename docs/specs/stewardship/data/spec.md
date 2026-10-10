@@ -443,8 +443,6 @@ and content digest, and its cursor counts no change. It never becomes
 current. This applies only when promotion would also change nothing outside
 the corpus:
 
-- the active configuration has already reconciled chairs for the current
-  snapshot;
 - every Family row already holds the current generation and exactly the
   status that today's mail suppressions give it, so a new bounce still
   promotes;
@@ -456,10 +454,6 @@ the corpus:
   itself reconciled does not force another promotion;
 - an active Family link generation is still current (a stale one fails the
   refresh, as promotion would).
-
-After a configuration activation that skipped its own chair reconciliation
-(no chair seeds and no open chair review), the next quick update promotes
-once more than strictly needed.
 
 Otherwise, and whenever the corpus differs in any way (compared by canonical
 payload digest, including a roster's "current" flag on a new day), the quick
@@ -784,8 +778,9 @@ the active YAML version uses the records below. Since migration 0042
 (#922), a Ministry leader's Ministries come only from ParishSoft roles, as
 [Ministry leaders](#ministry-leaders) describes: a rule's Ministry-leader
 role still admits the person (Administrator decision, 2026-10-10), but every
-`MinistryAssignment` is retained and grants nothing, and the chair-seed
-provenance, suspension and review described below no longer affect access.
+`MinistryAssignment` is retained and grants nothing. The chair-seed
+provenance, suspension and review are retired (see the note below); their
+records stay only for older configurations.
 
 - `DomainRule`: normalized domain with Staff and/or Ministry-leader roles;
   Administrator is prohibited;
@@ -795,70 +790,38 @@ provenance, suspension and review described below no longer affect access.
 - `AddressRoleGrant`: one configured role per AddressRule, with a nonempty
   origin set drawn from `manual` and `chair-seed` and the originating operation
   ID for each origin; and
-- `MinistryAssignment`: user/address to Ministry DUID, source (`chair-seed` or
-  `manual`), state (`active` or `suspended`), suspension reason/time, and audit
-  metadata.
+- `MinistryAssignment` (retained, grants nothing since #922): user/address to
+  Ministry DUID, source (`chair-seed` or `manual`), state (`active` or
+  `suspended`), suspension reason/time, and audit metadata.
 
-Domain rules, address rules, and the configured base of Ministry assignments
-carry their applied-configuration version and cannot be edited independently.
-Source-driven suspension/reactivation and its review task are runtime overlays
-that can remove scope immediately without rewriting YAML; an Admin decision to
-create, restore as manual, or delete configured policy goes through a
-`ConfigurationChangeRequest` and becomes effective on activation.
-
-Rule creation origin and role-grant origins are explicit authoritative YAML
-fields, carried unchanged into each applied database representation. The
-AddressRule role set is exactly the set of its AddressRoleGrant roles; a unique
-rule/role constraint and schema validation prevent contradictory copies. An
-empty exact-address denial rule has no grants. Bootstrap and ordinary manual
-rule creation use `manual`; creating a new rule through an Admin-confirmed
-chair suggestion uses `chair-seed`. Updating an existing rule never changes its
-creation origin or silently reclassifies existing grants.
-
-Only the confirmed chair-suggestion path may add a `chair-seed` grant origin,
-and only for Ministry leader. Pre-existing manual grant origins remain present.
-Other roles copied from a domain rule and explicitly confirmed as part of an
-exact-address override are manual grants, as is an already inherited Ministry-
-leader role preserved by that override. An ordinary explicit role addition or
-the Admin's **Keep role independently** action adds a manual origin without
-discarding seed provenance. Merely leaving a checked role unchanged, editing
-another role/assignment, or refreshing a suggestion adds no manual origin.
-Explicitly removing a configured role removes its complete grant; source
-refresh can neither recreate it nor add origins. Immutable configuration/audit
-history retains removed grants and their provenance.
-
-The source-suppression predicate is exactly: rule creation origin is
-`chair-seed`, the configured Ministry-leader grant has only a `chair-seed`
-origin, and no active Ministry assignment remains. Missing or inconsistent
-provenance blocks configuration activation instead of guessing from role count,
-assignment count, or the current source snapshot. An independently granted role
-does not itself confer Ministry row scope; assignment checks remain mandatory.
+Domain rules and address rules carry their applied-configuration version and
+cannot be edited independently. Rule creation origin and role-grant origins
+are explicit authoritative YAML fields, carried unchanged into each applied
+database representation. The AddressRule role set is exactly the set of its
+AddressRoleGrant roles; a unique rule/role constraint and schema validation
+prevent contradictory copies. An empty exact-address denial rule has no
+grants. Bootstrap and manual rule creation use `manual`; updating an existing
+rule never changes its creation origin or silently reclassifies existing
+grants. Explicitly removing a configured role removes its complete grant.
+Immutable configuration/audit history retains removed grants and their
+provenance.
 
 An exact address rule replaces, rather than unions with, a matching domain
-rule. When the UI creates an override for a chairperson already inheriting a
-domain role, it preselects the inherited roles plus Ministry leader so the
-Admin can see and confirm the replacement. `gmail.com` is prohibited as a
-domain rule but individual Gmail addresses are allowed. Every domain rule is a
-Google Workspace/Cloud Identity hosted-domain rule: it grants roles only when
-the signed `hd` claim and verified email suffix both match. An absent or
-mismatched `hd` claim never falls back to suffix-only authorization.
+rule. `gmail.com` is prohibited as a domain rule but individual Gmail
+addresses are allowed. Every domain rule is a Google Workspace/Cloud Identity
+hosted-domain rule: it grants roles only when the signed `hd` claim and
+verified email suffix both match. An absent or mismatched `hd` claim never
+falls back to suffix-only authorization.
 
-Chairperson synchronization creates or refreshes suggestions only; it never
-creates an AddressRule, grants a role, or creates an active assignment. The
-Admin-confirmed suggestion configuration request is the sole creator of a
-`chair-seed` assignment and any corresponding exact-address/Ministry-leader
-grant. For an
-existing `chair-seed`, a promoted snapshot that no longer shows the active
-Member as Chairperson of that active Ministry atomically changes it from
-`active` to `suspended`, records the source evidence, and opens an Admin review
-task. A suspended assignment grants no row scope on the next authorization
-check. Manual assignments are never changed from source data. When the explicit
-provenance predicate above holds, the runtime authorization overlay suppresses
-that Ministry-leader role; authoritative YAML and its materialized AddressRule
-remain unchanged. Unrelated roles/rules are preserved. If the source
-Chairperson relationship returns before review, the seeded assignment and role
-reactivate and the task closes with audit. Permanently deleting the configured
-assignment/role requires an Admin-applied `ConfigurationChangeRequest`.
+Retired by #922: Chairperson suggestions and their Admin confirmation, the
+`chair-seed` assignment and grant origin they created, the source-driven
+suspension and reactivation of seeded assignments, the suppression of a
+seed-only Ministry-leader grant, and the Admin review task for a suspended
+seed. Nothing creates, reconciles or reviews them any more, and the
+assignment records older configurations hold grant nothing; a seeded rule's
+roles count like any rule's. The tables stay until a later release drops
+them. Their earlier behavior is in this file's git history
+before #922.
 
 ### Ministry leaders
 
@@ -1651,8 +1614,7 @@ Snapshot promotion performs these effects transactionally:
   applying provider-suppression records;
 - resolve proposals that now match upstream;
 - mark three-way conflicts;
-- resolve Ministry requests whose requested roster state is now current;
-- refresh seeded Chairperson suggestions/assignment warnings.
+- resolve Ministry requests whose requested roster state is now current.
 
 Promotion plans no mail itself. A Family that becomes active, eligible or
 deliverable changes its row's planning columns, which the

@@ -2432,9 +2432,7 @@ current parishioner pages and previews use the applied visibility policy.
 For [Ministry leaders](../data/spec.md#ministry-leaders), an active Ministry
 means one present in the current catalog and locally active, so marking a
 Ministry inactive removes it from its leaders' scope on their next request.
-It does not alter Staff or Admin roles. The retained Chairperson suggestions
-and seeded assignment overlays are still reevaluated in the
-configuration-activation transaction, but grant nothing
+It does not alter Staff or Admin roles
 ([Ministry leaders from ParishSoft](#ministry-leaders-from-parishsoft)).
 
 ### ParishSoft Ministry catalog changes
