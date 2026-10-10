@@ -751,7 +751,7 @@ The source of truth is `stewardship_automation_session`.
   refused. Host, status and action columns do not sort. The checkbox, the
   headings and Revoke refresh the page in place, each keeping the others'
   choices (see the portal's
-  [in-place controls](../admin-portal/spec.md#in-place-controls)).
+  [in-place controls](../ui-conventions/spec.md#in-place-controls)).
   Any live one is revoked with a CSRF-protected in-place POST to
   `/admin/users/automation/sessions/<session>/` (`revoked_by_owner` for one's
   own, `revoked_by_administrator` otherwise), whose query carries the page's
@@ -1804,7 +1804,7 @@ to the page's own forms: a saved schedule named by `id` keeps what the
 document leaves out, `delete` removes it, an entry without `id` adds one,
 and saved schedules it does not name stay unchanged. A schedule's `time`
 takes every form the page's
-[time entry](../admin-portal/spec.md#time-entry) accepts, through the same
+[time entry](../ui-conventions/spec.md#time-entry) accepts, through the same
 form field and parser. The page's form errors
 are `invalid` with `error.fields`, each with its field identifier, its
 `ErrorCode` (`required` or `invalid`) and the page's message. The document's

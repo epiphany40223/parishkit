@@ -1,34 +1,35 @@
 # Stewardship reports and exports
 
 Reports use an explicitly selected campaign and make their data-as-of source
-snapshot/time explicit. The selector is per user/request, encoded as a stable
-campaign UUID in the report URL and never written to the global current-campaign
-pointer. It lists every retained campaign for which that user has report scope;
-purging/purged campaigns expose only permitted status/tombstone views. The
-default is the current pointer when authorized/reportable, otherwise the most
-recent authorized retained campaign. Exports and pinned links persist the UUID,
-so creating a successor cannot silently change a historical report. Admin
-inherits every report permission. Staff sees all reports below except logs;
-Ministry leaders see only Ministry reports and campaigns/rows for assigned
-Ministries.
+snapshot/time explicit. The selector is per user/request and never written to
+the global current-campaign pointer. It lists every retained campaign for
+which that user has report scope; purging/purged campaigns expose only
+permitted status/tombstone views. The default is the current pointer when
+authorized/reportable, otherwise the most recent authorized retained campaign.
+Exports persist their campaign, so creating a successor cannot silently change
+a historical report. Admin inherits every report permission. Staff sees all
+reports below except logs; Ministry leaders see only Ministry reports and
+campaigns/rows for assigned Ministries.
 
-The campaign selector, the campaign UUID in report URLs and the default to the
-most recent retained campaign are superseded for the Admin portal by the
-[navigation decisions](../admin-portal/spec.md#navigation-decisions) 10, 15
-and 19: reports show the current campaign, report URLs name no campaign, and
-the selector links stay greyed out until the single-campaign change (#145).
-Exports keep their own identifiers.
+The campaign selector and the default to the most recent retained campaign are
+superseded for the Admin portal by the [navigation
+decisions](../admin-portal/spec.md#navigation-decisions) 10, 15 and 19:
+reports show the current campaign and the selector links stay greyed out until
+the single-campaign change (#145). Exports keep their own identifiers.
 
 ## Shared report behavior
 
 Every report has a title, purpose/help text, active filters, source/data-as-of
 metadata, accessible empty/error state, and role-aware column set. Tables are
 server-paginated, sortable only by allowlisted fields, searchable, and
-filterable. URLs may contain only non-identifying enumerated filters, sort keys,
-page cursors, and the campaign UUID. Free-text search and any filter containing
-a Family/Member name, DUID, address, email, phone, code, census value, financial
-value, or other identifying text use a CSRF-protected POST body and never a URL
-or query string. Proxy/application access logs omit request bodies.
+filterable. URLs may contain only non-identifying enumerated filters, sort
+keys and page cursors, never a campaign identifier (Administrator decision,
+2026-10-10; see the [addresses
+rule](../ui-conventions/spec.md#addresses-and-legacy-urls)). Free-text search
+and any filter containing a Family/Member name, DUID, address, email, phone,
+code, census value, financial value, or other identifying text use a
+CSRF-protected POST body and never a URL or query string. Proxy/application
+access logs omit request bodies.
 
 Pagination cursors must obey the same non-identifying URL rule: no cursor may
 expose names, DUIDs, contact details, financial values, or other row values.
@@ -128,10 +129,12 @@ with each phone number and each head's emails on its own line; each response
 list is the same table; the postal mail merge is a grid of address cards.
 
 A field/value report (additional information, Ministry, financial, Family
-test names, packets) prints one card per record. The
-PDF is the readable view; CSV and XLSX stay the complete audit files with
-every column (except as a report's section notes). So that a page is easy to
-scan:
+test names, packets) prints one card per record. Which columns each format
+carries follows the
+[downloaded files rule](../ui-conventions/spec.md#downloaded-files): every
+format the same columns, with internal references left out. Until #966 makes
+the files consistent, CSV and XLSX still carry every column (except as a
+report's section notes). So that a page is easy to scan:
 
 - The first card, "About this report", shows counts and amounts as large
   tiles, then the remaining details. It leaves out what the page frame
@@ -171,10 +174,7 @@ sheets and a packet's Ministry details) use one tinted label style; a
 packet's Ministry detail values span the width of the member table below
 them. Styling never changes a cell's value or type.
 
-All charts have title, legend, labeled axes with units, accessible color/line
-patterns, hover/focus values, and equivalent data tables. They download as PNG
-or PDF. Dollar/count series on one chart use separate labeled axes rather than
-comparing unlike units on one scale.
+Charts follow the [chart conventions](../ui-conventions/spec.md#charts).
 
 ### Chart engine
 
@@ -559,7 +559,7 @@ tile per [funnel stage](#funnel-stages) with its count and its share compared
 with Invited, the three figures reported beside the funnel, then the funnel
 chart and the [activity chart](#response-activity-over-time) with its send
 markers, each with its summary and exact-values table. The explanation sits
-in the [About this page](../admin-portal/spec.md#page-help) panel after the
+in the [About this page](../ui-conventions/spec.md#page-help) panel after the
 data. Each chart is named by its panel's heading rather than a title drawn
 inside it. Until an invitation has been delivered the tiles leave out their
 shares and the page says so in one sentence. A **Lists of Families** panel
@@ -580,11 +580,11 @@ With no active rehearsal, the Testing view says there is nothing to show.
 everything it shows (the first link follow, form open or submission, or the
 first marked send) lies within three days of the cutoff, and daily after
 that. Both grains come from the one read, so switching never changes a
-total. Both choices are [in-place controls](../admin-portal/spec.md#in-place-controls):
+total. Both choices are [in-place controls](../ui-conventions/spec.md#in-place-controls):
 no reload, the reader's scroll position and focus on the chosen link kept,
 the charts drawn again, and the address replaced (so Back does not step
 through the choices). The Admin portal
-[requires JavaScript](../admin-portal/spec.md#javascript-requirement), so
+[requires JavaScript](../ui-conventions/spec.md#javascript-requirement), so
 there is no no-script form.
 
 Each view reads the funnel once, with the report's
@@ -632,13 +632,13 @@ Family that submitted
 `show` values (`invited`, `uninvited`) are unknown values now and are refused
 like any other.
 
-Each list is a [shared Admin table](../admin-portal/spec.md#admin-tables):
+Each list is a [shared Admin table](../ui-conventions/spec.md#admin-tables):
 every column sorts (times and counts newest or largest first on the first
 click, missing values last), the default is chronological for `submitted`,
 most submissions first for `more-than-once` and Family name otherwise, and the
 filter, search, sort headings, rows per page and paging refresh the table in
 place. The Production and Testing rehearsal links are
-[in-place controls](../admin-portal/spec.md#in-place-controls) of the table's
+[in-place controls](../ui-conventions/spec.md#in-place-controls) of the table's
 region: they keep the filter and order and refresh the list without a reload.
 The URL carries only closed choices: `mode` (as on the dashboard: Production
 by default, the active Testing rehearsal for Administrators only), `show` (the
@@ -793,7 +793,7 @@ Administrators also see whether campaign email can reach the Family (or why
 not), the furthest form step reached and when the Family was last seen on the
 form (live values of the
 [Family engagement record](../data/spec.md#family-engagement)), and the
-**Timeline**: a [shared Admin table](../admin-portal/spec.md#admin-tables)
+**Timeline**: a [shared Admin table](../ui-conventions/spec.md#admin-tables)
 with one row per event and the columns When, What happened and Details. It
 is newest first (the Administrator's decision on #590); When is its one sort
 heading, which reverses the order in place, and rows at the same instant keep
@@ -814,7 +814,7 @@ As on the [response lists](#response-lists), the URL carries only closed
 choices: the timeline's `sort` (and the `size=all` its heading carries), and
 `mode`, Production by default or the campaign's active Testing rehearsal for
 Administrators. Both are
-[in-place controls](../admin-portal/spec.md#in-place-controls) of the page's
+[in-place controls](../ui-conventions/spec.md#in-place-controls) of the page's
 one table region, and switching mode keeps the order chosen. Emails,
 submissions, form opens and the engagement record carry their mode (a Testing
 record also its rehearsal epoch; a Testing receipt is found through the
@@ -1201,7 +1201,7 @@ review* as well. Filters are status (with *Include history*), how the change
 reaches ParishSoft (with *Hide automatic changes* for staff working by
 hand), kind of change (contact details, moved, deceased, new Member), a
 Family name or DUID search, and submitted date. Sorting, paging and filters
-act [in place](../admin-portal/spec.md#in-place-controls). The filtered list
+act [in place](../ui-conventions/spec.md#in-place-controls). The filtered list
 downloads as CSV or XLSX (PDF later) with the page's columns and values,
 audited with a count like the other report downloads.
 
