@@ -278,7 +278,9 @@ def summary_errors(form):
     return errors
 
 
-def review_region(page, form=None, *, review=None, receipt=None, refusal=None):
+def review_region(
+    page, form=None, *, review=None, receipt=None, refusal=None, link=None
+):
     """Template context for an in-place settings page's review region (#532).
 
     ``review`` is the reviewed change (its ``changes``, ``notes`` and signed
@@ -286,6 +288,8 @@ def review_region(page, form=None, *, review=None, receipt=None, refusal=None):
     live region polls Change status's passive read and, once the change is
     applied, refreshes ``page`` in place; ``refusal`` a ``Refusal`` shown as
     the region's error summary. Otherwise a bound form's errors are.
+    ``link`` (``{"url", "label"}``) follows the errors when the page names
+    where to resolve them, as a live end-date review does for mail (#912).
     """
     if refusal is not None:
         errors = [
@@ -308,6 +312,8 @@ def review_region(page, form=None, *, review=None, receipt=None, refusal=None):
     return {
         "review": review,
         "review_errors": errors,
+        # Where to resolve what blocks the change, when a page names it.
+        "review_link": link,
         "receipt": receipt,
         "status_url": status_url,
     }

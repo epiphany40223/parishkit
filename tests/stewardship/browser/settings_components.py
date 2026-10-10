@@ -18,9 +18,14 @@ each step of the view renders:
 Every page draws the Make changes / Review / Apply indicator at its step, so
 a test can see the indicator follow along. Campaign settings is served the
 same way at ``CAMPAIGN`` (the editor) and ``CAMPAIGN_REVIEW`` (its review),
-so a test can check its module scripts survive an in-place review.
+so a test can check its module scripts survive an in-place review. A live
+campaign's Campaign settings, whose one editable setting is its end date
+(#912), is served at ``LIVE_END`` (the editor, whose Apply leads to
+``LIVE_END_PENDING``), ``LIVE_END_REVIEW`` (its review) and
+``LIVE_END_REFUSED`` (refused, linking to the combined date-change review).
 """
 
+from datetime import date
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -28,8 +33,14 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import setup_help
 from parishkit.stewardship.accounts.admin_editing import review_region
+from parishkit.stewardship.accounts.campaign_end_date import (
+    CAMPAIGN_END_TEXT,
+    FAMILY_ACCESS,
+    LiveEndDateForm,
+)
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
+from parishkit.stewardship.web.refusals import Refusal
 
 SETTINGS = "/settings-in-place"
 REVIEW = "/settings-in-place-review"
@@ -40,6 +51,12 @@ PENDING = f"{SETTINGS}?request={REQUEST}"
 SETTLED = f"{SETTINGS}?request={REQUEST}&settled=1"
 CAMPAIGN = "/campaign-in-place"
 CAMPAIGN_REVIEW = "/campaign-in-place-review"
+LIVE_END = "/campaign-end-in-place"
+LIVE_END_REVIEW = "/campaign-end-in-place-review"
+LIVE_END_REFUSED = "/campaign-end-in-place-refused"
+LIVE_END_PENDING = f"{LIVE_END}?request={REQUEST}"
+# Where a refused shortening sends the Administrator (#912).
+COMBINED_REVIEW = "/admin/campaign/schedules/?end_date=2054-10-20"
 CAMPAIGN_VALUES = {
     "name": "Sample campaign",
     "timezone": "America/New_York",
@@ -51,6 +68,7 @@ CAMPAIGN_VALUES = {
 # The confirmation's answer: back to this page, naming the change.
 POSTS = {
     SETTINGS: (303, PENDING, ""),
+    LIVE_END: (303, LIVE_END_PENDING, ""),
     # A Review answered with a redirect to another page, which does not draw
     # the review region (Campaign settings' dates-only change, #532).
     "/settings-in-place-elsewhere": (303, "/in-place-other", ""),
@@ -147,6 +165,38 @@ def components(context, admin):
             ),
         )
 
+    def live_end(step, **region):
+        """A live campaign's Campaign settings: only its end date can change."""
+        end_form = LiveEndDateForm(
+            initial={"end_date": date(2054, 10, 31), "base_digest": "a" * 64}
+        )
+        values = review_region("campaign_settings", end_form, **region)
+        if region.get("receipt"):
+            values["status_url"] = STATUS
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/campaign-settings.html",
+                context
+                | {
+                    "admin_chrome": admin | {"flow_steps": _steps(step)},
+                    "campaign": {
+                        "pk": REQUEST,
+                        "state": "active",
+                        "active_configuration": {"name": "Sample campaign"},
+                    },
+                    "editable": False,
+                    "form": CampaignForm(
+                        initial=CAMPAIGN_VALUES,
+                        ministries=[("4", "Community outreach")],
+                        funds=[("9", "Offertory")],
+                    ),
+                    "end_form": end_form,
+                }
+                | values,
+            ),
+        )
+
     pending = SimpleNamespace(state="staged", request_id=REQUEST, failure_code="")
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
     return {
@@ -182,6 +232,38 @@ def components(context, admin):
         ),
         SETTLED: page(editor("b" * 64), 2, receipt=applied),
         CAMPAIGN: campaign(None, 0),
+        LIVE_END: live_end(0),
+        LIVE_END_REVIEW: live_end(
+            1,
+            review={
+                "changes": [
+                    {
+                        "label": "Campaign end date",
+                        "before": "October 31, 2054",
+                        "after": "November 15, 2054",
+                    }
+                ],
+                "notes": [FAMILY_ACCESS, CAMPAIGN_END_TEXT],
+                "preview": "synthetic-signed-intent",
+            },
+        ),
+        LIVE_END_REFUSED: live_end(
+            0,
+            refusal=Refusal(
+                "Some scheduled emails would no longer fit the campaign.",
+                fix="Change the end date together with those mailings.",
+            ),
+            link={
+                "url": COMBINED_REVIEW,
+                "label": "Change the end date and its mailings",
+            },
+        ),
+        LIVE_END_PENDING: live_end(
+            2,
+            receipt=SimpleNamespace(
+                state="staged", request_id=REQUEST, failure_code=""
+            ),
+        ),
         CAMPAIGN_REVIEW: campaign(
             None,
             1,

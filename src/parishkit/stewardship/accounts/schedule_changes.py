@@ -30,6 +30,14 @@ from .schedule_preview import fingerprint, work_summary
 # A preview that changes nothing is refused with this, not with the catch-all
 # rule text, which would wrongly suggest a schedule breaks a rule (#878).
 NO_CHANGES = _("Nothing has changed.")
+# The candidate breaks a schedule rule: most often mail that a date change
+# leaves outside the campaign. A live end-date review (#912) recognizes it to
+# offer the combined date-change review that resolves every such mailing.
+DOES_NOT_FIT = (
+    "Every Family mailing must fit the campaign; reminders must follow "
+    "exactly one initial mailing and use distinct times. Resolve all "
+    "affected schedules, or change at most 100 records per request."
+)
 
 
 def preview_salt(campaign_id):
@@ -126,12 +134,7 @@ def build_preview(
     try:
         build_candidate(base, patch, candidate_id=uuid4())
     except (ConfigError, ValueError):
-        window.add_error(
-            None,
-            "Every Family mailing must fit the campaign; reminders must follow "
-            "exactly one initial mailing and use distinct times. Resolve all "
-            "affected schedules, or change at most 100 records per request.",
-        )
+        window.add_error(None, DOES_NOT_FIT)
         return None
     summary = work_summary(campaign.pk)
     prior = {row["id"]: row["values"] for row in schedules.previous}

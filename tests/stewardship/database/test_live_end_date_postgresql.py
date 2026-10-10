@@ -5,14 +5,19 @@ with its owning admission, the close boundary moves, every Family credential
 keeps working, and the shortened date never strands a Reminder.
 """
 
+import re
 from datetime import timedelta
+from html import unescape
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import pytest
 from django.test import Client
+from django.urls import reverse
 
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.configuration_requests import record_request
+from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.live_end_date import (
@@ -21,14 +26,20 @@ from parishkit.stewardship.campaigns.live_end_date import (
 )
 from parishkit.stewardship.campaigns.models import (
     Campaign,
+    CampaignBoundaryOccurrence,
     CampaignConfigurationIntent,
+    ScheduleDefinition,
 )
 
+from .auth_builders import signed_in
 from .automation_builders import paired
 from .campaign_builders import campaign_clock, command
 from .response_builders import activate_response_service
 from .test_admin_schedule_cli_postgresql import admin, confirm, events, preview
+from .test_campaign_views_postgresql import post, requested
 from .test_ministry_responses_postgresql import revisit
+from .test_parish_views_postgresql import token
+from .test_schedule_views_postgresql import fields
 from .test_schedule_views_postgresql import setup as campaign_with_reminder
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -47,6 +58,13 @@ def live(store):
     return campaign
 
 
+def digest(response):
+    """The page's hidden applied-configuration version."""
+    return re.search(
+        r'name="base_digest" value="([0-9a-f]{64})"', response.content.decode()
+    ).group(1)
+
+
 def installed(store, request_id):
     """Apply a request as the configuration installer service does."""
     return install_request(
@@ -55,6 +73,138 @@ def installed(store, request_id):
         correlation_id=uuid4(),
         admit_campaign=admit_end_edit,
     )
+
+
+def closes(campaign):
+    """The pending close occurrences' due instants."""
+    return list(
+        CampaignBoundaryOccurrence.objects.filter(
+            campaign=campaign, kind="close", state="pending"
+        ).values_list("due_at", flat=True)
+    )
+
+
+def test_campaign_settings_reviews_and_applies_a_later_end_in_place(
+    auth_service, google
+):
+    """Review, Apply in place, intent and audit with the request, then applied."""
+    store = auth_service.store
+    campaign = live(store)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+    assert page.status_code == 200, page.content
+    body = page.content.decode()
+    assert 'id="end-date"' in body and 'name="end_date"' in body
+    assert 'value="2054-10-31"' in body
+    review = post(
+        browser,
+        url,
+        {"action": "preview", "end_date": "2054-11-15", "base_digest": digest(page)},
+    )
+    assert review.status_code == 200, review.content
+    text = unescape(review.content.decode())
+    assert "Review your changes" in text and "Campaign end date" in text
+    assert "Family codes and links already sent keep working" in text
+    assert not ConfigurationChangeRequest.objects.filter(
+        patch__0__values__end_date="2054-11-15"
+    ).exists()
+    accepted = post(browser, url, {"action": "confirm", "preview": token(review)})
+    # Answered in place: the page again, naming the request (#532).
+    assert accepted["Location"].startswith(url + "?request=")
+    assert accepted["Location"].endswith("#settings-review")
+    request = ConfigurationChangeRequest.objects.get(pk=requested(accepted))
+    intent = CampaignConfigurationIntent.objects.get(request=request)
+    assert (intent.action, intent.campaign_id) == ("edit_end", campaign.pk)
+    assert intent.expected_version == campaign.version
+    assert intent.prior_projection_id == campaign.active_configuration_id
+    assert intent.token_generation_id is None
+    [event] = AuditEvent.objects.filter(event_type=EVENT)
+    assert event.subject_id == request.pk and event.actor_id == request.actor_id
+    assert event.campaign_reference == campaign.pk
+    status = browser.get(
+        urlsplit(accepted["Location"]).path + "?request=" + str(request.pk)
+    )
+    assert status.status_code == 200 and b"Change status" in status.content
+
+    assert installed(store, request.pk).state == "applied"
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.end_date.isoformat() == "2054-11-15"
+    assert campaign.state == "scheduled" and campaign.structural_locked
+    assert closes(campaign) == [campaign.active_configuration.ends_at]
+    # The repeated Apply returns the same request and binds nothing more.
+    again = post(browser, url, {"action": "confirm", "preview": token(review)})
+    assert requested(again) == request.pk
+    assert CampaignConfigurationIntent.objects.count() == 1
+
+
+def test_a_shortened_end_resolves_its_reminder_in_the_combined_review(
+    auth_service, google
+):
+    """Campaign settings refuses and links; Dates and mail schedules applies both."""
+    store = auth_service.store
+    campaign = live(store)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+    refused = post(
+        browser,
+        url,
+        {"action": "preview", "end_date": "2054-10-20", "base_digest": digest(page)},
+    )
+    assert refused.status_code == 400
+    text = unescape(refused.content.decode())
+    assert "would no longer fit the campaign" in text
+    schedules = reverse("admin:schedule_settings")
+    link = f"{schedules}?end_date=2054-10-20"
+    assert f'href="{link}"' in text and 'name="preview"' not in text
+    # The combined review: only the end date is open, at the proposed date.
+    review = browser.get(link)
+    assert review.status_code == 200, review.content
+    body = review.content.decode()
+    assert re.search(r'name="window-end_date" value="2054-10-20"[^>]*>', body)
+    assert re.search(r'name="window-start_date"[^>]*disabled', body)
+    assert "only its end date can change" in body
+    data, indexes = fields(store, campaign, editable=False)
+    data["window-end_date"] = "2054-10-20"
+    assert post(browser, schedules, data).status_code == 400
+    data[f"schedules-{indexes['reminder']}-DELETE"] = "on"
+    preview_page = post(browser, schedules, data)
+    accepted = post(
+        browser, schedules, {"action": "confirm", "preview": token(preview_page)}
+    )
+    request = ConfigurationChangeRequest.objects.get(pk=requested(accepted))
+    assert CampaignConfigurationIntent.objects.filter(request=request).exists()
+    assert installed(store, request.pk).state == "applied"
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.end_date.isoformat() == "2054-10-20"
+    assert ScheduleDefinition.objects.get(kind="reminder").current_revision_id is None
+    assert closes(campaign) == [campaign.active_configuration.ends_at]
+
+
+def test_a_past_or_unchanged_end_and_locked_fields_are_refused(auth_service, google):
+    """Only a changed future end date is reviewed; the start stays locked."""
+    store = auth_service.store
+    live(store)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+    before = ConfigurationChangeRequest.objects.count()
+    for value, message in (
+        ("2054-10-31", "Nothing has changed."),
+        ("2020-01-01", "Check the campaign dates"),
+    ):
+        refused = post(
+            browser,
+            url,
+            {"action": "preview", "end_date": value, "base_digest": digest(page)},
+        )
+        assert refused.status_code == 400
+        assert message in unescape(refused.content.decode())
+    # The start date may not be proposed for a live campaign.
+    schedules = reverse("admin:schedule_settings")
+    assert browser.get(f"{schedules}?start_date=2054-10-02").status_code == 400
+    assert ConfigurationChangeRequest.objects.count() == before
 
 
 @pytest.mark.parametrize("end_date", ["2054-11-15", "2054-10-29"])
