@@ -80,7 +80,7 @@ DELIVERY_SORTING = Sorting.by_column(
 
 
 def with_name_keys(selected, snapshot, duid="family__family_duid"):
-    """Annotate the Family name sort keys DELIVERY_SORTING's name orders by.
+    """Annotate the Family name sort keys a name sort orders by.
 
     ``family_sort_surname`` is the surname and ``family_sort_name`` the
     whole "Squyres, Tracy and Jeff" name, both lowercased, as the Family
@@ -89,13 +89,15 @@ def with_name_keys(selected, snapshot, duid="family__family_duid"):
     shows, read from ``snapshot``: the caller reads the current snapshot id
     once and passes it here and to ``with_family_names``, so the sort and the
     shown names agree. ``duid`` names each row's Family DUID: an outbox
-    message's by default. NULL (sorted last) for an Administrator report,
+    message's by default, or a refusal's ``family_duid`` on Refused
+    addresses (#935). NULL (sorted last) for an Administrator report,
     which has no Family, or a Family the snapshot lacks.
 
-    An email stores no name, so this runs per row, and only when the name
-    sort is chosen: a few index lookups and small JSON parses each. Computing
-    the keys once per Family would repeat less work for a Family with many
-    emails, but at a parish's few emails per Family the repeats are cheap.
+    Neither an email nor a refusal stores a name, so this runs per row, and
+    only when the name sort is chosen: a few index lookups and small JSON
+    parses each. Computing the keys once per Family would repeat less work
+    for a Family with many emails, but at a parish's few emails per Family
+    the repeats are cheap.
     """
     return selected.annotate(
         **{

@@ -300,7 +300,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](../admin-portal/spec.md#follow-up-workflows); System logs'
   cross-links, whose answer is the filtered page; Acknowledge on a security
-  event; Dismiss on an integration's finished key change; the
+  event; Clear verified refusal on a
+  [refused address](../admin-portal/spec.md#refused-addresses); Dismiss on an
+  integration's finished key change; the
   [participation report](../reports/spec.md#campaign-statistics)'s Apply
   report options, which refreshes its statistics, chart and export panels)
   names its region by its
@@ -795,7 +797,9 @@ Admin pages put the page's data first and keep explanation one deliberate
 click away, without removing any of it. A page leads with its heading, its own
 data line (such as the campaign name or counts), safety notices (such as
 Testing mode) and then its data or form; at most a one-line hint that prevents
-a likely mistake stays visible above the data. A caution that prevents a
+a likely mistake stays visible above the data. A line of cross-links to
+related pages may sit above the heading instead, when an About panel left
+open would otherwise push it out of view (#938). A caution that prevents a
 likely mistake (what an action cannot undo or stop, or a lasting consequence
 it has) is never only in the panel: it stays visible beside its control as a
 one-line hint or a notice. The page's introduction and longer explanation of

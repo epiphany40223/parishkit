@@ -380,7 +380,9 @@ def refusal_list_model(data):
         has_next=data["has_next"],
         matching=count,
         matching_capped=capped,
-        refusals=[{"id": row.pk, "created_at": row.created_at} for row in data["rows"]],
+        refusals=[
+            {"id": row["id"], "created_at": row["created_at"]} for row in data["rows"]
+        ],
     )
 
 
