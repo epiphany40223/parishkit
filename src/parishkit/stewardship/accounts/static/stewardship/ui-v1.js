@@ -1576,7 +1576,10 @@
     }
     note.className = "notice";
     note.setAttribute("role", "status");
-    note.textContent = "You changed the settings after reviewing them. "
+    // A review may say this in its own words (data-stale-note, Outgoing
+    // mail's bulk preview, #382).
+    note.textContent = review.dataset.staleNote
+      || "You changed the settings after reviewing them. "
       + "Choose Review changes again to see what will change.";
   };
   const withdrawReview = (event) => {

@@ -1,0 +1,11 @@
+{% load i18n stewardship delivery %}{% comment %}
+  The fields both bulk action forms share (delivery-bulk.html): which type
+  of email, listing only the types with an email the action covers (and
+  All types when there is more than one), and the required note recorded
+  on every email. ``kind`` names the form; ``choice`` is its
+  delivery_bulk.overview entry.
+{% endcomment %}<div><label for="bulk-{{ kind }}-purpose">{% translate "Type of email" %}</label>
+<select id="bulk-{{ kind }}-purpose" name="purpose">{% if choice.purposes|length > 1 %}<option value="all">{% blocktranslate with count=choice.total|number trimmed %}All types ({{ count }}){% endblocktranslate %}</option>{% endif %}{% for purpose, count in choice.purposes %}<option value="{{ purpose }}">{{ purpose|delivery_label }} ({{ count|number }})</option>{% endfor %}</select></div>
+<div data-missing-hint="{% translate 'Enter the evidence or reason to preview.' %}"><label for="bulk-{{ kind }}-note">{% translate "Evidence or reason, recorded on every email" %}</label>
+<textarea id="bulk-{{ kind }}-note" name="note" maxlength="2000" required aria-describedby="bulk-{{ kind }}-note-help"></textarea>
+<p id="bulk-{{ kind }}-note-help" class="help">{% translate "Keep it brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p></div>

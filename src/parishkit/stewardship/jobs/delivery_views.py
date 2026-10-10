@@ -4,13 +4,19 @@ from contextlib import contextmanager
 from uuid import UUID, uuid4
 
 from django.conf import settings
+from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, IntegrityError, transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.debug import sensitive_post_parameters
-from django.views.decorators.http import require_POST, require_safe
+from django.views.decorators.http import (
+    require_http_methods,
+    require_POST,
+    require_safe,
+)
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.admin_caller import AdminCaller
@@ -18,6 +24,7 @@ from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.storage import StaleRecordError
@@ -30,6 +37,7 @@ from parishkit.stewardship.web.tables import (
     window_table,
 )
 
+from . import delivery_bulk
 from .delivery_admin import clear_recipient_refusal
 from .delivery_metadata import DELIVERY_SORTING, STATES
 from .delivery_reads import (
@@ -39,6 +47,7 @@ from .delivery_reads import (
     read_listing,
     read_refusal,
     read_refusals,
+    read_sending_holds,
 )
 from .delivery_resolution import resolve_delivery
 from .models import TaskRun
@@ -130,8 +139,12 @@ def _retry_inputs(purpose):
     return dict(general=keys.general, public=keys.public, public_origin=origin)
 
 
-def _page(request, template, load, *, subject=None):
-    """Capture bounded metadata, render outside locks, then recheck disclosure."""
+def _page(request, template, load, *, subject=None, status=200):
+    """Capture bounded metadata, render outside locks, then recheck disclosure.
+
+    ``status`` is the answer's status: an in-place command refused with an
+    error summary answers with this page and a 4xx status (#562).
+    """
     try:
         service = runtime()
         actor = _principal(request, service.store)
@@ -140,7 +153,7 @@ def _page(request, template, load, *, subject=None):
             if configuration is None or configuration.restore_review_required:
                 return _error(ErrorCode.UNAVAILABLE, 503)
             context, count = load()
-        response = render(request, template, context)
+        response = render(request, template, context, status=status)
         with transaction.atomic():
             current = _principal(request, service.store, final=True)
             if current.identity != actor.identity:
@@ -156,6 +169,10 @@ def _page(request, template, load, *, subject=None):
                 subject_id=subject,
                 context={"outcome": Outcome.SUCCEEDED, "count": count},
             )
+        if status != 200:
+            # This page itself, with the refusal in its review region, not a
+            # bare error: the in-place handler swaps it in (#562).
+            response.stewardship_safe_error = True
         response["Cache-Control"] = "no-store"
         return response
     except PermissionError:
@@ -203,9 +220,18 @@ def _previous(request, window):
     return values.urlencode()
 
 
-@require_safe
+@require_http_methods(["GET", "HEAD", "POST"])
+@sensitive_post_parameters("note")
 def delivery_list(request):
-    """Search exact operational identifiers without fetching message content."""
+    """Search exact operational identifiers without fetching message content.
+
+    A POST is one of the page's bulk actions (#382 M4, ``_bulk``): it is
+    answered with this page, whose bulk review region shows the preview,
+    the result or the refusal in place.
+    """
+    bulk, status = _bulk(request) if request.method == "POST" else ({}, 200)
+    if isinstance(bulk, HttpResponse):
+        return bulk
 
     def load():
         """Capture one filtered page without reading any private message payload."""
@@ -225,9 +251,102 @@ def delivery_list(request):
             selected_state=values["state"],
             query=values["q"],
             send=data["send"],
+            holds=read_sending_holds(database_now()),
+            bulk_overview=delivery_bulk.overview(),
+            **bulk,
         ), len(data["rows"])
 
-    return _page(request, "stewardship/deliveries.html", load)
+    return _page(request, "stewardship/deliveries.html", load, status=status)
+
+
+# What a refused bulk action says in the page's error summary.
+BULK_REFUSALS = {
+    "stale": _(
+        "These emails changed, or the preview expired, before you confirmed. "
+        "Choose Preview again to see what qualifies now."
+    ),
+    "empty": _("No email qualifies for this action any more."),
+    "invalid": _(
+        "Enter a note, choose a type of email and, to record emails as not "
+        "sent, confirm that you checked the mail service's records."
+    ),
+}
+
+
+def _bulk(request):
+    """Preview or apply one bulk action; returns ``(context, status)``.
+
+    ``context`` fills the page's bulk review region: ``bulk_review`` (a
+    preview to confirm), ``bulk_result`` (what applying it did) or
+    ``bulk_errors`` (a refusal, with a 4xx status). A denial or an outage
+    is answered by the fixed error page instead, returned in place of the
+    context. Previewing changes nothing; applying resolves each message with
+    the ordinary per-message command (``delivery_bulk.apply_preview``).
+    """
+    try:
+        service = runtime()
+        actor = _principal(request, service.store, activity=True)
+        supplied = set(request.POST) - {"csrfmiddlewaretoken"}
+        if any(len(request.POST.getlist(key)) != 1 for key in request.POST):
+            raise ValueError("Repeated bulk fields.")
+        action = request.POST.get("action")
+        if action == "preview":
+            fields = {"action", "kind", "purpose", "note"}
+            if not fields <= supplied or supplied - fields - {"checked"}:
+                raise ValueError("Invalid bulk preview fields.")
+            with transaction.atomic():
+                _available()
+                review = delivery_bulk.preview(
+                    actor.identity,
+                    kind=request.POST["kind"],
+                    purpose=request.POST["purpose"],
+                    note=request.POST["note"],
+                    checked=request.POST.get("checked") == "yes",
+                )
+            return dict(bulk_review=review | {"form": f"bulk-{review['kind']}"}), 200
+        if action != "confirm" or supplied != {"action", "preview", "note"}:
+            raise ValueError("Invalid bulk confirmation fields.")
+        # The signed preview carries only the note's digest; the note is
+        # posted again beside it and must match.
+        binding = delivery_bulk.load_preview(
+            request.POST["preview"], actor.identity, request.POST["note"]
+        )
+        with transaction.atomic():
+            _available()
+        result = delivery_bulk.apply_preview(
+            service.store,
+            actor.identity,
+            binding,
+            scope=lambda: _command_scope(request, service, actor),
+            admit=lambda: _principal(request, service.store, final=True),
+            preparation_inputs=_retry_inputs,
+        )
+        # Continue applies the rest of the same preview, past what it skipped.
+        return dict(bulk_result=result, bulk_note=binding["note"]), 200
+    except delivery_bulk.NothingToResolve:
+        return _bulk_refused("empty", 409)
+    except (StaleRecordError, TaskRetryConflict, signing.BadSignature):
+        return _bulk_refused("stale", 409)
+    except PermissionError:
+        return _error(ErrorCode.DENIED, 403), 403
+    except DatabaseError as error:
+        return _database_error(error), 503
+    except UNAVAILABLE:
+        return _error(ErrorCode.UNAVAILABLE, 503), 503
+    except ValueError:
+        return _bulk_refused("invalid", 400)
+
+
+def _bulk_refused(reason, status):
+    """A refused bulk action: the page again, with its reason in the region."""
+    return dict(bulk_errors=[dict(message=BULK_REFUSALS[reason])]), status
+
+
+def _available():
+    """Refuse while a restore review withholds delivery pages, as ``_page`` does."""
+    configuration = SystemConfiguration.objects.first()
+    if configuration is None or configuration.restore_review_required:
+        raise ObjectDoesNotExist("Delivery pages are withheld.")
 
 
 @require_safe

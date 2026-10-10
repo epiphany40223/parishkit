@@ -10,6 +10,7 @@ page's query (a ``QueryDict``); repeated, unknown or malformed options are
 refused (``ValueError``) as on the page.
 """
 
+from datetime import timedelta
 from uuid import uuid4
 
 from django.db import connection
@@ -96,6 +97,32 @@ def read_listing(parameters):
     )
 
 
+def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry):
+    """The resolutions a message's page offers now, in the page's order.
+
+    ``state`` is the message's state and ``task_state`` its latest delivery
+    task's (None without one); ``can_resolve`` is the campaign's export
+    admission and ``can_retry`` the message's resend admission
+    (``stewardship_delivery_retry_admitted_v1``). The bulk actions on
+    Outgoing mail (``delivery_bulk``) select by these same rules, so a bulk
+    action never touches a message whose own page would not offer it.
+    """
+    actions = ["note"] if campaign_state != "archived" and can_resolve else []
+    if task_state == "failed" and actions:
+        if state == "delivery_unknown":
+            # Both settle the attempt from external evidence without a
+            # send, so neither depends on the resend admission (can_retry).
+            actions += ["accept", "confirm_unsent"]
+            if can_retry:
+                actions.append("resend")
+        elif can_retry:
+            if state == "permanent_failure":
+                actions.append("retry_failed")
+            elif state in {"pending", "retry_wait"}:
+                actions.append("retry_unsent")
+    return actions
+
+
 def read_detail(message_id, parameters):
     """One delivery: its metadata, history, latest task, notes and actions.
 
@@ -134,19 +161,13 @@ def read_detail(message_id, parameters):
             (message["campaign_id"], message_id),
         )
         can_resolve, can_retry = cursor.fetchone()
-    actions = ["note"] if campaign.state != "archived" and can_resolve else []
-    if task and task["state"] == "failed" and actions:
-        if message["state"] == "delivery_unknown":
-            # Both settle the attempt from external evidence without a
-            # send, so neither depends on the resend admission (can_retry).
-            actions += ["accept", "confirm_unsent"]
-            if can_retry:
-                actions.append("resend")
-        elif can_retry:
-            if message["state"] == "permanent_failure":
-                actions.append("retry_failed")
-            elif message["state"] in {"pending", "retry_wait"}:
-                actions.append("retry_unsent")
+    actions = offered_actions(
+        message["state"],
+        task and task["state"],
+        campaign_state=campaign.state,
+        can_resolve=can_resolve,
+        can_retry=can_retry,
+    )
     notes, notes_following = window.rows(
         DeliveryResolution.objects.filter(message_id=message_id)
         .order_by("-created_at", "-id")
@@ -168,6 +189,114 @@ def read_detail(message_id, parameters):
             in {"delivery_unknown", "permanent_failure", "pending", "retry_wait"}
         ),
     )
+
+
+def _long_retry():
+    """The wait past which a retry is on a limit or throttle backoff, not the usual.
+
+    The ordinary retry schedule (``family_mail_dispatch.retry_delay``) waits
+    at most 10 minutes; the recipient-throttle backoff and a Gmail limit
+    refusal wait at least 15. Halfway between keeps a few seconds of clock
+    difference between the message's ``updated_at`` and ``not_before`` from
+    mattering.
+    """
+    from .family_mail_dispatch import (
+        LIMIT_RETRY_SECONDS,
+        MAX_ATTEMPTS,
+        RECIPIENT_RETRY_SECONDS,
+        retry_delay,
+    )
+
+    usual = max(retry_delay(attempt) for attempt in range(1, MAX_ATTEMPTS + 1))
+    longer = min(*RECIPIENT_RETRY_SECONDS, *LIMIT_RETRY_SECONDS.values())
+    return timedelta(seconds=(usual + longer) / 2)
+
+
+def read_sending_holds(now):
+    """Why Family email is waiting on a sending limit, for Outgoing mail (#382 M3a).
+
+    Returns None when nothing is, else ``daily_limit`` (a running mail
+    sender waits for this server's daily limit), ``gmail_until`` (a running
+    sender is held at Gmail's limit; the latest time it names, or None when
+    none does), ``gmail_held``, and ``throttled`` and ``throttled_due``: how
+    many of the current campaign's Family emails, in the current mode, wait
+    to retry on a longer backoff, and when the first of them is due (None
+    once that time has passed: the mail sender picks the email up at its
+    next pass, so a past time would only mislead). A longer backoff is one
+    whose latest outcome was a temporary refusal (``smtp_transient``) and
+    whose wait is longer than the ordinary schedule's (``_long_retry``): the
+    receiving side throttling every address (#801) or a Gmail limit
+    answering that one message. The web login may read every column used
+    here; the refused addresses themselves stay in the event's evidence,
+    which it may not.
+
+    The sender states come from the same service status rows, grouped the
+    same way, as System health's Mail sender panel, so the two pages agree.
+    """
+    from django.db.models import Count, Exists, F, Min, OuterRef
+
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.system_health import group_processes
+
+    from .outbox_models import OutboxEvent
+    from .service_status_models import ServiceStatus
+
+    rows = ServiceStatus.objects.filter(service="mail-dispatch").values(
+        "service",
+        "process",
+        "target",
+        "started_at",
+        "reported_at",
+        "application_version",
+        "debug_logging",
+        "sender_state",
+        "sender_since",
+        "sender_until",
+    )
+    senders = [line for line in group_processes(list(rows), now) if line.running]
+    held = [line for line in senders if line.sender_state == "gmail_held"]
+    # Only the current campaign's emails in the current mode: a Testing
+    # rehearsal's or an earlier campaign's waiting emails are not what the
+    # Administrator is looking at.
+    configuration = SystemConfiguration.objects.only(
+        "mode", "current_campaign_id"
+    ).first()
+    current = messages().none()
+    if configuration is not None and configuration.current_campaign_id:
+        current = messages().filter(
+            campaign_id=configuration.current_campaign_id, mode=configuration.mode
+        )
+    throttled = (
+        current.filter(
+            state="retry_wait",
+            family_id__isnull=False,
+            not_before__gt=F("updated_at") + _long_retry(),
+        )
+        .filter(
+            Exists(
+                OutboxEvent.objects.filter(
+                    message_id=OuterRef("pk"),
+                    version=OuterRef("version"),
+                    reason="smtp_transient",
+                )
+            )
+        )
+        .aggregate(count=Count("id"), due=Min("not_before"))
+    )
+    holds = dict(
+        daily_limit=any(line.sender_state == "daily_limit" for line in senders),
+        gmail_held=bool(held),
+        gmail_until=max(
+            (line.sender_until for line in held if line.sender_until), default=None
+        ),
+        throttled=throttled["count"],
+        throttled_due=throttled["due"]
+        if throttled["due"] and throttled["due"] > now
+        else None,
+    )
+    if holds["daily_limit"] or holds["gmail_held"] or holds["throttled"]:
+        return holds
+    return None
 
 
 def read_refusals(parameters):
