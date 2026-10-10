@@ -368,3 +368,40 @@ def test_only_an_applied_change_refreshes_its_settings_page(state):
         {"receipt": receipt, "follow_url": "/admin/parish/settings/?request=x"},
     )
     assert ("data-live-follow" in html) == (state == "applied")
+
+
+@pytest.mark.parametrize("page", SETTINGS_PAGES)
+def test_settings_review_waits_for_a_change(page):
+    """Each in-place settings form keeps Review changes unavailable until it
+    differs from what is saved (#921): the form names its version field for
+    the change gate, and draws the shared Review button with its hint."""
+    text = (TEMPLATES / page).read_text()
+    form = re.search(r'<form id="settings-form"[^>]*>', text).group(0)
+    assert 'data-require-change="base_digest"' in form
+    assert "stewardship/components/review-changes-button.html" in text
+    assert 'translate "Review changes"' not in text
+
+
+def test_review_button_hint_follows_it_and_keeps_its_space():
+    """The hint sits right after Review changes, idle (hidden by visibility,
+    so it keeps its space) until the page script shows it; a page can word
+    it for its own form."""
+    html = render_to_string("stewardship/components/review-changes-button.html", {})
+    button, hint = re.fullmatch(
+        r"\s*(<button\b[^>]*>.*?</button>)\s*(<span\b[^>]*>.*?</span>)\s*", html, re.S
+    ).groups()
+    assert 'type="submit"' in button and "Review changes" in button
+    # Firefox would otherwise bring the script's disabled back on a reload.
+    assert 'autocomplete="off"' in button
+    # ui-v1.js names the hint after its form, so two forms never share an id.
+    assert " id=" not in hint
+    assert "data-unchanged-hint" in hint and "data-idle" in hint
+    assert "Change a setting to review it." in hint
+    worded = render_to_string(
+        "stewardship/components/review-changes-button.html",
+        {"hint": "Change an option to review it."},
+    )
+    assert "Change an option to review it." in worded
+    assert "Change a setting" not in worded
+    css = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.css").read_text()
+    assert ".unchanged-hint[data-idle] { visibility: hidden; }" in css

@@ -580,6 +580,8 @@ def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google)
         r'\s*<input type="hidden" name="editor" value="leader_roles">',
         body,
     )
+    # ... and says why while it waits, with the shared hint (#924).
+    assert "Change a setting to review it." in body
     assert body.count('id="leader_ministry_leader_roles_0"') == 1
     assert "sees the reports and follow-up of each Ministry" in body
     for role in ("Chairperson", "Staff"):
