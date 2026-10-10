@@ -434,6 +434,7 @@ def test_each_panel_reviews_under_its_own_heading(page, component_origin):
     assert len(reviews) == 2 and "editor=leader_roles" in reviews[1]
     assert "Chairperson, Staff" in leader_region.inner_text()
     assert page.evaluate(LABELLED, "leader-roles-review") == "leader-roles-review-title"
+    assert end_region.inner_text().strip() == ""
     assert page.evaluate(DUPLICATE_IDS) == []
     assert page.evaluate(MARKED) == "kept"
 
