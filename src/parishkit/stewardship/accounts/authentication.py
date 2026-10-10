@@ -45,7 +45,7 @@ from parishkit.stewardship.web.namespaces import admin_return_path
 from parishkit.stewardship.web.refusals import UserFacingGone, gone_response
 from parishkit.stewardship.web.security import login_denial
 
-from .auth_incidents import record_login_rejection
+from .auth_incidents import record_account_refusal, record_login_rejection
 from .limiting import Counter, Limiter, LimiterUnavailable
 from .models import OAuthStateConsumption, PolicyEpoch, PortalUser
 from .policy import current_principal
@@ -135,8 +135,13 @@ def ip_counter(limiter, source, *, initiation=False):
     )
 
 
-def record_failure(request, *, identity="", counter=None):
-    """Even early rejected callbacks contribute once; never parse tokens here."""
+def record_failure(request, *, identity="", counter=None, sampled=True):
+    """Even early rejected callbacks contribute once; never parse tokens here.
+
+    ``sampled=False`` skips the anonymous ``admin_login_denied`` sample for a
+    refusal its caller has already named (``record_account_refusal``); the
+    limiter accounting is the same either way.
+    """
     if getattr(request, "auth_failure_counted", False):
         return 0
     request.auth_failure_counted = True
@@ -146,7 +151,8 @@ def record_failure(request, *, identity="", counter=None):
         counters.append(counter)
     delay = limiter.counters(counters, failure=True)
     limiter.failed("admin", request.client_address, identity=identity)
-    record_login_rejection("admin_login_denied")
+    if sampled:
+        record_login_rejection("admin_login_denied")
     return min(3600, delay * (2 if limiter.elevated("admin") else 1))
 
 
@@ -459,7 +465,14 @@ def establish_identity(
             else:
                 rotate_token(request)
     if principal is None or not principal.roles:
-        delay = record_failure(request, identity=fingerprint, counter=counter)
+        # Google verified this account and policy refused it, so the audit
+        # entry names the account, bounded per account and deployment-wide
+        # (#953), in place of the anonymous sample. Limiter accounting runs
+        # first so it still counts the attempt if the audit write fails.
+        delay = record_failure(
+            request, identity=fingerprint, counter=counter, sampled=False
+        )
+        record_account_refusal(user.pk)
         return denial(status=429 if delay else 403, retry=delay)
     service.limiter.clear(counter)
     if step_up_only and not stepped_up:

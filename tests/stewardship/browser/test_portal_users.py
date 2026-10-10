@@ -40,8 +40,24 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     blocked = page.get_by_role("row", name="blocked@example.org", exact=False)
     visible(blocked.get_by_text("Explicit deny", exact=True))
     # Google verified that person's attempt; being refused is not a sign-in.
-    assert blocked.get_by_text("None on record", exact=True).count() == 1
+    # (Not exact: the cell also holds the Sign-in activity button, #953.)
+    assert blocked.get_by_text("None on record", exact=False).count() == 1
     assert blocked.locator("time").count() == 0
+    # Its sign-in activity, refusals included (#953), opens System logs by a
+    # POST naming the identity in the body, never in an address.
+    history = blocked.get_by_role(
+        "button", name="Sign-in activity for blocked@example.org", exact=True
+    )
+    visible(history)
+    form = history.locator("xpath=ancestor::form")
+    assert form.get_attribute("action") == "/admin/system/logs/"
+    assert form.get_attribute("method") == "post"
+    assert form.locator("input[name=activity]").get_attribute("value") == "sign_in"
+    # A rule whose address no Google identity has used has no such link.
+    unseen = page.get_by_role("row", name="chair@example.org", exact=False)
+    assert (
+        unseen.get_by_role("button", name="Sign-in activity", exact=False).count() == 0
+    )
     # A Chairperson-only role is suspended until the parish source confirms it.
     chair = page.get_by_role("row", name="chair@example.org", exact=False)
     assert chair.get_by_text(

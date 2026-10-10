@@ -779,6 +779,11 @@ only from the web login, with `verified_at` inside the inserting transaction
 (as the sign-in stamps it), and only for an enabled, unattributed, version-1
 row with a non-empty subject and email. SQL cannot see the Google sign-in
 itself, and it does not check email or hosted-domain normalization.
+Every Google-verified Admin sign-in attempt that passes the per-identity rate
+limit creates or refreshes its `PortalUser` before policy decides, whether or
+not policy then admits it, so a named refusal
+([sign-in activity](../admin-portal/spec.md#sign-in-activity)) can show the
+address.
 Authorization policy materialized from
 the active YAML version uses:
 

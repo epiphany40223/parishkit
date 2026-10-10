@@ -3941,7 +3941,10 @@ The Admin user page contains sorted domain and exact-address tables. Rows show
 normalized value, effective roles, source, last login, and warnings. A small
 "See sign-in activity in System logs" link beside the page heading opens
 [sign-in activity](#sign-in-activity) on System logs, with only the closed
-link filters in its address. Role
+link filters in its address. Each exact-address row's last-login cell has a
+"Sign-in activity" link-styled button per recorded Google identity for that
+address; it opens the same view narrowed to that identity as its actor, with
+the identity in the CSRF POST body, never in an address. Role
 checkbox changes autosave through a `ConfigurationChangeRequest` with a
 transient Applying/Applied/error indicator; each request uses the expected
 active YAML digest to prevent lost updates. A security-policy change is
@@ -5309,10 +5312,25 @@ types internal type names one at a time:
   [session endings](../architecture/spec.md#identity-and-session-security)
   (sign out, inactivity or absolute expiry, access removed or all sessions
   signed out, a new sign-in that replaced the previous session, and a
-  session replaced by one carrying the person's changed roles); and
-- `admin_login_denied`, the sampled record of refused sign-ins: at most one
-  per deployment every five minutes, with no actor, so public traffic cannot
-  allocate unbounded audit rows.
+  session replaced by one carrying the person's changed roles);
+- `admin_login_refused`, a sign-in by a Google account that Google verified
+  and policy then refused (no rule, a rule with no role, a disabled identity,
+  or the SQL session guard finding the Admin rule gone at the session
+  insert). Its actor is that account's `PortalUser`, so the Actor column
+  names the address, and it carries no context. It is recorded at most once
+  per account every ten minutes, and at most 20 times per deployment in any
+  ten minutes across all accounts. Anyone can create Google accounts
+  cheaply, so the per-account bound alone would not bound the log; the
+  deployment-wide ceiling does. One deployment-wide advisory lock is held
+  while both bounds are checked, so concurrent refusals cannot pass either
+  bound together. A refusal past the ceiling falls back to the anonymous
+  sample below; and
+- `admin_login_denied`, the sampled record of every other refused sign-in
+  (a stale or repeated sign-in state, a provider error, a rate limit
+  including the per-identity limit, or a named refusal past the ceiling): at
+  most one per deployment every five minutes, with no actor, so public
+  traffic cannot allocate unbounded audit rows. A refusal recorded as
+  `admin_login_refused` is not also sampled.
 
 The server maps the choice to that closed `event_type` list. Operational
 entries are left out while it is chosen, since none is sign-in activity: the
@@ -5328,11 +5346,19 @@ time, and the Actor column names the person by address. "Same actor" on an
 entry carries the choice, so it lists that person's sign-in activity. The
 choice is a link filter, so a bookmark or the page's own link keeps it, and the
 download carries it, so the file holds exactly the entries the page lists. The
-Portal users page links to it ([portal user management](#portal-user-management)).
+Portal users page links to it, and to each exact-address identity's own
+sign-in activity ([portal user management](#portal-user-management)).
 
-Per-user sign-in history, a per-account record of refused sign-ins by
-verified Google identities and a list of live Admin sessions are later
-slices of #953.
+A refused account's address is personal data. The entry stores only the
+account's `PortalUser` id; the address it shows is the one that row already
+holds, because a verified sign-in attempt that passes the per-identity rate
+limit records its identity whether or not policy admits it ([administration
+user and policy](../data/spec.md#administration-user-and-policy)). The entry is kept
+like every other audit event, indefinitely by default
+([retention and deletion](../data/spec.md#retention-and-deletion)), and is
+seen only by Administrators.
+
+A list of live Admin sessions is a later slice of #953.
 
 ## Campaign purge
 

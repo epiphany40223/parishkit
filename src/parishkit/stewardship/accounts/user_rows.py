@@ -260,6 +260,14 @@ def address_rows(policy):
                 ],
                 "assignments": held,
                 "last_login": _latest(policy.identities.get(email, [])),
+                # Each recorded Google identity's PortalUser id, for the row's
+                # link to its sign-in activity on System logs (#953). An
+                # identity without one (a review fixture) has no link.
+                "accounts": sorted(
+                    str(item["id"])
+                    for item in policy.identities.get(email, [])
+                    if item.get("id")
+                ),
                 "warnings": warnings,
                 # A Ministry leader role held only by the Chairperson seed can
                 # be kept independently; one with a manual origin already is.

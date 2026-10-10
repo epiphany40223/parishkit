@@ -1034,6 +1034,8 @@ def test_sign_in_activity_lists_every_admin_sign_in_type_together(auth_service, 
         AuditEvent.objects.create(event_type="admin_timeout", actor_id=other)
         # Sampled and anonymous by design (accounts.auth_incidents).
         AuditEvent.objects.create(event_type="admin_login_denied")
+        # A verified account policy refused, named (accounts.auth_incidents).
+        AuditEvent.objects.create(event_type="admin_login_refused", actor_id=other)
         AuditEvent.objects.create(event_type="admin_logout", actor_id=admin.pk)
         # A session replaced by one carrying changed roles also ends one.
         AuditEvent.objects.create(
@@ -1048,6 +1050,7 @@ def test_sign_in_activity_lists_every_admin_sign_in_type_together(auth_service, 
     expected = [
         "admin_privileges_changed",
         "admin_logout",
+        "admin_login_refused",
         "admin_login_denied",
         "admin_timeout",
         "admin_step_up",
@@ -1068,7 +1071,8 @@ def test_sign_in_activity_lists_every_admin_sign_in_type_together(auth_service, 
         assert types(grouped) == expected and levels(grouped) == []
         body = grouped.content.decode()
         assert body.count("<td>admin@example.org</td>") == 4
-        assert "Someone&#x27;s sign-in to the portal was refused." in body
+        assert "Someone&#x27;s sign-in to the portal was refused, for" in body
+        assert "A Google account&#x27;s sign-in to the portal was refused" in body
         # Same actor keeps the group: that person's sign-in activity only.
         mine = post(browser, {"actor": str(admin.pk), "activity": "sign_in"})
         assert types(mine) == [
@@ -1095,4 +1099,4 @@ def test_sign_in_activity_lists_every_admin_sign_in_type_together(auth_service, 
         assert [record["type"] for record in records] == expected
         assert {record["source"] for record in records} == {"Audit"}
     # Each view and the download were audited as before, with counts only.
-    assert {"outcome": "succeeded", "count": 6} in views()
+    assert {"outcome": "succeeded", "count": 7} in views()
