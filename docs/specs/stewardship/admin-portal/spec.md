@@ -1387,7 +1387,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](#follow-up-workflows); System logs'
   cross-links, whose answer is the filtered page; Acknowledge on a security
-  event; Dismiss on an integration's finished key change; the
+  event; Clear verified refusal on a
+  [refused address](#refused-addresses); Dismiss on an integration's
+  finished key change; the
   [participation report](../reports/spec.md#campaign-statistics)'s Apply
   report options, which refreshes its statistics, chart and export panels)
   names its region by its
@@ -3449,6 +3451,21 @@ resend), each with a required note, as the
 [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders)
 defines.
 
+An email whose delivery recorded a [refused address](#refused-addresses)
+that is still unresolved is marked in its State cell, on a second line,
+"1 address refused" or "N addresses refused"
+([#935](https://github.com/epiphany40223/parishkit/issues/935)), counting
+each address once even when a retry was refused again. A
+permanently refused address does not fail an email that another address
+accepted, so the email can be Delivered and still have missed one head of
+household; the mark makes that visible. It links to Refused addresses
+filtered to that Family's DUID. The counts come from one grouped query for
+the shown page (each refusal's outbox event names its email; the web login
+reads both columns, never the event's evidence). The link line above the
+list reads "Review refused addresses (N unresolved)" while any refusal is
+unresolved, and "Review refused addresses" otherwise; it is drawn once per
+page load, outside the in-place regions.
+
 #### Sending limit note
 
 While Family email is waiting on a sending limit, a note above the list says
@@ -3536,6 +3553,45 @@ The bulk actions are page-only for now; the shared functions in
 [Admin automation](../admin-automation/spec.md) command if one is added.
 No schema change: they insert the same resolution rows the per-email page
 inserts.
+
+#### Refused addresses
+
+Refused addresses (`/admin/mail/refusals/`, Administrators only) lists
+every unresolved refused address: one an outgoing Production email's
+delivery recorded as refused permanently, which stops campaign email to
+that address for that Family until it is cleared or ParishSoft's address
+changes. It filters by an exact Family DUID (`?duid=`), which the
+[Outgoing mail](#outgoing-mail) mark uses. The columns follow the Admin
+tables' shared order
+([#932](https://github.com/epiphany40223/parishkit/issues/932)): Refused
+at, Family, Family DUID, Address and Email
+([#935](https://github.com/epiphany40223/parishkit/issues/935)); the
+refusal's ID shows only under Technical details on its own page, though
+the command line can still sort by it (`--sort id`). The Family's name is
+read as Outgoing mail reads it (the latest ParishSoft data, for the shown
+page only, at most three small queries) and shows "Not in current
+ParishSoft data" when that data no longer has the Family. Family sorts on
+the server as Outgoing mail's does (sort token `name`: surname, then the
+whole shown name, then Family DUID), with Families no longer in the data
+last in both directions; Family DUID sorts too (token `duid`), since a
+table that shows a Family name and a Family DUID sorts on both
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). Only the
+Email column does not sort. The address opens the refusal's own page, and
+the Email column's **Open email** opens the email whose delivery recorded
+it. A link above the list leads back to Outgoing mail. The two pages stay
+separate: a refusal is per address and outlives the email that recorded
+it, so it is not a row or a state of Outgoing mail.
+
+A refusal's own page names the address, the Family and its Family DUID,
+links that Family's refused addresses and the recording email, and offers
+the verified clearance: a required note saying how the mailbox was
+verified and a required confirmation, available only with current
+ParishSoft data and a current campaign. **Clear verified refusal** is
+unavailable until both are filled in, and clearing acts
+[in place](#in-place-controls): the page's answer replaces the clearance
+region, which then shows the resolution with focus on its heading. A
+refused or stale clearance shows its error page, as before. Nothing is
+sent, and no schema change is involved.
 
 ### Family portal maintenance
 

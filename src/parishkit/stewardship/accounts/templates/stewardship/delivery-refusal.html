@@ -2,26 +2,33 @@
 {% block title %}{% translate "Refused address" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Refused address" %}</h1>
-{% aboutpage "delivery-refusal" %}<p>{% translate "The same address may have other refusals that still stop email to it; check the Refused addresses list afterward. Clearing does not send any email." %}</p>{% endaboutpage %}
-<p>{{ refusal.address }} · {% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
+{% aboutpage "delivery-refusal" %}<p>{% translate "The same address may have other refusals that still stop email to it; check the Refused addresses list afterward. Clearing does not send any email." %}</p>
+<p>{% translate "The Family's name comes from the latest ParishSoft data. Open the email that recorded the refusal to see its delivery history; it may show Delivered, because another address of the Family accepted it." %}</p>
+<p>{% translate "Clear verified refusal stays unavailable until you describe how you verified the mailbox and tick the confirmation. Clearing happens in place: this page shows the result where you are." %}</p>{% endaboutpage %}
+<p>{{ refusal.address }} · {% if family_name %}{{ family_name }}{% else %}<span class="help">{% translate "Not in current ParishSoft data" %}</span>{% endif %} · {% translate "Family DUID:" %} {{ refusal.family_duid|duid }}</p>
+<p><a href="{% url 'admin:delivery_refusals' %}?duid={{ refusal.family_duid }}">{% translate "See this Family's refused addresses" %}</a>{% if message_id %} · <a href="{% url 'admin:delivery' message_id %}">{% translate "Open the email that recorded this refusal" %}</a>{% endif %}</p>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Refusal ID" %}</dt><dd>{{ refusal.id }}</dd></dl></details>
 <p class="notice">{% translate "Clearing removes only this refusal, not any other refusal for the same address." %} {% translate "It does not resend an invitation another member of the Family already received." %}</p>
+{% comment %}Clearing acts in place (#935, #519): the form posts in place
+and the server's Post/Redirect/Get answer (this page) is swapped into this
+region, which then shows the resolution, with focus on its heading.{% endcomment %}<div id="refusal-clearance" data-in-place-region>
 {% if resolved %}
-<section class="panel"><h2>{% translate "This refusal has been resolved" %}</h2>
+<section class="panel"><h2 tabindex="-1" data-in-place-focus>{% translate "This refusal has been resolved" %}</h2>
 <p>{{ resolved.reason|delivery_label }}</p><p>{{ resolved.evidence_note }}</p>
 <time datetime="{{ resolved.created_at|instant }}" data-local-instant>{{ resolved.created_at|instant }}</time>
 </section>
 {% elif source.snapshot_id and can_clear %}
-<form method="post" action="{% url 'admin:delivery_refusal_clear' refusal.id %}" class="panel">
+<form method="post" action="{% url 'admin:delivery_refusal_clear' refusal.id %}#refusal-clearance" class="panel" data-in-place="refusal-clear" data-require-complete data-in-place-message="{% translate 'Refusal cleared.' %}">
   {% csrf_token %}
   <input type="hidden" name="command_id" value="{{ command_id }}">
   <input type="hidden" name="source_snapshot_id" value="{{ source.snapshot_id }}">
   <input type="hidden" name="source_generation" value="{{ source.generation }}">
-  <label for="verification-note">{% translate "How did you verify that this mailbox now works?" %}</label>
+  <div data-missing-hint="{% translate 'Describe how you verified the mailbox to clear the refusal.' %}"><label for="verification-note">{% translate "How did you verify that this mailbox now works?" %}</label>
   <textarea id="verification-note" name="note" maxlength="2000" required aria-describedby="evidence-help"></textarea>
-  <p id="evidence-help" class="help">{% translate "Keep evidence brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p>
-  <label><input type="checkbox" name="verified" value="yes" required data-acknowledgment> {% translate "I verified this address for this Family and authorize removing this refusal." %}</label>
-  {% button type="submit" %}{% translate "Clear verified refusal" %}{% endbutton %}
+  <p id="evidence-help" class="help">{% translate "Keep evidence brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p></div>
+  <div data-missing-hint="{% translate 'Confirm that you verified this address to clear the refusal.' %}"><label><input type="checkbox" name="verified" value="yes" required data-acknowledgment> {% translate "I verified this address for this Family and authorize removing this refusal." %}</label></div>
+  {% button type="submit" aria-describedby="refusal-clear-hint" %}{% translate "Clear verified refusal" %}{% endbutton %}<p class="help" id="refusal-clear-hint" data-complete-hint hidden></p>
 </form>
 {% else %}<p>{% translate "Clearing is not available right now. It needs up-to-date parish data from ParishSoft and a current campaign." %}</p>{% endif %}
+</div>
 {% endblock %}

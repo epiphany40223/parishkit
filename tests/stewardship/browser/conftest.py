@@ -80,6 +80,7 @@ from .automation_components import canonical
 from .automation_components import components as automation_components
 from .census_components import components as census_components
 from .chart_components import components as chart_components
+from .delivery_components import POSTS as DELIVERY_POSTS
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
@@ -2148,6 +2149,7 @@ def component_origin():
     # without a redirect.
     posts = (
         IN_PLACE_POSTS
+        | DELIVERY_POSTS
         | AUTOMATION_POSTS
         | FOLLOWUP_POSTS
         | INFORMATION_POSTS

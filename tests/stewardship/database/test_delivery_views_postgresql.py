@@ -1,5 +1,7 @@
 """Real-session Admin metadata, warning privacy, and verified-clearance forms."""
 
+from dataclasses import replace
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -13,6 +15,7 @@ from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.audit.models import AuditEvent, OperationalLog
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryResult,
@@ -23,20 +26,31 @@ from parishkit.stewardship.jobs.delivery_metadata import (
     DELIVERY_SORTING,
     with_name_keys,
 )
-from parishkit.stewardship.jobs.delivery_reads import read_listing, with_family_names
+from parishkit.stewardship.jobs.delivery_reads import (
+    read_listing,
+    read_refusals,
+    with_family_names,
+    with_refusal_counts,
+)
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.jobs.family_mail_dispatch import (
     begin_submission,
     finish_submission,
 )
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxEvent, OutboxMessage
 from parishkit.stewardship.jobs.outbox_storage import change_message
-from parishkit.stewardship.jobs.recipient_models import RecipientRefusalResolution
+from parishkit.stewardship.jobs.recipient_models import (
+    RecipientRefusal,
+    RecipientRefusalResolution,
+)
+from parishkit.stewardship.jobs.storage import change_run, retry_failed
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.web.presentation import instant
 
 from ..policy_factory import address
+from ..test_outbox_validation import rendering
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
 from .response_builders import activate_response_service, response_source
@@ -45,7 +59,9 @@ from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
 from .test_daily_digest_planning_postgresql import INSTANT as DIGEST_INSTANT
 from .test_family_mail_dispatch_postgresql import claim, prepare
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
-from .test_outbox_postgresql import submit
+from .test_outbox_postgresql import change as change_outbox
+from .test_outbox_postgresql import claim as claim_task
+from .test_outbox_postgresql import permit, provider_evidence, submit
 from .test_recipient_suppressions_postgresql import email, refused, remember
 from .test_source_families_postgresql import prepare as prepare_source
 from .test_source_families_postgresql import promote
@@ -169,6 +185,9 @@ def test_delivery_pages_and_warning_are_admin_only(
         "/admin/mail/outgoing/",
         f"/admin/mail/outgoing/{message.pk}/",
         "/admin/mail/refusals/",
+        # A refusal's page names its Family too (#935); unknown or not,
+        # the role check refuses it first.
+        f"/admin/mail/refusals/{uuid4()}/",
     ):
         response = browser.get(path)
         assert response.status_code == 403
@@ -330,7 +349,7 @@ def test_family_name_sort_keys_match_the_shown_names(response_service):
     current = SourceCurrent.objects.get().snapshot_id
     keyed = with_name_keys(
         FamilyCampaign.objects.filter(campaign=response_service.campaign),
-        family="stewardship_family_campaign.id",
+        duid="stewardship_family_campaign.family_duid",
     )
     with task_login(ServiceRole.WEB, exact=True):
         rows = list(
@@ -407,6 +426,178 @@ def test_tied_family_names_keep_each_familys_emails_together(response_service):
         ):
             rows = read_listing(QueryDict(f"sort={sort}"))["rows"]
             assert [row["id"] for row in rows] == newest[first] + newest[second], sort
+
+
+def test_refused_addresses_sort_by_family_name(response_service, google):
+    """#935: Refused addresses' Family column sorts on the server by the
+    Family's name (surname, whole name, Family DUID, then address), so each
+    Family's addresses stay together, as Outgoing mail's Family column."""
+    harness = activate_response_service(response_service)
+    for duid, mailbox in (
+        (1, "b@example.org"),
+        (2, "c@example.org"),
+        (1, "a@example.org"),
+    ):
+        remember(refused(harness, address=mailbox, duid=duid), address=mailbox)
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    assert snapshot_family_names(snapshot, [1, 2]) == {
+        1: "Example, Member",
+        2: "Empty",
+    }
+
+    def addresses(sort):
+        """The refused addresses in the order one page lists them."""
+        rows = read_refusals(QueryDict(f"sort={sort}"))["rows"]
+        return [row["address"] for row in rows]
+
+    with task_login(ServiceRole.WEB, exact=True):
+        assert addresses("name") == ["c@example.org", "a@example.org", "b@example.org"]
+        assert addresses("-name") == ["b@example.org", "a@example.org", "c@example.org"]
+        assert addresses("duid") == ["a@example.org", "b@example.org", "c@example.org"]
+        browser, _ = signed_in()
+        html = browser.get("/admin/mail/refusals/", {"sort": "name"}).content.decode()
+    heading = html.split('aria-sort="ascending"')[1].split("</th>")[0]
+    assert ">Family<" in heading
+    assert html.index("c@example.org") < html.index("a@example.org")
+
+
+def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
+    response_service, google
+):
+    """#935: Outgoing mail marks each email with an unresolved refused address
+    and counts them in its link line; Refused addresses names the Family
+    beside its own Family DUID column and links the recording email; and a
+    cleared refusal drops out of both."""
+    harness = activate_response_service(response_service)
+    events = {
+        mailbox: refused(harness, address=mailbox)
+        for mailbox in ("head@example.org", "spouse@example.org")
+    }
+    refusals = {
+        mailbox: remember(event, address=mailbox) for mailbox, event in events.items()
+    }
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    name = snapshot_family_names(snapshot, [1], "Family")[1]
+    assert name
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+        assert "Review refused addresses (2 unresolved)</a>" in html
+        marker = '<a href="/admin/mail/refusals/?duid=1">1 address refused</a>'
+        assert html.count(marker) == 2
+
+        listing = browser.get("/admin/mail/refusals/", {"duid": "1"})
+        assert listing.status_code == 200
+        html = listing.content.decode()
+        # Dates first, then the Family's name, then its own DUID column
+        # (#932), then the address and the recording email.
+        headings = ["Refused at", "Family", "Family DUID", "Address", "Email"]
+        thead = html.split("<thead>")[1].split("</thead>")[0]
+        places = [thead.index(f">{heading}<") for heading in headings]
+        assert places == sorted(places)
+        assert f'<th scope="row">{escape(name)}</th>' in html
+        assert '<td class="numeric nowrap">1</td>' in html
+        for mailbox, refusal in refusals.items():
+            message = events[mailbox].message_id
+            assert f'<a href="/admin/mail/refusals/{refusal.pk}/">{mailbox}</a>' in html
+            assert f'<a href="/admin/mail/outgoing/{message}/">Open email</a>' in html
+        # The name is shown, not searched: the filter stays an exact DUID.
+        assert browser.get("/admin/mail/refusals/", {"duid": name}).status_code == 400
+
+        refusal = refusals["head@example.org"]
+        path = f"/admin/mail/refusals/{refusal.pk}/"
+        html = browser.get(path).content.decode()
+        assert escape(name) in html
+        assert (
+            f'<a href="/admin/mail/outgoing/{events["head@example.org"].message_id}/">'
+        ) in html
+        assert '<a href="/admin/mail/refusals/?duid=1">' in html
+        assert 'data-in-place="refusal-clear"' in html
+        current = SourceCurrent.objects.get()
+        cleared = browser.post(
+            path + "clearance/",
+            dict(
+                command_id=str(uuid4()),
+                source_snapshot_id=str(current.snapshot_id),
+                source_generation=str(current.generation),
+                verified="yes",
+                note="Called the Family; the mailbox works again.",
+            ),
+            HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
+        )
+        assert cleared.status_code == 302 and cleared["Location"] == path
+        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+        assert "Review refused addresses (1 unresolved)</a>" in html
+        assert html.count(marker) == 1
+        html = browser.get("/admin/mail/refusals/").content.decode()
+        assert "head@example.org" not in html and "spouse@example.org" in html
+
+    # One grouped query counts the shown page's refusals, however many rows.
+    rows = [dict(id=event.message_id) for event in events.values()]
+    rows.append(dict(id=uuid4()))
+    with CaptureQueriesContext(connection) as queries:
+        counted = with_refusal_counts(rows)
+    assert len(queries) == 1
+    assert [row["refused"] for row in counted] == [0, 1, 0]
+
+
+def test_an_email_counts_each_refused_address_once(response_service, google):
+    """#935: an email to both heads with both addresses refused shows "2
+    addresses refused"; a retry refused again at the same address records a
+    second refusal against the same email, which still counts once."""
+    harness = activate_response_service(response_service)
+    heads = ("head@example.org", "spouse@example.org")
+    first = refused(harness, address=heads[0], intended=heads, routed=heads)
+    for mailbox in heads:
+        remember(first, address=mailbox)
+
+    # Retry the failed email, then have the provider refuse it again.
+    failed = OutboxMessage.objects.get(pk=first.message_id)
+    run = TaskRun.objects.get(pk=failed.task_id)
+    failed = SimpleNamespace(
+        message_id=failed.pk, version=failed.version, worker_id=failed.worker_id
+    )
+    change_run(
+        run_id=run.pk,
+        expected_version=run.version,
+        action="permanent_failure",
+        actor_id=run.worker_id,
+        fence=run.fence,
+        correlation_id=uuid4(),
+        admit=permit,
+    )
+    render = rendering(
+        configuration_id=harness.campaign.active_configuration.configuration_id,
+        intended_recipients=heads,
+        routed_recipients=heads,
+    )
+    with work_transaction():
+        retry = retry_failed(
+            run_id=run.pk,
+            command_id=uuid4(),
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=permit,
+        )
+        pending = change_outbox(failed, DeliveryAction.RETRY_FAILED, render=render)
+    submitted = submit(pending, task=claim_task(pending, run_id=retry.run_id))
+    again = change_outbox(
+        submitted,
+        DeliveryAction.FAIL_UNACCEPTED,
+        evidence=replace(provider_evidence(), reason="recipient_refused"),
+    )
+    second = OutboxEvent.objects.get(message_id=again.message_id, version=again.version)
+    assert second.pk != first.pk
+    remember(second, address=heads[0])
+    assert RecipientRefusal.objects.filter(address=heads[0]).count() == 2
+
+    assert [
+        row["refused"] for row in with_refusal_counts([{"id": first.message_id}])
+    ] == [2]
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+    assert '<a href="/admin/mail/refusals/?duid=1">2 addresses refused</a>' in html
 
 
 @pytest.mark.parametrize(

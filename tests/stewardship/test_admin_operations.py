@@ -13,7 +13,7 @@ import io
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -120,8 +120,13 @@ def delivery_show():
 
 def delivery_refusals():
     """One unresolved refusal, by id and time only."""
-    row = SimpleNamespace(
-        pk=REFUSAL, created_at=NOW, address="family@example.org", family_duid=4242
+    # The read's row (#935): the recording email is read but never projected.
+    row = dict(
+        id=REFUSAL,
+        created_at=NOW,
+        address="family@example.org",
+        family_duid=4242,
+        message_id=uuid4(),
     )
     return admin_operations.refusal_list_model(
         {

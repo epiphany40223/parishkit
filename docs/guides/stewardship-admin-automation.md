@@ -673,7 +673,9 @@ value), `--search` (an exact Family DUID or delivery id, as input only),
 `--page`, `--size` and `--sort`. `--sort` takes the page's tokens:
 `changed` (when the email last changed; the default is `-changed`, latest
 first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
-`created`. `delivery refusals` takes `--duid`.
+`created`. `delivery refusals` takes `--duid`, and its `--sort` takes
+`refused`, `name` (the Family's name, as `delivery list`), `duid`
+(the default), `address` and `id`.
 
 | Field | What it holds |
 | --- | --- |
@@ -1187,3 +1189,5 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   forms (the
   [exception](../specs/stewardship/admin-automation/spec.md#output-documents)
   records why).
+- `pk-admin/1` (#935): additive. `delivery refusals --sort name`, by the
+  Family's name, as the Refused addresses page.
