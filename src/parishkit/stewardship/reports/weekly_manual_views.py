@@ -1,11 +1,13 @@
 """An explicit configuration-bound confirmation for a new manual weekly report."""
 
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from django import forms
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, IntegrityError
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
@@ -107,14 +109,20 @@ def request_report(request, campaign_id):
         )
         if request.method == "POST" and form.is_valid():
             with _command_scope(request, service, principal):
-                task = request_manual_report(
+                request_manual_report(
                     service.store,
                     principal.identity,
                     campaign_id,
                     command_id=form.cleaned_data["command_id"],
                     configuration_id=form.cleaned_data["configuration_id"],
                 )
-            response = redirect("admin:background_task_page", task_id=task.run_id)
+            # Back to Emailed reports, which links the report this request
+            # produces (or its background task until then) (ADM-12.17).
+            response = redirect(
+                reverse("admin:emailed_reports")
+                + "?"
+                + urlencode({"requested": form.cleaned_data["command_id"]})
+            )
         else:
             response = render(
                 request,
