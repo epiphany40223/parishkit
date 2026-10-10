@@ -76,6 +76,12 @@ DESCRIPTIONS = {
     "admin_step_up": _(
         "An Administrator confirmed their sign-in again for a protected action."
     ),
+    # Sampled, anonymous evidence (accounts.auth_incidents): one entry per
+    # five minutes at most, never naming the attempt.
+    "admin_login_denied": _(
+        "Someone's sign-in to the portal was refused. At most one refusal is "
+        "recorded every five minutes, without saying who tried."
+    ),
     "family_login": _("A Family signed in to the Family form."),
     # Session endings the sign-in code records under its ending reason.
     "admin_logout": _(
@@ -607,6 +613,7 @@ DESCRIPTIONS = {
 DIRECT_AUDIT_TYPES = frozenset(
     {
         "admin_login",
+        "admin_login_denied",
         "admin_logout",
         "admin_privileges_changed",
         "admin_reauthenticated",
