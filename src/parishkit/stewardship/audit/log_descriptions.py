@@ -237,6 +237,18 @@ DESCRIPTIONS = {
         "chosen-Family test review, which the Send to chosen Families page "
         "shows."
     ),
+    "admin_cmd_export_exact_create": _(
+        "An automation session requested an exact daily export, as the "
+        "Participation page's exact-export form does."
+    ),
+    "admin_cmd_export_exact_cancel": _(
+        "An automation session cancelled an exact daily export, as its status "
+        "page's Cancel button does."
+    ),
+    "admin_cmd_export_exact_retry": _(
+        "An automation session retried an exact daily export, as its status "
+        "page's Retry button does."
+    ),
     "admin_cmd_digest_weekly_request": _(
         "An automation session requested a manual weekly report, as the "
         "Send a weekly report now page does."

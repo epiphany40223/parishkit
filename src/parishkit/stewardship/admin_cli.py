@@ -1418,6 +1418,48 @@ def export_postal(args, preamble, runtime, context):
     )
 
 
+def export_exact_create(args, preamble, runtime, context):
+    """Request an exact daily export, as the page's form does (PR 8h)."""
+    from .admin_exact_exports import create_exact
+
+    return create_exact(
+        context["caller"],
+        runtime,
+        scope=args.scope,
+        fmt=args.format,
+        zone=args.timezone,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
+def export_exact_status(args, preamble, runtime, context):
+    """One exact daily export's state, as its status page shows it (PR 8h)."""
+    from .admin_exact_exports import read_exact
+
+    return read_exact(context["caller"], runtime, args.exact_id)
+
+
+def export_exact_cancel(args, preamble, runtime, context):
+    """Cancel an exact daily export, as its page's Cancel does (PR 8h)."""
+    from .admin_exact_exports import cancel_exact
+
+    return cancel_exact(context["caller"], runtime, args.exact_id, context=context)
+
+
+def export_exact_retry(args, preamble, runtime, context):
+    """Retry an exact daily export, as its page's Retry does (PR 8h)."""
+    from .admin_exact_exports import retry_exact
+
+    return retry_exact(
+        context["caller"],
+        runtime,
+        args.exact_id,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
 def export_status(args, preamble, runtime, context):
     """One export's state, as its status page shows it (PR 8b)."""
     from .admin_exports import read_export
@@ -2236,6 +2278,40 @@ def _export_ministry_packet_options(parser):
     parser.add_argument(
         "--history", action="store_true", help="include earlier request versions"
     )
+
+
+def _exact_create_options(parser):
+    """Options of ``export exact create``: population, format, zone and key."""
+    parser.add_argument(
+        "--scope",
+        choices=("historical", "current"),
+        default="historical",
+        help="historical (default: each day's population then) or current",
+    )
+    parser.add_argument("--format", required=True, choices=EXPORT_FORMATS)
+    parser.add_argument(
+        "--timezone",
+        required=True,
+        help="the time zone of the file's dates, for example America/New_York",
+    )
+    _request_key_option(parser)
+
+
+def _exact_id_option(parser):
+    """The exact daily export a command acts on."""
+    parser.add_argument("exact_id", type=_uuid, metavar="EXACT_ID")
+
+
+def _exact_status_options(parser):
+    """Options of ``export exact status``: the request, and --watch."""
+    _exact_id_option(parser)
+    _watch_options(parser)
+
+
+def _exact_retry_options(parser):
+    """Options of ``export exact retry``: the request and the key."""
+    _exact_id_option(parser)
+    _request_key_option(parser)
 
 
 def _export_id_option(parser):
@@ -3063,6 +3139,7 @@ def _report_specs():
     (``admin_family_exports``).
     """
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
+    from .admin_exact_exports import ExactChange, ExactStatus
     from .admin_exports import ExportChange, ExportDownload, ExportStatus
     from .admin_report_reads import (
         FinancialReport,
@@ -3244,6 +3321,51 @@ def _report_specs():
             request_key=True,
             fresh_gated=True,
             prompts=True,
+        ),
+        # The exact daily exports (PR 8h, ``admin_exact_exports``).
+        CommandSpec(
+            "export exact create",
+            "Request an exact daily export, as the Participation page does.",
+            export_exact_create,
+            "full",
+            True,
+            ExactChange.field_names(),
+            8,
+            options=(_exact_create_options,),
+            request_key=True,
+        ),
+        CommandSpec(
+            "export exact status",
+            "Show one exact daily export's state, as its status page does.",
+            export_exact_status,
+            "read_only",
+            False,
+            ExactStatus.field_names(),
+            8,
+            options=(_exact_status_options,),
+            watch=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "export exact cancel",
+            "Cancel an exact daily export that is not ready yet.",
+            export_exact_cancel,
+            "full",
+            True,
+            ExactChange.field_names(),
+            8,
+            options=(_exact_id_option,),
+        ),
+        CommandSpec(
+            "export exact retry",
+            "Retry an exact daily export whose latest run failed.",
+            export_exact_retry,
+            "full",
+            True,
+            ExactChange.field_names(),
+            8,
+            options=(_exact_retry_options,),
+            request_key=True,
         ),
         # The digests (PR 8d, ``admin_digests``), and the Emailed reports
         # page that lists them.
