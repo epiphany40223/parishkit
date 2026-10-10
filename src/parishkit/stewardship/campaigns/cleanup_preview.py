@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from django.db.models import Count, F, TextField, Value
-from django.db.models.functions import Coalesce, Lower
+from django.db.models.functions import Lower
 
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
@@ -87,12 +87,16 @@ def cleanup_preview(campaign_id):
 
 
 def _sort_name(source_id, *, surname_only=False):
-    """The shown Family name (or its surname), lowercased to sort; "" without
-    a source snapshot or for a Family missing from it."""
+    """The shown Family name (or its surname), lowercased to sort.
+
+    NULL without a source snapshot or for a Family missing from it, so the
+    table's nulls-last ordering lists those unnamed rows after every named
+    one in both directions, as Outgoing mail does.
+    """
     if source_id is None:
-        return Value("", output_field=TextField())
+        return Value(None, output_field=TextField())
     name = SnapshotFamilyName(source_id, F("family_duid"), surname_only=surname_only)
-    return Lower(Coalesce(name, Value(""), output_field=TextField()))
+    return Lower(name)
 
 
 def cleanup_families(campaign_id, *, source_id, window, sort="duid"):
