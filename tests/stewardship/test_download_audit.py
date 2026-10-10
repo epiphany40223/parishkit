@@ -89,10 +89,11 @@ def test_sanitize_accepts_only_closed_report_choices(context, valid):
 def test_report_filters_are_exactly_the_reports_choices():
     """The closed vocabulary follows the reports' own menus, no more.
 
-    A retired Show value (#860) stays, since earlier events recorded it.
+    Submitted's retired Show values (#860) stay, since earlier events
+    recorded them, though the list itself now refuses them.
     """
     shows = {choice.value for spec in LISTS.values() for choice in spec.choices}
-    shows |= {value for spec in LISTS.values() for value in spec.retired}
+    shows |= {"invited", "uninvited"}
     assert shows | TALENT_WORDS | {"option"} == REPORT_FILTERS
     assert set(MODES) == REPORT_MODES
 
