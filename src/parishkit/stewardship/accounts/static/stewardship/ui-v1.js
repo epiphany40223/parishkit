@@ -569,6 +569,10 @@
     });
     forms.forEach(gateTimes);
   };
+  // A page script that builds rows of time fields itself (the refresh
+  // schedule editor, refresh-schedule-v1.js) wires each new row, and clears
+  // a removed row's timers, through these.
+  window.ParishTimeFields = Object.freeze({wire: wireTimeEntry, cancel: cancelTimeChecks});
   // Capture phase: the entry's validity is current before any form's own
   // input listener (the complete gate) runs.
   document.addEventListener("input", (event) => {

@@ -21,7 +21,7 @@ pytestmark = pytest.mark.parametrize(
 CASES = json.loads(
     (Path(__file__).parents[1] / "fixtures" / "time_entry_cases.json").read_text()
 )
-TIMES = '[name="full_refresh_times"]'
+TIMES = '[name="times"]'
 NEW = "schedules-1-"
 
 # Each case through window.ParishTimeEntry, in the fixture's own shape.
@@ -79,7 +79,7 @@ def test_refresh_times_read_live_refuse_at_the_field_and_gate_save(
     page.set_viewport_size({"width": width, "height": 900})
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
-    page.goto(component_origin + "/integration-settings")
+    page.goto(component_origin + "/time-list")
     field = page.locator(TIMES)
     line = reading(page, TIMES)
     save = page.locator("form.panel button[type=submit]")
@@ -148,21 +148,14 @@ def test_refresh_times_read_live_refuse_at_the_field_and_gate_save(
     )
     field.blur()
     assert field.input_value() == "14:00, 02:30"
-    # A frequency that hides the list releases Save even with a bad entry.
-    field.fill("noonish")
-    assert save.is_disabled()
-    page.locator('[name="full_refresh"]').select_option("hourly")
-    assert save.is_enabled()
-    page.locator('[name="full_refresh"]').select_option("daily")
-    assert save.is_disabled()
     assert not failures
 
 
 def test_a_server_refusal_is_cleared_by_the_first_edit(page, component_origin):
     """The server's message shows alone at first, then the live check takes over."""
-    page.goto(component_origin + "/integration-settings-time-error")
+    page.goto(component_origin + "/time-list-error")
     field = page.locator(TIMES)
-    server = page.locator("#id_full_refresh_times_error")
+    server = page.locator("#id_times_error")
     visible(server)
     assert "has no hour 25" in server.inner_text()
     # No duplicate live message while the server's says the same.
@@ -172,9 +165,7 @@ def test_a_server_refusal_is_cleared_by_the_first_edit(page, component_origin):
     field.fill("02:00, 2:20")
     hidden(server)
     has_text(reading(page, TIMES), "Reads as 02:00 (2:00 AM), 02:20 (2:20 AM)")
-    assert "id_full_refresh_times_error" not in (
-        field.get_attribute("aria-describedby") or ""
-    )
+    assert "id_times_error" not in (field.get_attribute("aria-describedby") or "")
     assert field.get_attribute("aria-invalid") == "false"
     assert page.locator("form.panel button[type=submit]").is_enabled()
 
@@ -233,11 +224,11 @@ def test_a_value_restored_without_an_event_is_checked_on_pageshow(
     page, component_origin
 ):
     """The back/forward cache can restore a value silently; pageshow re-checks."""
-    page.goto(component_origin + "/integration-settings")
+    page.goto(component_origin + "/time-list")
     save = page.locator("form.panel button[type=submit]")
     page.evaluate(
         """() => {
-          document.querySelector('[name="full_refresh_times"]').value = "25:00";
+          document.querySelector('[name="times"]').value = "25:00";
           window.dispatchEvent(new PageTransitionEvent("pageshow", {persisted: true}));
         }"""
     )

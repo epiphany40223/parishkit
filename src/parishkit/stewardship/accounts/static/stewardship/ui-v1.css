@@ -739,3 +739,34 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
    Templates keep the panel directly after the h1 (test_admin_help_guards
    checks it). */
 h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem; }
+
+/* The ParishSoft refresh schedule editor (#632). A row's controls read as a
+   sentence ("Full every 2 hours from 08:00 to 18:00") and wrap on narrow
+   screens; "from" and "to" sit beside their fields, and each time's reading
+   line stays under its own field. Remove ends the line (on its own line on
+   narrow screens). The line beside Save keeps room for two lines and the
+   "not checked" note for one, so neither moves Save when its words change. */
+.schedule-row { padding: .75rem 1rem 1rem; margin-block: .75rem; }
+.schedule-row > legend { font-size: .95rem; }
+.schedule-row-fields > .schedule-row-remove { margin-inline-start: auto; }
+.schedule-row-fields { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: flex-start; }
+.schedule-row-fields > div { display: flex; flex-direction: column; min-width: 0; }
+.schedule-row-fields > div[hidden] { display: none; }
+.schedule-row-fields > .schedule-labelled { display: grid; grid-template-columns: auto auto; column-gap: .4rem; align-items: center; }
+.schedule-labelled > label { grid-row: 1; margin: 0; font-weight: 400; }
+.schedule-labelled > .time-reading { grid-column: 2; }
+.schedule-row-fields select { width: auto; }
+.schedule-row-fields input[type=text] { width: 7.5rem; }
+.schedule-row-messages > :first-child { margin-top: .5rem; }
+.schedule-row-messages:empty { display: none; }
+.schedule-preset-list { list-style: none; padding: 0; display: grid; gap: .5rem; }
+.schedule-preset-list .help { display: block; margin-top: .25rem; }
+.schedule-switch { margin-block: 1.25rem; }
+.schedule-switch label { display: inline; margin: 0; }
+.schedule-text textarea { min-height: 3.5rem; }
+.schedule-stale { min-height: 1lh; }
+.schedule-day-times { list-style: none; padding: 0; margin: 0; columns: 14rem auto; }
+.schedule-day-times s { color: var(--muted); }
+.schedule-time-full { font-weight: 600; }
+.schedule-save { align-items: flex-start; }
+.schedule-status { flex: 1 1 18rem; margin: 0; min-height: 2lh; }

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django import forms
 from django.contrib.staticfiles import finders
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -62,6 +63,10 @@ from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.security import CSP
 from parishkit.stewardship.web.tables import paginate, window_table
+from parishkit.stewardship.web.time_entry_fields import (
+    FlexibleTimeListField,
+    TimeEntryInput,
+)
 
 from ..campaign_factory import campaign, financial, schedule
 from ..content_factory import content
@@ -96,6 +101,7 @@ from .log_components import components as log_components
 from .menu_components import components as menu_components
 from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
+from .refresh_schedule_components import components as refresh_schedule_components
 from .reminder_workgroup_components import components as workgroup_components
 from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
@@ -289,18 +295,28 @@ def progress_page(progress, wizard):
     }
 
 
-def refused_refresh_times():
-    """The ParishSoft settings posted with a refresh time the server refused."""
-    form = IntegrationForm(
-        "parishsoft",
-        {
-            "base_digest": "a" * 64,
-            "organization_id": "12345",
-            "full_refresh": "daily",
-            "full_refresh_times": "02:00, 25:00",
-            "delta_refresh": "quarter_hour",
-        },
+class TimeListForm(forms.Form):
+    """A list of times (#631), as a page with a time list field draws it.
+
+    No Admin page lists times since the refresh schedule editor (#632), but
+    the shared time entry still reads lists; this test-only form keeps its
+    browser checks on a real field.
+    """
+
+    times = FlexibleTimeListField(
+        label="Times",
+        initial=["02:00"],
+        required=False,
+        max_length=256,
+        blank=["02:00"],
+        max_times=8,
+        widget=TimeEntryInput(attrs={"placeholder": "2am, 14:00"}),
     )
+
+
+def refused_refresh_times():
+    """The time list posted with a time the server refused."""
+    form = TimeListForm({"times": "02:00, 25:00"})
     assert not form.is_valid()
     return form
 
@@ -538,13 +554,22 @@ def component_origin():
             },
         ),
         (
-            # The ParishSoft settings re-shown with the server's refusal of a
-            # refresh time (#631): the error is cleared on the first edit.
-            "/integration-settings-time-error",
+            # A list of times on a settings form (#631), as drawn, and re-shown
+            # with the server's refusal: the error is cleared on the first edit.
+            "/time-list",
             "integration-settings",
             {
-                "target": "parishsoft",
-                "label": "ParishSoft",
+                "target": "google_workspace",
+                "label": "Times",
+                "form": TimeListForm(),
+            },
+        ),
+        (
+            "/time-list-error",
+            "integration-settings",
+            {
+                "target": "google_workspace",
+                "label": "Times",
                 "form": refused_refresh_times(),
             },
         ),
@@ -1934,6 +1959,7 @@ def component_origin():
     responses.update(menu_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(step_up_components(context, admin))
+    responses.update(refresh_schedule_components(context, admin, NOW))
     # The in-place form page's POST answers (#519, #562): refusals answer
     # with the page the view would render (400 with the summary in the
     # region, 200 with it outside, or a 400 denial page without the region),
@@ -1971,6 +1997,7 @@ def component_origin():
         ("users-v1.js", "application/javascript"),
         ("phone-v1.js", "application/javascript"),
         ("live-status-v1.js", "application/javascript"),
+        ("refresh-schedule-v1.js", "application/javascript"),
         ("session-v1.js", "application/javascript"),
         ("local-sign-in-v1.js", "application/javascript"),
         ("session-v1.css", "text/css"),

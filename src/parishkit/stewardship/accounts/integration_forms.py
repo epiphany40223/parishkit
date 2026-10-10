@@ -3,17 +3,12 @@
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from parishkit.stewardship.jobs.operational_sources import configured_policy
-from parishkit.stewardship.source.cadence import DEFAULT_DELTA_REFRESH, DEFAULT_TIME
 from parishkit.stewardship.web.sender_name_field import SenderNameField
-from parishkit.stewardship.web.time_entry_fields import (
-    FlexibleTimeListField,
-    TimeEntryInput,
-)
 
 from . import field_tips, setup_help
 from .key_files import MAX_FILE_BYTES
 from .policy_schema import normalized_email
+from .refresh_schedule_forms import ScheduleEditor
 
 LABELS = {
     "parishsoft": _("ParishSoft"),
@@ -25,27 +20,6 @@ LABELS = {
 }
 
 
-# Stored values match source.cadence.FREQUENCIES.
-REFRESH_CHOICES = (
-    ("daily", _("At set times each day")),
-    ("hourly", _("Once an hour")),
-    ("quarter_hour", _("Every 15 minutes")),
-)
-# This page's own limit on full refresh times. The stored schedule has no cap
-# of eight since #632; the new schedule editor replaces this page's fields.
-MAX_FULL_REFRESH_TIMES = 8
-# Schedule fields this page edits; a schedule saved with its rules (#632) is
-# kept as stored and these fields are not shown.
-SCHEDULE_FIELDS = ("full_refresh", "full_refresh_times", "delta_refresh")
-# Stored values match source.cadence.DELTA_REFRESHES (#465), except "times",
-# which only a schedule saved with its rules uses (#632).
-DELTA_CHOICES = (
-    ("quarter_hour", _("Every 15 minutes")),
-    ("hourly", _("Once an hour")),
-    ("off", _("Off")),
-)
-
-
 class IntegrationForm(forms.Form):
     """Non-secret settings never accept fingerprints, keys or arbitrary URLs."""
 
@@ -53,9 +27,7 @@ class IntegrationForm(forms.Form):
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
 
-    def __init__(
-        self, target, *args, loaded_organization=None, rules_schedule=False, **kwargs
-    ):
+    def __init__(self, target, *args, loaded_organization=None, stored=None, **kwargs):
         """Use a compiled form per integration, not caller-provided schema fields.
 
         ``loaded_organization`` is the ParishSoft organization ID whose data
@@ -63,13 +35,14 @@ class IntegrationForm(forms.Form):
         loaded, the organization ID is shown read-only and a different value
         is refused: every later refresh must read that same organization, so
         a changed ID would stop them all (see ``source.requests``).
-        ``rules_schedule`` says the stored refresh schedule was saved with its
-        rules (#632): this page cannot edit such a schedule, so it leaves out
-        the schedule fields and the view keeps the stored schedule.
+        ``stored`` are the integration's stored settings: ParishSoft's
+        refresh schedule editor (``schedule``, #632) shows and compares
+        against the schedule they hold.
         """
         super().__init__(*args, **kwargs)
         self.target = target
         self.loaded_organization = loaded_organization
+        self.schedule = None
         if target == "parishsoft":
             self.fields["organization_id"] = forms.IntegerField(
                 label=_("Expected ParishSoft organization ID"),
@@ -87,70 +60,11 @@ class IntegrationForm(forms.Form):
                 self.fields["organization_id"].help_text = setup_help.CREDENTIALS[
                     "parishsoft"
                 ]["organization_id"]
-            self.fields["full_refresh"] = forms.ChoiceField(
-                label=_("Full ParishSoft refresh"),
-                choices=REFRESH_CHOICES,
-                initial="daily",
-                required=False,
-                help_text=_(
-                    "How often to reload all Families, Members and ministries from "
-                    "ParishSoft. A full load takes a few minutes and is the only "
-                    "way new Families, status changes, Members, ministries and "
-                    "giving arrive. Refreshes never overlap: a refresh that comes "
-                    "due while another is running waits for it."
-                ),
+            # The refresh schedule is edited as rows of rules (#632), read
+            # from the same submitted data as the other settings.
+            self.schedule = ScheduleEditor(
+                self.data if self.is_bound else None, stored=stored or {}
             )
-            # Parish wall-clock times, not the browser's: a recurring refresh
-            # follows the parish's own daylight-saving changes (#642's
-            # decision 18). Typed in any common form (#631).
-            self.fields["full_refresh_times"] = FlexibleTimeListField(
-                label=_("At these times"),
-                initial=[DEFAULT_TIME],
-                required=False,
-                max_length=256,
-                blank=[DEFAULT_TIME],
-                max_times=MAX_FULL_REFRESH_TIMES,
-                # Shown only for the set-times frequency (ui-v1.js); the view
-                # keeps the stored times otherwise.
-                widget=TimeEntryInput(
-                    attrs={
-                        "data-show-when": "full_refresh=daily",
-                        "placeholder": "2am, 14:00",
-                    }
-                ),
-                help_text=_(
-                    "Parish-local times, up to eight, in any common form (2am, "
-                    "2:30 PM, 14:00 or 1400), separated by commas or spaces; "
-                    "blank means 02:00 alone. The earliest is the nightly "
-                    "refresh, which runs even while Family emails are being sent; "
-                    "the others wait for a send to finish and then catch up. Each "
-                    "full refresh takes a few minutes of ParishSoft's time. Full "
-                    "refreshes are the dependable way to pick up ParishSoft "
-                    "changes, so consider one every few hours during the day, "
-                    "for example 02:00, 08:00, 12:00, 16:00, 20:00."
-                ),
-            )
-            self.fields["delta_refresh"] = forms.ChoiceField(
-                label=_("Quick updates between full refreshes"),
-                choices=DELTA_CHOICES,
-                initial=DEFAULT_DELTA_REFRESH,
-                required=False,
-                help_text=_(
-                    "Quick updates read only the Family address, phone, email and "
-                    "registration changes that ParishSoft's change list reports; "
-                    "everything else waits for a full refresh. When that list "
-                    "reports nothing, as ParishSoft's currently does, only full "
-                    "refreshes bring in changes, and quick updates mainly confirm "
-                    "that ParishSoft is reachable. Any choice, including none, is "
-                    "allowed: how current the data counts as depends only on the "
-                    "full refreshes, and Administrators are alerted when a "
-                    "scheduled full refresh is more than %(minutes)s minutes late."
-                )
-                % {"minutes": configured_policy().source_stale_seconds // 60},
-            )
-            if rules_schedule:
-                for name in SCHEDULE_FIELDS:
-                    del self.fields[name]
         elif target == "google_workspace":
             self.fields["delegated_email"] = forms.EmailField(
                 label=_("Delegated mailbox"), max_length=254
@@ -203,11 +117,6 @@ class IntegrationForm(forms.Form):
         field_tips.shorten(
             self,
             {
-                "full_refresh": _("A full refresh takes a few minutes."),
-                "full_refresh_times": _("For example 2am, 14:00; up to eight."),
-                "delta_refresh": _(
-                    "Checks the connection; Hourly or Off saves ParishSoft time."
-                ),
                 "target": _("The folder link from the address bar; it has /folders/."),
                 "delegated_email": setup_help.HINTS["delegated_email"],
                 "sender": setup_help.HINTS["sender"],
@@ -226,8 +135,18 @@ class IntegrationForm(forms.Form):
             raise forms.ValidationError(str(error)) from None
         return f"https://drive.google.com/drive/folders/{folder}"
 
+    def is_valid(self):
+        """The settings are valid, and so is the schedule, if this page edits one."""
+        return super().is_valid() and (
+            self.schedule is None or self.schedule.is_valid()
+        )
+
     def public_settings(self):
-        """Normalize exact YAML types after validation; never include the base field."""
+        """Normalize exact YAML types after validation; never include the base field.
+
+        ParishSoft's schedule keys are the editor's: the stored ones for an
+        unchanged schedule, else those its rules give.
+        """
         if not self.is_valid():
             raise ValueError("Valid integration settings are required.")
         # An empty From name is omitted: the applied settings then use the
@@ -243,10 +162,8 @@ class IntegrationForm(forms.Form):
             for name, value in self.cleaned_data.items()
             if name != "base_digest" and not (name == "sender_name" and not value)
         }
-        if "full_refresh_times" in settings:
-            # The earliest listed time is the nightly refresh, the one that
-            # runs during a Family send; the schedule stores it by name too.
-            settings["nightly_time"] = settings["full_refresh_times"][0]
+        if self.schedule is not None:
+            settings |= self.schedule.settings()
         return settings
 
     def clean_organization_id(self):
@@ -263,14 +180,6 @@ class IntegrationForm(forms.Form):
                 params={"loaded": self.loaded_organization},
             )
         return value
-
-    def clean_full_refresh(self):
-        """An omitted frequency keeps the documented once-a-day default."""
-        return self.cleaned_data["full_refresh"] or "daily"
-
-    def clean_delta_refresh(self):
-        """An omitted cadence keeps the documented quarter-hour default."""
-        return self.cleaned_data["delta_refresh"] or DEFAULT_DELTA_REFRESH
 
 
 class WriteOnlyTextarea(forms.Textarea):

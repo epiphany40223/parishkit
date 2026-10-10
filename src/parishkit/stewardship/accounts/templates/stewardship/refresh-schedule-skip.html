@@ -1,0 +1,16 @@
+{% load i18n stewardship %}{% comment %}
+One skip row of the refresh schedule editor (#632): "Skip at [time]" or
+"Skip from [time] to [time]" (the end itself is not skipped). As for rule
+rows, the page script shows only the fields the chosen shape uses, and "Add
+a skip" clones the empty form's copy of this markup.
+{% endcomment %}<fieldset class="schedule-row" id="skips-{{ row.index }}" data-schedule-row="skips">
+<legend><span>{% translate "Skip" %} <span data-row-number>{{ row.number }}</span></span></legend>
+<div class="schedule-row-fields">
+<div data-row-field="shape"><label class="visually-hidden" for="{{ row.form.shape.id_for_label }}">{% translate "Skip at one time or from a time" %}</label>{{ row.form.shape }}</div>
+<div data-row-field="at" data-row-shape="at"><label class="visually-hidden" for="{{ row.form.at.id_for_label }}">{% translate "Time" %}</label>{{ row.form.at }}</div>
+<div data-row-field="start" data-row-shape="range"><label class="visually-hidden" for="{{ row.form.start.id_for_label }}">{% translate "From" %}</label>{{ row.form.start }}</div>
+<div class="schedule-labelled" data-row-field="last" data-row-shape="range"><label for="{{ row.form.last.id_for_label }}">{% translate "to" %}</label>{{ row.form.last }}</div>
+<div class="schedule-row-remove">{% button type="button" variant="secondary" data-row-remove %}{% translate "Remove" %}{% endbutton %}</div>
+</div>
+<div class="schedule-row-messages" id="skips-{{ row.index }}-messages" data-row-messages>{% include 'stewardship/refresh-schedule-messages.html' %}</div>
+</fieldset>

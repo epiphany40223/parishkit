@@ -15,7 +15,6 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.service_boundaries import ROTATING_TARGETS
-from parishkit.stewardship.source.cadence import refresh_settings
 from parishkit.stewardship.source.refresh_status import (
     full_refresh_status,
     refresh_schedule,
@@ -44,12 +43,19 @@ from .integration_forms import (
 from .integration_selection import loaded_organization
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
+from .refresh_schedule_forms import (
+    PRESETS,
+    ScheduleEditor,
+    differences,
+    editor_view,
+    posted_names,
+    presets_payload,
+)
 from .request_admission import historical_record_id
 from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
 from .sessions import authenticated_admin, require_fresh
-from .source_cadence_schema import CADENCE_SETTINGS
 
 SALT = "stewardship-integration-settings-v1"
 CREDENTIAL_SALT = "stewardship-integration-credential-v1"
@@ -117,27 +123,49 @@ def _unset(target):
 def _form(target, *args, stored=None, **kwargs):
     """The settings form, with ParishSoft's organization ID fixed once loaded.
 
-    ``stored`` is the integration's stored settings record, if any; a
-    ParishSoft schedule saved with its rules (#632) leaves the form's
-    schedule fields out.
+    ``stored`` is the integration's stored settings record, if any; the
+    ParishSoft refresh schedule editor (#632) compares against its schedule.
     """
     loaded = loaded_organization() if target == "parishsoft" else None
     return IntegrationForm(
         target,
         *args,
         loaded_organization=loaded,
-        rules_schedule=_rules_schedule(target, stored),
+        stored=stored["values"]["settings"] if stored is not None else None,
         **kwargs,
     )
 
 
-def _rules_schedule(target, record):
-    """Whether ``record`` is a ParishSoft schedule saved with its rules (#632)."""
-    return (
-        target == "parishsoft"
-        and record is not None
-        and "refresh_rules" in record["values"]["settings"]
-    )
+def _schedule_zone(configuration):
+    """The zone refresh times resolve in (the scheduler's rule, #632).
+
+    The current campaign's zone, else the parish's, as
+    ``refresh_status.refresh_schedule`` and ``data_age.source_timezone``
+    read it.
+    """
+    schedule = refresh_schedule(configuration)
+    if schedule is not None:
+        return schedule["timezone"]
+    return configuration.active_configuration.canonical_document["sections"]["parish"][
+        0
+    ]["values"]["timezone"]
+
+
+def _schedule_context(configuration, editor):
+    """The refresh schedule editor's preview, summary and line beside Save."""
+    from parishkit.stewardship.source.schedule_preview import schedule_preview
+
+    zone = _schedule_zone(configuration)
+    return {
+        "schedule": editor_view(
+            editor,
+            timezone=zone,
+            now=timezone.now(),
+            preview_reader=schedule_preview,
+        ),
+        "presets": PRESETS,
+        "presets_payload": presets_payload(),
+    }
 
 
 def _checked(request, service, response):
@@ -158,10 +186,6 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     record = record or _unset(target)
     backup = _backup_context(request, configuration) if target == "backup" else {}
     settings = record["values"]["settings"]
-    if target == "parishsoft":
-        # Show the schedule the scheduler uses: an older document with a
-        # nightly time and no time list must list that time, not 02:00.
-        settings = _with_defaults(settings)
     initial = settings | {"base_digest": configuration.active_configuration.digest}
     probe = backup.get("probe")
     if (
@@ -218,6 +242,11 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             # The ParishSoft page offers the manual full refresh directly.
             "refresh_key": uuid4() if target == "parishsoft" else None,
             **backup,
+            **(
+                _schedule_context(configuration, form.schedule)
+                if form.schedule is not None
+                else {}
+            ),
         },
         status=status,
     )
@@ -357,46 +386,6 @@ def _inline_credential_form(configuration, request, target):
     return InlineCredentialForm(target, initial={"intent": intent})
 
 
-def _with_defaults(settings):
-    """ParishSoft settings with the schedule defaults filled in.
-
-    Older documents imply a setting they do not store (a time list is the
-    stored nightly time alone), so the page shows, and a save compares,
-    what the scheduler actually uses: ``cadence.refresh_settings`` is the one
-    home of those defaults.
-    """
-    schedule = refresh_settings(settings)
-    return {
-        "full_refresh": schedule["frequency"],
-        "nightly_time": schedule["nightly_time"],
-        "full_refresh_times": list(schedule["full_refresh_times"]),
-        "delta_refresh": schedule["delta_refresh"],
-    } | settings
-
-
-def _retain_unused_time(target, settings, before):
-    """Keep the stored times when the refresh is hourly or every 15 minutes.
-
-    The page hides (and the browser does not send) the time list for those
-    frequencies, so an empty or stale value there is never a change to review.
-    A schedule saved with its rules (#632) is kept exactly as stored: this
-    page has no fields for it, and saving other settings never changes it.
-    """
-    if target == "parishsoft" and "refresh_rules" in before:
-        return {
-            name: value
-            for name, value in settings.items()
-            if name not in CADENCE_SETTINGS
-        } | {name: before[name] for name in CADENCE_SETTINGS if name in before}
-    if target == "parishsoft" and settings.get("full_refresh", "daily") != "daily":
-        before = _with_defaults(before)
-        settings = settings | {
-            "nightly_time": before["nightly_time"],
-            "full_refresh_times": before["full_refresh_times"],
-        }
-    return settings
-
-
 def _save(request, service, configuration, actor, target):
     """Replace the key (and any changed settings) from the settings page.
 
@@ -430,28 +419,19 @@ def _save(request, service, configuration, actor, target):
     if intent["base"] != configuration.active_configuration.digest:
         raise StaleRecordError("Integration settings changed.")
     record = _optional(configuration, target)
+    if form.schedule is not None and form.schedule.changed:
+        # A key save never changes the refresh schedule: change it first.
+        raise UserFacingError(
+            _(
+                "Nothing was saved: a new key and a refresh schedule "
+                "change cannot be saved together here."
+            ),
+            fix=_(
+                "Leave the key field empty and save the refresh schedule "
+                "change first. Then paste the new key and save again."
+            ),
+        )
     settings = form.public_settings()
-    before = record["values"]["settings"] if record is not None else settings
-    settings = _retain_unused_time(target, settings, before)
-    if target == "parishsoft":
-        # Refresh defaults are implied, not stored, in older settings. A key
-        # save never upgrades the settings schema: change the schedule first.
-        for name, default in _with_defaults(before).items():
-            if name in before or name not in settings:
-                continue
-            if settings.get(name) != default:
-                raise UserFacingError(
-                    _(
-                        "Nothing was saved: a new key and a refresh schedule "
-                        "change cannot be saved together here."
-                    ),
-                    fix=_(
-                        "Leave the key field empty and save the refresh "
-                        "schedule change first. Then paste the new key and save "
-                        "again."
-                    ),
-                )
-            settings.pop(name)
     from .key_files import MAX_FILE_BYTES
 
     value = credential.cleaned_data.pop("candidate").encode("utf-8")
@@ -486,9 +466,9 @@ def _preview(request, service, actor, target):
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise StaleRecordError("Reload integration settings.")
     before = record["values"]["settings"]
-    if target == "parishsoft":
-        before = _with_defaults(before)
-    settings = _retain_unused_time(target, form.public_settings(), before)
+    # An unchanged refresh schedule keeps its stored keys exactly (#632), so
+    # a page saved as shown is no change at all.
+    settings = form.public_settings()
     if settings == before:
         form.add_error(None, _("No settings have changed."))
         return _page(request, configuration, target, form=form, status=400)
@@ -537,6 +517,16 @@ def _preview(request, service, actor, target):
                 if name != "base_digest"
                 and before.get(name, "") != settings.get(name, "")
             ],
+            # The schedule's differences in words, never its stored keys.
+            "schedule_changes": (
+                differences(
+                    before,
+                    form.schedule.document(),
+                    timezone=_schedule_zone(configuration),
+                )
+                if form.schedule is not None and form.schedule.changed
+                else []
+            ),
             "preview": sign_preview(
                 actor=actor,
                 configuration=configuration,
@@ -650,6 +640,8 @@ def integration_settings(request, target=None):
             require_fresh(request)
             _optional(configuration, target)
             fields = set(IntegrationForm(target).fields)
+            if target == "parishsoft":
+                fields |= posted_names()
             if target in ROTATING_TARGETS:
                 fields |= {"candidate", "intent"}
             action = form_action(request.POST, preview_fields=fields)
@@ -739,6 +731,42 @@ def integration_status(request, target):
                 "follow_url": reverse("admin:integration_settings", args=[target]),
             },
         )
+        return _checked(request, service, response)
+    except ERRORS as error:
+        return error_response(error)
+
+
+@require_http_methods(["POST"])
+def refresh_schedule_check(request, target):
+    """The refresh schedule editor's read-only live check (#632).
+
+    The page posts the editor's unsaved rows each time typing pauses or a
+    row, preset or switch changes. They are read with the same form the save
+    uses, checked by the shared validator and previewed; the answer is the
+    problems at each row, the preview, the summary and the line beside Save,
+    which the page script puts in place. It saves nothing, makes no
+    configuration request, writes no audit entry and is never cached; it
+    needs the page's own Configure capability. Only the editor's fields (and
+    the CSRF token) may be posted: never a pasted key.
+    """
+    try:
+        filters(request.GET, allowed=set())
+        service = runtime()
+        principal(request, service)
+        if target != "parishsoft":
+            raise LookupError("Integration is unavailable.")
+        if set(request.POST) - posted_names() - {"csrfmiddlewaretoken"} or any(
+            len(values) != 1 for _, values in request.POST.lists()
+        ):
+            raise ValueError("Invalid refresh schedule fields.")
+        with read_transaction():
+            configuration = editable_configuration(service)
+            record = _selected(configuration, target)
+            editor = ScheduleEditor(request.POST, stored=record["values"]["settings"])
+            if not editor.posted:
+                raise ValueError("Invalid refresh schedule fields.")
+            context = _schedule_context(configuration, editor)
+        response = render(request, "stewardship/refresh-schedule-check.html", context)
         return _checked(request, service, response)
     except ERRORS as error:
         return error_response(error)

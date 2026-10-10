@@ -23,8 +23,10 @@ from parishkit.stewardship.accounts.secret_models import (
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_grants import runtime_grants
+from parishkit.stewardship.source.refresh_rules import stored_settings
 
 from ..policy_factory import address
+from ..schedule_rows import rows, shown
 from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
 from .test_admin_navigation_postgresql import STEPS, flow_steps
@@ -145,13 +147,9 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     record = auth_service.store.active().document()["sections"]["integrations"][0][
         "values"
     ]
-    assert record["settings"] == {
-        "organization_id": "54321",
-        "full_refresh": "daily",
-        "full_refresh_times": ["02:00"],
-        "nightly_time": "02:00",
-        "delta_refresh": "quarter_hour",
-    }
+    # The page's unchanged schedule writes nothing new (#632): the existing
+    # schedule's defaults stay implied, as before the save.
+    assert record["settings"] == {"organization_id": "54321"}
     assert record["credential_fingerprint"] == "a" * 64
     assert (
         post(browser, URL, {"action": "confirm", "preview": preview})["Location"]
@@ -159,186 +157,47 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     )
 
 
-def test_nightly_only_edit_uses_parish_time_and_real_scheduler_receipt(
-    auth_service, google
-):
-    """Admin HTTP intent reaches canonical YAML, projections and scheduler slots."""
-    from zoneinfo import ZoneInfo
+def full_at(value):
+    """A "Full at" rule."""
+    return {"kind": "full", "at": value}
 
+
+def quick_every(step, start, end):
+    """A quick rule every ``step`` minutes."""
+    return {"kind": "quick", "every": step, "from": start, "to": end}
+
+
+def applied_settings(store):
+    """The applied ParishSoft settings."""
+    return store.active().document()["sections"]["integrations"][0]["values"][
+        "settings"
+    ]
+
+
+def install(store, response):
+    """Install the request a confirmation queued; return its applied version."""
     from parishkit.stewardship.accounts.configuration_models import (
         AppliedConfigurationVersion,
     )
-    from parishkit.stewardship.jobs.scheduler import scheduler_session
-    from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
-    from parishkit.stewardship.source.production import produce_refreshes
-    from parishkit.stewardship.source.refresh_models import SourceRefreshTick
 
-    SourceCurrent.objects.get_or_create(singleton=True)
-    SourceMutationLease.objects.get_or_create(singleton=True)
-    browser, _ = signed_in()
-    preview = hidden(
-        post(
-            browser,
-            URL,
-            edit(
-                auth_service.store, organization_id="12345", full_refresh_times="03:15"
-            ),
-        ),
-        "preview",
-    )
-    response = post(browser, URL, {"action": "confirm", "preview": preview})
-    assert response.status_code == 302
     request = ConfigurationChangeRequest.objects.get(
         pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
     )
-    assert request.request_schema == "source-cadence-patch-v8"
     assert (
-        install_request(
-            auth_service.store, request_id=request.pk, correlation_id=uuid4()
-        ).state
+        install_request(store, request_id=request.pk, correlation_id=uuid4()).state
         == "applied"
     )
-    configuration = AppliedConfigurationVersion.objects.get(
+    return request, AppliedConfigurationVersion.objects.get(
         pk=request.candidate_version_id
     )
-    assert configuration.validation_schema == "source-cadence-v8"
-    settings = configuration.canonical_document["sections"]["integrations"][0][
-        "values"
-    ]["settings"]
-    assert settings["nightly_time"] == "03:15"
-    assert settings["full_refresh_times"] == ["03:15"]
-    with scheduler_session() as guard:
-        assert len(produce_refreshes(guard)) == 2
-    tick = SourceRefreshTick.objects.get(command__cause="nightly")
-    assert tick.configuration_id == configuration.pk
-    assert tick.nightly_time == "03:15"
-    local = tick.due_at.astimezone(ZoneInfo(tick.timezone))
-    assert (local.hour, local.minute) == (3, 15)
-    assert browser.get(URL).status_code == 200
 
 
-def test_several_daily_times_reach_yaml_and_the_scheduler(auth_service, google):
-    """A typed time list is stored sorted; the scheduler's full tick names one (#465).
-
-    The earliest time becomes the nightly time; the review page shows the
-    list as typed. Which time is due depends on the clock, so the tick is
-    checked against the list and its own local wall time.
-    """
-    from zoneinfo import ZoneInfo
-
-    from parishkit.stewardship.accounts.configuration_models import (
-        AppliedConfigurationVersion,
-    )
-    from parishkit.stewardship.jobs.scheduler import scheduler_session
-    from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
-    from parishkit.stewardship.source.production import produce_refreshes
-    from parishkit.stewardship.source.refresh_models import SourceRefreshTick
-
-    SourceCurrent.objects.get_or_create(singleton=True)
-    SourceMutationLease.objects.get_or_create(singleton=True)
-    browser, _ = signed_in()
-    review = post(
-        browser,
-        URL,
-        edit(
-            auth_service.store,
-            organization_id="12345",
-            full_refresh_times="15:00, 03:15",
-            delta_refresh="quarter_hour",
-        ),
-    )
-    assert b"03:15, 15:00" in review.content
-    response = post(
-        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
-    )
-    request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
-    )
-    assert (
-        install_request(
-            auth_service.store, request_id=request.pk, correlation_id=uuid4()
-        ).state
-        == "applied"
-    )
-    configuration = AppliedConfigurationVersion.objects.get(
-        pk=request.candidate_version_id
-    )
-    settings = configuration.canonical_document["sections"]["integrations"][0][
-        "values"
-    ]["settings"]
-    assert settings["full_refresh_times"] == ["03:15", "15:00"]
-    assert settings["nightly_time"] == "03:15"
-    with scheduler_session() as guard:
-        assert len(produce_refreshes(guard)) == 2
-    tick = SourceRefreshTick.objects.get(command__cause="nightly")
-    assert tick.nightly_time in ("03:15", "15:00")
-    local = tick.due_at.astimezone(ZoneInfo(tick.timezone))
-    assert f"{local.hour:02d}:{local.minute:02d}" == tick.nightly_time
-    page = browser.get(URL).content
-    assert b"03:15, 15:00" in page
-
-
-def test_refresh_times_are_typed_in_any_common_form(auth_service, google):
-    """The page reads 12-hour, run-together and repeated entries (#631).
-
-    The review shows the stored list, sorted with each time once; a time the
-    parser cannot read is refused at the field and queues nothing.
-    """
-    browser, _ = signed_in()
-    requests = ConfigurationChangeRequest.objects.count()
-    refused = post(
-        browser,
-        URL,
-        edit(
-            auth_service.store,
-            organization_id="12345",
-            full_refresh_times="3:15 PM, 25:00",
-        ),
-    )
-    assert refused.status_code == 400
-    assert "\u201c25:00\u201d has no hour 25" in unescape(refused.content.decode())
-    assert 'id="id_full_refresh_times_error"' in refused.content.decode()
-    assert ConfigurationChangeRequest.objects.count() == requests
-    review = post(
-        browser,
-        URL,
-        edit(
-            auth_service.store,
-            organization_id="12345",
-            full_refresh_times="3:15 PM; 3:15am\n1515",
-        ),
-    )
-    assert review.status_code == 200
-    assert b"03:15, 15:15" in review.content
-    response = post(
-        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
-    )
-    request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
-    )
-    assert (
-        install_request(
-            auth_service.store, request_id=request.pk, correlation_id=uuid4()
-        ).state
-        == "applied"
-    )
-    settings = auth_service.store.active().document()["sections"]["integrations"][0][
-        "values"
-    ]["settings"]
-    assert settings["full_refresh_times"] == ["03:15", "15:15"]
-    assert settings["nightly_time"] == "03:15"
-
-
-def test_older_document_shows_its_nightly_time_as_the_time_list(auth_service, google):
-    """A document with a nightly time and no list shows that time, not 02:00 (#465).
-
-    Saving the page unchanged is then no change, and a key save with the
-    shown schedule is not mistaken for a schedule change.
-    """
-    base = auth_service.store.active()
+def replace_settings(store, settings):
+    """Store ``settings`` as the ParishSoft integration's settings."""
+    base = store.active()
     integration = base.document()["sections"]["integrations"][0]
     change(
-        auth_service.store,
+        store,
         base,
         uuid4(),
         [
@@ -346,31 +205,201 @@ def test_older_document_shows_its_nightly_time_as_the_time_list(auth_service, go
                 "operation": "update",
                 "section": "integrations",
                 "id": integration["id"],
-                "values": {
-                    "settings": integration["values"]["settings"]
-                    | {"nightly_time": "03:00"}
-                },
+                "values": {"settings": settings},
             }
         ],
     )
-    settings = auth_service.store.active().document()["sections"]["integrations"][0][
+
+
+def test_a_saved_rule_reaches_yaml_and_the_real_scheduler(auth_service, google):
+    """The editor's rows become rules and lists the scheduler runs (#632).
+
+    The first writer of ``refresh_rules``: a full time typed as "3:15am" and
+    quick updates every 15 minutes are stored with their derived lists, and
+    the scheduler's full tick names 03:15 at 03:15 parish time.
+    """
+    from zoneinfo import ZoneInfo
+
+    from parishkit.stewardship.jobs.scheduler import scheduler_session
+    from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
+    from parishkit.stewardship.source.production import produce_refreshes
+    from parishkit.stewardship.source.refresh_models import SourceRefreshTick
+
+    SourceCurrent.objects.get_or_create(singleton=True)
+    SourceMutationLease.objects.get_or_create(singleton=True)
+    browser, _ = signed_in()
+    posted = rows([full_at("03:15"), quick_every(15, "00:00", "23:45")]) | {
+        "rules-0-at": "3:15am"
+    }
+    review = post(
+        browser, URL, edit(auth_service.store, organization_id="12345") | posted
+    )
+    assert review.status_code == 200, review.content
+    page = unescape(review.content.decode())
+    assert "Full refreshes added: 03:15." in page
+    assert "Full refreshes removed: 02:00." in page
+    response = post(
+        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
+    )
+    assert response.status_code == 302
+    request, configuration = install(auth_service.store, response)
+    assert request.request_schema == "source-cadence-patch-v8"
+    assert configuration.validation_schema == "source-cadence-v8"
+    settings = configuration.canonical_document["sections"]["integrations"][0][
         "values"
     ]["settings"]
-    assert settings["nightly_time"] == "03:00" and "full_refresh_times" not in settings
-    # The schedule change above is the only request; the page adds none.
-    requests = ConfigurationChangeRequest.objects.count()
-    browser, _ = signed_in()
-    page = browser.get(URL)
-    assert page.status_code == 200
-    assert 'name="full_refresh_times" value="03:00"' in page.content.decode()
+    expected = stored_settings(
+        {
+            "rules": [full_at("03:15"), quick_every(15, "00:00", "23:45")],
+            "skips": [],
+            "skip_around_family_emails": False,
+        }
+    )
+    assert settings == {"organization_id": "12345"} | expected
+    assert settings["nightly_time"] == "03:15"
+    assert settings["delta_refresh"] == "times"
+    assert "03:15" not in settings["quick_refresh_times"]
+    with scheduler_session() as guard:
+        assert len(produce_refreshes(guard)) == 2
+    tick = SourceRefreshTick.objects.get(command__cause="nightly")
+    assert tick.configuration_id == configuration.pk
+    assert tick.nightly_time == "03:15"
+    local = tick.due_at.astimezone(ZoneInfo(tick.timezone))
+    assert (local.hour, local.minute) == (3, 15)
+    quick = SourceRefreshTick.objects.get(command__cause="delta")
+    local = quick.due_at.astimezone(ZoneInfo(quick.timezone))
+    assert f"{local.hour:02d}:{local.minute:02d}" in settings["quick_refresh_times"]
+    # The page now shows the saved rules, and saving them as shown is no change.
+    page = browser.get(URL).content.decode()
+    assert 'name="rules-0-at" value="03:15"' in page
     unchanged = post(
+        browser, URL, edit(auth_service.store, organization_id="12345") | shown(page)
+    )
+    assert b"No settings have changed." in unchanged.content
+
+
+def test_a_row_that_cannot_be_read_is_refused_at_its_row(auth_service, google):
+    """A refused entry is named at its row and queues nothing (#631, #632)."""
+    browser, _ = signed_in()
+    requests = ConfigurationChangeRequest.objects.count()
+    refused = post(
         browser,
         URL,
-        edit(auth_service.store, organization_id="12345", full_refresh_times="03:00"),
+        edit(auth_service.store, organization_id="12345")
+        | rows([full_at("02:00"), full_at("02:00")])
+        | {"rules-0-at": "3:15 PM", "rules-1-at": "25:00"},
+    )
+    assert refused.status_code == 400
+    page = unescape(refused.content.decode())
+    assert "At: “25:00” has no hour 25" in page
+    assert 'id="rules-1-messages"' in page
+    assert "Fix 1 problem before saving:" in page
+    assert ConfigurationChangeRequest.objects.count() == requests
+
+
+def test_an_older_document_is_shown_as_rules_and_saved_unchanged(auth_service, google):
+    """A nightly time without a list shows as "Full at 03:00" (#465, #632).
+
+    Saving the page as shown is no change, and writes no new key.
+    """
+    replace_settings(
+        auth_service.store, {"organization_id": "12345", "nightly_time": "03:00"}
+    )
+    requests = ConfigurationChangeRequest.objects.count()
+    browser, _ = signed_in()
+    page = browser.get(URL).content.decode()
+    assert 'name="rules-0-at" value="03:00"' in page
+    assert "Your current schedule, shown as rules." in page
+    unchanged = post(
+        browser, URL, edit(auth_service.store, organization_id="12345") | shown(page)
     )
     assert unchanged.status_code == 400
     assert b"No settings have changed." in unchanged.content
     assert ConfigurationChangeRequest.objects.count() == requests
+
+
+# A schedule stored before the editor, with a kept full time at 23:50: it runs
+# 23:45 and 00:00 quick updates, each less than 15 minutes from it.
+CLOSE = {
+    "organization_id": "12345",
+    "nightly_time": "00:00",
+    "full_refresh_times": ["00:00", "23:50"],
+    "delta_refresh": "quarter_hour",
+}
+
+
+def test_other_settings_save_with_an_unchanged_schedule_that_has_problems(
+    auth_service, google
+):
+    """Problems on the shown schedule block only a change to it (#632).
+
+    The organization ID changes; the schedule is stored byte for byte, and
+    no rules are written, so the scheduler runs it exactly as before.
+    """
+    replace_settings(auth_service.store, CLOSE)
+    browser, _ = signed_in()
+    page = browser.get(URL).content.decode()
+    assert "00:00 is only 10 minutes after the 23:50 full refresh" in page
+    review = post(
+        browser, URL, edit(auth_service.store, organization_id="54321") | shown(page)
+    )
+    assert review.status_code == 200, review.content
+    assert b"Refresh schedule changes" not in review.content
+    response = post(
+        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
+    )
+    install(auth_service.store, response)
+    assert applied_settings(auth_service.store) == CLOSE | {"organization_id": "54321"}
+
+
+def test_a_changed_schedule_with_problems_is_refused(auth_service, google):
+    """Once the schedule changes, its problems must be fixed before saving."""
+    replace_settings(auth_service.store, CLOSE)
+    requests = ConfigurationChangeRequest.objects.count()
+    browser, _ = signed_in()
+    posted = shown(browser.get(URL).content.decode())
+    count = int(posted["skips-TOTAL_FORMS"])
+    posted |= {
+        "skips-TOTAL_FORMS": str(count + 1),
+        f"skips-{count}-shape": "at",
+        f"skips-{count}-at": "12:00",
+    }
+    refused = post(
+        browser, URL, edit(auth_service.store, organization_id="12345") | posted
+    )
+    assert refused.status_code == 400
+    assert b"Fix " in refused.content
+    assert ConfigurationChangeRequest.objects.count() == requests
+    assert applied_settings(auth_service.store) == CLOSE
+
+
+def test_the_live_check_saves_nothing_and_needs_the_page_permission(
+    auth_service, google
+):
+    """The read-only check: no request, no audit entry, never cached (#632)."""
+    browser, _ = signed_in()
+    page = browser.get(URL).content.decode()
+    requests = ConfigurationChangeRequest.objects.count()
+    audits = AuditEvent.objects.count()
+    check = INDEX + "parishsoft/schedule-check/"
+    answer = post(browser, check, shown(page))
+    assert answer.status_code == 200, answer.content
+    assert answer["Cache-Control"] == "no-store"
+    assert b'data-blocking="false"' in answer.content
+    changed = post(browser, check, shown(page) | {"rules-0-at": "02:10"})
+    assert b'data-blocking="true"' in changed.content
+    assert "At: Use :00, :15, :30 or :45." in unescape(changed.content.decode())
+    assert ConfigurationChangeRequest.objects.count() == requests
+    assert AuditEvent.objects.count() == audits
+    # Only the editor's fields: never a pasted key or another setting.
+    for extra in ({"candidate": SECRET}, {"organization_id": "1"}):
+        refused = post(browser, check, shown(page) | extra)
+        assert refused.status_code == 400
+        assert SECRET.encode() not in refused.content
+    assert (
+        post(browser, INDEX + "slack/schedule-check/", shown(page)).status_code == 404
+    )
+    assert browser.get(check).status_code == 405
 
 
 def rules_schedule():
@@ -420,16 +449,11 @@ def stored_schedule(store):
     )
 
 
-# Posted by a browser with the old page's schedule fields, which this page
-# no longer shows for a rules schedule; they must be ignored.
-STALE_FIELDS = {"full_refresh_times": "02:00", "delta_refresh": "quarter_hour"}
+def test_a_schedule_saved_with_its_rules_is_shown_as_saved(auth_service, google):
+    """The page shows a rules schedule's own rows; saved as shown, no change.
 
-
-def test_a_schedule_saved_with_its_rules_is_kept_by_this_page(auth_service, google):
-    """This page shows no fields for a rules schedule (#632) and never changes it.
-
-    Until the new schedule editor lands, saving other settings keeps the
-    stored schedule exactly, so an unchanged save is no change at all.
+    The old frequency and time-list fields are gone (#632): posting them is
+    refused as an unknown field.
     """
     apply_rules_schedule(auth_service.store)
     requests = ConfigurationChangeRequest.objects.count()
@@ -437,13 +461,19 @@ def test_a_schedule_saved_with_its_rules_is_kept_by_this_page(auth_service, goog
     page = browser.get(URL).content.decode()
     for name in ("full_refresh", "full_refresh_times", "delta_refresh"):
         assert f'name="{name}"' not in page
+    assert 'name="rules-0-every" ' in page and 'name="skips-0-at" value="06:00"' in page
+    assert "Your current schedule, shown as rules." not in page
     unchanged = post(
-        browser,
-        URL,
-        edit(auth_service.store, organization_id="12345", **STALE_FIELDS),
+        browser, URL, edit(auth_service.store, organization_id="12345") | shown(page)
     )
     assert unchanged.status_code == 400
     assert b"No settings have changed." in unchanged.content
+    stale = post(
+        browser,
+        URL,
+        edit(auth_service.store, organization_id="12345", full_refresh_times="02:00"),
+    )
+    assert stale.status_code == 400
     assert ConfigurationChangeRequest.objects.count() == requests
 
 
@@ -455,10 +485,9 @@ def test_another_setting_saved_on_a_rules_schedule_keeps_it_exactly(
     before = stored_schedule(auth_service.store)
     assert json.loads(before)["delta_refresh"] == "times"
     browser, _ = signed_in()
+    page = browser.get(URL).content.decode()
     review = post(
-        browser,
-        URL,
-        edit(auth_service.store, organization_id="54321", **STALE_FIELDS),
+        browser, URL, edit(auth_service.store, organization_id="54321") | shown(page)
     )
     response = post(
         browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
@@ -488,7 +517,15 @@ def test_a_new_key_on_a_rules_schedule_leaves_the_schedule_alone(
     browser, _ = signed_in()
     with identity("pk_stewardship_web"):
         page = browser.get(URL)
-        response = save_key(browser, SECRET, page, **STALE_FIELDS)
+        rows_shown = shown(page.content.decode())
+        # A key and a schedule change are not saved together.
+        refused = save_key(
+            browser, SECRET, page, **(rows_shown | {"skips-0-at": "07:00"})
+        )
+        assert refused.status_code == 400
+        assert b"a new key and a refresh schedule change" in refused.content
+        page = browser.get(URL)
+        response = save_key(browser, SECRET, page, **shown(page.content.decode()))
         assert response.status_code == 302, response.content
     (queued,) = ConfigurationChangeRequest.objects.exclude(pk__in=requests)
     for item in queued.patch:
@@ -692,6 +729,8 @@ def test_integrations_and_secrets_are_admin_only(auth_service, google, role):
         "/admin/system/key-changes/" + str(uuid4()) + "/",
     ):
         assert browser.get(url).status_code == 403
+    # The refresh schedule's live check needs the page's own permission.
+    assert post(browser, URL + "schedule-check/", {}).status_code == 403
     response = post(
         browser,
         URL,

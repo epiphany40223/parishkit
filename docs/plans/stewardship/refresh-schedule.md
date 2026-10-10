@@ -381,7 +381,9 @@ slices).
     another zone would move against the parish's clock twice a year when the
     two zones change on different dates. #558 already names reminder send
     times as the kind of campaign-calendar time that may be an exception.
-    The page names the parish zone beside the editor and, when the browser's
+    The zone is the one the scheduler resolves refresh times in: the
+    current campaign's, else the parish's. The page names it ("the refresh
+    schedule's time zone") beside the editor and, when the browser's
     zone differs, shows each preview time in the browser's zone as well.
     Alternative: enter times in the browser's zone and convert them with
     today's offset, which is simple for the common case of a browser in the
