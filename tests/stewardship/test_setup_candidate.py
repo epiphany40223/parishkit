@@ -218,7 +218,7 @@ def test_disabled_page_remains_in_staging_but_not_in_compiled_selection():
 
 @pytest.mark.parametrize("step", sorted(RETIRED_STEPS))
 def test_retired_step_left_in_a_draft_is_not_compiled(step):
-    """A pre-#913 draft's critical alert neither blocks nor joins setup."""
+    """A step retired after the draft saved it neither blocks nor joins setup."""
     base, args = compilation()
     kind, _, slot = step.partition("_")
     args["sections"][step] = content(str(args["attempt_id"]), kind=kind, slot=slot)
@@ -263,8 +263,8 @@ def test_maximum_wizard_can_compile_without_artificial_combined_record_limit():
         )
     for step in CONTENT_STEPS:
         kind, _, slot = step.partition("_")
-        # The retired receipt closing note (#260) can no longer be staged.
-        if step != "page_submission_confirmation":
+        # Retired steps (#260, #913) can no longer be staged.
+        if step not in RETIRED_STEPS:
             sections[step] = content(str(args["attempt_id"]), kind=kind, slot=slot)
     sections["campaign"]["campaign"]["end_date"] = "2055-02-01"
     rows = []

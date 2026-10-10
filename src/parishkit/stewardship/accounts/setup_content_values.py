@@ -9,16 +9,18 @@ from .content_schema import (
     RETIRED_ALERT,
     validate_content_records,
 )
+from .receipt_note import RETIRED
 
 CONTENT_STEPS = tuple(
     f"{kind}_{slot}"
     for kind, slots in (("page", PAGE_SLOTS), ("email", EMAIL_SLOTS))
     for slot in sorted(slots)
 )
-# Retired content steps (#913) a draft saved before the change may still hold.
-# They can no longer be saved, so every reader of draft sections leaves them
-# behind (see without_retired) rather than refusing the whole draft.
-RETIRED_STEPS = frozenset({"_".join(RETIRED_ALERT)})
+# Retired content steps (#260 closing note, #913 critical alert) a draft
+# saved before the change may still hold. They can no longer be saved, so
+# every reader of draft sections leaves them behind (see without_retired)
+# rather than refusing the whole draft.
+RETIRED_STEPS = frozenset("_".join(pair) for pair in (RETIRED, RETIRED_ALERT))
 
 
 def without_retired(sections):

@@ -137,11 +137,13 @@ def test_another_login_and_cancelled_draft_cannot_reuse_preview(
             verify_preview(request, setup_service, token)
 
 
-@pytest.mark.parametrize("step", ["email_critical_alert"])
+@pytest.mark.parametrize(
+    "step", ["page_submission_confirmation", "email_critical_alert"]
+)
 def test_retired_step_left_in_a_draft_blocks_neither_saving_nor_finishing(
     setup_service, monkeypatch, tmp_path, step
 ):
-    """A draft saved before a slot retired (#913) still saves and previews.
+    """A draft saved before a slot retired (#260, #913) still saves and previews.
 
     The leftover step is written straight to SQL, as the older release did;
     the current code can no longer save it.
