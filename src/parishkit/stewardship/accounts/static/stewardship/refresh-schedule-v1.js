@@ -251,21 +251,22 @@
   // - regions below y move nothing at y.
   // The page then scrolls by the sum. WebKit scrolls by whole pixels and
   // drops a fraction, so there the place is rounded, and the fraction left
-  // over is owed to the next change at the same reference height, so a
-  // run of changes (a reading, then the check's answer) does not add up
-  // to more than half a pixel. At the top or bottom of the page it can
+  // over is owed to the next change at the same reference height and
+  // scroll place, so a run of changes (a reading, then the check's answer)
+  // does not add up to more than half a pixel; a scroll by the reader in
+  // between starts afresh. At the top or bottom of the page it can
   // scroll only as far as the page goes. A change made while another is
   // being steadied (a time reading redrawn as a new row is wired) is part
   // of that one.
   let steadying = false;
-  let owed = {y: null, by: 0};
+  let owed = {y: null, at: null, by: 0};
   const steady = (regions, change, fallback) => {
     if (steadying) {
       change();
       return;
     }
     const y = referenceY(fallback);
-    if (y !== owed.y) owed = {y, by: 0};
+    if (y !== owed.y || window.scrollY !== owed.at) owed = {y, at: window.scrollY, by: 0};
     const before = regions.map((region) => region.getClientRects().length && region.getBoundingClientRect());
     const at = y === null ? -1 : before.findIndex((box) => box && box.top <= y && y < box.bottom);
     const chain = at < 0 ? [] : spanning(regions[at], y);
@@ -297,6 +298,7 @@
     if (Math.abs(window.scrollY - target) > 0.25) window.scrollTo(window.scrollX, target);
     if (Math.abs(window.scrollY - target) > 0.5) window.scrollTo(window.scrollX, Math.round(target));
     owed.by = target - window.scrollY;
+    owed.at = window.scrollY;
   };
   // Move focus to ``node`` without scrolling what is under the pointer
   // (#736). With no pointer (keyboard only), a control off the screen is
