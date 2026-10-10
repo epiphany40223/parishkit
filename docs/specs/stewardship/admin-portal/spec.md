@@ -1635,7 +1635,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   space below a shorter status for a reader at the foot, which stays until
   the next change to the region (or a reload); a reader higher up the page
   needs little or no hold, so a long review followed by Applied leaves no
-  large gap. Share options and
+  large gap. Apply still moves focus to Change status's heading, so on a
+  window too short to show the whole region, focus may scroll the status
+  into view. Share options and
   Member talents (#750) work the same way, except that their form, to which
   no script is bound, is an in-place region of its own: a Review's answer
   redraws it with the values sent and their field errors. Edits typed into

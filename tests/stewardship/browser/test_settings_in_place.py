@@ -599,6 +599,25 @@ def test_a_shorter_status_never_moves_the_form(page, component_origin):
     assert page.evaluate(MARKED) == "kept"
 
 
+def test_focus_brings_the_status_into_view_on_a_short_window(page, component_origin):
+    """On a window too short to show the whole review region, Apply from
+    the foot of the page moves focus to Change status's heading, which may
+    scroll the page so the status is in view (#736); the held height only
+    keeps the page from being pulled down under the reader."""
+    answer_reviews(page, component_origin)
+    hold_status(page, component_origin)
+    review(page, component_origin)
+    to_the_foot(page, 400)
+    page.get_by_role("button", name="Apply changes").click()
+    heading = page.get_by_role("heading", name="Change status")
+    visible(heading)
+    assert page.evaluate(FOCUSED, "#settings-status-title")
+    from playwright.sync_api import expect
+
+    expect(heading).to_be_in_viewport()
+    assert page.evaluate(MARKED) == "kept"
+
+
 def test_a_status_loaded_with_the_page_never_moves_the_form(page, component_origin):
     """A page loaded with Change status already in its region (a reload of
     the change's address) holds its place the same way when Applied

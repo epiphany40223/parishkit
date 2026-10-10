@@ -1028,15 +1028,16 @@
   // would otherwise see the browser pull everything above it down under the
   // pointer (#736); a reader higher up needs less, often nothing, so a long
   // review followed by a short status leaves no gap below them. The height
-  // is measured unrounded and rounded up (offsetHeight can round down), and
-  // never exceeds the element's present height. The element is a flow root
+  // is measured and kept unrounded (offsetHeight can round down, and rounding
+  // up would move the page by a pixel), and never exceeds the element's
+  // present height. The element is a flow root
   // (ui-v1.css), so its children's margins count in its height. A copy lives
   // in live-status-v1.js, which does not depend on this file.
   const heldHeight = (element) => {
     const root = document.documentElement;
     const height = element.getBoundingClientRect().height;
     const below = window.scrollY + root.clientHeight - (root.scrollHeight - height);
-    const need = Math.min(Math.ceil(height), Math.ceil(below));
+    const need = Math.min(height, below);
     return need > 0 ? `${need}px` : "";
   };
   // Swap one region for its fresh copy. Selections are restored on the copy

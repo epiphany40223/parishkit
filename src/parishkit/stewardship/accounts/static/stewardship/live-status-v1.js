@@ -291,7 +291,7 @@
         const root = document.documentElement;
         const height = keep.getBoundingClientRect().height;
         const below = window.scrollY + root.clientHeight - (root.scrollHeight - height);
-        const need = Math.min(Math.ceil(height), Math.ceil(below));
+        const need = Math.min(height, below);
         keep.style.minHeight = need > 0 ? `${need}px` : "";
       }
       region.replaceChildren(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
