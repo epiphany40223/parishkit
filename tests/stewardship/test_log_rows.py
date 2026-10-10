@@ -382,3 +382,26 @@ def test_every_row_explains_its_type_in_plain_words():
     # Profile-neutral: LOCAL signs in without Google (#649).
     assert description.endswith("Ministry leader) signed in.")
     assert "Google" not in description
+
+
+def test_sign_in_activity_is_a_closed_link_filter():
+    """The Activity choice (#953) accepts only its closed groups, lists the
+    Admin sign-in audit types, and may travel in a link and an export."""
+    query = LogQuery.parse({"activity": "sign_in"})
+    assert set(query.activity_types) == {
+        "admin_login",
+        "admin_login_denied",
+        "admin_logout",
+        "admin_privileges_changed",
+        "admin_reauthenticated",
+        "admin_revoked",
+        "admin_step_up",
+        "admin_timeout",
+    }
+    assert LogQuery().activity_types is None
+    assert query.link_values() == {"activity": "sign_in"}
+    assert query.form_values() == {"activity": "sign_in"}
+    assert not query.unlinked
+    for refused in ("signin", "admin_login", "SIGN_IN", " sign_in"):
+        with pytest.raises(ValueError):
+            LogQuery.parse({"activity": refused})

@@ -109,14 +109,16 @@ def test_logs_mobile_keyboard_and_accessibility(
     time = page.get_by_role("columnheader", name="Time", exact=False)
     assert time.get_attribute("aria-sort") == "descending"
     assert time.get_by_role("button", name="sort ascending").count() == 1
-    # Audit record is the last of the Show choices; the type field follows.
+    # Audit record is the last of the Show choices; the Activity choice
+    # (#953) and then the type field follow.
     page.get_by_label("Audit record", exact=True).focus()
-    # The type's help bubble sits between its label and its field. WebKit's
+    # Each help bubble sits between its label and its field. WebKit's
     # default Tab order skips buttons (a macOS setting), so allow either.
-    page.keyboard.press("Tab")
-    if page.locator(":focus").get_attribute("aria-controls") == "log-event-tip":
+    for name, tip in (("activity", "log-activity-tip"), ("event", "log-event-tip")):
         page.keyboard.press("Tab")
-    assert page.locator(":focus").get_attribute("name") == "event"
+        if page.locator(":focus").get_attribute("aria-controls") == tip:
+            page.keyboard.press("Tab")
+        assert page.locator(":focus").get_attribute("name") == name
 
     page.goto(component_origin + "/logs-default")
     # DEBUG is excluded until chosen; audit records are included.
