@@ -10,6 +10,7 @@ import random
 import re
 from datetime import UTC, datetime
 from functools import partial
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -467,6 +468,35 @@ def test_every_body_stays_between_the_header_and_the_footer():
             frame,
             body_extents(frame, pages, partial(draw_record_page, frame=frame)),
         )
+
+
+@pytest.mark.parametrize("split", [False, True])
+def test_a_table_page_filled_exactly_keeps_its_closing_rule_inside(split):
+    """The rule under a page's last row stays above body_bottom.
+
+    Half the closing rule hangs below the last row, so a body exactly as tall
+    as the heading plus whole rows (or plus one split row's lines, since a
+    split row always fills its page) must not take that last row: the rule
+    would cross body_bottom by a fraction of a point.
+    """
+    table = pdf_design.Table.weighted(("Family", "Notes"), (1, 1))
+    one_row = pdf_design.LINE_PITCH + 2 * pdf_design.ROW_PAD
+    if split:
+        # One row of 40 lines, on a body that fits exactly 6 of its lines.
+        rows = [("Example", "\n".join(f"line {n}" for n in range(40)))]
+        rows_height = 6 * pdf_design.LINE_PITCH + 2 * pdf_design.ROW_PAD
+    else:
+        # Ten one-line rows, on a body that fits exactly 4 of them.
+        rows = [(f"Family {n}", "note") for n in range(10)]
+        rows_height = 4 * one_row
+    top = 100.0
+    bottom = top + table.heading_height + rows_height
+    frame = SimpleNamespace(body_top=top, body_bottom=bottom, body_height=bottom - top)
+    pages = list(pdf_design.table_pages(table, rows, frame))
+    assert len(pages) > 1
+    assert_inside(
+        frame, body_extents(frame, pages, pdf_design.draw_table(table, frame))
+    )
 
 
 def test_record_cards_move_whole_and_only_a_page_tall_card_splits():
