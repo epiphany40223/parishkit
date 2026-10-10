@@ -110,7 +110,7 @@ ends without a campaign before Create the campaign exists. Until both land,
 no real deployment reaches Create the campaign (setup always leaves a
 campaign), so it is exercised only by test fixtures that start without one.
 
-The [parish date format](../spec.md#global-presentation-rules) is not a wizard
+The [parish date format](../ui-conventions/spec.md#date-format) is not a wizard
 step: setup starts with the default US long style, and an Admin changes it
 afterwards in Parish settings.
 
@@ -2105,7 +2105,7 @@ read-only is refused there too, even from an old link (a GET or a POST).
 
 The send date, time and day of the week are shown and typed in the browser's
 time zone, like every Admin time ([#558](https://github.com/epiphany40223/parishkit/issues/558),
-the [global presentation rules](../spec.md#global-presentation-rules)); a note
+the [browser-local time rule](../ui-conventions/spec.md#dates-and-times)); a note
 beside the fields names the zone, and no field or help text names the
 campaign's. A schedule still keeps campaign-local values, which the scheduler
 resolves. Edit's page carries the schedule's moment (a digest's: its next send)
@@ -3695,7 +3695,7 @@ reader edits Date or Time.
 A contact attempt's date and time are typed in the browser's time zone, named
 in a note beside them, and every follow-up time shown (submitted, history,
 contact, last contact and source as of) is in that zone ([browser-timezone
-rule](../spec.md#global-presentation-rules)). The zone is sent only with a
+rule](../ui-conventions/spec.md#dates-and-times)). The zone is sent only with a
 contact attempt. When the browser reports no zone, the note stays hidden and
 Save stays unavailable with a hint to check the computer's time zone setting. A
 contact attempt that reaches the server without a usable zone (a page opened
@@ -4742,7 +4742,7 @@ second, with the zone name (no UTC offset, #635), so entries can be compared
 with times recorded elsewhere; the zone name also tells the repeated hour
 apart when clocks fall back. The From and Through date filters are whole days in
 the browser's time zone, following the
-[timestamp rule](../spec.md#global-presentation-rules): the filter form
+[timestamp rule](../ui-conventions/spec.md#date-format): the filter form
 carries the browser's zone, the server turns From into the start of that local
 day and Through into the start of the next local day (exclusive), so a
 daylight-saving day is 23 or 25 hours long, and paging, sorting and export

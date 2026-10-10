@@ -24,7 +24,7 @@ behaviors pass the integration suite against the candidate image.
 
 The web UI uses Django templates and progressive enhancement, except that the
 Admin portal [requires
-JavaScript](../admin-portal/spec.md#javascript-requirement). Small,
+JavaScript](../ui-conventions/spec.md#javascript-requirement). Small,
 self-hosted JavaScript modules manage the Family wizard, inline validation,
 browser-timezone rendering, and interactive charts. It is not a separately
 deployed single-page application. Static assets are versioned and served by
