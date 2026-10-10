@@ -1,0 +1,6 @@
+{% comment %}
+A live campaign's end-date live check (#944): what keeps the typed date from
+being reviewed, which the page script puts in the field's reserved error
+line, or nothing. data-blocking says whether Review changes stays
+unavailable. Read-only: nothing is saved.
+{% endcomment %}<div data-live-check-answer data-blocking="{{ message|yesno:'true,false' }}" data-hint="{{ message }}">{% if message %}{{ message }}{% if link %} <a href="{{ link.url }}">{{ link.label }}</a>{% endif %}{% endif %}</div>

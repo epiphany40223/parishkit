@@ -268,6 +268,13 @@ label { display: block; margin-block: 1rem .35rem; }
 .help, .helptext { color: var(--muted); font-size: .925rem; }
 label + .help, label + .helptext { margin-block: -.15rem .5rem; }
 .errorlist { list-style: none; padding: 0; margin-block: .25rem .5rem; color: var(--error-ink); font-weight: 600; }
+/* A field checked as it is typed keeps one line for its error, shown or not,
+   so the message coming and going never moves the controls below (#944).
+   The line takes its field's width but never widens it (width 0, at least
+   the column): a short date field shares its row with Review on desktop,
+   and a long message must not push that button onto the next line. */
+.field-error-line { min-height: 1.6em; min-height: 1lh; margin-block: .25rem .5rem; width: 0; min-width: 100%; }
+.field-error-line > .errorlist { margin: 0; }
 .error { color: var(--error-ink); font-weight: 600; }
 /* Legends float inside the box so a fieldset reads as a titled card. */
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); margin-block: 1.25rem; min-width: 0; padding: 1rem 1.25rem 1.25rem; }

@@ -550,6 +550,9 @@ NON_PAGES = frozenset(
         # The ParishSoft refresh schedule editor's live check (#632), a
         # fragment the settings page reads.
         "refresh_schedule_check",
+        # Campaign settings' live end-date check (#944), a fragment the
+        # page reads.
+        "campaign_end_date_check",
         "report_exact_create",
         "report_export_cancel",
         "report_export_create",
