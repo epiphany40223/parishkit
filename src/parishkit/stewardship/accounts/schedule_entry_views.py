@@ -62,6 +62,7 @@ from parishkit.stewardship.web.refusals import (
 from . import admin_navigation, schedule_local
 from .admin_editing import confirm_intent, error_response, form_action, principal
 from .authentication import runtime
+from .campaign_mail import admits_test_mail
 from .content_views import _records
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
@@ -323,7 +324,7 @@ def _carry_errors(entry, window, schedules, identifiers, targets):
         add(None, message)
 
 
-def entry_form(data, templates, saved, schedule=None, kept=None):
+def entry_form(data, templates, saved, schedule=None, kept=None, test_mail=True):
     """The page's one schedule form: blank for New, filled in for Edit.
 
     It offers the campaign's emails labelled by the schedules that send them,
@@ -334,7 +335,10 @@ def entry_form(data, templates, saved, schedule=None, kept=None):
     browser's zone (``entry_times``), and ``kept`` is the saved time in that
     zone, so a legacy time with seconds posted back unchanged still reads.
     ``templates`` are the campaign's content records and ``saved`` its saved
-    schedules in sending order.
+    schedules in sending order. ``test_mail`` false (the campaign admits no
+    test mail, see ``campaign_mail.admits_test_mail``) replaces each test link
+    with a note saying why, so the page never links a test that cannot work
+    (#923).
     """
     labels = dict(
         zip((row["id"] for row in saved), schedule_labels(saved), strict=True)
@@ -345,6 +349,7 @@ def entry_form(data, templates, saved, schedule=None, kept=None):
         templates=templates,
         usage=email_usage(saved),
         links=True,
+        test_mail=test_mail,
         label=labels.get(schedule["id"]) if schedule else None,
         initial=schedule["values"] | {"id": schedule["id"]} if schedule else None,
     )
@@ -563,6 +568,7 @@ def _entry(request, campaign_id, schedule_id=None):
             saved,
             schedule,
             kept=_kept(posted, schedule, values, now),
+            test_mail=admits_test_mail(state[0].mode, campaign),
         )
         repeat = RepeatRule(posted, prefix="repeat") if new else None
         context = {

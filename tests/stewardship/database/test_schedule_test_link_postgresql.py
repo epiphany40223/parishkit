@@ -1,6 +1,7 @@
 """A schedule email's test link never dead-ends on a live campaign (#923).
 
-Dates and mail schedules links each chosen email's test page (#446), but that
+The New and Edit scheduled email pages link each chosen email's test page
+(#446, #878), but that
 page sends only while the campaign is a Testing draft, or in Production while
 live email delivery is paused. A live campaign used to land on "This
 information changed. Reload before trying again.", which no reload fixes.
@@ -42,20 +43,23 @@ def test_live_campaign_explains_instead_of_asking_for_a_reload(scheduled):
 
     The test page used to answer the SQL admission's refusal with the stale
     message (409); it now refuses with the reason and a link to Pause and
-    resume mail. Pausing live delivery opens both the link and the page.
+    resume mail. Pausing live delivery opens both the link and the page. The
+    link lives on the New and Edit scheduled email pages, not the list (#878).
     """
     item = scheduled
-    schedules = reverse("admin:schedule_settings")
+    new_page = reverse("admin:schedule_new")
     with web_login():
         test_path = reverse(
             "admin:campaign_mail",
             args=[commands.page(*item.arguments)["test_template"]],
         )
-        page = item.browser.get(schedules)
-        assert page.status_code == 200
-        assert b"data-test-url" not in page.content
-        assert NOT_OPEN.encode() in page.content
-        assert b"data-edit-url" in page.content
+        # The New page, where the Administrator chooses an email, says why
+        # instead of linking a test that cannot work.
+        entry = item.browser.get(new_page)
+        assert entry.status_code == 200
+        assert b"data-test-url" not in entry.content
+        assert NOT_OPEN.encode() in entry.content
+        assert b"data-edit-url" in entry.content
         refused = item.browser.get(test_path)
         assert refused.status_code == 404, refused.content
         refusal = refused.json()["refusal"]
@@ -72,9 +76,9 @@ def test_live_campaign_explains_instead_of_asking_for_a_reload(scheduled):
         assert b"This information changed" not in shown.content
         _, token = commands.preview_pause(*item.arguments, reason="Check sender")
         commands.confirm(*item.arguments, token=token)
-        page = item.browser.get(schedules)
-        assert b"data-test-url" in page.content
-        assert b"data-test-note" not in page.content
+        entry = item.browser.get(new_page)
+        assert f'data-test-url="{test_path}"'.encode() in entry.content
+        assert b"data-test-note" not in entry.content
         assert item.browser.get(test_path).status_code == 200
 
 
@@ -96,7 +100,8 @@ def test_every_schedulable_email_previews_in_a_testing_draft(campaign_test, slot
         == "applied"
     )
     with web_login():
-        page = browser.get(reverse("admin:schedule_settings"))
+        # The New scheduled email page offers every email with its test link.
+        page = browser.get(reverse("admin:schedule_new"))
         assert page.status_code == 200
         test_path = reverse("admin:campaign_mail", args=[template["id"]])
         assert f'data-test-url="{test_path}"'.encode() in page.content
