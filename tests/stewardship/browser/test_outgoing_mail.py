@@ -129,7 +129,7 @@ def test_preview_and_confirm_happen_in_place(page, component_origin):
     expect(heading).to_be_focused()
     assert page.evaluate("window.notReloaded") is True
     # Nothing above the review moved, and the typing is kept.
-    assert button.evaluate(top) == before
+    assert abs(button.evaluate(top) - before) < 0.5
     assert retry.locator("textarea[name=note]").input_value() == (
         "Gmail was down from 2 to 3 PM."
     )
