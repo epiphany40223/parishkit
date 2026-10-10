@@ -54,8 +54,8 @@ last open questions; no decision remains open.
     limit on the approval page's user code.
 13. **High-impact changes:** a full-scope session may make the
     [high-impact changes](#high-impact-changes) (granting Administrator, and
-    removing, demoting or disabling another Administrator; domain sign-in
-    rules no longer exist since #952), with the same authorization and audit
+    deleting or demoting another Administrator; domain sign-in rules and
+    disabling an identity no longer exist since #952), with the same authorization and audit
     as the portal.
 14. **Notices and audit are kept:** they inform; they do not restrict.
 15. **Secret replacement is allowed** from the command line (reverses 7): the
@@ -206,8 +206,8 @@ can do in the portal except the first-Admin setup wizard and campaign purge:
 - send test email to chosen Families;
 - change schedules, campaign content and configuration, which changes what
   Families receive and when;
-- change users: grant Administrator to another address, add users, or demote,
-  delete or disable the **other Administrators** who would receive the
+- change users: grant Administrator to another address, add users, or demote
+  or delete the **other Administrators** who would receive the
   notices; grants outlive revocation of the session;
 - change or remove the Slack settings that carry the notices;
 - replace integration keys (ParishSoft, Google Workspace, mail, Slack) and the
@@ -870,7 +870,7 @@ as the portal (decision 13):
 
 - granting Administrator to an address (which also raises the portal's own
   [security event and email](../admin-portal/spec.md#user-change-checks-and-alerts));
-- demoting, deleting or disabling another Administrator.
+- demoting or deleting another Administrator.
 
 Each also creates an `automation_policy_change` notice, as does any key
 replacement and any change to Slack or other notification settings. The portal
@@ -2519,7 +2519,7 @@ MUST prove:
   file); it ends at `expires_at`; the 72-hour warning; revocation by owner, by
   another Administrator and by `logout` takes effect at the next command and
   records the revoking Administrator; loss of the Administrator role,
-  disabling the user and an offline recovery each end it before any further
+  deleting the user and an offline recovery each end it before any further
   command and in SQL, and listings show it ended at once;
   `revoke-automation-sessions` on the admin-recovery login revokes every live
   session (`restore`, `revoked_by_operator`) and nothing else; a host-digest

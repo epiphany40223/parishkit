@@ -587,16 +587,16 @@ Administrator may override.
      hosted-domain claim matching the rule, and no address rule for its
      address), with the user each becomes;
    - each address rule's roles and the role it will keep;
-   - each empty-role (deny) rule, which will be dropped; and
+   - each empty-role (deny) rule, which will be dropped, and by address and
+     Name each recorded domain identity it overrides today; with no user, that
+     address stays denied after the upgrade; and
    - what will not carry over: each domain rule's people who have never
      signed in, and disabled identities, which are not converted.
 
    The Administrator can add any missing address as an ordinary user (an
    address rule) before the upgrade, so nobody they expect is locked out.
-2. **Conversion as one configuration change.** In the release that brings
-   users, the configuration installer's upgrade of the `login_rules` section
-   writes one new configuration version through the normal installer and
-   activation, with audit; stored versions are never edited:
+2. **Conversion as one configuration change.** The conversion follows the
+   preview's rules exactly:
    - every Google identity that a domain rule admits today and that has signed
      in before becomes a user with that domain rule's highest role (Staff or
      Ministry leader); its Name is the
@@ -607,30 +607,86 @@ Administrator may override.
    - deny rules are dropped: with domain rules gone, an address with no user
      is already denied.
 
-   Domain rules could never hold Administrator, so every Administrator is
-   already an address rule and keeps that role, and converted identities get
-   at most Staff, so no Administrator alert fires. The last-Administrator
-   guard always holds: activation is rechecked, and the upgrade refuses to
-   activate, failing closed with the preview's explanation, rather than leave
-   no Administrator. One audit event records the conversion's counts. A
-   configuration already in the users form is left unchanged.
-3. **Schema migration** (the next free number, assigned centrally):
-   - add `name` and `role` to `stewardship_address_rule`, with a check
-     constraint that ties `roles` to the cumulative set of `role`
+   It writes one new configuration version through the configuration
+   installer's normal base-digest, schema-validation, prepare/manifest and
+   activation protocol, with audit; stored versions are never edited. No
+   section-upgrade mechanism exists today, so the code slice that brings users
+   builds one for the `login_rules` section, on the installer implementation,
+   not as a second YAML writer. Domain rules could never hold Administrator, so
+   every Administrator is already an address rule and keeps that role, and
+   converted identities get at most Staff, so no Administrator alert fires.
+   The last-Administrator guard always holds: activation is rechecked, and the
+   conversion refuses to activate, failing closed with the preview's
+   explanation, rather than leave no Administrator. One audit event records
+   the conversion's counts. A configuration already in the users form is left
+   unchanged, so a repeat or resumed run is a no-op.
+3. **Who runs it, and when.** The conversion is part of the deploy of the
+   release that brings users, in the same offline step as its migrations,
+   while web, workers, scheduler, online installers and proxy are stopped
+   (the [production upgrade](#production-upgrades) already stops them). It
+   runs as `pk-stewardship upgrade-users` in the `admin-recovery` one-shot
+   profile, under the same offline interlock, installer service identity and
+   narrow authority-directory mount as
+   [offline Admin-access recovery](#offline-admin-access-recovery). It
+   requires a named operator and reason, and its tagged operator-upgrade
+   ConfigurationChangeRequest records that operator as its actor, not a
+   fabricated PortalUser. The order is fixed:
+   1. **Preview:** the command prints the same preview as step 1 and needs
+      explicit confirmation (an unattended run supplies it explicitly, never
+      by default).
+   2. **Convert:** the first migration of the release has already added the
+      new columns while every SQL function still joins
+      `stewardship_domain_rule`; the command then activates the converted
+      configuration.
+   3. **Swap functions:** the second migration replaces the SQL functions.
+      Its self-verifying `DO` block raises, so the migration fails, unless the
+      active configuration is in the users form.
+   4. **Start:** only then are the grants applied and the services started.
+      The release's startup validation also refuses to start web, workers or
+      scheduler on an unconverted configuration.
+
+   If the conversion fails or is refused (an unresolved installation or a
+   YAML/database mismatch, which the existing installer protocol must recover
+   first, or the last-Administrator guard), the services stay down: the
+   deployment fails closed and never runs the new SQL functions on an
+   unconverted configuration. An interrupted run resumes by operation ID. The
+   scripted upgrade and the deployment runbook gain this step in the code
+   slice.
+
+   Considered and rejected: shipping the new SQL functions with a domain-join
+   fallback until an Administrator converts online after startup. The
+   application would then carry both authorization models in Python and SQL,
+   and the Users page would run on an unconverted configuration for an
+   unbounded window, so lockout and privilege bugs could hide in the mixed
+   state. The read-only preview in an earlier release already gives the
+   Administrator time to review and fix the outcome, so the offline step only
+   applies what was previewed.
+4. **Schema migrations** (two consecutive free numbers, assigned centrally):
+   - the first adds `name` and `role` to `stewardship_address_rule`, with a
+     check constraint that ties `roles` to the cumulative set of `role`
      ([data model](../data/spec.md#administration-user-and-policy)); both are
      empty only on the immutable rows of configurations activated before the
      upgrade;
-   - replace the SQL functions that join `stewardship_domain_rule` (session
-     admission, Ministry scope, export authorization, and the policy
+   - the second replaces the SQL functions that join `stewardship_domain_rule`
+     (session admission, Ministry scope, export authorization, and the policy
      projection and completeness functions) so they read only the users
      projection. Each replacement starts from its latest prior definition with
      only that change, keeps its attributes, and the file ends with the
      self-verifying `DO` block;
-   - stop writing `stewardship_domain_rule` and `stewardship_address_grant`.
+   - if the Ministry leaders function of migration 0042 (PR #939) is not
+     callable by the web login, the second migration grants it to that login;
+   - nothing writes `stewardship_domain_rule` or `stewardship_address_grant`
+     any more.
 
    A later cleanup migration drops those tables and the retired Ministry
    assignment tables once nothing reads them. Their history stays in the audit
    log and the immutable configuration versions.
+
+Once the conversion has activated, an application rollback to the previous
+release is not compatible: its code and SQL functions expect the sign-in
+rules. Under the fail-forward policy, a problem is fixed in a new release; only
+a catastrophic failure restores the pre-upgrade backup, the database and the
+YAML configuration manifest together, plus the previous release.
 
 Bootstrap (`bootstrap --admin-email`) and
 [offline Admin-access recovery](#offline-admin-access-recovery) write and
@@ -1464,13 +1520,6 @@ Required suites include:
   of one versus the last referencing campaign and restore with the required
   historical collision keys; no test may rekey an HMAC-only reservation by
   assuming deleted plaintext is still available;
-- role-provenance tests for manual versus seed-created rules, manual/seed/mixed
-  Ministry-leader grants, inherited-domain roles copied into overrides, and
-  source loss/return with zero or remaining active assignments. Verify explicit
-  independent retention, unrelated checkbox/assignment edits, role removal,
-  repeated suggestion refresh, YAML round-trip/activation, and audit history;
-  reject missing/inconsistent origins and prove provenance never replaces
-  Ministry row-scope authorization;
 - purge-reader tests that pause a report between queries and a download between
   chunks, claim purge concurrently, and prove no deletion starts until their
   shared guards release. Verify new readers are denied after claim, first-batch
@@ -1644,6 +1693,9 @@ Required suites include:
 - users-upgrade tests proving the preview and the conversion agree, and that
   the conversion refuses to leave no Administrator; a stale base digest
   is refused and never silently rebased past the last-Admin or CSRF guards;
+  the function-swap migration and service startup refuse an unconverted
+  configuration, a failed or refused conversion leaves the services down, and
+  a repeated or resumed conversion is a no-op;
 - limiter tests proving that pre-verification IP rejections contribute once
   without OAuth state allocation, provider calls, raw token retention, or
   duplicate counting, and that post-verification identity-limit rejections

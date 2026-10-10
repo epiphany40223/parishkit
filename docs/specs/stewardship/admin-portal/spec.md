@@ -3961,8 +3961,12 @@ People sign in with the Google account of their user's email address
 label: it is not tied to a ParishSoft Member, and only an Administrator changes
 it. An address with no user cannot sign in, so deleting a user is how
 access is removed; there is no explicit-deny entry and no hosted-domain rule.
-Disabling one recorded Google identity (`PortalUser.disabled`) stays the
-emergency switch for a compromised account.
+Delete is also the emergency switch for a compromised account. Disabling one
+recorded Google identity (`PortalUser.disabled`) is retired as an action: no
+page, `pk-admin` command or operator command sets it, and none did before the
+revamp. Sign-in still refuses an identity whose flag is already set, and the
+[upgrade preview](../operations/spec.md#users-upgrade-from-sign-in-rules)
+lists such identities.
 
 The page follows the portal's general conventions, which this section does not
 repeat: [Admin tables](../ui-conventions/spec.md#admin-tables),
@@ -3986,7 +3990,8 @@ refreshes in place like every other Admin table.
 
 Each row is one line. An email or Name too long for its column is cut short
 with an ellipsis; the full value stays the cell's text for screen readers and
-copying, and the Edit page shows it whole. This is a recorded exception to
+copying, the cell's `title` attribute shows it whole as a hover tooltip, and
+the Edit page shows it whole. This is a recorded exception to
 [table fit and row height](../ui-conventions/spec.md#table-fit-and-row-height),
 whose long text wraps instead, because the Administrator asked for one-line
 rows here (#952).
@@ -4041,9 +4046,13 @@ only the count of names found.
   Member DUID, so the choice is always the same. The others are offered as
   the Name field's suggestions (a `<datalist>`).
 
-A default name is the Member's, surname first ("Smith, Ann"), as the
-[Family and Member names](../ui-conventions/spec.md#family-and-member-names)
-convention shows Members. One help line under the field is always present,
+A default name is the Member's, surname first ("Smith, Ann"): the
+Administrator's #952 comment of 2026-10-10 asks for the leaders table's names
+in "Last, first" form, and a new user's Name uses the same form so the two
+tables match. The UX conventions spec
+([#958](https://github.com/epiphany40223/parishkit/pull/958)) has no
+Member-name rule yet; it should add one, which this section will then link.
+One help line under the field is always present,
 so nothing moves when the answer arrives: "Suggested from ParishSoft: Smith,
 Ann; Smith, Bob", or "No ParishSoft Member lists this address". The lookup
 never overwrites a Name the Administrator has already typed, and nothing links
