@@ -207,7 +207,11 @@ def test_sql_state_literals_are_real_states():
 # release_evidence.py reads renders ci_runs as JSON;
 # FAKE_OLD_RELEASE is a release.yml run that always exists, and
 # FAKE_RELEASE_RUN one that exists once the bare remote FAKE_REMOTE holds a
-# tag; a run's log names IMAGE.
+# tag; a run's log names IMAGE on its "Application image:" line, plus
+# FAKE_LOG_EXTRA (another line) when set; `attestation verify` passes unless
+# FAKE_ATTEST_FAIL is set, and its --help names the flags release.sh uses
+# except FAKE_GH_LACKS (one flag, then named only in prose), as an older
+# gh does; with FAKE_HELP_FAIL it fails as a gh without attestation does.
 FAKE_GH = rf"""
 echo "gh $*" >>"$FAKE_DIR/gh.calls"
 runs=$FAKE_DIR/ci_runs
@@ -259,7 +263,25 @@ case "$*" in
     "run list"*ci.yml*)
         limit=$(printf '%s\n' "$@" | grep -A1 -x -- --limit | tail -n 1)
         head -n "$limit" "$runs" | cut -d'|' -f1 ;;
-    "run view"*--log*) echo "publish Application image: \`{IMAGE}\`" ;;
+    "run view"*--log*)
+        echo "publish Application image: \`{IMAGE}\`"
+        if [ -n "${{FAKE_LOG_EXTRA-}}" ]; then echo "$FAKE_LOG_EXTRA"; fi ;;
+    "attestation verify --help")
+        if [ -n "${{FAKE_HELP_FAIL-}}" ]; then
+            echo "unknown command \"attestation\" for \"gh\"" >&2; exit 1
+        fi
+        for f in --signer-workflow --source-ref --deny-self-hosted-runners; do
+            if [ "$f" = "${{FAKE_GH_LACKS-}}" ]; then
+                echo "Use $f to pin the signer."
+            else
+                echo "      $f   a flag"
+            fi
+        done ;;
+    "attestation verify"*)
+        if [ -n "${{FAKE_ATTEST_FAIL-}}" ]; then
+            echo "Error: verification failed" >&2; exit 1
+        fi
+        echo "The following policy criteria will be enforced" ;;
     "run view"*status,conclusion,jobs*)
         if [ -n "${{FAKE_NEWER-}}" ] && ! grep -qx "$FAKE_NEWER" "$runs"; then
             prepend "$FAKE_NEWER"
@@ -538,9 +560,11 @@ def test_release_refuses_a_run_release_yml_would_not_check(tmp_path):
     assert "is not the full CI run that release.yml will check" in result.stderr
     # The listing names 78; a persistent disagreement decides none (#730).
     assert "(that is 'none')" in result.stderr
-    # The named run is read directly first (#730), then the listing decides,
-    # re-read a bounded number of times while another run decides.
-    assert calls[0] == "gh api repos/epiphany40223/parishkit/actions/runs/77"
+    # gh's attestation support is checked first, then the named run is read
+    # directly (#730), then the listing decides, re-read a bounded number of
+    # times while another run decides.
+    assert calls[0] == "gh attestation verify --help"
+    assert calls[1] == "gh api repos/epiphany40223/parishkit/actions/runs/77"
     listings = [c for c in calls if "--workflow ci.yml --event workflow_dispatch" in c]
     assert len(listings) == 4
     assert "run 78 decides instead of run 77" in result.stderr
@@ -644,6 +668,122 @@ def test_release_with_a_named_run_tags_and_prints_the_digest(tmp_path):
     # is never the one watched.
     assert "gh run view 99 --repo epiphany40223/parishkit --log" in calls
     assert not any(c.startswith("gh run view 98 ") for c in calls)
+    # The digest printed is the one whose provenance was verified, last.
+    assert calls[-1] == (
+        f"gh attestation verify oci://{IMAGE} --repo epiphany40223/parishkit "
+        "--signer-workflow epiphany40223/parishkit/.github/workflows/release.yml "
+        "--source-ref refs/tags/v1.2.3 --deny-self-hosted-runners"
+    )
+    assert f"verified the build provenance of {IMAGE}" in result.stderr
+
+
+def test_release_refuses_an_image_whose_provenance_does_not_verify(tmp_path):
+    """A failed attestation check prints no digest and exits 1 (#392 M2)."""
+    work, remote, sha = release_repo(tmp_path)
+    result, calls = run_release(
+        tmp_path,
+        work,
+        "--yes",
+        "1.2.3",
+        "77",
+        ci_runs="77\n",
+        FAKE_HEAD=sha,
+        FAKE_RELEASE_RUN="99",
+        FAKE_ATTEST_FAIL="1",
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Error: verification failed" in result.stderr
+    assert f"The build provenance of {IMAGE} did not verify" in result.stderr
+    assert any(c.startswith("gh attestation verify ") for c in calls)
+    # The tag was pushed before the release run; it stays.
+    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+
+
+def test_release_reads_the_digest_only_from_the_application_image_line(tmp_path):
+    """Another reference to the repository in the log is never the digest."""
+    work, remote, sha = release_repo(tmp_path)
+    other = IMAGE.replace("e" * 64, "f" * 64)
+    result, calls = run_release(
+        tmp_path,
+        work,
+        "--yes",
+        "1.2.3",
+        "77",
+        ci_runs="77\n",
+        FAKE_HEAD=sha,
+        FAKE_RELEASE_RUN="99",
+        FAKE_LOG_EXTRA=f"attest Attestation uploaded to registry {other}",
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == IMAGE + "\n"
+    assert not any(other in c for c in calls)
+
+
+def test_release_refuses_a_log_naming_two_application_images(tmp_path):
+    """Two different digests on "Application image:" lines are refused."""
+    work, remote, sha = release_repo(tmp_path)
+    other = IMAGE.replace("e" * 64, "f" * 64)
+    result, calls = run_release(
+        tmp_path,
+        work,
+        "--yes",
+        "1.2.3",
+        "77",
+        ci_runs="77\n",
+        FAKE_HEAD=sha,
+        FAKE_RELEASE_RUN="99",
+        FAKE_LOG_EXTRA=f"publish Application image: `{other}`",
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Release run 99 names more than one" in result.stderr
+    # Neither digest is verified or printed.
+    assert not any(c.startswith("gh attestation verify oci:") for c in calls)
+
+
+def test_release_refuses_a_gh_that_cannot_verify_before_tagging(tmp_path):
+    """A gh lacking an attestation verify flag is refused before the tag."""
+    work, remote, sha = release_repo(tmp_path)
+    for flag in ("--source-ref", "--deny-self-hosted-runners", "--signer-workflow"):
+        result, calls = run_release(
+            tmp_path / flag,
+            work,
+            "--yes",
+            "1.2.3",
+            "77",
+            ci_runs="77\n",
+            FAKE_HEAD=sha,
+            FAKE_RELEASE_RUN="99",
+            FAKE_GH_LACKS=flag,
+        )
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert f"cannot run gh attestation verify {flag}" in result.stderr
+        assert calls == ["gh attestation verify --help"]
+        assert remote_tag(remote, "v1.2.3") == ""
+
+
+def test_release_shows_why_gh_attestation_help_failed(tmp_path):
+    """A gh whose attestation help fails is refused, with gh's own error."""
+    work, remote, sha = release_repo(tmp_path)
+    result, calls = run_release(
+        tmp_path,
+        work,
+        "--yes",
+        "1.2.3",
+        "77",
+        ci_runs="77\n",
+        FAKE_HEAD=sha,
+        FAKE_RELEASE_RUN="99",
+        FAKE_HELP_FAIL="1",
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert 'unknown command "attestation"' in result.stderr
+    assert "cannot run gh attestation verify" in result.stderr
+    assert calls == ["gh attestation verify --help"]
+    assert remote_tag(remote, "v1.2.3") == ""
 
 
 def test_release_refuses_a_named_run_the_listing_omits(tmp_path):

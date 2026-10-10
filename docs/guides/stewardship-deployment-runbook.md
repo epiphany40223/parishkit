@@ -455,6 +455,13 @@ sequence with the commands that exist.
    grant cannot be taken by this procedure (see step 4). While the site is
    still up, do everything that needs only the new image, so none of it adds
    to the time `web` is down:
+   - Verify its build provenance, unless `release.sh` printed this digest
+     (it has already verified it):
+     `gh attestation verify oci://NEW_DIGEST --repo OWNER/REPOSITORY --signer-workflow OWNER/REPOSITORY/.github/workflows/release.yml --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners`,
+     from any machine with `gh` signed in. Stop if it fails: the image was
+     not built by this repository's release workflow for that tag. The
+     [release image guide](stewardship-release-image.md#the-pushed-digest-is-smoke-tested-and-attested)
+     says what it checks.
    - Pull it: `docker pull NEW_DIGEST`.
    - Collect its static files: create an empty `cache/static.next` owned by
      `10001:10001` with mode `0700` and run `collect-static` into it in the
@@ -676,8 +683,11 @@ which it uploads and runs on the host; the
 runs the same file in its `local` mode, so a local deploy rehearses these
 steps on a seeded local deployment. The manual steps remain the reference:
 where the script and this runbook differ, the runbook is right; fix the
-script. Run it from the checkout with the release's complete digest
-reference:
+script. One step 1 check stays with you: the script does not verify the
+image's build provenance, because its local mode deploys images no release
+built; take the digest from `release.sh`, which verified it, or run step 1's
+`gh attestation verify` first. Run it from the checkout with the release's
+complete digest reference:
 
 ```sh
 STEWARDSHIP_HOST=HOST STEWARDSHIP_UUID=UUID \
