@@ -1,7 +1,9 @@
 """Synthetic mail metadata for actual-template browser acceptance, never sends.
 
-A refused address's page is also served at its real address (``REFUSAL``,
-#935).
+A refused address's page is also served at its real address (``REFUSAL``),
+with a "cleared" view (``CLEARED``), and the fixture server answers its
+clearance POST with a real Post/Redirect/Get redirect (``POSTS``), for the
+in-place clearance test (#935).
 """
 
 from datetime import timedelta

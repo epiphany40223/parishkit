@@ -467,6 +467,7 @@ def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
             f'<a href="/admin/mail/outgoing/{events["head@example.org"].message_id}/">'
         ) in html
         assert '<a href="/admin/mail/refusals/?duid=1">' in html
+        assert 'data-in-place="refusal-clear"' in html
         current = SourceCurrent.objects.get()
         cleared = browser.post(
             path + "clearance/",
