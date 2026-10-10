@@ -12,6 +12,7 @@ from parishkit.stewardship.reports.census_changes import (
     HEADINGS,
     CensusQuery,
     census_csv,
+    census_xlsx,
     display,
     select,
     shape,
@@ -208,13 +209,44 @@ def test_parse_refuses_values_outside_the_closed_choices(values):
 
 
 def test_csv_keeps_its_own_column_order_in_the_chosen_zone():
-    """The download keeps its own column order, times in the chosen zone."""
+    """The download keeps its own column order, times in the chosen zone,
+    with Member DUID appended last so positional readers keep working."""
     result = select(rows(), CensusQuery(), administrator=False)
     text = census_csv(result, ZoneInfo("America/Chicago")).decode()
     table = list(csv.reader(io.StringIO(text)))
     assert tuple(table[0]) == HEADINGS
-    assert table[1][2] == "Pat Sample" and table[1][-1] == "2054-10-05T09:30:00-05:00"
+    assert HEADINGS[-2:] == ("Submitted", "Member DUID")
+    assert table[1][2] == "Pat Sample" and table[1][-2] == "2054-10-05T09:30:00-05:00"
     assert len(table) == 4
+
+
+def test_downloads_word_member_duid_as_the_page_does():
+    """CSV and XLSX end with the Member DUID: the DUID, "New Member" for a
+    Member added on the form, and blank for a household change (#932)."""
+    from openpyxl import load_workbook
+
+    proposed = row(
+        id="2",
+        entity_kind="proposed_member",
+        entity_key="p-1",
+        field="new_member",
+        submitted_value={"first_name": "Lee", "last_name": "Sample"},
+        member_name=None,
+    )
+    family = row(id="3", entity_kind="family", entity_key="7001", field="home_address")
+    result = {"rows": [shape(item) for item in (row(), proposed, family)]}
+    zone = ZoneInfo("UTC")
+    table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
+    assert [line[-1] for line in table] == ["Member DUID", "41", "New Member", ""]
+    sheet = load_workbook(io.BytesIO(census_xlsx(result, zone)))["Census changes"]
+    column = sheet.max_column
+    assert column == len(HEADINGS)
+    assert [sheet.cell(line, column).value for line in range(1, 4)] == [
+        "Member DUID",
+        "41",
+        "New Member",
+    ]
+    assert sheet.cell(4, column).value in (None, "")
 
 
 def test_family_duid_column_sorts_both_ways():
@@ -225,3 +257,81 @@ def test_family_duid_column_sorts_both_ways():
     assert [item["family_duid"] for item in up] == [13, 7001, 7002]
     down = SORTING.sort_rows(shaped, "-duid")
     assert [item["family_duid"] for item in down] == [7002, 7001, 13]
+
+
+def test_member_duid_comes_from_a_member_rows_key():
+    """A Member change shows its DUID; New Members and the Family have none."""
+    assert shape(row())["member_duid"] == 41
+    proposed = row(
+        entity_kind="proposed_member",
+        entity_key="p-1",
+        field="new_member",
+        submitted_value={"first_name": "Lee", "last_name": "Sample"},
+        member_name=None,
+    )
+    assert shape(proposed)["member_duid"] is None
+    family = row(entity_kind="family", entity_key="7001", field="home_address")
+    assert shape(family)["member_duid"] is None
+    # A key that is not a plain integer is left blank, never a broken page.
+    assert shape(row(entity_key="x41"))["member_duid"] is None
+
+
+def test_member_duid_column_sorts_with_blank_rows_after_members():
+    """Member DUID sorts in place both ways (#932); rows without one follow
+    the Members on the first click."""
+    shaped = [
+        shape(row(id="a", entity_key="900")),
+        shape(row(id="b", entity_kind="family", entity_key="7001")),
+        shape(row(id="c", entity_key="41")),
+    ]
+    assert SORTING.tokens["member_duid"] == ("member_duid", False)
+    up = SORTING.sort_rows(shaped, "member_duid")
+    assert [item["id"] for item in up] == ["c", "a", "b"]
+    down = SORTING.sort_rows(shaped, "-member_duid")
+    assert [item["id"] for item in down] == ["b", "a", "c"]
+
+
+def test_page_shows_member_duid_beside_who():
+    """Who is followed by its own Member DUID column; a New Member says so."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.web.tables import paginate
+
+    rows = [
+        shape(row()),
+        shape(
+            row(
+                id="2",
+                entity_kind="proposed_member",
+                entity_key="p-1",
+                field="new_member",
+                submitted_value={"first_name": "Lee"},
+            )
+        ),
+    ]
+    table = paginate(rows, {}, sorting=SORTING)
+    html = render_to_string(
+        "stewardship/census-changes.html",
+        {
+            "table": table,
+            "query": CensusQuery(),
+            "query_fields": {},
+            "summary": [],
+            "status_choices": [],
+            "route_choices": [],
+            "kind_choices": [],
+            "export_timezones": ["UTC"],
+        },
+    )
+    headings = [
+        "Family",
+        "Family DUID",
+        "Who",
+        "Member DUID",
+        "What changed",
+        "Submitted",
+    ]
+    positions = [html.index(f">{heading}<") for heading in headings]
+    assert positions == sorted(positions)
+    assert '<td class="numeric">41</td>' in html
+    assert '<td class="numeric">New Member</td>' in html

@@ -75,6 +75,9 @@ STATUS_CHOICES = ("open", *[key for key in STATUSES if key not in HISTORY], "all
 ROUTES = ("any", "automatic", "by_hand")
 KINDS = ("any", "contact", "moved", "deceased", "new_member")
 EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
+# The download's columns. Member DUID is the page's column after Who, but
+# here it is appended last (#932), so a reader that finds the other columns
+# by position keeps working.
 HEADINGS = (
     "Family",
     "Family DUID",
@@ -86,6 +89,7 @@ HEADINGS = (
     "How it reaches ParishSoft",
     "Status",
     "Submitted",
+    "Member DUID",
 )
 
 
@@ -318,6 +322,20 @@ def display(value):
     return "; ".join(f"{key}: {display(item)}" for key, item in value.items())
 
 
+def member_duid(row):
+    """The ParishSoft Member DUID a Member row is about, else None.
+
+    A Member change's entity key is the Member's DUID (the snapshot's source
+    key). A proposed Member has no DUID yet and a household change is about
+    the Family, so both give None; a key that is not a plain integer (which
+    the schema does not produce) gives None rather than a broken page.
+    """
+    key = row["entity_key"]
+    if row["entity_kind"] != "member" or not (key.isascii() and key.isdecimal()):
+        return None
+    return int(key)
+
+
 def shape(row):
     """Word one proposal row for the page and the downloads."""
     shown = row | {
@@ -338,6 +356,7 @@ def shape(row):
             display(row["baseline_value"]) if row["baseline_available"] else ""
         ),
     }
+    shown["member_duid"] = member_duid(row)
     if row["entity_kind"] == "family":
         shown["who"] = "Family"
     elif row["entity_kind"] == "proposed_member":
@@ -403,6 +422,17 @@ def select(rows, query, *, administrator):
     }
 
 
+def export_member_duid(row):
+    """The Member DUID cell as the page words it.
+
+    The Member's DUID, "New Member" for a Member added on the form, and
+    blank for a household change.
+    """
+    if row["member_duid"] is not None:
+        return str(row["member_duid"])
+    return "New Member" if row["entity_kind"] == "proposed_member" else ""
+
+
 def export_rows(result, zone):
     """The filtered rows as plain text, times in the requested timezone."""
     return [
@@ -417,13 +447,14 @@ def export_rows(result, zone):
             row["route_label"],
             row["status_label"],
             row["submitted_at"].astimezone(zone).isoformat(timespec="seconds"),
+            export_member_duid(row),
         )
         for row in result["rows"]
     ]
 
 
 def census_csv(result, zone):
-    """One CSV of the filtered rows, with the page's columns."""
+    """One CSV of the filtered rows: the page's columns, Member DUID last."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
     writer.writerow(HEADINGS)

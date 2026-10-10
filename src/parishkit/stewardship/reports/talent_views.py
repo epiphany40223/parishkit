@@ -48,6 +48,7 @@ MEMBER_SORTING = Sorting.by_column(
     {
         "member": lambda row: _text(row["member_name"]),
         "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
+        "duid": lambda row: row["family_duid"],
         "talents": lambda row: _text("; ".join(row["talents"])),
         "cannot_serve": lambda row: bool(row["cannot_serve"]),
         "latest": lambda row: row["submitted_at"],

@@ -40,9 +40,6 @@ NOT_SHOWN = re.compile(r"<option\b.*?</option>|<[^>]*>", re.DOTALL)
 # combined cells it holds and the work that splits it. Lower a count, or
 # remove the entry, when that work lands; the guard then holds it.
 PENDING = {
-    "talents-report.html": (1, "#932 slice 3 (Members table)"),
-    "ministry-report.html": (2, "#932 slice 3"),
-    "campaign-ministries-preview.html": (1, "#932 slice 3"),
     "users.html": (7, "#952 (the Portal users revamp)"),
     "deliveries.html": (1, "#934 (Outgoing mail)"),
 }
