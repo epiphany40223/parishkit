@@ -15,13 +15,16 @@ def components(now):
     message = dict(
         id=uuid4(),
         family__family_duid=12345,
+        # The Family's name beside its DUID (#931), long enough to wrap.
+        family_name="Castellanos, Maximiliana and Bartholomew",
         state="delivery_unknown",
         purpose="initial",
         mode="production",
         version=4,
         attempt=1,
         updated_at=now,
-        created_at=now,
+        # Outgoing mail shows only the last change (#931), never this.
+        created_at=now - timedelta(hours=3),
     )
     refusal = dict(
         id=uuid4(), family_duid=12345, address="head@example.org", created_at=now
@@ -42,6 +45,37 @@ def components(now):
             ),
             states=["all", "delivery_unknown"],
             selected_state="delivery_unknown",
+            query="",
+        ),
+    )
+    # Each kind of recipient (#931): a named Family, a Family the latest
+    # ParishSoft data no longer has, and an Administrator report.
+    yield (
+        "/deliveries-names",
+        "deliveries",
+        dict(
+            table=window_table(
+                PageWindow(1, 25),
+                [
+                    message,
+                    message
+                    | dict(id=uuid4(), family__family_duid=4021, family_name=None),
+                    message
+                    | dict(
+                        id=uuid4(),
+                        family__family_duid=None,
+                        family_name=None,
+                        purpose="daily_digest",
+                        state="delivered",
+                    ),
+                ],
+                False,
+                total=(3, False),
+                sorting=DELIVERY_SORTING,
+                sort=DELIVERY_SORTING.default,
+            ),
+            states=["all", "delivery_unknown"],
+            selected_state="all",
             query="",
         ),
     )

@@ -984,7 +984,17 @@ success or failure, to standard error:
   mirrors Automation access (the default
   [posted on #621](https://github.com/epiphany40223/parishkit/issues/621#issuecomment-6024219079),
   pending Administrator confirmation). Every later change of meaning needs
-  `pk-admin/2`.
+  `pk-admin/2`, except where an entry here records otherwise.
+- A documented exception: `delivery list --sort` changed meaning in #931
+  (the Family DUID token `recipient` became `duid`, `name` was added, and
+  the default moved from `-created` to `-changed`) and stayed on
+  `pk-admin/1`, with a changelog entry, because the command's only users
+  are the Administrator and the operator, and the Administrator's standing
+  decisions are to fail forward and keep no legacy forms: no old Admin
+  addresses, aliases or redirects
+  ([#864](https://github.com/epiphany40223/parishkit/issues/864)). The
+  command follows the page it mirrors, so a version bump would only carry
+  a legacy form the Administrator declined.
 - Output never contains credentials, session secrets or digests, Family
   access tokens, cipher material or exception text. Family-level personal data
   follows [personal data on the command line](#personal-data-on-the-command-line).

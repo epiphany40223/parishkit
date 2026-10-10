@@ -208,7 +208,7 @@ def test_database_order_appends_a_unique_tiebreak_in_the_same_direction():
     from django.db.models import F
     from django.db.models.functions import Lower
 
-    from parishkit.stewardship.web.tables import Sorting
+    from parishkit.stewardship.web.tables import Fixed, Sorting
 
     class Query:
         """Records order_by terms like a queryset would receive them."""
@@ -235,6 +235,12 @@ def test_database_order_appends_a_unique_tiebreak_in_the_same_direction():
         F("age").desc(nulls_last=True)
     )
     assert flipped.order(Query(), "-age").terms == ("age",)
+    # A Fixed term keeps its own direction either way (#934).
+    fixed = Sorting.by_column(
+        {"family": ("family", Fixed("-changed"))}, default="family", tiebreak=("id",)
+    )
+    assert fixed.order(Query(), "family").terms == ("family", "-changed", "id")
+    assert fixed.order(Query(), "-family").terms[1:] == ("-changed", "-id")
     with pytest.raises(ValueError):
         Sorting({"a": ("a", False)}, "b")
 

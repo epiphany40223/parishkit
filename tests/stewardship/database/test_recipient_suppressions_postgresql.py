@@ -49,10 +49,13 @@ from .test_taskrun_postgresql import act
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def refused(harness, *, mode="production", address="valid@example.org", intended=None):
-    """Record a synthetic provider refusal through real task/outbox state edges."""
-    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
-    status = create_message(
+def email(
+    harness, *, mode="production", address="valid@example.org", intended=None, duid=1
+):
+    """Create one synthetic initial email to Family ``duid`` through the real
+    outbox storage; returns its status, not yet submitted."""
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=duid)
+    return create_message(
         identity=DeliveryIdentity(
             scope_id=harness.campaign.pk,
             campaign_id=harness.campaign.pk,
@@ -74,6 +77,11 @@ def refused(harness, *, mode="production", address="valid@example.org", intended
         command_id=uuid4(),
         admit=permit,
     )
+
+
+def refused(harness, *, mode="production", address="valid@example.org", intended=None):
+    """Record a synthetic provider refusal through real task/outbox state edges."""
+    status = email(harness, mode=mode, address=address, intended=intended)
     failed = change(
         submit(status),
         DeliveryAction.FAIL_UNACCEPTED,

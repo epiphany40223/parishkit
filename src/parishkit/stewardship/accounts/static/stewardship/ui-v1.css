@@ -454,6 +454,28 @@ td > :last-child { margin-bottom: 0; }
 .data-table .select-col { width: 2.75rem; }
 .data-table input[type=checkbox] { width: 1.2rem; height: 1.2rem; vertical-align: middle; }
 .data-table .numeric { text-align: end; }
+/* Readable data tables (#931). main's overflow-wrap: anywhere lets every
+   cell's minimum width fall to one character, so a wide table was squeezed
+   into the page and its dates and words broke mid-way. In a .whole-words
+   table cells wrap only between words, so a table too wide for the screen
+   scrolls inside its .table-scroll region instead (the page never does).
+   Their rows often hold several lines, so cells align to the top and the
+   padding is a little narrower, so a table fits beside the Admin menu.
+   .nowrap keeps a date, time or short code on one line; .cell-line puts one
+   of several values on its own line; .cell-detail is a muted secondary line
+   under a cell's main value. A dl.cell-pairs lists several labelled values
+   in one cell as an aligned grid at every width (the page-wide dl grid's
+   zero-minimum value column would collapse in a table cell): muted labels,
+   which may wrap between words, beside values that never wrap. */
+.data-table.whole-words th, .data-table.whole-words td { overflow-wrap: normal; padding-inline: .6rem; }
+.data-table.whole-words tbody th, .data-table.whole-words tbody td { vertical-align: top; }
+.data-table .nowrap, .data-table .cell-line { white-space: nowrap; }
+.data-table .cell-line { display: block; }
+.data-table .cell-detail { display: block; color: var(--muted); font-size: .875rem; font-weight: 400; }
+.data-table dl.cell-pairs { display: grid; grid-template-columns: auto max-content; gap: .1rem .6rem; margin: 0; }
+.data-table dl.cell-pairs dt { grid-column: 1; color: var(--muted); font-weight: 400; }
+.data-table dl.cell-pairs dd { grid-column: 2; margin: 0; white-space: nowrap; }
+.data-table dl.cell-counts dd { text-align: end; }
 /* Home's My Ministries list (#533): name, counts, then the button, wrapping
    between them on a phone, never inside a word. */
 .my-ministries { list-style: none; padding: 0; margin: 0; }
