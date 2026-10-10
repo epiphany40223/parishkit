@@ -3220,13 +3220,13 @@ default; the email's own page keeps its whole timeline. Each row names the
 Family and, in a column of its own, its Family DUID; an Administrator
 report has no Family. The name is the Family directory's surname-and-heads
 name from the latest ParishSoft data, read for the shown page only (at
-most three small queries, however many rows), or a muted "Not in current
+most two small queries, however many rows), or a muted "Not in current
 ParishSoft data" when that data no longer has the Family. The name opens
 the email's own page. Family sorts on the server over the whole list (sort
 token `name`): by surname, then the whole shown name, then Family DUID
 for Families that show the same name, as the Family directory orders them,
-each email's name read from the latest ParishSoft data inside the page's
-query; Family DUID sorts too (token `duid`). Either
+each email's name read inside the page's query from the same ParishSoft
+snapshot the shown names come from; Family DUID sorts too (token `duid`). Either
 keeps each Family's emails together, newest change first (then newest
 email) in both directions, and Administrator reports (and, by name,
 Families no longer in the data) sort last in both directions. The

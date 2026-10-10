@@ -231,7 +231,7 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
 ):
     """#931: an Administrator digest is an Administrator report, and a Family
     the latest ParishSoft data no longer has is said so, through the real
-    snapshot read, which takes at most three queries however many rows."""
+    snapshot read, which takes at most two queries however many rows."""
     message = uncertain(family_mail)
     with campaign_clock(DIGEST_INSTANT):
         daily_allocated(family_mail)
@@ -248,15 +248,17 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
     assert escape(family_name(message)) in html
 
     # The listed rows, plus one whose Family DUID the snapshot lacks.
-    rows = read_listing({})["rows"]
+    data = read_listing({})
+    rows = data["rows"]
+    assert data["snapshot"] == SourceCurrent.objects.get().snapshot_id
     duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
     gone = next(row for row in rows if row["id"] == message.pk) | {
         "id": uuid4(),
         "family__family_duid": duid + 1_000_000,
     }
     with CaptureQueriesContext(connection) as queries:
-        named = with_family_names([*rows, gone])
-    assert len(queries) <= 3
+        named = with_family_names([*rows, gone], data["snapshot"])
+    assert len(queries) <= 2
     assert {row["id"]: row["family_name"] for row in named} == {
         message.pk: family_name(message),
         digest.pk: None,
@@ -330,7 +332,8 @@ def test_family_name_sort_keys_match_the_shown_names(response_service):
     current = SourceCurrent.objects.get().snapshot_id
     keyed = with_name_keys(
         FamilyCampaign.objects.filter(campaign=response_service.campaign),
-        family="stewardship_family_campaign.id",
+        current,
+        duid="family_duid",
     )
     with task_login(ServiceRole.WEB, exact=True):
         rows = list(

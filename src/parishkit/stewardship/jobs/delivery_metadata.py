@@ -5,10 +5,11 @@ import re
 from uuid import UUID
 
 from django.db import connection
-from django.db.models import Q, TextField
-from django.db.models.expressions import RawSQL
+from django.db.models import F, Q
+from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
 from parishkit.stewardship.web.tables import Fixed, Sorting, bounded_count, read_window
 
 from .outbox_models import OutboxMessage
@@ -76,76 +77,38 @@ DELIVERY_SORTING = Sorting.by_column(
     descending_first={"attempts", "changed", "created"},
     tiebreak=("id",),
 )
-# Every character Python's str.strip() removes, so a name trimmed in SQL
-# matches family_names.py exactly (as directory_reports.sql's name_trim).
-_WHITESPACE = "".join(chr(code) for code in range(0x110000) if chr(code).isspace())
-# The Family name sort keys of one outbox message, read from the current
-# ParishSoft snapshot by its unique (snapshot, source_key) indexes: the
-# surname (family_names.family_display_name, "Family" without one), then the
-# whole "Squyres, Tracy and Jeff" name (family_names.family_heads_name), the
-# string with_family_names shows. Both are lowercased, as the Family codes
-# directory orders them (directory_reports.sql builds the same name). The
-# email stores no name, so this runs per message, and only when the name
-# sort is chosen: a few index lookups and small JSON parses each, however
-# large the outbox grows. Computing the keys once per Family (a grouped
-# derived table joined in) would repeat less work for a Family with many
-# emails, but a queryset annotation cannot join one without raw SQL for the
-# whole listing; at a parish's few emails per Family the repeats are cheap,
-# so the correlated form stays. NULL (sorted last) for an Administrator report or
-# a Family the snapshot lacks. {result} is the selected expression and
-# {family} the outer query's FamilyCampaign id column.
-_FAMILY_NAME_SQL = """(SELECT {result}
-FROM stewardship_family_campaign fc
-JOIN stewardship_source_current sc ON sc.singleton
-JOIN stewardship_snapshot_family sf
-    ON sf.snapshot_id=sc.snapshot_id AND sf.source_key=fc.family_duid::text
-JOIN stewardship_source_family sp ON sp.id=sf.payload_id
-CROSS JOIN LATERAL (SELECT sp.canonical::jsonb AS doc, %s::text AS ws) d
-CROSS JOIN LATERAL (SELECT coalesce(
-    nullif(btrim(d.doc->>'lastName',d.ws),''),
-    nullif(btrim(d.doc->>'mailingName',d.ws),''),
-    -- "first last" when there is no last name: the first name alone.
-    nullif(btrim(d.doc->>'firstName',d.ws),''),
-    'Family') AS surname) s
-WHERE fc.id={family})"""
-# The heads after the surname: each active head in DUID order, by first name
-# when they share the surname and in full otherwise, blanks skipped, joined
-# "A", "A and B", "A, B and C" (family_names.name_series).
-_HEADS_SQL = """(SELECT CASE WHEN cardinality(parts)<3
-        THEN array_to_string(parts,' and ')
-        ELSE array_to_string(parts[1:cardinality(parts)-1],', ')
-            ||' and '||parts[cardinality(parts)] END
-    FROM (SELECT array_agg(x.part ORDER BY h.head::bigint)
-            FILTER (WHERE x.part<>'') AS parts
-        FROM jsonb_array_elements_text(CASE
-            WHEN jsonb_typeof(d.doc->'active_head_duids')='array'
-            THEN d.doc->'active_head_duids' ELSE '[]'::jsonb END) h(head)
-        JOIN stewardship_snapshot_member sm
-            ON sm.snapshot_id=sc.snapshot_id AND sm.source_key=h.head
-        JOIN stewardship_source_member mp ON mp.id=sm.payload_id
-        CROSS JOIN LATERAL (SELECT mp.canonical::jsonb AS doc) m
-        CROSS JOIN LATERAL (SELECT
-            btrim(coalesce(m.doc->>'firstName',''),d.ws) AS first,
-            btrim(coalesce(m.doc->>'lastName',''),d.ws) AS last) t
-        CROSS JOIN LATERAL (SELECT CASE WHEN t.last=s.surname THEN t.first
-            ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END
-            AS part) x
-        WHERE m.doc->'active'='true'::jsonb) heads)"""
 
 
-def with_name_keys(selected, family="stewardship_outbox_message.family_id"):
+def with_name_keys(selected, snapshot, duid="family__family_duid"):
     """Annotate the Family name sort keys DELIVERY_SORTING's name orders by.
 
-    ``family`` is the SQL column holding each row's FamilyCampaign id: the
-    outbox message's by default (tests also key FamilyCampaign rows).
+    ``family_sort_surname`` is the surname and ``family_sort_name`` the
+    whole "Squyres, Tracy and Jeff" name, both lowercased, as the Family
+    codes directory orders them. Both come from ``SnapshotFamilyName``, the
+    shared SQL twin of the ``snapshot_family_names`` name ``with_family_names``
+    shows, read from ``snapshot``: the caller reads the current snapshot id
+    once and passes it here and to ``with_family_names``, so the sort and the
+    shown names agree. ``duid`` names each row's Family DUID: an outbox
+    message's by default. NULL (sorted last) for an Administrator report,
+    which has no Family, or a Family the snapshot lacks.
+
+    An email stores no name, so this runs per row, and only when the name
+    sort is chosen: a few index lookups and small JSON parses each. Computing
+    the keys once per Family would repeat less work for a Family with many
+    emails, but at a parish's few emails per Family the repeats are cheap.
     """
-    surname = _FAMILY_NAME_SQL.format(result="lower(s.surname)", family=family)
-    name = _FAMILY_NAME_SQL.format(
-        result=f"lower(s.surname||coalesce(', '||{_HEADS_SQL},''))", family=family
-    )
     return selected.annotate(
-        family_sort_surname=RawSQL(surname, (_WHITESPACE,), output_field=TextField()),
-        family_sort_name=RawSQL(name, (_WHITESPACE,), output_field=TextField()),
+        **{
+            field: Lower(
+                SnapshotFamilyName(
+                    snapshot, F(duid), surname_only=surname_only, default="Family"
+                )
+            )
+            for field, surname_only in (
+                ("family_sort_surname", True),
+                ("family_sort_name", False),
+            )
+        }
     )
 
 
@@ -245,7 +208,9 @@ def alert_counts(since, *, limit):
     return counts, [UUID(str(value)) for value in ids], unknown, ended
 
 
-def listing(window, *, state, query, sort=DELIVERY_SORTING.default, send=None):
+def listing(
+    window, *, state, query, sort=DELIVERY_SORTING.default, send=None, snapshot=None
+):
     """Accept a bounded exact Family DUID or delivery UUID, not arbitrary SQL.
 
     Returns (window, rows, has_next, total): ``total`` is a bounded count of
@@ -254,6 +219,9 @@ def listing(window, *, state, query, sort=DELIVERY_SORTING.default, send=None):
     ``sort`` is a DELIVERY_SORTING token the caller already validated.
     ``send``, a ``send_history.SendKey``, keeps only that Family email send's
     emails: each Family's newest one, exactly those its history counts read.
+    ``snapshot`` is the ParishSoft snapshot id the Family name sort reads
+    (``read_listing`` passes the current one, which the page also names its
+    Families from); without one every name key is NULL.
     """
     if state not in STATES or type(query) is not str or len(query) > 64:
         raise ValueError("Invalid delivery filter.")
@@ -275,7 +243,7 @@ def listing(window, *, state, query, sort=DELIVERY_SORTING.default, send=None):
             selected = selected.filter(Q(pk=identifier) | Q(family_id=identifier))
     total = bounded_count(selected)
     if DELIVERY_SORTING.tokens[sort][0] == "name":
-        selected = with_name_keys(selected)
+        selected = with_name_keys(selected, snapshot)
     window, rows, has_next = read_window(
         window, DELIVERY_SORTING.order(selected, sort).values(*FIELDS), total
     )

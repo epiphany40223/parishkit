@@ -242,7 +242,7 @@ def delivery_list(request):
             table=_table(
                 request,
                 data["window"],
-                with_family_names(data["rows"]),
+                with_family_names(data["rows"], data["snapshot"]),
                 data["has_next"],
                 total=data["total"],
                 sorting=DELIVERY_SORTING,
