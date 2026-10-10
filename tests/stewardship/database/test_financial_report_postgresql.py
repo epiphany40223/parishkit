@@ -642,6 +642,8 @@ def test_native_page_filters_privately_and_denies_leaders(
             assert heading + b" (" + years + b")" in body
         assert b'aria-controls="financial-source-pledged-tip"' in body
         assert b'aria-controls="financial-source-contributed-tip"' in body
+        # Each tip's button is described by its bubble, not its whole heading.
+        assert b'aria-describedby="financial-source-pledged-tip"' in body
         # Family leads each row; Latest response is the last column.
         head = body[body.index(b"Current live pledges by Family</caption>") :]
         head = head[: head.index(b"</thead>")]

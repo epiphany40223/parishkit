@@ -1667,7 +1667,9 @@ the label, for fields whose format or rule is needed every time (an example
 address, "one per line", a key's paste rule), and a warning that blocks the
 field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
-opening the tip. Checkbox help stays beside the box.
+opening the tip. Checkbox help stays beside the box. A toggletip in a table
+heading is described by its bubble alone, and its bubble floats over the
+page, so opening it never changes the size or scroll of the table's box.
 
 Internal identifiers and bookkeeping fields that matter only for
 troubleshooting (delivery, refusal and test references, a retained

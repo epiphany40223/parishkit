@@ -566,6 +566,9 @@ details.technical-details dd { overflow-wrap: anywhere; }
 .toggletip-button::before { content: ""; position: absolute; inset: -.5rem; }
 .toggletip-button:not(:disabled):hover, .toggletip-button[aria-expanded=true] { background: var(--accent); color: var(--paper); box-shadow: none; }
 .toggletip-bubble { position: absolute; top: calc(100% + .4rem); inset-inline-start: 0; z-index: 3; display: block; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); padding: .6rem .8rem; border: 1px solid var(--border); border-inline-start: .3rem solid var(--accent); border-radius: var(--radius-small); background: var(--paper-soft, var(--paper)); color: var(--ink); font-size: .925rem; font-weight: 450; font-style: normal; line-height: 1.4; box-shadow: var(--shadow); }
+/* A tip in a table heading floats over the page (ui-v1.js places it), so it
+   never grows or scrolls the table's .table-scroll box. */
+.table-scroll .toggletip-bubble { position: fixed; inset: auto; }
 .label-row .toggletip-bubble { position: static; flex: 1 0 100%; width: auto; max-width: 40rem; box-shadow: none; }
 
 /* A Member's section groups fields without a second box around them. */

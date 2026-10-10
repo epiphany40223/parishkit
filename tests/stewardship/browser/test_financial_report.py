@@ -152,10 +152,7 @@ def test_financial_filters_and_pages_post_privately(page, component_origin):
 def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
     page, component_origin
 ):
-    """Family first, Latest response last; the ParishSoft year has a tip (#932).
-
-    Opening the tip must not move the table: the bubble floats over it.
-    """
+    """Family first, Latest response last; the ParishSoft year has a tip (#932)."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/financial-report")
     headings = page.locator("table thead th").all_inner_texts()
@@ -168,19 +165,64 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
     row = page.locator("table tbody tr").first
     assert row.locator("td").last.locator("time").count() == 1
     assert "Version" not in row.inner_text()
-    table = page.locator("table")
 
-    def placed():
-        """The table's box in page coordinates, whatever the scroll."""
-        return table.evaluate(
-            "t => { const r = t.getBoundingClientRect();"
-            " return [r.left + scrollX, r.top + scrollY, r.width, r.height]; }"
-        )
 
-    before = placed()
-    tip = page.locator("#financial-source-pledged .toggletip-button")
-    tip.click()
-    bubble = page.locator("#financial-source-pledged-tip")
+# The table's scroll box, in page coordinates, with its scroll area: none of
+# it may change when a heading's tip opens.
+TABLE_BOX = """() => {
+    const box = document.querySelector(".table-scroll");
+    const table = box.querySelector("table").getBoundingClientRect();
+    const outer = box.getBoundingClientRect();
+    return [outer.height, box.scrollWidth, box.scrollHeight, box.scrollTop,
+        box.scrollLeft, table.left + scrollX, table.top + scrollY, table.height];
+}"""
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("path", ["/financial-report", "/financial-unproven"])
+@pytest.mark.parametrize("column", ["pledged", "contributed"])
+def test_heading_tips_float_without_moving_the_table(
+    page, component_origin, width, path, column
+):
+    """Opening a heading's tip never resizes or scrolls the table box (#932).
+
+    One row (the report page) and two rows (the unproven page), at phone
+    and laptop widths: the bubble floats over the page instead of growing
+    the box's scroll area or being clipped by it, and stays on screen.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + path)
+    rows = page.locator("table tbody tr").count()
+    assert rows == {"/financial-report": 1, "/financial-unproven": 2}[path]
+    button = page.locator(f'button[aria-controls="financial-source-{column}-tip"]')
+    # Described by its bubble alone, not by the whole heading cell.
+    assert button.get_attribute("aria-describedby") == f"financial-source-{column}-tip"
+    # Playwright scrolls the box to reach the button at 320 px; measure after.
+    button.scroll_into_view_if_needed()
+    before = page.evaluate(TABLE_BOX)
+    button.click()
+    bubble = page.locator(f"#financial-source-{column}-tip")
     visible(bubble)
     assert "July 1, 2025" in bubble.inner_text()
-    assert placed() == before
+    assert page.evaluate(TABLE_BOX) == before
+    # The whole bubble is drawn inside the viewport, beside its button.
+    inside = bubble.evaluate(
+        """b => { const r = b.getBoundingClientRect();
+        return r.left >= 0 && r.top >= 0 && r.right <= innerWidth
+            && r.bottom <= innerHeight; }"""
+    )
+    assert inside
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    # The page scrolling keeps it with its button, still without moving the box.
+    page.mouse.wheel(0, 40)
+    page.wait_for_function(
+        """id => { const b = document.getElementById(id).getBoundingClientRect();
+        const t = document.querySelector(`[aria-controls="${id}"]`)
+            .getBoundingClientRect();
+        return Math.abs(b.top - t.bottom - 6) < 1
+            || Math.abs(t.top - 6 - b.bottom) < 1; }""",
+        arg=f"financial-source-{column}-tip",
+    )
+    assert page.evaluate(TABLE_BOX)[:5] == before[:5]
+    page.keyboard.press("Escape")
+    assert bubble.is_hidden()
