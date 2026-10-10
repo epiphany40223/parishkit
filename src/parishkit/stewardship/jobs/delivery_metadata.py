@@ -50,10 +50,12 @@ PURPOSES = (
 # a page is a top-N sort of the filtered messages. The default "all" view
 # therefore scans the outbox, as its newest-first order always did; the
 # outbox grows by about one message per Family per mailing and is not
-# purged. id is the unique tiebreak.
+# purged. Under name, Families that show the same name then sort by Family
+# DUID, so each Family's emails stay together, as the Family codes directory
+# orders tied names (directory_reports.sql). id is the unique tiebreak.
 DELIVERY_SORTING = Sorting.by_column(
     {
-        "name": ("family_sort_surname", "family_sort_name"),
+        "name": ("family_sort_surname", "family_sort_name", "family__family_duid"),
         "duid": ("family__family_duid",),
         "purpose": ("purpose",),
         "mode": ("mode",),
@@ -77,7 +79,11 @@ _WHITESPACE = "".join(chr(code) for code in range(0x110000) if chr(code).isspace
 # directory orders them (directory_reports.sql builds the same name). The
 # email stores no name, so this runs per message, and only when the name
 # sort is chosen: a few index lookups and small JSON parses each, however
-# large the outbox grows. NULL (sorted last) for an Administrator report or
+# large the outbox grows. Computing the keys once per Family (a grouped
+# derived table joined in) would repeat less work for a Family with many
+# emails, but a queryset annotation cannot join one without raw SQL for the
+# whole listing; at a parish's few emails per Family the repeats are cheap,
+# so the correlated form stays. NULL (sorted last) for an Administrator report or
 # a Family the snapshot lacks. {result} is the selected expression and
 # {family} the outer query's FamilyCampaign id column.
 _FAMILY_NAME_SQL = """(SELECT {result}

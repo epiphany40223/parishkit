@@ -3430,9 +3430,10 @@ name from the latest ParishSoft data, read for the shown page only (at
 most three small queries, however many rows), or a muted "Not in current
 ParishSoft data" when that data no longer has the Family. The name opens
 the email's own page. Family sorts on the server over the whole list (sort
-token `name`): by surname, then the whole shown name, as the Family
-directory orders them, each email's name read from the latest ParishSoft
-data inside the page's query; Family DUID sorts too (token `duid`). Either
+token `name`): by surname, then the whole shown name, then Family DUID
+for Families that show the same name, as the Family directory orders them,
+each email's name read from the latest ParishSoft data inside the page's
+query; Family DUID sorts too (token `duid`). Either
 keeps each Family's emails together, and Administrator reports (and, by
 name, Families no longer in the data) sort last in both directions. The
 columns follow the Admin tables' shared order
