@@ -224,6 +224,19 @@ CASE_SECONDS = {
 }
 
 
+# Shard one's baseline in estimate-seconds. In October 2026 the baseline took
+# 1,018 to 1,148 real seconds on a packed hosted runner, where one
+# estimate-second of database work took about 1.6 to 1.8 real seconds. With
+# the old 240 reservation, shard one (baseline plus 381 estimate-seconds)
+# reached its 30-minute quality_ci.SHARD_TIMEOUT and was killed mid-suite
+# (#961). With the 14-way database suite of that month, the three-quarter
+# cap in partition() binds first (452): shard one keeps about 184
+# estimate-seconds of database work, roughly 24 minutes in all, while every
+# other shard gains about 15. Revisit when the baseline's duration changes
+# much.
+BASELINE_SECONDS = 480
+
+
 def estimated_seconds(nodeid):
     """Estimate execution only; parameter changes remain independently assigned."""
     case = nodeid.rsplit("::", 1)[-1]
@@ -245,10 +258,14 @@ def partition(nodeids: list[str], index: int, count: int) -> list[str]:
         raise ValueError("Invalid or duplicate CI test partition")
     groups = [[] for _ in range(count)]
     loads = [0] * count
-    # Reserve baseline time only for a substantial suite. Small probe suites
-    # must not yield an empty shard merely because no real baseline runs there.
-    if sum(estimated_seconds(node) for node in nodeids) > count * 180:
-        loads[0] = 240
+    total = sum(estimated_seconds(node) for node in nodeids)
+    # Shard one also runs the non-database baseline under the same deadline,
+    # so it starts with that much load. Reserve only for a substantial suite,
+    # and never more than three quarters of an average shard: small probe
+    # suites, and shard one itself, must keep work, because an empty shard is
+    # refused as incomplete evidence.
+    if total > count * 180:
+        loads[0] = min(BASELINE_SECONDS, 3 * total // (4 * count))
     # Lexical ties repeatedly put the same parameter positions on one runner.
     # A stable digest spreads those unrelated fixture costs without randomizing
     # collection or omitting any node. Return each owner's nodes in normal order.
