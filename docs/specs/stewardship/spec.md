@@ -312,88 +312,13 @@ with its Family codes. Publishing census changes in step 7 is not built yet
 
 ## Global presentation rules
 
-The administration portal is desktop-first but fully functional on tablets and
-phones. The Family portal is mobile-first with equivalent desktop fidelity.
-Both use one design system and parish branding, meet WCAG 2.2 AA, support the
-current and previous major versions of Chrome, Edge, Firefox, and Safari, and
-remain keyboard operable.
-
-Application strings ship in English but use a localization framework from the
-start. Admin-authored content may use any language. The application does not
-claim a translated Spanish UI in the first release.
-
-Displayed ordinary numbers use US grouping separators. Money is USD with two
-fractional digits. Counts written as "X out of Y" also show a percentage;
-percentages use one fractional digit unless they are exact integers. A zero
-denominator displays an em dash rather than a misleading percentage.
-
-All instants are stored as timezone-aware UTC. Every Admin page shows and takes
-dates and times in the browser's time zone, with no campaign-zone exceptions:
-schedule send times, campaign and financial date-times and report day buckets
-included (Administrator decision, 2026-10-04,
-[#558](https://github.com/epiphany40223/parishkit/issues/558)). A pure date
-with no time stays a calendar date and is never shifted. The rule governs how
-Admin pages show and take times; system definitions such as the campaign-local
-day and the active window keep their campaign-zone definitions. Shown
-timestamps include a time zone abbreviation in detail views. A form that
-accepts a date and time carries the browser's IANA zone in a hidden field that
-the page script fills, and the server converts the typed wall-clock time to
-UTC; the page names the zone next to the fields. The Admin portal requires
-JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so
-a missing or unknown zone is refused rather than guessed, and when the browser
-reports none the page keeps Save unavailable, saying why. A time that occurs
-twice when clocks fall back is the first occurrence; a time skipped when clocks
-spring forward is read with the offset in force before the change (2:30 AM
-becomes 3:30 AM daylight time), so the form is never refused for it. Emails,
-which cannot know a reader's browser, use the parish time zone and name it
-("9:15 PM Eastern"), never "UTC". Pages and emails move to these rules one
-group at a time in the #558 PRs; the Ministry follow-up contact attempt is the
-first ([Admin portal](admin-portal/spec.md#follow-up-workflows)), the System
-logs date filters the second ([Admin portal](admin-portal/spec.md#logs)), and
-New and Edit scheduled email the third ([Admin
-portal](admin-portal/spec.md#new-and-edit-scheduled-email)).
-Until a page's PR lands, it keeps its current zone, including the campaign zone
-for the other schedule pages, campaign dates and report day buckets. One field is a recorded
-exception that stays in the parish's time zone after every #558 PR: the
-ParishSoft full-refresh times (Administrator decision). A refresh schedule is
-a recurring wall-clock schedule: the parish's own daylight-saving changes
-decide when each refresh runs and when the reminders it avoids are due, and a
-time entered in another zone and converted with today's offset would move
-against the parish's clock twice a year when the two zones change on
-different dates. The settings page says the times are parish-local, and the
-[time entry](admin-portal/spec.md#time-entry) reads them as it does any
-other. This is decision 18 of the
-[refresh schedule plan](../../plans/stewardship/refresh-schedule.md#open-decisions),
-which designs the whole refresh schedule. Local-day conversion must
-handle daylight-saving gaps and folds without running an occurrence twice.
-
-Dates and times follow one parish date format that an Admin chooses in Parish
-settings (issue #221): US long ("January 1, 2027", the default), US medium,
-US numeric (month first), European long, European medium, European numeric
-(day first, with slashes or dots) or ISO 8601. US styles pair with a 12-hour
-clock and the others with a 24-hour clock. Admin pages, Family pages, email
-and page placeholders, and PDF exports all use it; dense tables such as
-System logs, background work and deliveries use its compact variant (short
-month names or two-digit years, no time-zone abbreviation), except that System
-logs rows add seconds and the time-zone abbreviation, with no UTC offset, so
-entries can be compared exactly
-([Logs](admin-portal/spec.md#logs)). Background output
-uses the format of the configuration it pinned, not whichever is active when
-it runs (issue #280): a PDF export uses its requesting configuration, a daily
-or weekly digest its snapshot's configuration, and a receipt the configuration
-its render records, so a retry after an Admin changes the format keeps the
-captured style. The Admin pages for a retained daily or weekly digest are
-ordinary Admin pages and use the live format, so after a change they can show
-the same retained data in a different style from the emailed copy. One Python
-formatter (`web/dates.py`) and one browser script (`date-format-v1.js`, which
-reads `<body data-date-format>`) implement the same table. Exports that
-programs read are exempt: CSV files always use ISO 8601 (`2027-01-31`, and
-timestamps as `2027-01-31 14:05:00-05:00` in the export's stated display time
-zone, with the UTC offset so the repeated hour when clocks fall back stays
-unambiguous; Excel may treat such offset timestamps as text), and XLSX, the
-spreadsheet-native export, stores native dates in Excel's built-in
-locale-aware formats (14 for dates, 22 for timestamps). Operational and security alert emails keep
-their UTC stamp, which the database renders identically.
+The portal-wide presentation rules live in the
+[UX conventions](ui-conventions/spec.md), which have precedence for them:
+[devices and browsers](ui-conventions/spec.md#devices-and-browsers),
+[language](ui-conventions/spec.md#language-and-localization),
+[numbers and money](ui-conventions/spec.md#numbers-and-money),
+[dates and times](ui-conventions/spec.md#dates-and-times) and the
+[date format](ui-conventions/spec.md#date-format).
 
 ## Requirement traceability
 
