@@ -48,6 +48,8 @@ def alert(**values):
             "occurred_at": datetime(2026, 9, 21, 14, 30, 5, tzinfo=UTC),
             "before_roles": (),
             "after_roles": ("administrator",),
+            "timezone": "America/New_York",
+            "date_format": "us_long",
         }
         | values
     )

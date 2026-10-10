@@ -14,6 +14,8 @@ from types import MappingProxyType
 from uuid import UUID
 
 from parishkit.stewardship.campaigns.domain import SystemMode
+from parishkit.stewardship.schema_primitives import timezone_names
+from parishkit.stewardship.web import dates
 
 
 class IncidentKind(StrEnum):
@@ -171,7 +173,7 @@ _AUTOMATION_RESOLVED = gettext_noop(
 
 # What to do, for kinds where the operational log alone cannot say it (the
 # evidence is outside the log, or the fix is the operator's). Mirrored word for
-# word in stewardship_ops_content_v1; other kinds use the generic sentence.
+# word in stewardship_ops_content_v2; other kinds use the generic sentence.
 INSTRUCTIONS = MappingProxyType(
     {
         IncidentKind.BACKUP_KEY_CHANGED: (
@@ -190,7 +192,7 @@ INSTRUCTIONS = MappingProxyType(
             "worker log for the cause."
         ),
         # No apostrophe or other HTML-special character: the SQL twin
-        # (stewardship_ops_content_v1) inserts instructions unescaped.
+        # (stewardship_ops_content_v2) inserts instructions unescaped.
         IncidentKind.WEB_UNHEALTHY: (
             "The web server has not answered three health checks in a row, a "
             "minute apart, so the Admin and Family portals may not be "
@@ -205,7 +207,7 @@ INSTRUCTIONS = MappingProxyType(
 
 # A resolved notice that must not read as "recovered": the key-change episode
 # ends when the change is no longer recent, not when anyone confirmed the key.
-# Mirrored word for word in stewardship_ops_content_v1.
+# Mirrored word for word in stewardship_ops_content_v2.
 RESOLVED_INSTRUCTIONS = MappingProxyType(
     {
         IncidentKind.BACKUP_KEY_CHANGED: gettext_noop(
@@ -217,6 +219,32 @@ RESOLVED_INSTRUCTIONS = MappingProxyType(
         **dict.fromkeys(AUTOMATION_KINDS, _AUTOMATION_RESOLVED),
     }
 )
+
+
+def parish_clock_valid(timezone, date_format):
+    """Whether an alert's zone and date format are the exact catalog values.
+
+    The date format must already be a normalized code (never unset), so the
+    private pipe carries one canonical spelling the SQL twin also reads.
+    """
+    return (
+        type(timezone) is str
+        and timezone in timezone_names()
+        and type(date_format) is str
+        and date_format in dates.FORMATS
+    )
+
+
+def alert_time(alert, instant):
+    """Show one stored UTC instant in the parish zone, naming the zone (#967).
+
+    Uses the shared parish date format, e.g. "October 10, 2026 at 2:15 PM
+    EDT"; the abbreviation tells the two fall-back hours apart. The SQL twin
+    stewardship_alert_time_v1 (frozen migration 0043) renders the same text
+    with PostgreSQL's to_char, whose "TZ" field gives the same abbreviation
+    as zoneinfo (both read the IANA data, "ChST" and "+0545" included).
+    """
+    return dates.format_instant(instant, alert.timezone, alert.date_format)
 
 
 @dataclass(frozen=True)
@@ -231,11 +259,16 @@ class OperationalAlert:
     first_seen: datetime
     observed_at: datetime
     occurrences: int
+    # The parish profile's IANA zone and date format code, which the shown
+    # times use (#967); stored times stay UTC.
+    timezone: str
+    date_format: str
 
     def __post_init__(self):
         """Reject untyped/free-text values and impossible counters or UTC times."""
         if (
             not isinstance(self.incident_id, UUID)
+            or not parish_clock_valid(self.timezone, self.date_format)
             or not isinstance(self.kind, IncidentKind)
             or not isinstance(self.level, IncidentLevel)
             or not isinstance(self.phase, AlertPhase)
@@ -289,8 +322,8 @@ def render_alert(alert):
         ("Status", status),
         ("Notification", alert.phase.value),
         ("Deployment mode", alert.mode.value.title()),
-        ("First observed", alert.first_seen.strftime("%m/%d/%Y %H:%M:%S UTC")),
-        ("Latest observation", alert.observed_at.strftime("%m/%d/%Y %H:%M:%S UTC")),
+        ("First observed", alert_time(alert, alert.first_seen)),
+        ("Latest observation", alert_time(alert, alert.observed_at)),
         ("Occurrences", f"{alert.occurrences:,}"),
         ("Incident reference", str(alert.incident_id)),
     )

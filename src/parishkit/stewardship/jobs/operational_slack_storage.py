@@ -120,7 +120,7 @@ def begin_submission(claim, *, store, configuration_id, fingerprint):
         notification = OperationalSlack(
             attempt.pk,
             attempt.channel_id,
-            notice_alert(attempt.notice_id, SystemMode(runtime.mode)),
+            notice_alert(attempt.notice_id, SystemMode(runtime.mode), configuration_id),
         )
         return attempt.pk, attempt.deadline_at, notification
 

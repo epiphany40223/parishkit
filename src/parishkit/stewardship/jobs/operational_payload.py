@@ -26,6 +26,8 @@ def alert_payload(alert):
         "first_seen": alert.first_seen.isoformat(),
         "observed_at": alert.observed_at.isoformat(),
         "occurrences": alert.occurrences,
+        "timezone": alert.timezone,
+        "date_format": alert.date_format,
     }
 
 
@@ -40,6 +42,8 @@ def decode_alert(value):
         "first_seen",
         "observed_at",
         "occurrences",
+        "timezone",
+        "date_format",
     }:
         raise ValueError("Invalid operational alert payload.")
     try:
@@ -52,6 +56,8 @@ def decode_alert(value):
             datetime.fromisoformat(value["first_seen"]),
             datetime.fromisoformat(value["observed_at"]),
             value["occurrences"],
+            value["timezone"],
+            value["date_format"],
         )
         if alert_payload(alert) != value:
             raise ValueError("Noncanonical operational facts.")

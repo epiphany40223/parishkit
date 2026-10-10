@@ -117,7 +117,9 @@ OPERATIONAL = AlertOwner(
         pk=notice_id
     ).exists(),
     capture=_capture,
-    alert=lambda cohort, mode: notice_alert(cohort.notice_id, SystemMode(mode)),
+    alert=lambda cohort, mode: notice_alert(
+        cohort.notice_id, SystemMode(mode), cohort.configuration_id
+    ),
     mail_render=_mail_render,
     current_mail=lambda store, cohort, address, semantic_key: current_mail(
         store, notice_id=cohort.notice_id, address=address, semantic_key=semantic_key

@@ -10,6 +10,9 @@ RETURNS text LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog,public,pg_temp
       UNION ALL SELECT 3, 'Ministry leader' WHERE roles ? 'ministry_leader') words
 $$;
 
+-- Dropped by migration 0043_alert_local_time.sql (#967), which adds
+-- stewardship_security_content_v2 with times in the parish zone; kept here so
+-- the earlier frozen files that replace it still apply on a fresh install.
 CREATE FUNCTION stewardship_security_content_v1(event uuid, deployment_mode text)
 RETURNS jsonb LANGUAGE plpgsql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE e stewardship_policy_security_event%ROWTYPE; title text; actor text;
@@ -68,7 +71,7 @@ RETURNS text LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog,public,pg_temp
       '>','&gt;'),'"','&quot;'),'''','&#x27;')
 $$;
 
-CREATE FUNCTION stewardship_security_render_matches_v1(proposed jsonb, event uuid,
+CREATE FUNCTION public.stewardship_security_render_matches_v1(proposed jsonb, event uuid,
     configuration uuid, address text, deployment_mode text)
 RETURNS boolean LANGUAGE plpgsql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE email jsonb; content jsonb;
@@ -76,7 +79,7 @@ BEGIN
     SELECT settings INTO email FROM stewardship_applied_integration
       WHERE configuration_id=configuration AND kind='email';
     IF email IS NULL OR address IS NULL THEN RETURN false; END IF;
-    content:=stewardship_security_content_v1(event,deployment_mode);
+    content:=stewardship_security_content_v2(event,deployment_mode,configuration);
     RETURN (proposed->>'configuration_id')::uuid=configuration
       AND proposed->>'template_id' IS NULL
       AND proposed->>'sender'=email->>'sender'

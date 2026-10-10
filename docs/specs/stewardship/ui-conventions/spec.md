@@ -132,10 +132,12 @@ spring forward is read with the offset in force before the change (2:30 AM
 becomes 3:30 AM daylight time), so the form is never refused for it. Emails,
 which cannot know a reader's browser, use the parish time zone and name it
 ("9:15 PM Eastern"), never "UTC". Operational and security alert emails
-follow the same rule: parish local time with the zone named (Administrator
-decision, 2026-10-10; until
-[#967](https://github.com/epiphany40223/parishkit/issues/967) lands they
-still print a UTC stamp). Pages and emails move to these rules one
+follow the same rule (Administrator decision, 2026-10-10,
+[#967](https://github.com/epiphany40223/parishkit/issues/967)): their times
+use the parish profile's time zone and date format, with the zone
+abbreviation, such as "October 10, 2026 at 9:15 PM EDT"
+([alert times](../background-processing/spec.md#critical-errors-and-notification)).
+Pages and emails move to these rules one
 group at a time in the #558 PRs; the Ministry follow-up contact attempt is the
 first ([Admin portal](../admin-portal/spec.md#follow-up-workflows)), the System
 logs date filters the second ([Admin portal](../admin-portal/spec.md#logs)), and

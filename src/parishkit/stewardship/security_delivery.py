@@ -27,6 +27,8 @@ def alert_payload(alert):
         "occurred_at": alert.occurred_at.isoformat(),
         "before_roles": list(alert.before_roles),
         "after_roles": list(alert.after_roles),
+        "timezone": alert.timezone,
+        "date_format": alert.date_format,
     }
 
 
@@ -41,6 +43,8 @@ def decode_alert(value):
         "occurred_at",
         "before_roles",
         "after_roles",
+        "timezone",
+        "date_format",
     }:
         raise ValueError("Invalid security alert payload.")
     if (
@@ -59,6 +63,8 @@ def decode_alert(value):
         datetime.fromisoformat(value["occurred_at"]),
         tuple(value["before_roles"]),
         tuple(value["after_roles"]),
+        value["timezone"],
+        value["date_format"],
     )
 
 

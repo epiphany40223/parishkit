@@ -193,7 +193,7 @@ def test_operational_read_requires_work_order_and_configuration_coherence(
             (notice, "testing"),
         ):
             with pytest.raises(TypeError):
-                notice_alert(identifier, mode)
+                notice_alert(identifier, mode, uuid4())
         monkeypatch.setattr(store, "manifest_reference", lambda: (uuid4(), "a" * 64))
         with pytest.raises(ConfigError):
             current_routing(store)

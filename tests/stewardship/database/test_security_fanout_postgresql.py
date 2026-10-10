@@ -435,12 +435,13 @@ def test_closed_content_compilers_agree_for_every_kind_mode_and_actor(routing):
             )
         for event in events:
             for mode in SystemMode:
+                configuration = store.active().version_id
                 with work_transaction():
-                    alert = event_alert(event.pk, mode)
+                    alert = event_alert(event.pk, mode, configuration)
                     with connection.cursor() as cursor:
                         cursor.execute(
-                            "SELECT stewardship_security_content_v1(%s,%s)",
-                            [event.pk, mode.value],
+                            "SELECT stewardship_security_content_v2(%s,%s,%s)",
+                            [event.pk, mode.value, configuration],
                         )
                         compiled = cursor.fetchone()[0]
                 if isinstance(compiled, str):

@@ -1,6 +1,9 @@
 -- Independent fixed-content admission for outbox SQL writers. The private
 -- helper also recompiles these facts; it never trusts stored arbitrary prose.
 -- Contract tests compare every closed kind/phase against operational_content.py.
+-- Dropped by migration 0043_alert_local_time.sql (#967), which adds
+-- stewardship_ops_content_v2 with times in the parish zone; kept here so
+-- the earlier frozen files that replace it still apply on a fresh install.
 CREATE FUNCTION public.stewardship_ops_content_v1(notice uuid, deployment_mode text)
 RETURNS jsonb LANGUAGE plpgsql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE n stewardship_ops_notice%ROWTYPE; kind text; title text; status text;
@@ -72,7 +75,7 @@ BEGIN
       'html',html||'</dl>','text',body);
 END $$;
 
-CREATE FUNCTION stewardship_ops_render_matches_v1(proposed jsonb, notice uuid,
+CREATE FUNCTION public.stewardship_ops_render_matches_v1(proposed jsonb, notice uuid,
     configuration uuid, address text, deployment_mode text)
 RETURNS boolean LANGUAGE plpgsql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE email jsonb; content jsonb;
@@ -80,7 +83,7 @@ BEGIN
     SELECT settings INTO email FROM stewardship_applied_integration
       WHERE configuration_id=configuration AND kind='email';
     IF email IS NULL OR address IS NULL THEN RETURN false; END IF;
-    content:=stewardship_ops_content_v1(notice,deployment_mode);
+    content:=stewardship_ops_content_v2(notice,deployment_mode,configuration);
     RETURN (proposed->>'configuration_id')::uuid=configuration
       AND proposed->>'template_id' IS NULL
       AND proposed->>'sender'=email->>'sender'

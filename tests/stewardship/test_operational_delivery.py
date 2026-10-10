@@ -63,6 +63,8 @@ def alert():
         instant,
         instant,
         1234,
+        "America/New_York",
+        "us_long",
     )
 
 
@@ -122,6 +124,8 @@ def test_closed_facts_roundtrip_and_generated_mime():
         ("incident_id", None),
         ("template", "private@example.test"),
         ("first_seen", "2026-09-18T00:00:00Z"),
+        ("timezone", "private@example.test"),
+        ("date_format", "private@example.test"),
     ],
 )
 def test_invalid_fact_payloads_are_rejected_without_echo(field, value):

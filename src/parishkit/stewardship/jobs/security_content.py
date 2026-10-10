@@ -2,7 +2,7 @@
 
 These are the login-policy expansions and a replaced backup encryption key.
 
-The SQL twin `stewardship_security_content_v1` recompiles these exact
+The SQL twin `stewardship_security_content_v2` recompiles these exact
 alternatives from the immutable event, so every string here is closed and
 the deployment mode is visible but never changes routing.
 """
@@ -15,7 +15,7 @@ from uuid import UUID
 
 from parishkit.stewardship.campaigns.domain import SystemMode
 
-from .operational_content import OperationalContent
+from .operational_content import OperationalContent, alert_time, parish_clock_valid
 
 # Plain words in the fixed order the Portal users page uses. The private mail
 # helper compiles content with no Django settings, so the page's translated
@@ -64,6 +64,9 @@ class SecurityAlert:
     occurred_at: datetime
     before_roles: tuple[str, ...]
     after_roles: tuple[str, ...]
+    # The parish profile's zone and date format code for the shown time (#967).
+    timezone: str
+    date_format: str
 
     def __post_init__(self):
         """Reject untyped values, unknown kinds and non-UTC times."""
@@ -76,6 +79,7 @@ class SecurityAlert:
             or not isinstance(self.mode, SystemMode)
             or not isinstance(self.occurred_at, datetime)
             or self.occurred_at.utcoffset() != timedelta(0)
+            or not parish_clock_valid(self.timezone, self.date_format)
         ):
             raise ValueError("Invalid security alert facts.")
         for name in ("before_roles", "after_roles"):
@@ -101,7 +105,7 @@ def render_security_alert(alert):
     subject = f"[{alert.mode.value.upper()}] SECURITY: {title}"
     common = (
         ("By", alert.actor or "Operator recovery"),
-        ("When", alert.occurred_at.strftime("%m/%d/%Y %H:%M:%S UTC")),
+        ("When", alert_time(alert, alert.occurred_at)),
         ("Deployment mode", alert.mode.value.title()),
         ("Event reference", str(alert.event_id)),
     )
