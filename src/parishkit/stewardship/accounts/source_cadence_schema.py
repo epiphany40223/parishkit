@@ -102,8 +102,11 @@ def _validate_rules_schedule(settings):
         invalid()
 
 
-def validate_sections(document):
-    """Validate the refresh schedule settings, then all retained v5 rules."""
+def validate_sections(document, policy=None):
+    """Validate the refresh schedule settings, then all retained v5 rules.
+
+    ``policy`` replaces the login-rule check, as ``users-v10`` does (#952).
+    """
     from .configuration_schema import _validate_v5_sections
 
     rows = []
@@ -126,5 +129,6 @@ def validate_sections(document):
             }
         rows.append(row)
     _validate_v5_sections(
-        document | {"sections": document["sections"] | {"integrations": rows}}
+        document | {"sections": document["sections"] | {"integrations": rows}},
+        policy,
     )

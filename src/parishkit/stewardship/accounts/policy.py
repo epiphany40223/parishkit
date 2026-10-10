@@ -13,6 +13,7 @@ from uuid import UUID
 from parishkit.config import ConfigError
 
 from .policy_schema import normalized_domain, normalized_email
+from .users_schema import record_roles
 
 
 class Capability(StrEnum):
@@ -70,7 +71,9 @@ def resolve_roles(email, hosted_domain, records, led=frozenset()):
 
     An exact-address rule replaces any domain rule, and the rule's roles are
     the roles held: only a rule admits anyone (Administrator decision,
-    2026-10-10). An Administrator is also Staff and a Ministry leader.
+    2026-10-10). An Administrator is also Staff and a Ministry leader. In the
+    users form (#952) the address's one user is its rule, holding its role's
+    cumulative set, and there are no domain rules.
     ``led`` is the address's role-derived Ministry scope, ``leader_scope()``'s
     answer: the Ministries it leads in ParishSoft (#922), which SQL already
     gives only to a user whose rule grants a role. The login rules' Ministry
@@ -89,7 +92,7 @@ def resolve_roles(email, hosted_domain, records, led=frozenset()):
         (
             record["values"]
             for record in records
-            if record["values"]["kind"] == "address"
+            if record["values"]["kind"] in ("address", "user")
             and record["values"]["email"] == email
         ),
         None,
@@ -102,9 +105,10 @@ def resolve_roles(email, hosted_domain, records, led=frozenset()):
                 if record["values"]["kind"] == "domain"
                 and record["values"]["domain"] == domain == hosted
             ),
-            {"roles": []},
+            # No rule: an explicit empty grant, which admits no one.
+            {"kind": "address", "roles": []},
         )
-    roles = set(rule["roles"])
+    roles = set(record_roles(rule))
     if "administrator" in roles:
         roles.update(("staff", "ministry_leader"))
     return frozenset(roles), frozenset(led) if roles else frozenset()

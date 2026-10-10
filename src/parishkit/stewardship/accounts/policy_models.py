@@ -41,20 +41,56 @@ class DomainRule(PolicyProjection):
         ]
 
 
+def _user_shape(role, roles):
+    """One users-form row (#952): a Name, this role, its cumulative roles."""
+    return models.Q(
+        role=role,
+        roles=roles,
+        name__isnull=False,
+        creation_origin__isnull=True,
+        creation_operation__isnull=True,
+    )
+
+
 class AddressRule(PolicyProjection):
-    """Exact-email overrides include explicit denial and immutable creation origin."""
+    """One address's sign-in rule: an older exact-address rule, or a user.
+
+    Older rows (configurations before the users upgrade, #952) carry a
+    creation origin and operation, may hold any role set including none (an
+    explicit deny) and have no Name or role. A user row carries a Name and
+    one ``role``, and ``roles`` is that role's cumulative set, so every SQL
+    check of ``roles`` keeps its meaning; it has no origin and no grants.
+    ``address_rule_shape`` keeps the two shapes apart and ties ``roles`` to
+    ``role``.
+    """
 
     email = models.EmailField()
     roles = models.JSONField()
-    creation_origin = models.CharField(max_length=16)
-    creation_operation = models.UUIDField()
+    creation_origin = models.CharField(max_length=16, null=True)
+    creation_operation = models.UUIDField(null=True)
+    name = models.CharField(max_length=200, null=True)
+    role = models.CharField(max_length=32, null=True)
 
     class Meta(PolicyProjection.Meta):
         db_table = "stewardship_address_rule"
         constraints = PolicyProjection.Meta.constraints + [
             models.UniqueConstraint(
                 fields=["configuration", "email"], name="address_rule_identity"
-            )
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    role__isnull=True,
+                    name__isnull=True,
+                    creation_origin__isnull=False,
+                    creation_operation__isnull=False,
+                )
+                | _user_shape("ministry_leader", ["ministry_leader"])
+                | _user_shape("staff", ["ministry_leader", "staff"])
+                | _user_shape(
+                    "administrator", ["administrator", "ministry_leader", "staff"]
+                ),
+                name="address_rule_shape",
+            ),
         ]
 
 

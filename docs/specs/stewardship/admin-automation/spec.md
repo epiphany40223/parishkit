@@ -2386,6 +2386,8 @@ as the host operator (`actor_kind` `operator`), not as a portal user:
 - recovery: `preview-admin-recovery`, `recover-admin` (see
   [offline Admin-access recovery](../operations/spec.md#offline-admin-access-recovery));
   a recovery also ends every automation session approved before it;
+- users upgrade: `upgrade-users` (see
+  [users upgrade from sign-in rules](../operations/spec.md#users-upgrade-from-sign-in-rules));
 - restore: `restore-check`, `restore-compare` and `restore-begin` (see
   [restore](../operations/spec.md#restore));
 - automation: `revoke-automation-sessions` (see [session rules](#session-rules)),

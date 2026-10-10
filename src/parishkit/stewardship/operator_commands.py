@@ -226,6 +226,91 @@ def preview_recovery_command(configuration, *, deployment_id, target_email):
         return {"recovery_preview": recovery_preview(version, runtime.pk, target_email)}
 
 
+# The users conversion (#952) is enabled in the release that also brings
+# the Users page and the swap of the SQL sign-in functions (its slice 4).
+# Until then this command only previews: nothing else in this release can
+# edit a configuration in the users form, so converting would leave the
+# Admin portal unable to change its settings.
+USERS_UPGRADE_ENABLED = False
+
+
+def upgrade_users_command(
+    configuration,
+    *,
+    deployment_id,
+    preview,
+    operation_id=None,
+    operator_name=None,
+    reason=None,
+    confirmed_administrators=None,
+):
+    """Preview, or convert once, the sign-in rules into users (#952), offline.
+
+    The preview changes nothing. The conversion needs a named operator and
+    reason, a new operation ID (a repeat resumes it) and the exact list of
+    Administrators the preview shows, comma-separated; the preview is printed
+    first. It refuses unless the release enables it.
+    """
+    if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
+        raise ConfigError("The users upgrade requires the admin-recovery profile.")
+    if preview:
+        if any(
+            value is not None
+            for value in (operation_id, operator_name, reason, confirmed_administrators)
+        ):
+            raise ConfigError("The upgrade preview takes no conversion inputs.")
+        with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
+            configure_operator_database(configuration)
+            from .accounts.authority import AuthorityStore
+            from .accounts.configuration_installation import coherent_configuration
+            from .accounts.configuration_schema import validate_sections
+            from .accounts.request_admission import intake_base
+            from .accounts.users_upgrade import upgrade_preview
+            from .runtime_database import admit_offline_database
+
+            admit_offline_database(configuration, users_upgrade=True)
+            runtime = coherent_configuration(
+                AuthorityStore(configuration.paths["authority"], validate_sections)
+            )
+            if runtime.pk != _uuid(deployment_id):
+                raise ConfigError("The confirmed deployment does not match.")
+            _, version = intake_base(runtime.active_configuration.digest)
+            return {"users_upgrade_preview": upgrade_preview(version)}
+    if not USERS_UPGRADE_ENABLED:
+        raise ConfigError("This release previews the users upgrade only.")
+    if not isinstance(confirmed_administrators, str):
+        raise ConfigError("Confirm the Administrators the upgrade keeps.")
+    configure_operator_database(configuration)
+    from .accounts.authority import AuthorityStore
+    from .accounts.configuration_schema import validate_sections
+    from .accounts.users_upgrade import upgrade_users
+    from .runtime_database import admit_offline_database
+
+    admit_offline_database(configuration, users_upgrade=True)
+    result = upgrade_users(
+        AuthorityStore(configuration.paths["authority"], validate_sections),
+        deployment_id=_uuid(deployment_id),
+        operation_id=_uuid(operation_id),
+        operator_name=operator_name,
+        reason=reason,
+        confirmed_administrators=[
+            address.strip() for address in confirmed_administrators.split(",")
+        ],
+        correlation_id=uuid4(),
+        offline_interlock=lambda: StartupLease(
+            RuntimeLayout(configuration).interlock, offline=True
+        ),
+        before_apply=lambda plan: print(
+            json.dumps({"users_upgrade_preview": plan}, sort_keys=True)
+        ),
+    )
+    if result is None:
+        return {"users_upgrade_applied": False, "already_users": True}
+    if result.state != "applied":
+        raise ConfigError("The users upgrade did not reach an applied receipt.")
+    return {"users_upgrade_applied": True, "operation_id": operation_id}
+
+
 def revoke_automation_command(configuration, *, reason):
     """End every live Admin automation session, offline (restore or operator).
 
@@ -351,6 +436,16 @@ def execute_operator(args):
                 configuration,
                 deployment_id=args.confirm_deployment,
                 target_email=args.target_email,
+            )
+        elif args.command == "upgrade-users":
+            result = upgrade_users_command(
+                configuration,
+                deployment_id=args.confirm_deployment,
+                preview=bool(args.preview),
+                operation_id=args.operation_id,
+                operator_name=args.operator_name,
+                reason=args.reason,
+                confirmed_administrators=args.confirm_administrators,
             )
         elif args.command == "revoke-automation-sessions":
             result = revoke_automation_command(configuration, reason=args.reason)

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from .content_forms import stale_markup
 from .integration_selection import integration_records
+from .users_schema import record_roles
 
 
 @dataclass(frozen=True)
@@ -88,8 +89,8 @@ def configuration_readiness(document, campaign_id, *, ministries, funds):
         sorted(
             row["values"]["email"]
             for row in sections.get("login_rules", [])
-            if row["values"]["kind"] == "address"
-            and "administrator" in row["values"]["roles"]
+            if row["values"]["kind"] in ("address", "user")
+            and "administrator" in record_roles(row["values"])
         )
     )
     if not admins:

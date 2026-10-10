@@ -38,6 +38,9 @@ from .request_models import ConfigurationChangeRequest, ConfigurationRequestChec
 from .request_patch import MANUAL_POLICY_REQUEST_SCHEMAS, build_candidate
 from .runtime_models import ConfigurationActivation, SystemConfiguration
 
+# Request authorities that only an offline operator command installs.
+OFFLINE_AUTHORITIES = frozenset({"operator_recovery", "operator_upgrade"})
+
 
 class DatabaseMaterializer:
     """Match the existing file protocol with atomic durable PostgreSQL effects.
@@ -58,7 +61,9 @@ class DatabaseMaterializer:
         admit_campaign=None,
     ):
         """Bind one request, or an initial recipient committed only at activation."""
-        if request is not None and request.authority == "operator_recovery":
+        # The two offline operator authorities: Admin-access recovery and the
+        # users upgrade (#952). Each is attributed to its named operator.
+        if request is not None and request.authority in OFFLINE_AUTHORITIES:
             _identities(correlation_id)
             if actor_id is not None or request.actor_id is not None:
                 raise ConfigError("Offline recovery cannot impersonate a portal actor.")
