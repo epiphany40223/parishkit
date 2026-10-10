@@ -27,7 +27,10 @@ The `compose.production.yaml` scaffold, whose service commands refused to
 start, is removed in favour of the provisioner's rendered topologies.
 
 Multi-architecture images, SBOM and provenance attestations (OPS-09.03's
-release extras) and key rotation are cut from v1 by the launch scope. The
+release extras) and key rotation are cut from v1 by the launch scope.
+Provenance attestation was added after the launch (#392), with a smoke run
+of the pushed image; see
+[below](#the-pushed-digest-is-smoke-tested-and-attested). The
 deployment runbook is the next slice.
 
 ## Design
@@ -52,6 +55,57 @@ administrator makes the package public: on the repository's **Packages** entry
 for `parishkit/stewardship`, open **Package settings**, choose **Change
 visibility**, then **Public**. The image holds only the repository's public
 code; no secret is built into it. Later releases keep that visibility.
+
+### The pushed digest is smoke-tested and attested
+
+The image is rebuilt from the tagged commit at release time, so the bytes the
+hosts pull are not the image CI tested (#392 L4). After the push, the image
+job runs the pushed digest, referenced by digest as a host pulls it, as the
+[deployment runbook](stewardship-deployment-runbook.md) runs offline
+commands (no network, read-only, every capability dropped, as `10001:10001`):
+`--version` must print the tag's version, `collect-static` must fill a
+private tmpfs (it configures Django and imports every application, so a
+missing module or broken dependency fails here), and the bundled `pg_dump`
+must be PostgreSQL 18. It takes seconds and is limited to five minutes. It
+needs no secret, database or network service. The runner already holds the
+image it built, so pulling the digest only confirms that GHCR serves it; the
+bytes run are the pushed bytes either way.
+
+The job then signs build provenance for that digest with
+`actions/attest-build-provenance` (#392 M2): the attestation records the
+repository, `release.yml`, the tag ref and commit, and the GitHub-hosted
+runner, and is kept in GitHub's attestation store, signed through the
+public-good Sigstore instance because the repository is public. It is not
+pushed to GHCR, so the run log names no second `…@sha256:` reference beside
+the image's. Signing normally takes seconds; the step is limited to ten
+minutes so a stalled signing cannot hold the runner. Only this job holds
+`id-token: write` and `attestations: write`.
+
+The digest artifact is uploaded only after both steps pass, so a failed
+smoke run or attestation leaves no GitHub Release naming the image; the
+pushed `:<version>` and `:<commit>` tags remain in GHCR, unreferenced, as
+after any failed release run. Fix the cause and release a new version. When
+the failure was transient (a GHCR or Sigstore outage, say), re-running the
+failed jobs instead is fine, but it rebuilds and pushes a new digest after
+`release.sh` has already refused: take that digest from the release notes and
+run the verification below by hand before deploying it.
+
+Before deploying, verify the attestation:
+
+```sh
+gh attestation verify oci://ghcr.io/OWNER/REPOSITORY/stewardship@sha256:DIGEST \
+  --repo OWNER/REPOSITORY \
+  --signer-workflow OWNER/REPOSITORY/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
+```
+
+It needs `gh` signed in to GitHub, but no registry login: the package and
+the repository are public. The
+[release helper](stewardship-operator-scripts.md#releases) runs exactly this
+before it prints the digest, and refuses if it fails; the
+[upgrade](stewardship-deployment-runbook.md#upgrade) runs it for a digest
+copied from the release notes. A release published before this change has
+no attestation, so the check fails for it; that is expected.
 
 ### Retargeting re-renders the generated documents
 

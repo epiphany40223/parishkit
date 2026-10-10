@@ -57,11 +57,17 @@ A refusal or failure exits with 1, a usage error with 2, and Ctrl-C with
   `CI (jobs: all)` run on the same tree, or one differing only in
   documentation: the run you name, an existing one such as the nightly train
   head's, or, when none passed or is running, one it dispatches with all
-  jobs), pushes the annotated tag after you type its name, and
-  prints the published image digest for the
+  jobs), pushes the annotated tag after you type its name, waits for the
+  release run, verifies the image's
+  [build provenance](stewardship-release-image.md#the-pushed-digest-is-smoke-tested-and-attested)
+  with `gh attestation verify` (refusing, with nothing on stdout, if it
+  fails), and prints the published image digest for the
   [scripted upgrade](stewardship-deployment-runbook.md#scripted-upgrade).
-  Pushing a release tag needs a human's explicit authorization; running
-  the script is that act.
+  Its arguments and output are unchanged by the verification, but it needs
+  a `gh` whose `attestation verify` has `--signer-workflow`, `--source-ref`
+  and `--deny-self-hosted-runners`; it checks that first and refuses an
+  older `gh` before it tags anything. Pushing a release tag needs a human's
+  explicit authorization; running the script is that act.
 
 ## Upgrades
 

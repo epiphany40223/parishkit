@@ -11,6 +11,8 @@
 #      from it, and check that its committed pyproject.toml version (read
 #      with tomllib, as release.yml does) is VERSION and that tag vVERSION
 #      exists neither locally nor on the remote. Land the version bump first.
+#      Check too that this gh can run step 6's gh attestation verify with
+#      its flags, so an older gh is refused before anything is tagged.
 #   2. Ask release_evidence.py which full run decides for that commit (the
 #      run release.yml will check). CI_RUN_ID must be that run. Without it,
 #      use that run when it passed or is still running, and otherwise
@@ -30,7 +32,12 @@
 #      authorization; running this is that act. git fetch, ls-remote and
 #      push have a two-minute limit each.
 #   5. Wait for the new release.yml run (a push of the tag on that commit)
-#      and print the published image digest on stdout.
+#      and read the published image digest from its "Application image:"
+#      log line.
+#   6. Verify the image's build provenance with gh attestation verify: it
+#      must be signed by this repository's release.yml for the tag, on a
+#      GitHub-hosted runner (#392 M2). Only then print the digest on stdout;
+#      a failed verification prints nothing there and exits 1.
 #
 # Usage: tools/stewardship-ops/release.sh [-h] [--yes] VERSION [CI_RUN_ID]
 #
@@ -125,6 +132,26 @@ if [ -n "$remote_tag" ]; then
     ops_refuse "Tag $tag already exists on $remote"
 fi
 ops_log "main is $sha (version $version)"
+
+# Step 6 verifies the image with gh attestation verify; a gh too old for it
+# or its flags would otherwise fail there, after the tag is pushed, with a
+# misleading "did not verify". Ask its help text now, before any tag exists.
+help_status=0
+gh_help=$(ops_gh attestation verify --help 2>&1) || help_status=$?
+# The capture also took the timeout record and gh's own error text; show
+# them, since nothing else will.
+if [ "$help_status" -ne 0 ]; then
+    printf '%s\n' "$gh_help" >&2
+fi
+if [ "$help_status" = "$OPS_TIMEOUT_STATUS" ]; then
+    exit "$OPS_TIMEOUT_STATUS"
+fi
+# Match the flag where the help's flag table lists it, not in prose.
+for flag in --signer-workflow --source-ref --deny-self-hosted-runners; do
+    if [ "$help_status" -ne 0 ] || ! grep -q -E -e "^ +(-[A-Za-z], )?$flag( |\$)" <<<"$gh_help"; then
+        ops_refuse "This gh ($(command -v gh)) cannot run gh attestation verify $flag; upgrade gh before releasing"
+    fi
+done
 
 # The ids of the newest workflow_dispatch CI runs on this commit, newest first.
 dispatch_runs() {
@@ -337,14 +364,31 @@ if ! watch "$release"; then
     ops_refuse "Release run $release did not pass; the tag $tag stays pushed, see the run"
 fi
 # The complete log can lag the run's completion briefly; try a few times.
+# Only the push step's "Application image:" line names the digest, so no
+# other reference in the log (an attestation's, say) can be mistaken for it.
 pattern="${image_repo//./\\.}@sha256:[0-9a-f]{64}"
 digest=""
 for _ in 1 2 3; do
-    digest=$( (ops_gh run view "$release" --repo "$repo" --log || true) | grep -oE "$pattern" | sort -u || true)
+    digest=$( (ops_gh run view "$release" --repo "$repo" --log || true) |
+        grep -oE "Application image: \`$pattern\`" | grep -oE "$pattern" | sort -u || true)
     [ -z "$digest" ] || break
     sleep "$poll"
 done
 if [ -z "$digest" ]; then
     ops_refuse "Release run $release passed but its log names no $image_repo digest; read the release notes"
 fi
+if [ "$(printf '%s\n' "$digest" | wc -l)" -ne 1 ]; then
+    ops_refuse "Release run $release names more than one $image_repo digest; read the release notes"
+fi
+
+# 6. The image's provenance: signed by this repository's release workflow
+# for this tag, on a GitHub-hosted runner. The package and the repository
+# are public, so gh reads the image and its attestation without a registry
+# login. Its output goes to stderr, so stdout carries only the digest.
+if ! ops_gh attestation verify "oci://$digest" --repo "$repo" \
+    --signer-workflow "$repo/.github/workflows/release.yml" \
+    --source-ref "refs/tags/$tag" --deny-self-hosted-runners >&2; then
+    ops_refuse "The build provenance of $digest did not verify; do not deploy it (see the gh output above and release run $release)"
+fi
+ops_log "verified the build provenance of $digest"
 printf '%s\n' "$digest"
