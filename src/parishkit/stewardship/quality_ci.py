@@ -151,6 +151,50 @@ def child_status(result):
     return result.returncode
 
 
+# After a timed-out child is sent SIGABRT, how long its faulthandler may take
+# to write every thread's stack before the child is killed outright.
+ABORT_GRACE_SECONDS = 10
+
+
+def run_child(arguments, *, phase, timeout, **options):
+    """Run one shard pytest child; at its deadline, dump its stacks and say so.
+
+    ``subprocess.run(timeout=...)`` SIGKILLs a late child, so no stack dump
+    runs and the job log showed only "incomplete or invalid" (#961). This
+    sends SIGABRT first: pytest has faulthandler enabled for fatal signals, so
+    the child writes every thread's stack, naming the running test, to the
+    job log. A child still alive after ABORT_GRACE_SECONDS is killed. Before
+    re-raising ``TimeoutExpired``, it prints which ``phase`` was stopped, its
+    limit and the elapsed time. Any other interruption kills the child, as
+    ``subprocess.run`` does.
+    """
+    started = time.monotonic()
+    process = subprocess.Popen(arguments, **options)
+    try:
+        return subprocess.CompletedProcess(arguments, process.wait(timeout=timeout))
+    except subprocess.TimeoutExpired:
+        process.send_signal(signal.SIGABRT)
+        try:
+            process.wait(timeout=ABORT_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        print(
+            f"ERROR: CI shard timeout: stopped the {phase} pytest run after "
+            f"{time.monotonic() - started:.0f}s (limit {timeout:.0f}s; the "
+            f"shard's total deadline is {SHARD_TIMEOUT}s). Its thread stacks "
+            "are dumped above; in the database run, the last CI_PROGRESS "
+            "START without an END also names the test that was running.",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise
+    except BaseException:
+        process.kill()
+        process.wait()
+        raise
+
+
 def coverage_arguments(scope):
     """Branch coverage of the scope, with per-test contexts for the test map."""
     return [
@@ -198,19 +242,26 @@ def run_shard(root, output, index, count, basetemp=None, *, coverage=True, selec
     ]
     deadline = time.monotonic() + SHARD_TIMEOUT
     if index == 1:
-        result = subprocess.run(
+        result = run_child(
             [*arguments, "--ds=parishkit.stewardship.settings.test", "tests"],
+            phase="baseline",
             cwd=root,
             env=env,
-            check=False,
             timeout=SHARD_TIMEOUT,
         )
         if result.returncode:
             return child_status(result)
     remaining = deadline - time.monotonic()
     if remaining <= 0:
+        print(
+            "ERROR: CI shard timeout: the baseline used the whole "
+            f"{SHARD_TIMEOUT}s shard deadline (elapsed "
+            f"{SHARD_TIMEOUT - remaining:.0f}s); the database run was not started.",
+            file=sys.stderr,
+            flush=True,
+        )
         raise subprocess.TimeoutExpired(arguments, SHARD_TIMEOUT)
-    result = subprocess.run(
+    result = run_child(
         [
             *arguments,
             *(["--cov-append"] if coverage and index == 1 else []),
@@ -222,9 +273,9 @@ def run_shard(root, output, index, count, basetemp=None, *, coverage=True, selec
             *([f"--ci-select={Path(select).resolve()}"] if select else []),
             DATABASE_TESTS,
         ],
+        phase="database",
         cwd=root,
         env=env,
-        check=False,
         timeout=remaining,
     )
     if result.returncode:
