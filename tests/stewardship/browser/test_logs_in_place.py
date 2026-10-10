@@ -327,3 +327,33 @@ def test_sign_in_activity_applies_in_place(page, component_origin):
     )
     assert page.evaluate(MARKED) == "kept"
     assert page.get_by_label("Activity", exact=True).input_value() == "sign_in"
+
+
+def test_a_cross_link_clearing_the_activity_gives_the_levels_back(
+    page, component_origin
+):
+    """Show related entries sends no Activity (#953), so its answer shows
+    All activity; the level boxes the Sign-in choice had greyed out come
+    back, ticked as the answer draws them, and the next Apply sends them."""
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + LIVE)
+    page.get_by_label("Activity", exact=True).select_option("sign_in")
+    levels = page.locator("#table-filters .log-level-choices input:disabled")
+    assert levels.count() == 5
+    answer_with(page, component_origin, "/logs-related")
+    page.locator(f"#log-audit-{AUDIT}-related").click()
+    visible(page.locator("#table").get_by_text(COUNT).first)
+    eventually(page, "() => document.getElementById('log-activity').value", "")
+    assert levels.count() == 0
+    filters = page.evaluate(f"() => ({FILTERS})(document)")
+    assert filters == fixture_filters(page, component_origin, "/logs-related")
+    apply = page.get_by_role("button", name="Apply filters")
+    with page.expect_response(
+        lambda response: response.request.method == "POST"
+    ) as answer:
+        apply.click()
+    sent = posted(answer.value.request)
+    # The answer's default kinds, levels included, and no activity.
+    for kind in ("info", "warning", "error", "audit"):
+        assert sent[kind] == ["yes"], kind
+    assert sent.get("activity", [""]) == [""]
