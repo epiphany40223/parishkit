@@ -10,6 +10,10 @@ ParishKit contains reusable Python automation for Catholic parishes.
   specifications under `docs/specs/` (each spec file named `spec.md`). Keep
   them cross-linked and avoid duplicating prose across specs; link to another
   spec rather than copying text so the copies cannot drift.
+- General, portal-wide UX conventions live in
+  [docs/specs/stewardship/ui-conventions/spec.md](docs/specs/stewardship/ui-conventions/spec.md),
+  which has precedence over other specs for UX. Put UX convention changes
+  there, never in a feature spec, and link to it from feature specs.
 - Keep command behavior in `src/parishkit` modules exposed through console
   entry points; wrapper scripts should only delegate to package code.
 - Do not commit credentials, secrets, local logs, caches, generated reports, or
