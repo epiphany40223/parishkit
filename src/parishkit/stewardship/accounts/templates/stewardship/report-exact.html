@@ -8,13 +8,13 @@
 <p class="export-state export-state-ready" role="status">{% translate "The export's figures are ready." %}</p>
 <p>{% url 'admin:report_export' status.export_id as button_href %}{% button href=button_href variant="primary" data-live-follow %}{% translate "Open the file and download it" %}{% endbutton %}</p>
 {% elif status.state == 'failed' or status.state == 'abandoned' %}<p class="notice notice-error export-state" role="alert">{% translate "Calculating this export failed. Retry uses the same data as the original request." %}</p>
-<form method="post" action="{% url 'admin:report_exact_retry' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable %}{% translate "Retry export" %}{% endbutton %}</form>
+<form method="post" action="{% url 'admin:report_export_retry' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable %}{% translate "Retry export" %}{% endbutton %}</form>
 {% elif status.state == 'cancelled' %}<p class="export-state" role="status">{% translate "This export was cancelled. It stays in your list of recent exports." %}</p>
 {% else %}<p class="export-state export-state-pending" role="status"><span class="spinner" aria-hidden="true"></span> {% if wait %}{% include 'stewardship/queue-wait.html' %}{% else %}{% translate "Calculating the figures…" %}{% endif %}</p>
 <p class="help">{% translate "This usually takes a few seconds, and this page updates by itself. The file always uses the data as it was when you requested it." %}</p>{% endif %}
-{% if can_cancel %}<form method="post" action="{% url 'admin:report_exact_cancel' job.pk %}">{% csrf_token %}{% button type="submit" variant="secondary" enabled=mutable %}{% translate "Cancel export" %}{% endbutton %}</form>{% endif %}
+{% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}">{% csrf_token %}{% button type="submit" variant="secondary" enabled=mutable %}{% translate "Cancel export" %}{% endbutton %}</form>{% endif %}
 </section>
-<p><a href="{% url 'admin:report_exact' job.pk %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to Participation" %}</a></p>
+<p><a href="{% url 'admin:report_export' job.pk %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to Participation" %}</a></p>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
 <dt>{% translate "Population" %}</dt><dd>{% if job.population_scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</dd>
 <dt>{% translate "ParishSoft data as of" %}</dt><dd><time datetime="{{ source.promoted_at|date:'c' }}" data-local-instant>{{ source.promoted_at|date:'c' }}</time></dd>

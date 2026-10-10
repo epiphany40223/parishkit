@@ -27,6 +27,7 @@ from parishkit.stewardship.reports.export_tasks import export_handler
 from parishkit.stewardship.reports.financial import FinancialQuery
 from parishkit.stewardship.reports.financial_exports import create_financial_export
 
+from ..export_urls import export_action
 from ..test_financial_answers import CHECK, OPTIONS
 from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import campaign_clock
@@ -258,7 +259,7 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 == "ready"
             )
         with restricted_download_pool(settings):
-            response, body = search(browser, job_route + "download", {})
+            response, body = search(browser, export_action(job_route, "download"), {})
             assert response.status_code == 200
             assert body.startswith(
                 {"csv": b"Family,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
@@ -288,7 +289,7 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         fields = {"request_key": str(uuid4())}
         response = post(
-            browser, f"/admin/reports/exports/{first.pk}/regenerate", fields
+            browser, reverse("admin:report_export_regenerate", args=[first.pk]), fields
         )
         assert response.status_code == 302
         regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
@@ -359,7 +360,7 @@ def test_financial_export_needs_a_fresh_sign_in(response_service, google):
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         refused = post(
             browser,
-            f"/admin/reports/exports/{request.pk}/regenerate",
+            reverse("admin:report_export_regenerate", args=[request.pk]),
             {"request_key": str(uuid4())},
             HTTP_ACCEPT="text/html",
         )

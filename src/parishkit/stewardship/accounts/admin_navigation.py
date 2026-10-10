@@ -187,7 +187,6 @@ PAGES = {
     "information_queue": Page("reports", _("Additional information")),
     "information_item": Page("reports", _("Information request"), "information_queue"),
     "report_export": Page("reports", _("Report export"), "reports"),
-    "report_exact": Page("reports", _("Latest-data export"), "reports"),
     "weekly_digest_manual": Page("reports", _("Send a weekly report now")),
     # The emailed reports stand alone under the group until NAV-14 gives
     # them the Emailed reports page; the reports root is Participation now,
@@ -565,9 +564,7 @@ NON_PAGES = frozenset(
         # directory, and forms rendered before the merge still submit.
         "postal_directory",
         "postal_directory_export",
-        "report_exact_cancel",
         "report_exact_create",
-        "report_exact_retry",
         "report_export_cancel",
         "report_export_create",
         "report_export_download",

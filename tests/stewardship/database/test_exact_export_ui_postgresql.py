@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.exact_tasks import exact_handler
 from parishkit.stewardship.reports.export_models import ExportPublication, ExportRequest
 from parishkit.stewardship.reports.export_tasks import export_handler
 
+from ..export_urls import export_action
 from .test_background_grants_postgresql import task_login
 from .test_export_cleanup_postgresql import expire_publication
 from .test_export_views_postgresql import post
@@ -96,9 +97,11 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         assert b"Retry export" in read(browser, status_path)[1]
         for _ in range(2):
             assert (
-                post(browser, status_path + "retry", {"request_key": str(retry_key)})[
-                    "Location"
-                ]
+                post(
+                    browser,
+                    export_action(status_path, "retry"),
+                    {"request_key": str(retry_key)},
+                )["Location"]
                 == status_path
             )
     retry = job.task.chain_runs.get(retry_command_id=retry_key)
@@ -111,7 +114,7 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         )
     resolution = ExactExportResolution.objects.select_related("export").get(request=job)
     assert (job.source_id, job.submission_watermark, job.through_date) == frozen
-    rendered_path = f"/admin/reports/exports/{resolution.export_id}/"
+    rendered_path = reverse("admin:report_export", args=[resolution.export_id])
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, status_path)
         assert response.status_code == 200 and rendered_path.encode() in body
@@ -129,11 +132,13 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         assert b"ready" in read(browser, status_path)[1]
         assert (
             post(
-                browser, rendered_path + "regenerate", {"request_key": str(uuid4())}
+                browser,
+                export_action(rendered_path, "regenerate"),
+                {"request_key": str(uuid4())},
             ).status_code
             == 409
         )
-        assert post(browser, status_path + "cancel").status_code == 409
+        assert post(browser, export_action(status_path, "cancel")).status_code == 409
     expire_publication(resolution.export)
     publication = ExportPublication.objects.get(request=resolution.export)
     regeneration_key = uuid4()
@@ -142,14 +147,14 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         assert b"Regenerate expired file" in expired
         regenerated = post(
             browser,
-            rendered_path + "regenerate",
+            export_action(rendered_path, "regenerate"),
             {"request_key": str(regeneration_key)},
         )
         assert regenerated.status_code == 302
         assert (
             post(
                 browser,
-                rendered_path + "regenerate",
+                export_action(rendered_path, "regenerate"),
                 {"request_key": str(regeneration_key)},
             )["Location"]
             == regenerated["Location"]
@@ -184,7 +189,7 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
             handlers={"report_exact_export": exact_handler(store=store)},
         )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert post(browser, waiting + "cancel").status_code == 302
+        assert post(browser, export_action(waiting, "cancel")).status_code == 302
         assert b"cancelled" in read(browser, waiting)[1]
 
     from django.db import connection, transaction
@@ -209,9 +214,9 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         assert b"Other campaign work" in read(browser, status_path)[1]
         for endpoint, payload in (
             (path, values | {"request_key": str(uuid4())}),
-            (status_path + "cancel", {}),
-            (status_path + "retry", {"request_key": str(uuid4())}),
-            (rendered_path + "regenerate", {"request_key": str(uuid4())}),
+            (export_action(status_path, "cancel"), {}),
+            (export_action(status_path, "retry"), {"request_key": str(uuid4())}),
+            (export_action(rendered_path, "regenerate"), {"request_key": str(uuid4())}),
         ):
             assert post(browser, endpoint, payload).status_code == 403
 
@@ -248,15 +253,19 @@ def test_native_exact_cancel_and_other_requester_denial(
         owned = post(browser, path, values)["Location"]
         other = post(admin, path, values | {"request_key": str(uuid4())})["Location"]
         assert read(browser, other)[0].status_code == 403
-        assert post(browser, other + "cancel").status_code == 403
+        assert post(browser, export_action(other, "cancel")).status_code == 403
         assert (
-            post(browser, other + "retry", {"request_key": str(uuid4())}).status_code
+            post(
+                browser, export_action(other, "retry"), {"request_key": str(uuid4())}
+            ).status_code
             == 403
         )
-        assert post(browser, owned + "cancel").status_code == 302
+        assert post(browser, export_action(owned, "cancel")).status_code == 302
         assert b"cancelled" in read(browser, owned)[1]
         assert (
-            post(browser, owned + "retry", {"request_key": str(uuid4())}).status_code
+            post(
+                browser, export_action(owned, "retry"), {"request_key": str(uuid4())}
+            ).status_code
             == 409
         )
         assert read(admin, owned)[0].status_code == 200
@@ -281,8 +290,10 @@ def test_native_exact_cancel_and_other_requester_denial(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert read(browser, owned)[0].status_code == 403
         assert post(browser, path, values).status_code == 403
-        assert post(browser, owned + "cancel").status_code == 403
+        assert post(browser, export_action(owned, "cancel")).status_code == 403
         assert (
-            post(browser, owned + "retry", {"request_key": str(uuid4())}).status_code
+            post(
+                browser, export_action(owned, "retry"), {"request_key": str(uuid4())}
+            ).status_code
             == 403
         )

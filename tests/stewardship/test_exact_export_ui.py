@@ -28,10 +28,10 @@ def test_native_exact_outage_has_safe_recovery_link(monkeypatch, action):
         link = reverse("admin:participation")
     elif action == "detail":
         response = exact_ui.detail(factory.get("/"), identifier)
-        link = f"/admin/reports/exact-exports/{identifier}/"
+        link = reverse("admin:report_export", args=[identifier])
     else:
         response = exact_ui.command(factory.post("/"), identifier, action=action)
-        link = f"/admin/reports/exact-exports/{identifier}/"
+        link = reverse("admin:report_export", args=[identifier])
     assert response.status_code == 503
     assert response["Retry-After"] == "5"
     assert response["Cache-Control"] == "no-store"
@@ -65,7 +65,8 @@ def test_regeneration_rejects_get_and_has_private_outage_recovery(monkeypatch):
     assert response["Retry-After"] == "5"
     assert response["Cache-Control"] == "no-store"
     assert response.stewardship_safe_error
-    assert f"/admin/reports/exports/{identifier}/".encode() in response.content
+    page = reverse("admin:report_export", args=[identifier])
+    assert page.encode() in response.content
     assert b"private source value" not in response.content
 
 
@@ -110,5 +111,6 @@ def test_regeneration_conflict_retains_safe_native_link(monkeypatch):
     assert response["Cache-Control"] == "no-store"
     assert response.stewardship_safe_error
     assert "Retry-After" not in response
-    assert f"/admin/reports/exports/{identifier}/".encode() in response.content
+    page = reverse("admin:report_export", args=[identifier])
+    assert page.encode() in response.content
     assert b"private original value" not in response.content
