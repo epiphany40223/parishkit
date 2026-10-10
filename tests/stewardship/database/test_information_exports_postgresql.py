@@ -28,6 +28,7 @@ from parishkit.stewardship.reports.information_exports import create_information
 from parishkit.stewardship.responses.information import update_information
 from parishkit.stewardship.responses.models import AdditionalInformationItem
 
+from ..export_urls import export_action
 from .auth_builders import signed_in
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post, restricted_download_pool
@@ -262,7 +263,7 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
                 == "ready"
             )
         with restricted_download_pool(settings):
-            response, body = search(browser, job_route + "download", {})
+            response, body = search(browser, export_action(job_route, "download"), {})
             assert response.status_code == 200
             assert body.startswith(
                 {"csv": b"Record,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
@@ -285,7 +286,7 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         fields = {"request_key": str(uuid4())}
         response = post(
-            browser, f"/admin/reports/exports/{first.pk}/regenerate", fields
+            browser, reverse("admin:report_export_regenerate", args=[first.pk]), fields
         )
         assert response.status_code == 302
         regenerated = ExportRequest.objects.get(request_key=fields["request_key"])

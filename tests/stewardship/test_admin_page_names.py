@@ -99,7 +99,6 @@ TEMPLATES = {
     "response_dashboard": "response-dashboard.html",
     "information_queue": "information.html",
     "information_item": "information.html",
-    "report_exact": "report-exact.html",
     "weekly_digest_manual": "weekly-manual.html",
     "weekly_digest_snapshot": "weekly-digest.html",
     "weekly_digest_item": "weekly-digest.html",

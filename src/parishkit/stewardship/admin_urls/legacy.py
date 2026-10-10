@@ -7,8 +7,11 @@ old route names a campaign uses ``legacy(…, campaign=True)``. Route names are
 slash, ``_chooser`` or ``_root`` for a retired address), so the navigation
 registry can tell them from pages. The table only grows: an
 old address is never dropped while bookmarks, sent digest emails or the
-runbooks may still name it. The one exception is a page that is itself
-removed (the Family codes page, #873): its old addresses go with it.
+runbooks may still name it. The exceptions are a page that is itself
+removed (the Family codes page, #873), whose old addresses go with it, and
+every address moved since the Administrator dropped old Admin aliases
+(#864): NAV-12's exports and emailed reports have no row, so their old
+addresses, the digest addresses in sent report emails included, are 404.
 """
 
 from django.urls import path
@@ -233,7 +236,14 @@ SLASHLESS = (
     ("reports/ministries/follow-up/<uuid:request_id>", "ministry_followup_item"),
     ("reports/families", "family_directory"),
     ("reports/families/<uuid:family_id>", "family_timeline"),
-    ("reports/weekly-digests/request", "weekly_digest_manual"),
+    ("reports/exports/<uuid:request_id>", "report_export"),
+    ("reports/emailed/weekly/new", "weekly_digest_manual"),
+    ("reports/emailed/weekly/<uuid:snapshot_id>", "weekly_digest_snapshot"),
+    (
+        "reports/emailed/weekly/<uuid:snapshot_id>/items/<uuid:item_id>",
+        "weekly_digest_item",
+    ),
+    ("reports/emailed/daily/<uuid:snapshot_id>", "daily_digest_snapshot"),
     ("mail/controls", "delivery_control"),
     ("mail/family-progress", "family_email_progress"),
     ("mail/family-history", "family_email_sends"),

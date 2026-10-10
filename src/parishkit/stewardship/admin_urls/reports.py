@@ -7,19 +7,24 @@ as nouns: an export is posted to the report's ``exports/`` collection, a
 follow-up is saved to its request's ``record/``, and the header's Find a
 Family box posts to ``families/search/``. ``/admin/reports/`` keeps its old
 meaning (Participation, or Ministry requests for a viewer who may not open
-Participation) instead of the group's first entry. The export, latest-data
-export and emailed report pages, which are addressed by their own record,
-move with NAV-12 and stay in ``urls.py`` until then; "Send a weekly report
-now" names no record, so it is here, for the current campaign (#865).
+Participation) instead of the group's first entry.
+
+Records are addressed by their own id, which already names their campaign
+(NAV-12): every export, report or latest-data, shares one page at
+``exports/<request>/`` with its actions under it (decision 8), and the daily
+and weekly reports sent by email sit under ``emailed/``. Their old digest
+addresses are gone, with no redirect (#864).
 """
 
 from django.urls import path
 
 from ..reports import (
     census_change_views,
+    digest_views,
     directory_export_views,
     directory_views,
     exact_ui,
+    export_pages,
     export_ui,
     family_timeline_views,
     financial_export_views,
@@ -31,6 +36,7 @@ from ..reports import (
     response_dashboard,
     response_list_views,
     weekly_manual_views,
+    weekly_views,
     workspace_views,
 )
 from ..reports import ministry_views as ministry_report_views
@@ -155,11 +161,67 @@ patterns = [
         family_timeline_views.family_timeline,
         "family_timeline",
     ),
-    # A fixed word where the emailed reports' snapshot pages (still in
-    # urls.py) take a UUID, so neither address can shadow the other.
+    # Every export's page, report or latest-data (decision 8), and its actions.
+    path(
+        "reports/exports/<uuid:request_id>/", export_pages.detail, name="report_export"
+    ),
+    path(
+        "reports/exports/<uuid:request_id>/cancellation/",
+        export_pages.command,
+        {"action": "cancel"},
+        name="report_export_cancel",
+    ),
+    path(
+        "reports/exports/<uuid:request_id>/retries/",
+        export_pages.command,
+        {"action": "retry"},
+        name="report_export_retry",
+    ),
+    path(
+        "reports/exports/<uuid:request_id>/download/",
+        export_ui.command,
+        {"action": "download"},
+        name="report_export_download",
+    ),
+    path(
+        "reports/exports/<uuid:request_id>/regeneration/",
+        export_ui.command,
+        {"action": "regenerate"},
+        name="report_export_regenerate",
+    ),
+    # The reports sent by email. Send a weekly report now comes before the
+    # weekly reports; a report is a UUID, so "new" can never be taken for one
+    # (a unit test pins the resolved names).
     _page(
-        "reports/weekly-digests/request/",
+        "reports/emailed/weekly/new/",
         weekly_manual_views.request_report,
         "weekly_digest_manual",
+    ),
+    path(
+        "reports/emailed/weekly/<uuid:snapshot_id>/",
+        weekly_views.snapshot,
+        name="weekly_digest_snapshot",
+    ),
+    path(
+        "reports/emailed/weekly/<uuid:snapshot_id>/items/<uuid:item_id>/",
+        weekly_views.snapshot,
+        name="weekly_digest_item",
+    ),
+    path(
+        "reports/emailed/daily/<uuid:snapshot_id>/",
+        digest_views.snapshot,
+        name="daily_digest_snapshot",
+    ),
+    path(
+        "reports/emailed/daily/<uuid:snapshot_id>/chart.png",
+        digest_views.snapshot,
+        {"representation": "png"},
+        name="daily_digest_chart",
+    ),
+    path(
+        "reports/emailed/daily/<uuid:snapshot_id>/download.png",
+        digest_views.snapshot,
+        {"representation": "download"},
+        name="daily_digest_download",
     ),
 ]

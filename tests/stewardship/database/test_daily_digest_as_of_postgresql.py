@@ -112,7 +112,7 @@ def test_the_production_saved_page_shows_the_emails_funnel(
         assert document.funnel.stage("submitted") == 1
         assert "Submitted: 1 (" in content.text
         browser, _ = signed_in()
-        path = f"/admin/reports/daily-digests/{ready.snapshot_id}/"
+        path = f"/admin/reports/emailed/daily/{ready.snapshot_id}/"
         rows = re.compile(
             rb'<tr><th scope="row">([^<]+)(?:<small>[^<]*</small>)?</th>'
             rb"<td>([^<]+)</td><td>([^<]+)</td></tr>"

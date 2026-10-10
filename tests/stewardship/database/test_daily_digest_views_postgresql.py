@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError
 from django.test import Client
+from django.urls import reverse
 
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.schemas import Outcome
@@ -53,7 +54,7 @@ def test_report_and_chart_remain_exact_after_source_changes(family_mail, google)
     with campaign_clock(INSTANT):
         ready = allocated(family_mail)
         browser, _ = signed_in()
-        path = f"/admin/reports/daily-digests/{ready.snapshot_id}/"
+        path = reverse("admin:daily_digest_snapshot", args=[ready.snapshot_id])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             _, before = read(browser, path)
             _, chart = read(browser, path + "chart.png")
@@ -114,7 +115,7 @@ def test_report_roles_apply_to_all_representations(family_mail, google, role, se
         )
         google[0]["email"] = "reader@example.org"
         browser, _ = signed_in()
-        path = f"/admin/reports/daily-digests/{ready.snapshot_id}/"
+        path = reverse("admin:daily_digest_snapshot", args=[ready.snapshot_id])
         settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(
             ReadLimits(process_pool_size=1)
         )
@@ -152,7 +153,7 @@ def test_original_png_download_uses_restricted_read_connection(
         with restricted_download_pool(settings):
             response, content = read(
                 browser,
-                f"/admin/reports/daily-digests/{ready.snapshot_id}/download.png",
+                reverse("admin:daily_digest_download", args=[ready.snapshot_id]),
             )
         assert content == bytes(ready.chart)
         assert response["Content-Type"] == "image/png"
@@ -176,9 +177,12 @@ def test_captured_but_unbuilt_report_is_temporarily_unavailable(
             ReadLimits(process_pool_size=1)
         )
         with restricted_download_pool(settings):
-            response = browser.get(
-                f"/admin/reports/daily-digests/{retained.pk}/{suffix}"
-            )
+            name = {
+                "": "daily_digest_snapshot",
+                "chart.png": "daily_digest_chart",
+                "download.png": "daily_digest_download",
+            }[suffix]
+            response = browser.get(reverse(f"admin:{name}", args=[retained.pk]))
         assert response.status_code == 503
         assert response["Cache-Control"] == "no-store"
         assert b"Saved report" not in response.content
@@ -235,7 +239,7 @@ def test_terminal_audit_failure_preserves_response_and_emits_safe_signal(
         monkeypatch.setattr(digest_views, "record_action", record)
         if stage == "denied":
             monkeypatch.setattr(digest_views, "campaign_response", denied)
-        path = f"/admin/reports/daily-digests/{ready.snapshot_id}/chart.png"
+        path = reverse("admin:daily_digest_chart", args=[ready.snapshot_id])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             if stage == "streamed":
                 _, body = read(browser, path)
