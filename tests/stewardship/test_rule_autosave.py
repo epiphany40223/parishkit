@@ -69,8 +69,9 @@ def test_a_role_is_granted_and_withdrawn_over_the_configured_roles():
     assert withdrawn.after == ["ministry_leader"]
     assert "staff" not in withdrawn.patch[0]["values"]["grants"]
     later = applied(after, withdrawn.patch)
-    # Withdrawing the last role leaves an explicit deny, which policy admits.
-    denied = autosave_patch(
+    # Withdrawing the last role removes the rule (#939): an empty role set
+    # is an explicit deny, which would also block ParishSoft leadership.
+    removed = autosave_patch(
         later,
         kind="address",
         identity="clerk@example.org",
@@ -78,8 +79,41 @@ def test_a_role_is_granted_and_withdrawn_over_the_configured_roles():
         checked=False,
         operation_id=operation,
     )
-    assert denied.after == []
-    applied(later, denied.patch)
+    assert removed.before == ["ministry_leader"] and removed.after is None
+    assert removed.patch == [
+        {"operation": "remove", "section": "login_rules", "id": clerk["id"]}
+    ]
+    assert applied(later, removed.patch) == [admin]
+
+
+def test_a_deliberate_explicit_deny_stays_a_deny():
+    """Autosave never turns an explicit deny into anything else implicitly.
+
+    Unticking a role the deny does not hold changes nothing and is refused;
+    ticking one grants it, as for any rule.
+    """
+    admin = address("admin@example.org", ("administrator",))
+    deny = address("denied@example.org", ())
+    operation = str(uuid4())
+    with pytest.raises(RuleRefused, match="unchanged"):
+        autosave_patch(
+            [admin, deny],
+            kind="address",
+            identity="denied@example.org",
+            role="staff",
+            checked=False,
+            operation_id=operation,
+        )
+    granted = autosave_patch(
+        [admin, deny],
+        kind="address",
+        identity="denied@example.org",
+        role="staff",
+        checked=True,
+        operation_id=operation,
+    )
+    assert granted.before == [] and granted.after == ["staff"]
+    assert granted.patch[0]["operation"] == "update"
 
 
 def test_missing_targets_unchanged_intents_and_domain_fences_are_refused():
