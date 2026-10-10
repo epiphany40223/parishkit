@@ -20,6 +20,7 @@ from django.core.validators import validate_email
 from django.db import connection, transaction
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.live_end_date import EndRefusal
 from parishkit.stewardship.campaigns.work_locks import lock_current_campaign_exports
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
@@ -169,6 +170,14 @@ class DatabaseMaterializer:
             version, actor_id=self.actor_id, correlation_id=self.correlation_id
         )
         self.checkpoint("prepared")
+        # The last check before the YAML switch (#944): a live end edit that
+        # can no longer apply is journaled and failed now, with the base
+        # still selected, rather than switched to and refused at activation.
+        refusal = self._end_refusal(version.document())
+        if refusal is not None:
+            with transaction.atomic(durable=True):
+                self._journal_end(refusal)
+            self._refuse_end(refusal)
 
     def activate(self, digest):
         """Require exact selected YAML, then commit pointer/request/audit together."""
@@ -198,14 +207,22 @@ class DatabaseMaterializer:
             # with that campaign's export admission before any row lock.
             lock_current_campaign_exports()
             runtime = SystemConfiguration.objects.select_for_update().first()
-            self._campaign_admission()
+            # A live end edit's guards, judged under the locks the activation
+            # trigger takes (#944). A refusal is journaled in this
+            # transaction and restored below, never left selected.
+            end_refusal = self._end_refusal(selected.document())
+            if end_refusal is None:
+                self._campaign_admission()
             from parishkit.stewardship.campaigns.live_ministries import (
                 live_selection_admitted,
             )
 
             from .chair_seeding import confirmable
 
-            if self.admit_actor is not None and not self.admit_actor():
+            if end_refusal is not None:
+                self._journal_end(end_refusal)
+                refused = end_refusal
+            elif self.admit_actor is not None and not self.admit_actor():
                 # The refusal is committed under the very lock that judged it,
                 # so no crash before the YAML restore can let a later pass, the
                 # actor authorized again by then, judge the request afresh.
@@ -233,9 +250,75 @@ class DatabaseMaterializer:
                     "An added Ministry is no longer current and active."
                 )
             else:
-                self._apply(runtime, selected)
+                refused = self._apply_or_refuse(runtime, selected)
+        if isinstance(refused, EndRefusal):
+            self._refuse_end(refused)
         if refused:
             raise refused
+
+    def _apply_or_refuse(self, runtime, selected):
+        """Apply inside the activation; return a live end edit's refusal, if any.
+
+        Only the clock can change between the end-edit checks above and the
+        activation trigger, which refuses an end that passed meanwhile. For a
+        request with a bound end edit, that refusal (any integrity refusal,
+        so none can leave the candidate selected) rolls back to a savepoint
+        and is journaled instead, so the request ends failed and its base is
+        restored (#944). Every other request's refusal propagates as before.
+        """
+        from django.db import IntegrityError
+
+        from parishkit.stewardship.campaigns.live_end_date import end_intent, refusal
+
+        if self.request is None or end_intent(self.request.pk) is None:
+            self._apply(runtime, selected)
+            return None
+        try:
+            with transaction.atomic():
+                self._apply(runtime, selected)
+        except IntegrityError as error:
+            emit_failure(error, event=Event.INSTALLER_REQUEST_FAILED)
+            reason = self._end_refusal(selected.document()) or refusal("refused")
+            self._journal_end(reason)
+            return reason
+        return None
+
+    def _end_refusal(self, document):
+        """Why this request's live end edit can no longer apply, or None (#944)."""
+        if self.request is None:
+            return None
+        from parishkit.stewardship.campaigns.live_end_date import end_edit_refusal
+
+        return end_edit_refusal(self.request.pk, document)
+
+    def _journal_end(self, refusal):
+        """Journal a live end edit's refusal in the caller's transaction (#944).
+
+        The abort is attributed to the request's own actor, whose change it
+        refuses; its reason is the refusal's fixed sentence, which Change
+        status shows in the page's words.
+        """
+        from parishkit.stewardship.campaigns.configuration_intents import (
+            journal_abort,
+        )
+        from parishkit.stewardship.campaigns.live_end_date import end_intent
+
+        journal_abort(
+            end_intent(self.request.pk),
+            reason=refusal.reason,
+            actor_id=self.request.actor_id,
+            correlation_id=self.correlation_id,
+        )
+
+    def _refuse_end(self, refusal):
+        """Restore the base for a journaled end-edit refusal, then raise it.
+
+        The journal committed first, so a crash before or during the restore
+        leaves the request resumable: the next installer pass recovers the
+        abort (``recover_configuration_abort``) before anything else.
+        """
+        self.restore_aborted_candidate()
+        raise EndEditRefused(refusal.reason)
 
     def _apply(self, runtime, selected):
         """Commit the pointer, request and audit effects inside the activation."""
@@ -428,6 +511,10 @@ class LiveMinistryUnavailable(ActivationRefused):
     """A Ministry added to a live campaign is no longer current and active (#342)."""
 
 
+class EndEditRefused(ActivationRefused):
+    """A live end edit that could no longer apply, journaled and restored (#944)."""
+
+
 def actor_authorized(request, *, lock):
     """Whether the confirming portal user still holds `manage_users` under the base.
 
@@ -548,6 +635,13 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
             # between the two. Outside the candidate validation, so an error
             # judging the actor is never recorded as a malformed candidate.
             failure_code = "actor_unauthorized"
+        elif (refusal := materializer._end_refusal(None)) is not None:
+            # A live end edit that can no longer apply (#944): the campaign
+            # changed, closed or began closing, or work holds it. Refused
+            # before any file is written, so the queue moves on rather than
+            # retrying it ahead of every later request. A candidate whose new
+            # end has passed is the campaign validation's refusal below.
+            failure_code = refusal.failure_code
         else:
             # Active-base damage is deployment state, not invalid user intent.
             # Schema-environment failures likewise propagate before claiming.

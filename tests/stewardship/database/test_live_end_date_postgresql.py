@@ -328,3 +328,194 @@ def test_the_installer_needs_the_owning_admission(auth_service, google):
     with pytest.raises(StorageInvariantError, match="current admission"):
         install_request(store, request_id=request.request_id, correlation_id=uuid4())
     assert installed(store, request.request_id).state == "applied"
+
+
+# ---------------------------------------------------------------- refusals (#944)
+
+
+def drain(store, wrap=None):
+    """Run the configuration queue as the installer service does, until empty.
+
+    Returns each request's settled status, by request id. ``wrap``, when
+    given, is entered around each request's install.
+    """
+    from contextlib import nullcontext
+
+    from parishkit.stewardship.runtime_process import next_configuration_request
+
+    settled = {}
+    while (identifier := next_configuration_request()) is not None:
+        assert identifier not in settled, "the queue selected a request again"
+        with wrap() if wrap else nullcontext():
+            settled[identifier] = installed(store, identifier)
+    return settled
+
+
+def coherent(store):
+    """The selected YAML is the applied configuration, and nothing is queued."""
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.runtime_process import next_configuration_request
+
+    assert (
+        store.active().version_id
+        == SystemConfiguration.objects.get().active_configuration_id
+    )
+    assert next_configuration_request() is None
+
+
+def rename_parish(store, actor):
+    """Queue an ordinary change behind the end edit: the parish's name."""
+    parish = store.active().document()["sections"]["parish"][0]
+    return record_request(
+        base_digest=store.active().digest,
+        patch=[
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": parish["id"],
+                "values": {"name": "Renamed after the end edit"},
+            }
+        ],
+        actor_id=actor,
+        request_key=uuid4(),
+        correlation_id=uuid4(),
+    ).request_id
+
+
+def journal_reason(request_id):
+    """The abort journal's reason for ``request_id``'s end edit."""
+    from parishkit.stewardship.campaigns.models import CampaignConfigurationAbort
+
+    return CampaignConfigurationAbort.objects.get(intent__request_id=request_id).reason
+
+
+@pytest.mark.parametrize("passed", ["old_end", "new_end"])
+def test_a_date_passing_between_prepare_and_activate_refuses_cleanly(
+    tmp_path, monkeypatch, passed
+):
+    """The clock passes the old (or the new) end after the YAML switch.
+
+    The activation refuses the change under its own locks: the refusal is
+    journaled, the previous YAML restored and the request failed, and the
+    ordinary change queued behind it applies.
+    """
+    from parishkit.stewardship.accounts.configuration_installation import (
+        DatabaseMaterializer,
+    )
+    from parishkit.stewardship.campaigns.live_end_date import REFUSALS
+
+    from .campaign_builders import draft_campaign, end_request
+
+    store, campaign, actor = draft_campaign(tmp_path)
+    original = campaign.active_configuration
+    with campaign_clock(original.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+        new_date = original.end_date + timedelta(days=10 if passed == "old_end" else -2)
+        request, _ = end_request(
+            store, campaign, actor, "edit_end", new_date.isoformat()
+        )
+        later = rename_parish(store, actor)
+        before = store.active()
+        late = (
+            original.ends_at
+            if passed == "old_end"
+            else original.ends_at - timedelta(days=2)
+        ) + timedelta(hours=1)
+        activate = DatabaseMaterializer.activate
+
+        def activate_late(materializer, digest):
+            """Activate the end edit only once the date has passed."""
+            if materializer.request.pk != request.request_id:
+                return activate(materializer, digest)
+            # The YAML is already switched to the candidate here.
+            assert store.active().version_id == request.candidate_version_id
+            with campaign_clock(late):
+                return activate(materializer, digest)
+
+        monkeypatch.setattr(DatabaseMaterializer, "activate", activate_late)
+        settled = drain(store)
+    refused = settled[request.request_id]
+    assert (refused.state, refused.failure_code) == ("failed", "invalid_candidate")
+    assert (
+        journal_reason(request.request_id)
+        == REFUSALS["ended" if passed == "old_end" else "past"]
+    )
+    assert settled[later].state == "applied"
+    coherent(store)
+    assert store.active().predecessor_digest == before.digest
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.end_date == original.end_date
+
+
+def test_a_campaign_change_before_pickup_refuses_cleanly(tmp_path):
+    """The campaign opens after the review: the stale change fails at once."""
+    from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
+
+    from .campaign_builders import (
+        admit_test_work,
+        claimed_task,
+        draft_campaign,
+        end_request,
+    )
+
+    store, campaign, actor = draft_campaign(tmp_path)
+    original = campaign.active_configuration
+    with campaign_clock(original.starts_at - timedelta(days=1)):
+        command(campaign, actor, Action.ACTIVATE)
+        request, _ = end_request(store, campaign, actor, "edit_end")
+        later = rename_parish(store, actor)
+    with campaign_clock(original.starts_at):
+        run = claimed_task("campaign_boundary", campaign.pk, actor)
+        apply_due_boundaries(
+            campaign_id=campaign.pk,
+            task_id=run.run_id,
+            fence=run.fence,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+        campaign.refresh_from_db()
+        assert campaign.state == "active"
+        settled = drain(store)
+    refused = settled[request.request_id]
+    assert (refused.state, refused.failure_code) == ("failed", "stale_base")
+    assert settled[later].state == "applied"
+    coherent(store)
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.end_date == original.end_date
+
+
+def test_claimed_close_work_refuses_cleanly_and_the_queue_moves_on(tmp_path):
+    """A claimed close task refuses the change; the next request still applies."""
+    from django.db import transaction
+    from django.db.models import F
+
+    from .campaign_builders import claimed_task, draft_campaign, end_request
+
+    store, campaign, actor = draft_campaign(tmp_path)
+    original = campaign.active_configuration
+    with campaign_clock(original.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+        row = CampaignBoundaryOccurrence.objects.create(
+            campaign=campaign,
+            kind="close",
+            due_at=original.ends_at,
+            actor_id=actor,
+            correlation_id=uuid4(),
+        )
+        run = claimed_task("campaign_boundary", campaign.pk, actor)
+        with transaction.atomic():
+            CampaignBoundaryOccurrence.objects.filter(pk=row.pk).update(
+                task_id=run.run_id,
+                task_fence=run.fence,
+                version=F("version") + 1,
+                actor_id=actor,
+                correlation_id=uuid4(),
+            )
+        request, _ = end_request(store, campaign, actor, "edit_end")
+        later = rename_parish(store, actor)
+        settled = drain(store)
+    refused = settled[request.request_id]
+    assert (refused.state, refused.failure_code) == ("failed", "invalid_candidate")
+    assert settled[later].state == "applied"
+    coherent(store)
