@@ -583,6 +583,12 @@ def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google)
     body = page.content.decode()
     assert "read-only" in body
     assert 'name="editor" value="leader_roles"' in body
+    # Review waits for a changed role, as on the other settings forms (#921).
+    assert re.search(
+        r'<form [^>]*data-require-change="base_digest"[^>]*>(?:\s*<input[^>]*>)*?'
+        r'\s*<input type="hidden" name="editor" value="leader_roles">',
+        body,
+    )
     assert body.count('id="leader_ministry_leader_roles_0"') == 1
     assert "sees the reports and follow-up of each Ministry" in body
     for role in ("Chairperson", "Staff"):
