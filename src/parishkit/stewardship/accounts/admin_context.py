@@ -244,9 +244,13 @@ COUNTED = frozenset({"information_queue", "ministry_followup"})
 # rows, and takes its total, so the count applies every filter the page
 # does: the Ministry module, a promoted and uncompacted source, the
 # campaign's Ministries (plus removed ones with a current request), the
-# viewer's scope and the latest revision. When the page would say the
-# Ministry follow-up is turned off or unavailable, or the viewer has no
-# Ministry in scope, the count is NULL and no number shows.
+# viewer's scope and the latest revision. The selection derives that scope
+# in SQL from the signed-in actor (stewardship_ministry_followup_v2, #389
+# L3), as the page does, and the page's cross-check against Python's view of
+# the same actor applies here too, so the count never exceeds what the queue
+# shows. When the page would say the Ministry follow-up is turned off or
+# unavailable, or the viewer has no Ministry in scope, the count is NULL and
+# no number shows.
 OPEN_COUNTS = """
 SELECT
     CASE WHEN %(information)s THEN (
@@ -255,13 +259,20 @@ SELECT
         WHERE s.campaign_id=%(campaign)s AND s.mode='live'
           AND i.disposition='current_actionable' AND i.followed_up_at IS NULL)
     END,
-    CASE WHEN %(ministry)s THEN (
-        SELECT CASE WHEN (f->>'authorized')::boolean THEN (f->>'total')::bigint END
-        FROM stewardship_ministry_followup_v1(
-            campaign_uuid => %(campaign)s, filters => %(filters)s::jsonb,
-            operational => %(operational)s, ministry_scope => %(scope)s::bigint[],
-            viewer => %(viewer)s, page_limit => 0) f)
-    END
+    f.total,
+    f.ministries
+FROM (SELECT NULL) one
+LEFT JOIN LATERAL (
+    SELECT CASE WHEN (v->>'authorized')::boolean THEN (v->>'total')::bigint END
+            AS total,
+        ARRAY(SELECT (m->>'duid')::bigint
+            FROM jsonb_array_elements(coalesce(v->'ministries','[]'::jsonb)) m)
+            AS ministries
+    FROM stewardship_ministry_followup_v2(
+        campaign_uuid => %(campaign)s, filters => %(filters)s::jsonb,
+        actor_uuid => %(viewer)s, page_limit => 0) v
+    WHERE %(ministry)s
+) f ON true
 """
 
 
@@ -306,7 +317,7 @@ def _read_open_counts(offered, actor, campaign):
     """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``."""
     from parishkit.stewardship.reports.ministry_followup import (
         FollowupQuery,
-        ministry_scope,
+        in_scope,
         selection_filters,
     )
 
@@ -318,12 +329,14 @@ def _read_open_counts(offered, actor, campaign):
                 "ministry": "ministry_followup" in offered,
                 "campaign": campaign.pk,
                 "filters": selection_filters(FollowupQuery()),
-                "operational": allows(actor, Capability.MINISTRY_FOLLOWUP),
-                "scope": ministry_scope(actor),
                 "viewer": actor.identity,
             },
         )
-        information, ministry = cursor.fetchone()
+        information, ministry, ministries = cursor.fetchone()
+    # A count naming a Ministry outside Python's view of the actor would be
+    # refused by the page (in_scope), so it gets no count either.
+    if ministry is not None and not in_scope(actor, True, ministries):
+        ministry = None
     # An entry not asked for, or a Ministry follow-up the page would show as
     # off or unavailable, reads NULL and gets no count.
     return {
