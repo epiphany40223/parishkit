@@ -90,6 +90,8 @@ def components(context, admin):
     links = {
         "campaign": campaign,
         "transition": Value(pk=UUID(int=59)),
+        # The listed preparation can still be cancelled, so Prepare says so.
+        "unavailable": "prepared",
         "records": [
             {
                 "preparation": Value(

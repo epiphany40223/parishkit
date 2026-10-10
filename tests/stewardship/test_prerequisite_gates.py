@@ -15,6 +15,7 @@ from uuid import UUID
 import pytest
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts import activation_progress
 from parishkit.stewardship.accounts.campaign_family_test_views import (
     FamilyTestForm,
     _unavailable,
@@ -248,15 +249,21 @@ def links_page(**values):
 @pytest.mark.parametrize(
     ("values", "words"),
     [
-        ({"inputs_unavailable": True}, "Links can't be prepared yet."),
-        ({}, "Links are already prepared or being prepared below."),
+        ({"unavailable": "not_draft"}, "this campaign is no longer a draft."),
+        ({"unavailable": "cleanup"}, "Finish Testing cleanup, then reload"),
+        ({"unavailable": "inputs"}, "Wait for any running ParishSoft refresh"),
+        ({"unavailable": "discarding"}, "Wait for them to finish being discarded"),
+        ({"unavailable": "prepared"}, "cancel and discard those first"),
     ],
 )
 def test_prepare_is_shown_unavailable_with_its_reason(values, words):
     """Without a prepare control, Prepare is greyed and described by why."""
     html = links_page(**values)
     (reason,) = re.findall(r'<p role="status" id="prepare-unavailable">([^<]*)', html)
-    assert reason.startswith(words)
+    assert words in reason.replace("&#x27;", "'")
+    # Only the cleanup reason names cleanup, and only discarding says wait.
+    assert ("Testing cleanup" in reason) == (values["unavailable"] == "cleanup")
+    assert ("cancel and discard" in reason) == (values["unavailable"] == "prepared")
     (button,) = re.findall(r"<button[^>]*>(?=Prepare inactive Family links)", html)
     assert " disabled" in button and 'aria-describedby="prepare-unavailable"' in button
 
@@ -267,3 +274,60 @@ def test_prepare_is_available_while_the_server_offers_it():
     assert 'id="prepare-unavailable"' not in html
     (button,) = re.findall(r"<button[^>]*>(?=Prepare inactive Family links)", html)
     assert 'type="submit"' in button and "disabled" not in button
+
+
+class Records(list):
+    """A preparation queryset stand-in: filter() keeps the uncancelled ones."""
+
+    def filter(self, **lookup):
+        """Only the uncancelled filter is used; records carry ``cancelled``."""
+        assert lookup == {"productiontokencancellation__isnull": True}
+        return [record for record in self if not record.cancelled]
+
+
+def unavailable_reason(
+    monkeypatch, *, campaign="draft", cleanup=True, inputs=True, records=()
+):
+    """Pick Prepare's reason with the cleanup records and tasks faked."""
+    exists = Value(objects=Value(filter=lambda **_: Value(exists=lambda: False)))
+    manifest = Value(objects=Value(filter=lambda **_: Value(exists=lambda: cleanup)))
+    monkeypatch.setattr(activation_progress, "ProductionCleanupCancellation", exists)
+    monkeypatch.setattr(activation_progress, "ProductionCleanupManifest", manifest)
+    monkeypatch.setattr(activation_progress, "_latest", lambda task: task)
+    monkeypatch.setattr(activation_progress, "disposed", lambda item: item.disposed)
+    row = Value(
+        campaign=Value(state=campaign),
+        state="cleanup_complete",
+        processed_count=5,
+        inventory_total=5,
+    )
+    return activation_progress._unavailable(
+        row, object() if inputs else None, Records(records)
+    )
+
+
+def preparation(*, cancelled=False, disposed=False, state="succeeded"):
+    """One earlier preparation; its task id is its task, as _latest is faked."""
+    return Value(cancelled=cancelled, disposed=disposed, task_id=Value(state=state))
+
+
+@pytest.mark.parametrize(
+    ("values", "reason"),
+    [
+        ({"campaign": "active", "cleanup": False, "inputs": False}, "not_draft"),
+        ({"cleanup": False, "inputs": False}, "cleanup"),
+        ({"inputs": False}, "inputs"),
+        ({"records": [preparation()]}, "prepared"),
+        ({"records": [preparation(cancelled=True)]}, "discarding"),
+        (
+            {"records": [preparation(cancelled=True), preparation(disposed=True)]},
+            "discarding",
+        ),
+        ({"records": [preparation(disposed=True, state="running")]}, "prepared"),
+    ],
+)
+def test_prepare_reason_matches_what_blocks_it(monkeypatch, values, reason):
+    """Each reason only for its own case: a closed campaign first, then
+    unfinished cleanup, other inputs, a preparation that still needs Cancel,
+    and otherwise cancelled ones still being discarded."""
+    assert unavailable_reason(monkeypatch, **values) == reason

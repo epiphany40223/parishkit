@@ -22,6 +22,10 @@ from parishkit.stewardship.campaigns.activation_tokens import (
     require_current,
 )
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.campaigns.production_models import (
+    ProductionCleanupCancellation,
+    ProductionCleanupManifest,
+)
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.storage import TaskRetryConflict, retry_failed
@@ -50,6 +54,37 @@ def _inputs(value):
 def _latest(root_id):
     """A failed historical execution must never hide its running retry child."""
     return TaskRun.objects.filter(root_id=root_id).order_by("-retry_sequence").first()
+
+
+def _cancellable(preparation, task):
+    """Whether an uncancelled preparation still holds staging Cancel can discard."""
+    return not disposed(preparation) or task.state in NONTERMINAL_STATES
+
+
+def _unavailable(row, inputs, preparations):
+    """Why Prepare is unavailable, as the key of the page's reason (#563).
+
+    In order: the campaign is no longer a draft; Testing cleanup is not
+    complete; other current inputs (a ParishSoft refresh, campaign work) are
+    not ready; an earlier preparation still needs Cancel; or every earlier
+    one is already cancelled and still being discarded.
+    """
+    if row.campaign.state != "draft":
+        return "not_draft"
+    if (
+        row.state != "cleanup_complete"
+        or row.processed_count != row.inventory_total
+        or ProductionCleanupCancellation.objects.filter(request=row).exists()
+        or not ProductionCleanupManifest.objects.filter(request=row).exists()
+    ):
+        return "cleanup"
+    if inputs is None:
+        return "inputs"
+    # Preparations of one transition are few, so checking each is cheap.
+    for preparation in preparations.filter(productiontokencancellation__isnull=True):
+        if _cancellable(preparation, _latest(preparation.task_id)):
+            return "prepared"
+    return "discarding"
 
 
 def _sign(actor, row, action, *, preparation=None, task=None, inputs=None):
@@ -100,9 +135,7 @@ def progress(request, service, campaign_id, request_id, *, window):
                 and TokenPreparationInputs.retained(preparation) == inputs
             )
             controls = {}
-            if not cancellation and (
-                not disposed(preparation) or task.state in NONTERMINAL_STATES
-            ):
+            if not cancellation and _cancellable(preparation, task):
                 controls["cancel"] = _sign(
                     actor, row, "cancel", preparation=preparation
                 )
@@ -138,7 +171,9 @@ def progress(request, service, campaign_id, request_id, *, window):
             "prepare": _sign(actor, row, "prepare", inputs=inputs)
             if available
             else None,
-            "inputs_unavailable": inputs is None,
+            "unavailable": None
+            if available
+            else _unavailable(row, inputs, preparations),
             "page": window.page,
             "previous_page": window.page - 1,
             "next_page": window.page + 1,
