@@ -3774,13 +3774,13 @@ refresh re-reads everything (including Ministry rosters and giving) and usually
 takes a few minutes, while the automatic quick updates read only the
 Families ParishSoft reports as changed. A refresh run's background task page,
 and its row in the background-work list, name the run as a "Full refresh" or a
-"15-minute update" from its request kind (whatever the quick-update cadence),
-and describe the current phase in
-words ("Downloading from ParishSoft", "Saving the downloaded records",
-"Checking the new data", "Making the new data current"). The download phase has
-no count, so while a refresh is downloading the page says so instead of a bare
-wait message; other steps without a count keep the general message. Counts are
-labeled as records checked, since every refresh places every record into a
+"Quick update" from its request kind (whatever the quick-update cadence, so the
+label never claims a 15-minute cadence that is not configured), and describe
+the current phase in words ("Downloading from ParishSoft", "Saving the
+downloaded records", "Checking the new data", "Making the new data current").
+The download phase has no count, so while a refresh is downloading the page
+says so instead of a bare wait message; other steps without a count keep the
+general message. Counts are labeled as records checked, since every refresh places every record into a
 complete new copy and reuses unchanged records. Once a refresh has succeeded,
 its task page says how many records it checked and how many changed, by
 collection (for example, "Checked 30,639 records from ParishSoft; 12 changed

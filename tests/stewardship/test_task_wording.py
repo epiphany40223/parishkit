@@ -30,7 +30,7 @@ def test_refresh_label_needs_a_refresh_task_and_a_known_kind():
     """Only refresh tasks are labeled, by their request kind."""
     task = {"type": "source_refresh", "root_id": "r"}
     assert refresh_label(task, {"r": "full"}) == REFRESH_LABELS["full"]
-    assert refresh_label(task, {"r": "delta"}) == "15-minute update"
+    assert refresh_label(task, {"r": "delta"}) == "Quick update"
     assert refresh_label(task, {}) is None
     assert (
         refresh_label({"type": "report_export", "root_id": "r"}, {"r": "full"}) is None
@@ -76,6 +76,8 @@ def test_downloading_explains_why_there_is_no_count_yet():
     assert "Full refresh" in html
     assert "Downloading from ParishSoft…" in html
     assert "This step shows no count yet" in html
+    assert "a quick update a minute or two" in html
+    assert "15-minute" not in html
     assert "Waiting for progress details" not in html
 
 
@@ -109,7 +111,7 @@ def test_waiting_to_retry_says_so():
     [
         # Before the download: retention runs first and reports "starting".
         ("starting", 0, 0),
-        # A 15-minute update that loaded nothing saves, checks and promotes
+        # A quick update that loaded nothing saves, checks and promotes
         # with no count at all.
         ("staging", 0, 0),
         ("validating", 0, 0),
