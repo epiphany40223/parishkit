@@ -388,7 +388,9 @@ no connection) keeps the countdown going. Privileged operations such
 as Production transition, campaign reopening, ParishSoft publication, secret
 replacement, and purge require fresh Google re-authentication no older than
 five minutes, as do Family-directory, mail-merge and financial exports,
-integration setting changes and starting Testing cleanup ([#547](https://github.com/epiphany40223/parishkit/issues/547)). The one exception is a full-scope
+integration setting changes and starting Testing cleanup ([#547](https://github.com/epiphany40223/parishkit/issues/547)),
+pausing and resuming mail, withdrawing Production, closing the Family portal
+for maintenance, backup-key changes and approving an automation session. The one exception is a full-scope
 [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line),
 which an Administrator approved with a fresh sign-in and which stands in for it
 for the actions listed there.
@@ -455,7 +457,11 @@ authentication.
 
 Cookies are `Secure` in production, `HttpOnly`, `SameSite=Lax`, narrowly
 scoped, and rotated at login/privilege transition. Family and administration
-sessions are separate namespaces; acquiring one never grants the other.
+sessions are separate namespaces; acquiring one never grants the other. Each
+namespace has its own session and CSRF cookies (`pk_family` and
+`pk_family_csrf` on `/`, `pk_admin` and `pk_admin_csrf` on `/admin/`), so a
+sign-in or CSRF rotation in one never invalidates the other's open pages (see
+the [CSRF namespaces guide](../../../guides/stewardship-csrf-namespaces.md)).
 
 ## Family credential security
 
@@ -515,9 +521,13 @@ unnecessary. Incoming exchange uses only the digest. Only `mail-dispatch` and
 reports, exports, logs, and general workers cannot.
 
 Tokens are campaign-bound, reusable until invalidated, and rejected whenever
-the campaign is closed or the Family is ineligible. Explicit rotation atomically
-replaces ciphertext and digest, invalidating every prior email link without
-changing the manual code. Campaign close destroys recoverable token ciphertext
+the campaign is closed or the Family is ineligible. A storage primitive can
+rotate one Family's token, atomically replacing ciphertext and digest, which
+invalidates every prior email link without changing the manual code; no page,
+command or task calls it, because Production codes and links stay valid for
+the rest of the campaign (see the
+[bulk Family send's constraints](../background-processing/spec.md#bulk-send-work-outside-the-lock)).
+Campaign close destroys recoverable token ciphertext
 and digest while retaining non-secret generation/revocation audit metadata; a
 later guarded reopen prepares a new inactive token generation asynchronously
 and selects it only at final confirmation, before new Family mail can be sent.
@@ -526,11 +536,10 @@ pointer as defined by the [data model](../data/spec.md#family-campaign-identity)
 Temporary Family ineligibility does not destroy the ciphertext, so reactivation
 during the same open campaign can restore the existing link.
 
-Restore is an exception to that reuse: it invalidates every restored link and
-prepared generation before web access resumes. A scheduled/active release
-requires fresh generation preparation and atomic activation under the
-[restore workflow](../admin-portal/spec.md#restore-release). Manual codes remain
-stable; no token rotation implicitly authorizes another email delivery.
+Restore is not an exception: it keeps the restored codes, links, token
+generations and credential epoch, and its release activates nothing new (the
+Administrator's hard rule; see the
+[restore workflow](../admin-portal/spec.md#restore-release)).
 
 Stored uniqueness and submitted lookup use one canonical value: remove ASCII
 spaces and hyphens, convert ASCII letters to uppercase, and require exactly

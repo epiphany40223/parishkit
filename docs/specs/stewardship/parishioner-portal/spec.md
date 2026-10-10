@@ -64,9 +64,9 @@ entropy, failures do not consume guessable-code counters; ordinary request-
 abuse limits still apply uniformly through the
 [secure-link anti-flood policy](../architecture/spec.md#identity-and-session-security).
 
-An explicit Cancel and sign out action is available throughout. It warns that
-in-progress answers will be lost, clears client state, revokes the server
-session, and returns to `/`.
+An explicit Cancel and sign out action is available throughout. When the form
+has unsaved answers it first asks the Family to confirm discarding them; it then
+clears client state, revokes the server session, and returns to `/`.
 
 ## Form state and navigation
 

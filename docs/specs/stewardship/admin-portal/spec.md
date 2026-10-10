@@ -1819,7 +1819,7 @@ Admins have two always-visible indicators:
   type, initiator, start/heartbeat, phase, processed/total counts and percent,
   sanitized status, and links to completed/failed records. A distinct Admin-only
   delivery warning links to unresolved `delivery_unknown` rows and exposes the
-  reconciliation, evidence-note, delivered-resolution, and acknowledged-resend
+  evidence-note, delivered-resolution, recorded-unsent and acknowledged-resend
   actions defined by the
   [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders);
   it never displays credentials or sealed substitutions.
