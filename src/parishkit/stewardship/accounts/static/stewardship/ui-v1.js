@@ -1689,26 +1689,82 @@
   // buttons disabled here (data-acknowledgment-gated) are ever re-enabled, so
   // a button the server or another script disabled (a pending test, setup
   // that is not ready) stays disabled. formnovalidate buttons are never gated.
+  //
+  // While this gate holds a button, a hint after it (the unticked box's
+  // data-missing-hint, or a generic line) says why, named by the button's
+  // aria-describedby (#563). It sits after the button, or after the row or
+  // paragraph holding it, so it never moves the box just ticked or the
+  // button. A hint only explains this gate: a button the server disabled
+  // (setup not ready, a test pending) gets none. A form with the
+  // data-require-complete gate is left to it; its required boxes count there
+  // and its own hint says what is missing.
+  const acknowledgmentHints = new WeakMap(); // form → its hint element
+  let acknowledgmentHintCount = 0; // numbers each hint's id
+  const acknowledgmentHint = (form, controls) => {
+    if (acknowledgmentHints.has(form)) return acknowledgmentHints.get(form);
+    if (!controls.length) return null;
+    const last = controls[controls.length - 1];
+    const hint = document.createElement("p");
+    hint.className = "help";
+    acknowledgmentHintCount += 1;
+    hint.id = `acknowledgment-hint-${acknowledgmentHintCount}`;
+    hint.setAttribute("data-acknowledgment-hint", "");
+    hint.hidden = true;
+    const holder = last.parentElement;
+    (holder?.matches("p, .setup-actions") ? holder : last).after(hint);
+    controls.forEach((node) => {
+      const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter(Boolean);
+      node.setAttribute("aria-describedby", [...described, hint.id].join(" "));
+    });
+    acknowledgmentHints.set(form, hint);
+    return hint;
+  };
   const gateAcknowledgments = (form) => {
-    if (!form) return;
+    if (!form || !form.isConnected || form.hasAttribute("data-require-complete")) return;
     const boxes = [...form.elements].filter((node) => node instanceof HTMLInputElement
       && node.type === "checkbox" && node.hasAttribute("data-acknowledgment"));
     if (!boxes.length) return;
-    const blocked = boxes.some((box) => !box.checked && !box.closest("[hidden]"));
-    submitControls(form).forEach((node) => {
-      if (node.formNoValidate) return;
-      if (blocked && !node.disabled) {
+    const unticked = boxes.find((box) => !box.checked && !box.closest("[hidden]"));
+    const controls = submitControls(form).filter((node) => !node.formNoValidate);
+    controls.forEach((node) => {
+      if (unticked && !node.disabled) {
         node.disabled = true;
         node.setAttribute("data-acknowledgment-gated", "");
-      } else if (!blocked && node.hasAttribute("data-acknowledgment-gated")) {
+      } else if (!unticked && node.hasAttribute("data-acknowledgment-gated")) {
         node.disabled = false;
         node.removeAttribute("data-acknowledgment-gated");
       }
     });
+    const holding = controls.some((node) => node.hasAttribute("data-acknowledgment-gated"));
+    // No hint element is made until one is needed.
+    const hint = holding || acknowledgmentHints.has(form)
+      ? acknowledgmentHint(form, controls) : null;
+    if (!hint) return;
+    hint.hidden = !holding;
+    hint.textContent = holding
+      ? (unticked.closest("[data-missing-hint]")?.dataset.missingHint
+        || "Tick the confirmation above to continue.")
+      : "";
   };
-  document.querySelectorAll("form").forEach((form) => {
-    gateAcknowledgments(form);
-    form.addEventListener("change", () => gateAcknowledgments(form));
+  // Forms are wired at load and again when an in-place swap brings a form
+  // in (fresh elements with no listeners); a swap inside a wired form only
+  // needs that form checked again.
+  const wiredAcknowledgments = new WeakSet();
+  const wireAcknowledgments = (root) => {
+    const forms = [...(root instanceof HTMLFormElement ? [root] : []),
+      ...root.querySelectorAll("form")];
+    forms.forEach((form) => {
+      if (wiredAcknowledgments.has(form)) return;
+      wiredAcknowledgments.add(form);
+      form.addEventListener("change", () => gateAcknowledgments(form));
+    });
+    forms.forEach(gateAcknowledgments);
+    if (root instanceof Element) gateAcknowledgments(root.closest("form"));
+  };
+  wireAcknowledgments(document);
+  document.addEventListener("parishkit:swap", (event) => {
+    if (event.target instanceof Element) wireAcknowledgments(event.target);
   });
   // Back/forward navigation can restore checkbox state without a change event.
   window.addEventListener("pageshow", () => {
@@ -1780,6 +1836,8 @@
         button.removeAttribute("data-acknowledgment-gated");
         button.disabled = true;
         warning.hidden = false;
+        // The button is held by the failure now, not by the box: drop the hint.
+        gateAcknowledgments(acknowledgement.form);
       } finally {
         window.clearTimeout(timeout);
         activeRequest = null;

@@ -12,16 +12,17 @@
 <time datetime="{{ resolved.created_at|instant }}" data-local-instant>{{ resolved.created_at|instant }}</time>
 </section>
 {% elif source.snapshot_id and can_clear %}
-<form method="post" action="{% url 'admin:delivery_refusal_clear' refusal.id %}" class="panel">
+{# Clear waits for a note that is more than spaces and the tick, as the server requires; the hint follows the button (#563). #}
+<form method="post" action="{% url 'admin:delivery_refusal_clear' refusal.id %}" class="panel" data-require-complete>
   {% csrf_token %}
   <input type="hidden" name="command_id" value="{{ command_id }}">
   <input type="hidden" name="source_snapshot_id" value="{{ source.snapshot_id }}">
   <input type="hidden" name="source_generation" value="{{ source.generation }}">
   <label for="verification-note">{% translate "How did you verify that this mailbox now works?" %}</label>
-  <textarea id="verification-note" name="note" maxlength="2000" required aria-describedby="evidence-help"></textarea>
+  <textarea id="verification-note" name="note" maxlength="2000" required aria-describedby="evidence-help" data-missing-hint="{% translate 'Describe how you verified the mailbox.' %}"></textarea>
   <p id="evidence-help" class="help">{% translate "Keep evidence brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p>
-  <label><input type="checkbox" name="verified" value="yes" required data-acknowledgment> {% translate "I verified this address for this Family and authorize removing this refusal." %}</label>
-  {% button type="submit" %}{% translate "Clear verified refusal" %}{% endbutton %}
+  <label><input type="checkbox" name="verified" value="yes" required data-acknowledgment data-missing-hint="{% translate 'Tick the box to confirm that you verified this address.' %}"> {% translate "I verified this address for this Family and authorize removing this refusal." %}</label>
+  {% button type="submit" aria-describedby="refusal-complete-hint" %}{% translate "Clear verified refusal" %}{% endbutton %}<p class="help" id="refusal-complete-hint" data-complete-hint hidden></p>
 </form>
 {% else %}<p>{% translate "Clearing is not available right now. It needs up-to-date parish data from ParishSoft and a current campaign." %}</p>{% endif %}
 {% endblock %}
