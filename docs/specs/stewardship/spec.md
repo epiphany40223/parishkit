@@ -37,7 +37,10 @@ The application does not process payments, modify ParishSoft Ministry rosters,
 create ParishSoft Members or Families, or expose a public integration API. New
 pledges and unsupported ParishSoft changes are resolved by report/export or a
 human workflow. ParishSoft remains the source of truth; submitted answers are a
-versioned proposal overlay until upstream data reflects them.
+versioned proposal overlay until upstream data reflects them. Contact-data
+write-back (ParishSoft publication) is not built yet; it is the
+[post-launch priority](../../plans/stewardship/v1-launch.md#post-launch-priority-parishsoft-write-back)
+([#528](https://github.com/epiphany40223/parishkit/issues/528)).
 
 ## Specification map
 
@@ -160,6 +163,13 @@ background work.
    restored to an earlier lifecycle state.
 8. **Purged**: only the non-sensitive tombstone and purge audit metadata remain.
 
+v1 builds the states through `closed`. Archive, unarchive, reopen, Return to
+Testing and purge are cut from v1
+([v1 launch scope](../../plans/stewardship/v1-launch.md#cut-from-v1), items 1
+and 2; [#527](https://github.com/epiphany40223/parishkit/issues/527)); the
+rules below keep their intended design, and the
+[campaign data model](data/spec.md#campaign) says what exists today.
+
 The only purge transitions are `archived` to `purging`; `purging` to `archived`
 only if the job fails before its first deletion batch commits; `purging` to
 `purged` or `purge_cleanup_failed`; and `purge_cleanup_failed` back through
@@ -216,7 +226,9 @@ a valid future instant or remove it. The new end date and all resulting schedule
 revisions/cancellations commit atomically with exact affected counts. Any
 provider-submitting or delivery-unknown affected work blocks the operation until
 resolved. If the campaign closes first, the ordinary editor loses the race and
-the guarded reopen workflow applies instead.
+the guarded reopen workflow applies instead. No page or command offers this
+end-date edit yet, although its storage and guards are built
+([#912](https://github.com/epiphany40223/parishkit/issues/912)).
 
 Before the resolved start instant, a freshly authenticated Admin may use an
 explicit, confirmed **Cancel go-live** workflow. It transactionally
@@ -266,6 +278,12 @@ between campaign dates and that period is allowed only after a visible warning
 and Admin confirmation.
 
 ## End-to-end sequence
+
+Steps 2 and 3 describe the setup split (#142). Until Create the campaign
+ships ([#786](https://github.com/epiphany40223/parishkit/issues/786)), the
+setup wizard still collects the first campaign and finishing setup creates it
+with its Family codes. Publishing census changes in step 7 is not built yet
+(#528).
 
 1. An operator runs the minimal bootstrap command and starts Compose.
 2. The initial Admin authenticates with Google and completes the transactional
