@@ -1950,8 +1950,8 @@ each preview time in the browser's zone as well. See decision 18 in the
   times and clears the skips, and the page says so beside the lists before
   it does. Since each time becomes a rule, the two lists together hold at
   most 64 times, said beside them; a schedule with more (such as quick
-  updates every 15 minutes) is changed with its rules instead. The lists and the rows stay in step: each check refills them
-  from the rows.
+  updates every 15 minutes) is changed with its rules instead. The lists
+  and the rows stay in step: each check refills them from the rows.
 - The page states which full time is the nightly refresh and that it runs
   even while Family emails are being sent.
 - A schedule saved before this page existed is shown converted to the
@@ -2019,11 +2019,12 @@ and removes rows, fills presets and reads times through the shared
   so neither the line nor a longer preview moves Save or the rows under the
   pointer. A row's messages are drawn under its controls, in room kept for
   one line, so a one-line message that comes or goes moves nothing. When
-  a longer message, or "Use these lists", changes what is above, the page
-  scrolls by the same amount, so the control under the pointer (else the
-  one being edited, or the button just chosen) stays where it was on the
-  screen. The "Edit as text" error is drawn after Use these lists, in room
-  kept for one line.
+  a longer message changes what is above, the page scrolls by the same
+  amount, so the row under the pointer (or, over blank space, the next row
+  below it; else the control being edited) stays where it was on the
+  screen. "Use these lists" keeps its own button in place, even with the
+  pointer elsewhere. The "Edit as text" error is drawn after Use these
+  lists, in room kept for one line.
   The preview and the problems at each row are not live regions. This is
   the same pattern as the mail schedules' repeat panel
   ([#469](https://github.com/epiphany40223/parishkit/issues/469)).

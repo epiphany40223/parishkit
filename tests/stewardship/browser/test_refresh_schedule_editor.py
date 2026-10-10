@@ -411,3 +411,88 @@ def test_edit_as_text_moves_nothing_under_the_pointer(page, component_origin):
     # The answer is in place once the seven-day list loses 16:00.
     expect(page.locator('[data-schedule-part="preview"]')).not_to_contain_text("16:00")
     assert steady(before, tops(page, *watched))
+
+
+def close_page_with_field_at(page, component_origin, y):
+    """Open the too-close schedule on a tall screen, with rule 2's time
+    field ``y`` pixels from the top; return the requests, rule 1's long
+    message and the field."""
+    page.set_viewport_size({"width": 480, "height": 1200})
+    requests = answering(page, CLOSE)
+    page.goto(component_origin + "/refresh-schedule-close")
+    message = page.locator("#rules-0-messages")
+    contains(message, "00:00 is only 10 minutes after the 23:50 full refresh")
+    assert message.bounding_box()["height"] > 60
+    field = page.locator('[name="rules-1-at"]')
+    scroll_to(page, field, y)
+    return requests, message, field
+
+
+def within_half_a_pixel(before, after):
+    """Whether each of ``after`` is within 0.5px of ``before``."""
+    return all(abs(a - b) <= 0.5 for a, b in zip(before, after, strict=True))
+
+
+def test_a_pointer_in_a_gap_between_rows_keeps_the_rows_in_place(
+    page, component_origin
+):
+    """Over the blank space between two rows the pointer points at the rows'
+    container, whose top never moves: the next row below the pointer is
+    kept in place instead, and with it the focused control below."""
+    requests, message, field = close_page_with_field_at(page, component_origin, 300)
+    rows = rule_rows(page)
+    above, below = rows.nth(1).bounding_box(), rows.nth(2).bounding_box()
+    gap = below["y"] - (above["y"] + above["height"])
+    assert gap > 4
+    page.mouse.move(above["x"] + above["width"] / 2, below["y"] - gap / 2)
+    assert page.evaluate(
+        "([x, y]) => document.elementFromPoint(x, y).matches('[data-schedule-rows]')",
+        [above["x"] + above["width"] / 2, below["y"] - gap / 2],
+    )
+    field.fill("23:30")
+    focused = page.locator('[name="rules-3-at"]')
+    focused.focus()
+    watched = ('[name="rules-3-at"]', "#rules-2")
+    before = tops(page, *watched)
+    recorded(page, requests, 1)
+    has_text(message, "")
+    assert within_half_a_pixel(before, tops(page, *watched))
+
+
+def test_a_cancelled_touch_leaves_no_stale_pointer(page, component_origin):
+    """A touch that turns into a pan ends with pointercancel, not pointerup:
+    it no longer points anywhere, so the focused control is kept in place,
+    not rule 1 where the touch began."""
+    requests, message, field = close_page_with_field_at(page, component_origin, 600)
+    first = rule_rows(page).nth(0).bounding_box()
+    page.evaluate(
+        """([x, y]) => {
+          const at = {clientX: x, clientY: y, pointerType: "touch", bubbles: true};
+          document.dispatchEvent(new PointerEvent("pointerdown", at));
+          document.dispatchEvent(new PointerEvent("pointercancel", at));
+        }""",
+        [first["x"] + first["width"] / 2, first["y"] + 10],
+    )
+    field.fill("23:30")
+    before = top(field)
+    recorded(page, requests, 1)
+    has_text(message, "")
+    assert within_half_a_pixel((before,), (top(field),))
+
+
+def test_a_pointer_on_a_replaced_message_keeps_its_row_in_place(page, component_origin):
+    """The message under the pointer is replaced by the redraw (rule 2's
+    kept-time note goes once its time is on the quarter hour): its row is
+    kept in place instead, also with nothing focused."""
+    requests, message, field = close_page_with_field_at(page, component_origin, 300)
+    note = page.locator("#rules-1-messages > *").first
+    contains(note, "Kept from the earlier schedule")
+    box = note.bounding_box()
+    page.mouse.move(box["x"] + 5, box["y"] + box["height"] / 2)
+    field.fill("23:30")
+    page.evaluate("document.activeElement.blur()")
+    before = tops(page, "#rules-1")
+    recorded(page, requests, 1)
+    has_text(message, "")
+    has_text(page.locator("#rules-1-messages"), "")
+    assert within_half_a_pixel(before, tops(page, "#rules-1"))
