@@ -2106,8 +2106,9 @@ reconciliation before cancellation or settlement.
 
 ### Daily campaign digest
 
-After every active local campaign day, default 12:15 a.m. next day and
-Admin-configurable, send:
+After every active local campaign day, at the local time its schedule on
+[Dates and mail schedules](../admin-portal/spec.md#campaign-configuration)
+sets (the Administrator chooses it; there is no preset time), send:
 
 - the report day's first submissions, cumulative participation and
   percentage;
@@ -2219,7 +2220,10 @@ report button is the portal's primary button. There is no small print.
 
 Changing Admin recipients does not resend past successful digests. An Admin may
 manually generate/send a new report occurrence, visibly labeled manual and
-independently audited.
+independently audited. The saved weekly report pages are
+Administrator-only, like the email's recipients; Staff work the same items
+on the [Additional information](../reports/spec.md#additional-information)
+report.
 
 The manual-report confirmation explicitly explains that it selects all current
 actionable live items and corrections to previously delivered items, and may
@@ -2314,6 +2318,11 @@ recovery page with a task-detail link; unrelated internal failures report
 unavailability, not a retry conflict.
 
 ## ParishSoft publication
+
+Not built yet: publication is ADM-09
+([#528](https://github.com/epiphany40223/parishkit/issues/528)), and today
+census changes reach ParishSoft by hand from the
+[Census changes](../reports/spec.md#pending-census-changes) page.
 
 Publication runs in a dedicated queue with lower concurrency and uses the same
 `SourceMutationLease` as refresh. Preflight and execution are separate task
