@@ -20,9 +20,11 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.configuration import MINISTRY_LEADER_ROLES
 from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.domain import CampaignState
+from parishkit.stewardship.campaigns.leader_roles import effective_roles, role_choices
 from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.campaigns.live_ministries import live_ministries_editable
 from parishkit.stewardship.campaigns.models import Campaign, CampaignWorkGate
@@ -55,7 +57,7 @@ from .admin_editing import (
 )
 from .authentication import runtime
 from .campaign_family_test import chosen_family_test_url
-from .campaign_forms import CampaignForm, initial_fields
+from .campaign_forms import CampaignSettingsForm, LeaderRolesForm, initial_fields
 from .campaign_preview import describe_changes
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
@@ -70,7 +72,13 @@ REMOVES_SHARE_OPTIONS = _(
     "Re-enabling it starts with the default options, not your customized "
     "labels. The previous configuration remains in retained history."
 )
-MULTIPLE_FIELDS = frozenset({"ministry_duids", "fund_duids", "comparison_fund_duids"})
+MULTIPLE_FIELDS = frozenset(
+    {"ministry_duids", "fund_duids", "comparison_fund_duids", "ministry_leader_roles"}
+)
+# A live campaign's Ministry leader roles (#922) keep their own small form,
+# which names itself with this hidden field.
+LEADER_EDITOR = "leader_roles"
+LEADER_FIELDS = frozenset({"editor", "ministry_leader_roles", "base_digest"})
 
 
 def _state(service):
@@ -218,13 +226,64 @@ def _target(configuration, campaigns, held, campaign_id):
     return campaign, editable
 
 
-def _page(request, configuration, campaign, form, *, editable, status=200, **region):
+def _leaders_editable(configuration, campaign, editable):
+    """Whether the live leader-role form is shown: a locked current campaign
+    that is not archived and asks about Ministries (#922). A draft edits the
+    roles in its own form instead.
+    """
+    return (
+        not editable
+        and campaign.pk == configuration.current_campaign_id
+        and campaign.state != "archived"
+        and "ministry" in campaign.active_configuration.values["modules"]
+    )
+
+
+def _leader_form(configuration, campaign, data=None, *, digest=None):
+    """The live leader-role form, ticked with the roles in effect now."""
+    roles = effective_roles(campaign.active_configuration.values)
+    form = LeaderRolesForm(
+        data,
+        initial={
+            "ministry_leader_roles": roles,
+            "base_digest": digest or configuration.active_configuration.digest,
+        },
+        roles=role_choices(roles),
+    )
+    # No shared text replaces its own help; this only moves the long help
+    # into the field's tip, as on every Admin form.
+    setup_help.apply(form, {})
+    return form
+
+
+def _page(
+    request,
+    configuration,
+    campaign,
+    form,
+    *,
+    editable,
+    status=200,
+    leader_form=None,
+    **region,
+):
     """Keep locked structural values visible without rendering mutation controls.
 
     ``region`` is ``review_region``'s ``review``, ``receipt`` or ``refusal``
-    for the editor's in-place review region (#532).
+    for the editor's in-place review region (#532). A live campaign that asks
+    about Ministries shows its leader-role form (``leader_form``, #922) with
+    that region under it.
     """
-    if editable:
+    leaders = _leaders_editable(configuration, campaign, editable)
+    if leaders:
+        if leader_form is None:
+            leader_form = _leader_form(
+                configuration, campaign, digest=form["base_digest"].value()
+            )
+        # The live form edits the roles; the read-only settings do not
+        # repeat them.
+        form.fields.pop("ministry_leader_roles", None)
+    if editable or leaders:
         # Edit, review, apply (#196), all on this page; a locked campaign's
         # read-only page is not part of any flow.
         step = "review" if region.get("review") else "edit"
@@ -239,6 +298,7 @@ def _page(request, configuration, campaign, form, *, editable, status=200, **reg
             "campaign": campaign,
             "form": form,
             "editable": editable,
+            "leader_form": leader_form if leaders else None,
             # A live campaign's Ministries keep their own editor (#342).
             "ministries_live": live_ministries_editable(
                 campaign, configuration.current_campaign_id
@@ -267,7 +327,7 @@ def _preview(request, service, actor, state, campaign, form):
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
     values = form.values()
-    previous = campaign.active_configuration.values
+    previous = _with_leader_roles(campaign.active_configuration.values)
     changed = {
         key: value for key, value in values.items() if previous.get(key) != value
     }
@@ -341,6 +401,116 @@ def _preview(request, service, actor, state, campaign, form):
     return _page(request, configuration, campaign, form, editable=True, review=review)
 
 
+def _with_leader_roles(values):
+    """A campaign's values with its effective leader roles filled in (#922).
+
+    A campaign without the key uses the default roles, so a review compares
+    a change with the roles really in effect, never with "Not set".
+    """
+    if "ministry" not in values["modules"] or MINISTRY_LEADER_ROLES in values:
+        return values
+    return {**values, MINISTRY_LEADER_ROLES: effective_roles(values)}
+
+
+def _leaders_preview(request, service, actor, state, campaign, settings, form):
+    """Review a live campaign's leader-role change; nothing is requested yet.
+
+    The change is one campaign update setting ``ministry_leader_roles``,
+    which the installer and the SQL structural lock both admit while live.
+    ``settings`` is the page's read-only settings form; ``form`` the bound
+    leader-role form.
+    """
+    configuration, fingerprint = state[0], state[-1]
+
+    def again(status):
+        """This page again, with the leader form as the reader sent it."""
+        return _page(
+            request,
+            configuration,
+            campaign,
+            settings,
+            editable=False,
+            status=status,
+            leader_form=form,
+        )
+
+    if not form.is_valid():
+        return again(400)
+    if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
+        raise stale_page()
+    previous = _with_leader_roles(campaign.active_configuration.values)
+    roles = form.cleaned_data["ministry_leader_roles"]
+    if roles == previous[MINISTRY_LEADER_ROLES]:
+        form.add_error(None, _("No settings have changed."))
+        return again(400)
+    patch = [
+        {
+            "operation": "update",
+            "section": "campaigns",
+            "id": str(campaign.pk),
+            "values": {MINISTRY_LEADER_ROLES: roles},
+        }
+    ]
+    base = service.store.active()
+    if base is None or base.digest != configuration.active_configuration.digest:
+        raise stale_page()
+    build_candidate(base, patch, candidate_id=uuid4())
+    review = {
+        "changes": describe_changes(previous, {MINISTRY_LEADER_ROLES: roles}),
+        "notes": [],
+        "preview": sign_preview(
+            actor=actor,
+            configuration=configuration,
+            patch=patch,
+            salt=SALT,
+            snapshot=fingerprint,
+        ),
+    }
+    return _page(
+        request,
+        configuration,
+        campaign,
+        settings,
+        editable=False,
+        leader_form=form,
+        review=review,
+    )
+
+
+def _settings_form(configuration, campaign, data=None, *, digest=None, source=None):
+    """The campaign's settings form, drawn from its applied values.
+
+    ``digest`` is the version the form is drawn at (the current one unless
+    an in-place answer keeps the reader's); ``source`` the promoted source
+    for the Ministry and fund names.
+    """
+    previous = campaign.active_configuration.values
+    ministries, funds = _catalog(configuration, source, previous)
+    initial = initial_fields(
+        previous,
+        digest=configuration.active_configuration.digest if digest is None else digest,
+    )
+    leader_roles = (
+        effective_roles(previous) if "ministry" in previous["modules"] else []
+    )
+    # A draft without Ministry stewardship still offers the default roles,
+    # ticked, for when it is turned on.
+    shown = leader_roles or effective_roles({})
+    initial["ministry_leader_roles"] = shown
+    form = CampaignSettingsForm(
+        data,
+        initial=initial,
+        previous=previous,
+        ministries=ministries,
+        funds=funds,
+        leader_choices=role_choices(shown),
+        leader_roles=shown,
+    )
+    # Same plain-language field help as the setup wizard (setup_help.py).
+    setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
+    return form
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def retired_new(request):
     """The retired New campaign address: go to the current campaign's settings.
@@ -386,10 +556,15 @@ def campaign_settings(request, campaign_id):
             passive=request.method != "POST" and "request" in request.GET,
         )
         action, refusal, digest = None, None, None
+        leaders = (
+            request.method == "POST" and request.POST.get("editor") == LEADER_EDITOR
+        )
         if request.method == "POST":
             action = form_action(
                 request.POST,
-                preview_fields=set(CampaignForm.base_fields),
+                preview_fields=LEADER_FIELDS
+                if leaders
+                else set(CampaignSettingsForm.base_fields),
                 multiple_fields=MULTIPLE_FIELDS,
             )
             if action == "confirm":
@@ -429,30 +604,48 @@ def campaign_settings(request, campaign_id):
             state = _state(service)
             configuration, campaigns, source, held = state[:4]
             campaign, editable = _target(configuration, campaigns, held, campaign_id)
-            previous = campaign.active_configuration.values
-            ministries, funds = _catalog(configuration, source, previous)
-            initial = initial_fields(
-                previous,
-                digest=configuration.active_configuration.digest
-                if digest is None
-                else digest,
+            form = _settings_form(
+                configuration,
+                campaign,
+                request.POST if action == "preview" and not leaders else None,
+                digest=digest,
+                source=source,
             )
-            form = CampaignForm(
-                request.POST if action == "preview" else None,
-                initial=initial,
-                previous=previous,
-                ministries=ministries,
-                funds=funds,
-            )
-            # Same plain-language field help as the setup wizard (setup_help.py).
-            setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
-            if refusal is not None and editable:
+            if leaders and action == "preview":
+                if not _leaders_editable(configuration, campaign, editable):
+                    raise UserFacingStale(
+                        _("These Ministry leader roles can't be changed here now."),
+                        fix=_(
+                            "A draft campaign changes them with its other "
+                            "settings; an archived campaign or one that does "
+                            "not ask about Ministries has none to change."
+                        ),
+                    )
+                leader_form = _leader_form(configuration, campaign, request.POST)
+                try:
+                    response = _leaders_preview(
+                        request, service, actor, state, campaign, form, leader_form
+                    )
+                except UserFacingStale as error:
+                    response = _page(
+                        request,
+                        configuration,
+                        campaign,
+                        form,
+                        editable=False,
+                        status=409,
+                        leader_form=leader_form,
+                        refusal=error.refusal,
+                    )
+            elif refusal is not None and (
+                editable or _leaders_editable(configuration, campaign, editable)
+            ):
                 response = _page(
                     request,
                     configuration,
                     campaign,
                     form,
-                    editable=True,
+                    editable=editable,
                     status=409,
                     refusal=refusal,
                 )

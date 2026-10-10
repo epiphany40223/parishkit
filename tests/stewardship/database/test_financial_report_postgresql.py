@@ -46,7 +46,6 @@ from .test_family_auth_postgresql import login as family_login
 from .test_family_mail_dispatch_postgresql import claim
 from .test_financial_source_postgresql import financial_source
 from .test_information_followup_postgresql import search
-from .test_ministry_exports_postgresql import leader
 from .test_ministry_responses_postgresql import respond, revisit
 from .test_receipt_dispatch_postgresql import begin
 from .test_report_workspace_postgresql import read as get
@@ -701,11 +700,10 @@ def test_native_page_filters_privately_and_denies_leaders(
     ]
     assert len(failures) == 1 and failures[0].levelno == logging.ERROR
     assert name.decode() not in str(vars(failures[0]))
-    # Signing the leader in changes the login policy, so this comes last.
-    other, *_ = leader(harness, google)
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert get(other, route)[0].status_code == 403
-        assert search(other, route, {"amount": "any"})[0].status_code == 403
+    # The fixture's Choir Chairperson leads nothing: this campaign does not
+    # ask about Ministries (#922), so the Chairperson cannot even sign in.
+    google[0].update(email="valid@example.org", sub="chairperson-subject")
+    assert signed_in()[1].status_code == 403
     contexts = list(
         AuditContext.objects.filter(
             event__event_type="financial_report_viewed"

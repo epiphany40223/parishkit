@@ -5,6 +5,7 @@ must reload policy under their own configuration/admission serialization. Google
 verification and session lifecycle are ARC-04's boundary, not trusted UUID input.
 """
 
+import json
 from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
@@ -65,16 +66,29 @@ class Principal:
 
 
 def assignment_in_force(record, active_seeded):
-    """The one rule for whether an assignment grants scope right now.
+    """Whether an assignment record is current under the retired assignment model.
 
-    A manual assignment always does; a Chairperson-seeded one only while the
-    promoted source confirms it. Displays reuse this rather than restating it.
+    A manual assignment always is; a Chairperson-seeded one only while the
+    promoted source confirms it. Since Ministry leaders come from ParishSoft
+    roles (#922) no assignment grants any scope; only the remaining review
+    pages still describe their records with this.
     """
     return record["values"]["source"] == "manual" or record["id"] in active_seeded
 
 
-def resolve_roles(email, hosted_domain, records, active_seeded=frozenset()):
-    """Exact address replaces domain rules; seeded scope fails closed on suspension."""
+def resolve_roles(email, hosted_domain, records, led=frozenset()):
+    """The roles and Ministry scope one address holds now.
+
+    An exact-address rule replaces any domain rule. Only a rule's
+    Administrator and Staff roles count: since Ministry leaders come from
+    their ParishSoft Ministry roles (#922), a rule's Ministry leader role and
+    the login rules' Ministry assignments grant nothing. ``led`` is the
+    address's role-derived Ministry scope, ``leader_scope()``'s answer; a
+    non-empty one makes the address a Ministry leader of exactly those
+    Ministries. An exact-address rule with no role still denies everything,
+    leadership included, as SQL's scope does. An Administrator is also Staff
+    and a Ministry leader.
+    """
     email = normalized_email(email)
     domain = email.rsplit("@", 1)[1]
     try:
@@ -83,18 +97,7 @@ def resolve_roles(email, hosted_domain, records, active_seeded=frozenset()):
         # Bad optional hosted-domain evidence grants no domain authority; it
         # must not override an otherwise valid exact-address decision.
         hosted = None
-    assignments = [
-        record
-        for record in records
-        if record["values"]["kind"] == "assignment"
-        and record["values"]["email"] == email
-    ]
-    ministries = frozenset(
-        record["values"]["ministry_duid"]
-        for record in assignments
-        if assignment_in_force(record, active_seeded)
-    )
-    exact = next(
+    rule = next(
         (
             record["values"]
             for record in records
@@ -103,28 +106,42 @@ def resolve_roles(email, hosted_domain, records, active_seeded=frozenset()):
         ),
         None,
     )
-    if exact is not None:
-        roles = set(exact["roles"])
-        if (
-            exact["creation_origin"] == "chair-seed"
-            and set(exact["grants"].get("ministry_leader", {})) == {"chair-seed"}
-            and not ministries
-        ):
-            roles.discard("ministry_leader")
-    else:
-        matching = next(
+    if rule is not None and not rule["roles"]:
+        return frozenset(), frozenset()
+    if rule is None:
+        rule = next(
             (
                 record["values"]
                 for record in records
                 if record["values"]["kind"] == "domain"
                 and record["values"]["domain"] == domain == hosted
             ),
-            None,
+            {"roles": []},
         )
-        roles = set(matching["roles"]) if matching else set()
+    roles = set(rule["roles"]) & {"administrator", "staff"}
+    if led:
+        roles.add("ministry_leader")
     if "administrator" in roles:
         roles.update(("staff", "ministry_leader"))
-    return frozenset(roles), ministries
+    return frozenset(roles), frozenset(led)
+
+
+def leader_scope(user_id):
+    """The Ministries this portal user leads now through a ParishSoft role.
+
+    SQL holds the one definition (stewardship_ministry_leader_scope_v1, #922),
+    which every SQL scope, session and export check also uses, so Python never
+    restates who leads what and can never grant a wider scope than SQL. A
+    disabled or unknown user leads nothing.
+    """
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT public.stewardship_ministry_leader_scope_v1(%s)", [user_id]
+        )
+        value = cursor.fetchone()[0]
+    return frozenset(json.loads(value) if isinstance(value, str) else value)
 
 
 def allows(principal, capability, *, ministry_id=None, family_id=None):
@@ -195,7 +212,7 @@ def report_columns(principal, requested, *, ministry_id=None):
 
 
 def current_principal(store, user_id):
-    """Reload verified YAML-backed policy and source overlays on every request."""
+    """Reload verified YAML-backed policy and ParishSoft leadership every request."""
     from .configuration_installation import coherent_configuration
     from .policy_models import PortalUser
 
@@ -217,10 +234,7 @@ def current_principal(store, user_id):
         or record["values"].get("domain") == email.rsplit("@", 1)[1]
     ]
     roles, ministries = resolve_roles(
-        email,
-        user.hosted_domain,
-        records,
-        confirmed_seeded(runtime.active_configuration, email=email),
+        email, user.hosted_domain, records, leader_scope(user.pk)
     )
     return Principal(user.pk, roles, ministries)
 

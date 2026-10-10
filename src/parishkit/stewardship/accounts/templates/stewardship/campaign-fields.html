@@ -11,7 +11,8 @@ shown overlap confirmation; the server's own checks are unchanged.
 <div>{{ form.additional_information.as_field_group }}</div>
 <fieldset id="ministry-selections" data-campaign-module="id_ministry"><legend>{% translate "Ministry selections" %}</legend>
 <p>{% translate "Only active Ministries can be newly chosen. A chosen Ministry that later becomes inactive stays chosen." %}</p>
-{{ form.ministry_duids.as_field_group }}</fieldset>
+{{ form.ministry_duids.as_field_group }}
+{% if form.ministry_leader_roles %}<div>{{ form.ministry_leader_roles.as_field_group }}</div>{% endif %}</fieldset>
 <fieldset data-campaign-module="id_financial_enabled" data-missing-hint="{% translate 'Fill in both financial periods and their funds.' %}"><legend>{% translate "Financial periods and funds" %}</legend>
 <p>{% translate "Choose both the upcoming and comparison periods and their funds. Each period must be exactly one year long." %}</p>
 {% for field in form.financial_fields %}<div>{{ field.as_field_group }}</div>{% endfor %}</fieldset>

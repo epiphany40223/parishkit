@@ -19,9 +19,9 @@ from parishkit.stewardship.campaigns.production_models import (
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.storage import StaleRecordError
 
-from ..policy_factory import address
 from .auth_builders import signed_in
-from .campaign_builders import campaign_clock, change
+from .campaign_builders import campaign_clock
+from .leader_builders import grant_role
 from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
 from .test_campaign_mail_postgresql import campaign_test  # noqa: F401
 from .test_setup_mail_views_postgresql import web_login
@@ -73,16 +73,7 @@ def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test)
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
 def test_staff_and_ministry_leaders_cannot_read_readiness(campaign_test, google, role):
     service, _, _, _ = campaign_test
-    record = address("other@example.org", roles=(role,))
-    assert (
-        change(
-            service.store,
-            service.store.active(),
-            uuid4(),
-            [{"operation": "add", "section": "login_rules", **record}],
-        ).state
-        == "applied"
-    )
+    grant_role(service.store, "other@example.org", role)
     google[0].update(email="other@example.org", sub="another-google-subject")
     browser, login = signed_in()
     assert login.status_code == 302

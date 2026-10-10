@@ -17,11 +17,12 @@ from ..census_factory import address
 from ..policy_factory import address as rule_address
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .leader_builders import promote_leaders
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import restricted_download_pool
 from .test_information_followup_postgresql import search
-from .test_ministry_responses_postgresql import respond, start
+from .test_ministry_responses_postgresql import ministry_source, respond, start
 from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import answers_for, load_form
 from .test_runtime_auth_grants_postgresql import web_login
@@ -164,13 +165,17 @@ def test_staff_may_open_the_page_and_ministry_leaders_may_not(
     harness = activate_response_service(harness)
     submit_live(harness)
     store = harness.service.store
-    rule = rule_address("reader@example.org", roles=roles)
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [{"operation": "add", "section": "login_rules", **rule}],
-    )
+    if roles == ("ministry_leader",):
+        # A Ministry leader leads through a ParishSoft role (#922).
+        promote_leaders(harness, ministry_source(), {"reader@example.org": [9]})
+    else:
+        rule = rule_address("reader@example.org", roles=roles)
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "login_rules", **rule}],
+        )
     google[0]["email"] = "reader@example.org"
     browser, login = signed_in()
     assert login.status_code == 302

@@ -13,7 +13,12 @@ from django.utils.html import format_html_join
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.campaigns.configuration import campaign_values
+from parishkit.stewardship.campaigns.configuration import (
+    MINISTRY_LEADER_ROLES,
+    campaign_values,
+    leader_role_key,
+)
+from parishkit.stewardship.campaigns.leader_roles import canonical_roles
 from parishkit.stewardship.schema_primitives import timezone_names
 
 from .share_forms import default_share_options
@@ -22,6 +27,13 @@ from .share_forms import default_share_options
 MULTI_SELECT_HELP = _(
     "To choose several, hold Ctrl (Cmd on a Mac) while clicking; to choose a "
     "range, click the first item and hold Shift while clicking the last."
+)
+# What the Ministry leader roles decide (#922), in plain words.
+LEADER_ROLES_HELP = _(
+    "People with any of these ParishSoft Ministry roles can sign in and see "
+    "their Ministry's reports and follow-up, with no sign-in rule. They sign "
+    "in with Google using an email address their ParishSoft Member record "
+    "lists. Choose at least one role; changes take effect on their next page."
 )
 # The campaign-overlap confirmation renders through this field template so it
 # can be shown only while the entered dates overlap (see overlap_attributes).
@@ -85,6 +97,46 @@ class SourceChoices(forms.MultipleChoiceField):
         if len(set(values)) != len(values):
             raise forms.ValidationError(_("Select each item only once."))
         return sorted(int(item) for item in values)
+
+
+class LeaderRoleChoices(forms.MultipleChoiceField):
+    """Ministry leader role names, ticked from the offered labels (#922)."""
+
+    widget = forms.CheckboxSelectMultiple
+
+    def __init__(self, **kwargs):
+        """Every use has the same label and plain-language help."""
+        super().__init__(
+            label=_("Ministry leader roles"), help_text=LEADER_ROLES_HELP, **kwargs
+        )
+
+    def clean(self, value):
+        """Refuse repeats, even in another case, and store the canonical order."""
+        values = super().clean(value)
+        if len({leader_role_key(name) for name in values}) != len(values):
+            raise forms.ValidationError(_("Select each role only once."))
+        return canonical_roles(values)
+
+
+class LeaderRolesForm(forms.Form):
+    """A live campaign's one leader-role setting, against the applied digest."""
+
+    ministry_leader_roles = LeaderRoleChoices(
+        error_messages={"required": _("Choose at least one role.")}
+    )
+    base_digest = forms.RegexField(
+        regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
+    )
+
+    def __init__(self, *args, roles=(), **kwargs):
+        """Offer only server-built choices (campaigns.leader_roles.role_choices).
+
+        Its element ids differ from the read-only settings form's on the same
+        page; the field names are the same, as the view expects.
+        """
+        kwargs.setdefault("auto_id", "leader_%s")
+        super().__init__(*args, **kwargs)
+        self.fields["ministry_leader_roles"].choices = roles
 
 
 class CampaignForm(forms.Form):
@@ -363,3 +415,50 @@ def initial_fields(values, *, digest):
         financial["financial_end"] = financial.pop("end")
         result.update(financial)
     return result
+
+
+class CampaignSettingsForm(CampaignForm):
+    """Campaign settings' draft form: the shared fields plus leader roles (#922).
+
+    The leader roles sit with the Ministry selections and matter only while
+    Ministry stewardship is on. ``leader_roles`` is the campaign's effective
+    list now (its saved value or the default), so leaving the default ticked
+    never writes the key. The setup wizard and Copy campaign keep the shared
+    form: a new campaign starts with the default.
+    """
+
+    ministry_leader_roles = LeaderRoleChoices(required=False)
+
+    def __init__(self, *args, leader_choices=(), leader_roles=(), **kwargs):
+        """Offer server-built role choices beside the effective list."""
+        super().__init__(*args, **kwargs)
+        self.fields["ministry_leader_roles"].choices = leader_choices
+        self.leader_roles = canonical_roles(leader_roles)
+
+    def clean(self):
+        """Ministry stewardship needs at least one leader role."""
+        data = super().clean()
+        if (
+            not self.has_error("ministry_leader_roles")
+            and data.get("ministry")
+            and not data.get("ministry_leader_roles")
+        ):
+            self.add_error("ministry_leader_roles", _("Choose at least one role."))
+        return data
+
+    def values(self):
+        """Add the leader roles only when they differ from what is in effect.
+
+        A saved value is kept as it is while Ministry stewardship is off or
+        nothing is ticked (which clean() refuses), so validation never sees an
+        empty list.
+        """
+        values = super().values()
+        roles = self.cleaned_data.get("ministry_leader_roles") or []
+        if "ministry" in values["modules"] and roles and roles != self.leader_roles:
+            values[MINISTRY_LEADER_ROLES] = roles
+        elif MINISTRY_LEADER_ROLES in self.previous:
+            values[MINISTRY_LEADER_ROLES] = deepcopy(
+                self.previous[MINISTRY_LEADER_ROLES]
+            )
+        return values

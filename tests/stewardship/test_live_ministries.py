@@ -63,6 +63,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     from parishkit.stewardship.runtime_grants import (
         AUTOMATION_FRESH_FUNCTION,
         FAMILY_LOGIN_FUNCTION,
+        LEADER_SCOPE_FUNCTION,
         MINISTRY_CATALOG_FUNCTION,
         runtime_functions,
     )
@@ -70,20 +71,25 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     assert runtime_functions(ServiceRole.CONFIG_INSTALLER) == {
         MINISTRY_CATALOG_FUNCTION
     }
-    # Web also reads the 24-hour Family mail count for System health (ADM-13)
-    # and checks a secret request's automation sign-in (ADM-11 PR 5).
+    # Web also reads the 24-hour Family mail count for System health (ADM-13),
+    # checks a secret request's automation sign-in (ADM-11 PR 5) and reads a
+    # user's role-derived Ministry scope (#922).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
         AUTOMATION_FRESH_FUNCTION,
+        LEADER_SCOPE_FUNCTION,
     }
-    # The worker's definer routines purge ended Admin sessions (ADM-11) and
-    # count an export's read-guard stops (#386).
+    # The worker's definer routines purge ended Admin sessions (ADM-11),
+    # count an export's read-guard stops (#386) and read a user's
+    # role-derived Ministry scope (#922), as a download does.
     assert runtime_functions(ServiceRole.WORKER) == {
         "stewardship_admin_session_purge_v1(uuid[])",
         "stewardship_read_guard_kills_v1(uuid)",
         "stewardship_task_event_prune_v1(integer, integer, integer)",
+        LEADER_SCOPE_FUNCTION,
     }
+    assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}
     for role in (ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):
         assert runtime_functions(role) == frozenset()
 

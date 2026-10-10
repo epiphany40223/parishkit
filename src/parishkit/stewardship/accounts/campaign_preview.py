@@ -16,6 +16,7 @@ LABELS = {
     "share_options": _("Share options"),
     "content_versions": _("Included content blocks"),
     "additional_information": _("Collect additional information"),
+    "ministry_leader_roles": _("Ministry leader roles"),
 }
 MODULES = {
     "census": _("Census"),
@@ -57,6 +58,8 @@ def display_value(key, value, *, ministries=(), funds=()):
         return str(_("Yes") if value else _("No"))
     if key == "content_versions":
         return ", ".join(str(SLOTS[name]) for name in value) or str(_("None"))
+    if key == "ministry_leader_roles":
+        return ", ".join(value)
     if key == "share_options":
         return "; ".join(row["label"] for row in value) or str(_("None"))
     if key == "financial":
