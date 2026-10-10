@@ -41,10 +41,10 @@ def member(first, last, *, active=True):
 NAME_CASES = (
     (
         "no-break and ideographic space padding",
-        {"lastName": " Squyres　"},
+        {"lastName": "\u00a0Squyres\u3000"},
         {
-            BASE + 1: member("　Tracy ", "Squyres "),
-            BASE + 2: member(" Jeff", "　Squyres"),
+            BASE + 1: member("\u3000Tracy\u00a0", "Squyres\u00a0"),
+            BASE + 2: member(" Jeff", "\u3000Squyres"),
         },
         "Squyres, Tracy and Jeff",
     ),
