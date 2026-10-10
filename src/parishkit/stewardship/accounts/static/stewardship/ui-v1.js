@@ -446,17 +446,33 @@
   // the same. Only this field's own typing (after the pause) or blur
   // ``announce``s, through the live region, and only a changed message:
   // loading, pageshow and other controls' changes update the line silently.
+  //
+  // A field can also carry a mark from a message beside it rather than from
+  // its own reading (data-field-error: a server refusal in a shared message
+  // element, or the follow-up contact time's not-in-the-future check, #398).
+  // That mark keeps aria-invalid true whatever the reading. While the
+  // entry is unreadable a server mark's message already says so, so
+  // the reading line stays quiet. A time field that also takes the browser's
+  // zone (data-browser-zone-field) keeps the zone's validity once its entry
+  // reads, since both set the same custom validity.
   const checkTimeField = (field, {typing = false, announce = false, quiet = false} = {}) => {
     const parts = timeParts.get(field);
     if (!parts) return;
     const {message, invalid} = readTimeField(field);
     field.setCustomValidity(invalid ? message : "");
+    if (!invalid && field.matches("[data-browser-zone-field]")) zoneValidity(field);
     cancelTimeCheck(field);
-    const shown = quiet ? "" : message;
+    const marked = () => field.hasAttribute("data-field-error");
+    // A server mark has its own message beside the field; the not-in-the-
+    // future check's mark (value "client") does not, so a time it cannot
+    // read still shows its own reading line.
+    const silent = () => quiet
+      || (invalid && marked() && field.getAttribute("data-field-error") !== "client");
     const show = (speak) => {
+      const shown = silent() ? "" : message;
       parts.reading.textContent = shown;
-      parts.reading.classList.toggle("is-error", invalid && !quiet);
-      field.setAttribute("aria-invalid", String(invalid || quiet));
+      parts.reading.classList.toggle("is-error", invalid && !silent());
+      field.setAttribute("aria-invalid", String(invalid || silent() || marked()));
       if (speak && shown !== parts.spoken) parts.live.textContent = shown;
       parts.spoken = shown;
     };
@@ -468,11 +484,11 @@
       // A half-typed entry: no stale reading and no red until the pause.
       parts.reading.textContent = "";
       parts.reading.classList.remove("is-error");
-      field.setAttribute("aria-invalid", "false");
+      field.setAttribute("aria-invalid", String(marked()));
     } else {
-      parts.reading.textContent = shown;
+      parts.reading.textContent = quiet ? "" : message;
       parts.reading.classList.remove("is-error");
-      field.setAttribute("aria-invalid", String(quiet));
+      field.setAttribute("aria-invalid", String(quiet || marked()));
     }
     timePending.add(field);
     parts.timer = window.setTimeout(() => {
@@ -2105,6 +2121,9 @@
       hint.hidden = !missing;
       hint.textContent = missing
         ? (missing.dataset.clientError
+          // An unreadable time entry says why itself (#398).
+          || (missing.matches("[data-time-entry]") && missing.validity.customError
+            && missing.validationMessage)
           || missing.closest("[data-missing-hint]")?.dataset.missingHint
           || "Fill in the required fields to save.")
         : "";
@@ -2256,14 +2275,18 @@
         limit();
         const error = document.getElementById(errorId);
         const source = error && !error.hidden ? error.dataset.source : null;
-        // A hidden contact group's fields are disabled and not sent.
-        const future = !date.disabled && Boolean(date.value) && (time && time.value
-          ? new Date(`${date.value}T${time.value}`).getTime() > Date.now()
+        // A hidden contact group's fields are disabled and not sent. The
+        // time is typed in any common form (#398), so it is read as the
+        // server reads it; an entry that cannot be read yet counts as no
+        // time (its own refusal holds Save).
+        const clock = time && time.value ? parseTime(time.value) : null;
+        const future = !date.disabled && Boolean(date.value) && (clock && clock.value
+          ? new Date(`${date.value}T${canonicalTime(clock.value)}`).getTime() > Date.now()
           : date.value > localToday());
         if (future) {
           fields.forEach((node) => {
             node.setAttribute("aria-invalid", "true");
-            node.setAttribute("data-field-error", "");
+            node.setAttribute("data-field-error", "client");
             describe(node);
           });
           date.dataset.clientError = message;

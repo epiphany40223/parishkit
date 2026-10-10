@@ -1739,13 +1739,14 @@ rule that those rules describe (see also
 | --- | --- | --- |
 | ParishSoft settings | At these times (full refresh) | List, parish time |
 | Dates and mail schedules; first-campaign Mail schedules | Send time | One time, campaign time |
-| Ministry follow-up | Contact attempt time | Native time control for now |
+| Ministry follow-up | Contact attempt time | One time, browser time zone |
 | Logs, reports | Date filters | Dates only, no time of day |
 
-The Ministry follow-up contact attempt still uses its native time control.
-Its in-place save work
-([#592](https://github.com/epiphany40223/parishkit/pull/592)), which it was
-waiting for, has merged, so moving it to this entry is an open follow-up. The planned
+The Ministry follow-up contact attempt moved to this entry after its in-place
+save work ([#592](https://github.com/epiphany40223/parishkit/pull/592))
+merged ([#398](https://github.com/epiphany40223/parishkit/issues/398)); its
+date stays a date control, and its not-in-the-future check reads the typed
+time as the server does. The planned
 [refresh schedule editor](#parishsoft-refresh-schedule-settings)
 ([#632](https://github.com/epiphany40223/parishkit/issues/632)) replaces the
 "At these times" list and uses this entry for its rule and exception times.
@@ -3891,8 +3892,9 @@ values kept, a summary naming the one problem, and that problem shown
 [at its fields](#bootstrap-and-first-admin-wizard): a missing or unsuitable
 outcome marks Outcome, Other without notes marks Notes, a contact attempt in
 the future, or one that reached the server without a usable time zone (see
-below), marks its Date and Time, and an incomplete one marks whichever of
-them is missing (both when one is malformed). The view maps each refusal to
+below), marks its Date and Time, a time the [time entry](#time-entry) rules
+cannot read marks Time with that rule's message, and an incomplete one marks
+whichever of them is missing (both when the date is malformed). The view maps each refusal to
 its fields in one table. The contact fields keep the time-zone note in their
 description, followed by the error.
 

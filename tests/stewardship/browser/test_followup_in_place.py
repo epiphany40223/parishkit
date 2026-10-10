@@ -241,6 +241,46 @@ def test_future_contact_is_flagged_as_it_is_typed(page, component_origin):
     assert save.is_enabled() and not hint.is_visible()
 
 
+def test_contact_time_takes_any_common_form(page, component_origin):
+    """The contact time is the shared time-of-day entry (#398): a time typed
+    as "11:59 pm" or "12:30am" shows its reading, the future check reads it as
+    the server does, and leaving the field writes it canonically. A future
+    time stays marked after leaving Time. An entry that cannot be read says
+    why at the field and holds Save with the same words."""
+    page.clock.set_fixed_time(NOON)
+    page.goto(component_origin + FOLLOWUP_ITEM)
+    page.get_by_label("How").select_option("phone")
+    date, time = page.locator("#contact-date"), page.locator("#contact-time")
+    reading = page.locator("#contact-time_reading")
+    save, hint = page.locator(FOLLOWUP_SAVE), page.locator("#followup-save-hint")
+    assert time.get_attribute("type") == "text"
+    date.fill(page.evaluate(LOCAL_TODAY))
+    time.fill("11:59 pm")
+    has_text(reading, "Reads as 23:59 (11:59 PM)")
+    contact_marked(page, True)
+    assert save.is_disabled()
+    # Leaving Time rewrites the entry and keeps the future mark.
+    page.locator("#contact-notes").focus()
+    assert time.input_value() == "23:59"
+    contact_marked(page, True)
+    # Half past midnight is past in every zone NOON allows for (see above).
+    time.fill("12:30am")
+    has_text(reading, "Reads as 00:30 (12:30 AM)")
+    contact_marked(page, False)
+    assert save.is_enabled()
+    page.locator("#contact-notes").focus()
+    assert time.input_value() == "00:30"
+    refusal = "“25:00” has no hour 25: hours run from 0 to 23."
+    time.fill("25:00")
+    has_text(reading, refusal)
+    assert time.get_attribute("aria-invalid") == "true"
+    assert save.is_disabled()
+    has_text(hint, refusal)
+    time.fill("00:30")
+    contact_marked(page, False)
+    assert save.is_enabled()
+
+
 def test_future_contact_check_works_after_a_swap(page, component_origin):
     """The live check, the picker's limit and the Save gate work on a form a
     save swapped in, as on the page as loaded."""
@@ -284,14 +324,21 @@ def test_server_future_refusal_is_shown_at_its_fields(page, component_origin):
     visible(link)
     assert page.evaluate(MARKED) == "kept"
     contact_marked(page, True)
-    for field in ("#contact-date", "#contact-time"):
-        # The zone note (#558) still describes it, then the error.
-        assert page.locator(field).get_attribute("aria-describedby") == (
-            "contact-zone-help contact-error"
-        )
+    # The zone note (#558) still describes each, then (for Time) its
+    # time-entry reading line (#398), then the error.
+    for field, described in (
+        ("#contact-date", "contact-zone-help contact-error"),
+        ("#contact-time", "contact-zone-help contact-time_reading contact-error"),
+    ):
+        assert page.locator(field).get_attribute("aria-describedby") == described
+    # The error follows the Time field's reading line and its live region.
+    assert (
+        page.evaluate("document.querySelector('#contact-time ~ .errorlist').id")
+        == "contact-error"
+    )
     assert (
         page.evaluate("document.querySelector('#contact-time').nextElementSibling.id")
-        == "contact-error"
+        == "contact-time_reading"
     )
     assert link.get_attribute("href") == "#contact-date"
     assert page.evaluate("document.activeElement.hasAttribute('data-error-summary')")
