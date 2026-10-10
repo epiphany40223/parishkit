@@ -129,10 +129,12 @@ with each phone number and each head's emails on its own line; each response
 list is the same table; the postal mail merge is a grid of address cards.
 
 A field/value report (additional information, Ministry, financial, Family
-test names, packets) prints one card per record. The
-PDF is the readable view; CSV and XLSX stay the complete audit files with
-every column (except as a report's section notes). So that a page is easy to
-scan:
+test names, packets) prints one card per record. Which columns each format
+carries follows the
+[downloaded files rule](../ui-conventions/spec.md#downloaded-files): every
+format the same columns, with internal references left out. Until #966 makes
+the files consistent, CSV and XLSX still carry every column (except as a
+report's section notes). So that a page is easy to scan:
 
 - The first card, "About this report", shows counts and amounts as large
   tiles, then the remaining details. It leaves out what the page frame
