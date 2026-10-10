@@ -18,6 +18,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.live_end_date import bind_reviewed_end_edit
 from parishkit.stewardship.campaigns.single_campaign import refuse_campaign_creation
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import (
@@ -388,6 +389,17 @@ def confirm_intent(
                 raise expired_preview(link)
             return True
 
+    def attach_all(created):
+        """Bind a live end-date edit, then record the editor's companion rows.
+
+        A change to a live campaign's end date (#912) crosses the structural
+        lock only with its exceptional intent, bound here in the request's
+        own transaction so the installer never sees the request without it.
+        """
+        bind_reviewed_end_edit(created)
+        if attach is not None:
+            attach(created, intent.get("extra"))
+
     return record_request(
         base_digest=intent["base"],
         patch=intent["patch"],
@@ -396,11 +408,7 @@ def confirm_intent(
         correlation_id=current_correlation(),
         admit=admit,
         request_schema=request_schema,
-        attach=(
-            None
-            if attach is None
-            else lambda created: attach(created, intent.get("extra"))
-        ),
+        attach=attach_all,
     )
 
 
