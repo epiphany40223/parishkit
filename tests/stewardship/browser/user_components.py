@@ -8,7 +8,6 @@ from parishkit.stewardship.accounts.user_rows import (
     ROLE_LABELS,
     AppliedPolicy,
     address_rows,
-    domain_assignment_rows,
     domain_rows,
 )
 from parishkit.stewardship.accounts.user_rules import ROLE_ORDER
@@ -51,40 +50,9 @@ def components(context, admin):
         identity("consumer@workspace.example", login=None),
     ]
 
-    # One suspended Chairperson assignment awaiting review, shaped as
-    # chair_review_rows.suspended_rows builds it (#563: its reason gate).
-    review = dict(
-        email="chair@example.org",
-        ministry_duid=9,
-        ministry_name="Choir",
-        member_duid=41,
-        reason="The Ministry is inactive in the applied activity.",
-        opened_at=moment,
-        generation=3,
-        latest_at=moment,
-        elsewhere=False,
-        manual=False,
-        granted=["Ministry leader"],
-        leading=False,
-        last_login=moment,
-    )
-
-    # One Chairperson suggestion, shaped as the view builds it (#563: the
-    # selection hint of its bulk Review).
-    suggestion = dict(
-        email="newchair@example.org",
-        ministry_duid=9,
-        ministry_name="Choir",
-        candidates=[dict(name="Sample Member", duid=41, publishable=True)],
-        ambiguous=False,
-        owners=1,
-        rule=dict(kind=None, roles=[], deny=False, suspended=False, domain=None),
-        assignments=[],
-    )
-
-    def page(rules, known, active=frozenset(), reviews=(), suggestions=()):
+    def page(rules, known):
         """Render exactly the context the view builds."""
-        policy = AppliedPolicy(rules, known, active)
+        policy = AppliedPolicy(rules, known)
         return render_to_string(
             "stewardship/users.html",
             context
@@ -95,9 +63,6 @@ def components(context, admin):
                     {
                         "domain_table": domain_rows(policy),
                         "address_table": address_rows(policy),
-                        "assignment_table": domain_assignment_rows(policy),
-                        "review_table": list(reviews),
-                        "suggestion_table": list(suggestions),
                     },
                 ),
                 "base_digest": "0" * 64,
@@ -128,20 +93,8 @@ def components(context, admin):
 
     return {
         "/portal-users": ("text/html", page(records, identities)),
-        "/portal-users-confirmed": (
-            "text/html",
-            page(records, identities, frozenset({seeded["id"]})),
-        ),
         # Only the mandatory Administrator: both optional tables are empty.
         "/portal-users-minimal": ("text/html", page([address()], [])),
-        "/portal-users-review": (
-            "text/html",
-            page(records, identities, reviews=[review]),
-        ),
-        "/portal-users-suggestions": (
-            "text/html",
-            page(records, identities, suggestions=[suggestion]),
-        ),
         "/portal-users-preview": ("text/html", preview()),
         "/portal-users-preview-deny": (
             "text/html",

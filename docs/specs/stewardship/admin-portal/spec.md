@@ -546,9 +546,10 @@ moved to it, and the page names, links and URLs fixed against it, by the
 follow-up issues #520 (one name per page), #521 (every page reachable, every
 flow with a way back) and #525 (one URL scheme). Every page already uses the
 table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which keeps its
-name until NAV-15 splits it into Sign-in rules, Ministry assignments and
-Chairpersons, and the Ministry assignments and Chairpersons pages, which do
-not exist yet (Emailed reports exists since NAV-14). The System pages already have their new
+name until NAV-15 reworks it into Sign-in rules (Emailed reports exists
+since NAV-14). Ministry leaders come from ParishSoft roles (#922), so the
+planned Ministry assignments and Chairpersons pages are not built. The System
+pages already have their new
 addresses (NAV-6), and so do the Parish data pages and a change's status page
 (NAV-7), the Mail and Family portal pages (NAV-8) and the Campaign setup
 pages (NAV-9: settings, Copy campaign, content and its history, images,
@@ -631,8 +632,6 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Parish data | Hosted files | `/admin/parish/files/` | Administrator | Never |
 | Parish data | Refresh from ParishSoft | `/admin/parish/parishsoft-refresh/` | Administrator | Never |
 | Users and access | Sign-in rules | `/admin/users/sign-in-rules/` | Administrator | Never |
-| Users and access | Ministry assignments | `/admin/users/ministry-assignments/` | Administrator | Never |
-| Users and access | Chairpersons | `/admin/users/chairpersons/` | Administrator | Never |
 | Users and access | Automation access | `/admin/users/automation/` | Administrator | Never |
 | System | System health | `/admin/system/health/` | Administrator | Never |
 | System | Integrations | `/admin/system/integrations/` | Administrator | Never |
@@ -685,15 +684,14 @@ Notes on the groups:
   ([Family portal maintenance](#family-portal-maintenance)) are side by side.
   The header's background, delivery and presence counts stay as shortcuts to
   their entries.
-- [Portal user management](#portal-user-management) is three entries instead
-  of one long page of five tables: **Sign-in rules** (Google Workspace
-  domain rules and exact-address rules, with their roles), **Ministry
-  assignments** (Ministry assignments for people a domain rule admits) and
-  **Chairpersons** (suspended Chairperson assignments awaiting review, and
-  [Chairperson suggestions](#ministry-leaders-from-parishsoft) from
-  ParishSoft). Each review started on one of them returns to it.
-- Emailed reports, Ministry assignments and Chairpersons are new pages: #520
-  and #521 add their registry entries and views.
+- [Portal user management](#portal-user-management) becomes **Sign-in
+  rules** (Google Workspace domain rules and exact-address rules, with their
+  roles). Ministry leaders come from ParishSoft roles
+  ([Ministry leaders from ParishSoft](#ministry-leaders-from-parishsoft)), so
+  there are no Ministry assignments or Chairpersons pages (#922). Each review
+  started on Sign-in rules returns to it.
+- Emailed reports is a new page: #520 and #521 add its registry entry and
+  view.
 - Each group's root URL (`/admin/campaign/`, `/admin/mail/`,
   `/admin/reports/`, `/admin/parish/`, `/admin/users/`, `/admin/system/`)
   redirects to the group's first entry available to the viewer, except
@@ -977,12 +975,9 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same; old address redirects) |  |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same; old address redirects) |  |
 | `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same; old address redirects) |  |
-| `users` | Sign-in rules | Menu: Sign-in rules | Administrator | Portal users | `/admin/users` | `/admin/users/sign-in-rules/` | Portal users is split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
+| `users` | Sign-in rules | Menu: Sign-in rules | Administrator | Portal users | `/admin/users` | `/admin/users/sign-in-rules/` | Portal users becomes Sign-in rules (decision 13); there are no Ministry assignments or Chairpersons pages (#922). |
 | `user_rules` | Review sign-in rules | Sign-in rules | Administrator | Review login rule change; Sign-in rules | `/admin/users/rules` (POST only) | `/admin/users/sign-in-rules/review/` (POST only) |  |
 | `rule_request` | (not a page) | Sign-in rules | Administrator | Rule change (status); Rule change | `/admin/users/rules/requests/<request>` | `/admin/users/sign-in-rules/requests/<request>/` (JSON) | Answers JSON only; reclassify as a non-page. |
-| `assignments` | Review Ministry assignment | Ministry assignments (new page) | Administrator | Review Ministry assignment change; Assignments | `/admin/users/assignments` (POST only) | `/admin/users/ministry-assignments/review/` (POST only) |  |
-| `chair_confirmations` | Review Chairperson suggestion | Chairpersons (new page) | Administrator | Review Chairperson confirmation; Chair suggestions | `/admin/users/suggestions` (POST only) | `/admin/users/chairpersons/suggestions/` (POST only) |  |
-| `chair_reviews` | Review Chairperson decision | Chairpersons (new page) | Administrator | Review Chairperson assignment decision; Chair reviews | `/admin/users/reviews` (POST only) | `/admin/users/chairpersons/reviews/` (POST only) |  |
 | `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); revoke posts to `/admin/users/automation/sessions/<session>/`. |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
@@ -1170,8 +1165,7 @@ under Home. A key's replacement status and its Finish switching page sit under
 the integration the key belongs to, never under each other, because only the
 Administrator who saved a key may read its status. Some pages are named in
 trails but never linked, and "Return to" skips them: those that only answer a
-POST (the sign-in rule, Chairperson suggestion, Chairperson decision and
-Ministry assignment reviews); one-time reviews that refuse once their change is
+POST (the sign-in rule reviews); one-time reviews that refuse once their change is
 confirmed (Copy campaign, and the campaign image and logo reviews); and Finish
 switching, which still opens afterward but needs a fresh Google sign-in and has
 nothing left to do. A menu page is linked in a trail or "Return to" only while
@@ -1190,10 +1184,8 @@ confirmation. The flows are: making a settings change (Make changes, Review,
 Apply) on every settings editor (campaign settings, Campaign Ministries, Copy
 campaign, pages and emails, dates and mail schedules, share options, member
 talents, campaign images, Parish settings, Parish logos, each integration,
-Ministries and Finish switching), the reviews started on Sign-in rules,
-Ministry assignments and Chairpersons (sign-in rules, Ministry assignments,
-Chairperson suggestions and Chairperson decisions) and every change's status
-page; going live (Check readiness, Testing cleanup, Family links, Confirm
+Ministries and Finish switching), the reviews started on Sign-in rules and
+every change's status page; going live (Check readiness, Testing cleanup, Family links, Confirm
 Production, Activation); sending to chosen Families (Choose Families, Review,
 Send and follow); and report exports (Choose report, Prepare file, Download). A
 locked campaign's read-only settings page is not in a flow. Those reviews show
@@ -1241,8 +1233,10 @@ follows them.
 12. **Should the restore-review maintenance page get a way forward?** Yes, in
     its own issue: #537 (as proposed).
 13. **Split Portal users into separate entries?** Split now (for example
-    Sign-in rules and Chairpersons). This spec adds a third entry, Ministry
-    assignments, for the Portal users table that fits neither.
+    Sign-in rules and Chairpersons). This spec added a third entry, Ministry
+    assignments, for the Portal users table that fits neither. Superseded by
+    the Administrator's decision on #922 (2026-10-09): Ministry leaders come
+    from ParishSoft roles, so only Sign-in rules remains.
 14. **Should menu groups collapse?** Groups are collapsible, with the state
     remembered per browser.
 15. **How should the campaign appear in Admin URLs?** No campaign identifier in
@@ -2438,9 +2432,7 @@ current parishioner pages and previews use the applied visibility policy.
 For [Ministry leaders](../data/spec.md#ministry-leaders), an active Ministry
 means one present in the current catalog and locally active, so marking a
 Ministry inactive removes it from its leaders' scope on their next request.
-It does not alter Staff or Admin roles. The retained Chairperson suggestions
-and seeded assignment overlays are still reevaluated in the
-configuration-activation transaction, but grant nothing
+It does not alter Staff or Admin roles
 ([Ministry leaders from ParishSoft](#ministry-leaders-from-parishsoft)).
 
 ### ParishSoft Ministry catalog changes
@@ -3959,9 +3951,12 @@ Ministry pages to show, never the generic sign-in denial. The
 [data specification](../data/spec.md#ministry-leaders) defines the rule. A
 change in ParishSoft reaches the portal with the next full refresh.
 
-Ministry assignments and the Chairperson suggestion, confirmation and review
-flows remain from the earlier model until they are removed (#922). They
-grant no Ministry: the Portal users page says so beside each assignment.
+The Ministry assignments editor and the Chairperson suggestion, confirmation
+and review pages are removed (#922), and nothing reconciles Chairperson-seeded
+assignments at a refresh or a configuration change. Older configurations keep
+their assignment records and seeded grants, unread and not shown, and their
+tables stay until a later release drops them. A sign-in rule's roles,
+Ministry leader included, still decide who signs in, whatever their origin.
 
 ## Manual ParishSoft refresh
 

@@ -24,8 +24,10 @@ from parishkit.stewardship.source.requests import TASK_TYPE
 from ..test_source_corpus import source
 from .automation_builders import paired
 from .test_admin_task_retry_cli_postgresql import runner
-from .test_chair_suggestions_postgresql import publish
-from .test_source_families_postgresql import source_singletons  # noqa: F401
+from .test_source_families_postgresql import (
+    publish,
+    source_singletons,  # noqa: F401
+)
 from .test_source_refresh_views_postgresql import post, run_of, web
 from .test_source_requests_postgresql import claim
 

@@ -1,8 +1,7 @@
 # Stewardship Chairperson confirmation
 
-Since #922 (migration 0042), the Ministries a Ministry leader sees come only
-from ParishSoft roles, and the Ministry assignments this guide describes
-grant none; a login rule's role still decides who signs in. See
+Historical: since #922, the Ministries a Ministry leader sees come only from
+ParishSoft roles, and what this guide describes has been removed; see
 [Ministry leaders](../specs/stewardship/data/spec.md#ministry-leaders).
 
 This guide records the sixth slice of

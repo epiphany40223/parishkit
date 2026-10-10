@@ -5,13 +5,10 @@ from django.urls import include, path
 from . import views
 from .accounts import (
     access_gate,
-    assignment_views,
     authentication,
     automation_views,
     branding_views,
     campaign_views,
-    chair_review_views,
-    chair_views,
     content_views,
     critical_event_views,
     family_authentication,
@@ -102,13 +99,6 @@ admin_patterns = [
         rule_autosave_views.rule_request,
         name="rule_request",
     ),
-    path(
-        "users/suggestions",
-        chair_views.chair_confirmations,
-        name="chair_confirmations",
-    ),
-    path("users/reviews", chair_review_views.chair_reviews, name="chair_reviews"),
-    path("users/assignments", assignment_views.assignments, name="assignments"),
     path(
         "security-events/<uuid:event_id>/acknowledge",
         security_event_views.acknowledge_event,

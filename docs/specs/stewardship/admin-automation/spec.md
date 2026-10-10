@@ -1608,8 +1608,8 @@ signatures:
   settings (including the backup folder probe) from `campaign_views`,
   `content_views`, `campaign_ministry_views`, `share_views`, `talent_views`,
   `parish_views`, `ministry_views` and `integration_views`.
-- **PR 11:** user, rule, assignment, chairperson, event and follow-up actions
-  from their views.
+- **PR 11:** user, rule, event and follow-up actions from their views
+  (assignment and Chairperson actions were retired by #922).
 - **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
   retry and cancel, the link preparation controls in `activation_views.links`,
   `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
@@ -2228,8 +2228,6 @@ never prepares or sends twice.
 | --- | --- |
 | `users` | `users list` (PR 11) |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | `rules show`, `rules apply`, `rules request show` (PR 11), including the [high-impact changes](#high-impact-changes) |
-| `chair_confirmations`, `chair_reviews` | `chairs …` (PR 11) |
-| `assignments` | `assignments …` (PR 11) |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` (PR 11) |
 | `information_update`, `ministry_followup`, `ministry_followup_item`, `ministry_followup_update` | `followup …` (PR 11); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 
@@ -2663,8 +2661,9 @@ exactly the commands that exist.
   finish switching and the backup key change, with the wrapper's secret
   input.
 - **PR 11, users and follow-up:** users, rules (including the
-  [high-impact changes](#high-impact-changes)), assignments, chairpersons, event acknowledgements and
-  follow-up updates.
+  [high-impact changes](#high-impact-changes)), event acknowledgements and
+  follow-up updates. #922 retired the assignment and Chairperson
+  commands.
 - **PR 12, go-live and withdrawal:** the verified readiness preview, cleanup
   with retry and cancel, link preparation with retry and cancel,
   confirmation, the Production preparation retry and withdrawal; after
