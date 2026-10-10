@@ -23,7 +23,7 @@ from parishkit.stewardship.schema_primitives import (
 from parishkit.stewardship.sender_name import clean_sender_name
 from parishkit.stewardship.web import dates
 
-from . import source_cadence_schema
+from . import source_cadence_schema, users_schema
 from .bootstrap_schema import BOOTSTRAP_SCHEMA, validate_bootstrap_sections
 from .content_schema import SCHEMA as CONTENT_SCHEMA
 from .content_schema import validate_content_records
@@ -174,11 +174,16 @@ def _backup_public_key(text, values):
 # A historical row chooses its validator, not the currently emitted schema.
 # Add future validators and a migration admitting their names; retain old
 # functions and their schema data unchanged while historical versions exist.
-def _validate_v2_sections(document):
-    """Extend the frozen parish schema with explicitly versioned login policy."""
+def _validate_v2_sections(document, policy=None):
+    """Extend the frozen parish schema with explicitly versioned login policy.
+
+    ``policy`` replaces the login-rule check for a later schema whose policy
+    has another form (the users form of ``users-v10``); every other rule of
+    this and the later schemas stays exactly as it was.
+    """
     from .policy_schema import validate_policy_records
 
-    policy = document["sections"].get("login_rules", [])
+    records = document["sections"].get("login_rules", [])
     base = document | {
         "sections": {
             key: value
@@ -187,10 +192,10 @@ def _validate_v2_sections(document):
         }
     }
     _validate_v1_sections(base)
-    validate_policy_records(policy)
+    (validate_policy_records if policy is None else policy)(records)
 
 
-def _validate_v3_sections(document):
+def _validate_v3_sections(document, policy=None):
     """Add campaign configuration without reinterpreting historical policy schemas."""
     if not document["sections"].get("login_rules"):
         invalid()
@@ -201,11 +206,11 @@ def _validate_v3_sections(document):
             if name not in {"campaigns", "schedules"}
         }
     }
-    _validate_v2_sections(base)
+    _validate_v2_sections(base, policy)
     validate_campaign_sections(document)
 
 
-def _validate_v4_sections(document):
+def _validate_v4_sections(document, policy=None):
     """Add local Ministry overrides without changing any retained v1-v3 meaning."""
     base = document | {
         "sections": {
@@ -214,11 +219,11 @@ def _validate_v4_sections(document):
             if name != "ministries"
         }
     }
-    _validate_v3_sections(base)
+    _validate_v3_sections(base, policy)
     validate_ministry_records(document["sections"].get("ministries", []))
 
 
-def _validate_v5_sections(document):
+def _validate_v5_sections(document, policy=None):
     """Add canonical content without relaxing the frozen prior configuration schemas."""
     base = document | {
         "sections": {
@@ -227,7 +232,7 @@ def _validate_v5_sections(document):
             if name != "content"
         }
     }
-    _validate_v4_sections(base)
+    _validate_v4_sections(base, policy)
     validate_content_records(document)
 
 
@@ -240,6 +245,7 @@ VALIDATORS = MappingProxyType(
         BOOTSTRAP_SCHEMA: validate_bootstrap_sections,
         CONTENT_SCHEMA: _validate_v5_sections,
         source_cadence_schema.SCHEMA: source_cadence_schema.validate_sections,
+        users_schema.SCHEMA: users_schema.validate_sections,
     }
 )
 
@@ -259,6 +265,8 @@ def validate_sections(document):
 
 def schema_for(document):
     """Keep legacy documents on their retained schema until new policy is present."""
+    if users_schema.uses_users(document):
+        return users_schema.SCHEMA
     if source_cadence_schema.uses_cadence(document):
         return source_cadence_schema.SCHEMA
     if set(document["sections"]) == {"login_rules"}:

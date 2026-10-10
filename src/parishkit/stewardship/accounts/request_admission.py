@@ -257,13 +257,22 @@ def _check_policy_additions(base_id, patch):
 
     sources = []
     parameters = [base_id]
-    for model, kind, fields in (
-        (DomainRule, "domain", ("domain",)),
-        (AddressRule, "address", ("email", "creation_origin", "creation_operation")),
+    # The address-rule projection holds two shapes: an older rule (no role)
+    # and a user (#952, with a role); each is compared only as itself.
+    for model, kind, fields, shape in (
+        (DomainRule, "domain", ("domain",), ""),
+        (
+            AddressRule,
+            "address",
+            ("email", "creation_origin", "creation_operation"),
+            " AND p.role IS NULL",
+        ),
+        (AddressRule, "user", ("email",), " AND p.role IS NOT NULL"),
         (
             MinistryAssignment,
             "assignment",
             ("email", "ministry_duid", "source", "operation_id"),
+            "",
         ),
     ):
         columns = ",".join(
@@ -273,7 +282,7 @@ def _check_policy_additions(base_id, patch):
             f"SELECT p.record_id, jsonb_build_array(%s::text,{columns}) AS identity "
             f"FROM {quote(model._meta.db_table)} p "
             "JOIN chain c ON c.id=p.configuration_id "
-            "WHERE p.record_id=ANY(%s::uuid[])"
+            "WHERE p.record_id=ANY(%s::uuid[])" + shape
         )
         parameters.extend([kind, list(identities)])
     predicates = []

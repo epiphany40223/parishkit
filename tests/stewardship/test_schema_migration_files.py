@@ -171,6 +171,9 @@ FROZEN = {
     "0046_restore_begin_keeps_review.sql": (
         "251f9db9d1a23e5ac9326e9f1034c9bf3c4b299b68b32c036634fa681c988e62"
     ),
+    "0047_portal_users.sql": (
+        "5f13232f3f49dd03ecc7252f1f4e36cf65c1ab960beeebb4c84800319cbdfc26"
+    ),
 }
 
 

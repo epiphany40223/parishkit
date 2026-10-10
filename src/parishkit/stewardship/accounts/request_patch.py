@@ -15,9 +15,10 @@ from uuid import UUID
 from parishkit.config import ConfigError
 
 from . import source_cadence_schema as cadence
+from . import users_schema as users
 from .authority import ConfigurationVersion, parse_version
 from .chair_confirmation import REQUEST_SCHEMA as CHAIR_REQUEST_SCHEMA
-from .configuration_schema import validator_for
+from .configuration_schema import schema_for, validator_for
 from .content_schema import RECOVERY_SCHEMA as CONTENT_RECOVERY_SCHEMA
 from .content_schema import REQUEST_SCHEMA as CONTENT_REQUEST_SCHEMA
 from .content_schema import SCHEMA as CONTENT_SCHEMA
@@ -32,6 +33,10 @@ from .setup_configuration import build_setup_candidate
 
 REQUEST_SCHEMA = "parish-integrations-patch-v1"
 POLICY_REQUEST_SCHEMA = "foundation-policy-patch-v2"
+POLICY_SCHEMA = "foundation-policy-v2"
+# The users upgrade removes every sign-in rule and adds every user in one
+# request (#952); this bounds that one request, not ordinary edits.
+UPGRADE_LIMIT = 4000
 CAMPAIGN_REQUEST_SCHEMA = "campaign-foundation-patch-v3"
 CREDENTIAL_REQUEST_SCHEMA = "integration-credential-patch-v6"
 MANUAL_POLICY_REQUEST_SCHEMAS = frozenset(
@@ -260,14 +265,28 @@ def _build_credential_candidate(base, patch, *, candidate_id, schema=None):
 
 
 def _build_records(
-    base, patch, *, candidate_id, schema, sections, credential_reference=False
+    base,
+    patch,
+    *,
+    candidate_id,
+    schema,
+    sections,
+    credential_reference=False,
+    base_schema=None,
+    limit=100,
 ):
-    """Shared mechanical patch application; each stored parser chooses its schema."""
+    """Shared mechanical patch application; each stored parser chooses its schema.
+
+    The base is revalidated under ``schema`` too, unless ``base_schema`` names
+    the schema it was written in: only the users upgrade (#952) changes the
+    schema, and only it raises the operation ``limit``, since it replaces
+    every sign-in rule at once.
+    """
     if not isinstance(base, ConfigurationVersion) or not isinstance(candidate_id, UUID):
         raise TypeError("Explicit configuration and candidate identities are required.")
     if candidate_id == base.version_id:
         _invalid()
-    if type(patch) is not list or not 1 <= len(patch) <= 100:
+    if type(patch) is not list or not 1 <= len(patch) <= limit:
         _invalid()
     document = base.document()
     validate_sections = validator_for(schema)
@@ -275,7 +294,13 @@ def _build_records(
     # Its content is applied and digest-verified, so today's content text rules
     # do not re-run on it (content_trust, #187).
     with trusted_content():
-        if parse_version(document, validate_sections=validate_sections) != base:
+        if (
+            parse_version(
+                document,
+                validate_sections=validator_for(base_schema or schema),
+            )
+            != base
+        ):
             _invalid()
     carried = records_of(document)
     document["version_id"] = str(candidate_id)
@@ -518,6 +543,57 @@ def _build_chair_seed_candidate(base, patch, *, candidate_id):
     return result
 
 
+# The bases the users upgrade converts: every post-setup schema of sign-in
+# rules. A bootstrap configuration is converted by finishing setup first.
+UPGRADE_BASES = frozenset(
+    {
+        POLICY_SCHEMA,
+        "campaign-foundation-v3",
+        MINISTRY_SCHEMA,
+        CONTENT_SCHEMA,
+        cadence.SCHEMA,
+    }
+)
+
+
+def _build_users_upgrade_candidate(base, patch, *, candidate_id):
+    """Admit exactly the one offline conversion of sign-in rules into users (#952).
+
+    Only login rules change: every old rule is removed and the users added,
+    so the candidate is in the users form and every other section is carried
+    unchanged. Independently of how the conversion chose its users, every
+    address that held Administrator keeps an Administrator user, and no
+    address gains Administrator (a converted hosted-domain person gets at
+    most Staff). SQL's activation guard repeats the first rule.
+    """
+    base_schema = schema_for(base.document())
+    if base_schema not in UPGRADE_BASES:
+        _invalid()
+    result = _build_records(
+        base,
+        patch,
+        candidate_id=candidate_id,
+        schema=users.SCHEMA,
+        sections={"login_rules"},
+        base_schema=base_schema,
+        limit=UPGRADE_LIMIT,
+    )
+    administrators = {
+        record["values"]["email"]
+        for record in base.document()["sections"]["login_rules"]
+        if record["values"]["kind"] == "address"
+        and "administrator" in record["values"]["roles"]
+    }
+    kept = {
+        record["values"]["email"]
+        for record in result.candidate.document()["sections"]["login_rules"]
+        if record["values"]["role"] == "administrator"
+    }
+    if kept != administrators:
+        _invalid()
+    return result
+
+
 def candidate_operation(patch):
     """The one operation identity a confirmation patch names, or refuse.
 
@@ -556,6 +632,7 @@ BUILDERS = MappingProxyType(
         "operator-recovery-patch-v2": _build_recovery_v2_candidate,
         "operator-recovery-bootstrap-v1": _build_recovery_bootstrap_candidate,
         CHAIR_REQUEST_SCHEMA: _build_chair_seed_candidate,
+        users.UPGRADE_REQUEST_SCHEMA: _build_users_upgrade_candidate,
     }
 )
 

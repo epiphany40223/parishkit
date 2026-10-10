@@ -2,7 +2,10 @@
 
 from django.db.models import prefetch_related_objects
 
+from parishkit.config import ConfigError
+
 from .policy_models import AddressRoleGrant, AddressRule, DomainRule, MinistryAssignment
+from .users_schema import cumulative_roles
 
 
 def prepare_policy(snapshot, records, attribution):
@@ -11,7 +14,13 @@ def prepare_policy(snapshot, records, attribution):
         values = record["values"].copy()
         kind = values.pop("kind")
         common = dict(configuration=snapshot, record_id=record["id"], **attribution)
-        if kind == "domain":
+        if kind == "user":
+            # One users-form row (#952): its name and role, and the cumulative
+            # roles every SQL check reads; no origins and no grant rows.
+            AddressRule.objects.create(
+                **common, **values, roles=cumulative_roles(values["role"])
+            )
+        elif kind == "domain":
             DomainRule.objects.create(**common, **values)
         elif kind == "assignment":
             MinistryAssignment.objects.create(**common, **values)
@@ -45,6 +54,24 @@ def stored_policy(snapshot):
             }
         )
     for row in snapshot.addressrule_set.all():
+        if row.role is not None:
+            # The YAML entry carries only the role; the stored cumulative
+            # roles must be exactly that role's (a database CHECK holds it
+            # too), or the projection does not round-trip.
+            if row.roles != cumulative_roles(row.role):
+                raise ConfigError("Users projection roles differ from the role.")
+            records.append(
+                {
+                    "id": str(row.record_id),
+                    "values": {
+                        "kind": "user",
+                        "email": row.email,
+                        "name": row.name,
+                        "role": row.role,
+                    },
+                }
+            )
+            continue
         records.append(
             {
                 "id": str(row.record_id),

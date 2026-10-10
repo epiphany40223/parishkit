@@ -637,14 +637,19 @@ Administrator may override.
    requires a named operator and reason, and its tagged operator-upgrade
    ConfigurationChangeRequest records that operator as its actor, not a
    fabricated PortalUser. The order is fixed:
-   1. **Preview:** the command prints the same preview as step 1, and the
-      operator must confirm the list of Administrators to be kept, not just
-      the run (an unattended run supplies that list explicitly and is refused
-      if it differs, never confirmed by default).
+   1. **Preview:** `upgrade-users --preview` prints the same preview as step
+      1 and changes nothing. The operator must confirm the list of
+      Administrators to be kept, not just the run: the conversion takes it
+      as `--confirm-administrators` (comma-separated) and is refused if it
+      differs, never confirmed by default.
    2. **Convert:** the first migration of the release has already added the
       new columns while every SQL function still joins
-      `stewardship_domain_rule`; the command then activates the converted
-      configuration.
+      `stewardship_domain_rule`, and `database-grants` has given the
+      `admin-recovery` login the two narrow read functions the conversion
+      uses (recorded identities and ParishSoft Member names); the command
+      then activates the converted configuration. SQL's activation guard
+      refuses it, and any other activation into the users form, unless every
+      address that held Administrator keeps an Administrator user.
    3. **Swap functions:** the second migration replaces the SQL functions.
       Its self-verifying `DO` block raises, so the migration fails, unless the
       active configuration is in the users form.

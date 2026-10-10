@@ -51,6 +51,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         "operator-recovery-cadence-v8",
                         "integration-credential-cadence-v8",
                         "chair-seed-patch-v9",
+                        "operator-upgrade-users-v10",
                     ]
                 ),
                 name="config_request_schema",
@@ -76,6 +77,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                             "operator-recovery-ministry-v4",
                             "operator-recovery-content-v5",
                             "operator-recovery-cadence-v8",
+                            "operator-upgrade-users-v10",
                         ]
                     )
                     | models.Q(
@@ -94,6 +96,18 @@ class ConfigurationChangeRequest(ImmutableRecord):
                             "operator-recovery-cadence-v8",
                         ],
                     )
+                    # The offline users upgrade (#952): a named operator and
+                    # the confirmed deployment, no portal actor and no
+                    # recovery target.
+                    | models.Q(
+                        authority="operator_upgrade",
+                        actor_id__isnull=True,
+                        operator_name__isnull=False,
+                        operator_reason__isnull=False,
+                        confirmed_deployment_id__isnull=False,
+                        recovery_target__isnull=True,
+                        request_schema="operator-upgrade-users-v10",
+                    )
                 ),
                 name="config_request_actor",
             ),
@@ -101,6 +115,11 @@ class ConfigurationChangeRequest(ImmutableRecord):
                 fields=["request_key"],
                 condition=models.Q(authority="operator_recovery"),
                 name="operator_recovery_operation",
+            ),
+            models.UniqueConstraint(
+                fields=["request_key"],
+                condition=models.Q(authority="operator_upgrade"),
+                name="operator_upgrade_operation",
             ),
             models.CheckConstraint(
                 condition=models.Q(payload_fingerprint__regex=r"^[0-9a-f]{64}$"),

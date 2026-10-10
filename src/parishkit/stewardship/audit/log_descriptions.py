@@ -222,6 +222,10 @@ DESCRIPTIONS = {
         "The server operator restored Administrator access from the command "
         "line, which signed out every portal user."
     ),
+    "operator_users_upgraded": _(
+        "The server operator converted the sign-in rules into users from the "
+        "command line, keeping every Administrator."
+    ),
     # Access-policy changes the settings activation records.
     "policy_security_event": _(
         "A settings change widened access (for example, a new Administrator or "
@@ -662,6 +666,7 @@ DIRECT_AUDIT_TYPES = frozenset(
         "family_tokens_ready",
         "limiter_recovered",
         "operator_admin_recovered",
+        "operator_users_upgraded",
         "policy_denial_namespace_reset",
         "policy_security_event",
         "production_cancel_requested",

@@ -730,7 +730,7 @@ CREATE FUNCTION public.stewardship_campaign_complete_v1() RETURNS trigger
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 BEGIN
-    IF NEW.validation_schema NOT IN ('campaign-foundation-v3', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8') THEN RETURN NULL; END IF;
+    IF NEW.validation_schema NOT IN ('campaign-foundation-v3', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10') THEN RETURN NULL; END IF;
     IF (SELECT count(*) FROM public.stewardship_campaign_configuration
         WHERE configuration_id = NEW.id) <> coalesce(jsonb_array_length(
             NEW.canonical_document->'sections'->'campaigns'), 0)
@@ -1243,7 +1243,7 @@ BEGIN
     FROM public.stewardship_configuration_version v,
         jsonb_array_elements(v.canonical_document->'sections'->section) item
     WHERE v.id = NEW.configuration_id AND item->>'id' = NEW.record_id::text
-      AND v.validation_schema IN ('campaign-foundation-v3', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8');
+      AND v.validation_schema IN ('campaign-foundation-v3', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10');
     IF expected IS NULL OR expected IS DISTINCT FROM NEW.values THEN
         RAISE EXCEPTION 'Campaign projection differs from YAML' USING ERRCODE = '23514';
     END IF;
@@ -2128,7 +2128,7 @@ CREATE FUNCTION public.stewardship_content_complete_v1() RETURNS trigger
 DECLARE records jsonb; actual jsonb;
 BEGIN
     records := coalesce(NEW.canonical_document->'sections'->'content', '[]'::jsonb);
-    IF NEW.validation_schema NOT IN ('campaign-content-v5', 'source-cadence-v8') THEN
+    IF NEW.validation_schema NOT IN ('campaign-content-v5', 'source-cadence-v8', 'users-v10') THEN
         IF records <> '[]'::jsonb THEN
             RAISE EXCEPTION 'Content requires its versioned schema'
                 USING ERRCODE='23514';
@@ -2173,7 +2173,7 @@ BEGIN
     SELECT item INTO expected
     FROM public.stewardship_configuration_version v,
          jsonb_array_elements(v.canonical_document->'sections'->'content') item
-    WHERE v.id=NEW.configuration_id AND v.validation_schema IN ('campaign-content-v5', 'source-cadence-v8')
+    WHERE v.id=NEW.configuration_id AND v.validation_schema IN ('campaign-content-v5', 'source-cadence-v8', 'users-v10')
       AND item->>'id'=NEW.record_id::text;
     IF expected IS DISTINCT FROM jsonb_build_object('id', NEW.record_id,
         'values', jsonb_build_object('campaign_id', NEW.campaign_id,
@@ -3294,7 +3294,7 @@ CREATE FUNCTION public.stewardship_ministry_complete_v1() RETURNS trigger
 DECLARE records jsonb; actual jsonb; vals jsonb;
 BEGIN
     records := coalesce(NEW.canonical_document->'sections'->'ministries', '[]'::jsonb);
-    IF NEW.validation_schema NOT IN ('ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8') THEN
+    IF NEW.validation_schema NOT IN ('ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10') THEN
         IF records <> '[]'::jsonb THEN
             RAISE EXCEPTION 'Ministry activity requires its versioned schema'
                 USING ERRCODE='23514';
@@ -3338,7 +3338,7 @@ BEGIN
     SELECT item INTO expected
     FROM public.stewardship_configuration_version v,
          jsonb_array_elements(v.canonical_document->'sections'->'ministries') item
-    WHERE v.id=NEW.configuration_id AND v.validation_schema IN ('ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8')
+    WHERE v.id=NEW.configuration_id AND v.validation_schema IN ('ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10')
       AND item->>'id'=NEW.record_id::text;
     IF expected IS DISTINCT FROM jsonb_build_object(
         'id', NEW.record_id, 'values', jsonb_build_object(
@@ -4204,7 +4204,7 @@ DECLARE
     actual bigint;
     rule public.stewardship_address_rule%ROWTYPE;
 BEGIN
-    IF NEW.validation_schema NOT IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8') THEN RETURN NULL; END IF;
+    IF NEW.validation_schema NOT IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10') THEN RETURN NULL; END IF;
     expected := jsonb_array_length(NEW.canonical_document->'sections'->'login_rules');
     SELECT (SELECT count(*) FROM public.stewardship_domain_rule
             WHERE configuration_id = NEW.id)
@@ -4220,8 +4220,20 @@ BEGIN
         RAISE EXCEPTION 'Policy must be complete and retain an Administrator'
             USING ERRCODE = '23514';
     END IF;
+    -- The users form (#952) holds only users, and only it holds them.
+    IF EXISTS (SELECT 1 FROM public.stewardship_address_rule
+               WHERE configuration_id = NEW.id
+                 AND (role IS NOT NULL) <> (NEW.validation_schema = 'users-v10'))
+       OR (NEW.validation_schema = 'users-v10' AND (
+           EXISTS (SELECT 1 FROM public.stewardship_domain_rule
+                   WHERE configuration_id = NEW.id)
+           OR EXISTS (SELECT 1 FROM public.stewardship_ministry_assignment
+                      WHERE configuration_id = NEW.id))) THEN
+        RAISE EXCEPTION 'Policy form does not match the configuration schema'
+            USING ERRCODE = '23514';
+    END IF;
     FOR rule IN SELECT * FROM public.stewardship_address_rule
-        WHERE configuration_id = NEW.id LOOP
+        WHERE configuration_id = NEW.id AND role IS NULL LOOP
         IF (SELECT count(*) FROM public.stewardship_address_grant
             WHERE rule_id = rule.id)
            <> jsonb_array_length(rule.roles) THEN
@@ -4267,7 +4279,7 @@ BEGIN
     SELECT item->'values' INTO expected
     FROM public.stewardship_configuration_version version,
         jsonb_array_elements(version.canonical_document->'sections'->'login_rules') item
-    WHERE version.id = config AND version.validation_schema IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8')
+    WHERE version.id = config AND version.validation_schema IN ('foundation-policy-v2', 'campaign-foundation-v3', 'bootstrap-policy-v1', 'ministry-activity-v4', 'campaign-content-v5', 'source-cadence-v8', 'users-v10')
         AND item->>'id' = record::text;
     IF expected IS NULL THEN
         RAISE EXCEPTION 'Policy projection requires matching YAML record'
@@ -4280,6 +4292,17 @@ BEGIN
            OR NEW.roles = '[]'::jsonb
            OR NOT NEW.roles <@ '["staff", "ministry_leader"]'::jsonb THEN
             RAISE EXCEPTION 'Invalid hosted domain grant' USING ERRCODE = '23514';
+        END IF;
+    ELSIF TG_TABLE_NAME = 'stewardship_address_rule'
+          AND to_jsonb(NEW)->>'role' IS NOT NULL THEN
+        -- A user (#952): its YAML entry is the email, Name and role. The
+        -- cumulative roles follow from the role (address_rule_shape). The
+        -- test reads role through to_jsonb: PL/pgSQL does not short-circuit
+        -- AND, and this trigger also fires on tables without that column.
+        actual := jsonb_build_object('kind', 'user', 'email', NEW.email,
+            'name', NEW.name, 'role', NEW.role);
+        IF NEW.email <> lower(NEW.email) THEN
+            RAISE EXCEPTION 'Invalid user' USING ERRCODE = '23514';
         END IF;
     ELSIF TG_TABLE_NAME = 'stewardship_address_rule' THEN
         actual := jsonb_build_object('kind', 'address', 'email', NEW.email,

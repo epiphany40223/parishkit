@@ -430,7 +430,7 @@ def admit_offline_database(configuration):
     from django.db import connection
 
     from .accounts.credential_database import _identity, admit_grants
-    from .runtime_grants import admit_columns
+    from .runtime_grants import admit_columns, runtime_functions
 
     role = configuration.service_role
     _identity("pk_stewardship_" + role.value.replace("-", "_"))
@@ -438,7 +438,7 @@ def admit_offline_database(configuration):
     allowed = {table: set(grants) for table, grants in tables.items()}
     for table, grants in columns.items():
         allowed.setdefault(table, set()).update(grants)
-    admit_grants(allowed)
+    admit_grants(allowed, functions=runtime_functions(role))
     admit_columns(connection, tables, columns)
     require_no_temporary_authority()
     require_current_schema()

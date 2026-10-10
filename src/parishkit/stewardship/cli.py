@@ -74,6 +74,16 @@ _COMMAND_OPTIONS = {
         "reason",
     },
     "preview-admin-recovery": {"config", "confirm_deployment", "target_email"},
+    # The one offline conversion of sign-in rules into users (#952).
+    "upgrade-users": {
+        "config",
+        "confirm_deployment",
+        "preview",
+        "operation_id",
+        "operator_name",
+        "reason",
+        "confirm_administrators",
+    },
     # Ends every live Admin automation session (ADM-11); run in every restore.
     "revoke-automation-sessions": {"config", "reason"},
     # Closes the site for a restore review (#537); run in every real restore.
@@ -210,6 +220,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "wait-seconds",
         "ca-file",
         "backup-at",
+        "confirm-administrators",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -220,6 +231,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             "smoke only: post the one fixed Slack message, or copy the newest "
             "backup set to the Drive folder, after a valid check"
         ),
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        default=None,
+        help="upgrade-users only: print what the conversion would do, change nothing",
     )
     parser.add_argument(
         "--keep",
@@ -260,6 +277,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "migrate",
         "recover-admin",
         "preview-admin-recovery",
+        "upgrade-users",
         "revoke-automation-sessions",
         "restore-begin",
         "database-roles",
