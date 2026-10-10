@@ -342,10 +342,12 @@ def test_lists_and_downloads_for_admin_and_staff(
         assert b"Families that submitted</a>: 0" in body
 
 
-def test_search_is_private_and_matches_part_of_a_name_or_an_envelope(
+def test_search_is_private_and_matches_a_name_duid_or_envelope(
     quality_funnel, auth_service, google, settings, caplog
 ):
-    """The search (#849, #860): POST only, any case, exact envelope, audited bare.
+    """The search (#849, #860): POST only, any case, exact DUID or envelope.
+
+    It is audited bare (whether one was used, never the text).
 
     ParishSoft data to check lists two Families in Production and the
     rehearsal's submission is on the Testing submitted list, so the search
@@ -387,6 +389,13 @@ def test_search_is_private_and_matches_part_of_a_name_or_an_envelope(
         for other in ("471", "47110"):
             _, body = search(admin, quality, {"search": other})
             assert listed_duids(body) == []
+        # A Family DUID matches exactly too. The corpus names hold their
+        # DUIDs ("Family12"), so the leading zeros keep the name from
+        # matching: only the number can find this Family.
+        duid = f"{ENVELOPE_ZERO:04d}"
+        assert duid not in zero.name and duid not in blank.name
+        _, body = search(admin, quality, {"search": duid})
+        assert listed_duids(body) == [ENVELOPE_ZERO]
         # The search combines with the filter and the sort.
         _, body = search(
             admin, quality, {"search": part, "show": "envelope", "sort": "-duid"}

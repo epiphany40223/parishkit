@@ -572,12 +572,12 @@ The URL carries only closed choices: `mode` (as on the dashboard: Production
 by default, the active Testing rehearsal for Administrators only), `show` (the
 filter), `sort`, `size` and `page`; nothing identifying.
 
-Every list has a **Search by Family name or envelope number** box
+Every list has a **Search by Family name, DUID or envelope number** box
 ([#849](https://github.com/epiphany40223/parishkit/issues/849)). It keeps a
 Family whose Family column (the directory's name: surname, then active heads)
 contains the text, ignoring case, or, for a search of digits only, whose
-envelope number is exactly that number; a part of an envelope number matches
-nothing by number. The search runs on the list's rows after its filter, before
+Family DUID or envelope number is exactly that number; a part of a DUID or
+envelope number matches nothing by number. The search runs on the list's rows after its filter, before
 sorting and paging, so the row count, the pages and the download all follow
 it. A search can name a Family, so it is sent only in the filter form's
 CSRF-protected POST body, never in a URL, as the

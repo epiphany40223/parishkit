@@ -112,8 +112,8 @@ def test_submitted_has_no_filter_and_refuses_old_show_values():
             ListQuery.parse(spec, QueryDict(f"show={old}"))
 
 
-def test_search_matches_part_of_a_name_or_an_exact_envelope():
-    """The directory's name rule, any case; an all-digit search is an envelope."""
+def test_search_matches_part_of_a_name_or_an_exact_duid_or_envelope():
+    """The directory's name rule, any case; all digits: a DUID or an envelope."""
     assert duids(rows_of("submitted", search="adams")) == [1]
     assert duids(rows_of("submitted", search="BOB")) == [2]
     # Part of the name, anywhere in it (surname or head).
@@ -123,6 +123,13 @@ def test_search_matches_part_of_a_name_or_an_exact_envelope():
     assert duids(rows_of("submitted", search="102")) == [2]
     assert duids(rows_of("submitted", search="10")) == []
     assert duids(rows_of("data-quality", search="0")) == [4]
+    # So must the Family DUID, on every list (#884); these names hold no
+    # digits, so only the number can match.
+    assert duids(rows_of("submitted", search="2")) == [2]
+    assert duids(rows_of("submitted", search="5")) == [5]
+    assert duids(rows_of("data-quality", search="4")) == [4]
+    assert duids(rows_of("started", "opened", search="4")) == [4]
+    assert duids(rows_of("submitted", search="99")) == []
     # Nothing found, and a search combines with the list's filter.
     assert duids(rows_of("submitted", search="zzz")) == []
     assert duids(rows_of("started", "opened", search="diaz")) == [4]

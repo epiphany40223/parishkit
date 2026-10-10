@@ -3,8 +3,8 @@
 Each list is one ``ResponseList``: which per-Family funnel rows it holds
 (``response_metrics.FamilyResponse``, the rows behind the dashboard's tiles),
 its columns, its closed filter (``show``, where it has one) and its default
-order. Every list also takes a private name or envelope-number search
-(``ListQuery.search``, #849/#860). Four
+order. Every list also takes a private name, DUID or envelope-number
+search (``ListQuery.search``, #849/#860). Four
 lists are chosen from the funnel rows alone, so each one's length equals the
 dashboard figure it sits behind:
 
@@ -431,14 +431,14 @@ class ListQuery:
 
         As the directory's search matches its Family column: part of the
         shown name (surname, then the heads of household), ignoring case.
-        A search of digits only also matches that exact envelope number, the
-        number staff copy from a gift; a partial number would match far too
-        many envelopes to be useful.
+        A search of digits only also matches that exact Family DUID or
+        envelope number, the numbers staff copy from ParishSoft or a gift; a
+        partial number would match far too many Families to be useful.
         """
         text = self.search.casefold()
         if not text:
             return True
-        if text.isascii() and text.isdigit() and row.envelope == int(text):
+        if text.isascii() and text.isdigit() and int(text) in (row.duid, row.envelope):
             return True
         return bool(row.name) and text in row.name.casefold()
 

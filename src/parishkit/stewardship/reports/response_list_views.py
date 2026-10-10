@@ -3,9 +3,9 @@
 ``reports/responses/<list>/`` shows one list of Families behind
 the response funnel (``response_lists``) at the database's current instant,
 as a shared Admin table (web/tables.py) that sorts, filters and pages in
-place. A name or envelope-number search (#849) is posted to the same page in
-a CSRF-protected body, never put in a URL; while one is applied the table is
-a POST table, whose controls carry it as hidden fields. ``.../csv/``
+place. A name, DUID or envelope-number search (#849) is posted to the same
+page in a CSRF-protected body, never put in a URL; while one is applied the
+table is a POST table, whose controls carry it as hidden fields. ``.../csv/``
 downloads the complete filtered list, in the page's order,
 rendered on request on the web connection (see ``_respond``). Admission, the
 campaign read guard, the role recheck inside it and the audit follow the

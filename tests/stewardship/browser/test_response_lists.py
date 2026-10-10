@@ -191,7 +191,7 @@ def test_search_narrows_in_place_and_never_enters_the_address(page, component_or
     assert page.locator("#list-show").count() == 0
     posted = answer_posts(page, component_origin, SUBMITTED, searched)
     page.evaluate(MARK)
-    box = page.get_by_label("Search by Family name or envelope number")
+    box = page.get_by_label("Search by Family name, DUID or envelope number")
     box.fill("e")
     box.press("Enter")
     visible(page.get_by_text("Showing 1–2 of 2").first)
@@ -239,7 +239,7 @@ def test_mode_switch_clears_the_search_box(page, component_origin):
     errors = watch(page)
     page.goto(component_origin + SUBMITTED)
     answer_posts(page, component_origin, SUBMITTED, searched)
-    box = page.get_by_label("Search by Family name or envelope number")
+    box = page.get_by_label("Search by Family name, DUID or envelope number")
     box.fill("e")
     box.press("Enter")
     visible(page.get_by_text("Showing 1–2 of 2").first)
