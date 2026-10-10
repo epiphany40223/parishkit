@@ -46,11 +46,20 @@ def _function(name):
 
 
 # Text concatenations in audit-writing functions that build something other
-# than an audit type, with what each builds. Each must still be found, so a
-# stale entry cannot hide a prefix.
+# than an audit type: what each builds, and the exact functions that build it.
+# A prefix is exempt only in its listed functions (real admin_* audit types
+# exist, so a new trigger building 'admin_'||... must still fail), and every
+# listed (prefix, function) pair must still be found, so a stale entry cannot
+# hide a prefix.
 NOT_AUDIT_TYPES = {
-    "admin_": "a delivery resolution's reason code",
-    "pk_stewardship_": "a credential consumer's database role name",
+    "admin_": (
+        "a delivery resolution's reason code",
+        frozenset({"stewardship_delivery_resolution_guard_v1"}),
+    ),
+    "pk_stewardship_": (
+        "a credential consumer's database role name",
+        frozenset({"stewardship_credential_ack_guard_v1"}),
+    ),
 }
 
 
@@ -110,6 +119,19 @@ def test_every_built_audit_prefix_is_closed():
             built.setdefault(prefix, set()).add(name)
     # The scan cannot pass vacuously.
     assert {"config_request_", "setup_mail_", "task_"} <= set(built)
-    unclosed = set(built) - set(BUILT_TYPES) - set(NOT_AUDIT_TYPES)
-    assert not unclosed, {prefix: sorted(built[prefix]) for prefix in unclosed}
-    assert set(NOT_AUDIT_TYPES) <= set(built), sorted(set(NOT_AUDIT_TYPES) - set(built))
+    # A non-type prefix is exempt only in the functions listed for it.
+    exempt = {prefix: names for prefix, (_reason, names) in NOT_AUDIT_TYPES.items()}
+    unclosed = {
+        prefix: sorted(names - exempt.get(prefix, frozenset()))
+        for prefix, names in built.items()
+        if prefix not in BUILT_TYPES and names - exempt.get(prefix, frozenset())
+    }
+    assert not unclosed, unclosed
+    # Every exempted (prefix, function) pair is still built there.
+    stale = sorted(
+        (prefix, name)
+        for prefix, names in exempt.items()
+        for name in names
+        if name not in built.get(prefix, ())
+    )
+    assert not stale, stale
