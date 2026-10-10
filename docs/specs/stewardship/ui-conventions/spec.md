@@ -481,8 +481,13 @@ sits after the button it holds, never on its line
 all sit after the bulk action buttons ([Admin tables](#admin-tables)); a
 confirmation dialog shows a refusal below its buttons
 ([row actions](#row-actions-and-confirmation)); the theme always reserves the
-scrollbar's space ([page help](#page-help)). **Precedent.** #736 and its
-review (Administrator, 2026-10-08), #563.
+scrollbar's space ([page help](#page-help)); `data-complete-hint="reserve"`
+on a complete-gate hint keeps its one line's height while empty instead of
+hiding it (open #959); a field that a choice makes inapplicable stays in
+place, greyed, rather than disappearing, through `data-enabled-when` (open
+#959) or `data-locked-when` (open #957) ([conditional
+fields](#conditional-fields)). **Precedent.** #736 and its review
+(Administrator, 2026-10-08), #563, open #957, open #959.
 
 ### Prerequisite gates
 
@@ -493,7 +498,10 @@ from what is saved. The server still checks every submission. **Why.** A
 button that is available but refuses afterwards wastes a round trip and reads
 as an error; a button greyed out with no reason reads as broken. **Shared
 code.** `ui-v1.js`: `data-require-complete` with `data-complete-hint` and
-`data-missing-hint`; `data-required-when` and `data-required-when-shown`;
+`data-missing-hint`, and `data-complete-hint="reserve"` to keep the hint's
+line while it is empty (open #959); `data-required-when` and
+`data-required-when-shown`; `data-enabled-when` and `data-locked-when`
+([conditional fields](#conditional-fields));
 the acknowledgment gate (`data-acknowledgment-gated`); the time-entry gate;
 the change gate `data-require-change` (open #924); the shared `holdButton` /
 `releaseButton` pair and `GATE_MARKS` list (open #924), so gates never release a
@@ -615,7 +623,22 @@ made, and is required only while shown. A hidden field is not sent, and its
 errors clear. **Why.** Fields that do not apply invite wrong answers and make
 a form look longer than it is. **Shared code.** `ui-v1.js`: `data-show-when`,
 `data-required-when`, `data-required-when-shown`; re-applied on `pageshow`
-and after every in-place swap. **Precedent.** #563, #736.
+and after every in-place swap. Where hiding a field would move the controls
+around it, two gates keep it in place instead:
+
+- `data-enabled-when="name=value"` (open #959) works like `data-show-when`
+  but never hides: while the rule does not hold, the field stays, disabled
+  (greyed and not sent). It is re-checked on `pageshow` and after in-place
+  filter syncs. First use: System logs' level boxes while Sign-in activity is
+  chosen.
+- `data-locked-when` (open #957) shows a fixed value, disabled, while its
+  rule holds, with the reason in reserved space, and gives back the reader's
+  own value (kept in a hidden field) when the rule stops holding. First use:
+  the directory's "Campaign mail can reach" while Include mailing columns is
+  ticked.
+
+The two overlap, and are to be merged into one shared gate once both have
+landed. **Precedent.** #563, #736, open #957, open #959.
 
 ### Single-campaign interim
 
@@ -1109,7 +1132,20 @@ name is sometimes one person's given name. **Shared code.**
 DUIDs, `snapshot_family_names` in `source/snapshot_names.py`; the SQL
 equivalent in `schema/directory_reports.sql` for the directory's search and
 order. Salutations use `heads_salutation_name` ("Tracy and Jeff Squyres")
-from the same module. **Precedent.** #471, #932 (Administrator, 2026-10-10).
+from the same module. Where a table sorts in the database, the
+`SnapshotFamilyName` ORM expression (open #965, in
+`source/snapshot_name_sql.py`) builds the same name per row, so the sort
+orders by surname, then the whole name. **Precedent.** #471, #932 (Administrator, 2026-10-10), open #965.
+
+A Member's own name is shown "Last, first" ("Smith, Ann"), so a column of
+Member or person names sorts by surname too (Administrator, 2026-10-10, on
+[#952](https://github.com/epiphany40223/parishkit/issues/952)); first used by
+the Users page's leaders table and user Names (open #963).
+
+Recorded exception: System health's "Families the form cannot open" shows the
+Family's surname only (from the shared `family_display_name`), never the
+heads' names. The refused field can itself be a head's name, and that page
+never shows Member values (open #965).
 
 ### Table fit and row height
 
@@ -1121,6 +1157,11 @@ disclosure. **Why.** A page that scrolls sideways hides its own controls; tall
 rows make a table unscannable. **Shared code.** The `table-scroll` class in
 `ui-v1.css`; the button-label browser test at 320 px and 1280 px.
 **Precedent.** #614, #952 (Portal users' rows wrapping to several lines).
+
+Recorded exception: the Users page keeps every row to one line (the
+Administrator asked for one-line rows on #952). A long email or Name is cut
+off with "…"; the full value stays the cell's text, appears in a `title`
+tooltip, and is shown whole on the user's Edit page (#952, open #963).
 
 ## Downloaded files
 
