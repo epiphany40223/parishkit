@@ -2943,7 +2943,11 @@ re-reads the same check.
 
 The Admin-only Family list (the **Testing submissions** page) opens only
 while the campaign is the current Testing draft, as does Go-live readiness,
-the only page that links to it. Afterwards the list answers with a plain
+the only page that links to it. It names each Family as the other Admin
+tables do, the surname then the heads ("Squyres, Tracy and Jeff"), with the
+Family DUID in its own column; both columns sort on the server, the name by
+surname and then the whole name, as the Family codes directory sorts
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). Afterwards the list answers with a plain
 notice, "Testing submissions are only available before go-live.", as a 410
 refusal: signing in again cannot help, so it never shows the generic
 sign-in-again refusal
@@ -4327,6 +4331,11 @@ example Families of a refused change (PR 5) and the debug-off switch
   the Member DUID and the field to correct in plain words, never the value
   (not even a Member's name), sorted and paged in place, and says the Family
   can open the form after the correction and the next ParishSoft refresh.
+  The Family name is therefore the surname alone, the recorded exception to
+  the "Surname, heads" Family name rule
+  ([#932](https://github.com/epiphany40223/parishkit/issues/932)): the heads'
+  names are Member values, and a head's name can be the very value the form
+  refuses.
   The result is cached in memory per campaign, snapshot and campaign
   configuration, so a refresh clears it. The sentence is read on page load
   only, never by the 10-second status poll; if the check cannot run, it

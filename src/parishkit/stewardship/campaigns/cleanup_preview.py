@@ -2,21 +2,12 @@
 
 from dataclasses import dataclass
 
-from django.db.models import (
-    CharField,
-    Count,
-    JSONField,
-    OuterRef,
-    Subquery,
-    TextField,
-    Value,
-)
-from django.db.models.fields.json import KT
-from django.db.models.functions import Cast, Coalesce, Concat, Lower, NullIf, Trim
+from django.db.models import Count, F, TextField, Value
+from django.db.models.functions import Coalesce, Lower
 
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
-from parishkit.stewardship.source.family_names import family_display_name
-from parishkit.stewardship.source.version_models import SnapshotFamily
+from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
+from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 
 from .cleanup_catalog import (
@@ -32,13 +23,14 @@ from .work_locks import require_work_order
 # The Testing Families table sorts on the server by either column. DUID is
 # the default and is covered by the family_campaign_duid unique index
 # (campaign_id, family_duid). Family name is not a FamilyCampaign column: it
-# is read per row from the current source snapshot's Family payload through
-# the (snapshot, source_key) unique index, the same lastName, mailingName,
-# then "first last" choice family_display_name makes for display. The
-# inventory is only Families with Testing submissions, so that per-row
-# lookup is bounded. id is the unique tiebreak.
+# is built per row from the current source snapshot (SnapshotFamilyName,
+# through the (snapshot, source_key) unique indexes), the same "Surname,
+# heads" string snapshot_family_names shows, ordered by surname and then the
+# whole name and then the DUID, as the Family codes directory is. The
+# inventory is only Families with Testing submissions, so that per-row lookup
+# is bounded. id is the unique tiebreak.
 TESTING_FAMILY_SORTING = Sorting.by_column(
-    {"name": ("sort_name",), "duid": ("family_duid",)},
+    {"name": ("sort_surname", "sort_name", "family_duid"), "duid": ("family_duid",)},
     default="duid",
     tiebreak=("id",),
 )
@@ -94,39 +86,13 @@ def cleanup_preview(campaign_id):
     )
 
 
-def _source_name(source_id):
-    """The Family's display name from the source snapshot, lowercased to sort."""
+def _sort_name(source_id, *, surname_only=False):
+    """The shown Family name (or its surname), lowercased to sort; "" without
+    a source snapshot or for a Family missing from it."""
     if source_id is None:
         return Value("", output_field=TextField())
-
-    def text(key):
-        """One trimmed payload field, NULL when blank."""
-        return NullIf(Trim(KT(f"document__{key}")), Value(""), output_field=TextField())
-
-    name = Coalesce(
-        text("lastName"),
-        text("mailingName"),
-        Trim(
-            Concat(
-                text("firstName"),
-                Value(" "),
-                text("lastName"),
-                output_field=TextField(),
-            )
-        ),
-        Value(""),
-        output_field=TextField(),
-    )
-    return Subquery(
-        SnapshotFamily.objects.filter(
-            snapshot_id=source_id,
-            source_key=Cast(OuterRef("family_duid"), CharField()),
-        )
-        # The payload is canonical JSON text; read it as jsonb to pick fields.
-        .annotate(document=Cast("payload__canonical", JSONField()))
-        .annotate(sort_name=Lower(name))
-        .values("sort_name")[:1]
-    )
+    name = SnapshotFamilyName(source_id, F("family_duid"), surname_only=surname_only)
+    return Lower(Coalesce(name, Value(""), output_field=TextField()))
 
 
 def cleanup_families(campaign_id, *, source_id, window, sort="duid"):
@@ -146,22 +112,14 @@ def cleanup_families(campaign_id, *, source_id, window, sort="duid"):
     query = families.only("id", "family_duid")
     if TESTING_FAMILY_SORTING.tokens[sort][0] == "name":
         query = query.annotate(
-            sort_name=Coalesce(
-                _source_name(source_id), Value(""), output_field=TextField()
-            )
+            sort_surname=_sort_name(source_id, surname_only=True),
+            sort_name=_sort_name(source_id),
         )
     total = bounded_count(families)
     window, rows, has_next = read_window(
         window, TESTING_FAMILY_SORTING.order(query, sort), total
     )
-    names = {}
-    if source_id is not None:
-        for row in SnapshotFamily.objects.filter(
-            snapshot_id=source_id,
-            source_key__in=[str(family.family_duid) for family in rows],
-        ).select_related("payload"):
-            value = row.payload.payload
-            names[int(row.source_key)] = family_display_name(value)
+    names = snapshot_family_names(source_id, [row.family_duid for row in rows])
     return (
         window,
         [
