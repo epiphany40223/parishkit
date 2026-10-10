@@ -112,6 +112,19 @@ def promote(snapshot, claim, campaign, ring, **overrides):
     return result
 
 
+def publish(data=None):
+    """Stage and promote ``data`` with no Family effects; return the snapshot.
+
+    For tests that need a current promoted source but no campaign population.
+    """
+    snapshot, claim = prepare(data)
+    with work_transaction():
+        promote_snapshot(snapshot.pk, claim, admit=permit, reconcile=lambda _: True)
+    release_source(claim)
+    snapshot.refresh_from_db()
+    return snapshot
+
+
 def test_promotion_populates_exact_generation_codes_and_cohort(tmp_path):
     """Source identity, Family population and first eligibility all share one commit."""
     campaign, ring = setup(tmp_path)

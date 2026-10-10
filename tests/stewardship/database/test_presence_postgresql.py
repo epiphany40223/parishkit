@@ -20,10 +20,12 @@ from .campaign_builders import campaign_clock
 from .credential_builders import populate
 from .leader_builders import grant_role
 from .test_background_grants_postgresql import task_login
-from .test_current_chair_postgresql import publish
 from .test_family_auth_postgresql import family_service as family_service
 from .test_family_auth_postgresql import login
-from .test_source_families_postgresql import source_singletons  # noqa: F401
+from .test_source_families_postgresql import (
+    publish,
+    source_singletons,  # noqa: F401
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ADMIN = "/admin/mail/presence/"

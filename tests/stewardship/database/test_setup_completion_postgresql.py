@@ -217,7 +217,7 @@ def test_late_failures_roll_back_every_effect_and_allow_same_live_owner_retry(
                     raise RuntimeError("synthetic atomic completion failure")
 
                 if stage == "families":
-                    patch.setattr(owner, "reconcile_source_chairs", fail)
+                    patch.setattr(owner, "reconcile_source_families", fail)
                 elif stage == "marker":
                     patch.setattr(SetupCompletion.objects, "create", fail)
                 elif stage == "omit_population":

@@ -1,11 +1,10 @@
-"""Database-free review rows for login rules, provenance and assignments."""
+"""Database-free review rows for login rules and provenance."""
 
 from datetime import UTC, datetime
 
 from parishkit.stewardship.accounts.user_rows import (
     AppliedPolicy,
     address_rows,
-    domain_assignment_rows,
     domain_rows,
 )
 
@@ -98,40 +97,27 @@ def test_address_rows_show_granted_roles_provenance_and_denial():
     )
 
 
-# What every retired Ministry assignment says (#922).
-RETIRED = (
-    "Ministry assignments no longer grant anything: a Ministry leader sees "
-    "the Ministries of their ParishSoft Ministry roles."
-)
-
-
-def test_rule_leader_roles_admit_and_assignments_say_they_grant_nothing():
-    """A rule's role is held; assignments grant no Ministry (#922), and say so.
-
-    A rule's Ministry leader role, seeded or manual, is granted, since a rule
-    is what admits a Ministry leader (2026-10-10). No assignment is in force,
-    whatever the promoted source confirms, and each row holding one says so.
+def test_rule_leader_roles_are_held_and_assignments_are_not_shown():
+    """A rule's Ministry leader role, seeded or manual, is held: a rule is
+    what admits a Ministry leader (2026-10-10), and ParishSoft decides their
+    Ministries (#922). Ministry assignment records are neither shown nor
+    counted, and nothing warns about them.
     """
     rule = address("chair@example.org", roles=("ministry_leader",), seeded=True)
     held = assignment("chair@example.org", ministry=9, seeded=True)
     manual = address("leader@example.org", roles=("ministry_leader",))
     idle = assignment("staff@example.org", ministry=4)
     staff = address("staff@example.org", roles=("staff",))
-    records = [rule, held, manual, idle, staff]
-    for policy in (
-        AppliedPolicy(records, []),
-        AppliedPolicy(records, [], frozenset({held["id"]})),
-    ):
-        chair, leader, other = address_rows(policy)
-        assert text(chair["granted"]) == text(leader["granted"]) == ["Ministry leader"]
-        assert text(other["granted"]) == ["Staff"]
-        assert [item["active"] for item in chair["assignments"]] == [False]
-        for row in (chair, other):
-            assert text(row["warnings"]) == [RETIRED]
-        assert leader["warnings"] == []
-        # Provenance is still shown as recorded.
-        assert text(chair["grants"][0]["origins"]) == ["Parish source Chairperson"]
-        assert text([chair["origin"]]) == ["Parish source Chairperson"]
+    chair, leader, other = address_rows(
+        AppliedPolicy([rule, held, manual, idle, staff], [])
+    )
+    assert text(chair["granted"]) == text(leader["granted"]) == ["Ministry leader"]
+    assert text(other["granted"]) == ["Staff"]
+    for row in (chair, leader, other):
+        assert row["warnings"] == [] and "assignments" not in row
+    # Provenance is still shown as recorded.
+    assert text(chair["grants"][0]["origins"]) == ["Parish source Chairperson"]
+    assert text([chair["origin"]]) == ["Parish source Chairperson"]
     (admin,) = address_rows(AppliedPolicy([address()], []))
     assert admin["warnings"] == []
 
@@ -158,40 +144,3 @@ def test_several_google_identities_for_one_address_are_grouped():
     ]
     _, both = address_rows(AppliedPolicy(records, [old, old | {"last_login": None}]))
     assert text(both["warnings"])[0].startswith("All 2 recorded Google identities")
-
-
-def test_assignments_relying_on_a_domain_rule_lead_nothing():
-    """No assignment leads now (#922), whatever rule or claim backs it."""
-    held = assignment("chair@lead.example", ministry=9, seeded=True)
-    records = [
-        address(),
-        domain("lead.example", roles=("ministry_leader",)),
-        assignment("claimed@lead.example", ministry=7),
-        assignment("claimed@lead.example", ministry=3),
-        assignment("off@lead.example", ministry=8),
-        address("exact@lead.example", roles=("ministry_leader",)),
-        assignment("exact@lead.example", ministry=1),
-        held,
-    ]
-    identities = [
-        identity("claimed@lead.example", hosted="lead.example"),
-        identity("off@lead.example", hosted="lead.example", disabled=True),
-        identity("chair@lead.example", hosted="lead.example"),
-    ]
-    rows = {
-        row["email"]: row
-        for row in domain_assignment_rows(
-            AppliedPolicy(records, identities, frozenset({held["id"]}))
-        )
-    }
-    assert list(rows) == sorted(rows) and "exact@lead.example" not in rows
-    claimed = rows["claimed@lead.example"]
-    assert [item["ministry_duid"] for item in claimed["assignments"]] == [3, 7]
-    assert claimed["last_login"] == LATER
-    for row in rows.values():
-        assert not row["leading"]
-        assert not any(item["active"] for item in row["assignments"])
-        assert text(row["warnings"])[0] == RETIRED
-    # A disabled identity still says so too.
-    assert len(rows["off@lead.example"]["warnings"]) == 2
-    assert domain_assignment_rows(AppliedPolicy([address()], [])) == []

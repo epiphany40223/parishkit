@@ -229,23 +229,12 @@ PAGES = {
     # change was confirmed on when this sign-in remembers it.
     "configuration_request": Page(None, _("Change status")),
     # Users
-    # Keeps its name until NAV-15 splits it into Sign-in rules, Ministry
-    # assignments and Chairpersons; renaming the combined page earlier would
-    # mislabel its other tables.
+    # Keeps its name until NAV-15 (#796) reworks it into Sign-in rules.
     "users": Page("users", _("Portal users")),
     # Only the review of a change started on Portal users (a POST from that
     # page) renders at these routes, so trails name them but never link them.
     "user_rules": Page("users", _("Review sign-in rules"), "users", linkable=False),
     "rule_request": Page("users", _("Rule change"), "user_rules"),
-    "chair_confirmations": Page(
-        "users", _("Review Chairperson suggestion"), "users", linkable=False
-    ),
-    "chair_reviews": Page(
-        "users", _("Review Chairperson decision"), "users", linkable=False
-    ),
-    "assignments": Page(
-        "users", _("Review Ministry assignment"), "users", linkable=False
-    ),
     # The Administrator's own automation sessions (ADM-11), and the approval
     # of a pending one, which the command line links to.
     "automation_access": Page("users", _("Automation access")),
@@ -433,7 +422,7 @@ class Entry:
 # The menu, in order within each group (admin-portal spec, "Menu groups").
 # Labels come from PAGES, so the menu, the trail and the page share a name.
 # Entries for pages that do not exist yet are added with those pages:
-# Emailed reports, Ministry assignments and Chairpersons (ADM-12).
+# Emailed reports (ADM-12).
 _ADMIN = Capability.CONFIGURE
 MENU = (
     # Campaign setup

@@ -2228,8 +2228,6 @@ never prepares or sends twice.
 | --- | --- |
 | `users` | `users list` (PR 11) |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | `rules show`, `rules apply`, `rules request show` (PR 11), including the [high-impact changes](#high-impact-changes) |
-| `chair_confirmations`, `chair_reviews` | `chairs …` (PR 11) |
-| `assignments` | `assignments …` (PR 11) |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` (PR 11) |
 | `information_update`, `ministry_followup`, `ministry_followup_item`, `ministry_followup_update` | `followup …` (PR 11); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 

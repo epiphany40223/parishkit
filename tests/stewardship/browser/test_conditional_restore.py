@@ -192,16 +192,3 @@ def test_restored_campaign_modules_update_a_save_gate(page, component_origin):
     assert save.is_disabled()
     restore(page, "#id_financial_enabled", "box => { box.checked = false; }")
     assert save.is_enabled()
-
-
-def test_chairperson_suggestions_say_what_to_select(page, component_origin):
-    """The suggestion table's Review waits for a selection, with its hint."""
-    page.goto(component_origin + "/portal-users-suggestions")
-    review = page.get_by_role("button", name="Review selected suggestions")
-    hint = "Select at least one suggestion to review."
-    takes_no_space(page.locator("[data-selection-hint]"))
-    assert review.is_disabled()
-    assert explained(review, hint)
-    restore(page, "input[data-select-row]", "box => { box.checked = true; }")
-    assert review.is_enabled()
-    assert not explained(review, hint)

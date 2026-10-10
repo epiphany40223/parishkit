@@ -1,8 +1,0 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n %}
-{% block title %}{% translate "Chairperson assignment decision not made" %}{% endblock %}
-{% block content %}<section class="flow panel">
-  <h1>{% translate "Chairperson assignment decision not made" %}</h1>
-  <p class="notice notice-error" role="alert">{% if code == 'missing' %}{% translate "That rule or Chairperson assignment no longer exists. Reload the page to see the current rules." %}{% elif code == 'not_seeded' %}{% translate "That address has no Ministry leader role from a Chairperson suggestion, so there is nothing to keep independently." %}{% elif code == 'not_suspended' %}{% translate "That Chairperson assignment is not suspended: ParishSoft still shows that Chairperson, so there is nothing to restore or remove. Use the rule's own change form for an ordinary change." %}{% elif code == 'already' %}{% translate "That decision is already in effect: an Administrator already added that role, or already assigned that Ministry." %}{% elif code == 'stale' %}{% translate "The login rules changed since you opened the Portal users page, so nothing was changed. Reload the Portal users page and decide again." %}{% elif code == 'policy' %}{% translate "The resulting policy is not valid, so nothing was changed." %}{% else %}{% translate "The decision was not understood. A restore or removal names its Ministry and carries a reason. Use the forms on the Portal users page." %}{% endif %}</p>
-  <p>{% translate "The submitted address is never repeated on this page." %}</p>
-  <p><a href="{% url 'admin:users' %}">{% translate "Return to Portal users" %}</a></p>
-</section>{% endblock %}

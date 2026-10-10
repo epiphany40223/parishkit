@@ -63,11 +63,9 @@ LONG_PARAGRAPH_WORDS = 50
 # Pages not yet converted, with the longest visible message each may keep.
 # Lower or remove an entry when its page is converted; never raise one.
 LONG_PARAGRAPH_ALLOWED = {
-    "chair-confirmation-preview.html": 51,
-    "chair-review-preview.html": 55,
     "setup-content.html": 60,
     "setup-source-progress.html": 67,
-    "users.html": 99,
+    "users.html": 74,
 }
 
 # The page's introduction: everything between its heading and the first
