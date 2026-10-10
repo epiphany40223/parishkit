@@ -65,7 +65,7 @@ LONG_PARAGRAPH_WORDS = 50
 LONG_PARAGRAPH_ALLOWED = {
     "setup-content.html": 60,
     "setup-source-progress.html": 67,
-    "users.html": 74,
+    "users.html": 51,
 }
 
 # The page's introduction: everything between its heading and the first
