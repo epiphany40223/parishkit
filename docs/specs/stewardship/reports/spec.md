@@ -864,11 +864,9 @@ then heads, as on the
 Family DUID, Submitted, then the rest. The default queue shows only
 `current_actionable`; history filters expose superseded/withdrawn items.
 Search covers authorized text, Family name/DUID, notes, date, disposition,
-and workflow state. The installed SQL selection searches and sorts by the
-Family's surname, which leads the shown name, so a head's first name does
-not match the Family name and Families that share a surname keep the
-selection's order rather than sorting by their heads; the Family DUID
-column does not sort yet
+and workflow state. The installed SQL selection searches the shown name
+(surname, then heads) and sorts the Family column by surname and then that
+name, as the directory does; the Family DUID column sorts too
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)). Exports
 include complete text and workflow history option, and name each Family as
 the page does, from the snapshot their capture was read from; a Family
@@ -1131,8 +1129,11 @@ Member or the Ministry: each DUID has its
 own column next to its name, and a Member added on the form, who has no
 ParishSoft DUID yet, shows "New Member" there, followed by the note that the
 Member was added on the form and the proposed Member's reference under
-technical details; the row header is just the name. Neither DUID column
-sorts: the installed selection orders the rows and has no DUID order. Exports keep
+technical details; the row header is just the name. Both DUID columns sort
+in the installed selection's order
+([#960](https://github.com/epiphany40223/parishkit/issues/960)): the summary
+by Ministry DUID, and a list by Member DUID with a Member added on the form
+last in either direction. Exports keep
 their own columns until the export slice of
 [#932](https://github.com/epiphany40223/parishkit/issues/932).
 
@@ -1318,8 +1319,9 @@ pledges. One row per currently effective live Family response shows, in the
 Admin table [column order](../admin-portal/spec.md#table-column-order), the
 Family name first (surname, then heads, as on the
 [active parishioner family directory](#active-parishioner-family-directory);
-search and the Family sort still use the surname), Family DUID in its own
-column (not sortable: the installed selection does not order by it), Annual
+search matches that name and the Family sort orders by surname, then that
+name), Family DUID in its own sortable column
+([#960](https://github.com/epiphany40223/parishkit/issues/960)), Annual
 pledge, Frequency, Approximate installment, Share methods (selected
 share-option labels with any Other text), the ParishSoft comparison pledge
 and contribution aggregates, Latest response (the time the Family last

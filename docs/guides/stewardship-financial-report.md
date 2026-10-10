@@ -166,7 +166,7 @@ are focused selections rather than a complete acceptance pass.
   The same Family's own rows in an unmapped fund, outside the window and after a
   backdated cutoff excluded, with both boundary days included. Three real
   Families submitted at distinct campaign-clock times: per-Family attribution, a
-  proven complete zero, all six sorts, thirteen filter outcomes each with a
+  proven complete zero, all eight sorts, thirteen filter outcomes each with a
   matching filtered summary, disjoint ordered pages at a page size of two with
   one identical summary, a page past the end, and the complete unpaged mode.
   Twenty-seven parameter values, including scalars and arrays where an object

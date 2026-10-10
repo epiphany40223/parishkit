@@ -1055,15 +1055,16 @@ orders. In v1 that covers:
 
 - the active parishioner family directory (Family and Family DUID, 50 rows; Family code would need
   every code decrypted per view);
-- Financial stewardship detail (Family, Annual pledge and latest response);
-- the Additional information queue (Family and Submitted);
-- the Ministry report (Ministry; Member and Submitted in one Ministry's view);
+- Financial stewardship detail (Family, Family DUID, Annual pledge and
+  latest response);
+- the Additional information queue (Family, Family DUID and Submitted);
+- the Ministry report (Ministry and Ministry DUID; Member, Member DUID and
+  Submitted in one Ministry's view);
 - the Ministry follow-up queue (Request, Member and Ministry).
 
-Extending those vocabularies is a schema change; the DUID columns of the
-financial, Additional information and Ministry tables are the known gap
-([table column order](#table-column-order),
-[#960](https://github.com/epiphany40223/parishkit/issues/960)). Columns that are only
+Extending those vocabularies is a schema change; the DUID sorts of the
+financial, Additional information and Ministry tables came with one
+([#960](https://github.com/epiphany40223/parishkit/issues/960)). Columns that are only
 controls (selection, actions, previews) never sort. Two short before/after
 lists of pending setting changes (credential selection and integration
 preview), the campaign mail test's at most ten reviewed Families and link
@@ -1234,12 +1235,11 @@ no Member name on purpose: the name itself may be the value the form
 refuses, and that page never shows one
 ([System health page](../admin-portal/spec.md#system-health-page)).
 
-Known exceptions, which need a schema change: three report tables are ordered
-by an installed SQL selection with no DUID sort
-([Admin tables](#admin-tables)), so their DUID columns do not sort yet. They
-are Financial stewardship detail and the Additional information queue (Family
-DUID), and the Ministry report (Ministry DUID, and Member DUID in one
-Ministry's view). One forward migration adds those sorts
+The three report tables an installed SQL selection orders
+([Admin tables](#admin-tables)) sort their DUID columns through that
+selection: Financial stewardship detail and the Additional information queue
+(Family DUID), and the Ministry report (Ministry DUID, and Member DUID in one
+Ministry's view)
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)).
 
 ### Family and Member names
@@ -1253,7 +1253,15 @@ name is sometimes one person's given name. **Shared code.**
 `family_heads_name` in `source/family_names.py` (the rule); for a set of
 DUIDs, `snapshot_family_names` in `source/snapshot_names.py`; the SQL
 equivalent in `schema/directory_reports.sql` for the directory's search and
-order. Salutations use `heads_salutation_name` ("Tracy and Jeff Squyres")
+order. Migration 0045 adds the shared SQL functions the report selections
+use, each matching its Python counterpart, Unicode trim included:
+`stewardship_name_strip_v1` (`str.strip()`), `stewardship_family_surname_v1`
+(`family_display_name`), `stewardship_family_head_part_v1` and
+`stewardship_family_heads_name_v1` (`family_heads_name`), and the lookup
+`stewardship_family_display_name_v1` (`snapshot_family_names` for one
+Family); later steps of
+[#932](https://github.com/epiphany40223/parishkit/issues/932) move the other
+SQL copies onto them. Salutations use `heads_salutation_name` ("Tracy and Jeff Squyres")
 from the same module. Where a table sorts in the database, the
 `SnapshotFamilyName` ORM expression (open #965, in
 `source/snapshot_name_sql.py`) builds the same name per row, so the sort
