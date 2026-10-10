@@ -9,6 +9,7 @@ plus Staff's reduced view and a page whose Open form is unavailable.
 """
 
 from datetime import timedelta
+from uuid import UUID
 
 from django.template.loader import render_to_string
 
@@ -30,13 +31,25 @@ OLDEST = ADMIN + "?size=all&sort=when"
 NEWEST = ADMIN + "?size=all&sort=-when"
 STAFF = "/family-timeline-staff"
 UNAVAILABLE = "/family-timeline-unavailable"
+# A second Family whose campaign has a Testing rehearsal, so the export form
+# is drawn in both modes and its mode follows the in-place switch.
+REHEARSED = UUID(int=7)
+REHEARSED_ADMIN = timeline_url(REHEARSED)
+REHEARSED_TESTING = timeline_url(REHEARSED, "testing")
+# The export form's values, as the view's ``export_context`` gives them.
+EXPORT = {
+    "url": "/family-timeline-export",
+    "request_key": UUID(int=99),
+    "timezones": ["America/Los_Angeles", "America/New_York", "UTC"],
+    "mutable": True,
+}
 
 
-def render(context, admin, timeline, *, mode="production", **options):
+def render(context, admin, timeline, *, mode="production", family=FAMILY, **options):
     """One Family timeline page for ``timeline`` in ``mode``."""
     shaped = page_context(
         CAMPAIGN,
-        FAMILY,
+        family,
         IDENTITY,
         mode,
         timeline,
@@ -70,10 +83,12 @@ def components(context, admin):
             "production",
             {"full": True, "testing_codes": True, "family_test_url": ADMIN},
         ),
+        REHEARSED_ADMIN: (TIMELINE, "production", {"full": True, "family": REHEARSED}),
+        REHEARSED_TESTING: (TIMELINE, "testing", {"full": True, "family": REHEARSED}),
     }
     # Administrators and Staff both may see Family codes.
     pages = {
-        path: (timeline, mode, options | {"show_codes": True})
+        path: (timeline, mode, options | {"show_codes": True, "export": EXPORT})
         for path, (timeline, mode, options) in pages.items()
     }
     responses = {}

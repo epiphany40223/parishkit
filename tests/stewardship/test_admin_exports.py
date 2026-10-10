@@ -170,6 +170,7 @@ def test_every_export_command_has_a_golden_document():
         "export ministry-packet",
         "export directory",
         "export postal",
+        "export family-timeline",
     }
     models = {
         "export status": admin_exports.ExportStatus,

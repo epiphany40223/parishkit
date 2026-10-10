@@ -113,6 +113,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export ministry-packet",
         "export directory",
         "export postal",
+        "export family-timeline",
     }
     assert set(entries) == (
         session | reads | changes | refresh | tests | operations | reports
@@ -144,6 +145,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export financial",
                 "export directory",
                 "export postal",
+                "export family-timeline",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -415,6 +417,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_ministry_packet",
         "admin_cmd_export_directory",
         "admin_cmd_export_postal",
+        "admin_cmd_export_family_timeline",
         "admin_cmd_digest_weekly_request",
     ]
     for event in events:

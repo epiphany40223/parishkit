@@ -20,6 +20,7 @@ FAMILY_EXPORTS = (
     "export ministry-packet",
     "export directory",
     "export postal",
+    "export family-timeline",
 )
 
 

@@ -1047,8 +1047,33 @@ pk-admin export postal --format xlsx --timezone America/New_York
 - The file holds every matching Family's code (or mailing address). Keep
   it private and delete it once used (`pk-admin exports clean`).
 
-The one-Family timeline, the talents and response list downloads and the
-exact daily exports are not on the command line yet; use the pages.
+#### One Family's timeline
+
+`export family-timeline` exports one Family's timeline, as the Family
+timeline page's **Export this timeline** does: the Family's details, the
+page's summary and every line of its timeline (oldest first), with its
+Family code. Like the page's full view, it is
+for Administrators. Because the file holds the Family's code, the page asks
+for a recent Google sign-in, so the command asks at the
+[confirmation prompt](#confirmations) (or takes `--yes`), and System logs
+show `automation_fresh_gate` beside it; regenerating one asks the same.
+
+```sh
+pk-admin export family-timeline FAMILY_RECORD_ID --format pdf \
+  --timezone America/New_York
+pk-admin export family-timeline FAMILY_RECORD_ID --mode testing \
+  --format csv --timezone America/New_York
+```
+
+`FAMILY_RECORD_ID` is the id in the Family's timeline page address,
+`/admin/reports/families/FAMILY_RECORD_ID/`. `--mode testing` is
+the page's Testing rehearsal view; such an export cannot be regenerated once
+that rehearsal has ended, so export it again instead. It takes `--request-key` like the other
+exports. A Family that is not in the current campaign is exit 1
+(`not_available`).
+
+The talents and response list downloads and the exact daily exports are not
+on the command line yet; use the pages.
 
 ### Fetching an export's file
 
@@ -1173,3 +1198,4 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   `delivery refusal-clear`, which prompt. `delivery show`'s `actions` may
   now include `resend` (it listed only `delivery resolve` actions); an
   offered `resend` is `delivery resend`.
+- `pk-admin/1` (ADM-11 PR 8g): additive. `export family-timeline`.

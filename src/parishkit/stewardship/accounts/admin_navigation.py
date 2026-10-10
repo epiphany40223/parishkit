@@ -539,6 +539,7 @@ NON_PAGES = frozenset(
         "family_email_progress_status",
         # The header's presence count, polled at the old presence address.
         "presence_count",
+        "family_timeline_export",
         "family_directory_export",
         # The header's Find a Family results (#561), a fragment for its box.
         "find_family",

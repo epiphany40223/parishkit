@@ -166,6 +166,7 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_FAMILY_TEST_NAMES = "admin_cmd_export_family_test_names"
     ADMIN_CMD_DELIVERY_RESEND = "admin_cmd_delivery_resend"
     ADMIN_CMD_DELIVERY_REFUSAL_CLEAR = "admin_cmd_delivery_refusal_clear"
+    ADMIN_CMD_EXPORT_FAMILY_TIMELINE = "admin_cmd_export_family_timeline"
 
 
 # Closed field identifiers are operational metadata, never census values.

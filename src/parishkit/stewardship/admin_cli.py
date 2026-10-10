@@ -1286,6 +1286,30 @@ def export_postal(args, preamble, runtime, context):
     )
 
 
+def export_family_timeline(args, preamble, runtime, context):
+    """Request one Family's timeline export, as its page's form does (PR 8g).
+
+    The file can hold the Family's live code, so it is fresh-gated (#547)
+    and asks at the confirmation prompt first, as ``export directory`` does.
+    """
+    from .admin_family_exports import export_family_timeline as request
+
+    confirm(
+        context,
+        ("Create a Family timeline export, which can hold the Family's code.",),
+    )
+    return request(
+        context["caller"],
+        runtime,
+        family_id=args.family_id,
+        mode=args.mode,
+        fmt=args.format,
+        zone=args.timezone,
+        request_key=_request_key(args, context),
+        context=context,
+    )
+
+
 def export_status(args, preamble, runtime, context):
     """One export's state, as its status page shows it (PR 8b)."""
     from .admin_exports import read_export
@@ -1973,6 +1997,23 @@ def _export_ministry_packet_options(parser):
     parser.add_argument(
         "--history", action="store_true", help="include earlier request versions"
     )
+
+
+def _export_family_timeline_options(parser):
+    """Options of ``export family-timeline``: the Family, mode, format and zone."""
+    parser.add_argument(
+        "family_id",
+        type=_uuid,
+        metavar="FAMILY_RECORD_ID",
+        help="the Family's record id, as in its timeline page's address",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("production", "testing"),
+        default="production",
+        help="production (default) or the Testing rehearsal",
+    )
+    _family_export_options(parser, filters=False)
 
 
 def _export_id_option(parser):
@@ -2819,6 +2860,20 @@ def _report_specs():
             ExportChange.field_names(),
             8,
             options=(_family_export_options,),
+            request_key=True,
+            fresh_gated=True,
+            prompts=True,
+        ),
+        # The one-Family timeline export (PR 8g, migration 0044).
+        CommandSpec(
+            "export family-timeline",
+            "Request one Family's timeline export, as its page's form does.",
+            export_family_timeline,
+            "full",
+            True,
+            ExportChange.field_names(),
+            8,
+            options=(_export_family_timeline_options,),
             request_key=True,
             fresh_gated=True,
             prompts=True,

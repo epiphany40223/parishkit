@@ -180,10 +180,14 @@ CREATE INDEX export_ministry_snapshot ON stewardship_export_request(ministry_sna
 
 -- Only the Ministry kind uses assignment authority; all other reports keep
 -- their original global capability. Ownership remains independent of scope.
-CREATE FUNCTION stewardship_export_request_authorized_v1(user_uuid uuid, request stewardship_export_request)
+CREATE FUNCTION public.stewardship_export_request_authorized_v1(user_uuid uuid, request stewardship_export_request)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT (user_uuid=request.requester_id OR stewardship_export_authorized_v1(user_uuid,true))
         AND CASE WHEN request.report='ministry' THEN
             stewardship_ministry_scope_authorized_v1(user_uuid,request.authorization_scope)
+        WHEN request.report='family_timeline' THEN
+            -- One Family's full timeline is the page's Administrator view
+            -- (migration 0044), for the requester as for anyone else.
+            stewardship_export_authorized_v1(user_uuid,true)
         ELSE stewardship_export_authorized_v1(user_uuid) END
 $$;

@@ -175,6 +175,48 @@ class FamilyTestNamesSnapshot(ImmutableRecord):
         ]
 
 
+class TimelineExportSnapshot(ImmutableRecord):
+    """One Family's timeline as its page showed it, captured when requested.
+
+    The page builds the timeline in Python (``family_timeline.read_timeline``),
+    so the web captures that same read into ``document`` and SQL checks
+    everything around it (migration 0044): an Administrator requester, an
+    admitted campaign, the Family's campaign, the document's closed shape and
+    ``row_count`` (its events). The Family code is never stored; the worker
+    decrypts it into the file for a requester who may see codes.
+    """
+
+    campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign", on_delete=models.PROTECT, db_index=False
+    )
+    family = models.ForeignKey(
+        "stewardship_campaigns.FamilyCampaign",
+        on_delete=models.PROTECT,
+        db_index=False,
+    )
+    configuration = models.ForeignKey(
+        "stewardship_accounts.AppliedConfigurationVersion",
+        on_delete=models.PROTECT,
+        db_index=False,
+    )
+    actor_id = models.UUIDField(editable=False)
+    correlation_id = models.UUIDField(editable=False)
+    parameters = models.JSONField()
+    document = models.JSONField(default=dict)
+    row_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "stewardship_timeline_export_snapshot"
+        indexes = [
+            models.Index(
+                fields=("correlation_id",), name="timeline_export_correlation"
+            ),
+            models.Index(fields=("campaign",), name="timeline_export_campaign"),
+            models.Index(fields=("family",), name="timeline_export_family"),
+            models.Index(fields=("configuration",), name="timeline_export_config"),
+        ]
+
+
 class ExportRequest(ImmutableRecord):
     """One canonical report request and its exact retained calculation generation."""
 
@@ -202,6 +244,9 @@ class ExportRequest(ImmutableRecord):
     family_test_names_snapshot = models.ForeignKey(
         FamilyTestNamesSnapshot, on_delete=models.PROTECT, null=True, db_index=False
     )
+    timeline_snapshot = models.ForeignKey(
+        TimelineExportSnapshot, on_delete=models.PROTECT, null=True, db_index=False
+    )
     configuration = models.ForeignKey(
         "stewardship_accounts.AppliedConfigurationVersion", on_delete=models.PROTECT
     )
@@ -226,6 +271,7 @@ class ExportRequest(ImmutableRecord):
                     directory_snapshot__isnull=True,
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=True,
+                    timeline_snapshot__isnull=True,
                 )
                 | models.Q(
                     report="additional_information",
@@ -235,6 +281,7 @@ class ExportRequest(ImmutableRecord):
                     directory_snapshot__isnull=True,
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=True,
+                    timeline_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -245,6 +292,7 @@ class ExportRequest(ImmutableRecord):
                     directory_snapshot__isnull=False,
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=True,
+                    timeline_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -255,6 +303,7 @@ class ExportRequest(ImmutableRecord):
                     ministry_snapshot__isnull=False,
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=True,
+                    timeline_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -265,6 +314,7 @@ class ExportRequest(ImmutableRecord):
                     ministry_snapshot__isnull=True,
                     financial_snapshot__isnull=False,
                     family_test_names_snapshot__isnull=True,
+                    timeline_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 # The names behind a chosen-Family test review (#817): a CSV
@@ -277,7 +327,20 @@ class ExportRequest(ImmutableRecord):
                     ministry_snapshot__isnull=True,
                     financial_snapshot__isnull=True,
                     family_test_names_snapshot__isnull=False,
+                    timeline_snapshot__isnull=True,
                     format="csv",
+                )
+                # One Family's timeline, from its own capture (migration 0044).
+                | models.Q(
+                    report="family_timeline",
+                    fact_set__isnull=True,
+                    information_snapshot__isnull=True,
+                    directory_snapshot__isnull=True,
+                    ministry_snapshot__isnull=True,
+                    financial_snapshot__isnull=True,
+                    family_test_names_snapshot__isnull=True,
+                    timeline_snapshot__isnull=False,
+                    format__in=("csv", "xlsx", "pdf"),
                 ),
                 name="export_report_known",
             ),
@@ -305,6 +368,9 @@ class ExportRequest(ImmutableRecord):
             models.Index(
                 fields=("family_test_names_snapshot",),
                 name="export_family_test_names",
+            ),
+            models.Index(
+                fields=("timeline_snapshot",), name="export_timeline_snapshot"
             ),
         ]
 
