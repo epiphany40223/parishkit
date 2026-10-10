@@ -46,6 +46,43 @@ def test_outgoing_mail_marks_emails_with_refused_addresses(page, component_origi
     )
 
 
+def test_link_line_stays_on_screen_with_the_about_panel_open(page, component_origin):
+    """An Administrator who keeps Outgoing mail's About panel open still sees
+    the link line on a laptop screen (#938): the panel's long help opens
+    below the heading, and the links sit above it, so the help cannot push
+    them below the fold. Visible is not enough; the link must be inside the
+    window without scrolling."""
+    from playwright.sync_api import expect
+
+    viewport = {"width": 1280, "height": 720}
+    page.set_viewport_size(viewport)
+    page.goto(component_origin + "/deliveries-names")
+    page.evaluate("localStorage.setItem('pk-about-page:outgoing-mail', 'open')")
+    page.reload()
+    page.evaluate("document.fonts.ready.then(() => true)")
+    panel = page.locator("details[data-about-page='outgoing-mail']")
+    expect(panel).to_have_attribute("open", "")
+    # The open help really is long enough to reach past the window.
+    help_box = panel.locator(".about-page-body").bounding_box()
+    assert help_box["y"] + help_box["height"] > viewport["height"]
+    assert page.evaluate("scrollY") == 0
+    for name in (
+        "Review refused addresses (3 unresolved)",
+        "Watch Family email progress",
+        "See Family email history",
+    ):
+        box = page.get_by_role("link", name=name).bounding_box()
+        assert box is not None, name
+        assert box["y"] >= 0 and box["y"] + box["height"] <= viewport["height"], (
+            name,
+            box,
+        )
+        assert box["x"] >= 0 and box["x"] + box["width"] <= viewport["width"], (
+            name,
+            box,
+        )
+
+
 def test_without_refusals_the_link_line_is_unchanged(page, component_origin):
     """No count and no mark while nothing is refused, but the link itself is
     always there and visible: an Administrator reaches Refused addresses

@@ -3255,10 +3255,13 @@ accepted, so the email can be Delivered and still have missed one head of
 household; the mark makes that visible. It links to Refused addresses
 filtered to that Family's DUID. The counts come from one grouped query for
 the shown page (each refusal's outbox event names its email; the web login
-reads both columns, never the event's evidence). The link line above the
-list reads "Review refused addresses (N unresolved)" while any refusal is
-unresolved, and "Review refused addresses" otherwise; it is drawn once per
-page load, outside the in-place regions.
+reads both columns, never the event's evidence). The page's link line
+(Watch Family email progress, See Family email history and Review refused
+addresses) sits above the page heading, so an About panel left open cannot
+push it out of view (#938). It reads "Review refused addresses (N
+unresolved)" while any refusal is unresolved, and "Review refused
+addresses" otherwise; it is drawn once per page load, outside the in-place
+regions.
 
 #### Sending limit note
 
