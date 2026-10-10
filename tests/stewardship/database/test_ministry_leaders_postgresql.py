@@ -1,6 +1,7 @@
 """Ministry leaders come from ParishSoft roster roles (#922, migration 0042).
 
-A person leads a Ministry when an active Member holds one of the campaign's
+A person leads a Ministry when an active Member of an active Family (a
+non-parishioner Family included) holds one of the campaign's
 leader roles (by default Chairperson or Staff) on that Ministry's current
 roster, the Ministry is in the current campaign and not marked inactive, and
 the person signs in with a valid email address that Member's record lists.
@@ -42,7 +43,7 @@ from ..policy_factory import address, assignment
 from ..test_ministry_activity import activity
 from .auth_builders import OMIT, signed_in
 from .campaign_builders import change
-from .leader_builders import leader, promote_leaders, with_leaders
+from .leader_builders import FAMILIES, leader, promote_leaders, with_leaders
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_ministry_responses_postgresql import configure, ministry_source
@@ -207,6 +208,65 @@ def test_leaders_come_from_current_roster_roles(response_service):
     assert all(name == leader_role_label(name) for name in offered)
     assert all(len(name) <= ROLE_NAME_LIMIT for name in offered)
     assert all(saveable(name) for name in offered)
+
+
+def family_flags(key):
+    """The promoted Family's canonical active and parishioner flags."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT p.canonical::jsonb->'active', p.canonical::jsonb->'parishioner' "
+            "FROM stewardship_source_current c "
+            "JOIN stewardship_snapshot_family m ON m.snapshot_id=c.snapshot_id "
+            "JOIN stewardship_source_family p ON p.id=m.payload_id "
+            "WHERE c.singleton AND m.source_key=%s",
+            [str(key)],
+        )
+        return tuple(
+            json.loads(value) if isinstance(value, str) else value
+            for value in cursor.fetchone()
+        )
+
+
+def test_inactive_families_never_lead_and_non_parishioners_do(response_service):
+    """The Administrator's rule (2026-10-10): inactive Members never lead.
+
+    An active Member of a Family in ParishSoft's "Inactive" Family group is
+    still an inactive Member here: the Family's own active flag excludes
+    them. An active Member of an active Family registered at another parish,
+    a non-parishioner, leads like anyone else.
+    """
+    harness = response_service
+    promote_leaders(
+        harness,
+        source(),
+        [
+            leader("parishioner@example.org", 9, family="parishioner"),
+            leader("inactivefamily@example.org", 9, family="inactive"),
+            leader("visitor@example.org", 9, family="non_parishioner"),
+            leader(
+                "inactivevisitor@example.org",
+                9,
+                family="non_parishioner",
+                status="Inactive",
+            ),
+        ],
+    )
+    configure(harness, selected=(4, 9))
+    # The source's own flags, which the leader definition reads.
+    assert family_flags(FAMILIES["parishioner"]) == (True, True)
+    assert family_flags(FAMILIES["inactive"]) == (False, True)
+    assert family_flags(FAMILIES["non_parishioner"]) == (True, False)
+    expected = {
+        "parishioner@example.org": [9],
+        "inactivefamily@example.org": [],
+        "visitor@example.org": [9],
+        "inactivevisitor@example.org": [],
+    }
+    store = harness.service.store
+    for email, ministries in expected.items():
+        pk = user(email).pk
+        assert scope(pk)[0] == ministries, email
+        assert current_principal(store, pk).ministries == frozenset(ministries), email
 
 
 def test_rule_roles_assignments_and_denial(response_service):

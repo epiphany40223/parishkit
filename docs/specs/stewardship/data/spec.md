@@ -862,11 +862,16 @@ assignment/role requires an Admin-applied `ConfigurationChangeRequest`.
 
 ### Ministry leaders
 
-A person leads a Ministry for the current campaign when an active Member,
-whatever their Family's status, holds one of the campaign's Ministry leader
-roles on that Ministry's current roster in the promoted ParishSoft data, and
-the person signs in with a valid email address on that Member's ParishSoft
-contact record (#922). The Ministry must be catalog-present, selected in the
+A person leads a Ministry for the current campaign when an active Member of
+an active Family holds one of the campaign's Ministry leader roles on that
+Ministry's current roster in the promoted ParishSoft data, and the person
+signs in with a valid email address on that Member's ParishSoft contact
+record (#922). Both flags are the promoted source's own: a Member is active
+unless ParishSoft marks them Inactive or Deceased, and a Family is active
+unless it is in ParishSoft's "Inactive" Family group or has no active
+Member, the same Family flag Portal eligibility requires. The Family need
+not be registered at the parish: a non-parishioner can lead a Ministry, an
+inactive Member cannot (Administrator decision, 2026-10-10). The Ministry must be catalog-present, selected in the
 current campaign, which asks about Ministries, and not marked inactive in the
 applied [Ministry activity](#ministry-activity-policy). The current campaign
 may still be a draft. Role labels match with each run of whitespace (any
