@@ -165,6 +165,9 @@ FROZEN = {
     "0044_corpus_evidence_from_snapshot.sql": (
         "17f7b2eaee06e950f8e091f41cb270b8fc68a2332780f0efe8da259e9cba068f"
     ),
+    "0045_report_duid_sorts.sql": (
+        "dc2b43df327068290e94e5891f6667a3c1804fa7b48989b2386b00b2f096c1d4"
+    ),
 }
 
 
