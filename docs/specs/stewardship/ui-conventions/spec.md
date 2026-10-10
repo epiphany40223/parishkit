@@ -1178,11 +1178,12 @@ envelope numbers, are not internal references and stay. **Why.** Staff print
 and share these files; internal references mean nothing to a reader, and a
 column that is in one format and not another makes the files disagree about
 what the report holds. Troubleshooting uses the page's Technical details and
-the audit log, not a download. Every data export is offered as CSV, XLSX and PDF unless a recorded
-technical or design reason says otherwise (Administrator decision,
+the audit log, not a download; the one recorded exception is the System logs
+export below. Every data export is offered as CSV, XLSX and PDF unless a
+recorded technical or design reason says otherwise (Administrator decision,
 2026-10-10); a page may add a format, such as the participation chart's PNG
-or System logs' JSON Lines. **Shared code.** `reports/pdf_design.py` and `reports/xlsx_design.py`;
-`web/design_tokens.py`. The format rules for each file type (CSV neutralizing,
+or System logs' JSON Lines. **Shared code.** `reports/pdf_design.py` and
+`reports/xlsx_design.py`; `web/design_tokens.py`. The format rules for each file type (CSV neutralizing,
 money, headers) are in the reports'
 [shared report behavior](../reports/spec.md#shared-report-behavior).
 **Precedent.** #926, #929, and the Administrator's decisions of 2026-10-10
@@ -1192,7 +1193,12 @@ Recorded exceptions to the three formats:
 
 - **System logs:** CSV, XLSX and JSON Lines, no PDF. Its rows are wide raw
   data (structured details up to the export limit) that do not print as a
-  readable page.
+  readable page. It is also the one exception to leaving out internal
+  identifiers: every format keeps the log entries' cross-link identifiers
+  (request, correlation and subject IDs), because the export is itself the
+  troubleshooting record and only the Administrator can download it
+  (default, pending Administrator confirmation on
+  [#966](https://github.com/epiphany40223/parishkit/issues/966)).
 
 Not data exports, so outside the rule: the deployment configuration
 document, hosted files (served as uploaded) and chart images.
