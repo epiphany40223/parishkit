@@ -134,7 +134,7 @@ img { max-width: 100%; height: auto; }
 
 /* Admin shell: a sidebar menu beside the content, desktop-first. On narrow
    screens the sidebar is a collapsed "Menu" disclosure above the content
-   (ui-v1.js closes it there; without JavaScript it stays open). */
+   (ui-v1.js closes it there). */
 .admin-shell { flex: 1 0 auto; width: 100%; max-width: 94rem; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); }
 .admin-shell > main { max-width: none; margin: 0; min-width: 0; }
 /* Line the header up with the wider Admin shell. */

@@ -11,7 +11,7 @@ pytestmark = pytest.mark.parametrize(
 def test_security_events_are_prominent_accessible_and_acknowledgeable(
     page, component_origin, axe_source, width
 ):
-    """Every open expansion is named, worded and acknowledgeable without scripts."""
+    """Every open expansion is named, worded and acknowledgeable in place."""
     page.set_viewport_size({"width": width, "height": 900})
     for path in ("/dashboard-events", "/dashboard-clear"):
         page.goto(component_origin + path)

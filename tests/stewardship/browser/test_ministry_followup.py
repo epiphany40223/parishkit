@@ -1,4 +1,4 @@
-"""Native private Ministry follow-up queue and edit form, with no assignment."""
+"""Private Ministry follow-up queue and edit form, with no assignment."""
 
 import json
 from datetime import UTC, datetime
@@ -10,7 +10,6 @@ from django.urls import reverse
 from parishkit.stewardship.reports.ministry_followup_views import change_values
 from parishkit.stewardship.reports.report_paging import pop_navigation
 
-from .conftest import no_script_context
 from .waits import has_text, visible
 
 # The instant every follow-up fixture shows (followup_components.py).
@@ -255,55 +254,42 @@ def test_followup_fields_follow_a_restored_status(page, component_origin):
     assert page.get_by_role("button", name="Save follow-up").is_disabled()
 
 
-def test_followup_filters_without_scripts(browser_engine, component_origin):
-    """Identifying filters submit only through native POST, never the URL."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/followup-queue")
-        page.get_by_label("Search Member or Ministry name").fill("Private name")
-        page.get_by_label("Status").select_option("in_progress")
-        page.route("**/follow-up/", lambda route: route.fulfill(body="Filtered"))
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Apply filters").click()
-        assert "search=Private+name" in sent.value.post_data
-        assert "state=in_progress" in sent.value.post_data
-        assert "assignee" not in sent.value.post_data
-        assert "ministry=9" in sent.value.post_data
-        assert "Private" not in sent.value.url and "?" not in sent.value.url
-    finally:
-        context.close()
+def test_followup_filters_post_privately(page, component_origin):
+    """Identifying filters submit only in a POST body, never the URL."""
+    page.goto(component_origin + "/followup-queue")
+    page.get_by_label("Search Member or Ministry name").fill("Private name")
+    page.get_by_label("Status").select_option("in_progress")
+    page.route("**/follow-up/", lambda route: route.fulfill(body="Filtered"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    assert "search=Private+name" in sent.value.post_data
+    assert "state=in_progress" in sent.value.post_data
+    assert "assignee" not in sent.value.post_data
+    assert "ministry=9" in sent.value.post_data
+    assert "Private" not in sent.value.url and "?" not in sent.value.url
 
 
-def test_followup_edit_without_scripts(browser_engine, component_origin):
-    """The edit posts natively, with no URL state and no assignee."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/followup-item")
-        page.get_by_label("Status").select_option("resolved")
-        page.get_by_label("Outcome", exact=True).select_option("joined")
-        page.get_by_label("How").select_option("email")
-        page.get_by_label("Date", exact=True).fill("2026-09-19")
-        page.get_by_label("Time", exact=True).fill("15:04")
-        page.get_by_label("What happened").fill("Private reply")
-        page.route("**/record/", lambda route: route.fulfill(body="Saved"))
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Save follow-up").click()
-        body = sent.value.post_data
-        assert "state=resolved" in body and "outcome=joined" in body
-        assert "expected_version=3" in body and "request_key=" in body
-        assert "contact_channel=email" in body and "contact_date=2026-09-19" in body
-        # The Admin portal requires JavaScript (#565): without it the browser
-        # zone is unknown, so the server refuses the contact time rather than
-        # guessing its zone (#558).
-        assert "contact_zone=&" in body
-        with pytest.raises(ValueError):
-            change_values(posted(body))
-        assert "Private" not in sent.value.url and "?" not in sent.value.url
-        assert "assignee" not in body
-    finally:
-        context.close()
+def test_followup_edit_posts_privately(page, component_origin):
+    """The edit posts in the body, with no URL state and no assignee."""
+    page.goto(component_origin + "/followup-item")
+    page.get_by_label("Status").select_option("resolved")
+    page.get_by_label("Outcome", exact=True).select_option("joined")
+    page.get_by_label("How").select_option("email")
+    page.get_by_label("Date", exact=True).fill("2026-09-19")
+    page.get_by_label("Time", exact=True).fill("08:04")
+    page.get_by_label("What happened").fill("Private reply")
+    page.route("**/record/", lambda route: route.fulfill(body="Saved"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Save follow-up").click()
+    body = sent.value.post_data
+    assert "state=resolved" in body and "outcome=joined" in body
+    assert "expected_version=3" in body and "request_key=" in body
+    assert "contact_channel=email" in body and "contact_date=2026-09-19" in body
+    # The browser's zone goes with the typed time for the server to convert.
+    assert "contact_zone=America%2FLos_Angeles" in body
+    assert change_values(posted(body))["change"].contact_at == FIXTURE
+    assert "Private" not in sent.value.url and "?" not in sent.value.url
+    assert "assignee" not in body
 
 
 @pytest.mark.parametrize(
@@ -388,21 +374,14 @@ def test_followup_contact_waits_for_a_known_browser_zone(
     assert save.is_enabled()
 
 
-def test_followup_sort_heading_without_scripts(browser_engine, component_origin):
-    """A heading re-sorts the queue by native POST, keeping private filters."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/followup-queue")
-        heading = page.get_by_role("columnheader", name="Request")
-        assert heading.get_attribute("aria-sort") == "descending"
-        page.route("**/follow-up/", lambda route: route.fulfill(body="Sorted"))
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("columnheader", name="Member").get_by_role(
-                "button"
-            ).click()
-        body = sent.value.post_data
-        assert "sort=name" in body and "search=Example" in body
-        assert "ministry=9" in body and "?" not in sent.value.url
-    finally:
-        context.close()
+def test_followup_sort_heading_posts_privately(page, component_origin):
+    """A heading re-sorts the queue by POST, keeping private filters."""
+    page.goto(component_origin + "/followup-queue")
+    heading = page.get_by_role("columnheader", name="Request")
+    assert heading.get_attribute("aria-sort") == "descending"
+    page.route("**/follow-up/", lambda route: route.fulfill(body="Sorted"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("columnheader", name="Member").get_by_role("button").click()
+    body = sent.value.post_data
+    assert "sort=name" in body and "search=Example" in body
+    assert "ministry=9" in body and "?" not in sent.value.url

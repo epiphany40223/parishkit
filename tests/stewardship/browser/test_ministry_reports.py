@@ -3,7 +3,6 @@
 import pytest
 from django.urls import reverse
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -45,130 +44,104 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
     assert heading.get_attribute("aria-sort") == "ascending"
 
 
-def test_ministry_sort_heading_without_scripts(browser_engine, component_origin):
-    """A heading re-sorts through a native POST that keeps the private search."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/ministry-detail")
-        page.route(
-            "**" + reverse("admin:ministry_joiners"),
-            lambda route: route.fulfill(body="Sorted"),
-        )
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("columnheader", name="Member").get_by_role(
-                "button"
-            ).click()
-        assert "sort=name_desc" in sent.value.post_data
-        assert "search=Example" in sent.value.post_data
-        assert "ministry=9" in sent.value.post_data and "page=" not in (
-            sent.value.post_data
-        )
-        assert "?" not in sent.value.url
-    finally:
-        context.close()
+def test_ministry_sort_heading_posts_privately(page, component_origin):
+    """A heading re-sorts through a POST that keeps the private search."""
+    page.goto(component_origin + "/ministry-detail")
+    page.route(
+        "**" + reverse("admin:ministry_joiners"),
+        lambda route: route.fulfill(body="Sorted"),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("columnheader", name="Member").get_by_role("button").click()
+    assert "sort=name_desc" in sent.value.post_data
+    assert "search=Example" in sent.value.post_data
+    assert "ministry=9" in sent.value.post_data and "page=" not in (
+        sent.value.post_data
+    )
+    assert "?" not in sent.value.url
 
 
-def test_ministry_search_without_scripts(browser_engine, component_origin):
-    """Private search and history selection submit only through native POST."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/ministry-detail")
-        page.get_by_label("Search Member name or DUID").fill("Private name")
-        page.get_by_label("Request history").select_option("all")
-        page.route(
-            "**" + reverse("admin:ministry_joiners"),
-            lambda route: route.fulfill(body="Filtered"),
-        )
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Apply filters").click()
-        assert "search=Private+name" in sent.value.post_data
-        assert "history=all" in sent.value.post_data
-        assert "ministry=9" in sent.value.post_data
-        assert "Private" not in sent.value.url and "?" not in sent.value.url
-    finally:
-        context.close()
+def test_ministry_search_posts_privately(page, component_origin):
+    """Private search and history selection submit only in a POST body."""
+    page.goto(component_origin + "/ministry-detail")
+    page.get_by_label("Search Member name or DUID").fill("Private name")
+    page.get_by_label("Request history").select_option("all")
+    page.route(
+        "**" + reverse("admin:ministry_joiners"),
+        lambda route: route.fulfill(body="Filtered"),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    assert "search=Private+name" in sent.value.post_data
+    assert "history=all" in sent.value.post_data
+    assert "ministry=9" in sent.value.post_data
+    assert "Private" not in sent.value.url and "?" not in sent.value.url
 
 
-def test_ministry_complete_export_without_scripts(browser_engine, component_origin):
-    """Applied filters and private selection survive native export without URL leaks."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/ministry-detail")
-        page.get_by_label("Export format").select_option("xlsx")
-        page.get_by_label("Export timezone").select_option("America/Detroit")
-        page.route(
-            "**" + reverse("admin:ministry_export"),
-            lambda route: route.fulfill(body="Queued"),
-        )
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Queue complete export").click()
-        assert "search=Example" in sent.value.post_data
-        assert (
-            "ministry=9" in sent.value.post_data
-            and "action=join" in sent.value.post_data
-        )
-        assert (
-            "format=xlsx" in sent.value.post_data
-            and "page=" not in sent.value.post_data
-        )
-        assert "?" not in sent.value.url and "/9/" not in sent.value.url
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Queued", exact=True))
-        page.goto(component_origin + "/ministry-gated")
-        assert page.get_by_role("button", name="Queue complete export").is_disabled()
-    finally:
-        context.close()
+def test_ministry_complete_export_posts_privately(page, component_origin):
+    """Applied filters and private selection reach the export without URL leaks."""
+    page.goto(component_origin + "/ministry-detail")
+    page.get_by_label("Export format").select_option("xlsx")
+    page.get_by_label("Export timezone").select_option("America/Detroit")
+    page.route(
+        "**" + reverse("admin:ministry_export"),
+        lambda route: route.fulfill(body="Queued"),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Queue complete export").click()
+    assert "search=Example" in sent.value.post_data
+    assert (
+        "ministry=9" in sent.value.post_data and "action=join" in sent.value.post_data
+    )
+    assert "format=xlsx" in sent.value.post_data and "page=" not in sent.value.post_data
+    assert "?" not in sent.value.url and "/9/" not in sent.value.url
+    # Let the routed answer finish loading before the next navigation,
+    # which it would otherwise interrupt (#623).
+    visible(page.get_by_text("Queued", exact=True))
+    page.goto(component_origin + "/ministry-gated")
+    assert page.get_by_role("button", name="Queue complete export").is_disabled()
 
 
-def test_ministry_packet_request_without_scripts(browser_engine, component_origin):
-    """The multi-Ministry selection posts natively; detail pages do not offer it."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/ministry-summary")
-        # Nothing ticked means every authorized Ministry: no selection is sent.
-        packet = page.locator("form", has_text="Ministries in the packet")
-        assert packet.locator("input[name=ministries]:checked").count() == 0
-        assert packet.locator("input[type=radio]").count() == 0
-        page.route(
-            "**" + reverse("admin:ministry_packet"),
-            lambda route: route.fulfill(body="Queued"),
-        )
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Queue follow-up packet").click()
-        assert "ministries=" not in sent.value.post_data
-        assert "format=pdf" in sent.value.post_data
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Queued", exact=True))
-        page.goto(component_origin + "/ministry-summary")
-        page.get_by_label("Example <Ministry>", exact=False).check()
-        page.get_by_label("Also include resolved and withdrawn requests").check()
-        page.get_by_label("Packet format").select_option("xlsx")
-        page.get_by_label("Packet timezone").select_option("America/Detroit")
-        page.route(
-            "**" + reverse("admin:ministry_packet"),
-            lambda route: route.fulfill(body="Queued"),
-        )
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Queue follow-up packet").click()
-        body = sent.value.post_data
-        assert "selection=" not in body and body.count("ministries=") == 1
-        assert "ministries=9" in body
-        assert "history=yes" in body and "format=xlsx" in body
-        assert "request_key=00000000-0000-0000-0000-000000000060" in body
-        assert "?" not in sent.value.url
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Queued", exact=True))
-        # A single Ministry's detail page has no multi-Ministry packet to offer.
-        page.goto(component_origin + "/ministry-detail")
-        assert page.get_by_role("button", name="Queue follow-up packet").count() == 0
-        page.goto(component_origin + "/ministry-gated")
-        assert page.get_by_role("button", name="Queue follow-up packet").count() == 0
-    finally:
-        context.close()
+def test_ministry_packet_request_posts_its_selection(page, component_origin):
+    """The multi-Ministry selection posts its choices; detail pages do not offer it."""
+    page.goto(component_origin + "/ministry-summary")
+    # Nothing ticked means every authorized Ministry: no selection is sent.
+    packet = page.locator("form", has_text="Ministries in the packet")
+    assert packet.locator("input[name=ministries]:checked").count() == 0
+    assert packet.locator("input[type=radio]").count() == 0
+    page.route(
+        "**" + reverse("admin:ministry_packet"),
+        lambda route: route.fulfill(body="Queued"),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Queue follow-up packet").click()
+    assert "ministries=" not in sent.value.post_data
+    assert "format=pdf" in sent.value.post_data
+    # Let the routed answer finish loading before the next navigation,
+    # which it would otherwise interrupt (#623).
+    visible(page.get_by_text("Queued", exact=True))
+    page.goto(component_origin + "/ministry-summary")
+    page.get_by_label("Example <Ministry>", exact=False).check()
+    page.get_by_label("Also include resolved and withdrawn requests").check()
+    page.get_by_label("Packet format").select_option("xlsx")
+    page.get_by_label("Packet timezone").select_option("America/Detroit")
+    page.route(
+        "**" + reverse("admin:ministry_packet"),
+        lambda route: route.fulfill(body="Queued"),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Queue follow-up packet").click()
+    body = sent.value.post_data
+    assert "selection=" not in body and body.count("ministries=") == 1
+    assert "ministries=9" in body
+    assert "history=yes" in body and "format=xlsx" in body
+    assert "request_key=00000000-0000-0000-0000-000000000060" in body
+    assert "?" not in sent.value.url
+    # Let the routed answer finish loading before the next navigation,
+    # which it would otherwise interrupt (#623).
+    visible(page.get_by_text("Queued", exact=True))
+    # A single Ministry's detail page has no multi-Ministry packet to offer.
+    page.goto(component_origin + "/ministry-detail")
+    assert page.get_by_role("button", name="Queue follow-up packet").count() == 0
+    page.goto(component_origin + "/ministry-gated")
+    assert page.get_by_role("button", name="Queue follow-up packet").count() == 0

@@ -239,39 +239,6 @@ def page(browser_engine):
     context.close()
 
 
-def no_script_context(browser_engine, **options):
-    """A JavaScript-off browser context that loads Admin pages past the gate.
-
-    The Admin portal requires JavaScript (#565): with script off, an Admin page
-    shows only the "needs JavaScript" panel. Some older no-script tests still
-    check the native form and link markup that the scripts submit too, such as
-    POST bodies that keep identifying values out of URLs. Until each one is
-    retired or rewritten when its page changes (#565), it uses this context,
-    which removes the gate's class from every page the browser loads. The gate
-    itself is tested with a plain context in test_admin_javascript_gate.py.
-    """
-    context = browser_engine.new_context(java_script_enabled=False, **options)
-
-    def ungate(route):
-        """Serve each HTML page without the class that hides it.
-
-        Only text/html documents are rewritten; every other response,
-        including a redirect or a download, passes through unchanged.
-        """
-        if route.request.resource_type != "document":
-            route.fallback()
-            return
-        response = route.fetch(max_redirects=0)
-        if not response.headers.get("content-type", "").startswith("text/html"):
-            route.fulfill(response=response)
-            return
-        body = response.text().replace(' class="js-required"', "", 1)
-        route.fulfill(response=response, body=body)
-
-    context.route("**/*", ungate)
-    return context
-
-
 def load_collections(done=0, *, finished=None, expected=None):
     """Decoded download collections with the first ``done`` of them finished."""
     return [

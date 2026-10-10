@@ -514,8 +514,6 @@ CHECKOUT_READERS = {
     "tests/stewardship/browser/test_automation.py": None,
     # The LOCAL step-up's laptop command, shown as page text (#619).
     "tests/stewardship/browser/test_local_step_up.py": None,
-    # A parametrize argument name, not a path.
-    "tests/stewardship/browser/test_directories.py": None,
 }
 CHECKOUT_DIRECTORIES = ("docs", "tools", "scripts", "deploy", ".github")
 

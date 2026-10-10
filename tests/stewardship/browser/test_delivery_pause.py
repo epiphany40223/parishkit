@@ -2,7 +2,6 @@
 
 import pytest
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -49,16 +48,11 @@ def test_pause_resume_and_resolution_accessibility(
     visible(page.get_by_role("button", name="Confirm held-message resolution"))
 
 
-def test_closed_resolution_without_javascript(browser_engine, component_origin):
-    """A closed-campaign decision needs only ordinary labeled POST controls."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/delivery-resolve")
-        page.get_by_label("Weekly Admin reports", exact=False).check()
-        page.get_by_label("Resolution", exact=True).select_option("cancel")
-        page.get_by_label("Reason", exact=True).fill("Cancel after staff review")
-        visible(page.get_by_role("button", name="Preview held-message resolution"))
-        assert page.locator('form input[name="preview"]').get_attribute("value")
-    finally:
-        context.close()
+def test_closed_resolution_previews_with_ordinary_controls(page, component_origin):
+    """A closed-campaign decision uses labeled controls and a versioned preview."""
+    page.goto(component_origin + "/delivery-resolve")
+    page.get_by_label("Weekly Admin reports", exact=False).check()
+    page.get_by_label("Resolution", exact=True).select_option("cancel")
+    page.get_by_label("Reason", exact=True).fill("Cancel after staff review")
+    visible(page.get_by_role("button", name="Preview held-message resolution"))
+    assert page.locator('form input[name="preview"]').get_attribute("value")
