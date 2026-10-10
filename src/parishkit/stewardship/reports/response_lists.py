@@ -52,7 +52,6 @@ from parishkit.stewardship.web.dates import csv_text
 from parishkit.stewardship.web.exports import csv_cell
 from parishkit.stewardship.web.tables import Sorting, table_parameters
 
-from .directory_rendering import draw_pages, fill_pages, table_heading, table_lines
 from .information_rendering import information_xlsx
 from .response_metrics import MODES, FamilyResponse, response_families
 
@@ -65,12 +64,11 @@ FORMATS = {
     "pdf": "application/pdf",
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
-# PDF column widths in monospaced characters, by column key: each at least
-# its heading's length, and every list's row (with two spaces between
-# columns) within PDF_LINE, the characters a landscape page holds at 9 pt
-# (see directory_rendering.COLUMN_WIDTHS). Longer cells wrap. A compact
-# time ("Sep 30, 2026 12:04 PM") is 21 characters.
-PDF_WIDTHS = {
+# Relative PDF column widths, by column key: each list's columns share the
+# page's body width in these proportions (``pdf_design.Table.weighted``).
+# Longer cells wrap. They are sized so a compact time ("Sep 30, 2026
+# 12:04 PM") stays on one line and no heading word breaks.
+PDF_WEIGHTS = {
     "submitted": 21,
     "opened": 21,
     "progressed": 23,
@@ -84,7 +82,6 @@ PDF_WIDTHS = {
     "mailing": 24,
     "problem": 20,
 }
-PDF_LINE = 138
 
 
 @dataclass(frozen=True)
@@ -562,8 +559,9 @@ class ListDocument:
 
     ``metadata`` is the (label, value) details the XLSX "Report information"
     sheet lists and the PDF header draws; ``rows`` hold each format's cell
-    values (``xlsx_value`` or ``pdf_text``); ``widths`` maps each heading to
-    its PDF column width. ``repr=False`` keeps names out of tracebacks.
+    values (``xlsx_value`` or ``pdf_text``); ``weights`` maps each heading to
+    its PDF column's relative width (``PDF_WEIGHTS``). ``repr=False`` keeps
+    names out of tracebacks.
     """
 
     title: str
@@ -571,7 +569,7 @@ class ListDocument:
     headings: tuple
     rows: tuple
     requested_at: datetime
-    widths: dict
+    weights: dict
     sheet_name: str = "Families"
 
 
@@ -626,31 +624,55 @@ def pdf_text(column, value, zone):
     return str(value)
 
 
-def list_pdf(document, output):
-    """The list as landscape table pages with its details on every page."""
+def list_frame(document):
+    """The shared PDF page frame (``pdf_design``) with the list's details.
+
+    The header names the parish and campaign, the Counted at time with the
+    download's time zone, and one line of counts and filters that says
+    whether a search was applied, never its text. The footer is the privacy
+    line and "Page N of M".
+    """
+    from .pdf_design import PdfFrame
+
     details = dict(document.metadata)
-    header = (
-        " · ".join(
-            (
-                details["Parish"],
-                details["Campaign"],
-                f"Counted at {dates.display_text(details['Counted at'])}",
-                f"Times in {details['Display time zone']}",
-            )
+    count = details["Families in this file"]
+    return PdfFrame(
+        title=document.title,
+        eyebrow=f"{details['Parish']} · {details['Campaign']}",
+        stamp=(
+            f"Counted at {dates.display_text(details['Counted at'])} "
+            f"({details['Display time zone']})"
         ),
-        f"{details['Families in this file']} "
-        f"{'Family' if details['Families in this file'] == '1' else 'Families'} "
-        "in this file. "
-        f"{details['Responses']} responses. {details['Filter']}."
-        + (" Search applied." if details["Search applied"] == "Yes" else ""),
+        details=(
+            f"{count} {'Family' if count == '1' else 'Families'} in this file. "
+            f"{details['Responses']} responses. {details['Filter']}."
+            + (" Search applied." if details["Search applied"] == "Yes" else ""),
+        ),
+        notice=PRIVACY,
     )
-    return draw_pages(
-        document,
+
+
+def list_table(document):
+    """The list's PDF table: its headings sharing the page by ``weights``."""
+    from .pdf_design import Table
+
+    return Table.weighted(
+        document.headings, [document.weights[name] for name in document.headings]
+    )
+
+
+def list_pdf(document, output):
+    """The list as the shared zebra table, framed, its heading on every page."""
+    from .pdf_design import draw_table, table_pages
+
+    frame, table = list_frame(document), list_table(document)
+    pages = list(table_pages(table, document.rows, frame))
+    return frame.write(
         output,
-        list(fill_pages(list(table_lines(document, document.widths)))),
-        header=header,
-        heading=table_heading(document.headings, document.widths),
-        footer=PRIVACY,
+        pages,
+        len(pages),
+        draw_table(table, frame),
+        requested_at=document.requested_at,
     )
 
 
@@ -659,11 +681,12 @@ def list_file(spec, rows, zone, format, *, details=(), as_of=None):
 
     ``rows`` are already filtered, searched and sorted as on the page, every
     one of them. CSV is exactly the table (``list_csv``). XLSX and PDF add
-    the report ``details`` (``list_details``): the XLSX through the shared
-    writer, with its "Report information" sheet, and the PDF through the
-    shared table pages. Every text cell is neutralized by its writer: CSV
-    against formulas, XLSX as literal text, PDF escaping what its font
-    cannot draw. ``zone`` is a ZoneInfo; ``as_of`` dates the PDF.
+    the report ``details`` (``list_details``) in the shared file design: the
+    XLSX through the shared styled writer, with its "Report information"
+    sheet, and the PDF as the shared framed table. Every text cell is
+    neutralized by its writer: CSV against formulas, XLSX as literal text,
+    PDF escaping what its fonts cannot draw. ``zone`` is a ZoneInfo;
+    ``as_of`` dates the PDF.
     """
     if format == "csv":
         return list_csv(spec, rows, zone)
@@ -679,8 +702,8 @@ def list_file(spec, rows, zone, format, *, details=(), as_of=None):
             tuple(convert(c, c.value(row), zone) for c in spec.columns) for row in rows
         ),
         requested_at=as_of,
-        widths={
-            heading: PDF_WIDTHS[column.key]
+        weights={
+            heading: PDF_WEIGHTS[column.key]
             for heading, column in zip(headings, spec.columns, strict=True)
         },
     )

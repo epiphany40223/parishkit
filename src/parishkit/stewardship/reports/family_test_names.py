@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, Outcome
+from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.work_locks import export_transaction
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
@@ -184,6 +185,14 @@ class FamilyTestNamesDocument:
     sheet_name: ClassVar[str] = "Families"
 
 
+def campaign_name(request):
+    """The campaign's name in the configuration the capture was taken under."""
+    return CampaignConfiguration.objects.values_list("name", flat=True).get(
+        configuration_id=request.family_test_names_snapshot.configuration_id,
+        record_id=request.campaign_id,
+    )
+
+
 def names_document(request):
     """The retained capture of one export, with its provenance as metadata.
 
@@ -198,6 +207,8 @@ def names_document(request):
     metadata = (
         ("Report", FamilyTestNamesDocument.title),
         ("Parish", request.configuration.parish.name),
+        # Named like every other report's, so the PDF eyebrow shows it.
+        ("Campaign", campaign_name(request)),
         ("Campaign reference", str(request.campaign_id)),
         ("Email revision", snapshot.parameters["revision"]),
         ("Captured at", snapshot.created_at.astimezone(zone)),

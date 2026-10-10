@@ -19,7 +19,7 @@ from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.reports import response_lists
+from parishkit.stewardship.reports import pdf_design, response_lists
 from parishkit.stewardship.reports.response_list_views import page_context
 from parishkit.stewardship.reports.response_lists import (
     EVERYONE,
@@ -560,16 +560,16 @@ def test_file_text_is_neutralized_in_every_format():
         assert book["Families"].cell(2, 2).value == "Tab\\u000bName"
     finally:
         book.close()
-    document = []
-    original = response_lists.draw_pages
+    drawn = []
+    original = pdf_design.Canvas.text
 
-    def capture(*args, **kwargs):
-        """Keep the drawn pages, then draw them for real."""
-        document.append((args, kwargs))
-        return original(*args, **kwargs)
+    def capture(canvas, x, y, text, *args, **kwargs):
+        """Keep each drawn string, then draw it for real."""
+        drawn.append(text)
+        return original(canvas, x, y, text, *args, **kwargs)
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(response_lists, "draw_pages", capture)
+        patch.setattr(pdf_design.Canvas, "text", capture)
         body = list_file(
             spec,
             [odd],
@@ -579,8 +579,7 @@ def test_file_text_is_neutralized_in_every_format():
             as_of=START,
         )
     assert body.startswith(b"%PDF")
-    (_, _, pages), _ = document[0]
-    assert any("Tab\\u000bName" in line for page in pages for line in page)
+    assert any("Tab\\u000bName" in text for text in drawn)
     assert csv_cell_text(list_csv(spec, [odd], NEW_YORK)) == "Tab\x0bName"
 
 
@@ -593,15 +592,15 @@ def test_pdf_reads_as_the_page_with_its_details_on_every_page():
     """Missing values in the page's words; counts grouped; details in the header."""
     drawn = {}
 
-    def capture(document, output, pages, **kwargs):
-        """Record what the PDF draws instead of drawing it."""
-        drawn.update(kwargs, document=document, pages=pages)
-        return len(pages)
+    def capture(document, output):
+        """Record the document and its page frame instead of drawing them."""
+        drawn.update(document=document, frame=response_lists.list_frame(document))
+        return 1
 
     spec = LISTS["started"]
     query = ListQuery(show="opened")
     with pytest.MonkeyPatch.context() as patch, using("us_long"):
-        patch.setattr(response_lists, "draw_pages", capture)
+        patch.setattr(response_lists, "list_pdf", capture)
         list_file(
             spec,
             rows_of("started", "opened"),
@@ -617,24 +616,43 @@ def test_pdf_reads_as_the_page_with_its_details_on_every_page():
     assert progressed == "Not yet"
     assert family == "Diaz, Dee" and duid == "4" and envelope == "0"
     assert opened.startswith("Oct ") and "UTC" not in opened
-    subtitle, counts = drawn["header"]
-    assert "Sample parish · Sample campaign · Counted at October 4, 2026" in subtitle
-    assert subtitle.endswith("Times in America/New_York")
-    assert (
-        counts
-        == "1 Family in this file. Production responses. Show: Opened the form only."
+    frame = drawn["frame"]
+    assert frame.title == str(spec.title)
+    assert frame.eyebrow == "Sample parish · Sample campaign"
+    assert frame.stamp.startswith("Counted at October 4, 2026")
+    assert frame.stamp.endswith("(America/New_York)")
+    assert frame.details == (
+        "1 Family in this file. Production responses. Show: Opened the form only.",
     )
-    assert drawn["footer"] == response_lists.PRIVACY
-    assert drawn["heading"].startswith("Form opened")
+    assert frame.notice == response_lists.PRIVACY
+    assert response_lists.list_table(document).headings[0] == "Form opened"
 
 
 def test_pdf_columns_fit_the_page_and_their_headings():
-    """Every list's PDF row fits a landscape page; no heading is cut."""
+    """Every list's PDF table spans the page; times and heading words fit.
+
+    A compact time never wraps, and no heading word is broken across lines
+    (``pdf_design`` wraps a heading only between words).
+    """
+    time = "Sep 30, 2026 12:04 PM"
     for spec in LISTS.values():
-        widths = [response_lists.PDF_WIDTHS[c.key] for c in spec.columns]
-        assert sum(widths) + 2 * (len(widths) - 1) <= response_lists.PDF_LINE
-        for column, width in zip(spec.columns, widths, strict=True):
-            assert len(str(column.heading)) <= width, column.key
+        headings = tuple(str(column.heading) for column in spec.columns)
+        document = SimpleNamespace(
+            headings=headings,
+            weights={
+                heading: response_lists.PDF_WEIGHTS[column.key]
+                for heading, column in zip(headings, spec.columns, strict=True)
+            },
+        )
+        table = response_lists.list_table(document)
+        assert sum(table.widths) == pytest.approx(pdf_design.BODY_WIDTH)
+        times = table.cells([time] * len(headings))
+        for column, heading, cell in zip(
+            spec.columns, table.heading_cells, times, strict=True
+        ):
+            assert " ".join(heading).split() == str(column.heading).split()
+            if column.kind == "instant":
+                assert cell == [time], column.key
 
 
 def test_counts_group_in_the_pdf_and_stay_numbers_in_xlsx():

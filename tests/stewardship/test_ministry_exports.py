@@ -18,11 +18,13 @@ from parishkit.stewardship.reports import export_services
 from parishkit.stewardship.reports.exact_models import ExactExportRequest
 from parishkit.stewardship.reports.export_models import ExportRequest
 from parishkit.stewardship.reports.information_rendering import (
-    information_lines,
+    information_records,
     render_information,
 )
 from parishkit.stewardship.reports.ministry_documents import ministry_document
 from parishkit.stewardship.reports.ministry_exports import scope_authorized
+
+from .test_information_rendering import card_text
 
 AUDIT_SCOPE_CASES = (
     ({"ministry_duids": [], "ministry_operational": False}, True),
@@ -276,7 +278,7 @@ def test_rendered_ministry_formats_use_same_private_document(format):
         book.close()
     else:
         assert output.getvalue().startswith(b"%PDF")
-        text = "\n".join(information_lines(report))
+        text = "\n".join(text for _, text in card_text(information_records(report)))
         assert "Not published" in text and "hidden" not in text
 
 

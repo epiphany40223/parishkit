@@ -24,8 +24,12 @@ generic query language, new delivery framework or Phase 6 workflow is added.
 XLSX represents XML-illegal characters with visible Unicode escapes. PDF uses
 the exact bundled font and the same notation for unavailable glyphs or control
 characters. Both formats double literal backslashes and include a notation
-legend, preserving every code point without silently dropping text. CSV retains
-original Unicode text (with spreadsheet-formula neutralization where needed).
+legend (the PDF only when the file contains an escape), preserving every code
+point of the values they show. CSV retains original Unicode text (with
+spreadsheet-formula neutralization where needed). The PDF is the readable view
+and leaves out internal references and blank fields; CSV and XLSX keep every
+column (see
+[File design](../specs/stewardship/reports/spec.md#file-design)).
 
 ## Acceptance and status
 

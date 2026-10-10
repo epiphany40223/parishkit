@@ -4,10 +4,7 @@ import csv
 import io
 from datetime import date, datetime
 from decimal import Decimal
-from functools import cache
-from itertools import chain, islice
-from pathlib import Path
-from textwrap import wrap
+from itertools import chain
 from unicodedata import category
 
 from parishkit.stewardship.web import dates
@@ -15,7 +12,6 @@ from parishkit.stewardship.web.exports import csv_cell
 
 from .money import MoneyAmount
 
-PAGE_LINES = 34
 # Excel's number format for exact USD: "-$50.00" for a negative amount, the
 # same text the reports display, while the cell stays a summable number.
 MONEY_FORMAT = '"$"#,##0.00'
@@ -87,16 +83,6 @@ def excel_amount(value):
     return amount if len(amount.as_tuple().digits) <= EXCEL_DIGITS else None
 
 
-@cache
-def pdf_font():
-    """Use the same pinned bundled font for glyph validation and actual drawing."""
-    from matplotlib import get_data_path
-    from matplotlib.ft2font import FT2Font
-
-    path = Path(get_data_path()) / "fonts/ttf/DejaVuSansMono.ttf"
-    return str(path), frozenset(FT2Font(str(path)).get_charmap())
-
-
 def xlsx_cell(sheet, row, column, value):
     """Write one cell: a native date/timestamp or amount, or literal text.
 
@@ -161,8 +147,9 @@ def information_csv(document, output):
 def information_xlsx(document, output):
     """Literal cells retain complete values; metadata survives empty reports too."""
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font
-    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Alignment
+
+    from .xlsx_design import style_information, style_table
 
     book = Workbook()
     try:
@@ -174,139 +161,55 @@ def information_xlsx(document, output):
             for column, value in enumerate(values, 1):
                 cell = xlsx_cell(sheet, row_index, column, value)
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
-                if row_index == 1:
-                    cell.font = Font(bold=True)
-        for index, heading in enumerate(document.headings, 1):
-            sheet.column_dimensions[get_column_letter(index)].width = (
-                70 if heading in {"Submitted text", "Staff notes"} else 28
-            )
-        sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = sheet.dimensions
-        sheet.print_title_rows = "1:1"
-        sheet.page_setup.orientation = "landscape"
-        sheet.page_setup.fitToWidth = 1
-        sheet.sheet_properties.pageSetUpPr.fitToPage = True
-        sheet.oddFooter.center.text = "Page &P of &N"
+        # Long free text gets a wide column; a directory's Family column
+        # stays in view while scrolling across its contact columns.
+        style_table(
+            sheet,
+            widths={"Submitted text": 70, "Staff notes": 70},
+            freeze_first_column=document.headings[0] == "Family",
+            title=document.title,
+        )
         metadata = book.create_sheet("Report information")
         for index, (key, value) in enumerate(
             chain(document.metadata, (("Text representation", FORMAT_NOTE),)), 1
         ):
-            metadata.cell(index, 1, key).font = Font(bold=True)
-            cell = xlsx_cell(metadata, index, 2, value)
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
-        metadata.column_dimensions["A"].width = 32
-        metadata.column_dimensions["B"].width = 90
+            xlsx_cell(metadata, index, 1, key)
+            xlsx_cell(metadata, index, 2, value)
+        style_information(metadata, title=document.title)
         book.save(output)
     finally:
         book.close()
 
 
-def record_lines(records, *, width=108):
-    """Lay out label/value records without ellipsis, one blank line after each.
+def information_records(document):
+    """The report-information card, then one card per record (lazily).
 
-    Blank lines and long words survive; nothing is truncated. Shared by every
-    field/value PDF so they wrap and escape identically.
+    A field/value card avoids compressing seventeen columns into unreadable
+    widths. The PDF is the readable view: it leaves out internal references
+    and blank fields, which CSV and XLSX keep (``pdf_design.row_records``).
     """
-    supported = pdf_font()[1]
-    for record in records:
-        for label, value in record:
-            prefix = label + ": "
-            for index, paragraph in enumerate(
-                visible_text(
-                    dates.display_text(plain(value)), supported=supported
-                ).split("\n")
-            ):
-                lines = wrap(
-                    paragraph,
-                    width=width - len(prefix),
-                    expand_tabs=True,
-                    replace_whitespace=False,
-                    drop_whitespace=False,
-                    break_long_words=True,
-                    break_on_hyphens=False,
-                ) or [""]
-                for offset, line in enumerate(lines):
-                    yield (
-                        prefix if index == 0 and offset == 0 else " " * len(prefix)
-                    ) + line
-        yield ""
+    from .pdf_design import report_record, row_records
 
-
-def information_lines(document, *, width=108):
-    """Lay out every value without ellipsis, including blank lines/long words.
-
-    A two-column field/value layout avoids compressing seventeen columns into
-    unreadable widths. The PDF owner repeats its column headings on every page.
-    """
-    return record_lines(
-        chain(
-            (document.metadata, (("Text representation", FORMAT_NOTE),)),
-            (zip(document.headings, row, strict=True) for row in document.rows),
-        ),
-        width=width,
+    return chain(
+        (report_record(document.metadata, values=chain.from_iterable(document.rows)),),
+        row_records(document.headings, document.rows),
     )
 
 
 def information_pdf(document, output):
-    """Paginate before drawing so no complete-text cell is clipped at a page end."""
+    """Paginate before drawing so every page states its position.
 
-    # Count without retaining wrapped strings, then stream one bounded page at
-    # a time. Both passes use the same detached document and bundled font.
-    page_count = -(-sum(1 for _ in information_lines(document)) // PAGE_LINES)
-    lines = iter(information_lines(document))
-    return write_pages(
-        document,
+    Count without retaining wrapped lines, then stream one bounded page at a
+    time; both passes lay out the same detached document identically.
+    """
+    from .pdf_design import PdfFrame, write_records
+
+    return write_records(
         output,
-        (tuple(islice(lines, PAGE_LINES)) for _ in range(page_count)),
-        page_count,
+        PdfFrame.for_document(document),
+        lambda: information_records(document),
+        requested_at=document.requested_at,
     )
-
-
-def write_pages(document, output, pages, page_count):
-    """Draw already paginated lines, one bounded figure at a time."""
-    from matplotlib.backends.backend_pdf import PdfPages
-    from matplotlib.figure import Figure
-    from matplotlib.font_manager import FontProperties
-
-    from .charts import rendering_style
-
-    font = FontProperties(fname=pdf_font()[0])
-    with (
-        rendering_style(),
-        PdfPages(
-            output,
-            metadata={
-                "Title": document.title,
-                "CreationDate": document.requested_at,
-                "ModDate": document.requested_at,
-            },
-        ) as pdf,
-    ):
-        for number, page in enumerate(pages, 1):
-            figure = Figure(figsize=(11, 8.5), facecolor="white")
-            try:
-                figure.text(0.05, 0.95, document.title, fontsize=13)
-                figure.text(0.05, 0.90, "Field / complete value", fontsize=10)
-                for index, line in enumerate(page):
-                    figure.text(
-                        0.05,
-                        0.865 - index * 0.022,
-                        line,
-                        fontsize=9,
-                        fontproperties=font,
-                        va="top",
-                    )
-                figure.text(
-                    0.95,
-                    0.04,
-                    f"Page {number:,} of {page_count:,}",
-                    ha="right",
-                    fontsize=9,
-                )
-                pdf.savefig(figure)
-            finally:
-                figure.clear()
-    return page_count
 
 
 def render_information(document, output, *, format):
