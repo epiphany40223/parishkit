@@ -152,18 +152,26 @@ def test_financial_filters_and_pages_post_privately(page, component_origin):
 def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
     page, component_origin
 ):
-    """Family first, Latest response last; the ParishSoft year has a tip (#932)."""
+    """The downloads' columns in their order; the ParishSoft year has a tip.
+
+    Family first, then Latest and First response last, with no status,
+    version or reference column (#932, decisions B1 and E1).
+    """
+    from parishkit.stewardship.reports.financial_documents import headings
+
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/financial-report")
-    headings = page.locator("table thead th").all_inner_texts()
-    assert headings[0].startswith("Family") and headings[1] == "Family DUID"
-    assert headings[-1].startswith("Latest response")
-    # Each also holds its tip's "i" button.
-    assert headings[5].startswith("ParishSoft pledged (2025–2026)")
-    assert headings[6].startswith("ParishSoft contributed (2025–2026)")
-    # Only the latest response time: no First time or Version in the row.
+    shown = page.locator("table thead th").all_inner_texts()
+    expected = headings("2025-07-01", "2026-06-30")
+    # A sortable heading or a tip's "i" button adds text after the name.
+    assert len(shown) == len(expected)
+    assert all(
+        text.startswith(name) for text, name in zip(shown, expected, strict=True)
+    )
+    # Latest and First response are the last two cells, one time each.
     row = page.locator("table tbody tr").first
     assert row.locator("td").last.locator("time").count() == 1
+    assert row.locator("td").nth(-2).locator("time").count() == 1
     assert "Version" not in row.inner_text()
 
 

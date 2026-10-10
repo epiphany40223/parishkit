@@ -32,6 +32,7 @@ from parishkit.stewardship.reports.financial import (
     financial_page,
     giving_proof,
 )
+from parishkit.stewardship.reports.financial_documents import HEADINGS
 from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
 from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.snapshots import promote_snapshot
@@ -644,11 +645,13 @@ def test_native_page_filters_privately_and_denies_leaders(
         assert b'aria-controls="financial-source-contributed-tip"' in body
         # Each tip's button is described by its bubble, not its whole heading.
         assert b'aria-describedby="financial-source-pledged-tip"' in body
-        # Family leads each row; Latest response is the last column.
+        # The page has the downloads' columns in their order (decisions B1
+        # and E1, #932): Family leads, First response follows Latest response.
         head = body[body.index(b"Current live pledges by Family</caption>") :]
         head = head[: head.index(b"</thead>")]
-        assert head.index(b"Family DUID") < head.index(b"ParishSoft contributed (")
-        assert head.index(b"ParishSoft contributed (") < head.index(b"Latest response")
+        assert head.count(b'scope="col"') == len(HEADINGS)
+        places = [head.index(heading.encode()) for heading in HEADINGS]
+        assert places == sorted(places)
         assert b">Version<" not in body
         assert b'datetime=""' not in body and b"?search=" not in body
         # Identifying filters are private POST state, never a URL.

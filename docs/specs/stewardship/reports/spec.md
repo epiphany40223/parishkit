@@ -1276,11 +1276,16 @@ Admin table [column order](../admin-portal/spec.md#table-column-order), the
 Family name first (surname, then heads, as on the
 [active parishioner family directory](#active-parishioner-family-directory);
 search and the Family sort still use the surname), Family DUID in its own
-column (not sortable: the installed selection does not order by it), annual
-pledge, frequency, approximate installment, selected share-option labels,
-Other text, active status, source comparison pledge/contribution aggregates
-with as-of time, and last the Latest response (the time the Family last
-updated its response). The page's two aggregate headings carry the
+column (not sortable: the installed selection does not order by it), Annual
+pledge, Frequency, Approximate installment, Share methods (selected
+share-option labels with any Other text), the ParishSoft comparison pledge
+and contribution aggregates, Latest response (the time the Family last
+updated its response) and last First response (when it first responded).
+The page and every export format (CSV, XLSX, PDF) have exactly these
+columns in this order (the Administrator's decisions B1 and E1, #932): the
+report lists only active Families, so no format has a Family status
+column, and no format carries internal references (Family version or
+response reference). The page's two aggregate headings carry the
 comparison period's years, as the Family form words them ("ParishSoft
 pledged (2026)", or "(2026–2027)" for a period spanning two years), each with
 a toggletip naming the period's dates. The comparison period is the
