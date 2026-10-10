@@ -302,8 +302,11 @@ rolls back to a savepoint. After preparation, the refusal is recorded as the
 abort journal above, attributed to the request's actor with a fixed reason,
 and its restoration follows, so the request ends failed with
 `invalid_candidate` and its predecessor selected, and an interrupted
-restoration resumes from the journal. The configuration installer may insert
-that journal for this reason alone. An Administrator's cancellation of a
+restoration resumes from the journal. The configuration installer inserts
+that journal only for these refusals, but the database does not enforce the
+reason: the journal's trigger admits a row only for an unapplied request,
+past staging, whose candidate is prepared on the base that is still applied.
+An Administrator's cancellation of a
 stuck change uses the same journal through `config request cancel` (see the
 [Admin automation spec](../admin-automation/spec.md#schedules-and-configuration));
 it remains the only way to cancel an unapplied candidate.
