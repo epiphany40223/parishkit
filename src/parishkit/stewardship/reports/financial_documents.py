@@ -14,16 +14,21 @@ from datetime import date, datetime
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_DETAIL
 from parishkit.stewardship.web import dates
 
 from .money import MoneyAmount
 
 # The two comparison columns use the page's own labels (#404), so a file and
-# the page name the same figures alike.
+# the page name the same figures alike; ``financial_document`` adds the
+# comparison period's years to them, as the page's headings show
+# ("ParishSoft pledged (2026)"). Every format has the page's columns in the
+# page's order, and no internal references (the Administrator's decisions
+# B1 and E1, #932): the report lists only active Families, so it has no
+# Family status column, and no Family version or response reference.
 HEADINGS = (
     "Family",
     "Family DUID",
-    "Family status",
     "Annual pledge",
     "Frequency",
     "Approximate installment",
@@ -32,10 +37,7 @@ HEADINGS = (
     "ParishSoft contributed",
     "Latest response",
     "First response",
-    "Family version",
-    "Response reference",
 )
-STATUS = {True: "Active", False: "Inactive", None: "Status unavailable"}
 UNPROVEN = (
     "Unavailable: the latest giving data read from ParishSoft is not confirmed "
     "complete for this campaign's comparison period. Unavailable does not mean "
@@ -60,9 +62,33 @@ class FinancialDocument:
     rows: tuple[tuple[str | MoneyAmount | datetime, ...], ...]
     item_count: int
     requested_at: datetime
-    headings: ClassVar[tuple[str, ...]] = HEADINGS
+    headings: tuple[str, ...] = HEADINGS
     title: ClassVar[str] = "Financial stewardship detail"
     sheet_name: ClassVar[str] = "Financial detail"
+
+
+def period_years(start, end):
+    """The years an ISO date period covers: "2026", or "2026–2027".
+
+    Words the ParishSoft comparison period in the table headings, on the page
+    and in the downloads, as the Family form does; "" when the campaign has
+    no such period.
+    """
+    if not start or not end:
+        return ""
+    first, last = start[:4], end[:4]
+    return first if first == last else f"{first}–{last}"
+
+
+def headings(comparison_start, comparison_end):
+    """The column headings, the two ParishSoft ones with the period's years."""
+    years = period_years(comparison_start, comparison_end)
+    if not years:
+        return HEADINGS
+    return tuple(
+        f"{heading} ({years})" if heading.startswith("ParishSoft ") else heading
+        for heading in HEADINGS
+    )
 
 
 def _share_cells(row):
@@ -124,6 +150,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         ("Source reference", source["source_id"]),
         ("Source generation", f"{source['source_generation']:,}"),
         ("Source as of", instant(source["source_as_of"])),
+        (FAMILY_NAMES_DETAIL, source["family_names"]),
         # A Family-only refresh keeps an older giving read, so the money's own
         # observation time is stated apart from the source promotion time.
         (
@@ -172,7 +199,6 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
             (
                 row["family_name"],
                 str(row["family_duid"]),
-                STATUS[row["active"]],
                 row["annual"],
                 row["frequency_label"],
                 # No installment (no pledge or no frequency) stays blank.
@@ -182,19 +208,22 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 row["source_contributions"],
                 instant(row["submitted_at"]),
                 instant(row["first_submitted_at"]),
-                f"{row['family_version']:,}",
-                row["id"],
             )
         )
-        # A continuation row names the Family and the response it continues
-        # and carries nothing else, so no amount is ever counted twice and a
-        # filter on any other column never sees a second value for the Family.
+        # A continuation row names the Family it continues and carries
+        # nothing else, so no amount is ever counted twice and a filter on
+        # any other column never sees a second value for the Family.
         for cell in overflow:
             rows.append(
                 (row["family_name"], str(row["family_duid"]))
-                + ("",) * 4
+                + ("",) * 3
                 + (CONTINUED + cell,)
-                + ("",) * 5
-                + (row["id"],)
+                + ("",) * 4
             )
-    return FinancialDocument(metadata, tuple(rows), result["total"], requested_at)
+    return FinancialDocument(
+        metadata,
+        tuple(rows),
+        result["total"],
+        requested_at,
+        headings(source["comparison_start"], source["comparison_end"]),
+    )

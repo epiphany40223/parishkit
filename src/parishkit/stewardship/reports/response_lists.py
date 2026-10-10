@@ -245,7 +245,7 @@ LISTS = {
             key="submitted",
             title=_("Families that submitted"),
             description=_("Every Family with a submission"),
-            columns=(FIRST_SUBMITTED, FAMILY, DUID, ENVELOPE, SUBMISSIONS),
+            columns=(FAMILY, DUID, ENVELOPE, SUBMISSIONS, FIRST_SUBMITTED),
             # Chronological: the first submission first.
             default_sort="submitted",
             # The Administrator found the invitation filter unneeded here
@@ -260,6 +260,9 @@ LISTS = {
             title=_("Families that started but did not submit"),
             description=_("Opened the form, nothing submitted yet"),
             columns=(
+                FAMILY,
+                DUID,
+                ENVELOPE,
                 Column(
                     "opened",
                     _("Form opened"),
@@ -273,9 +276,6 @@ LISTS = {
                     "instant",
                     _("Not yet"),
                 ),
-                FAMILY,
-                DUID,
-                ENVELOPE,
             ),
             default_sort="family",
             choices=(
@@ -302,6 +302,9 @@ LISTS = {
             title=_("Invited Families that never opened the form"),
             description=_("Invitation delivered, form never opened"),
             columns=(
+                FAMILY,
+                DUID,
+                ENVELOPE,
                 Column(
                     "invited",
                     _("Invitation delivered"),
@@ -315,9 +318,6 @@ LISTS = {
                     "instant",
                     _("No"),
                 ),
-                FAMILY,
-                DUID,
-                ENVELOPE,
             ),
             default_sort="family",
             choices=(
@@ -344,6 +344,9 @@ LISTS = {
             title=_("Families that submitted more than once"),
             description=_("More than one submission"),
             columns=(
+                FAMILY,
+                DUID,
+                ENVELOPE,
                 SUBMISSIONS,
                 FIRST_SUBMITTED,
                 Column(
@@ -352,9 +355,6 @@ LISTS = {
                     lambda row: row.response.last_submitted_at,
                     "instant",
                 ),
-                FAMILY,
-                DUID,
-                ENVELOPE,
             ),
             default_sort="-submissions",
             choices=(Choice(EVERYONE, _("Everyone"), _keep_all),),

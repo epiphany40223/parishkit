@@ -810,7 +810,10 @@ the label, for fields whose format or rule is needed every time (an example
 address, "one per line", a key's paste rule), and a warning that blocks the
 field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
-opening the tip. Checkbox help stays beside the box.
+opening the tip. Checkbox help stays beside the box. A toggletip in a table
+heading is described by its bubble alone, and its bubble floats over the
+page, so opening it never changes the size or scroll of the table's box;
+it closes when that box scrolls its button out of view.
 
 Internal identifiers and bookkeeping fields that matter only for
 troubleshooting (delivery, refusal and test references, a retained
@@ -1024,7 +1027,7 @@ orders offers that selection's sort orders on the columns they order and its
 page sizes; its other columns do not sort, since the schema owns those
 orders. In v1 that covers:
 
-- the active parishioner family directory (Family and DUID, 50 rows; Family code would need
+- the active parishioner family directory (Family and Family DUID, 50 rows; Family code would need
   every code decrypted per view);
 - Financial stewardship detail (Family, Annual pledge and latest response);
 - the Additional information queue (Family and Submitted);
@@ -1172,10 +1175,17 @@ column and a DUID column, both sort. **Why.** A combined cell cannot be
 sorted or scanned by DUID, reads badly with a screen reader and copies badly
 into a spreadsheet; staff moving between pages should not re-learn each one.
 **Shared code.** `test_admin_table_columns.py` refuses a cell that prints a
-DUID label with a value (open #941). **Precedent.** #932 (Administrator,
+DUID label with a value (#941). **Precedent.** #932 (Administrator,
 2026-10-09, corrected 2026-10-10 to "most relevant column first", and the
-2026-10-10 rule that the Family name and DUID columns both sort), open #941,
+2026-10-10 rule that the Family name and DUID columns both sort), #941,
 open #950.
+
+The guard test reads every Admin template, components included. In each
+`<td>` and each `<th>` whose attributes include `scope="row"`, it refuses a
+DUID label followed by a printed value, and a printed `*duid` variable
+beside any other printed value (values inside tag attributes or `<option>`
+choices do not count). It allows only the tables not yet split, which it
+lists by name with the exact number of such cells each holds.
 
 Known exceptions, which need a schema change: three report tables are ordered
 by an installed SQL selection with no DUID sort

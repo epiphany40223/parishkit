@@ -45,6 +45,7 @@ EARLIER = CONFIGURATION | {"year_label": "Jubilee"}
 SEEN = str(uuid4())
 PERIOD = f"{parish_date(date(2055, 1, 1))} – {parish_date(date(2055, 12, 31))}"
 PROOF = {"snapshot": str(uuid4()), "configuration": str(uuid4())}
+SOURCE = PROOF["snapshot"]
 
 
 def test_query_accepts_only_the_closed_bounded_grammar():
@@ -170,6 +171,16 @@ def substitute(monkeypatch, answer):
             yield cursor
 
     monkeypatch.setattr(financial, "connection", Connection())
+    # The directory's name from the snapshot SQL read, without a database.
+    cursor.named = []
+
+    def name_file_rows(metadata, rows):
+        """Record the snapshot and add the heads, as the shared helper does."""
+        cursor.named.append(metadata["source_id"])
+        for row in rows:
+            row["family_name"] += ", Ann and Bo"
+
+    monkeypatch.setattr(financial, "name_file_rows", name_file_rows)
     # The immutable configuration the row's Family answered, without a database.
     monkeypatch.setattr(
         financial,
@@ -213,7 +224,13 @@ def result(**row):
         contribution_total=None,
     )
     return {
-        "metadata": {"source_as_of": moment, "giving_through": "2026-06-30"},
+        "metadata": {
+            "source_id": SOURCE,
+            "source_as_of": moment,
+            "giving_through": "2026-06-30",
+            "comparison_start": "2025-07-01",
+            "comparison_end": "2026-06-30",
+        },
         "summary": {
             "families": 1,
             "annual_total": "1234.50",
@@ -252,7 +269,12 @@ def test_rows_are_shaped_with_exact_installments_and_honest_absence(monkeypatch)
     assert not row["source_contributions"].available
     assert "configuration_id" not in row and "pledge_total" not in row
     assert row["submitted_at"] == datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
+    # Named as in every Admin table, from the snapshot SQL read (#932).
+    assert row["family_name"] == "Example, Ann and Bo"
+    assert cursor.named == [SOURCE]
     assert shaped["metadata"]["giving_through"] == date(2026, 6, 30)
+    # The ParishSoft headings name the comparison period's years.
+    assert shaped["metadata"]["comparison_years"] == "2025–2026"
     assert shaped["summary"]["annual_total"].cents == 123450
     assert dict(shaped["summary"]["frequencies"]) == {
         "Weekly": 0,
@@ -306,6 +328,22 @@ def test_rows_are_shaped_with_exact_installments_and_honest_absence(monkeypatch)
     kept = page()["rows"][0]
     assert kept["frequency_label"] == "Monthly"
     assert kept["installment"].available and kept["installment"].display == "$0.00"
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "expected"),
+    [
+        ("2026-01-01", "2026-12-31", "2026"),
+        ("2025-07-01", "2026-06-30", "2025–2026"),
+        (None, "2026-12-31", ""),
+        ("2026-01-01", None, ""),
+    ],
+)
+def test_period_years_word_the_comparison_period_as_the_family_form(
+    start, end, expected
+):
+    """One year, a span of two, or nothing when the campaign has no period."""
+    assert financial.period_years(start, end) == expected
 
 
 def test_denial_and_unavailable_inputs_never_become_an_empty_report(monkeypatch):

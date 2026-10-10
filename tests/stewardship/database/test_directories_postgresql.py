@@ -97,17 +97,20 @@ def test_native_directory_code_filters_contacts_and_response(
         response, body = read(browser, route)
         assert response.status_code == 200 and harness.code.encode() in body
         assert (
-            b">Example, Member</a></td>" in body
+            b">Example, Member</a></th>" in body
             and b"Do not show this private" not in body
         )
         # The name opens the Family's timeline by its campaign record id.
         assert re.search(
-            rf'<td><a href="{route}[0-9a-f-]{{36}}/">Example, Member</a></td>'.encode(),
+            (
+                rf'<th scope="row"><a href="{route}[0-9a-f-]{{36}}/">'
+                r"Example, Member</a></th>"
+            ).encode(),
             body,
         )
         # Simplified columns: DUID on its own, Yes/No values, no retired rows.
         for text in (
-            b"ParishSoft DUID",
+            b"Family DUID",
             b"Campaign email deliverable",
             b"<td>1</td>",
             b"<td>Yes</td>",
@@ -503,7 +506,7 @@ def test_archived_directory_keeps_its_retained_source(response_service, google):
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, reverse("admin:family_directory"))
         assert response.status_code == 200
-        assert b">Example, Member</a></td>" in body and b"Successor" not in body
+        assert b">Example, Member</a></th>" in body and b"Successor" not in body
 
 
 def test_directory_unavailability_and_invalid_filters_are_private(
@@ -645,7 +648,7 @@ def test_reach_preset_link_and_dashboard_readiness(live_response_service, google
     route = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route + "?reach=neither")
-        assert response.status_code == 200 and b">Example, Member</a></td>" in body
+        assert response.status_code == 200 and b">Example, Member</a></th>" in body
         assert b'value="neither" selected' in body
         assert b"no campaign mail can reach" not in body
         # Only Testing mode explains that live codes wait for go-live.
@@ -897,8 +900,8 @@ def test_contact_details_show_head_emails_in_one_batched_read(
     )
     name_cell, pane = row.split(b'<td class="contact-details">')
     assert re.search(
-        rf'<td><a href="{route}[0-9a-f-]{{36}}/">Example, Member, Second '
-        rf"and Third</a></td>".encode(),
+        rf'<th scope="row"><a href="{route}[0-9a-f-]{{36}}/">Example, Member, Second '
+        rf"and Third</a></th>".encode(),
         name_cell,
     )
     assert b"@" not in name_cell and b"mailto:valid@example.org" in pane

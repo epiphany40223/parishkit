@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from parishkit.stewardship.reports.census_change_views import SORTING
 from parishkit.stewardship.reports.census_changes import (
     HEADINGS,
     CensusQuery,
@@ -206,11 +207,21 @@ def test_parse_refuses_values_outside_the_closed_choices(values):
         CensusQuery.parse(values)
 
 
-def test_csv_has_the_page_columns_in_the_chosen_zone():
-    """The download repeats the page's columns, times in the chosen zone."""
+def test_csv_keeps_its_own_column_order_in_the_chosen_zone():
+    """The download keeps its own column order, times in the chosen zone."""
     result = select(rows(), CensusQuery(), administrator=False)
     text = census_csv(result, ZoneInfo("America/Chicago")).decode()
     table = list(csv.reader(io.StringIO(text)))
     assert tuple(table[0]) == HEADINGS
     assert table[1][2] == "Pat Sample" and table[1][-1] == "2054-10-05T09:30:00-05:00"
     assert len(table) == 4
+
+
+def test_family_duid_column_sorts_both_ways():
+    """Family DUID has its own column, and it sorts both ways (#932)."""
+    shaped = [shape(row(id=str(duid), family_duid=duid)) for duid in (7002, 13, 7001)]
+    assert SORTING.tokens["duid"] == ("duid", False)
+    up = SORTING.sort_rows(shaped, "duid")
+    assert [item["family_duid"] for item in up] == [13, 7001, 7002]
+    down = SORTING.sort_rows(shaped, "-duid")
+    assert [item["family_duid"] for item in down] == [7002, 7001, 13]

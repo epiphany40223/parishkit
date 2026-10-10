@@ -151,7 +151,11 @@ def test_information_and_directory_workbooks_share_the_style():
 
 
 def test_response_list_workbook_shares_the_style():
-    """A response list's XLSX (#850) is the shared styled workbook."""
+    """A response list's XLSX (#850) is the shared styled workbook.
+
+    Its Family column leads (#932), so it stays in view while the sheet
+    scrolls sideways, as a directory's does.
+    """
     query = ListQuery(search="adams")
     body = list_file(
         LISTS["submitted"],
@@ -161,7 +165,8 @@ def test_response_list_workbook_shares_the_style():
         details=details_of("submitted", query),
     )
     book = load_workbook(io.BytesIO(body))
-    assert_styled_table(book["Families"])
+    assert book["Families"]["A1"].value == "Family"
+    assert_styled_table(book["Families"], first_column=True)
     assert_information_sheet(book["Report information"])
 
 
