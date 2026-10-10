@@ -182,63 +182,11 @@ with sending another test kept as a secondary button. Finish setup's primary
 action is "Check readiness and finish setup", which still requires accepted
 tests of the exact reviewed revision.
 
-Wherever a form requires an acknowledgment checkbox (finishing setup, a test
-that may already have arrived, chosen-Family tests, Testing cleanup,
-withdrawal, refusal removal, manual reports, duplicate resends, resetting all
-pages and emails to their default text), the page script keeps the form's
-primary button disabled until the box is checked, and the server refuses a
-missing acknowledgment. While the button waits, a short hint directly after
-it (named by the button's `aria-describedby`) says to tick the confirmation,
-so only content below the button moves when it clears. A form that arrives
-through an in-place update is gated the same way (#563).
+Acknowledgment checkboxes and incomplete forms hold their submit buttons as the
+[prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) describe.
 
-More generally, a form whose fields depend on other choices keeps its submit
-button unavailable until every visible required field is complete, with a
-short hint by the button saying what is missing (`data-require-complete` in
-the page script; first used by
-[Ministry follow-up](#follow-up-workflows), #553). Fields required only in
-some states are required only while shown. A required text field holding
-only spaces counts as empty, as the server trims it: the reason for
-cancelling go-live and the evidence notes on Mail delivery and delivery
-refusal pages use this gate, as does the typed "Production" confirmation
-(which, like the server, ignores spaces around the word). The Admin portal
-requires JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
-server validation is unchanged and still refuses an incomplete submission.
-A browser can restore a page from its history (Back or Forward) with the
-reader's values but without the events that set the page up, so these
-states (shown and hidden fields, unavailable buttons and their hints, a
-table's selection, the campaign modules and mail schedule rows) are worked
-out again when the page is shown (`pageshow`, #563).
-
-A field error is shown at that field: its message sits directly beside it,
-and the field is marked in error (`aria-invalid="true"`, described by the
-message, with the shared error border and error-coloured message of
-`ui-v1.css`, the same markup Django forms render on the settings and setup
-pages). An error that concerns two fields (a date and a time) marks both and
-shows its message once, after them. Where a page also shows the error
-summary, the summary links to the first marked field and takes focus, as
-every Admin refusal summary does (#592).
-
-Where a rule can be checked in the browser, the page checks it too, and
-shows its error at the field the same way. The browser's own checks (a
-required field, a format) mark a field when the reader leaves it, and clear
-once the value is valid. A page can also check a rule live, as the value is
-entered (a follow-up contact time in the future). Save is held while such an
-error stands only on forms that use the complete-before-submit gate above.
-The server stays the authority: it checks every save, and its refusal is
-shown at the field as above, even when the browser would have allowed the
-value (a wrong computer clock, for example).
-
-A mark clears as soon as its error does, without waiting for Save (#592). An
-error the browser checks clears once the value is valid. One only the
-server can check (an outcome that doesn't fit the request, for example)
-clears from its field, with its message, on the first edit of that field,
-since the server checks again on save; an error that marks two fields (a
-date and a time) clears from both when either is edited. A field that a
-choice hides is not sent, so its marks clear too. Leaving a field without
-changing it clears nothing. The summary loses the item for a field that
-clears, and goes once it lists nothing. This applies to every Admin form,
-Django-rendered ones included, through the shared page script.
+Field errors and live checks follow the
+[field error conventions](../ui-conventions/spec.md#field-errors-and-live-checks).
 
 The mail schedule pages start with a short guide (in the About panel): what
 each mail type is, that exactly one initial invitation is required before
@@ -247,13 +195,13 @@ most one digest of each kind), that submission receipts and critical alerts are
 sent automatically and never scheduled, the time zone send times are entered in
 (this computer's on the list and the New and Edit scheduled email pages; the
 campaign's on the first-campaign step and the date-change review, see [time
-entry](#time-entry)), and the current campaign dates. Wherever a schedule is
+entry](../ui-conventions/spec.md#time-entry)), and the current campaign dates. Wherever a schedule is
 edited (the first-campaign Mail schedules step, the date-change review and the
 New and Edit scheduled email pages below), its fields show only those its mail
 type uses (initial invitation and reminder: date, time and email; daily digest:
 time and email; weekly digest: weekday, time and email) and offer only emails of
 that type; the page script clears a field it hides. The send time is a [time
-entry](#time-entry) field. A saved schedule's mail type is shown but cannot
+entry](../ui-conventions/spec.md#time-entry) field. A saved schedule's mail type is shown but cannot
 change. The server reports a missing or inapplicable value on its own field (for
 example a weekday on an invitation, or a date outside the campaign with the
 campaign's dates); only rules between schedules, such as a second initial
@@ -400,7 +348,7 @@ dates, latest successful ParishSoft refresh, next scheduled mail,
 participation summary, unresolved work counts and recent failures appropriate
 to the role, and links the next steps for the campaign's state, as
 [Home page](#home-page) describes. All pages show consistent breadcrumbs,
-[help](#page-help), loading/empty/error states, and responsive layouts.
+[help](../ui-conventions/spec.md#page-help), loading/empty/error states, and responsive layouts.
 
 In Testing mode, every Admin page has a prominent persistent banner naming the
 test recipient and linking to mode configuration. Staff/leader pages show a
@@ -444,26 +392,14 @@ taken in each of its counted entries and every incident they opened has
 [resolved](../background-processing/spec.md#what-went-wrong-and-recovery)
 (#633). The banner costs the Admin page one query, shared with the delivery
 warning count. It is distinct from security-event acknowledgement, which is per
-recipient. Acknowledge acts [in place](#in-place-controls): the server still
+recipient. Acknowledge acts [in place](../ui-conventions/spec.md#in-place-controls): the server still
 answers with Home, and the banner is taken from that answer on the page the
 Administrator is on, which keeps its address and everything else on it.
 
 ### JavaScript requirement
 
-The Admin portal requires JavaScript and has no no-script fallback (#565).
-Every Admin page, including the sign-in pages, renders its content hidden
-behind a `js-required` class beside a plain-language panel: "The Admin portal
-needs JavaScript. Turn it on in your browser settings, then reload this page."
-The first-party Admin script removes the class at startup, and the hiding rule
-lives in the shared stylesheet, so the content security policy still allows
-no inline script or style. With script off, a page shows only the panel and
-offers no action. Links and forms keep real `href` and `action` attributes,
-because they are the targets the scripts request. Every action is still
-validated on the server, in the same service code the
-[Admin automation interface](../admin-automation/spec.md) calls; client-side
-checks are a convenience, never the only guard. The Family portal is not
-gated and keeps working without script
-([client behavior](../architecture/spec.md#accessibility-and-client-behavior)).
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#javascript-requirement),
+which have precedence for it.
 
 ### Admin navigation
 
@@ -508,20 +444,10 @@ requests, only Find a Family (NAV-19) has landed; NAV-12 to NAV-18 are
 listed in the
 [ADM-12 checklist](../../../tasks/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).
 
-The Admin portal serves one current campaign. The system moves to a single
-campaign after this campaign (#145), so navigation already assumes it: there
-is no campaign chooser and no New campaign control (the one campaign is
-created by [Create the campaign](#create-the-campaign), offered only while the
-deployment has never had a campaign), and no Admin URL names a campaign. Every
-remaining control whose only purpose is working with more than one campaign,
-such as **Copy campaign** on Campaign settings and the "Choose a retained
-campaign" links on Participation and Ministry requests, is shown greyed out
-until #145 removes it: an unavailable control, not a link or action, with the
-tip "Disabled; will be removed with the single-campaign change (#145)", shown
-and announced the same way as an unavailable menu entry's reason. The server
-refuses the matching actions too, so a greyed control cannot be bypassed
-([navigation rule 10](#navigation-rules), [decisions 18 and
-19](#navigation-decisions)).
+The Admin portal serves one current campaign; controls for more than one
+campaign follow the [single-campaign interim](../ui-conventions/spec.md#single-campaign-interim)
+rule ([navigation rule 10](#navigation-rules),
+[decisions 18 and 19](#navigation-decisions)).
 
 #### Menu groups
 
@@ -688,7 +614,7 @@ VoiceOver and NVDA check confirms both are announced. The summary is a keyboard 
 Space toggles it) and shows an arrow for its state.
 Groups start open. Each browser remembers which groups an Admin collapsed (only
 the group key and its open or closed state, in browser storage, as the
-[About panel](#page-help) does); with nothing stored, every group starts
+[About panel](../ui-conventions/spec.md#page-help) does); with nothing stored, every group starts
 open. The group holding the current page always opens, so the
 `aria-current` entry is never hidden. Collapsing is the reader's choice and
 does not change the menu's shape.
@@ -995,16 +921,9 @@ Admin URLs follow the menu, so the address says where the reader is
 - **Nouns, not verbs:** plural nouns for collections, a noun for each item,
   and actions are POSTs to the item or collection (no GET target such as
   `/delete` or `/remove`).
-- **Old URLs are not kept:** the Administrator dropped the old Admin
-  addresses ([#864](https://github.com/epiphany40223/parishkit/issues/864)),
-  so each answers 404: the addresses from before the scheme, those that named
-  a campaign, the retired campaign choosers and the daily and weekly report
-  links in report emails sent before NAV-12. Family-facing addresses (the
-  emailed codes and links, the Family portal and its sign-in) are not Admin
-  addresses and do not change. A page for one record (an export, a digest
-  snapshot, a cleanup request) refuses a record whose campaign is not current
-  ("This campaign is no longer the current campaign", 410 Gone) until the
-  single-campaign change (#145).
+- **Old URLs are not kept**
+  ([#864](https://github.com/epiphany40223/parishkit/issues/864)): see
+  [addresses and legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls).
 
 #### Navigation rules
 
@@ -1189,7 +1108,7 @@ follows them.
     the single-campaign change (#145); the server refuses the matching actions.
     New campaign stays removed (decision 11).
 20. **No-script fallbacks?** (Coordinator.) None: the Admin portal
-    [requires JavaScript](#javascript-requirement) (#565).
+    [requires JavaScript](../ui-conventions/spec.md#javascript-requirement) (#565).
 21. **Who gets Find a Family, and how does it search?** Administrators and
     Staff only, results scoped to what the role may see (Administrator); by
     CSRF POST (coordinator) (#561). It matches what the directory search
@@ -1219,524 +1138,28 @@ follows them.
 
 ### Admin tables
 
-Admin tables share one component, so paging, sorting, selection and styling
-behave the same everywhere. A long table has a row navigator above and below
-it: the rows shown and "Page N of M", a rows-per-page choice (25, 50, 100, 250
-or All, where the table's source allows it), Previous and Next, and a
-page-number field. A page number past the end shows the last page.
-
-Column headings sort the table on the server. Each sortable heading is a
-control that sorts by that column; choosing the sorted column again reverses
-it, and times and counts sort newest or largest first on the first choice.
-The sorted heading carries `aria-sort`, a small arrow marks it, and each
-control's accessible name says which direction it will choose. A table accepts
-only its own whitelisted sort tokens, each mapped to server-owned ordering, and
-appends a unique tiebreak so rows with equal values never move between pages.
-Rows with no value in the sorted column (a task without a heartbeat, a user
-who never signed in) sort last in either direction.
-A new sort starts again at page 1. The headings are the only sort control: no
-page offers a separate sort menu, and a page's filter and export forms carry
-the heading's current sort as a hidden field, so applying filters or
-exporting keeps the order the table shows.
-
-Page, size and sort are query parameters (`page`, `size`, `sort`), optionally
-prefixed so two tables on one page keep their own place, and every navigator
-link, heading and filter form keeps the page's filters and the others' choices.
-Reports whose filters are private (the active parishioner family directory, System logs and the
-campaign reports) keep them in POST state: their navigator and headings are
-small CSRF-protected forms that carry the filters as hidden fields, so no
-private value reaches a URL. System logs also accept a link carrying only its
-non-private filters ([Logs](#logs)). A report whose rows an installed SQL selection
-orders offers that selection's sort orders on the columns they order and its
-page sizes; its other columns do not sort, since the schema owns those
-orders. In v1 that covers:
-
-- the active parishioner family directory (Family and DUID, 50 rows; Family code would need
-  every code decrypted per view);
-- Financial stewardship detail (Family, Annual pledge and latest response);
-- the Additional information queue (Family and Submitted);
-- the Ministry report (Ministry; Member and Submitted in one Ministry's view);
-- the Ministry follow-up queue (Request, Member and Ministry).
-
-Extending those vocabularies is a schema change. Columns that are only
-controls (selection, actions, previews) never sort. Two short before/after
-lists of pending setting changes (credential selection and integration
-preview), the campaign mail test's at most ten reviewed Families and link
-preparation history (panels, not columns) have no sortable columns.
-
-A short table shown whole has no navigator: its headings carry only its sort
-token (no page or size), and the page accepts nothing else for it. The two
-session tables on Automation access are such tables (see
-[portal user management](#portal-user-management)).
-
-A table's navigators and rows sit in one region with a stable id (the table's
-anchor, derived from its parameter prefix so two tables on one page differ),
-and every heading and navigator control names that id as its URL fragment.
-Choosing a heading, Previous, Next, a page number or a
-rows-per-page value re-sorts or re-pages the table in place (#478): the
-browser fetches the page the control would have loaded, requested as the
-control would have requested it (a GET table's link or query, a POST table's
-CSRF form with its private filters), and replaces that region, every other
-table region on the page and the hidden state fields (sort, size, applied
-filters, request keys) of the page's filter and export forms from the fetched
-page, so no control is left carrying a choice the table no longer shows; the
-reader's visible choices in those forms are kept. The reader keeps their
-scroll position, rows still shown keep their selection, focus returns to the
-chosen heading or control, the heading's `aria-sort` and a polite live region
-announce the new order or the rows now shown, and a GET table's choice
-replaces the address so reload, bookmarks and returning to the page keep it; a
-POST table's address never changes. Applying a page's filters works the same
-way (#484): the filter form is sent as it would have been (a GET query, or a
-CSRF POST body), every table region is replaced, and so are the counts,
-summaries and filter-dependent panels outside the tables (a report's matching
-count and summary, the active parishioner family directory's export column list); focus stays on
-the filter button and the live region announces the rows now shown in each
-table, including none. A response the
-server refuses (a malformed filter's 400, a denial, an unavailable report) is
-shown as returned; a POST is never sent twice, since each report read is
-audited. While a request is in flight, repeating the same submission is
-ignored. The participation report's options reshape its statistics, chart and
-exports rather than one table, so its options form is an
-[in-place control](#in-place-controls) of all three panels instead. When
-the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at
-the top. The link preparation history keeps only the fragment and always
-loads in full. A table region is one kind of region that
-[in-place controls](#in-place-controls) refresh; that section states the
-shared rules (one request at a time, when a POST may be sent again, the
-fallback, focus and announcements).
-
-Lists read straight from a growing database table page on the server with one
-extra row to learn whether a next page exists, and count matching rows only up
-to 10,000. Past that the navigator says "more than 10,000", omits the page
-count and keeps paging by the extra row. They offer 25, 50 or 100 rows. On the
-largest tables only indexed columns sort, so a page view never sorts or counts
-a whole log.
-
-A table with bulk actions has a selection column. Its header checkbox and a
-Select all button choose every row on the current page; the bar above the
-table shows how many rows are selected and enables its action buttons only
-while at least one is. While none is, the disabled action buttons are
-described by a short, visually hidden hint saying what to select (also shown
-as their tooltip). Ticking a row never moves a control under the pointer: no
-visible line appears or disappears, and the count and Select all button sit
-after the action buttons, so their changing text cannot push them (#563). The
-server validates every submitted selection.
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#admin-tables),
+which have precedence for it.
 
 #### Row actions and confirmation
 
-A table whose rows can be acted on follows one pattern
-([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
-and shared; [Dates and mail schedules](#dates-and-mail-schedules) is its first
-user, and the other Admin tables with per-row actions move to it in later
-changes.
-
-- **Actions column.** The last column holds each row's actions as small icon
-  buttons (`table_actions`): Edit, a link to the item's own page, and Delete.
-  Each has an accessible name and a matching tooltip that name the row ("Edit
-  Reminder 2", "Delete Reminder 2"), and the icons are drawn inline, so they
-  need no request and stay inside the content security policy. A row shows
-  only the actions that apply to it; a row with none shows nothing there.
-- **Edit** opens the item's edit page, which is the same page as New, filled
-  in. Saving it goes through that page's usual review, and its status page
-  returns to the table.
-- **Delete** opens a confirmation dialog in the page: a native modal
-  `<dialog>` that names what it removes and says what cannot be undone, with
-  the destructive action and Cancel. While it is open the rest of the page is
-  inert and Tab stays inside it; Escape or Cancel closes it and changes
-  nothing; focus returns to the control that opened it, or, when that row is
-  gone, to the table's heading. Confirming sends the table form's POST with
-  the chosen rows, without a page load: the confirm button says it is working
-  and the dialog cannot be dismissed until the answer arrives. When the
-  server records a configuration change, the page follows that change's status
-  until it is applied, then redraws every region from the table's own address
-  (keeping its sort) and closes the dialog, announcing what was removed. A
-  refusal, or a change that failed to apply, is shown inside the dialog, below
-  its buttons so they never move, and nothing is redrawn; the server's
-  explanation is shown when it gives one. A page-wide `confirm()` is never
-  used.
-- **Several rows.** A table that allows acting on several rows has the
-  [selection column and bulk bar](#admin-tables) above; its only bulk action
-  is usually Delete selected, which opens the same dialog naming the count.
-  Rows without actions have no selection box.
-- **Server checks** are those of the action itself: the dialog only asks, and
-  the server validates every chosen row and refuses the whole request when
-  any one cannot be acted on.
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#row-actions-and-confirmation),
+which have precedence for it.
 
 ### In-place controls
 
-An Admin control acts where the reader is: it never reloads the page or sends
-the reader back to its top (#519). The table controls above are one case;
-the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
-
-- **Regions.** A page marks each part a control can change as a region, an
-  element with a stable id (a table's region, or `data-in-place-region`). The
-  id is also the control's URL fragment, which is required: the script finds
-  the region by it, and an ordinary load lands on the region instead of at
-  the top. The fragment must name a region in the same template as the
-  control (not one a base or included template draws); a template test
-  refuses an in-place control whose fragment names no region there.
-- **Controls.** A link that shows another view of the page (`a[data-in-place]`:
-  the [response dashboard](../reports/spec.md#response-dashboard)'s mode and
-  grain, the [response lists](../reports/spec.md#response-lists)' mode, the
-  [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
-  "Refresh current work" on "Background work", "Refresh list" on
-  "Families on the form now", the page links of a mail delivery's
-  evidence and attempt history, an information item's and a Ministry
-  follow-up request's history, and a weekly information report, and the
-  Refresh links of the key replacement status, Family email progress and
-  Family test pages) or a form whose answer is the page again
-  (`form[data-in-place]`, such as a POST whose server redirects back to the
-  page: Save follow-up on an information item and on a
-  [Ministry follow-up request](#follow-up-workflows); System logs'
-  cross-links, whose answer is the filtered page; Acknowledge on a security
-  event; Dismiss on an integration's finished key change; the
-  [participation report](../reports/spec.md#campaign-statistics)'s Apply
-  report options, which refreshes its statistics, chart and export panels)
-  names its region by its
-  URL's fragment. A POST form saves a change unless it is marked
-  `data-in-place-read` (the System logs cross-links only read): a read may
-  be cancelled by a newer choice and, with no answer at all, falls back to
-  the ordinary submission. A form or link marked `data-in-place-filters`
-  sets the page's filters from outside its filter form (a response list's
-  mode link clears its private search), so after the swap the filter
-  form's visible fields, and any disclosure in it, show what the fresh page
-  applied, and the next Apply, sort or page keeps them; every other swap
-  leaves filters typed but not yet applied alone. A region a
-  control can empty (the security events, the critical-problems banner) is
-  drawn even when it has nothing to show, so the answer that empties it
-  still carries it. A form marked `data-in-place-anywhere` changes a region
-  every Admin page draws (the
-  [critical-problems banner](#navigation-and-home)'s Acknowledge, which the
-  server answers with Home from any page): any same-origin answer will do,
-  and only that region is taken from it, never the answer's other regions,
-  synced controls or address. A refused acknowledgement shows its error
-  page whole, with its own explanation: that page draws the banner too, but
-  its banner says nothing about the refusal. Because the banner's region is
-  on every Admin page, any other in-place control that refreshes every
-  region (a Save, a filter, a view switch) also refreshes the banner from
-  its answer, so the banner shows what that answer's page shows. A report whose address has no
-  time zone loads the same address with this browser's zone added in place,
-  as it loads and again after any in-place refresh that brought a page
-  without one (a daily-table link followed before the zone was applied):
-  every other parameter and the address's own fragment are kept, focus
-  stays where it is and nothing is announced (the request is a link marked
-  `data-in-place-quiet`), and if it gets no answer the same address is
-  loaded the ordinary way, without a jump to a panel. Because the chart,
-  statistics and export panels are all regions, paging or sorting the daily
-  table refreshes all three from the same answer: an export format chosen
-  but not yet used, an open "Technical details" and the chart's inspected
-  date return to their defaults, as an ordinary load would leave them. A checkbox marked
-  `data-submit-on-change` submits its own `form[data-in-place]` as soon as it
-  changes, with no Apply button (the Admin portal requires script), and keeps
-  focus. Each page records the state it shows on the box. The box submits
-  again only when its own change got no answer of its own and the page
-  shows another state once nothing is in flight: it changed again while its
-  request ran, a newer request overtook that one, or a save held it back
-  (it then says "Still saving…" beside it too). It never resubmits after
-  its request fell back to a full load or got a page shown as returned
-  (no answer, a refusal, another page), and never sends a state that
-  failed again until the reader changes the box or its own request succeeds, so
-  a server that cannot answer gets one attempt and the fallback, not a
-  loop (Automation access's "Include ended sessions"). "Refresh current work" keeps
-  the reader's state filter, sort, rows per page and page; "Refresh list"
-  keeps sort and rows per page and returns to the first page. A form's
-  submit button belongs to its form even outside it (`form="…"`); a table's
-  sort heading or navigator inside a `form[data-in-place]` (a selection form
-  around its table) is still a table control. A POST form should carry a
-  `data-in-place-message` ("Saved.") for the live region; without one the
-  clicked button's text is announced.
-- **Request.** The browser fetches exactly the request the control would have
-  made, follows the server's Post/Redirect/Get redirect, and replaces every
-  region the fetched page shares with this one, plus the counts, summaries,
-  links and form state outside them that follow the view; views keep
-  rendering whole pages, so no partial-page endpoint exists. A link marked
-  `data-in-place-only` replaces only the region it names: the history
-  pages of an information item and a Ministry follow-up request sit inside
-  the item's panel, and paging them must not replace the Save follow-up form
-  above or discard notes typed but not yet saved; a save still replaces the
-  whole panel, history included. One request is
-  in flight at a time: a newer choice cancels an older read, but a POST that
-  saves a change is never cancelled, and other in-place controls and repeats
-  are ignored (the live region says "Still saving…") until it settles.
-- **Place, focus and announcement.** The reader keeps their scroll position;
-  focus returns to the control (or its fresh copy; when that is gone, the
-  link its `data-in-place-fallback` key names, so Next page on the last page
-  hands focus to Previous page; when that is gone too or disabled, the
-  region's first heading, else the region, or the page's own heading when
-  the region is now empty); the region
-  is marked busy while the request runs, and a polite live region says what
-  happened ("By day", "List refreshed." and the rows now shown). A view
-  choice replaces the address, and a followed redirect sets it to the
-  redirect's page, so reload, bookmarks and Back never re-send a POST and do
-  not step through choices.
-- **Errors and fallback.** A POST that got an answer is never sent again; a
-  saving POST is never re-sent at all; a read-only table POST with no answer
-  falls back to the ordinary submission. A refused POST (an error answer, or
-  a page with an error summary, such as a form re-rendered with its errors
-  and the values the reader sent) that carries the control's region and was
-  not redirected to another page is swapped in like a success (#562): every
-  shared region and the data outside them that follows the view are
-  replaced, and the address is unchanged. The error summary, which the base
-  template draws above the page content, moves to the top of the region when
-  it is drawn outside the region; this page's own older summaries outside
-  the regions are removed then (a successful swap leaves them). The reader
-  keeps their place, focus moves to the summary (or to the control when
-  there is none), the fields it names are marked in error beside their
-  message as the fetched page draws them, and the live region reads the
-  summary's messages, or says
-  the server did not accept the change when there is no summary. Any other
-  refusal, and a POST's own answer that is not this page, is shown as the
-  whole page, as a native submission would show it. That page keeps the
-  window, so the old page is first told it is going away (a `pagehide` that
-  is not persisted: the pollers that listen for it stop, and a reply already
-  in flight can neither re-arm them nor act), and every timer id in the
-  window is cleared, so no old timer runs beside the new page's own. The
-  sweep relies on browsers numbering timers in sequence, as current engines
-  do. A saving POST that got no answer at all may have been saved, so an
-  alert at the top of its form says the server could not be reached and to
-  reload the page to check. A redirect to another page (elsewhere, or the
-  sign-in page) is followed by loading that page's address. A read (a GET)
-  that fails falls back to the ordinary load, except when the browser cut
-  it off because the reader is leaving the page: their own navigation goes
-  ahead. A save with no answer still shows its note then, since a download
-  link also starts leaving the page and the page stays.
-- **Real targets.** Every control is a real link or form with its `href`
-  or `action` and fragment, which the script requests; when an ordinary load
-  happens instead (a fallback above), the fragment, kept across a
-  fragment-less redirect, lands it on the region. The Admin portal
-  [requires JavaScript](#javascript-requirement), so in-place work builds and
-  tests no no-script fallback.
-- **Policy.** The mechanism runs under the strict content security policy:
-  first-party script and same-origin requests only; it changes attributes and
-  classes and creates elements with text content, never inline script or
-  style, and never uses `eval`. Swapped content is enhanced
-  again as the page's own was (dates, selections, copy buttons, charts, and
-  a form's conditional fields and its
-  [complete-before-submit](#bootstrap-and-first-admin-wizard) gate), and a
-  `parishkit:swap` event on it lets any other script do the same. A page
-  that watches background work (`live-status-v1.js`) stops watching a
-  status region an in-place refresh replaced, and watches the fresh one
-  while it is still pending, so a Refresh or Dismiss that brings back work
-  in progress keeps updating by itself; there is always one watcher per
-  status region. A Refresh reads out the region's coarse status sentence
-  when it changed, as a poll does. Dismiss refreshes only an integration's
-  status line: if it brings back a new key change in progress (another
-  Administrator started one), the settings form and notes below it keep the
-  state the page was loaded with until the next load.
-- **In-place review (#532).** Parish settings and Campaign settings review,
-  apply and follow a change on the page itself, not on separate Review and
-  Change status pages. The settings form is a `form[data-in-place]` marked
-  `data-table-sync`: its answer fills the review region under it, while the
-  form keeps the reader's typing and every script bound to it and takes only
-  its hidden fields (the version it edits) from the answer. The review shows
-  what the review page showed (each changed setting with its current and
-  proposed value, and the change's notes) and Apply, which posts the same
-  signed preview; its heading (`data-in-place-focus`) takes focus. Editing
-  the form after a review, or while its Review is in flight, withdraws the
-  review (`data-review-of`), so Apply never applies values other than those
-  shown: Apply is removed, the rest stays in place greyed out at no less
-  than its height (so nothing moves under the pointer), and its last line
-  says to review again. Confirmation answers with the
-  page again, naming the request (`?request=<id>#settings-review`), and the
-  region shows the change's live status, polled from Change status's passive
-  read (named with `in_place`, which only these two pages may be). Once the
-  change is applied, that read carries a hidden follow-up link marked
-  `data-in-place` and `data-in-place-quiet`, which the status script clicks,
-  so the page refreshes in place without moving focus and the form starts
-  from the applied version; reading a change's status this way never renews
-  idle time. A change that was not applied leaves the page alone. A Review
-  made while an earlier change is still being applied is checked against the
-  settings that change replaces, so once the earlier change applies, Apply
-  of the later one is refused when it runs (`stale_base`) and its status
-  says to start again from the current settings; nothing is changed. A
-  refused review (invalid values, nothing changed, a page changed elsewhere)
-  or a refused Apply (an out-of-date preview) is the page again with an
-  error summary in the review region, each field error linked to its field,
-  since the form itself is not replaced. A refusal keeps the form at the
-  version the reader's values came from (the one posted, or the one the
-  refused preview was reviewed at), never the current one, so a page whose
-  settings changed elsewhere is refused again until it is reloaded and can
-  never quietly propose undoing that change. For the same reason, Apply's
-  answer and the status refreshes after it draw the form at the version the
-  change was reviewed at until the change is applied, and then at the
-  version the change made; a full load of that address (a reload) draws the
-  current settings at the current version. A Review the server redirects to
-  another page (Campaign settings' dates-only change) loads it without this
-  page's region fragment. The step indicator is a region too, so it follows
-  Make changes, Review and Apply. The signed preview, optimistic
-  concurrency, capability and session rechecks, the durable request and its
-  audit are unchanged; a refusal that needs a fresh sign-in still shows its
-  page whole. Other editors keep their review and Change status pages.
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#in-place-controls),
+which have precedence for it.
 
 ### Page help
 
-Admin pages put the page's data first and keep explanation one deliberate
-click away, without removing any of it. A page leads with its heading, its own
-data line (such as the campaign name or counts), safety notices (such as
-Testing mode) and then its data or form; at most a one-line hint that prevents
-a likely mistake stays visible above the data. A caution that prevents a
-likely mistake (what an action cannot undo or stop, or a lasting consequence
-it has) is never only in the panel: it stays visible beside its control as a
-one-line hint or a notice. The page's introduction and longer explanation of
-how it behaves (how a credential is kept, how mail schedules work, the
-placeholder reference) sit in an "About this page" panel beside the heading: a
-native disclosure that starts closed, and that each browser remembers open,
-per page type, once an Admin opens it. Every page with a panel has exactly
-one, placed directly after its heading, so its control always sits on the
-heading's line, open or closed, and stays in place when it is toggled, even
-when the open help makes the page scroll (the theme always reserves the
-scrollbar's space, so a centred page never moves sideways); opened, the help
-appears on its own full-width line below. Only that open choice is
-stored in the browser, and closing the panel removes it; with nothing stored
-the panel starts closed and opens with a click or the keyboard. Help under a field is a short hint; longer
-field explanations belong in the About panel or a click-to-open field tip,
-never in hover-only tooltips, which touch and keyboard users cannot reach.
-
-Admin pages are laid out for a laptop screen: compact headings, panels,
-notices and table cells, and short filter forms in one row. The target is that,
-with help closed, a page's first data starts inside the browser window of a
-typical laptop (a 1366×768 screen, about 650 pixels of page after the
-browser's own toolbars). Pages with short filters meet it now; report pages
-with long filter and export forms meet it once those forms are collapsed by
-default (a #227 follow-up). The Family portal keeps its own spacing.
-
-Field help longer than about one line opens from an "i" button beside the
-field's label (the shared toggletip). Only a one-line hint stays visible under
-the label, for fields whose format or rule is needed every time (an example
-address, "one per line", a key's paste rule), and a warning that blocks the
-field, such as having no emails to schedule, always stays visible. The field
-remains described by its full help, so screen readers announce it without
-opening the tip. Checkbox help stays beside the box.
-
-Internal identifiers and bookkeeping fields that matter only for
-troubleshooting (delivery, refusal and test references, a retained
-configuration version, an export's requester reference and data-load
-numbers, and the log cross-link identifiers) sit in a "Technical details"
-disclosure, closed by default, instead of in the page's main text. Nothing
-is removed, and exports keep every field. An empty list says what to do
-next rather than only that it is empty.
-
-Template tests guard these rules: one fails when a paragraph shown without a
-click holds a message longer than about two sentences (50 words), one fails
-when more than about one line (15 words) of help sentences shows between a
-page's heading and its data outside the About panel, notices and links, one
-fails unless each page's single About panel directly follows its heading, and
-one fails when a label for an internal identifier or worker field (such as a
-heartbeat, lease, data-load number or request ID) appears outside a Technical
-details disclosure. The long-paragraph, introduction and internal-field
-checks each keep a short, reviewed list of exceptions, and the long-paragraph
-and introduction exceptions must shrink as their pages are converted. A
-browser test checks on every component fixture with an About panel that the
-closed control is drawn on the heading's line, to its right.
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#page-help),
+which have precedence for it.
 
 ### Time entry
 
-Every Admin field that takes a time of day accepts it in any common form,
-shows how it read the entry, and stores the same canonical value as before
-([#631](https://github.com/epiphany40223/parishkit/issues/631)). Admins type
-`2:00`, `2am`, `0200` or `2:30 PM`, and a native time control's typed entry
-differs per browser and locale (Linux WebKit ignores typing, #605), so these
-fields are plain text boxes. The cost is the phone's own time picker, which a
-text box does not offer; typing a short form such as `9p` is as quick.
-
-**What is read.** Case is ignored, and so is white space around the entry
-(the same set of white-space characters on the server and in the page).
-
-- 24-hour, with a colon, `.` or `h` between hour and minutes: `02:00`,
-  `2:00`, `14.30`, `14h30`. Seconds are accepted only in the colon form
-  (`hh:mm:ss`) and only when they are `00`, since these fields are to the
-  minute.
-- A bare 1–2 digit number is an hour (`7` is 07:00); a bare 3–4 digit number
-  is 24-hour `hmm`/`hhmm` (`830` is 08:30, `1430` is 14:30).
-- Any of those, without seconds, followed by `am`/`pm`, `a`/`p` or
-  `a.m.`/`p.m.`, with or without a space: `2pm`, `2:30 PM`, `2p`,
-  `11 a.m.`, `830pm`. The hour is then 1–12; `12 am` is 00:00 and `12 pm` is
-  12:00.
-- `noon` and `midnight`.
-
-Refused, with a plain message at the field: an hour above 23 (`24:00`), a
-minute above 59 (`7:60`), an hour outside 1–12 with AM or PM (`13pm`,
-`0am`), seconds other than `00`, and anything else, including digits from
-other scripts. Nothing is guessed: a bare `7` is 07:00, never 7 PM, and the
-reading shows both clocks so the Admin can see which. One exception keeps
-saved work saving: a mail schedule saved before this change with seconds in
-its time keeps that time when it is posted back unchanged.
-
-**On the page** (`ui-v1.js`, fields marked `data-time-entry`):
-
-- A readable entry's reading shows under the field at once, as the Admin
-  types, on both clocks: "Reads as 07:00 (7:00 AM)".
-- An entry that cannot be read shows its refusal there once typing pauses
-  (about half a second) or focus leaves, so a half-typed `2:` is not flashed
-  red; the field is marked invalid only once the refusal shows. Save is
-  unavailable at once, and the hint that explains it (below) appears with
-  the refusal. The refusal clears as soon as the entry reads. A server error
-  under the field is removed on the first edit, and the live check then
-  speaks for the field.
-- A visually hidden live region beside the field announces its reading or
-  refusal, only for that field's own typing (once typing pauses) or as focus
-  leaves it, and only when the message changed. Loading the page, the page
-  being shown again, and another control's change (a mail type, the refresh
-  frequency) update the line silently. The reading line keeps one line's
-  height while empty, so a first reading does not move the controls below
-  it.
-- When focus leaves a readable entry it is rewritten in the canonical form
-  (`2pm` becomes `14:00`).
-- While a shown entry cannot be read the form's submit buttons are
-  unavailable, with a one-line hint below them ("Fix the time that can't be
-  read to continue."), which the buttons name while it shows. The hint never
-  shares the buttons' line, so their labels do not wrap. A field hidden by
-  another choice (a mail type that takes no time, a refresh frequency without
-  set times) does not hold Save, and a `formnovalidate` button stays usable.
-- A list field (the ParishSoft refresh times) reads each entry. Entries are
-  separated by commas, semicolons or spaces, and by new lines in a value
-  posted without the page (a one-line text box drops line breaks from pasted
-  text). A suffix standing alone after a space (`2 pm`) belongs to the entry
-  before it, but not across a comma or semicolon (`2, pm` is refused). A time
-  listed twice is reported in the reading and saved once.
-- A list field whose blank stands for a value says so: a blank entry, or
-  one of only separators such as `,`, reads "Blank reads as 02:00 (2:00 AM)"
-  and saves that value. A blank single time has no reading; whether it is
-  required is the form's rule.
-
-The Admin portal [requires JavaScript](#javascript-requirement), so there is
-no no-script fallback. The server stays the authority: one parser
-(`parishkit.stewardship.time_entry`, through the form fields
-`FlexibleTimeField` and `FlexibleTimeListField`) reads every post and every
-`pk-stewardship admin` command that binds the same forms, such as
-[`schedule preview`](../admin-automation/spec.md#schedules-and-configuration).
-The page script applies the same rules, and one shared table of cases
-(`tests/stewardship/fixtures/time_entry_cases.json`) runs against both, so
-the two cannot drift.
-
-**Time zones.** The fields read wall-clock times; each keeps its page's zone
-rule under the [global presentation rules](../spec.md#global-presentation-rules).
-New and Edit scheduled email take send times in the browser's zone (see [New
-and Edit scheduled email](#new-and-edit-scheduled-email)); the first-campaign
-step and the date-change review still take them in the campaign's time zone
-until their #558 slice. The ParishSoft refresh times
-are in the parish's time zone, the recorded exception to the browser-local
-rule that those rules describe (see also
-[ParishSoft refresh schedule settings](#parishsoft-refresh-schedule-settings)).
-
-**Fields.**
-
-| Page | Field | Entry |
-| --- | --- | --- |
-| ParishSoft settings | At these times (full refresh) | List, parish time |
-| New and Edit scheduled email | Send time | One time, browser time |
-| The date-change review; first-campaign Mail schedules | Send time | One time, campaign time |
-| Ministry follow-up | Contact attempt time | One time, browser time zone |
-| Logs, reports | Date filters | Dates only, no time of day |
-
-The Ministry follow-up contact attempt moved to this entry after its in-place
-save work ([#592](https://github.com/epiphany40223/parishkit/pull/592))
-merged ([#398](https://github.com/epiphany40223/parishkit/issues/398)); its
-date stays a date control, and its not-in-the-future check reads the typed
-time as the server does. The planned
-[refresh schedule editor](#parishsoft-refresh-schedule-settings)
-([#632](https://github.com/epiphany40223/parishkit/issues/632)) replaces the
-"At these times" list and uses this entry for its rule and exception times.
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#time-entry),
+which have precedence for it.
 
 ### Preview lifetimes
 
@@ -1775,41 +1198,13 @@ the generic "Check this value." refusal
 
 ### Button labels
 
-A button's label never breaks inside a word, and a one-word label never
-wraps at all ([#614](https://github.com/epiphany40223/parishkit/issues/614)).
-This covers buttons, links styled as buttons, submit inputs and sortable
-column headings, whether they are POST buttons or GET links, so both kinds of
-heading wrap alike. A longer label may wrap between words, so it never makes
-a phone-width page scroll sideways; a table cell grows to fit its buttons,
-and a wide table scrolls inside its own region. A browser test checks the
-buttons and headings on representative pages at 320 px and 1280 px.
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#button-labels),
+which have precedence for it.
 
 ### Shared visual style
 
-The portal and the emails share one visual style
-([#732](https://github.com/epiphany40223/parishkit/issues/732)):
-
-- **Design tokens:** `web/design_tokens.py` is the one source of the
-  colours, corner radii, fonts and button shape. The portal stylesheet
-  declares them as CSS custom properties, and a unit test fails if the two
-  disagree, including any `var()` fallback in another stylesheet. Email
-  components read the same module and inline the values, because mail
-  programs cannot load the stylesheet.
-- **Buttons:** templates draw every button, and every link styled as one,
-  with the `{% button %}` tag. Its variants are primary (the default),
-  secondary, large and link. It renders the stylesheet's classes and keeps
-  each attribute in the order the template gives it, so in-place controls
-  keep their `data-` attributes. A guard test counts raw button markup in
-  every template against a list of reviewed exceptions that may only
-  shrink.
-- **Email buttons:** `email_button()` renders the same primary and
-  secondary buttons for email: a one-cell table with inline styles from the
-  tokens, `bgcolor`, and Outlook padding. The label is real text, so the
-  button reads with images off and in an inverted dark mode. It links only
-  to absolute http(s) addresses.
-
-Notices, cards and headings, and each email's move to the shared
-components, follow in later slices of #732.
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#shared-visual-style),
+which have precedence for it.
 
 ## Background indicators
 
@@ -1890,7 +1285,7 @@ Saved while only PostgreSQL or only YAML has changed. The dedicated installer
 and fail-closed mismatch recovery are defined by the
 [configuration architecture](../architecture/spec.md#configuration-and-secrets).
 Parish settings shows its review, Apply and that status
-[in place](#in-place-controls) under its form.
+[in place](../ui-conventions/spec.md#in-place-controls) under its form.
 
 Outgoing email settings (the setup mail step and the post-setup outgoing
 email integration) include an optional From name: a single line of at most 100
@@ -2134,7 +1529,7 @@ exceptions, then a live preview); the
 [refresh schedule plan](../../../plans/stewardship/refresh-schedule.md#research-notes)
 records the products compared. It is written for a mid-level IT admin: plain
 words, no cron text, and every refused or skipped time explained where it
-appears. It follows the [in-place controls](#in-place-controls) and
+appears. It follows the [in-place controls](../ui-conventions/spec.md#in-place-controls) and
 conditional-field rules: nothing on the page reloads it.
 
 Status: the scheduler side is built (steps 2a and 2b of the
@@ -2177,7 +1572,7 @@ each preview time in the browser's zone as well. See decision 18 in the
   the Family email windows by hand: the automatic exclusions do that.
 - **Rule rows**, each "[Full | Quick] every [interval] from [time] to [time]"
   or "[Full | Quick] at [time]", with **Add a rule** and **Remove**. Time
-  fields use the shared [time entry](#time-entry), with its live reading
+  fields use the shared [time entry](../ui-conventions/spec.md#time-entry), with its live reading
   beside the field, and accept quarter-hour times; a kept off-quarter-hour full time is shown as a single time,
   labeled as kept from the earlier schedule.
 - **Skip these times**: single times or from–to ranges.
@@ -2228,7 +1623,7 @@ row.
 
 The rules are applied in one place, the server. The page script only adds
 and removes rows, fills presets and reads times through the shared
-[time entry](#time-entry); it has no copy of the rules, coverage or spacing.
+[time entry](../ui-conventions/spec.md#time-entry); it has no copy of the rules, coverage or spacing.
 
 - **Checking.** Once typing pauses (about half a second, as the time entry
   waits), or a row, preset or switch changes, the page posts the editor's
@@ -2237,7 +1632,7 @@ and removes rows, fills presets and reads times through the shared
   (`refresh_rules.check_schedule`, with the kept off-quarter-hour times) and
   the preview and cost functions, and answers with the problems, the
   preview and the summary, which the page puts in place through the shared
-  [in-place controls](#in-place-controls). The check saves nothing, makes no
+  [in-place controls](../ui-conventions/spec.md#in-place-controls). The check saves nothing, makes no
   configuration request and writes no audit entry; it needs the same Admin
   configuration permission as the page and is never cached. Only the answer
   to the latest check is shown; an older one that arrives late is dropped.
@@ -2333,7 +1728,7 @@ The command line offers the same schedule, validation and preview (see the
 Admins can mark a Ministry inactive or reactivate it through an Admin web
 screen. The screen lists the current Ministry catalog with name, DUID, local
 active/inactive state and campaign inclusion, and supports searching and
-filtering by name, DUID and status, in a shared [Admin table](#admin-tables).
+filtering by name, DUID and status, in a shared [Admin table](../ui-conventions/spec.md#admin-tables).
 Admins select one or more Ministries and activate or inactivate them together.
 Saves use the ordinary versioned YAML configuration-request workflow, with
 optimistic concurrency, an impact preview and audit; one bulk change is one
@@ -2553,7 +1948,7 @@ The server checks all conditions in the draft-creation transaction; stale or
 direct requests cannot bypass them.
 
 Campaign settings reviews and applies its changes
-[in place](#in-place-controls) under its form, as Parish settings does.
+[in place](../ui-conventions/spec.md#in-place-controls) under its form, as Parish settings does.
 Its Review changes button, like Save and continue on the wizard's First
 campaign step, stays unavailable, with the hint described under
 [Bootstrap and first-Admin wizard](#bootstrap-and-first-admin-wizard),
@@ -2635,11 +2030,11 @@ table, opens the [New scheduled email page](#new-and-edit-scheduled-email).
 
 The **Scheduled emails** table
 ([#448](https://github.com/epiphany40223/parishkit/issues/448)) is an
-[action table](#row-actions-and-confirmation) with one row per saved schedule.
+[action table](../ui-conventions/spec.md#row-actions-and-confirmation) with one row per saved schedule.
 It opens in sending order: dated sends by date and time (the Initial invitation
 first at a tie), then the digests, with the saved ID as the final tie-break, so
 the order never changes between loads. Its **When** heading sorts it in place
-(sending order, or the reverse), as any [Admin table](#admin-tables) heading
+(sending order, or the reverse), as any [Admin table](../ui-conventions/spec.md#admin-tables) heading
 does. Reminders are numbered in sending order, as [Family email
 sends](#family-email-sends) numbers them, whichever way the table is sorted. The
 columns are a selection box, the schedule, when it sends (a browser-local time,
@@ -3410,7 +2805,7 @@ types only for Release or Cancel, which need at least one ticked. With no
 choice left, Preview is shown unavailable with the reason. Whether reports are
 still being prepared is checked only by the server, when the preview is built.
 Preview otherwise follows the
-[complete-before-submit rule](#bootstrap-and-first-admin-wizard).
+[complete-before-submit rule](../ui-conventions/spec.md#prerequisite-gates).
 
 ### Family email progress
 
@@ -3731,7 +3126,7 @@ nothing. Its **Confirm** button posts a signed preview that binds every
 selected email's identity and version, a digest of the note and the
 Administrator, and expires after 15 minutes. The note itself is not in the
 preview: Confirm posts it again beside the preview, and it must match. Changing the form after previewing withdraws the
-preview, as an [in-place review](#in-place-controls) does. Confirming
+preview, as an [in-place review](../ui-conventions/spec.md#in-place-controls) does. Confirming
 resolves each email through the ordinary per-email resolution, one email per
 command and transaction, at its previewed version, so each keeps its own
 guard, resolution record and audit event, and a retry prepares the email
@@ -4097,7 +3492,7 @@ the granting actor alone does not clear the event for those other recipients.
 Delivery failure does not roll back or hide the grant: it follows durable
 operational retry and escalation, while the dashboard event remains visible.
 Acknowledgements and notification outcomes are audited. Each Acknowledge acts
-[in place](#in-place-controls) on Home: the event leaves the list without a
+[in place](../ui-conventions/spec.md#in-place-controls) on Home: the event leaves the list without a
 reload.
 
 ### ParishSoft Ministry leaders without a user
@@ -4205,7 +3600,7 @@ hint, until it is ticked (default, pending Administrator confirmation, #519);
 the server still refuses an unconfirmed clear.
 
 Save follow-up on an information item and on a Ministry follow-up request acts
-[in place](#in-place-controls) (#519): the request's panel, its form and its
+[in place](../ui-conventions/spec.md#in-place-controls) (#519): the request's panel, its form and its
 history are refreshed where the reader is, and "Follow-up saved." is
 announced.
 
@@ -4230,7 +3625,7 @@ actionable request awaiting completion. An item that isn't in the view leads
 to the view's first open item. The item page finds the next item while it
 renders, inside its own guarded read, and a help line beside the button says
 where it leads. After the last item, Save and next returns to the queue view
-(Administrator decision, 2026-10-04). It acts [in place](#in-place-controls):
+(Administrator decision, 2026-10-04). It acts [in place](../ui-conventions/spec.md#in-place-controls):
 the next item's panel replaces this one, the address becomes that item's, focus
 moves to its heading, and "Follow-up saved." is announced with the item's name.
 A refused or stale save stays on the item exactly as Save does. The Save gate
@@ -4277,7 +3672,7 @@ values kept, a summary naming the one problem, and that problem shown
 [at its fields](#bootstrap-and-first-admin-wizard): a missing or unsuitable
 outcome marks Outcome, Other without notes marks Notes, a contact attempt in
 the future, or one that reached the server without a usable time zone (see
-below), marks its Date and Time, a time the [time entry](#time-entry) rules
+below), marks its Date and Time, a time the [time entry](../ui-conventions/spec.md#time-entry) rules
 cannot read marks Time with that rule's message, and an incomplete one marks
 whichever of them is missing (both when the date is malformed). The view maps each refusal to
 its fields in one table. The contact fields keep the time-zone note in their
@@ -4429,7 +3824,7 @@ example Families of a refused change (PR 5) and the debug-off switch
   [debug logging banner](#navigation-and-home) and the critical-problems
   banner link this page too.
 - **Live and in place.** The page needs JavaScript, as every Admin page
-  does (see the [JavaScript requirement](#javascript-requirement)). It
+  does (see the [JavaScript requirement](../ui-conventions/spec.md#javascript-requirement)). It
   updates itself like the other
   [self-updating pages](#background-indicators): every 10 seconds, it reads
   a status fragment that records no audit row and does not extend the
@@ -4438,7 +3833,7 @@ example Families of a refused change (PR 5) and the debug-off switch
   (`system_health_status`) and each action's route are listed in the
   automation spec's [action inventory](../admin-automation/spec.md#operations). Each action's preview,
   confirmation and progress appear in place, through the shared
-  [in-place controls](#in-place-controls), so the page never reloads or
+  [in-place controls](../ui-conventions/spec.md#in-place-controls), so the page never reloads or
   moves the reader to the top.
 - **Plain words, help hidden.** Times are shown and entered in the browser's
   local time zone, without "UTC" labels. States use words ("Halted",
@@ -4446,7 +3841,7 @@ example Families of a refused change (PR 5) and the debug-off switch
   an incident kind, appear only under a closed "Technical details"
   disclosure. Each panel shows its state and its button. What each state
   means, and what a panel cannot see, is in the page's "About this page"
-  panel ([page help](#page-help)), hidden by default. The panels below say
+  panel ([page help](../ui-conventions/spec.md#page-help)), hidden by default. The panels below say
   which explanations go there.
 - **Cost.** A status read uses one read-only snapshot, takes no lock (in
   particular not the global work-order lock that sending takes), and reads
@@ -5271,7 +4666,7 @@ Only Admins access the combined log screen. It supports:
   private (the Show choices, type, Ministry, From and Through with their
   zone, rows per page and sort). The search text, identifiers (actor,
   correlation, campaign, subject) and the paging snapshot stay in POST
-  bodies, following the [Admin tables](#admin-tables) rule that private
+  bodies, following the [Admin tables](../ui-conventions/spec.md#admin-tables) rule that private
   filters keep POST state, because a web address is kept in the server's
   access log and the browser's history; a GET carrying one is refused
   without echoing it. The page draws "Link to these
@@ -5303,14 +4698,14 @@ Only Admins access the combined log screen. It supports:
   records) and, for task
   entries and views of one task's page, "Open task" to the background task
   page. Each filter travels in a POST body like the form's and applies
-  [in place](#in-place-controls): the filter form above then shows the
+  [in place](../ui-conventions/spec.md#in-place-controls): the filter form above then shows the
   filters applied ("Filter by identifier" opened), and focus returns to the
   same entry's button in the filtered list, or to the list when that entry
   is no longer in it. The raw
   identifiers themselves (correlation, actor, campaign, subject) are under a
   per-row "Technical details" disclosure, closed by default; the table uses
   the shared Admin table styling;
-- the shared [table navigator](#admin-tables) in POST mode. The first view
+- the shared [table navigator](../ui-conventions/spec.md#admin-tables) in POST mode. The first view
   records a snapshot instant, and every later page, size or sort change lists
   only entries created at or before it, so new entries never shift pages. An
   entry whose transaction was already running when the snapshot was taken
