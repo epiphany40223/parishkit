@@ -780,7 +780,12 @@ only from the web login, with `verified_at` inside the inserting transaction
 row with a non-empty subject and email. SQL cannot see the Google sign-in
 itself, and it does not check email or hosted-domain normalization.
 Authorization policy materialized from
-the active YAML version uses:
+the active YAML version uses the records below. Since migration 0042
+(#922), Ministry leaders and their Ministries come only from ParishSoft
+roles, as [Ministry leaders](#ministry-leaders) describes: a rule's
+Ministry-leader role and every `MinistryAssignment` are retained but grant
+nothing, and the chair-seed provenance, suspension and review described
+below no longer affect access.
 
 - `DomainRule`: normalized domain with Staff and/or Ministry-leader roles;
   Administrator is prohibited;
@@ -854,6 +859,42 @@ remain unchanged. Unrelated roles/rules are preserved. If the source
 Chairperson relationship returns before review, the seeded assignment and role
 reactivate and the task closes with audit. Permanently deleting the configured
 assignment/role requires an Admin-applied `ConfigurationChangeRequest`.
+
+### Ministry leaders
+
+A person leads a Ministry for the current campaign when an active Member
+holds one of the campaign's Ministry leader roles on that Ministry's current
+roster in the promoted ParishSoft data, and the person signs in with a valid
+email address on that Member's ParishSoft contact record (#922). The Ministry
+must be catalog-present, selected in the current campaign, which asks about
+Ministries, and not marked inactive in the applied
+[Ministry activity](#ministry-activity-policy). Role labels match trimmed and
+ASCII case-insensitive, otherwise exactly; addresses match
+case-insensitively, with no Gmail dot or plus folding, whatever the contact's
+publication flag says. An address that several leader Members list gets the
+union of their Ministries. No current campaign, or a campaign without
+Ministry stewardship, means no Ministry leaders. An exact-address login rule
+with no role still refuses the address, leadership included.
+
+The campaign's `ministry_leader_roles` value lists the role names: one to 50
+distinct trimmed names, none repeated in another case. A campaign without the
+value uses the default, `["Chairperson", "Staff"]`, which only SQL's
+`stewardship_ministry_leader_roles_v1` writes down; Python reads it there. The
+value stays editable while the campaign is live (the structural lock exempts
+it in Python and SQL).
+
+`stewardship_ministry_leaders_v1()` is the one definition of who leads what.
+It is a SECURITY DEFINER function no login may execute directly.
+`stewardship_ministry_leader_scope_v1(user)`, also a definer, returns one
+portal user's Ministries; database-grants lets the web, worker and download
+logins execute it. `stewardship_ministry_scope_v1`, the Admin session guard
+(#306) and Python's `current_principal()` read that scope, so Python never
+restates the rule and can never grant more than SQL. Administrator and Staff
+come only from login rules, as before; a Staff member who also leads a
+Ministry keeps Staff's access. Scope is recomputed on every request, so a full
+refresh that removes a role or an address takes effect on the next request; a
+leader left with no Ministry and no other role is refused. A read costs a few
+milliseconds with thousands of roster rows (the migration's measured case).
 
 ### Submission
 

@@ -31,6 +31,9 @@ from .test_user_views_postgresql import URL as PAGE
 from .test_user_views_postgresql import add_rules, row
 
 pytestmark = pytest.mark.django_db(transaction=True)
+# What every assignment review says since Ministry leaders come from
+# ParishSoft roles (#922).
+NOTICE = "Ministry assignments no longer grant anything"
 URL = "/admin/users/assignments"
 ACTIVITY = "/admin/parish/ministries/"
 
@@ -107,18 +110,16 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
         body = browser.get(PAGE).content.decode()
     offered = address_row(body, "leader@example.org")
     assert '<option value="4">Choir (4)</option>' in offered
-    # The effect is stated as the evaluator decides it: an exact leader rule
-    # takes effect at once, an Administrator needs no scope, and an address
-    # no rule names gets none until one does.
+    # Since #922 no assignment grants anything, whatever rule names the
+    # address, and the review says so.
     with web():
-        text = post(browser, proposal(store)).content.decode()
-        assert "exact-address rule granting Ministry leader" in text
-        admin = post(browser, proposal(store, identity="admin@example.org"))
-        assert (
-            "grants Administrator, who leads every Ministry" in admin.content.decode()
-        )
-        unruled = post(browser, proposal(store, identity="nobody@elsewhere.example"))
-        assert "No login rule names this address" in unruled.content.decode()
+        for identity in (
+            "leader@example.org",
+            "admin@example.org",
+            "nobody@elsewhere.example",
+        ):
+            text = post(browser, proposal(store, identity=identity)).content.decode()
+            assert NOTICE in text
     request = applied(store, browser, proposal(store))
     # The POST-only review is named, never linked; Return goes to users.
     with web():
@@ -130,11 +131,11 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
     )
     assert (assignment.ministry_duid, assignment.source) == (4, "manual")
     assert assignment.operation_id == request.pk
-    assert current_principal(store, account.pk).ministries == frozenset({4})
+    assert current_principal(store, account.pk).ministries == frozenset()
     with web():
         body = browser.get(PAGE).content.decode()
     listed = address_row(body, "leader@example.org")
-    assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
+    assert "Choir (Ministry DUID 4) (Administrator entry; suspended)" in listed
     # The assignment's own removal form, not the rule editor's removal button.
     assert "Review assignment removal" in listed
     with web():
@@ -152,7 +153,7 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
         assert bad.status_code == 400
         removal = post(browser, proposal(store, operation="remove")).content.decode()
         assert "assignment to Choir (Ministry DUID 4) will be removed" in removal
-        assert "Any scope this assignment gave ends" in removal
+        assert NOTICE in removal
     applied(store, browser, proposal(store, operation="remove"))
     assert not MinistryAssignment.objects.filter(
         configuration_id=store.active().version_id, email="leader@example.org"
@@ -180,22 +181,13 @@ def test_an_address_without_a_rule_is_assigned_and_told_how_it_takes_effect(
     browser, login = signed_in()
     assert login.status_code == 302
     with web():
-        # Each remaining wording: a domain rule that grants Ministry leader
-        # and an exact rule that does not.
-        leading = post(browser, proposal(store, identity="lead@other.example"))
-        assert (
-            "presents the other.example hosted-domain claim, whose rule grants"
-            in leading.content.decode()
-        )
-        clerk = post(browser, proposal(store, identity="clerk@example.org"))
-        assert (
-            "exact-address rule that does not grant Ministry leader"
-            in clerk.content.decode()
-        )
+        # Since #922 no assignment grants anything, whatever rule backs it.
+        for identity in ("lead@other.example", "clerk@example.org"):
+            text = post(browser, proposal(store, identity=identity)).content.decode()
+            assert NOTICE in text
         preview = post(browser, proposal(store, identity="helper@example.org"))
         assert preview.status_code == 200
-        text = preview.content.decode()
-        assert "hosted-domain rule does not grant Ministry leader" in text
+        assert NOTICE in preview.content.decode()
         signed = token(preview)
     # A promotion changes no digest but may change the catalog the addition
     # was judged against, so the preview is stale after one.
@@ -221,8 +213,8 @@ def test_an_address_without_a_rule_is_assigned_and_told_how_it_takes_effect(
     with web():
         body = browser.get(PAGE).content.decode()
     listed = row(body[body.index('id="domain-assignments"') :], "helper@example.org")
-    assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
-    assert "No login rule gives this person the Ministry leader role." in listed
+    assert "Choir (Ministry DUID 4) (Administrator entry; suspended)" in listed
+    assert NOTICE in listed
     assert "Review assignment removal" in listed
 
 
@@ -248,7 +240,7 @@ def test_an_assignment_to_a_deactivated_ministry_is_still_removed(auth_service, 
     with web():
         body = browser.get(PAGE).content.decode()
     listed = address_row(body, "leader@example.org")
-    assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
+    assert "Choir (Ministry DUID 4) (Administrator entry; suspended)" in listed
     assert listed.count("Review assignment removal") == 2
     assert '<option value="4">' not in listed
     with web():
@@ -285,7 +277,7 @@ def test_without_a_promoted_catalog_only_removals_are_possible(auth_service, goo
         body = browser.get(PAGE).content.decode()
         assert "Add a Ministry assignment" not in body
         listed = address_row(body, "leader@example.org")
-        assert "Ministry DUID 77 (Administrator entry)" in listed
+        assert "Ministry DUID 77 (Administrator entry; suspended)" in listed
         assert "Review assignment removal" in listed
         assert "Assign to Ministry" not in listed
         assert post(browser, proposal(store)).status_code == 503

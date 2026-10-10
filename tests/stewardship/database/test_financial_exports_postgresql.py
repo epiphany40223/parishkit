@@ -11,6 +11,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from openpyxl import load_workbook
 
+from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -37,7 +38,6 @@ from .test_export_views_postgresql import post, restricted_download_pool
 from .test_financial_report_postgresql import family_session, head, pledge, report
 from .test_financial_source_postgresql import financial_source
 from .test_information_followup_postgresql import search
-from .test_ministry_exports_postgresql import leader
 from .test_policy_postgresql import user
 from .test_report_workspace_postgresql import read
 from .test_response_http_postgresql import load_form
@@ -295,13 +295,13 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
         regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
         assert regenerated.financial_snapshot_id == first.financial_snapshot_id
         assert regenerated.parameters == first.parameters
-    # A Ministry leader never captures money: over HTTP, in the service or in SQL.
-    other, leader_id, *_ = leader(harness, google)
-    fields = query.form_values() | dict(
-        format="csv", browser_timezone="UTC", request_key=str(uuid4())
-    )
+    # The fixture's Choir Chairperson never captures money: this campaign does
+    # not ask about Ministries (#922), so the Chairperson cannot even sign in,
+    # and neither the service nor SQL accepts the portal user.
+    google[0].update(email="valid@example.org", sub="chairperson-subject")
+    assert signed_in()[1].status_code == 403
+    leader_id = PortalUser.objects.get(email="valid@example.org").pk
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert post(other, reverse("admin:financial_export"), fields).status_code == 403
         with pytest.raises(PermissionError):
             create_financial_export(
                 harness.service.store,

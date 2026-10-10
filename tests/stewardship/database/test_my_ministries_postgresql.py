@@ -54,13 +54,16 @@ def test_counts_are_exact_and_follow_the_leaders_scope(response_service):
     assert summary(harness, nobody) is None
 
 
-def test_a_removed_ministry_with_open_requests_stays_listed(response_service):
-    """Removing a Ministry never hides its open requests from its leader."""
+def test_a_removed_ministry_leaves_its_leaders_panel(response_service):
+    """A Ministry removed from the campaign is no longer its leaders' (#922):
+    they lead it only while the campaign asks about it, so the panel is gone.
+    Administrators and Staff keep its open requests."""
     harness = setup(response_service)
     requests()
-    assert applied(select(harness, [4]))  # Ministry 9 leaves the campaign.
     scoped = actor(harness, ("ministry_leader",), (9,))
-    assert counts(summary(harness, scoped)) == [(9, False, 1, 0)]
+    assert counts(summary(harness, scoped)) == [(9, True, 1, 0)]
+    assert applied(select(harness, [4]))  # Ministry 9 leaves the campaign.
+    assert summary(harness, scoped) is None
 
 
 def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, google):

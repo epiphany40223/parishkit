@@ -269,6 +269,11 @@ READ_GUARD_KILLS_FUNCTION = "stewardship_read_guard_kills_v1(uuid)"
 # The general worker's hourly maintenance prunes long-finished runs'
 # liveness events (#386, L2).
 TASK_EVENT_PRUNE_FUNCTION = "stewardship_task_event_prune_v1(integer, integer, integer)"
+# One portal user's Ministry scope from ParishSoft roster roles (#922): every
+# login that evaluates a principal or a Ministry scope (web, the worker's
+# export and retry checks, and a download's fresh authorization) learns only
+# the scope, never the Member contact data that decides it.
+LEADER_SCOPE_FUNCTION = "stewardship_ministry_leader_scope_v1(uuid)"
 
 
 def runtime_functions(role, *, target=None):
@@ -280,7 +285,9 @@ def runtime_functions(role, *, target=None):
     the general worker purges the Django sessions of ended Admin sessions,
     counts an export's read-guard stops and prunes old task events.
     Web and the parishsoft, google_workspace and slack credential installers
-    check a secret request's automation sign-in instant (ADM-11 PR 5).
+    check a secret request's automation sign-in instant (ADM-11 PR 5). Web,
+    the general worker and the download login read a user's role-derived
+    Ministry scope (#922).
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -293,13 +300,16 @@ def runtime_functions(role, *, target=None):
                 FAMILY_LOGIN_FUNCTION,
                 DAILY_SENDS_FUNCTION,
                 AUTOMATION_FRESH_FUNCTION,
+                LEADER_SCOPE_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {MINISTRY_CATALOG_FUNCTION},
             ServiceRole.WORKER: {
                 SESSION_PURGE_FUNCTION,
                 READ_GUARD_KILLS_FUNCTION,
                 TASK_EVENT_PRUNE_FUNCTION,
+                LEADER_SCOPE_FUNCTION,
             },
+            "download": {LEADER_SCOPE_FUNCTION},
         }.get(role, ())
     )
 
@@ -742,7 +752,7 @@ def admit_download_database(configuration, database):
     allowed = {table: set(grants) for table, grants in tables.items()}
     for table, grants in columns.items():
         allowed.setdefault(table, set()).update(grants)
-    admit_grants(allowed, database=database)
+    admit_grants(allowed, functions=runtime_functions("download"), database=database)
     admit_columns(database, tables, columns)
     budget = configuration.runtime_budget
     with database.cursor() as cursor:

@@ -9,8 +9,9 @@ default is the current pointer when authorized/reportable, otherwise the most
 recent authorized retained campaign. Exports and pinned links persist the UUID,
 so creating a successor cannot silently change a historical report. Admin
 inherits every report permission. Staff sees all reports below except logs;
-Ministry leaders see only Ministry reports and campaigns/rows for assigned
-Ministries.
+Ministry leaders see only Ministry reports and campaigns/rows for the
+Ministries they lead (see
+[Ministry leaders](../data/spec.md#ministry-leaders)).
 
 The campaign selector, the campaign UUID in report URLs and the default to the
 most recent retained campaign are superseded for the Admin portal by the
@@ -906,16 +907,18 @@ never includes the opaque email-link token.
 
 ## Ministry change summary
 
-**Access:** Admin/Staff for all selected campaign Ministries; leaders for
-assigned campaign Ministries only.
+**Access:** Admin/Staff for all selected campaign Ministries; leaders for the
+campaign Ministries they lead in ParishSoft only.
 
 The database enforces this scope, not only the application. The summary, its
 lists and the
 [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) queue read
 through `stewardship_ministry_report_v2` and
 `stewardship_ministry_followup_v2` (migration 0040). These take the signed-in
-user and derive the scope from that user's current roles and assignments with
-`stewardship_ministry_scope_v1`, as export captures do. A user with no current
+user and derive the scope from that user's current roles and the Ministries
+they lead in ParishSoft with `stewardship_ministry_scope_v1`, as export
+captures do (since migration 0042, #922, the led Ministries come only from
+ParishSoft roles, not from assignments). A user with no current
 scope reads nothing. The application's own view of the user's roles and
 Ministries is a pre-check and a cross-check. If the database's scope is wider,
 the page is refused. If it is narrower, the narrower scope applies
@@ -948,7 +951,7 @@ Follow-up has no assignee, so neither list nor its exports show one; see
 
 Leader phone/email columns honor ParishSoft publish flags and show "Not
 published" rather than leaking a value. Admin/Staff may see operational source
-contact. Mailing address/demographics are visible to assigned leaders as
+contact. Mailing address/demographics are visible to a Ministry's leaders as
 explicitly authorized for this workflow. Birth date itself is not shown when
 age suffices.
 

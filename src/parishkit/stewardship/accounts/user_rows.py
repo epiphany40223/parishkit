@@ -1,9 +1,12 @@
 """Read-only review rows for the applied login rules and Ministry assignments.
 
 Pure shaping over the applied canonical policy records. It decides nothing:
-every role and Ministry scope shown comes from the one policy evaluator, given
-the hosted-domain claim a recorded Google identity actually presented, so this
-page never reasons from an email suffix the way a sign-in itself refuses to.
+every role shown comes from the one policy evaluator, given the hosted-domain
+claim a recorded Google identity actually presented, so this page never
+reasons from an email suffix the way a sign-in itself refuses to. Ministry
+leaders come from their ParishSoft Ministry roles (#922), not from these
+records, so a rule's Ministry leader role and every Ministry assignment shown
+here grant nothing; the rows say so.
 
 An identity here is a dict with `email`, `hosted_domain`, `disabled` and
 `last_login`. Google's stable subject owns identity, so one address can have
@@ -14,13 +17,19 @@ Google attempt that policy then denied is not a sign-in.
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import ngettext_lazy
 
-from .policy import assignment_in_force, resolve_roles
+from .policy import resolve_roles
 
 ROLE_LABELS = {
     "administrator": _("Administrator"),
     "staff": _("Staff"),
     "ministry_leader": _("Ministry leader"),
 }
+# What a rule's Ministry leader role or a Ministry assignment does now (#922).
+RETIRED_LEADER = _(
+    "Ministry leader roles on sign-in rules and Ministry assignments no longer "
+    "grant anything: Ministry leaders now come from their ParishSoft Ministry "
+    "roles."
+)
 # Neutral nouns: the same origin names a rule's creation, a role grant and an
 # assignment's source, and a seeded rule was created by reconciling the parish
 # source, not by the Chairperson it names.
@@ -83,13 +92,6 @@ class AppliedPolicy:
             ):
                 self.authorized.setdefault(domain, []).append(identity)
 
-    def leads(self, email, identity):
-        """Whether this identity would sign in as a leader with scope in force."""
-        if identity["disabled"]:
-            return False
-        roles, ministries = self.resolve(email, identity["hosted_domain"])
-        return "ministry_leader" in roles and bool(ministries)
-
     def relevant(self, email):
         """Only the records the evaluator could use for this one address."""
         rule = self.addresses.get(email)
@@ -102,12 +104,10 @@ class AppliedPolicy:
 
     def resolve(self, email, hosted_domain):
         """What the real evaluator gives this address with this hosted claim."""
-        return resolve_roles(
-            email, hosted_domain, self.relevant(email), self.active_seeded
-        )
+        return resolve_roles(email, hosted_domain, self.relevant(email))
 
     def held(self, email):
-        """This address's assignments, and whether each is currently in force.
+        """This address's assignments; none is in force any more (#922).
 
         `manual` says whether the assignment is the Administrator's own entry,
         the only kind the assignment editor removes; a seed is decided by the
@@ -122,7 +122,7 @@ class AppliedPolicy:
                     ),
                     "source": ORIGIN_LABELS[record["values"]["source"]],
                     "manual": record["values"]["source"] == "manual",
-                    "active": assignment_in_force(record, self.active_seeded),
+                    "active": False,
                 }
                 for record in self.assignments.get(email, [])
             ),
@@ -206,33 +206,10 @@ def address_rows(policy):
         granted, ministries = policy.resolve(email, None)
         held = policy.held(email)
         warnings = []
-        if "ministry_leader" in values["roles"] and "ministry_leader" not in granted:
-            warnings.append(
-                _(
-                    "The Ministry leader role is suspended: no Chairperson "
-                    "assignment is currently confirmed by the parish source."
-                )
-            )
-        elif (
-            "ministry_leader" in granted
-            and not ministries
-            # An Administrator is a leader of everything and needs no assignment.
-            and "administrator" not in granted
+        if held or (
+            "ministry_leader" in values["roles"] and "administrator" not in granted
         ):
-            warnings.append(_("Ministry leader with no active Ministry assignment."))
-        # Only when the role is not configured at all: for a suspended seeded
-        # role the remedy is the parish source, not granting a role it has.
-        if (
-            held
-            and "ministry_leader" not in values["roles"]
-            and ("administrator" not in granted)
-        ):
-            warnings.append(
-                _(
-                    "Ministry assignments have no effect without the Ministry "
-                    "leader role."
-                )
-            )
+            warnings.append(RETIRED_LEADER)
         if email.rsplit("@", 1)[1] in policy.domains:
             warnings.append(
                 _("This exact address replaces its domain rule for this person.")
@@ -281,34 +258,9 @@ def domain_assignment_rows(policy):
     rows = []
     for email in sorted(set(policy.assignments) - set(policy.addresses)):
         known = policy.identities.get(email, [])
-        # In effect only when a usable identity receives the role *and* scope:
-        # the role alone, with every assignment suspended, leads nothing.
-        leading = any(policy.leads(email, item) for item in known)
-        domain = email.rsplit("@", 1)[1]
-        rule = policy.domains.get(domain)
-        warnings = []
-        if not (rule and "ministry_leader" in rule["values"]["roles"]):
-            # The root cause, stated whether or not anyone has signed in.
-            warnings.append(
-                _("No login rule gives this person the Ministry leader role.")
-            )
-        elif not known:
-            warnings.append(
-                _(
-                    "Not seen yet. These assignments take effect only if this "
-                    "person's Google account presents the %(domain)s "
-                    "hosted-domain claim."
-                )
-                % {"domain": domain}
-            )
-        elif not leading:
-            warnings.append(
-                _(
-                    "No usable Google identity recorded for this address "
-                    "receives the Ministry leader role with an assignment in "
-                    "force, so these assignments have no effect."
-                )
-            )
+        # No assignment grants scope any more (#922), so none of these leads.
+        leading = False
+        warnings = [RETIRED_LEADER]
         warnings.extend(policy.disabled_warning(email))
         rows.append(
             {

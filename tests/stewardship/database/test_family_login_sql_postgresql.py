@@ -167,12 +167,14 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
     """Startup admission demands web's EXECUTE and refuses any other definer."""
     functions = runtime_functions(ServiceRole.WEB)
     # The worker's definer routines are the automation maintenance task's
-    # session purge (ADM-11) and the export recovery's read-guard count
-    # (#386); it never holds the Family login function.
+    # session purge (ADM-11), the export recovery's read-guard count (#386)
+    # and a principal's role-derived Ministry scope (#922); it never holds
+    # the Family login function.
     assert runtime_functions(ServiceRole.WORKER) == {
         "stewardship_admin_session_purge_v1(uuid[])",
         "stewardship_read_guard_kills_v1(uuid)",
         "stewardship_task_event_prune_v1(integer, integer, integer)",
+        "stewardship_ministry_leader_scope_v1(uuid)",
     }
     tables, columns = runtime_grants(ServiceRole.WEB)
     allowed = {table: set(grants) for table, grants in tables.items()}

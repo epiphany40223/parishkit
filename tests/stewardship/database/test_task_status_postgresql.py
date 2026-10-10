@@ -16,10 +16,9 @@ from parishkit.stewardship.jobs import views
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.phases import TaskPhase
 
-from ..policy_factory import address
 from .activation_builders import activation_window, errors
 from .auth_builders import signed_in
-from .campaign_builders import change
+from .leader_builders import grant_role
 from .test_background_grants_postgresql import task_login
 from .test_taskrun_postgresql import act, new
 
@@ -37,16 +36,7 @@ def test_only_current_admin_sees_operational_tasks(
     """Owning a report/export capability does not expose refresh or other tasks."""
     store = auth_service.store
     if role != "administrator":
-        row = address("reader@example.org", roles=(role,))
-        assert (
-            change(
-                store,
-                store.active(),
-                store.active().version_id,
-                [{"operation": "add", "section": "login_rules", **row}],
-            ).state
-            == "applied"
-        )
+        grant_role(store, "reader@example.org", role)
         google[0]["email"] = "reader@example.org"
     task = new()
     browser, signed = signed_in()
@@ -413,16 +403,7 @@ def test_polling_task_status_fragment_is_passive_and_unaudited(auth_service, goo
 def test_task_status_fragment_is_administrator_only(auth_service, google, role):
     """The passive fragment keeps the task page's Administrator-only access."""
     store = auth_service.store
-    row = address("reader@example.org", roles=(role,))
-    assert (
-        change(
-            store,
-            store.active(),
-            store.active().version_id,
-            [{"operation": "add", "section": "login_rules", **row}],
-        ).state
-        == "applied"
-    )
+    grant_role(store, "reader@example.org", role)
     google[0]["email"] = "reader@example.org"
     task = new()
     browser, signed = signed_in()

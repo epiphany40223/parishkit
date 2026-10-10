@@ -119,6 +119,13 @@ def isolated_roles():
                         "GRANT SELECT, INSERT ON stewardship_secret_checkpoint "
                         f'TO "{role}"'
                     )
+                if role in {"pk_stewardship_web", "pk_stewardship_worker"}:
+                    # As database-grants does: a principal's role-derived
+                    # Ministry scope (#922).
+                    cursor.execute(
+                        "GRANT EXECUTE ON FUNCTION public."
+                        f'stewardship_ministry_leader_scope_v1(uuid) TO "{role}"'
+                    )
                 if role == "pk_stewardship_web":
                     cursor.execute(
                         "GRANT SELECT, INSERT ON stewardship_provider_context "

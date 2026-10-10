@@ -21,9 +21,10 @@ from parishkit.stewardship.campaigns.production_models import (
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.web.admin_routes import current_campaign
 
-from ..policy_factory import address, assignment
+from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change
+from .leader_builders import grant_role
 from .test_clone_views_postgresql import setup
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -551,18 +552,8 @@ def test_reports_root_takes_a_ministry_leader_to_ministry_requests(
     """/admin/reports/ opens Ministry requests for a viewer without Participation."""
     store = auth_service.store
     _current(store)
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {"operation": "add", "section": "login_rules", **record}
-            for record in (
-                address("leader@example.org", roles=("ministry_leader",)),
-                assignment("leader@example.org", ministry=9),
-            )
-        ],
-    )
+    # A Ministry leader leads through a ParishSoft role (#922).
+    grant_role(store, "leader@example.org", "ministry_leader")
     google[0]["email"] = "leader@example.org"
     browser, _ = signed_in()
     response = browser.get(reverse("admin:reports"))
