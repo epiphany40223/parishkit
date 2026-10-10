@@ -620,6 +620,15 @@ def test_the_command_line_cancels_a_stuck_end_change(admin, google, monkeypatch)
         AuditEvent.objects.filter(event_type="admin_cmd_config_request_cancel").count()
         == 1
     )
+    # Another reason, while the first is still being restored, is refused
+    # plainly: the journal is immutable, and it is not an internal error.
+    code, other = one(admin, *argv, "--reason", "Another reason", secret=secret)
+    assert code == 1 and other["error"]["code"] == "stale_version", other
+    assert journal_reason(request_id) == reason
+    assert (
+        AuditEvent.objects.filter(event_type="admin_cmd_config_request_cancel").count()
+        == 1
+    )
     # The installer's next pass ends it first, though the outage persists.
     settled = drain(store)
     status = settled[request_id]
@@ -632,6 +641,188 @@ def test_the_command_line_cancels_a_stuck_end_change(admin, google, monkeypatch)
     # A settled change can no longer be cancelled.
     code, late = one(admin, *argv, "--reason", "Another reason", secret=secret)
     assert code == 1 and late["error"]["code"] == "stale_version", late
+
+
+def test_a_change_never_prepared_is_refused_with_a_reason(admin, google, monkeypatch):
+    """``config request cancel`` cannot rescue a change validating, unprepared.
+
+    Every installer pass fails before the candidate's snapshot is written,
+    so the abort journal (which needs a prepared candidate) cannot name it.
+    The command says so, as ``invalid`` with a message, and changes nothing;
+    once the failure is fixed, the installer's next pass applies the change.
+    """
+    from parishkit.stewardship.accounts import configuration_installation
+    from parishkit.stewardship.accounts.configuration_models import (
+        AppliedConfigurationVersion,
+    )
+    from parishkit.stewardship.accounts.configuration_requests import _status
+    from parishkit.stewardship.admin_changes import UNPREPARED
+    from parishkit.stewardship.campaigns.models import CampaignConfigurationAbort
+
+    from .test_admin_schedule_cli_postgresql import one
+
+    store = admin.service.store
+    live(store)
+    _, secret, _ = paired(admin.service)
+    code, document = preview(admin, secret, {"window": {"end_date": "2054-11-15"}})
+    assert code == 0, document
+    code, confirmed = confirm(admin, secret, document["result"]["preview"]["token"])
+    request_id = UUID(confirmed["result"]["request"]["request_id"])
+    request = ConfigurationChangeRequest.objects.get(pk=request_id)
+
+    def outage(*args, **kwargs):
+        """A failure before the snapshot is written, on every pass."""
+        raise RuntimeError("synthetic outage")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(configuration_installation, "prepare_snapshot", outage)
+        with pytest.raises(RuntimeError, match="synthetic outage"):
+            installed(store, request_id)
+        assert _status(request).state == "validating"
+        assert not AppliedConfigurationVersion.objects.filter(
+            pk=request.candidate_version_id
+        ).exists()
+        argv = ("config", "request", "cancel", str(request_id), "--yes")
+        code, refused = one(admin, *argv, "--reason", "Keep the date.", secret=secret)
+        assert code == 1 and refused["error"]["code"] == "invalid", refused
+        assert refused["error"]["fields"] == [UNPREPARED]
+        assert not CampaignConfigurationAbort.objects.exists()
+        assert not AuditEvent.objects.filter(
+            event_type="admin_cmd_config_request_cancel"
+        ).exists()
+    # The failure fixed, the next pass applies it.
+    assert drain(store)[request_id].state == "applied"
+    coherent(store)
+
+
+def test_a_refusal_once_prepared_is_journaled_before_the_switch(tmp_path, monkeypatch):
+    """The prepare-time (second) check refuses what changed after preflight.
+
+    Close work is claimed just after the candidate is prepared, so preflight
+    admitted the change but the check before the YAML switch refuses it: the
+    refusal is journaled, the YAML is never switched, the request fails and
+    the ordinary change queued behind it applies.
+    """
+    from django.db import transaction
+    from django.db.models import F
+
+    from parishkit.stewardship.accounts.configuration_installation import (
+        DatabaseMaterializer,
+    )
+    from parishkit.stewardship.campaigns.live_end_date import REFUSALS
+
+    from .campaign_builders import claimed_task, draft_campaign, end_request
+
+    store, campaign, actor = draft_campaign(tmp_path)
+    original = campaign.active_configuration
+    with campaign_clock(original.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+        request, _ = end_request(store, campaign, actor, "edit_end")
+        later = rename_parish(store, actor)
+        before = store.active()
+        checkpoint = DatabaseMaterializer.checkpoint
+
+        def claim_after_prepared(materializer, state, **kwargs):
+            """Claim the campaign's close work once the end edit is prepared."""
+            checkpoint(materializer, state, **kwargs)
+            if state != "prepared" or materializer.request.pk != request.request_id:
+                return
+            assert store.active() == before
+            row = CampaignBoundaryOccurrence.objects.create(
+                campaign=campaign,
+                kind="close",
+                due_at=original.ends_at,
+                actor_id=actor,
+                correlation_id=uuid4(),
+            )
+            run = claimed_task("campaign_boundary", campaign.pk, actor)
+            with transaction.atomic():
+                CampaignBoundaryOccurrence.objects.filter(pk=row.pk).update(
+                    task_id=run.run_id,
+                    task_fence=run.fence,
+                    version=F("version") + 1,
+                    actor_id=actor,
+                    correlation_id=uuid4(),
+                )
+
+        activate = DatabaseMaterializer.activate
+
+        def never_switched(materializer, digest):
+            """The refused end edit never reaches the YAML switch."""
+            assert materializer.request.pk != request.request_id
+            return activate(materializer, digest)
+
+        monkeypatch.setattr(DatabaseMaterializer, "checkpoint", claim_after_prepared)
+        monkeypatch.setattr(DatabaseMaterializer, "activate", never_switched)
+        settled = drain(store)
+    refused = settled[request.request_id]
+    assert (refused.state, refused.failure_code) == ("failed", "invalid_candidate")
+    # Only the prepare-time and activation checks journal; preflight does not.
+    assert journal_reason(request.request_id) == REFUSALS["closing"]
+    assert settled[later].state == "applied"
+    coherent(store)
+    assert store.active().predecessor_digest == before.digest
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.end_date == original.end_date
+
+
+def test_a_crash_before_the_restore_resumes_from_the_journal(tmp_path, monkeypatch):
+    """A crash after the activation's journal, before the YAML restore.
+
+    The activation refuses the change (its old end passed) and commits the
+    journal; the process then dies before restoring the previous YAML, so
+    the candidate is still selected. The next pass restores it from the
+    journal, the request ends failed, and the queue moves on.
+    """
+    from parishkit.stewardship.accounts.configuration_installation import (
+        DatabaseMaterializer,
+    )
+    from parishkit.stewardship.accounts.configuration_requests import _status
+    from parishkit.stewardship.campaigns.live_end_date import REFUSALS
+
+    from .campaign_builders import draft_campaign, end_request
+
+    store, campaign, actor = draft_campaign(tmp_path)
+    original = campaign.active_configuration
+    with campaign_clock(original.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+        new_date = original.end_date + timedelta(days=10)
+        request, _ = end_request(
+            store, campaign, actor, "edit_end", new_date.isoformat()
+        )
+        later = rename_parish(store, actor)
+        before = store.active()
+        activate = DatabaseMaterializer.activate
+
+        def activate_late(materializer, digest):
+            """Activate the end edit only once its old end has passed."""
+            if materializer.request.pk != request.request_id:
+                return activate(materializer, digest)
+            with campaign_clock(original.ends_at + timedelta(hours=1)):
+                return activate(materializer, digest)
+
+        def crash(materializer):
+            """The process dies before the YAML restore."""
+            raise RuntimeError("synthetic crash")
+
+        monkeypatch.setattr(DatabaseMaterializer, "activate", activate_late)
+        with monkeypatch.context() as patch:
+            patch.setattr(DatabaseMaterializer, "restore_aborted_candidate", crash)
+            with pytest.raises(RuntimeError, match="synthetic crash"):
+                drain(store)
+        # Journaled, but the candidate is still selected and unsettled.
+        assert journal_reason(request.request_id) == REFUSALS["ended"]
+        assert store.active().version_id == request.candidate_version_id
+        row = ConfigurationChangeRequest.objects.get(pk=request.request_id)
+        assert _status(row).state == "yaml_activated"
+        settled = drain(store)
+    refused = _status(ConfigurationChangeRequest.objects.get(pk=request.request_id))
+    assert (refused.state, refused.failure_code) == ("failed", "invalid_candidate")
+    assert settled[later].state == "applied"
+    coherent(store)
+    assert store.active().predecessor_digest == before.digest
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.end_date == original.end_date
 
 
 def opened(store):
