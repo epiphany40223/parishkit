@@ -467,6 +467,13 @@ Exactly one promoted snapshot is current. Promotion changes that pointer and
 all derived current indexes in one database transaction. A failed or rejected
 load never exposes a partial corpus.
 
+The database recomputes a snapshot's evidence when it becomes `ready` or
+`unchanged`, and refuses it unless every relationship and contact or address
+owner resolves inside that snapshot. That check reads only the snapshot's own
+rows, so its cost follows the size of one corpus, not how many snapshots are
+retained, and a collection with no rows has nothing to check
+([#629](https://github.com/epiphany40223/parishkit/issues/629)).
+
 A quick update whose corpus equals the current snapshot's is not staged or
 promoted ([#630](https://github.com/epiphany40223/parishkit/issues/630)).
 Promoting it would add no ParishSoft data, yet it would write a full copy of

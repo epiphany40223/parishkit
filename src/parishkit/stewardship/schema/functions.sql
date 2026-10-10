@@ -8806,10 +8806,17 @@ BEGIN
         ['pledge','fund_key','fund'], ['contribution','family_key','family'],
         ['contribution','fund_key','fund']
     ] LOOP
-        EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I m '
-            'JOIN %I p ON p.id=m.payload_id '
-            'WHERE m.snapshot_id=$1 AND NOT EXISTS(SELECT 1 FROM %I parent '
-            'WHERE parent.snapshot_id=$1 AND parent.source_key=p.%I))',
+        -- An empty collection has nothing to resolve, so an unchanged quick
+        -- update (no rows at all) runs no check (#629).
+        CONTINUE WHEN counts->>relation[1]='0';
+        -- Read this snapshot's references first (its snapshot_id index, then
+        -- each payload by primary key), materialized so the planner cannot
+        -- walk every retained payload and each one's rows in every snapshot
+        -- sharing it instead (#629).
+        EXECUTE format('WITH c AS MATERIALIZED (SELECT p.%4$I AS parent_key '
+            'FROM %1$I m JOIN %2$I p ON p.id=m.payload_id WHERE m.snapshot_id=$1) '
+            'SELECT EXISTS(SELECT 1 FROM c WHERE NOT EXISTS(SELECT 1 FROM %3$I parent '
+            'WHERE parent.snapshot_id=$1 AND parent.source_key=c.parent_key))',
             'stewardship_snapshot_'||relation[1], 'stewardship_source_'||relation[1],
             'stewardship_snapshot_'||relation[3], relation[2])
             INTO invalid USING snapshot_id;
@@ -8819,13 +8826,15 @@ BEGIN
         END IF;
     END LOOP;
     FOREACH kind IN ARRAY ARRAY['contact','address'] LOOP
-        EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I m '
-            'JOIN %I p ON p.id=m.payload_id '
+        CONTINUE WHEN counts->>kind='0';
+        EXECUTE format('WITH c AS MATERIALIZED (SELECT p.owner_kind,p.owner_key '
+            'FROM %I m JOIN %I p ON p.id=m.payload_id WHERE m.snapshot_id=$1) '
+            'SELECT EXISTS(SELECT 1 FROM c '
             'LEFT JOIN stewardship_snapshot_family f ON f.snapshot_id=$1 '
-            'AND f.source_key=p.owner_key AND p.owner_kind=''family'' '
+            'AND f.source_key=c.owner_key AND c.owner_kind=''family'' '
             'LEFT JOIN stewardship_snapshot_member b ON b.snapshot_id=$1 '
-            'AND b.source_key=p.owner_key AND p.owner_kind=''member'' '
-            'WHERE m.snapshot_id=$1 AND f.id IS NULL AND b.id IS NULL)',
+            'AND b.source_key=c.owner_key AND c.owner_kind=''member'' '
+            'WHERE f.id IS NULL AND b.id IS NULL)',
             'stewardship_snapshot_'||kind,'stewardship_source_'||kind)
             INTO invalid USING snapshot_id;
         IF invalid THEN
