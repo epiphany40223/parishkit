@@ -91,17 +91,44 @@ def eventually(page, expression, expected=True, *, arg=None, timeout=30000):
         page.wait_for_timeout(50)
 
 
-def painted(page):
-    """Wait until the page has drawn two more frames.
+# True once the scroll position is the same at two consecutive frames.
+SCROLL_STEADY = (
+    "new Promise((done) => requestAnimationFrame(() => {"
+    " const x = window.scrollX, y = window.scrollY;"
+    " requestAnimationFrame(() =>"
+    " done(window.scrollX === x && window.scrollY === y));"
+    " }))"
+)
+
+
+def painted(page, *, timeout=5000):
+    """Wait until the page has drawn two more frames and stopped scrolling.
 
     After typing, Firefox scrolls the focused field's caret into view at its
     next refresh, not at once: a test that scrolls, or measures where things
     sit, right after ``fill`` races that deferred scroll and sees the page
-    jump by up to the whole viewport. Two frames let it land first. A user
-    cannot type and scroll in the same frame, so this changes no behaviour
-    under test.
+    jump by up to the whole viewport. Two frames usually let it land; a
+    slow or smooth scroll can take longer, so the wait then continues until
+    the scroll position holds across two consecutive frames. A user cannot
+    type and scroll in the same frame, so this changes no behaviour under
+    test. If the page is still scrolling after ``timeout`` ms, the wait logs
+    what it waited for, the limit and the time spent, and fails.
     """
+    import logging
+    import time
+
+    started = time.monotonic()
     page.evaluate(
         "new Promise((done) =>"
         " requestAnimationFrame(() => requestAnimationFrame(done)))"
     )
+    try:
+        eventually(page, SCROLL_STEADY, timeout=timeout)
+    except AssertionError:
+        logging.getLogger(__name__).error(
+            "painted: scroll position still changing between frames after "
+            "%.0f ms (limit %d ms)",
+            (time.monotonic() - started) * 1000,
+            timeout,
+        )
+        raise
