@@ -4983,8 +4983,8 @@ sign-in activity ([portal user management](#portal-user-management)).
 
 A refused account's address is personal data. The entry stores only the
 account's `PortalUser` id; the address it shows is the one that row already
-holds, because a verified sign-in attempt that passes the per-identity rate
-limit records its identity whether or not policy admits it ([administration
+holds, because a verified sign-in attempt under the current recovery epoch that
+passes the per-identity rate limit records its identity whether or not policy admits it ([administration
 user and policy](../data/spec.md#administration-user-and-policy)). The entry is kept
 like every other audit event, indefinitely by default
 ([retention and deletion](../data/spec.md#retention-and-deletion)), and is

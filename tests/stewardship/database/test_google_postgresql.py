@@ -276,6 +276,77 @@ def test_concurrent_refusals_of_one_account_write_one_entry(auth_service, google
     assert refusals() == ["admin@example.org"]
 
 
+def test_concurrent_refusals_of_two_accounts_respect_the_ceiling(
+    auth_service, google, monkeypatch
+):
+    """Two different accounts racing at the ceiling's edge write one entry.
+
+    Their per-account checks never conflict, so only the deployment-wide
+    advisory lock stops both from passing the ceiling check; the loser
+    falls back to the anonymous sample (#968).
+    """
+    from parishkit.stewardship.accounts import auth_incidents
+    from parishkit.stewardship.accounts.sessions import database_now
+
+    monkeypatch.setattr(auth_incidents, "ACCOUNT_REFUSAL_CEILING", 1)
+    users = [
+        PortalUser.objects.create(
+            google_subject=f"{name}-subject",
+            email=f"{name}@example.net",
+            verified_at=database_now(),
+        ).pk
+        for name in ("one", "two")
+    ]
+    barrier = Barrier(2)
+
+    def refuse(user_id):
+        """Start together, then refuse one account on a new connection."""
+        try:
+            barrier.wait(10)
+            return auth_incidents.record_account_refusal(user_id)
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [
+            f.result(timeout=20) for f in [pool.submit(refuse, u) for u in users]
+        ]
+    assert sorted(results) == [False, True]
+    assert len(refusals()) == 1
+    assert AuditEvent.objects.filter(event_type="admin_login_denied").count() == 1
+
+
+def test_refusal_lock_wait_is_a_bounded_retryable_outage(auth_service, google):
+    """A refusal that cannot get the refusal lock within its one-second
+    timeout is the retryable 503, not a hung sign-in (#968)."""
+    import time
+
+    import psycopg
+
+    settings = connections["default"].settings_dict
+    holder = psycopg.connect(
+        host=settings["HOST"],
+        port=settings["PORT"],
+        dbname=settings["NAME"],
+        user=settings["USER"],
+        password=settings["PASSWORD"],
+        autocommit=True,
+    )
+    try:
+        holder.execute("SELECT pg_advisory_lock(736228, 4)")
+        google[0].update(email="outsider@example.net", sub="outsider-subject")
+        started = time.monotonic()
+        _, response = signed_in()
+        elapsed = time.monotonic() - started
+    finally:
+        holder.execute("SELECT pg_advisory_unlock(736228, 4)")
+        holder.close()
+    assert response.status_code == 503
+    assert elapsed < 2.5
+    assert not refusals()
+    assert not PortalSession.objects.exists()
+
+
 def test_refusals_past_the_ceiling_become_anonymous_samples(
     auth_service, google, monkeypatch
 ):
