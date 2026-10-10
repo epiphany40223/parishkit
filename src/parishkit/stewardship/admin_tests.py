@@ -121,6 +121,7 @@ def preview_sample(caller, service, revision_id, *, request_key):
 
     from .accounts.campaign_mail import SALT, prepare, recent_tests
     from .accounts.policy import Capability
+    from .storage import StaleRecordError
 
     actor = _admit(caller, service.store, final=True)
 
@@ -133,6 +134,12 @@ def preview_sample(caller, service, revision_id, *, request_key):
             )
         except ObjectDoesNotExist:
             raise NotAvailable("No such email revision.") from None
+        except LookupError:
+            # A campaign whose mode and state admit no test mail: the page
+            # now explains this (#923); the command keeps its stale_version.
+            raise StaleRecordError(
+                "Campaign test preview is not currently available."
+            ) from None
         token = signing.dumps(preview.binding(), salt=SALT)
         return sample_preview_model(
             preview, recent_tests(campaign_id, preview.row), token, revision_id
@@ -259,6 +266,11 @@ def send_sample(caller, service, *, token, acknowledge_unknown, context):
                 # unknown outcome.
                 raise StaleRecordError(
                     "Review a fresh campaign test preview."
+                ) from None
+            except LookupError:
+                # The campaign admits no test mail now (#923): stale, as before.
+                raise StaleRecordError(
+                    "Campaign test preview is not currently available."
                 ) from None
             if not repeat:
                 record_action(

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from uuid import UUID, uuid4, uuid5
 
 from django.db import connection
+from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import (
@@ -18,7 +20,7 @@ from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.readiness_mail import ReadinessMail
 from parishkit.stewardship.sender_name import resolved_sender_name
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import load_preview
+from parishkit.stewardship.web.refusals import UserFacingMissing, load_preview
 
 from .admin_editing import editable_configuration, principal
 from .campaign_mail_models import CampaignMailTest
@@ -28,6 +30,9 @@ from .content_models import ContentVersion
 
 TASK_TYPE = "campaign_mail_test"
 SALT = "stewardship-campaign-mail-test-v1"
+# The Production campaign states whose test mail is admitted while live
+# delivery is paused, as in stewardship_campaign_mail_live_v1.
+PAUSED_STATES = frozenset({"scheduled", "active", "closed"})
 
 
 @dataclass(frozen=True)
@@ -68,6 +73,47 @@ def recipient_digest(address):
     the same digest.
     """
     return hashlib.sha256((address or "").strip().lower().encode()).hexdigest()
+
+
+def admits_test_mail(mode, campaign):
+    """Whether the campaign's mode and state admit test mail at all (#923).
+
+    This is the lifecycle part of the SQL admission
+    (``stewardship_campaign_mail_live_v1``): a Testing draft, or a scheduled,
+    active or closed Production campaign whose live delivery is paused. The
+    SQL stays the authority and also checks the work gates, the installed
+    credential and the requesting Administrator; this only lets pages offer a
+    test when one can work, and say why when it cannot, instead of the
+    generic "This information changed".
+    """
+    if mode == "testing":
+        return campaign.state == "draft"
+    return (
+        mode == "production"
+        and campaign.delivery_paused
+        and campaign.state in PAUSED_STATES
+    )
+
+
+# Shown on Dates and mail schedules in place of the test link, and as the
+# test page's refusal, while admits_test_mail is false.
+NOT_OPEN = _(
+    "Test emails can be sent only while the campaign is being tested, or while "
+    "live email delivery is paused."
+)
+
+
+def not_open_refusal():
+    """The test page's refusal while the campaign admits no test mail (#923)."""
+    return UserFacingMissing(
+        NOT_OPEN,
+        fix=_(
+            "While a live campaign's email delivery runs, its emails go out only "
+            "as scheduled. To send a test now, pause live email delivery first."
+        ),
+        link=reverse("admin:delivery_control"),
+        link_label=_("Pause and resume mail"),
+    )
 
 
 def live(row):
@@ -130,6 +176,10 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
             fingerprint=workspace.credential_fingerprint,
         )
         if not live(row):
+            # A campaign whose mode and state admit no test mail at all gets a
+            # refusal that says so; reloading would never help (#923).
+            if not admits_test_mail(runtime.mode, campaign):
+                raise not_open_refusal()
             raise StaleRecordError("Campaign test preview is not currently available.")
         sample = ReadinessMail(
             delivery_id=row.pk,

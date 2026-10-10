@@ -366,13 +366,21 @@ SCHEDULE_TABLE_NOW = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
 
 def schedule_page(
-    owner, previous, *, templates=(), summary=None, data=None, now=SCHEDULE_TABLE_NOW
+    owner,
+    previous,
+    *,
+    templates=(),
+    summary=None,
+    data=None,
+    now=SCHEDULE_TABLE_NOW,
+    test_mail=True,
 ):
     """Dates and mail schedules as its view renders it, table rows included.
 
     ``summary`` stands in for the work counts by schedule ID that the view
     reads from the database (schedule_preview.work_summary). With ``data``
     the formset is bound and validated, as after a refused preview.
+    ``test_mail`` false is a live campaign, which admits no test mail (#923).
     """
     schedules = Schedules(
         data,
@@ -382,6 +390,7 @@ def schedule_page(
         campaign=owner["values"],
         prefix="schedules",
         email_links=True,
+        test_mail=test_mail,
     )
     if data is not None:
         schedules.is_valid()
@@ -816,6 +825,19 @@ def component_origin():
                 table_rows,
                 templates=mail_emails,
                 summary={table_rows[2]["id"]: {"delivered": 1031, "failed": 2}},
+            ),
+        ),
+        (
+            # The same page for a live campaign whose delivery runs: no test
+            # email can be sent, so no test link is offered (#923).
+            "/schedule-table-live",
+            "schedule-settings",
+            schedule_page(
+                mail_campaign,
+                table_rows,
+                templates=mail_emails,
+                summary={table_rows[2]["id"]: {"delivered": 1031, "failed": 2}},
+                test_mail=False,
             ),
         ),
         (

@@ -18,6 +18,7 @@ from parishkit.stewardship.web.contracts import filters
 from . import admin_navigation
 from .admin_editing import confirm, error_response, principal
 from .authentication import runtime
+from .campaign_mail import admits_test_mail
 from .content_views import _records
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
@@ -145,8 +146,11 @@ def schedule_settings(request, campaign_id):
                 campaign_id=campaign_id,
                 campaign=previous,
                 previous=campaign_schedules(state[0], campaign_id),
-                # Each email choice links to its preview, test and editor.
+                # Each email choice links to its preview, test and editor;
+                # while the campaign admits no test mail, the description says
+                # why instead of linking a test that cannot work (#923).
                 email_links=True,
+                test_mail=admits_test_mail(state[0].mode, campaign),
             )
             response = (
                 _preview(
