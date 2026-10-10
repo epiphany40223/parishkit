@@ -53,10 +53,10 @@ last open questions; no decision remains open.
     lookups. Applying the same rationale, review also dropped the attempt
     limit on the approval page's user code.
 13. **High-impact changes:** a full-scope session may make the
-    [high-impact changes](#high-impact-changes) (granting Administrator,
-    domain sign-in rules, Staff on a domain rule, removing or disabling
-    another Administrator), with the same authorization and audit as the
-    portal.
+    [high-impact changes](#high-impact-changes) (granting Administrator, and
+    removing, demoting or disabling another Administrator; domain sign-in
+    rules no longer exist since #952), with the same authorization and audit
+    as the portal.
 14. **Notices and audit are kept:** they inform; they do not restrict.
 15. **Secret replacement is allowed** from the command line (reverses 7): the
     secret is read from a file or standard input on the host, never from an
@@ -206,9 +206,9 @@ can do in the portal except the first-Admin setup wizard and campaign purge:
 - send test email to chosen Families;
 - change schedules, campaign content and configuration, which changes what
   Families receive and when;
-- change user rules: grant Administrator to another address, add domain rules
-  or Staff on a domain, or demote or disable the **other Administrators** who
-  would receive the notices; grants outlive revocation of the session;
+- change users: grant Administrator to another address, add users, or demote,
+  delete or disable the **other Administrators** who would receive the
+  notices; grants outlive revocation of the session;
 - change or remove the Slack settings that carry the notices;
 - replace integration keys (ParishSoft, Google Workspace, mail, Slack) and the
   backup encryption key, which could cut off refreshes, mail, alerts or the
@@ -384,7 +384,7 @@ a table is now required):
   after that rests on the [command events](#audit-attribution).
 
 A session is **live** while `revoked_at` is null, `expires_at` is in the
-future, its principal is an enabled portal user whose current rule grants
+future, its principal is an enabled portal user whose current user role is
 Administrator (the projection of `stewardship_export_authorized_v1(principal,
 true)`), and no offline Admin-access recovery (`stewardship_admin_revocation`)
 was recorded after its approval. Listings and guards compute liveness at read
@@ -756,8 +756,8 @@ The source of truth is `stewardship_automation_session`.
   `/admin/users/automation/sessions/<session>/` (`revoked_by_owner` for one's
   own, `revoked_by_administrator` otherwise), whose query carries the page's
   state so the page it returns to is unchanged.
-  The list stays off Portal users, which the navigation work splits into
-  several pages (NAV-15). Approving a new session from this page first asks
+  The list stays off the Users page, which lists only who may sign in
+  (#952). Approving a new session from this page first asks
   for a fresh sign-in, as the approval page does.
 - `pk-stewardship admin sessions` lists the caller's own sessions, with the
   page's filter and sort (`--include-ended`, `--sort`).
@@ -868,11 +868,9 @@ A full-scope session may make the changes the portal treats as high impact,
 with the same authorization, configuration request, security event and audit
 as the portal (decision 13):
 
-- granting Administrator to an address;
-- creating a domain rule, or adding Staff to a domain rule (the existing
-  [high-impact expansions](../admin-portal/spec.md#portal-user-management),
-  which also raise their own security event and email);
-- removing Administrator from, or disabling, another Administrator.
+- granting Administrator to an address (which also raises the portal's own
+  [security event and email](../admin-portal/spec.md#user-change-checks-and-alerts));
+- demoting, deleting or disabling another Administrator.
 
 Each also creates an `automation_policy_change` notice, as does any key
 replacement and any change to Slack or other notification settings. The portal
@@ -1608,8 +1606,9 @@ signatures:
   settings (including the backup folder probe) from `campaign_views`,
   `content_views`, `campaign_ministry_views`, `share_views`, `talent_views`,
   `parish_views`, `ministry_views` and `integration_views`.
-- **PR 11:** user, rule, assignment, chairperson, event and follow-up actions
-  from their views.
+- **PR 11:** user, event and follow-up actions from their views (the users
+  model of #952 replaces the rule actions; #922 retired the assignment and
+  Chairperson actions).
 - **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
   retry and cancel, the link preparation controls in `activation_views.links`,
   `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
@@ -2227,12 +2226,41 @@ never prepares or sends twice.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `users` | `users list` (PR 11) |
-| `user_rules`, `rule_apply`, `rule_base`, `rule_request` | `rules show`, `rules apply`, `rules request show` (PR 11), including the [high-impact changes](#high-impact-changes) |
-| `chair_confirmations`, `chair_reviews` | `chairs …` (PR 11) |
-| `assignments` | `assignments …` (PR 11) |
+| `users` | `users list` (#952 slice 2); the page's Upgrade preview panel is `users preview-upgrade` (#952 slice 2) |
+| `user_new`, `user_edit`, `user_delete` | `users preview`, `users confirm` (#952 slice 4): a change document adds, changes or deletes users, including the [high-impact changes](#high-impact-changes) |
+| `user_name_suggestions` | Covered by `users preview` (#952 slice 4): a new user in the change document without a `name` gets the [default from ParishSoft](../admin-portal/spec.md#name-from-parishsoft), which the preview shows; the other suggested Member names are only counted, under the [personal data](#personal-data-on-the-command-line) rule |
+| `user_leader_import` | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
+| `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
+| `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` (PR 11) |
 | `information_update`, `ministry_followup`, `ministry_followup_item`, `ministry_followup_update` | `followup …` (PR 11); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
+
+The users commands (#952) call the same service functions as the
+[Users page](../admin-portal/spec.md#portal-user-management), with its
+checks, audit and alerts:
+
+- `users list` prints each user's email, Name, role and last successful
+  sign-in, with the page's sort (`--sort`); it is read-only and needs only a
+  read-only session.
+- `users preview-upgrade` prints the
+  [users upgrade](../operations/spec.md#users-upgrade-from-sign-in-rules)
+  preview: read-only, and unavailable once the configuration holds users.
+- `users preview --expected-version … --changes …` and
+  `users confirm --token …` change users as `schedule preview` and
+  `schedule confirm` change schedules: the change document names a saved user
+  by `id` to change its Name or role or, with `delete`, to delete it; an entry
+  with no `id` adds a user by `email`, `name` and `role`; users it does not
+  name stay unchanged.
+- `users import-leaders --preview` lists the ParishSoft Ministry leaders
+  without a user, as the page's second table does (email, Name and Member
+  DUID), and the import it would make; `--all` or repeated `--email` choose
+  whom. `users import-leaders --confirm --token …` applies that preview. Both
+  run the page's import code, so existing users are skipped and nobody gets
+  more than Ministry leader.
+
+These need a full-scope session, except `users list` and
+`users preview-upgrade`; none is fresh-gated, as the page asks for no fresh
+sign-in. The command shapes are defaults, pending Administrator confirmation.
 
 ### Integrations and credentials
 
@@ -2663,9 +2691,12 @@ exactly the commands that exist.
   backup folder probe, and secret replacement: integration key replacement,
   finish switching and the backup key change, with the wrapper's secret
   input.
-- **PR 11, users and follow-up:** users, rules (including the
-  [high-impact changes](#high-impact-changes)), assignments, chairpersons, event acknowledgements and
-  follow-up updates.
+- **PR 11, users and follow-up:** users (including the
+  [high-impact changes](#high-impact-changes)), event acknowledgements and
+  follow-up updates. #922 retired the assignment and Chairperson commands,
+  and #952 replaced the rule commands with the
+  [users commands](#users-and-follow-up), which its slices land with their
+  routes, ahead of the rest of PR 11.
 - **PR 12, go-live and withdrawal:** the verified readiness preview, cleanup
   with retry and cancel, link preparation with retry and cancel,
   confirmation, the Production preparation retry and withdrawal; after

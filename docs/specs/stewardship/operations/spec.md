@@ -568,6 +568,75 @@ across releases.
 Rollback instructions distinguish application rollback (only when schema is
 compatible) from database restore.
 
+### Users upgrade from sign-in rules
+
+The [Users revamp](../admin-portal/spec.md#portal-user-management)
+([#952](https://github.com/epiphany40223/parishkit/issues/952)) replaces
+hosted-domain and exact-address sign-in rules with one list of users, each
+with one role. Production converts its rules once, in two releases, under the
+[post-launch schema policy](#post-launch-schema-policy); each deploy needs the
+Administrator's approval as usual. These are default decisions, which the
+Administrator may override.
+
+1. **Read-only preview first.** An earlier release adds
+   `pk-admin users preview-upgrade` and an **Upgrade preview** panel on the
+   Portal users page. Both run one read-only function and list exactly what
+   the conversion will do:
+   - each domain rule, and every recorded Google identity it admits today
+     that has signed in before (enabled, its email suffix and recorded
+     hosted-domain claim matching the rule, and no address rule for its
+     address), with the user each becomes;
+   - each address rule's roles and the role it will keep;
+   - each empty-role (deny) rule, which will be dropped; and
+   - what will not carry over: each domain rule's people who have never
+     signed in, and disabled identities, which are not converted.
+
+   The Administrator can add any missing address as an ordinary user (an
+   address rule) before the upgrade, so nobody they expect is locked out.
+2. **Conversion as one configuration change.** In the release that brings
+   users, the configuration installer's upgrade of the `login_rules` section
+   writes one new configuration version through the normal installer and
+   activation, with audit; stored versions are never edited:
+   - every Google identity that a domain rule admits today and that has signed
+     in before becomes a user with that domain rule's highest role (Staff or
+     Ministry leader); its Name is the
+     [default from ParishSoft](../admin-portal/spec.md#name-from-parishsoft),
+     or the email's local part when no Member lists the address;
+   - every address rule becomes a user with its highest role, and keeps its
+     address; its Name is chosen the same way;
+   - deny rules are dropped: with domain rules gone, an address with no user
+     is already denied.
+
+   Domain rules could never hold Administrator, so every Administrator is
+   already an address rule and keeps that role, and converted identities get
+   at most Staff, so no Administrator alert fires. The last-Administrator
+   guard always holds: activation is rechecked, and the upgrade refuses to
+   activate, failing closed with the preview's explanation, rather than leave
+   no Administrator. One audit event records the conversion's counts. A
+   configuration already in the users form is left unchanged.
+3. **Schema migration** (the next free number, assigned centrally):
+   - add `name` and `role` to `stewardship_address_rule`, with a check
+     constraint that ties `roles` to the cumulative set of `role`
+     ([data model](../data/spec.md#administration-user-and-policy)); both are
+     empty only on the immutable rows of configurations activated before the
+     upgrade;
+   - replace the SQL functions that join `stewardship_domain_rule` (session
+     admission, Ministry scope, export authorization, and the policy
+     projection and completeness functions) so they read only the users
+     projection. Each replacement starts from its latest prior definition with
+     only that change, keeps its attributes, and the file ends with the
+     self-verifying `DO` block;
+   - stop writing `stewardship_domain_rule` and `stewardship_address_grant`.
+
+   A later cleanup migration drops those tables and the retired Ministry
+   assignment tables once nothing reads them. Their history stays in the audit
+   log and the immutable configuration versions.
+
+Bootstrap (`bootstrap --admin-email`) and
+[offline Admin-access recovery](#offline-admin-access-recovery) write and
+preview Administrator users in the same form; their Name is optional and
+defaults to the email's local part.
+
 ### Offline bootstrap profile
 
 The `bootstrap` Compose profile is an explicitly operator-invoked, one-shot
@@ -629,16 +698,17 @@ authorization; bootstrap retains its empty-deployment-only behavior.
 Require an initialized, supported database and matching active YAML/database
 configuration. An unresolved configuration installation or mismatch must be
 recovered through the existing installer protocol first, never overwritten.
-The command displays deployment/parish identity, current Admin rules, the exact
-normalized target email, and a minimal diff. Require a named operator, reason,
-and explicit confirmation of deployment identity and target email; unattended
-invocation must supply equivalent explicit confirmations, never default to yes.
-The permitted patch only adds Administrator with manual provenance to that
-exact-address rule, creating it if absent. Preserve other roles, rule origins,
-assignments, all existing Admin grants, and all unrelated configuration. Adding
-Admin to an explicit-deny rule is shown as an intentional access grant. No
-domain grants, account rebinding, removal, or general configuration edits are
-accepted; removal of an obsolete Admin is a later normal authenticated action.
+The command displays deployment/parish identity, current Administrator users,
+the exact normalized target email, and a minimal diff. Require a named
+operator, reason, and explicit confirmation of deployment identity and target
+email; unattended invocation must supply equivalent explicit confirmations,
+never default to yes. The permitted patch only raises the
+[user](../admin-portal/spec.md#portal-user-management) with that address to
+Administrator, or creates that user as an Administrator when absent (its Name
+is `--name` when given, otherwise the email's local part). Preserve every
+other user, all existing Administrators, and all unrelated configuration.
+Account rebinding, removal, or general configuration edits are not accepted;
+removal of an obsolete Admin is a later normal authenticated action.
 
 Create a tagged operator-recovery ConfigurationChangeRequest and apply a new
 immutable YAML version through the same base-digest, schema-validation,
@@ -1371,8 +1441,8 @@ Required suites include:
   campaign checks, and in-memory conflict review preserving actual edits without
   storing drafts or exposing inaccessible data;
 - offline Admin-recovery tests for sole-account rename/deactivation, an
-  existing explicit-deny target, manual role provenance, and preservation of
-  old grants/unrelated configuration. Verify host-profile-only invocation,
+  existing lower-role user as target, a new user as target, and preservation of
+  other users/unrelated configuration. Verify host-profile-only invocation,
   narrow installer mounts, startup mutual exclusion, confirmation, stale
   digests, uninitialized/mismatched configuration refusal, crash/resume
   idempotency, session/OAuth revocation, durable audit/security notifications,
@@ -1473,8 +1543,9 @@ Required suites include:
   prove it performs no token-generation/encryption/per-Family insertion work;
 - Django request tests for every role/denial/object-scope and CSRF/session
   boundary;
-- authentication tests proving that domain rules require matching verified
-  email and signed Google hosted-domain claims, while exact-address rules do not;
+- authentication tests proving that only a user's exact normalized address
+  admits a person, at that user's role level, and that no hosted-domain claim
+  or email suffix grants a role;
 - configuration-authority tests for canonical YAML, schema migration, stale
   base-digest denial, immutable version/manifest activation, crash at every
   installer checkpoint, exact YAML/database digest recovery, fail-closed
@@ -1564,17 +1635,15 @@ Required suites include:
   and post-close held-message release/cancellation before archive;
 - browser tests for setup, Admin/Staff/leader workflows and the full responsive
   Family path, including stale submit and repeat visit;
-- browser and authorization tests proving that role checkbox changes autosave
-  without reauthentication or a confirmation dialog while enforcing CSRF,
-  optimistic concurrency, current-Admin authorization, last-Administrator
-  protection, and complete audit records;
-- autosave browser/installer tests for rapid multi-row/table edits, repeated
-  checkbox changes while applying, and dispatch only after `applied` with its
-  returned digest. Verify queued versus saved indicators, uncertain-outcome
-  reconciliation, same-key retry deduplication, failure/cancellation pauses,
-  genuine multi-tab/Admin conflicts with preserved unsaved intent, removed
-  targets, current-Admin revocation, and page-exit/revisit behavior. Conflicts
-  never silently rebase or bypass provenance, last-Admin, or CSRF guards;
+- browser and authorization tests proving that user changes (New, Edit,
+  Delete and Import Ministry leaders) save only through Review and Apply,
+  without reauthentication, while enforcing CSRF, optimistic concurrency,
+  current-Admin authorization, last-Administrator protection, and complete
+  audit records; that the Users tables sort in place; and that their pages
+  have no horizontal page scroll at 320 px and 1280 px;
+- users-upgrade tests proving the preview and the conversion agree, and that
+  the conversion refuses to leave no Administrator; a stale base digest
+  is refused and never silently rebased past the last-Admin or CSRF guards;
 - limiter tests proving that pre-verification IP rejections contribute once
   without OAuth state allocation, provider calls, raw token retention, or
   duplicate counting, and that post-verification identity-limit rejections
@@ -1615,15 +1684,12 @@ At minimum, end-to-end tests demonstrate:
    the active PostgreSQL snapshot expose one matching digest, every induced
    installer interruption is recoverable without partial configuration, and
    sealed credential replacement cannot be claimed by the wrong target.
-2. Google allow/deny, exact-address override, last-Admin guard, immediate role
-   revocation after applied-YAML activation, and immediate high-impact expansion
-   upon activation with durable dashboard event and preexisting-Admin
-   notification/retry for exact-address Administrator grants, all new domain
-   rules, and Staff additions to existing domain rules; assigned-Ministry
-   scoping, immediate runtime suspension after a
-   seeded Chairperson relationship disappears, runtime suppression without YAML
-   mutation, configuration-request role removal, YAML-backed manual restoration,
-   and source-return reactivation.
+2. Google allow/deny by user email only, the role ladder, last-Admin guard,
+   immediate role revocation after applied-YAML activation, and immediate
+   Administrator grants upon activation with durable dashboard event and
+   preexisting-Admin notification/retry; Ministry scoping from ParishSoft
+   roles, user deletion and demotion through configuration requests, and the
+   users upgrade from sign-in rules (#952).
 3. Testing email rerouting, the Family-facing Testing banner,
    segregated test submission, blocked transition with in-flight test delivery,
    aggregate creation, go-live admission gating, resumable bounded cleanup of

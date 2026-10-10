@@ -93,22 +93,22 @@ Configuration requests identify their authority as authenticated Admin or the
 explicit [offline operator-recovery workflow](../operations/spec.md#offline-admin-access-recovery).
 The latter stores a named operator, reason, confirmed deployment/target, and
 stable recovery-operation ID rather than fabricating a PortalUser. Enforce
-operation-ID uniqueness and the permitted exact-address Admin-only patch in
+operation-ID uniqueness and the permitted Administrator-user-only patch in
 that dedicated service; web/caller-supplied authority fields cannot select it.
 Normal configuration APIs retain current-Admin and CSRF checks. Recovery uses
 the same installer checkpoints and atomically records its required session
 revocation, parish-owned audit, and security-event/notification intents with
 matching database activation.
 
-For the [user-management autosave queue](../admin-portal/spec.md#portal-user-management),
-store a client idempotency key and canonical payload/base-digest fingerprint
-with the request. Enforce uniqueness per actor/key: identical retries return
-the same request/status, while key reuse with a different payload is rejected.
-Status responses include the request's applied-version ID/digest only after
-matching YAML/database activation, plus its authoritative affected values.
-Lookup and retry require current authorization; idempotency is not a bypass of
-role, CSRF, or activation guards. Client intents not yet submitted are not
-durable ConfigurationChangeRequests and cannot be shown as saved.
+A configuration request stores a client idempotency key and canonical
+payload/base-digest fingerprint. Enforce uniqueness per actor/key: identical
+retries return the same request/status, while key reuse with a different
+payload is rejected. Status responses include the request's applied-version
+ID/digest only after matching YAML/database activation. Lookup and retry
+require current authorization; idempotency is not a bypass of role, CSRF, or
+activation guards. [User changes](../admin-portal/spec.md#portal-user-management)
+are ordinary requests made by Review and Apply; the user-management autosave
+queue this paragraph once served is retired (#952).
 
 There is exactly one materialized `Parish` row for each applied configuration
 version containing the display name, main website URL, IANA timezone, valid US
@@ -774,86 +774,61 @@ recoverable and is not invented.
 
 `PortalUser` links a Google `sub` and current normalized verified email to the
 login/audit history, including the validated Google hosted-domain claim when
-present. It is runtime identity state. A SQL guard (#389) admits an insert
+present, which is recorded evidence only: authorization never reads it. It is
+runtime identity state. A SQL guard (#389) admits an insert
 only from the web login, with `verified_at` inside the inserting transaction
 (as the sign-in stamps it), and only for an enabled, unattributed, version-1
 row with a non-empty subject and email. SQL cannot see the Google sign-in
 itself, and it does not check email or hosted-domain normalization.
-Authorization policy materialized from
-the active YAML version uses:
 
-- `DomainRule`: normalized domain with Staff and/or Ministry-leader roles;
-  Administrator is prohibited;
-- `AddressRule`: normalized exact address with any role set, including an empty
-  set that explicitly denies access, immutable creation origin (`manual` or
-  `chair-seed`), and originating configuration-request/bootstrap-operation ID;
-- `AddressRoleGrant`: one configured role per AddressRule, with a nonempty
-  origin set drawn from `manual` and `chair-seed` and the originating operation
-  ID for each origin; and
-- `MinistryAssignment`: user/address to Ministry DUID, source (`chair-seed` or
-  `manual`), state (`active` or `suspended`), suspension reason/time, and audit
-  metadata.
+Authorization policy materialized from the active YAML version is one list of
+**users** (Administrator decisions of 2026-10-10,
+[#952](https://github.com/epiphany40223/parishkit/issues/952); the
+[Users page](../admin-portal/spec.md#portal-user-management) edits it). The
+`login_rules` section, under a new section schema version, holds only entries
+of the form `{kind: "user", id, email, name, role}`:
 
-Domain rules, address rules, and the configured base of Ministry assignments
-carry their applied-configuration version and cannot be edited independently.
-Source-driven suspension/reactivation and its review task are runtime overlays
-that can remove scope immediately without rewriting YAML; an Admin decision to
-create, restore as manual, or delete configured policy goes through a
-`ConfigurationChangeRequest` and becomes effective on activation.
+- `id`: a stable opaque UUID assigned when the user is created, kept across
+  configuration versions and never reused; the Edit page's address uses it;
+- `email`: the normalized address (trimmed and lowercased, with no Gmail dot or
+  plus folding), a valid address, unique within the configuration;
+- `name`: plain text of 1 to 200 characters after trimming, with no control
+  characters; it is a label, not a link to a ParishSoft Member; and
+- `role`: exactly one of `ministry_leader`, `staff` and `administrator`. There
+  is no empty role, no explicit deny, no domain and no grant provenance.
 
-Rule creation origin and role-grant origins are explicit authoritative YAML
-fields, carried unchanged into each applied database representation. The
-AddressRule role set is exactly the set of its AddressRoleGrant roles; a unique
-rule/role constraint and schema validation prevent contradictory copies. An
-empty exact-address denial rule has no grants. Bootstrap and ordinary manual
-rule creation use `manual`; creating a new rule through an Admin-confirmed
-chair suggestion uses `chair-seed`. Updating an existing rule never changes its
-creation origin or silently reclassifies existing grants.
+Activation materializes each user as one row of the `AddressRule` projection
+(`stewardship_address_rule`), which gains `name` and `role` columns. Its
+`roles` jsonb column holds the **cumulative** set: `administrator` is
+`["administrator", "staff", "ministry_leader"]`, `staff` is
+`["staff", "ministry_leader"]` and `ministry_leader` is
+`["ministry_leader"]`. A check constraint ties `roles` to `role`, so the two
+never disagree, and every SQL check that tests `roles` with `?` or `?|` keeps
+its meaning without restating the ladder. Python resolves an address to its
+one user's role, or to nothing, and treats the roles as levels. The session
+admission, Ministry scope, export authorization and policy projection and
+completeness functions read only this projection.
 
-Only the confirmed chair-suggestion path may add a `chair-seed` grant origin,
-and only for Ministry leader. Pre-existing manual grant origins remain present.
-Other roles copied from a domain rule and explicitly confirmed as part of an
-exact-address override are manual grants, as is an already inherited Ministry-
-leader role preserved by that override. An ordinary explicit role addition or
-the Admin's **Keep role independently** action adds a manual origin without
-discarding seed provenance. Merely leaving a checked role unchanged, editing
-another role/assignment, or refreshing a suggestion adds no manual origin.
-Explicitly removing a configured role removes its complete grant; source
-refresh can neither recreate it nor add origins. Immutable configuration/audit
-history retains removed grants and their provenance.
+Users carry their applied-configuration version and cannot be edited
+independently: every change is a `ConfigurationChangeRequest` and takes effect
+on activation. Activation refuses a version with no Administrator user (the
+last-Administrator guard), and immutable configuration and audit history keep
+every earlier version. A Ministry leader's Ministries come only from
+ParishSoft roles ([#922](https://github.com/epiphany40223/parishkit/issues/922));
+a user of Ministry leader or higher is what lets the person sign in, and Staff
+and Administrators see every Ministry.
 
-The source-suppression predicate is exactly: rule creation origin is
-`chair-seed`, the configured Ministry-leader grant has only a `chair-seed`
-origin, and no active Ministry assignment remains. Missing or inconsistent
-provenance blocks configuration activation instead of guessing from role count,
-assignment count, or the current source snapshot. An independently granted role
-does not itself confer Ministry row scope; assignment checks remain mandatory.
-
-An exact address rule replaces, rather than unions with, a matching domain
-rule. When the UI creates an override for a chairperson already inheriting a
-domain role, it preselects the inherited roles plus Ministry leader so the
-Admin can see and confirm the replacement. `gmail.com` is prohibited as a
-domain rule but individual Gmail addresses are allowed. Every domain rule is a
-Google Workspace/Cloud Identity hosted-domain rule: it grants roles only when
-the signed `hd` claim and verified email suffix both match. An absent or
-mismatched `hd` claim never falls back to suffix-only authorization.
-
-Chairperson synchronization creates or refreshes suggestions only; it never
-creates an AddressRule, grants a role, or creates an active assignment. The
-Admin-confirmed suggestion configuration request is the sole creator of a
-`chair-seed` assignment and any corresponding exact-address/Ministry-leader
-grant. For an
-existing `chair-seed`, a promoted snapshot that no longer shows the active
-Member as Chairperson of that active Ministry atomically changes it from
-`active` to `suspended`, records the source evidence, and opens an Admin review
-task. A suspended assignment grants no row scope on the next authorization
-check. Manual assignments are never changed from source data. When the explicit
-provenance predicate above holds, the runtime authorization overlay suppresses
-that Ministry-leader role; authoritative YAML and its materialized AddressRule
-remain unchanged. Unrelated roles/rules are preserved. If the source
-Chairperson relationship returns before review, the seeded assignment and role
-reactivate and the task closes with audit. Permanently deleting the configured
-assignment/role requires an Admin-applied `ConfigurationChangeRequest`.
+Retired by the users model, after #922 retired Ministry assignments: the
+`DomainRule` (`stewardship_domain_rule`) and `AddressRoleGrant`
+(`stewardship_address_grant`) records, rule creation and grant origins
+(`manual` and `chair-seed`), empty-role denial rules, the chair-seed
+suppression predicate, Chairperson suggestions and their seeded assignments,
+and `MinistryAssignment` with its overlay. After the
+[users upgrade](../operations/spec.md#users-upgrade-from-sign-in-rules)
+nothing writes or reads them; their tables stay, unread, until a later cleanup
+migration drops them, and older configuration versions and the audit log keep
+their history. Their earlier behavior is in this file's git history from
+before #952.
 
 ### Submission
 
@@ -1592,8 +1567,7 @@ Snapshot promotion performs these effects transactionally:
   applying provider-suppression records;
 - resolve proposals that now match upstream;
 - mark three-way conflicts;
-- resolve Ministry requests whose requested roster state is now current;
-- refresh seeded Chairperson suggestions/assignment warnings.
+- resolve Ministry requests whose requested roster state is now current.
 
 Promotion plans no mail itself. A Family that becomes active, eligible or
 deliverable changes its row's planning columns, which the
