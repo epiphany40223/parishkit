@@ -1265,8 +1265,9 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
 
 `users list` reads the Portal users page, and `users preview-upgrade` its
 Upgrade preview panel ([#952](https://github.com/epiphany40223/parishkit/issues/952)).
-Any session may run them; each records the page's event in System logs
-(`portal_users_viewed`, with the number of users printed).
+An Administrator's session, read-only or full, may run them; each records
+the page's event in System logs (`portal_users_viewed`, with the number of
+users printed).
 
 ```sh
 pk-admin users list
