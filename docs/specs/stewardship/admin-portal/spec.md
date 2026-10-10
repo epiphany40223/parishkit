@@ -2021,20 +2021,31 @@ and removes rows, fills presets and reads times through the shared
   one line, so a one-line message that comes or goes moves nothing. Every
   other change the page's script makes (messages, the line beside Save,
   the summary, the seven-day list, the "Not checked" line, the "Edit as
-  text" error, and rows added, removed or replaced) keeps the page steady
-  at one height on the screen: the pointer's, whatever is beside it; with
-  no pointer (keyboard only, a lifted touch, or the pointer has left the
-  window), the top of the control being edited, or of Use these lists
-  when it replaces the rows. The script measures each part it changes
-  before and after the change and scrolls by the sum of the height
-  changes of the parts wholly above that height. In a part that spans it,
-  it adds how far the same piece of content (followed by position) moved
-  within the part, or nothing where that content is gone. So what is under
-  the pointer stays where it was on the screen, within half a pixel. Over
-  something that does not scroll with the page (the sticky Admin menu),
-  nothing is scrolled. The browser's own scroll anchoring is turned off on
-  this page so it does not add a second adjustment. The "Edit as text"
-  error is drawn after Use these lists, in room kept for one line.
+  text" error, a time's reading line, and rows added, removed or
+  replaced) keeps the page steady at one height on the screen: the
+  pointer's, whatever is beside it; with no pointer (keyboard only, a
+  lifted touch, or the pointer has left the window), or with the pointer
+  over something that does not scroll with the page (the sticky Admin
+  menu), the top of the control being edited, or of Use these lists when
+  it replaces the rows. The script measures each part it changes before
+  and after the change and scrolls by the sum of the height changes of
+  the parts wholly above that height. In a part that spans it, it adds how
+  far the content at that height moved within the part: the same element,
+  followed wherever rows added or removed around it put it (over a gap
+  between rows, the row just below the gap). Only where that content is
+  gone (its row removed, or the part redrawn) is it followed by position,
+  and where nothing is left there, nothing is added. So what is under the
+  pointer stays where it was on the screen, within half a pixel, except
+  where it is itself removed or redrawn, and as far as the page can
+  scroll: near the top or bottom of the page the scroll stops at the
+  page's edge. Moving focus (to Add a rule after Remove, or to Replace my
+  changes) never scrolls the page under the pointer; with no pointer, a
+  control off the screen is brought just into view. The browser's own
+  scroll anchoring stays on for the page, so a note the header shows
+  above the page moves nothing; the parts the script steadies opt out of
+  it, so it does not add a second adjustment. Those parts take the same
+  room as plain blocks. The "Edit as text" error is drawn after Use these
+  lists, in room kept for one line.
   The preview and the problems at each row are not live regions. This is
   the same pattern as the mail schedules' repeat panel
   ([#469](https://github.com/epiphany40223/parishkit/issues/469)).

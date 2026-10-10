@@ -438,6 +438,11 @@
     if (root) root.querySelectorAll("input[data-time-entry]").forEach(cancelTimeCheck);
     else [...timePending].filter((field) => !field.isConnected).forEach(cancelTimeCheck);
   };
+  // Every change to a reading line goes through this, which a page that
+  // keeps its layout steady itself can replace (ParishTimeFields, below):
+  // a reading can grow by a line or two on a narrow screen. By default the
+  // change is simply made.
+  let aroundReading = (field, change) => change();
   // Show a field's reading or refusal and set its validity, which the Save
   // gates read at once. ``typing`` (an input event on this field) defers a
   // refusal, and the Save hint that explains it, until typing pauses, so a
@@ -453,27 +458,23 @@
     field.setCustomValidity(invalid ? message : "");
     cancelTimeCheck(field);
     const shown = quiet ? "" : message;
-    const show = (speak) => {
+    const show = (speak) => aroundReading(field, () => {
       parts.reading.textContent = shown;
       parts.reading.classList.toggle("is-error", invalid && !quiet);
       field.setAttribute("aria-invalid", String(invalid || quiet));
       if (speak && shown !== parts.spoken) parts.live.textContent = shown;
       parts.spoken = shown;
-    };
+    });
     if (!typing) {
       show(announce);
       return;
     }
-    if (invalid) {
-      // A half-typed entry: no stale reading and no red until the pause.
-      parts.reading.textContent = "";
+    // A half-typed entry: no stale reading and no red until the pause.
+    aroundReading(field, () => {
+      parts.reading.textContent = invalid ? "" : shown;
       parts.reading.classList.remove("is-error");
-      field.setAttribute("aria-invalid", "false");
-    } else {
-      parts.reading.textContent = shown;
-      parts.reading.classList.remove("is-error");
-      field.setAttribute("aria-invalid", String(quiet));
-    }
+      field.setAttribute("aria-invalid", String(!invalid && quiet));
+    });
     timePending.add(field);
     parts.timer = window.setTimeout(() => {
       timePending.delete(field);
@@ -571,8 +572,14 @@
   };
   // A page script that builds rows of time fields itself (the refresh
   // schedule editor, refresh-schedule-v1.js) wires each new row, and clears
-  // a removed row's timers, through these.
-  window.ParishTimeFields = Object.freeze({wire: wireTimeEntry, cancel: cancelTimeChecks});
+  // a removed row's timers, through these. steadyReadings(hook) has each
+  // later reading change made as hook(field, change), so that page can keep
+  // what is under the pointer in place as a reading grows or shrinks.
+  window.ParishTimeFields = Object.freeze({
+    wire: wireTimeEntry,
+    cancel: cancelTimeChecks,
+    steadyReadings: (hook) => { aroundReading = hook; },
+  });
   // Capture phase: the entry's validity is current before any form's own
   // input listener (the complete gate) runs.
   document.addEventListener("input", (event) => {
