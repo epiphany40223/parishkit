@@ -11,7 +11,10 @@ tried the form yet.
 
 It never shows a Member value, not even a name, since the refusing field may
 be the name itself: only the Family name and DUID, the Member DUID and the
-field in plain words.
+field in plain words. The Family name is therefore the surname alone
+(``family_display_name``), never the usual "Surname, heads" name, whose
+heads' names are Member values: a head's over-long or unreadable name could
+be the very value the form refuses (#932).
 
 The scan reads the whole current snapshot's Members once, so its result is
 kept in process memory, keyed by the campaign, the snapshot and the campaign
@@ -26,6 +29,7 @@ from collections import OrderedDict
 from threading import Lock
 
 from parishkit.stewardship.responses.inputs import member_source_fields
+from parishkit.stewardship.source.family_names import family_display_name
 from parishkit.stewardship.source.version_models import SnapshotFamily
 from parishkit.stewardship.source_form_check import (
     RECORD,
@@ -78,20 +82,21 @@ def _cached(key):
 
 
 def family_names(snapshot_id, duids):
-    """Each Family's name from the snapshot, as the other reports word it."""
-    names = {}
+    """Each Family's surname from the snapshot, by the shared naming rule.
+
+    Deliberately not ``snapshot_family_names``: its heads' names are Member
+    values, which this page never shows (see the module docstring).
+    """
     if not duids:
-        return names
-    for row in SnapshotFamily.objects.filter(
-        snapshot_id=snapshot_id, source_key__in=[str(duid) for duid in duids]
-    ).select_related("payload"):
-        payload = row.payload.payload or {}
-        names[row.source_key] = (
-            (payload.get("lastName") or "").strip()
-            or (payload.get("mailingName") or "").strip()
-            or "Unavailable Family"
+        return {}
+    return {
+        row.source_key: family_display_name(
+            row.payload.payload or {}, "Unavailable Family"
         )
-    return names
+        for row in SnapshotFamily.objects.filter(
+            snapshot_id=snapshot_id, source_key__in=[str(duid) for duid in duids]
+        ).select_related("payload")
+    }
 
 
 def blocked_families(campaign_id):
