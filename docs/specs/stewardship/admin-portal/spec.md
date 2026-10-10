@@ -2617,8 +2617,11 @@ A live campaign's end date
 ([#912](https://github.com/epiphany40223/parishkit/issues/912)) changes in
 two places, both for the current Production campaign while it is scheduled
 or open, before its closing instant and while no background work holds
-campaign changes. Campaign settings shows a **Campaign end date** panel: one
-date field, **Review changes** and the page's in-place review and Apply. Its
+campaign changes. Campaign settings shows a **Change the end date** panel:
+one date field, **Review changes** and the page's in-place review and Apply.
+While background work holds campaign changes, the panel stays, saying only
+that the end date can change once that work finishes, and a review posted
+meanwhile is refused as locked. Its
 review is the Dates and mail schedules review of the same change, built from
 the saved schedules left as they are; it names the end date before and
 after and every digest re-planned for the new dates, and notes that Family
@@ -2631,7 +2634,11 @@ proposed date filled in and only the end date open. Either Apply records
 the request and, in the same transaction, binds its exceptional end-edit
 intent and a `campaign_end_date_requested` audit event (subject: the
 request). The configuration installer applies it with that intent's owning
-admission; see the [campaign data model](../data/spec.md#campaign). The end
+admission; see the [campaign data model](../data/spec.md#campaign). A change
+the installer refuses (the campaign changed or closed, a date passed, or
+closing or other campaign work started first) ends as **Not applied**, and
+its status on the page, and on Change status, says which, or quotes the
+reason of an Administrator's cancellation. The end
 date never changes the Family token generation, and Family pages and later
 emails that show the end date use the new one.
 

@@ -10,9 +10,11 @@ import pytest
 
 from .settings_components import (
     COMBINED_REVIEW,
+    END_REFUSAL,
     LIVE_END,
     LIVE_END_PENDING,
     LIVE_END_REFUSED,
+    LIVE_END_REFUSING,
     LIVE_END_REVIEW,
 )
 from .test_in_place import MARK, MARKED, count_requests
@@ -77,3 +79,17 @@ def test_a_shortening_that_strands_mail_links_to_the_combined_review(
     assert page.get_by_role("button", name="Apply changes").count() == 0
     assert page.get_by_label("Campaign end date").input_value() == "2054-10-20"
     assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_refused_change_settles_in_place_with_its_reason(page, component_origin):
+    """The polled status says Not applied and why, without moving the form
+    or reloading the page (#944)."""
+    page.goto(component_origin + LIVE_END_REFUSING)
+    page.evaluate(MARK)
+    before = page.evaluate(FORM_TOP)
+    panel = page.locator("#settings-review")
+    visible(panel.get_by_role("heading", name="Not applied"))
+    assert END_REFUSAL in panel.inner_text()
+    assert page.evaluate(FORM_TOP) == before
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url == component_origin + LIVE_END_REFUSING

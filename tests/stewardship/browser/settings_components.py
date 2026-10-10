@@ -22,7 +22,9 @@ so a test can check its module scripts survive an in-place review. A live
 campaign's Campaign settings, whose one editable setting is its end date
 (#912), is served at ``LIVE_END`` (the editor, whose Apply leads to
 ``LIVE_END_PENDING``), ``LIVE_END_REVIEW`` (its review) and
-``LIVE_END_REFUSED`` (refused, linking to the combined date-change review).
+``LIVE_END_REFUSED`` (refused, linking to the combined date-change review);
+``LIVE_END_REFUSING`` shows a change whose polled status settles as refused
+(#944).
 """
 
 from datetime import date
@@ -55,6 +57,14 @@ LIVE_END = "/campaign-end-in-place"
 LIVE_END_REVIEW = "/campaign-end-in-place-review"
 LIVE_END_REFUSED = "/campaign-end-in-place-refused"
 LIVE_END_PENDING = f"{LIVE_END}?request={REQUEST}"
+# A change the installer then refuses (#944): its page, and the status its
+# region polls, which settles as Not applied with the reason.
+LIVE_END_REFUSING = f"{LIVE_END}?request={REQUEST}&refused=1"
+LIVE_END_STATUS_REFUSED = "/campaign-end-in-place-status-refused"
+END_REFUSAL = (
+    "The campaign closed, or its previous end date passed, before the end "
+    "date could change, so it was not applied."
+)
 # Where a refused shortening sends the Administrator (#912).
 COMBINED_REVIEW = "/admin/campaign/schedules/?end_date=2054-10-20"
 CAMPAIGN_VALUES = {
@@ -165,14 +175,17 @@ def components(context, admin):
             ),
         )
 
-    def live_end(step, **region):
-        """A live campaign's Campaign settings: only its end date can change."""
+    def live_end(step, status=STATUS, **region):
+        """A live campaign's Campaign settings: only its end date can change.
+
+        ``status`` is the Change status read its pending change polls.
+        """
         end_form = LiveEndDateForm(
             initial={"end_date": date(2054, 10, 31), "base_digest": "a" * 64}
         )
         values = review_region("campaign_settings", end_form, **region)
         if region.get("receipt"):
-            values["status_url"] = STATUS
+            values["status_url"] = status
         return (
             "text/html",
             render_to_string(
@@ -262,6 +275,24 @@ def components(context, admin):
             2,
             receipt=SimpleNamespace(
                 state="staged", request_id=REQUEST, failure_code=""
+            ),
+        ),
+        LIVE_END_REFUSING: live_end(2, status=LIVE_END_STATUS_REFUSED, receipt=pending),
+        LIVE_END_STATUS_REFUSED: (
+            "text/html",
+            render_to_string(
+                "stewardship/configuration-request.html",
+                context
+                | {
+                    "admin_chrome": admin,
+                    "receipt": SimpleNamespace(
+                        state="failed",
+                        request_id=REQUEST,
+                        failure_code="invalid_candidate",
+                        refusal=END_REFUSAL,
+                    ),
+                    "follow_url": None,
+                },
             ),
         ),
         CAMPAIGN_REVIEW: campaign(

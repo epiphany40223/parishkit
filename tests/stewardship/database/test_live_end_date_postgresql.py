@@ -521,6 +521,38 @@ def test_claimed_close_work_refuses_cleanly_and_the_queue_moves_on(tmp_path):
     coherent(store)
 
 
+def test_change_status_shows_why_the_end_date_was_not_changed(auth_service, google):
+    """Campaign settings' status of a refused change names its reason."""
+    store = auth_service.store
+    campaign = live(store)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+    review = post(
+        browser,
+        url,
+        {"action": "preview", "end_date": "2054-11-15", "base_digest": digest(page)},
+    )
+    accepted = post(browser, url, {"action": "confirm", "preview": token(review)})
+    request = ConfigurationChangeRequest.objects.get(pk=requested(accepted))
+    # The campaign closes (its old end passes) before the installer runs.
+    with campaign_clock(campaign.active_configuration.ends_at + timedelta(hours=1)):
+        status = installed(store, request.pk)
+        assert (status.state, status.failure_code) == ("failed", "invalid_candidate")
+        coherent(store)
+        shown = browser.get(
+            urlsplit(accepted["Location"]).path + "?request=" + str(request.pk)
+        )
+        text = unescape(shown.content.decode())
+        assert shown.status_code == 200 and "Not applied" in text
+        assert "The end date could no longer change" in text
+        # Change status, which the page's region polls, says the same.
+        polled = browser.get(reverse("admin:configuration_request", args=[request.pk]))
+        assert "The end date could no longer change" in unescape(
+            polled.content.decode()
+        )
+
+
 def test_the_command_line_cancels_a_stuck_end_change(admin, google, monkeypatch):
     """``config request cancel``: journaled, restored by the installer, audited.
 
@@ -600,3 +632,122 @@ def test_the_command_line_cancels_a_stuck_end_change(admin, google, monkeypatch)
     # A settled change can no longer be cancelled.
     code, late = one(admin, *argv, "--reason", "Another reason", secret=secret)
     assert code == 1 and late["error"]["code"] == "stale_version", late
+
+
+def opened(store):
+    """An open Production campaign (active), its reminder on 2054-10-25."""
+    campaign, _ = campaign_with_reminder(store)
+    with campaign_clock(campaign.active_configuration.starts_at):
+        command(campaign, uuid4(), Action.ACTIVATE)
+    campaign.refresh_from_db()
+    assert campaign.state == "active" and campaign.structural_locked
+    return campaign
+
+
+def test_an_open_campaign_changes_its_end_date_on_the_page(auth_service, google):
+    """Campaign settings offers and applies the end date of an open campaign."""
+    store = auth_service.store
+    campaign = opened(store)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+    body = page.content.decode()
+    assert 'id="end-date"' in body and 'name="end_date"' in body
+    assert "This campaign is live, so these settings are locked" in body
+    review = post(
+        browser,
+        url,
+        {"action": "preview", "end_date": "2054-11-15", "base_digest": digest(page)},
+    )
+    assert review.status_code == 200, review.content
+    accepted = post(browser, url, {"action": "confirm", "preview": token(review)})
+    request = ConfigurationChangeRequest.objects.get(pk=requested(accepted))
+    assert installed(store, request.pk).state == "applied"
+    campaign.refresh_from_db()
+    assert campaign.state == "active"
+    assert campaign.active_configuration.end_date.isoformat() == "2054-11-15"
+    coherent(store)
+
+
+def test_an_open_campaign_changes_its_end_date_on_the_command_line(admin, google):
+    """``schedule preview`` and ``confirm`` move an open campaign's end date."""
+    store = admin.service.store
+    campaign = opened(store)
+    _, secret, _ = paired(admin.service)
+    code, document = preview(admin, secret, {"window": {"end_date": "2054-11-15"}})
+    assert code == 0, document
+    code, confirmed = confirm(admin, secret, document["result"]["preview"]["token"])
+    assert code == 0, confirmed
+    request_id = UUID(confirmed["result"]["request"]["request_id"])
+    assert installed(store, request_id).state == "applied"
+    campaign.refresh_from_db()
+    assert campaign.state == "active"
+    assert campaign.active_configuration.end_date.isoformat() == "2054-11-15"
+
+
+def test_held_work_notes_the_end_date_and_refuses_a_stale_review(auth_service, google):
+    """While background work holds changes the panel says so; a post is refused."""
+    from django.db import connection, transaction
+
+    from parishkit.stewardship.campaigns.models import CampaignWorkGate
+
+    store = auth_service.store
+    campaign = live(store)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+    base = digest(page)
+    # A work gate (a purge reservation), the owner's sentinel only.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE stewardship_campaign_work_gate DISABLE TRIGGER USER"
+        )
+        CampaignWorkGate.objects.create(
+            campaign=campaign,
+            request_id=uuid4(),
+            initiated_by_id=uuid4(),
+            state="preparing",
+        )
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
+    held = browser.get(url)
+    body = unescape(held.content.decode())
+    assert held.status_code == 200
+    panel = re.search(r'<section class="panel" id="end-date".*?</section>', body, re.S)
+    assert panel is not None and 'name="end_date"' not in panel.group(0)
+    assert "The end date can change once the background work" in body
+    assert "They can change only on the current Testing-mode draft" not in body
+    before = ConfigurationChangeRequest.objects.count()
+    stale = post(
+        browser,
+        url,
+        {"action": "preview", "end_date": "2054-11-15", "base_digest": base},
+    )
+    assert stale.status_code == 409
+    assert "These campaign settings are locked" in unescape(stale.content.decode())
+    assert ConfigurationChangeRequest.objects.count() == before
+
+
+def test_a_past_end_date_is_refused_on_the_page(auth_service, google):
+    """While the campaign runs, an end date already past is refused by name."""
+    store = auth_service.store
+    campaign = live(store)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_settings")
+    with campaign_clock(campaign.active_configuration.starts_at + timedelta(days=10)):
+        page = browser.get(url)
+        assert 'name="end_date"' in page.content.decode()
+        refused = post(
+            browser,
+            url,
+            {
+                "action": "preview",
+                "end_date": "2054-10-05",
+                "base_digest": digest(page),
+            },
+        )
+    assert refused.status_code == 400
+    text = unescape(refused.content.decode())
+    assert "Choose an end date that has not already passed." in text
+    assert "would no longer fit the campaign" not in text
+    assert not CampaignConfigurationIntent.objects.exists()

@@ -52,6 +52,9 @@ class RequestStatus:
     applied_version_id: UUID | None = None
     applied_digest: str | None = None
     _affected_targets: tuple[tuple[str, str], ...] = field(default=(), repr=False)
+    # Why a refused live end-date change was not applied (#944), in the
+    # page's words; only Change status's read fills it in.
+    refusal: str = field(default="", compare=False)
 
     def affected_values(self):
         """Load values lazily; state-only reads never revalidate full projections."""
