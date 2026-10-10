@@ -8,9 +8,9 @@
 <p>{% translate "The first campaign uses the parish timezone. Content, share options and delivery schedules can be reviewed separately before final confirmation." %}</p>{% endaboutpage %}
 <p class="notice">{% translate "Testing mode. This campaign remains temporary until final setup completes. Ministry and fund choices come from this setup's validated source load." %}</p>
 <p><a href="{% url 'admin:setup_schedules' %}">{% translate "Change campaign dates together with saved mail schedules" %}</a></p>
-<form method="post" class="panel" data-campaign-form>
+<form method="post" class="panel" data-campaign-form data-require-complete>
 {% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
 {% include 'stewardship/campaign-fields.html' %}
-{% translate "Save and continue" as submit %}{% include 'stewardship/setup-navigation.html' %}
+{% translate "Save and continue" as submit %}{% include 'stewardship/setup-navigation.html' with complete_hint="setup-complete-hint" %}
 </form>
 {% endblock %}

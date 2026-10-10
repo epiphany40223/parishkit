@@ -85,7 +85,8 @@ configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
    and a complete staged source load.
 4. Google Workspace email service-account/delegated mailbox, sender/reply
    address, optional From name, Testing recipient, and test delivery.
-5. Optional Slack token/channel and test notification.
+5. Optional Slack token/channel and test notification. The channel ID field
+   is shown, and required, only while Slack notifications are enabled.
 6. Exact preview/readiness summary and final confirmation.
 
 The campaign is created afterwards, from Home, by
@@ -2542,6 +2543,12 @@ direct requests cannot bypass them.
 
 Campaign settings reviews and applies its changes
 [in place](#in-place-controls) under its form, as Parish settings does.
+Its Review changes button, like Save and continue on the wizard's First
+campaign step, stays unavailable, with the hint described under
+[Bootstrap and first-Admin wizard](#bootstrap-and-first-admin-wizard),
+until at least one module is ticked. While Financial stewardship is ticked
+it also waits for both financial periods, their funds and, while shown, the
+overlap confirmation. The server's checks are unchanged (#563).
 
 The campaign editor includes:
 

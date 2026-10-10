@@ -112,9 +112,24 @@ class SetupSlackForm(forms.Form):
     )
 
     def __init__(self, *args, **kwargs):
-        """Explain what Slack is used for and where to find the channel ID."""
+        """Explain Slack, and show the channel only while Slack is enabled.
+
+        clean() wants a channel exactly when Slack is enabled. The page
+        (ui-v1.js) shows the channel field, and requires it, only while
+        "Enable Slack notifications" is ticked; hidden, it is disabled and not
+        sent, so turning Slack off clears a saved channel (#563).
+        """
         super().__init__(*args, **kwargs)
         setup_help.apply(self, setup_help.SLACK)
+        self.fields["channel_id"].widget.attrs.update(
+            {
+                "data-show-when": f"{self.add_prefix('enabled')}=on",
+                "data-required-when-shown": "",
+                "data-missing-hint": _(
+                    "Enter the Slack channel ID, or untick Enable Slack notifications."
+                ),
+            }
+        )
 
     def clean(self):
         """Reject hidden leftover channel data when the option is turned off."""

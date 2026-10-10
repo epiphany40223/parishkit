@@ -1,6 +1,8 @@
-{% comment %}
+{% load i18n %}{% comment %}
 The campaign/financial-period overlap confirmation: the ordinary field group,
 shown only while the dates overlap (the form's overlap_needed). ui-v1.js keeps
-it in step as dates change and unchecks it when hidden; the server still
-refuses an unconfirmed overlap and redisplays this with its error.
-{% endcomment %}<div data-overlap-confirmation {{ field.form.overlap_attributes }}{% if not field.form.overlap_needed %} hidden{% endif %}>{% include "django/forms/field.html" %}</div>
+it in step as dates change and unchecks it when hidden; on a form with the
+complete gate it is also required while shown, with this group's missing
+hint (#563). The server still refuses an unconfirmed overlap and redisplays
+this with its error.
+{% endcomment %}<div data-overlap-confirmation {{ field.form.overlap_attributes }} data-missing-hint="{% translate 'Confirm the overlap with the campaign dates, or change the dates.' %}"{% if not field.form.overlap_needed %} hidden{% endif %}>{% include "django/forms/field.html" %}</div>

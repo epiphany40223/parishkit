@@ -100,3 +100,15 @@ def test_identity_lists_and_unknown_steps_are_bounded():
             validate_values(value, {})
         with pytest.raises(ValueError):
             initial_values(value, {})
+
+
+def test_slack_channel_is_shown_and_required_only_while_enabled():
+    """The page shows the channel only for an enabled Slack (#563), so the
+    server's "enable and supply, or disable and clear" rule is never hit."""
+    attrs = FORMS["slack"]().fields["channel_id"].widget.attrs
+    assert attrs["data-show-when"] == "enabled=on"
+    assert attrs["data-required-when-shown"] == ""
+    assert str(attrs["data-missing-hint"]).startswith("Enter the Slack channel ID")
+    # Hidden, the field is disabled and not sent: Slack off clears it.
+    assert FORMS["slack"]({"enabled": ""}).is_valid()
+    assert not FORMS["slack"]({"enabled": "on"}).is_valid()

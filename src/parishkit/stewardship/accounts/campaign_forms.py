@@ -26,6 +26,16 @@ MULTI_SELECT_HELP = _(
 # The campaign-overlap confirmation renders through this field template so it
 # can be shown only while the entered dates overlap (see overlap_attributes).
 OVERLAP_TEMPLATE = "stewardship/overlap-field.html"
+# The financial fields Financial stewardship requires (the overlap
+# confirmation is required only while the dates overlap).
+FINANCIAL_REQUIRED = (
+    "financial_start",
+    "financial_end",
+    "comparison_start",
+    "comparison_end",
+    "fund_duids",
+    "comparison_fund_duids",
+)
 
 
 def _as_date(value):
@@ -160,6 +170,12 @@ class CampaignForm(forms.Form):
             ("comparison_start", "comparison_end"),
         ):
             self.fields[start].widget.attrs["data-fills-end"] = self.add_prefix(end)
+        # clean() requires these while Financial stewardship is ticked; the
+        # page's complete gate (ui-v1.js) makes them required in the browser
+        # then too, so Review waits for them instead of being refused (#563).
+        financial_on = f"{self.add_prefix('financial_enabled')}=on"
+        for name in FINANCIAL_REQUIRED:
+            self.fields[name].widget.attrs["data-required-when"] = financial_on
         self.fields["overlap_confirmed"].template_name = OVERLAP_TEMPLATE
 
     @property
@@ -203,22 +219,14 @@ class CampaignForm(forms.Form):
             self.add_error(
                 "ministry_duids", _("Enable Ministry stewardship to select Ministries.")
             )
-        financial_fields = (
-            "financial_start",
-            "financial_end",
-            "comparison_start",
-            "comparison_end",
-            "fund_duids",
-            "comparison_fund_duids",
-            "overlap_confirmed",
-        )
+        financial_fields = (*FINANCIAL_REQUIRED, "overlap_confirmed")
         if not data["financial_enabled"]:
             if any(data[name] for name in financial_fields):
                 raise forms.ValidationError(
                     _("Financial settings require financial stewardship.")
                 )
         else:
-            for name in financial_fields[:-1]:
+            for name in FINANCIAL_REQUIRED:
                 if not data[name]:
                     self.add_error(name, _("Required for financial stewardship."))
             if (
@@ -297,21 +305,20 @@ class CampaignForm(forms.Form):
 
     @property
     def general_fields(self):
-        """Keep semantic module controls outside the conditionally hidden groups."""
+        """The campaign's name, time zone and dates, shown first."""
         return [
             self[name]
-            for name in (
-                "name",
-                "year_label",
-                "timezone",
-                "start_date",
-                "end_date",
-                "census",
-                "ministry",
-                "financial_enabled",
-                "additional_information",
-            )
+            for name in ("name", "year_label", "timezone", "start_date", "end_date")
         ]
+
+    @property
+    def module_fields(self):
+        """The module boxes, kept outside the conditionally hidden groups.
+
+        The template groups them so the page can require at least one, as
+        clean() does.
+        """
+        return [self[name] for name in ("census", "ministry", "financial_enabled")]
 
     @property
     def financial_fields(self):

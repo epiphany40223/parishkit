@@ -13,9 +13,9 @@
 {% if step == 'access' %}<p>{% translate "The Administrator account you are signed in with always keeps its access. Domains may grant Staff or Ministry-leader roles, never Administrator. Ministry access also requires a Ministry assignment." %}</p>{% endif %}
 {% if step == 'mail' %}<p>{% translate "These are public sender settings only. Credential verification and test delivery are separate required checks." %}</p>{% endif %}{% endaboutpage %}
 <p class="notice">{% translate "Testing mode. These settings remain temporary until final setup completes. Do not enter API tokens, passwords or service-account JSON here." %}</p>
-<form method="post" class="panel">
+{% comment %}The Slack step shows and requires its channel only while Slack is enabled, so its Save waits for it (#563).{% endcomment %}<form method="post" class="panel"{% if step == 'slack' %} data-require-complete{% endif %}>
 {% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
 {{ form.as_div }}
-{% translate "Save and continue" as submit %}{% include 'stewardship/setup-navigation.html' %}
+{% translate "Save and continue" as submit %}{% if step == 'slack' %}{% include 'stewardship/setup-navigation.html' with complete_hint="setup-complete-hint" %}{% else %}{% include 'stewardship/setup-navigation.html' %}{% endif %}
 </form>
 {% endblock %}
