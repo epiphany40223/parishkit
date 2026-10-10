@@ -58,10 +58,12 @@ already known.
 
 The email names the expansion by the same words the dashboard uses, the
 target, the roles before and after in the fixed role order, the granting
-Administrator's current address or operator recovery, the time in UTC, the
+Administrator's current address or operator recovery, the time in the
+parish time zone with the zone named
+([#967](https://github.com/epiphany40223/parishkit/issues/967)), the
 deployment mode and the event reference, with a fixed instruction to
 acknowledge it on the Admin dashboard. The Python compiler and
-`stewardship_security_content_v1` produce the same subject, HTML and text
+`stewardship_security_content_v2` produce the same subject, HTML and text
 byte for byte, and the SQL render matcher admits an outbox render only when
 it equals that recompilation for the message's recipient, sender and
 reply-to, so no process can substitute its own prose. The private helper

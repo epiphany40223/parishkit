@@ -807,7 +807,7 @@ acknowledges it; acknowledging affects only one's own view.
 **Email and Slack** use the existing operational alert path rather than a new
 mail purpose. That path is bound in SQL to operational incidents: the outbox
 guard, the operational cohort and recipient bindings, the prepare and
-dispatch checks, and `stewardship_ops_content_v1`, which renders fixed text
+dispatch checks, and `stewardship_ops_content_v2`, which renders fixed text
 from a closed list of incident kinds and has no place for a label. It sends
 to the Administrators of the active configuration and, when configured, to
 Slack. So four new incident kinds are added, each with fixed text naming no
@@ -2623,7 +2623,7 @@ MUST prove:
   and still refuse a read-only, revoked or expired session;
 - **notices:** each event in the [table](#notifications) creates its dashboard
   notice and, where stated, observes its incident kind, whose fixed content
-  renders through `stewardship_ops_content_v1` in the opened, repeated and
+  renders through `stewardship_ops_content_v2` in the opened, repeated and
   resolved phases; a burst opens one episode, and its resolution an hour later
   sends the resolved text; acknowledgement affects only the acknowledging
   Administrator; labels are escaped on the dashboard; no secret, digest, label
