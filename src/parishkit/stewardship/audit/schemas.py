@@ -125,6 +125,8 @@ class Action(StrEnum):
     HOSTED_FILE_DELETED = "hosted_file_deleted"
     CHAIR_REVIEW_DECIDED = "chair_review_decided"
     CAMPAIGN_MINISTRIES_REQUESTED = "campaign_ministries_requested"
+    # A live campaign end-date change (#912); its subject is the request.
+    CAMPAIGN_END_DATE_REQUESTED = "campaign_end_date_requested"
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"
     SETUP_SOURCE_COMPLETED = "setup_source_completed"

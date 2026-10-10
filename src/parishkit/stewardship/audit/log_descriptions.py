@@ -573,6 +573,9 @@ DESCRIPTIONS = {
     "campaign_ministries_requested": _(
         "An Administrator asked to change a live campaign's Ministries."
     ),
+    "campaign_end_date_requested": _(
+        "An Administrator asked to change a live campaign's end date."
+    ),
     # Campaign schedule (audit, written by the database).
     "campaign_boundary_completed": _(
         "A scheduled campaign date change (such as opening or closing) happened."
