@@ -14,6 +14,9 @@ one place and is linked rather than duplicated. Each specification file is named
   parish census, Ministry stewardship, and financial stewardship campaigns.
   Its cross-linked subsystem specs cover architecture, data/reconciliation,
   both portals, background work, reports, deployment, and operations.
+  Its [UX conventions](stewardship/ui-conventions/spec.md) are the home of
+  the general, portal-wide UX rules and take precedence over the other
+  specs for them.
 
 The related ParishSoft API comparison lives one level up in the docs root:
 **[../parishsoft-api-analysis.md](../parishsoft-api-analysis.md)** (v1 vs. v2,

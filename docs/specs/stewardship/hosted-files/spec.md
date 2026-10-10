@@ -11,8 +11,8 @@ serving patterns (`accounts/branding_files.py`, `web/content.py`,
 `accounts/branding_views.py`) rather than inventing new ones. Content rules
 that it extends are defined in
 [content and email templates](../data/spec.md#content-and-email-templates);
-the Admin page follows the shared [Admin tables](../admin-portal/spec.md#admin-tables)
-and [page help](../admin-portal/spec.md#page-help) conventions.
+the Admin page follows the shared [Admin tables](../ui-conventions/spec.md#admin-tables)
+and [page help](../ui-conventions/spec.md#page-help) conventions.
 
 ## Scope and decisions
 
@@ -460,7 +460,7 @@ slug is labelled **Placeholder name**.
 The page leads with a one-line notice ("Anyone with a file's link can open it,
 so never upload anything private."); its introduction ("Files you can link
 from Family pages and emails.") opens the About panel, following the Admin
-[page help](../admin-portal/spec.md#page-help) rules. Then:
+[page help](../ui-conventions/spec.md#page-help) rules. Then:
 
 - **Upload form**: a file field (`accept` lists the permitted extensions, as a
   hint only) and a **Placeholder name** field with the hint "Lowercase
@@ -501,7 +501,7 @@ from Family pages and emails.") opens the About panel, following the Admin
   email-image advice; and how to replace a file.
 
 Copy buttons use the clipboard API (the Admin portal [requires
-JavaScript](../admin-portal/spec.md#javascript-requirement)); the read-only
+JavaScript](../ui-conventions/spec.md#javascript-requirement)); the read-only
 field can also be selected and copied by hand. The Pages and emails editor's
 placeholder reference mentions `{{ file.<slug> }}` and links to this page.
 
