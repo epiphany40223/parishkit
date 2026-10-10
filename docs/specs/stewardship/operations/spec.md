@@ -749,7 +749,9 @@ rule of its `source-cadence-v8` counterpart with the users list in place of
 the sign-in rules. Bootstrap (`bootstrap --admin-email`) writes an
 Administrator user too, with the code slice that changes the setup wizard:
 the bootstrap configuration is the wizard's base, and its access step and SQL
-setup guards still expect an exact-address rule.
+setup guards still expect an exact-address rule. Until then the users
+release's startup refusal of sign-in rules exempts a deployment still in
+initial setup.
 
 ### Offline bootstrap profile
 
