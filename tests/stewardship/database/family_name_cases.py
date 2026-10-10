@@ -5,8 +5,9 @@
 string to sort and search by. ``NAME_CASES`` lists the edge cases the copies
 have drifted on, and ``seed_name_cases`` writes them into a snapshot, so a
 test of any SQL copy can seed them and compare against ``expected`` (#932).
-The table and helper match #965's ``test_family_name_sql_postgresql.py``,
-which can import them from here once both have landed.
+``test_family_name_sql_postgresql.py`` (``SnapshotFamilyName``, #965) and
+``test_family_name_functions_postgresql.py`` (migration 0045's functions)
+both import them from here.
 """
 
 import hashlib
