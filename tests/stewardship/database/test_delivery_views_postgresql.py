@@ -45,7 +45,7 @@ from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
 from .test_daily_digest_planning_postgresql import INSTANT as DIGEST_INSTANT
 from .test_family_mail_dispatch_postgresql import claim, prepare
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
-from .test_recipient_suppressions_postgresql import refused, remember
+from .test_recipient_suppressions_postgresql import email, refused, remember
 from .test_source_families_postgresql import prepare as prepare_source
 from .test_source_families_postgresql import promote
 
@@ -333,7 +333,9 @@ def test_family_name_sort_keys_match_the_shown_names(response_service):
     )
     with task_login(ServiceRole.WEB, exact=True):
         rows = list(
-            DELIVERY_SORTING.order(keyed, "name").values(
+            # The name column's surname and whole-name keys, then the DUID
+            # (FamilyCampaign's own column, as the outbox's family__family_duid).
+            keyed.order_by(*DELIVERY_SORTING.orders["name"][:2], "family_duid").values(
                 "family_duid", "family_sort_surname", "family_sort_name"
             )
         )
@@ -352,6 +354,45 @@ def test_family_name_sort_keys_match_the_shown_names(response_service):
     }
     # Surname first, then the whole name: both Smiths sort by "smith".
     assert [row["family_duid"] for row in rows] == [22, 2, 1, 21, 20, 24, 23]
+
+
+def test_tied_family_names_keep_each_familys_emails_together(response_service):
+    """#931: two Families that show the same name sort by Family DUID under
+    Family, as the Family codes directory orders tied names, so each
+    Family's emails stay together in both directions."""
+    data = response_source()
+    for duid in (20, 30):
+        data.families[duid] = data.families[1] | {
+            "familyDUID": duid,
+            "familyID": duid + 100,
+            "firstName": "",
+            "mailingName": "",
+            "lastName": "Smith",
+        }
+        data.members[duid * 100] = data.members[3] | {
+            "memberDUID": duid * 100,
+            "familyDUID": duid,
+            "firstName": "Carl",
+            "lastName": "Smith",
+            "memberType": "Head",
+            "emailAddress": "",
+        }
+    snapshot, claim = prepare_source(data)
+    promote(snapshot, claim, response_service.campaign, response_service.rings)
+    current = SourceCurrent.objects.get().snapshot_id
+    assert snapshot_family_names(current, [20, 30]) == {
+        20: "Smith, Carl",
+        30: "Smith, Carl",
+    }
+    harness = activate_response_service(response_service)
+    # Interleaved, so neither creation order nor ids group them by chance.
+    family_of = {
+        email(harness, duid=duid).message_id: duid for duid in (30, 20, 30, 20)
+    }
+    with task_login(ServiceRole.WEB, exact=True):
+        for sort, first, second in (("name", 20, 30), ("-name", 30, 20)):
+            rows = read_listing(QueryDict(f"sort={sort}"))["rows"]
+            assert [family_of[row["id"]] for row in rows] == [first] * 2 + [second] * 2
 
 
 @pytest.mark.parametrize(
