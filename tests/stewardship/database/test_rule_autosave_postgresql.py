@@ -16,7 +16,6 @@ from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address, domain
 from .auth_builders import signed_in
-from .leader_builders import grant_role
 from .test_background_grants_postgresql import task_login
 from .test_configuration_service_postgresql import (
     as_config_installer,
@@ -223,39 +222,3 @@ def test_refusals_are_closed_and_record_nothing(auth_service, google, monkeypatc
         assert stranger.get(BASE).status_code == 403
     assert ConfigurationChangeRequest.objects.count() == before
     assert browser.get(PAGE).status_code in {200, 403}
-
-
-@pytest.mark.usefixtures("config_role")
-def test_withdrawing_the_last_role_removes_the_rule_and_leadership_stays(
-    auth_service, google
-):
-    """Unticking an address's last role removes its rule, never a deny (#939).
-
-    An explicit deny also blocks ParishSoft Ministry leadership (#922), so a
-    leader whose address rule loses its last role through autosave keeps
-    leading: the rule is gone, not turned into a deny.
-    """
-    store = auth_service.store
-    grant_role(store, "lead@example.org", "ministry_leader")
-    add_rules(store, address("lead@example.org", ("staff",)))
-    account = user("lead@example.org")
-    assert current_principal(store, account.pk).roles == {"staff", "ministry_leader"}
-    browser, login = signed_in()
-    assert login.status_code == 302
-    with web():
-        answer = apply(
-            browser,
-            intent(store, identity="lead@example.org", role="staff", checked="0"),
-        )
-        assert answer.status_code == 202, answer.content
-        receipt = answer.json()
-    installed(store, receipt["request_id"])
-    request = ConfigurationChangeRequest.objects.get(pk=receipt["request_id"])
-    assert [item["operation"] for item in request.patch] == ["remove"]
-    assert not any(
-        record["values"].get("email") == "lead@example.org"
-        for record in store.active().document()["sections"]["login_rules"]
-    )
-    principal = current_principal(store, account.pk)
-    assert principal.roles == {"ministry_leader"}
-    assert principal.ministries == {9}

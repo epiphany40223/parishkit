@@ -3930,13 +3930,7 @@ list without a reload.
 Domain rows expose Staff and Ministry-leader columns. Administrator is visibly
 disabled. Creating `gmail.com` fails client and server validation. Address rows
 expose all roles; an empty role set is clearly labeled Explicit deny rather
-than appearing accidental. An explicit deny refuses the address entirely,
-ParishSoft [Ministry leadership](#ministry-leaders-from-parishsoft) included,
-so it is only ever made deliberately: by adding an address rule with no role
-ticked. Unticking an address's last role removes its rule instead (#939), so
-the address falls back to any hosted-domain rule and its ParishSoft roles.
-The row then says its rule was removed and its checkboxes are disabled in
-place until the page is redrawn, since autosave never recreates a rule.
+than appearing accidental.
 
 The domain table labels its rules as Google Workspace/Cloud Identity hosted-
 domain rules and explains that an email suffix alone never matches. Login-rule

@@ -312,37 +312,12 @@
     adopt(answer);
     return answer;
   }
-  function removed(intent) {
-    // Withdrawing an exact address's last role removes its rule (#939), so
-    // a cleared row means "no rule, default access", never an explicit
-    // deny. The applied receipt confirms the page's view of that rule, so
-    // when no box in the row is confirmed ticked the rule is gone. Its
-    // boxes are then disabled until the page is redrawn, as a deleted
-    // target is after a conflict, and a change still queued for them is
-    // dropped visibly: the server never recreates a rule implicitly.
-    if (intent.kind !== "address" || intent.checked) return false;
-    const row = controls.filter((control) =>
-      control.kind === intent.kind && control.identity === intent.identity);
-    if (row.some((control) => confirmed.get(control.box))) return false;
-    row.forEach((control) => {
-      const index = queue.findIndex((item) => item.box === control.box);
-      if (index >= 0) {
-        queue.splice(index, 1);
-        status(control.box, "Not saved: this address's rule was removed. Reload the page to add it again.", "discarded");
-      }
-      control.box.checked = false;
-      control.box.disabled = true;
-    });
-    return true;
-  }
   function settle(intent, receipt) {
     inflight = null;
     if (receipt.state === "applied") {
       base = receipt.applied_digest; refresh();
       confirmed.set(intent.box, intent.checked);
-      status(intent.box, removed(intent)
-        ? "Applied: with no role left, this address's rule was removed"
-        : "Applied", "applied");
+      status(intent.box, "Applied", "applied");
       dispatch();
       return;
     }
