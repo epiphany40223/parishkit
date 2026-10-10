@@ -715,8 +715,9 @@ around it, two gates keep it in place instead:
   filter syncs. First use: System logs' level boxes while Sign-in activity is
   chosen.
 - `data-locked-when` (open #957) shows a fixed value, disabled, while its
-  rule holds, with the reason in reserved space, and gives back the reader's
-  own value (kept in a hidden field) when the rule stops holding. First use:
+  rule holds, with the reason in the field's toggletip (never a line under
+  the field), and gives back the reader's own value (kept in a hidden field)
+  when the rule stops holding. First use:
   the directory's "Campaign mail can reach" while Include mailing columns is
   ticked.
 
@@ -831,8 +832,8 @@ the label, for fields whose format or rule is needed every time (an example
 address, "one per line", a key's paste rule), and a warning that blocks the
 field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
-opening the tip. Checkbox help stays beside the box. A toggletip in a table
-heading is described by its bubble alone, and its bubble floats over the
+opening the tip. Checkbox help is a toggletip beside the box. A toggletip in a
+table heading is described by its bubble alone, and its bubble floats over the
 page, so opening it never changes the size or scroll of the table's box;
 it closes when that box scrolls its button out of view.
 
