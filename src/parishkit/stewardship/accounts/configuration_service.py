@@ -68,7 +68,9 @@ CONFIGURATION_GRANTS = {
     "stewardship_campaign": {"SELECT", "INSERT", "UPDATE"},
     "stewardship_campaign_work_gate": {"SELECT"},
     "stewardship_campaign_config_intent": {"SELECT"},
-    "stewardship_campaign_config_abort": {"SELECT"},
+    # A live end edit that can no longer apply is journaled by the installer
+    # itself (#944), so it is refused and its base restored, never retried.
+    "stewardship_campaign_config_abort": {"SELECT", "INSERT"},
     "stewardship_campaign_control": {"SELECT"},
     "stewardship_campaign_transition": {"SELECT"},
     # End edits atomically retire old work and allocate a fresh close revision.

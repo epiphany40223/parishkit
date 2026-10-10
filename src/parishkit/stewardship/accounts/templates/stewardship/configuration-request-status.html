@@ -6,13 +6,16 @@
   once the change is applied: a hidden follow-up that refreshes the settings
   page in place, quietly, so its form starts from the applied settings. A
   change that was not applied leaves the page alone, so its form keeps the
-  version it was reviewed at.
+  version it was reviewed at. A refused live end-date change (#944) says
+  why, in the same paragraph a failure's explanation always takes, so the
+  settled status occupies the same place as any other.
 {% endcomment %}<section class="panel" role="status" aria-live="polite" data-live-status="configuration"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-state="{{ receipt.state }}"{% if receipt.state != 'applied' and receipt.state != 'failed' and receipt.state != 'cancelled' %} data-live-pending{% endif %}>
 {% if receipt.state == 'applied' %}
   <h2 class="live-done">{% translate "Applied: your change is saved" %}</h2><p>{% translate "The change has been applied and is now in effect." %}</p>
 {% elif receipt.state == 'failed' or receipt.state == 'cancelled' %}
   <h2 class="live-failed">{% translate "Not applied" %}</h2>
-  {% if receipt.failure_code == 'invalid_candidate' %}<p>{% translate "This change could not be applied because it did not pass validation against the saved settings. Nothing was changed. Start the change again; if it keeps failing, check System logs." %}</p>
+  {% if receipt.refusal %}<p>{{ receipt.refusal }} {% translate "Nothing was changed. If the end date still needs to change, review it again on Campaign settings." %}</p>
+  {% elif receipt.failure_code == 'invalid_candidate' %}<p>{% translate "This change could not be applied because it did not pass validation against the saved settings. Nothing was changed. Start the change again; if it keeps failing, check System logs." %}</p>
   {% elif receipt.failure_code == 'stale_base' %}<p>{% translate "The settings changed after you reviewed this change, so it was not applied. Nothing was changed. Start the change again from the current settings." %}</p>
   {% elif receipt.failure_code == 'actor_unauthorized' %}<p>{% translate "Your account is no longer allowed to make this change, so it was not applied. Nothing was changed." %}</p>
   {% else %}<p>{% translate "Review the current configuration before starting a new change." %}</p>{% endif %}

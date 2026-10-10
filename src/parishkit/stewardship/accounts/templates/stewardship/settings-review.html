@@ -13,7 +13,7 @@
     Apply can only ever apply what is shown;
   - the status of the change just applied (receipt), polled live from
     Change status (status_url) until it settles.
-{% endcomment %}{% if review_errors %}{% include 'stewardship/components/errors.html' with errors=review_errors %}{% endif %}
+{% endcomment %}{% if review_errors %}{% include 'stewardship/components/errors.html' with errors=review_errors %}{% if review_link %}<p><a href="{{ review_link.url }}">{{ review_link.label }}</a></p>{% endif %}{% endif %}
 {% if review %}<section class="panel" data-review-of="settings-form" aria-labelledby="settings-review-title">
 <h2 id="settings-review-title" tabindex="-1" data-in-place-focus>{% translate "Review your changes" %}</h2>
 {% for note in review.notes %}<p class="notice" role="note">{{ note }}</p>{% endfor %}

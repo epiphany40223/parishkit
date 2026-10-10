@@ -215,8 +215,13 @@ Where a rule can be checked in the browser, the page checks it too, and
 shows its error at the field the same way. The browser's own checks (a
 required field, a format) mark a field when the reader leaves it, and clear
 once the value is valid. A page can also check a rule live, as the value is
-entered (a follow-up contact time in the future). Save is held while such an
-error stands only on forms that use the complete-before-submit gate above.
+entered (a follow-up contact time in the future), or have the server check
+one field as it is typed (`data-live-check` in the page script, a
+single-field check first used by a live campaign's
+[end date](#campaign-configuration), #944; the ParishSoft refresh
+schedule's multi-row editor, #920, checks its whole formset with its own
+mechanism for now). Save is held while such an error stands only on forms
+that use the complete-before-submit gate above.
 The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).
@@ -2613,11 +2618,62 @@ schedule definitions/revisions, occurrences, and outbox rows; rechecks state and
 provider uncertainty; and commits the new end date together with every selected
 schedule change. Any failure rolls back the complete edit.
 
-Status: the storage and guards for this edit are built, but no page or
-command offers it yet. Once go-live locks the dates, the date editor refuses
-any date change, so a live campaign's end date cannot be moved from the portal
-([#912](https://github.com/epiphany40223/parishkit/issues/912); see the
-[campaign data model](../data/spec.md#campaign)).
+A live campaign's end date
+([#912](https://github.com/epiphany40223/parishkit/issues/912)) changes in
+two places, both for the current Production campaign while it is scheduled
+or open, before its closing instant and while no background work holds
+campaign changes. Campaign settings shows a **Change the end date** panel:
+one date field, **Review changes** and the page's in-place review and Apply.
+While background work holds campaign changes, the panel stays, saying only
+that the end date can change once that work finishes, and a review posted
+meanwhile is refused as locked. Its
+review is the Dates and mail schedules review of the same change, built from
+the saved schedules left as they are; it names the end date before and
+after and every digest re-planned for the new dates, and notes that Family
+codes and links already sent keep working until the new end date. A date
+that has passed, falls on or before the campaign's start date, is
+unchanged, or would need the financial-period overlap acknowledged again is
+refused. When the new date would leave an invitation or Reminder outside
+the campaign, the review is refused with a link to the combined date-change
+review above, on Dates and mail schedules, with the proposed date filled in
+and only the end date open.
+
+The date is checked as it is typed, so **Review changes** is available only when there is something to review and
+it can be reviewed. While the field is empty or holds the saved date,
+Review waits, with the gate's hint after it saying to choose a (different)
+end date, and no error is shown. Any other date is posted, after a short
+pause, to a no-save live check that applies the Review's own checks,
+including stranded mail, and records nothing. Typing another date takes any
+earlier error away at once, since it was about the earlier date. While the
+check answers, Review waits; when it finds a problem, the field is marked in
+error (`aria-invalid`, described by the message) and the problem's words
+show in a line reserved under the field, so the message never moves Review,
+with the link to the combined review for stranded mail; Review waits with
+the same words as its hint. A date the check clears takes the error away.
+The reserved line is a polite live region (`role="status"`), so a screen
+reader hears each answer. Calendar dates in these messages are the
+campaign's own and are never shifted into the browser's time zone.
+
+Review is offered only when the change is known to be possible, so a check
+that cannot answer (the network, a page out of date, the service
+unavailable) keeps Review held: the reserved line and the hint say "Couldn't
+check this end date. Check your connection, then change the date or reload
+the page.", or, when the answer is that the sign-in has ended (401 or 403),
+"Your sign-in has ended. Sign in again, then reload the page." The field is
+not marked invalid, as nothing is known to be wrong with the date. The next
+edit, or showing the page again (`pageshow`), checks again. Every Review is
+still checked in full by the server, whose refusals above still apply.
+Either Apply records
+the request and, in the same transaction, binds its exceptional end-edit
+intent and a `campaign_end_date_requested` audit event (subject: the
+request). The configuration installer applies it with that intent's owning
+admission; see the [campaign data model](../data/spec.md#campaign). A change
+the installer refuses (the campaign changed or closed, a date passed, or
+closing or other campaign work started first) ends as **Not applied**, and
+its status on the page, and on Change status, says which, or quotes the
+reason of an Administrator's cancellation. The end
+date never changes the Family token generation, and Family pages and later
+emails that show the end date use the new one.
 
 ### Dates and mail schedules
 

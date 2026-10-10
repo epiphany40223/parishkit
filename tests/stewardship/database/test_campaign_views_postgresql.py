@@ -240,9 +240,12 @@ def test_live_lock_invalidates_preview_without_a_yaml_change(auth_service, googl
     assert post(browser, url(row), fields(store, row, name="Locked")).status_code == 409
     response = browser.get(url(row))
     assert response.status_code == 200 and b"read-only" in response.content
-    assert b"Review changes" not in response.content
-    # A read-only page is not a step of any flow (#196).
-    assert flow_steps(response.content) is None
+    assert b"data-campaign-form" not in response.content
+    # Only the end date stays editable once live (#912): its form is the
+    # page's one change, the first step of edit, review, apply (#196).
+    assert response.content.count(b"Review changes") == 1
+    assert b'id="end-date"' in response.content
+    assert flow_steps(response.content) == (STEPS, "Make changes")
 
 
 def test_source_replacement_requires_fresh_preview(auth_service, google):

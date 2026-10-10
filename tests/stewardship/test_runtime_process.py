@@ -607,6 +607,7 @@ def test_configuration_service_restores_on_an_idle_pass(tmp_path, monkeypatch):
     from parishkit.stewardship.accounts.configuration_service import (
         ConfigurationInstaller,
     )
+    from parishkit.stewardship.campaigns.live_end_date import admit_end_edit
 
     configuration = replace(
         configuration_at(tmp_path), service_role=ServiceRole.CONFIG_INSTALLER
@@ -645,7 +646,10 @@ def test_configuration_service_restores_on_an_idle_pass(tmp_path, monkeypatch):
         installer.restore_refused.assert_called_once_with()
         installer.run_request.assert_not_called()
         run_once()
-        installer.run_request.assert_called_once_with("id")
+        # A live end-date change's owning admission (#912) goes with it.
+        installer.run_request.assert_called_once_with(
+            "id", admit_campaign=admit_end_edit
+        )
         installer.restore_refused.assert_called_once_with()
         return 0
 

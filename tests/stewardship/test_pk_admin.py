@@ -1063,8 +1063,10 @@ def test_the_wrapper_never_waits_for_an_answer_no_longer_needed(host, tmp_path):
 
 
 # Prompting commands that accept only --yes, by catalog name, so the wrapper
-# never forwards a terminal's answer to them: none on this branch.
-YES_ONLY = frozenset()
+# never forwards a terminal's answer to them: ``config request cancel``
+# (#944), whose first two words are also ``config request show``'s, a watch
+# that must never wait on a terminal.
+YES_ONLY = frozenset({"config request cancel"})
 
 
 def test_the_prompting_list_names_every_prompting_command():

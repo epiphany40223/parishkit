@@ -65,7 +65,12 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "go-live progress",
         "system health",
     }
-    changes = {"schedule preview", "schedule confirm", "config request show"}
+    changes = {
+        "schedule preview",
+        "schedule confirm",
+        "config request show",
+        "config request cancel",
+    }
     refresh = {"refresh start", "refresh status"}
     tests = {
         "test sample-preview",
@@ -396,6 +401,7 @@ def test_every_state_change_has_a_registered_described_event():
     ]
     assert events == [
         "admin_cmd_schedule_confirm",
+        "admin_cmd_config_request_cancel",
         "admin_cmd_refresh_start",
         "admin_cmd_test_sample",
         # test families-preview's --names export (#817).

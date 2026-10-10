@@ -125,6 +125,8 @@ class Action(StrEnum):
     HOSTED_FILE_DELETED = "hosted_file_deleted"
     CHAIR_REVIEW_DECIDED = "chair_review_decided"
     CAMPAIGN_MINISTRIES_REQUESTED = "campaign_ministries_requested"
+    # A live campaign end-date change (#912); its subject is the request.
+    CAMPAIGN_END_DATE_REQUESTED = "campaign_end_date_requested"
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"
     SETUP_SOURCE_COMPLETED = "setup_source_completed"
@@ -146,6 +148,8 @@ class Action(StrEnum):
     # change, admin_cmd_<area>_<verb>, whose subject is the automation
     # session (see the specification's "Audit attribution").
     ADMIN_CMD_SCHEDULE_CONFIRM = "admin_cmd_schedule_confirm"
+    # The operator's cancellation of a stuck live end-date change (#944).
+    ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"
     ADMIN_CMD_TASK_RETRY = "admin_cmd_task_retry"
     ADMIN_CMD_REFRESH_START = "admin_cmd_refresh_start"
     ADMIN_CMD_TEST_SAMPLE = "admin_cmd_test_sample"

@@ -299,7 +299,7 @@ def drop_unusable(connections):
 
 
 def serve_configuration_installer(configuration, lease):
-    """Run the durable configuration queue, without inventing campaign admission."""
+    """Run the durable configuration queue with only the campaign owners that exist."""
     from .operator_commands import configure_operator_database
     from .runtime_grants import admit_runtime_database
     from .runtime_web import admit_lifecycle_mounts
@@ -311,6 +311,7 @@ def serve_configuration_installer(configuration, lease):
     configure_operator_database(configuration)
     admit_runtime_database(configuration)
     from .accounts.configuration_service import ConfigurationInstaller
+    from .campaigns.live_end_date import admit_end_edit
 
     installer = ConfigurationInstaller.from_configuration(configuration)
     from .service_status import ServiceStatusReporter
@@ -327,7 +328,9 @@ def serve_configuration_installer(configuration, lease):
             installer.restore_refused()
             return
         with installer_request(identifier):
-            installer.run_request(identifier)
+            # A live end-date change's owning admission (#912); other
+            # exceptional requests (the unbuilt reopen) have no owner yet.
+            installer.run_request(identifier, admit_campaign=admit_end_edit)
 
     return serve_installer_loop(run_once, lease, status=status)
 

@@ -22,7 +22,22 @@
 </form>
 <div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div>
 {% else %}
-<p role="status">{% translate "These settings can't be changed now. They can change only on the current Testing-mode draft, before it has ever been live, and not while background work or going live is under way. Background work usually finishes in minutes; going live holds them until it completes or is cancelled." %}</p>
+{% if end_form or end_held %}<p role="status">{% translate "This campaign is live, so these settings are locked. Its end date can still change, below." %}</p>
+{% else %}<p role="status">{% translate "These settings can't be changed now. They can change only on the current Testing-mode draft, before it has ever been live, and not while background work or going live is under way. Background work usually finishes in minutes; going live holds them until it completes or is cancelled." %}</p>{% endif %}
+{% if end_form %}<section class="panel" id="end-date" aria-labelledby="end-date-title"><h2 id="end-date-title">{% translate "Change the end date" %}</h2>
+<p>{% translate "This campaign is live, but its end date can still move: later to extend it, or earlier to end it sooner. Family codes and links keep working until the end date you choose." %}</p>
+{% comment %}Review and apply happen in place, below the form (#532, #912). The hint sits after the button so its line never moves a control above it (#563).{% endcomment %}<form id="settings-form" method="post" action="#settings-review" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-require-complete data-missing-hint="{% translate 'Choose the new end date first.' %}" data-live-check="{% url 'admin:campaign_end_date_check' %}" data-live-check-field="end_date" data-live-check-saved="{{ end_saved }}" data-unchanged-hint="{% translate 'Choose a different end date first.' %}" data-checking-hint="{% translate 'Checking the end date…' %}" data-check-failed-hint="{% translate "Couldn't check this end date. Check your connection, then change the date or reload the page." %}" data-signed-out-hint="{% translate 'Your sign-in has ended. Sign in again, then reload the page.' %}">
+{% csrf_token %}<input type="hidden" name="action" value="preview">
+{% comment %}The date is checked as it is typed (#944): the server's live check answers what keeps it from being reviewed, or that it couldn't check, shown in the line reserved under the field, so that line never moves Review changes. The line is a polite live region, so the answer is heard.{% endcomment %}{% with field=end_form.end_date %}<div>{{ field.label_tag }}<div class="helptext" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>
+{{ field }}<div class="field-error-line" role="status"><ul class="errorlist" id="{{ field.auto_id }}_error" data-live-check-error{% if not field.errors %} hidden{% endif %}>{% for error in field.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>{% endwith %}
+{{ end_form.base_digest }}
+{% button type="submit" aria-describedby="settings-complete-hint" %}{% translate "Review changes" %}{% endbutton %}<p class="help" id="settings-complete-hint" data-complete-hint hidden></p>
+</form>
+<div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div></section>
+{% comment %}While background work holds it, the end date's panel says so rather than vanishing (#944). A change's status stays on the page even once the end date can no longer change, as when the change itself was refused because the campaign closed.{% endcomment %}{% elif end_held %}<section class="panel" id="end-date" aria-labelledby="end-date-title"><h2 id="end-date-title">{% translate "Change the end date" %}</h2>
+<p role="status">{% translate "The end date can change once the background work now running finishes, usually within minutes. Reload this page then." %}</p>
+{% if receipt %}<div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div>{% endif %}</section>
+{% elif receipt %}<div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div>{% endif %}
 {% if ministries_live %}<section class="panel" id="ministry-selections"><h2>{% translate "Ministry selections" %}</h2>
 <p>{% translate "This campaign is live, but its Ministries can still be added or removed while it is open. Answers Families already gave are never deleted." %}</p>
 <p>{% url 'admin:campaign_ministries' as button_href %}{% button variant="primary" href=button_href %}{% translate "Change Campaign Ministries" %}{% endbutton %}</p></section>{% endif %}

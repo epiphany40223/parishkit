@@ -558,6 +558,9 @@ NON_PAGES = frozenset(
         "ministry_followup_update",
         "ministry_packet",
         "participation_chart",
+        # Campaign settings' live end-date check (#944), a fragment the
+        # page reads.
+        "campaign_end_date_check",
         "report_exact_create",
         "report_export_cancel",
         "report_export_create",

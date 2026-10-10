@@ -9,20 +9,23 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 
 from parishkit.stewardship.accounts.configuration_installation import install_request
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditContext
-from parishkit.stewardship.campaigns.admission import (
-    CampaignAdmissionUnavailable,
-    close_work_running,
-)
+from parishkit.stewardship.campaigns.admission import close_work_running
 from parishkit.stewardship.campaigns.boundary_production import produce_boundaries
 from parishkit.stewardship.campaigns.boundary_revisions import current_boundary
 from parishkit.stewardship.campaigns.lifecycle import Action
-from parishkit.stewardship.campaigns.models import CampaignBoundaryOccurrence
+from parishkit.stewardship.campaigns.live_end_date import REFUSALS
+from parishkit.stewardship.campaigns.models import (
+    CampaignBoundaryOccurrence,
+    CampaignConfigurationAbort,
+)
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.jobs.storage import enqueue
+from parishkit.stewardship.runtime_process import next_configuration_request
 
 from .campaign_builders import (
     admit_test_work,
@@ -85,14 +88,20 @@ def test_preflight_sees_root_claim_even_before_occurrence_binding(tmp_path, stat
             row.refresh_from_db()
             assert row.state == "skipped" and row.reason == "boundary_replaced"
         else:
-            with pytest.raises(CampaignAdmissionUnavailable):
-                install_request(
-                    store,
-                    request_id=request.request_id,
-                    correlation_id=uuid4(),
-                    admit_campaign=admit_test_work,
-                )
+            # Claimed close work refuses the change cleanly (#944): failed,
+            # with the YAML still the applied base, so the queue moves on.
+            result = install_request(
+                store,
+                request_id=request.request_id,
+                correlation_id=uuid4(),
+                admit_campaign=admit_test_work,
+            )
+            assert (result.state, result.failure_code) == (
+                "failed",
+                "invalid_candidate",
+            )
             assert store.active() == previous
+            assert next_configuration_request() is None
 
 
 def test_end_date_a_b_a_keeps_history_and_allocates_a_fresh_executable_root(tmp_path):
@@ -221,16 +230,28 @@ def test_sql_end_edit_excludes_unbound_close_even_without_python_preflight(
         if state == "abandoned":
             expire(task)
         request, _ = end_request(store, campaign, actor, "edit_end")
+        before = store.active()
         monkeypatch.setattr(
             "parishkit.stewardship.campaigns.admission.close_work_running",
             lambda _: False,
         )
-        with pytest.raises(IntegrityError, match="quiescent exceptional intent"):
-            install_request(
+        # The activation trigger's refusal, after the YAML switch, is
+        # journaled by the installer's own login and restored (#944): the
+        # request fails and the queue moves on, never retried forever.
+        with task_login(ServiceRole.CONFIG_INSTALLER, exact=True):
+            result = install_request(
                 store,
                 request_id=request.request_id,
                 correlation_id=uuid4(),
                 admit_campaign=admit_test_work,
             )
+    assert (result.state, result.failure_code) == ("failed", "invalid_candidate")
+    abort = CampaignConfigurationAbort.objects.get()
+    assert abort.reason == REFUSALS["refused"] and abort.actor_id == actor
+    assert store.active() == before
+    assert (
+        SystemConfiguration.objects.get().active_configuration_id == before.version_id
+    )
+    assert next_configuration_request() is None
     row.refresh_from_db()
     assert row.state == "pending" and row.task_id is None

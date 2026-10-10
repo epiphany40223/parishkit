@@ -271,11 +271,45 @@ primitives exist, but no Admin page or command calls them. With no purge,
 there is no `PurgeRequest`. Draft creation checks the mode, the pointer, that
 every existing campaign is archived or purged, that no restore review is
 pending, and that no `CampaignWorkGate` (the purge reservation) is preparing
-or running. A post-go-live end-date edit is in the same position:
-its configuration intent, close-occurrence replacement and abort journal
-exist and are tested, but nothing in the product binds that intent, and the
-date editor refuses date changes once the dates are locked
-([#398](https://github.com/epiphany40223/parishkit/issues/398)).
+or running.
+
+A post-go-live end-date edit
+([#912](https://github.com/epiphany40223/parishkit/issues/912); pages and
+command in the
+[Admin portal spec](../admin-portal/spec.md#campaign-configuration)) binds
+its `edit_end` `CampaignConfigurationIntent` in the same durable transaction
+that records its configuration request, at the campaign and runtime versions
+the confirmation rechecked under the work-order lock, so the installer never
+selects the request without it. The configuration installer service passes
+the owning admission for `edit_end` (`campaigns/live_end_date.py`); a
+`reopen` intent has no owner until
+[#527](https://github.com/epiphany40223/parishkit/issues/527), so it would
+stay staged. The intent binds no token generation, so Family credentials are
+untouched and keep working until the new closing instant; activation retires
+the pending close occurrence and allocates one at the new instant.
+
+The installer refuses an end edit that can no longer apply, rather than
+retrying it ahead of every later request
+([#944](https://github.com/epiphany40223/parishkit/pull/944)): the campaign
+or runtime version changed, a restore review began, the campaign closed or
+its previous end passed, the new end passed, its close work is claimed, or a
+`CampaignWorkGate` is preparing or running. It judges these first in
+preflight (the request fails, `stale_base` for a version change and
+`invalid_candidate` otherwise, with no file written), again once the
+candidate is prepared but before the YAML switch, and last inside the
+activation transaction, where a refusal by the activation trigger itself
+rolls back to a savepoint. After preparation, the refusal is recorded as the
+abort journal above, attributed to the request's actor with a fixed reason,
+and its restoration follows, so the request ends failed with
+`invalid_candidate` and its predecessor selected, and an interrupted
+restoration resumes from the journal. The configuration installer inserts
+that journal only for these refusals, but the database does not enforce the
+reason: the journal's trigger admits a row only for an unapplied request,
+past staging, whose candidate is prepared on the base that is still applied.
+An Administrator's cancellation of a
+stuck change uses the same journal through `config request cancel` (see the
+[Admin automation spec](../admin-automation/spec.md#schedules-and-configuration));
+it remains the only way to cancel an unapplied candidate.
 
 `CampaignBoundaryOccurrence` stores campaign, kind (`start` or `close`),
 resolved UTC boundary, immutable execution revision, state, attempts/lease,

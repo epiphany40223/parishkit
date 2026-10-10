@@ -1778,7 +1778,8 @@ none.
 | URL names | Command or exemption |
 | --- | --- |
 | `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules |
-| `configuration_request` | `config request show --watch` (PR 4) |
+| `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
+| `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `campaign_ministries`, `share_settings`, `talent_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign talents`, `campaign reminder-workgroup` (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
@@ -1803,7 +1804,12 @@ nothing. It takes `--expected-version` (the `version` of `schedule show`,
 the page's hidden base digest) and `--changes`, a JSON change document bound
 to the page's own forms: a saved schedule named by `id` keeps what the
 document leaves out, `delete` removes it, an entry without `id` adds one,
-and saved schedules it does not name stay unchanged. A schedule's `time`
+and saved schedules it does not name stay unchanged. For a live campaign
+the document's `window` may change `end_date` alone, as the page allows
+([#912](https://github.com/epiphany40223/parishkit/issues/912)), and
+`schedule confirm` binds its exceptional end-edit intent and records
+`campaign_end_date_requested` exactly as the page's confirmation does. A
+schedule's `time`
 takes every form the page's
 [time entry](../admin-portal/spec.md#time-entry) accepts, through the same
 form field and parser. The page's form errors
@@ -1828,6 +1834,36 @@ is in no row of the [notifications](#notifications) table, so it creates
 no automation notice. `config request show REQUEST_ID` reads only the
 approving Administrator's own requests, as the page does; any other is
 `not_available`, and, like the page, it records no view event.
+
+`config request cancel REQUEST_ID --reason TEXT`
+([#944](https://github.com/epiphany40223/parishkit/pull/944)) is the
+operator's way out of a live end-date change stuck before it applied. It
+needs a full-scope session and prompts, but the host wrapper answers it only
+with `--yes`, since `config request show` shares its first two words; it
+finds only a
+request with a bound `edit_end` intent (any other is `not_available`). In
+one durable transaction it records the
+[abort journal](../data/spec.md#parish-and-integrations) with the reason and
+the current Administrator, and `admin_cmd_config_request_cancel`; the
+configuration installer then restores the previous YAML and records the
+request as failed (`invalid_candidate`) before anything else. A change still
+`staged` is cancelled outright, but only by the Administrator who made it;
+another's, or one that applied or failed, is `stale_version`. Repeating the
+same cancellation returns `cancelled: false` and records nothing; one with a
+different reason, while the first is still being restored, is
+`stale_version`, since the journal is immutable. Like every
+command it admits only while the YAML and database agree, so it serves a
+change stuck before its YAML switch; a refusal after the switch is the
+installer's own, journaled automatically.
+
+The command cannot rescue a change stuck in `validating` before its
+candidate was prepared, such as one whose every installer pass fails in
+validation before preparation. The journal requires a prepared candidate,
+and no other cancellation path exists, so the command answers `invalid`
+with a `request` field message saying that nothing was prepared and that the
+configuration installer's log says what stops it. Nothing was written that
+needs undoing; once the operator fixes that failure, the installer's next
+pass applies the change or refuses it in preflight.
 
 ### Production transition and withdrawal
 
