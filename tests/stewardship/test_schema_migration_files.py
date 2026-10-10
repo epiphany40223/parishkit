@@ -168,6 +168,9 @@ FROZEN = {
     "0045_report_duid_sorts.sql": (
         "dc2b43df327068290e94e5891f6667a3c1804fa7b48989b2386b00b2f096c1d4"
     ),
+    "0046_restore_begin_keeps_review.sql": (
+        "251f9db9d1a23e5ac9326e9f1034c9bf3c4b299b68b32c036634fa681c988e62"
+    ),
 }
 
 

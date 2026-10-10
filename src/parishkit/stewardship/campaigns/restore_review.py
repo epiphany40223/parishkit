@@ -25,6 +25,7 @@ the last five minutes; the session and sign-in are recorded with the decision.
 
 from contextlib import contextmanager
 from datetime import datetime
+from typing import NamedTuple
 from uuid import UUID, uuid4
 
 from django.db import connection, transaction
@@ -64,20 +65,45 @@ def _uuid(*values):
         raise TypeError("Restore review identities must be UUIDs.")
 
 
+class ReviewStart(NamedTuple):
+    """What ``begin_review`` did: the review in force and whether it is new.
+
+    ``transition`` is the new ``restore_begin`` row, or None when a review of
+    the same backup was already open and nothing was written.
+    """
+
+    restore_id: UUID
+    backup_at: datetime
+    started: bool
+    transition: RuntimeTransition | None
+
+
 def begin_review(*, backup_at, reason, correlation_id):
-    """Close the site for review after a restore; returns the transition.
+    """Close the site for review after a restore; returns a ``ReviewStart``.
 
     ``backup_at`` is when the restored backup was taken (its set's name). The
     guard admits only the admin-recovery login and the schema owner, a backup
     time not in the future, and a new restore id, so a second restore starts
     a new review. Mode, campaign and every Family credential stay as restored.
+
+    Re-running it while a review of the same backup is open (a recovery
+    restart, say) writes nothing and reports that review (#799): a new
+    transition would replace its restore id and move its held-email cutoff.
+    The SQL guard refuses that insert too, so a caller that skipped this
+    check still fails closed.
     """
     if not isinstance(backup_at, datetime) or backup_at.tzinfo is None:
         raise TypeError("The backup time must be timezone-aware.")
     if not isinstance(reason, str) or not reason.strip() or len(reason) > 1024:
         raise ValueError("A restore review needs a short reason.")
     with _review_transaction(correlation_id) as runtime:
-        return RuntimeTransition.objects.create(
+        # The work-order lock is held, so no other transition can open or
+        # release a review between this read and the insert below.
+        if runtime.restore_review_required and runtime.restore_backup_at == backup_at:
+            return ReviewStart(
+                runtime.restore_id, runtime.restore_backup_at, False, None
+            )
+        transition = RuntimeTransition.objects.create(
             request_id=uuid4(),
             expected_version=runtime.version,
             action="restore_begin",
@@ -91,6 +117,7 @@ def begin_review(*, backup_at, reason, correlation_id):
             actor_id=None,
             correlation_id=correlation_id,
         )
+        return ReviewStart(transition.restore_id, backup_at, True, transition)
 
 
 def list_held_emails(*, actor_id, correlation_id):
