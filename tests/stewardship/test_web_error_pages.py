@@ -420,3 +420,16 @@ def test_chrome_check_is_read_only_and_needs_a_session(monkeypatch):
     under_review.session = SimpleNamespace(session_key="key")
     _assert_no_page(through(under_review, HttpResponseNotFound()))
     assert calls == [("store", True)]
+
+
+def test_unknown_family_address_shows_the_family_page(client):
+    """A Family address gets the same page in the Family layout, linking home."""
+    response = client.get("/family/no-such-page-private?code=private", **PAGE)
+    body = _assert_no_page(response, admin=False)
+    assert 'href="/">Family portal home</a>' in body
+    assert "/admin/" not in body
+    script = client.get("/family/no-such-page-private", **JSON)
+    assert script.status_code == 404
+    assert json.loads(script.content)["refusal"]["message"] == (
+        "There is no page at this address."
+    )
