@@ -43,6 +43,19 @@ ALL = "all"
 COUNT_LIMIT = 10_000
 
 
+@dataclass(frozen=True)
+class Fixed:
+    """An ordering term whose direction never follows the chosen one.
+
+    A column's later terms can order the rows its first terms tie, such as
+    each Family's emails newest first under a Family sort (#934), whichever
+    way the Family itself sorts. ``term`` is a field name, optionally
+    "-"-prefixed, used exactly as given.
+    """
+
+    term: str
+
+
 def _direction(term, descending, *, nulls_last=False):
     """One ORM ordering term, flipped when the chosen direction is descending.
 
@@ -52,7 +65,10 @@ def _direction(term, descending, *, nulls_last=False):
     a column term (``nulls_last``) asks for them last: a first click on
     "newest heartbeat first" must not open on every task without one. The
     unique, non-null tiebreak keeps its plain form, which an index can serve.
+    A ``Fixed`` term keeps its own direction.
     """
+    if isinstance(term, Fixed):
+        return term.term
     if isinstance(term, str):
         name = term[1:] if term.startswith("-") else term
         down = descending != term.startswith("-")

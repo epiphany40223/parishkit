@@ -45,6 +45,7 @@ from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
 from .test_daily_digest_planning_postgresql import INSTANT as DIGEST_INSTANT
 from .test_family_mail_dispatch_postgresql import claim, prepare
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
+from .test_outbox_postgresql import submit
 from .test_recipient_suppressions_postgresql import email, refused, remember
 from .test_source_families_postgresql import prepare as prepare_source
 from .test_source_families_postgresql import promote
@@ -359,7 +360,9 @@ def test_family_name_sort_keys_match_the_shown_names(response_service):
 def test_tied_family_names_keep_each_familys_emails_together(response_service):
     """#931: two Families that show the same name sort by Family DUID under
     Family, as the Family codes directory orders tied names, so each
-    Family's emails stay together in both directions."""
+    Family's emails stay together in both directions. Under Family and
+    Family DUID, each Family's emails read newest change first in either
+    direction (#934), not in id order."""
     data = response_source()
     for duid in (20, 30):
         data.families[duid] = data.families[1] | {
@@ -386,13 +389,24 @@ def test_tied_family_names_keep_each_familys_emails_together(response_service):
     }
     harness = activate_response_service(response_service)
     # Interleaved, so neither creation order nor ids group them by chance.
-    family_of = {
-        email(harness, duid=duid).message_id: duid for duid in (30, 20, 30, 20)
+    created = [email(harness, duid=duid) for duid in (30, 20, 30, 20, 30, 20)]
+    # Each Family's middle email changes last, so its newest-change-first
+    # order (middle, last, first) is neither id order nor its reverse.
+    for status in created[2:4]:
+        submit(status)
+    newest = {
+        30: [created[index].message_id for index in (2, 4, 0)],
+        20: [created[index].message_id for index in (3, 5, 1)],
     }
     with task_login(ServiceRole.WEB, exact=True):
-        for sort, first, second in (("name", 20, 30), ("-name", 30, 20)):
+        for sort, first, second in (
+            ("name", 20, 30),
+            ("-name", 30, 20),
+            ("duid", 20, 30),
+            ("-duid", 30, 20),
+        ):
             rows = read_listing(QueryDict(f"sort={sort}"))["rows"]
-            assert [family_of[row["id"]] for row in rows] == [first] * 2 + [second] * 2
+            assert [row["id"] for row in rows] == newest[first] + newest[second], sort
 
 
 @pytest.mark.parametrize(
