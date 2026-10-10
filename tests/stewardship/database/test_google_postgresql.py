@@ -1,10 +1,13 @@
 """Google cryptographic claims, durable sessions, early limits and namespace tests."""
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from threading import Barrier
 
 import pytest
 from django.contrib.sessions.models import Session
+from django.db import connections
 from django.db.models import F
 from django.test import Client
 
@@ -245,6 +248,104 @@ def test_disabled_identity_is_a_named_refusal(auth_service, google):
     PortalUser.objects.update(disabled=True, version=F("version") + 1)
     assert signed_in()[1].status_code == 403
     assert refusals() == ["admin@example.org"]
+
+
+def test_concurrent_refusals_of_one_account_write_one_entry(auth_service, google):
+    """Two refusals of one account racing on separate connections name it once.
+
+    The deployment-wide advisory lock serializes the check and the insert, so
+    exactly one of the two writes the entry (#968).
+    """
+    from parishkit.stewardship.accounts.auth_incidents import record_account_refusal
+
+    signed_in()
+    user_id = PortalUser.objects.get().pk
+    barrier = Barrier(2)
+
+    def refuse():
+        """Start together, then refuse the same account on a new connection."""
+        try:
+            barrier.wait(10)
+            return record_account_refusal(user_id)
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [f.result(timeout=20) for f in [pool.submit(refuse) for _ in "ab"]]
+    assert sorted(results) == [False, True]
+    assert refusals() == ["admin@example.org"]
+
+
+def test_refusals_past_the_ceiling_become_anonymous_samples(
+    auth_service, google, monkeypatch
+):
+    """Cheap Google accounts cannot flood the log: past the deployment-wide
+    ceiling a refusal falls back to the anonymous sample (#968)."""
+    from parishkit.stewardship.accounts import auth_incidents
+
+    monkeypatch.setattr(auth_incidents, "ACCOUNT_REFUSAL_CEILING", 2)
+    for name in ("one", "two", "three", "four"):
+        google[0].update(email=f"{name}@example.net", sub=f"{name}-subject")
+        assert signed_in()[1].status_code == 403
+    assert refusals() == ["one@example.net", "two@example.net"]
+    # The sample keeps its own five-minute bound and names no one.
+    denied = AuditEvent.objects.get(event_type="admin_login_denied")
+    assert denied.actor_id is None
+
+
+def test_refusal_audit_outage_is_retryable_after_counting(
+    auth_service, google, monkeypatch
+):
+    """A database failure naming a refusal is the retryable 503, and the
+    limiter has already counted the attempt (#968)."""
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.accounts import auth_incidents, authentication
+
+    class Broken:
+        """An audit table whose every read fails as an outage would."""
+
+        class objects:  # noqa: N801 - mirrors the model manager attribute
+            @staticmethod
+            def filter(**kwargs):
+                raise DatabaseError("Synthetic audit outage")
+
+    counted = []
+    record_failure = authentication.record_failure
+
+    def counting(*args, **kwargs):
+        """Note that the limiter accounting ran, then run it."""
+        counted.append(kwargs["identity"])
+        return record_failure(*args, **kwargs)
+
+    monkeypatch.setattr(authentication, "record_failure", counting)
+    monkeypatch.setattr(auth_incidents, "AuditEvent", Broken)
+    google[0].update(email="outsider@example.net", sub="outsider-subject")
+    _, response = signed_in()
+    assert response.status_code == 503
+    assert not PortalSession.objects.exists()
+    assert len(counted) == 1 and counted[0]
+
+
+def test_identity_limited_attempt_stays_an_anonymous_sample(
+    auth_service, google, monkeypatch
+):
+    """An attempt the per-identity limiter stops before policy runs names no
+    one, even for an account policy would refuse (#968)."""
+    limiter = auth_service.limiter
+    checked = limiter.counters
+
+    def limited(counters, *, failure=False):
+        """Report the identity window as exhausted; count everything else."""
+        if not failure and counters[0].name.startswith("admin_identity_"):
+            return 30
+        return checked(counters, failure=failure)
+
+    monkeypatch.setattr(limiter, "counters", limited)
+    google[0].update(email="outsider@example.net", sub="outsider-subject")
+    assert signed_in()[1].status_code == 429
+    assert not refusals()
+    assert AuditEvent.objects.get(event_type="admin_login_denied").actor_id is None
 
 
 def test_anonymous_refusal_stays_a_sample_with_no_actor(auth_service, google):
