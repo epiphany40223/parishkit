@@ -1,5 +1,5 @@
 -- One closed query owns the HTML queue and complete immutable export inputs.
-CREATE FUNCTION stewardship_information_report_v1(
+CREATE FUNCTION public.stewardship_information_report_v1(
     campaign uuid, parameters jsonb, page_number integer DEFAULT NULL,
     item_uuid uuid DEFAULT NULL, page_size integer DEFAULT 50
 ) RETURNS jsonb LANGUAGE plpgsql STABLE
@@ -22,7 +22,7 @@ BEGIN
        OR f->>'disposition' NOT IN ('current_actionable','superseded','withdrawn','all')
        OR f->>'needed' NOT IN ('any','yes','no')
        OR f->>'completed' NOT IN ('any','yes','no')
-       OR f->>'sort' NOT IN ('newest','oldest','name','name_desc')
+       OR f->>'sort' NOT IN ('newest','oldest','name','name_desc','duid','duid_desc')
        OR (page_number IS NOT NULL AND page_number NOT BETWEEN 1 AND 10000)
        OR page_size IS NULL OR page_size NOT BETWEEN 1 AND 100
     THEN RAISE EXCEPTION 'Invalid information report parameters' USING ERRCODE='23514'; END IF;
@@ -56,6 +56,12 @@ BEGIN
                     nullif(btrim(p.canonical::jsonb->>'firstName'),''),
                     nullif(btrim(p.canonical::jsonb->>'lastName'),''))),''),
                 'Family') AS family_name,
+            -- The surname that leads the shown name, as Python names it
+            -- (migration 0045's shared functions); family_name above keeps
+            -- its own trim for the returned rows.
+            stewardship_family_surname_v1(p.canonical::jsonb,'Family') AS surname,
+            CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
+                THEN p.canonical::jsonb->'active_head_duids' END AS head_duids,
             h.value->'reported' ? i.id::text AS previously_reported,
             h.value->'corrected' @>
                 jsonb_build_array(jsonb_build_array(i.id::text,i.disposition))
@@ -74,27 +80,56 @@ BEGIN
         WHERE (item_uuid IS NULL OR i.id=item_uuid)
           AND (f->>'start'='' OR (s.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date>=(f->>'start')::date)
           AND (f->>'end'='' OR (s.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date<=(f->>'end')::date)
+    ), head_names AS MATERIALIZED (
+        -- Each Family's active heads as the shown name lists them, in DUID
+        -- order (stewardship_family_head_part_v1), so search and sort match
+        -- what the page shows (#960). One set-based join over each Family's
+        -- heads, skipped when neither a search nor a name sort reads the name.
+        SELECT r.family_duid,array_agg(
+                stewardship_family_head_part_v1(sm.canonical::jsonb,r.surname)
+                ORDER BY h.head::bigint) AS parts
+        FROM (SELECT DISTINCT family_duid,surname,head_duids FROM rows) r
+        CROSS JOIN selected x
+        CROSS JOIN LATERAL jsonb_array_elements_text(r.head_duids) h(head)
+        JOIN stewardship_snapshot_member mm
+            ON mm.snapshot_id=x.source_id AND mm.source_key=h.head
+        JOIN stewardship_source_member sm ON sm.id=mm.payload_id
+        WHERE f->>'search'<>'' OR f->>'sort' IN ('name','name_desc')
+        GROUP BY r.family_duid
+    ), named AS MATERIALIZED (
+        -- "Surname, A and B" (family_names.family_heads_name).
+        SELECT r.*,stewardship_family_heads_name_v1(r.surname,n.parts) AS display_name
+        FROM rows r LEFT JOIN head_names n ON n.family_duid=r.family_duid
     ), filtered AS MATERIALIZED (
-        SELECT * FROM rows WHERE (f->>'disposition'='all' OR disposition=f->>'disposition')
+        SELECT * FROM named WHERE (f->>'disposition'='all' OR disposition=f->>'disposition')
           AND (f->>'needed'='any' OR follow_up_needed=(f->>'needed'='yes'))
           AND (f->>'completed'='any' OR (followed_up_at IS NOT NULL)=(f->>'completed'='yes'))
-          AND (f->>'search'='' OR position(lower(f->>'search') IN lower(family_name))>0
+          AND (f->>'search'='' OR position(lower(f->>'search') IN lower(display_name))>0
             OR position(f->>'search' IN family_duid::text)>0
             OR position(lower(f->>'search') IN lower(text))>0
             OR position(lower(f->>'search') IN lower(notes))>0)
     ), ordered AS (
+        -- A name sort orders by surname, then the whole shown name, as the
+        -- directory does; the item id is the unique tiebreak.
         SELECT *,row_number() OVER (ORDER BY
             CASE WHEN f->>'sort'='newest' THEN submitted_at END DESC,
             CASE WHEN f->>'sort'='oldest' THEN submitted_at END,
-            CASE WHEN f->>'sort'='name' THEN lower(family_name) END,
-            CASE WHEN f->>'sort'='name_desc' THEN lower(family_name) END DESC,id) AS ordinal
+            CASE WHEN f->>'sort'='name' THEN lower(surname) END,
+            CASE WHEN f->>'sort'='name' THEN lower(display_name) END,
+            CASE WHEN f->>'sort'='name_desc' THEN lower(surname) END DESC,
+            CASE WHEN f->>'sort'='name_desc' THEN lower(display_name) END DESC,
+            CASE WHEN f->>'sort'='duid' THEN family_duid END,
+            CASE WHEN f->>'sort'='duid_desc' THEN family_duid END DESC,id) AS ordinal
         FROM filtered
     ), page AS (
         SELECT * FROM ordered ORDER BY ordinal
         LIMIT CASE WHEN page_number IS NULL THEN NULL ELSE page_size END
         OFFSET CASE WHEN page_number IS NULL THEN 0 ELSE (page_number-1)*page_size END
     ), detached AS (
-        SELECT ordinal,to_jsonb(page)-'ordinal' || jsonb_build_object('history',
+        -- The shown name and heads only order and search; the page and an
+        -- export capture keep the row they always had.
+        SELECT ordinal,to_jsonb(page)-ARRAY['ordinal','head_duids','surname','display_name']
+            || jsonb_build_object('history',
             CASE WHEN (parameters->>'history')::boolean THEN coalesce((
                 SELECT jsonb_agg(jsonb_build_object(
                     'version',r.expected_version+1,'created_at',r.created_at,

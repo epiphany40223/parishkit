@@ -97,7 +97,8 @@ def test_request_details_lead_with_member_and_member_duid():
     assert in_order(
         table,
         'data-sort-column="member"',
-        '"numeric">Member DUID</th>',
+        # Both DUID columns sort through the selection (#960).
+        'class="numeric" data-sort-column="member_duid"',
         ">Status and outcome</th>",
         'data-sort-column="submitted"',
     )
@@ -131,7 +132,9 @@ def test_summary_puts_the_ministry_duid_in_its_own_column():
     html = ministry_page([], summaries=[summary])
     start = html.index("Current Ministry request summary")
     table = html[start : html.index("</table>", start)]
-    assert in_order(table, '"numeric">Ministry DUID</th>', ">Joining</th>")
+    assert in_order(
+        table, 'class="numeric" data-sort-column="ministry_duid"', ">Joining</th>"
+    )
     row = '<th scope="row">Food pantry<br>Active</th>\n<td class="numeric">9</td>'
     assert row in table
     assert "— DUID" not in table
