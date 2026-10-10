@@ -298,7 +298,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](../admin-portal/spec.md#follow-up-workflows); System logs'
   cross-links, whose answer is the filtered page; Acknowledge on a security
-  event; Dismiss on an integration's finished key change; the
+  event; Clear verified refusal on a
+  [refused address](../admin-portal/spec.md#refused-addresses); Dismiss on an
+  integration's finished key change; the
   [participation report](../reports/spec.md#campaign-statistics)'s Apply
   report options, which refreshes its statistics, chart and export panels)
   names its region by its
