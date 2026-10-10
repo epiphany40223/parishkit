@@ -61,7 +61,7 @@ def test_daily_reports_are_listed_for_administrators_and_staff(
         assert page.status_code == 200 and page["Cache-Control"] == "no-store"
         assert link.encode() in page.content
         assert b"Weekly reports" in page.content
-        assert reverse("admin:weekly_digest_manual").encode() in page.content
+        assert b"data-weekly-now" in page.content
         staff = _sign_in_as(
             family_mail.service.store, google, "staff@example.org", ("staff",)
         )
@@ -69,6 +69,7 @@ def test_daily_reports_are_listed_for_administrators_and_staff(
             page = staff.get(reverse(PAGE))
         assert page.status_code == 200 and link.encode() in page.content
         assert b"Weekly reports" not in page.content
+        assert b"data-weekly-now" not in page.content
         assert reverse("admin:weekly_digest_manual").encode() not in page.content
 
 
@@ -97,6 +98,41 @@ def test_weekly_reports_are_listed_for_administrators(live_response_service, goo
         assert link.encode() in page.content
         # Only a closed request id is accepted in the address.
         assert admin.get(reverse(PAGE) + "?search=x").status_code == 400
+
+
+def test_send_a_weekly_report_now_leads_the_page_and_waits_for_its_schedule(
+    response_service, google
+):
+    """The button is always there for an Administrator, above both lists.
+
+    Without a Weekly Admin digest schedule it is unavailable, with a hint after
+    it linking Dates and mail schedules; once the schedule exists it links the
+    request page.
+    """
+    harness = response_service
+    with campaign_clock(WEEKLY_INSTANT):
+        browser, _ = signed_in()
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = browser.get(reverse(PAGE)).content.decode()
+        action = page.index("data-weekly-now")
+        assert (
+            action
+            < page.index('id="daily-reports"')
+            < page.index('id="weekly-reports"')
+        )
+        assert reverse("admin:weekly_digest_manual") not in page
+        assert (
+            '<button type="button" disabled aria-describedby="weekly-now-reason"'
+            in (page)
+        )
+        assert "Available once the campaign has a Weekly Admin digest schedule." in page
+        assert f'href="{reverse("admin:schedule_settings")}"' in page
+        add_digest(harness.service.store, harness.campaign, weekly=True)
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = browser.get(reverse(PAGE)).content.decode()
+        assert f'href="{reverse("admin:weekly_digest_manual")}"' in page
+        assert page.index("data-weekly-now") < page.index('id="daily-reports"')
+        assert "weekly-now-reason" not in page
 
 
 def test_send_a_weekly_report_now_returns_to_emailed_reports(response_service, google):
