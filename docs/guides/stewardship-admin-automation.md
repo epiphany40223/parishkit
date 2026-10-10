@@ -1261,6 +1261,53 @@ Underneath, `export download EXPORT_ID
 (`id`, `file_name`, `content_type`, `size`, `sha256`, `count`) to standard
 error, as `logs export` does; the wrapper refuses to write it to a terminal.
 
+## Portal users
+
+`users list` reads the Portal users page, and `users preview-upgrade` its
+Upgrade preview panel ([#952](https://github.com/epiphany40223/parishkit/issues/952)).
+Any session may run them; each records the page's event in System logs
+(`portal_users_viewed`, with the number of users printed).
+
+```sh
+pk-admin users list
+pk-admin users list --sort=-role
+pk-admin users preview-upgrade
+```
+
+`users list` takes `--sort`: `email` (the default), `name`, `role` or
+`last_login`, with `--sort=-NAME` for the other direction. `-role` lists
+Administrators first and `-last_login` the newest sign-in first; users who
+never signed in come last either way.
+
+| `users list` field | What it holds |
+| --- | --- |
+| `form` | `users` once the configuration holds users, else `sign_in_rules` |
+| `sort` | The sort used |
+| `users` | Each user's `email`, `name`, `role` (`administrator`, `staff` or `ministry_leader`) and `last_login`, the newest successful sign-in of any Google account with that address, or `null` |
+
+Until the users upgrade, the users are the exact-address rules that grant a
+role, each with its highest role and a `null` name. Deny rules and
+hosted-domain rules are not users: see the upgrade preview for a domain
+rule's people.
+
+`users preview-upgrade` prints what the
+[users upgrade](../specs/stewardship/operations/spec.md#users-upgrade-from-sign-in-rules)
+would do with today's sign-in rules, the same preview the operator's
+`pk-stewardship upgrade-users --preview` prints. It changes nothing. Once
+the configuration holds users it is exit 1 (`not_available`).
+
+| `users preview-upgrade` field | What it holds |
+| --- | --- |
+| `administrators` | The addresses that keep Administrator: the exact list the operator confirms |
+| `users` | Each user the upgrade writes: `email`, `name` (the ParishSoft default, or the address's local part) and `role` |
+| `address_rules` | Each exact-address rule that grants a role: `email`, its `roles` and the `role` it keeps |
+| `domain_rules` | Each hosted-domain rule: `domain`, `roles`, the `role` its people get, and the `users` it converts (its recorded Google accounts that signed in before) |
+| `dropped_deny_rules` | Each deny rule: `email`, `name`, and `overrides_identity`, whether it refuses a recorded Google account today |
+| `not_converted` | Addresses a domain rule lets in today that do not carry over: `never_signed_in` and `disabled` |
+
+If someone you expect is missing from `users`, add an exact-address rule for
+them on the Portal users page before the upgrade.
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -1400,3 +1447,5 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   Ministry's. The commands' options and documents are unchanged, and the
   only readers are Administrator-run assistants; a script that reads these
   files by position or by the old headings must change.
+- `pk-admin/1` (#952 slice 2): additive. `users list` and
+  `users preview-upgrade`.

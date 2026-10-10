@@ -8,6 +8,8 @@ frozen read model. A model's
 fields are its **defined projection**: counts, states, stored enumeration
 values, identifiers and instants, never Family names, emails, addresses,
 phone numbers, codes, access tokens, signed controls or translated labels.
+The users reads (#952) are the one exception the specification lists: they
+print Admin portal users' own addresses and Names, never Family data.
 ``to_document()`` turns those fields into JSON values (instants as UTC
 ISO 8601 strings); the command catalog lists ``FIELDS``.
 
@@ -1063,3 +1065,114 @@ def read_system_health(caller, service, *, audit=True):
         return model
 
     return _held(step)
+
+
+# -------------------------------------------------------------------- users
+
+
+@dataclass(frozen=True)
+class UsersList(ReadModel):
+    """``users list``: each user's email, Name, role and newest sign-in (#952).
+
+    ``form`` is ``users`` once the configuration holds users, else
+    ``sign_in_rules``: before the users upgrade the users are the
+    exact-address rules that grant a role, each with its highest role and a
+    null ``name`` (``user_reads.user_list``).
+    """
+
+    form: str
+    sort: str
+    users: list
+
+
+@dataclass(frozen=True)
+class UsersUpgradePreview(ReadModel):
+    """``users preview-upgrade``: what the users upgrade would do (#952).
+
+    Exactly ``users_upgrade.document_preview``'s plan, which the offline
+    ``upgrade-users --preview`` prints too. ``administrators`` is the list the
+    operator confirms; ``users`` is what the conversion writes.
+    """
+
+    administrators: list
+    users: list
+    address_rules: list
+    domain_rules: list
+    dropped_deny_rules: list
+    not_converted: dict
+
+
+def _read_users(caller, service, read, *, audit):
+    """Admit as the Portal users page, read its snapshot, recheck and audit.
+
+    ``read(document, records)`` runs inside the page's read-only snapshot
+    and returns the model and the number of rows it holds, which the page's
+    view event (``portal_users_viewed``) records, never an address or role;
+    a None model is ``not_available``.
+    """
+    from .accounts.admin_editing import editable_configuration
+    from .accounts.policy import Capability
+    from .audit.schemas import Action
+    from .campaigns.work_locks import read_transaction
+
+    def step():
+        """Admit, read in the page's snapshot, recheck and audit."""
+        actor = _admit(caller, service.store, Capability.MANAGE_USERS)
+        with read_transaction():
+            configuration = editable_configuration(service)
+            document = configuration.active_configuration.canonical_document
+            model, count = read(document, document["sections"].get("login_rules", []))
+        with transaction.atomic():
+            # As the task reads: the session is rechecked before anything is
+            # reported, including that there is nothing to preview.
+            current = _recheck(caller, service.store, actor, Capability.MANAGE_USERS)
+            if model is None:
+                raise NotAvailable("The configuration already holds users.")
+            if audit:
+                _audit(Action.USERS_VIEWED, current, count=count)
+        return model
+
+    return _held(step)
+
+
+def read_users(caller, service, sort=None, *, audit=True):
+    """``users list``: the users, sorted as the Users table sorts them.
+
+    An unknown ``sort`` token is refused (``invalid``) before anything is
+    read, as the page refuses it.
+    """
+    from .accounts.user_reads import USER_SORTING, policy_identities, user_list
+    from .accounts.users_schema import uses_users
+
+    token = USER_SORTING.parse({} if sort is None else {"sort": sort})
+
+    def read(document, records):
+        """The users of this snapshot, sorted."""
+        rows = USER_SORTING.sort_rows(
+            user_list(records, policy_identities(records)), token
+        )
+        form = "users" if uses_users(document) else "sign_in_rules"
+        return UsersList(form=form, sort=token, users=rows), len(rows)
+
+    return _read_users(caller, service, read, audit=audit)
+
+
+def read_users_upgrade(caller, service, *, audit=True):
+    """``users preview-upgrade``: the users upgrade preview, read-only.
+
+    Unavailable (``not_available``) once the configuration holds users: there
+    is nothing left to convert.
+    """
+    from .accounts.users_upgrade import document_preview
+
+    def read(document, records):
+        """The preview of converting this snapshot's sign-in rules."""
+        preview = document_preview(document)
+        if preview["already_users"]:
+            return None, 0
+        model = UsersUpgradePreview(
+            **{name: preview[name] for name in UsersUpgradePreview.field_names()}
+        )
+        return model, len(model.users)
+
+    return _read_users(caller, service, read, audit=audit)

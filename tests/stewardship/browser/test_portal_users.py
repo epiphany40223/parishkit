@@ -183,3 +183,80 @@ def test_rule_review_forms_post_to_the_rules_route(page, component_origin):
     )
     assert "kind=domain" in body and "identity=Parish.Example" in body
     assert "roles=staff" in body and "roles=administrator" not in body
+
+
+def test_upgrade_preview_panel_lists_the_kept_administrators(page, component_origin):
+    """The read-only users upgrade preview (#952 slice 2) on Portal users.
+
+    It lists the exact Administrators the upgrade keeps first, then the users
+    it writes with where each comes from, and what it drops or leaves behind.
+    It offers no control that changes anything, and its table's headings
+    sort it on the server, keeping the other tables' places.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/portal-users")
+    panel = page.get_by_role("region", name="Upgrade preview", exact=True)
+    # A link near the heading reaches the panel at the bottom of the page.
+    page.get_by_role("link", name="See the users upgrade preview").click()
+    visible(panel)
+    assert page.evaluate("location.hash") == "#upgrade-preview"
+    kept = panel.get_by_role("list", name="Administrators kept")
+    assert kept.get_by_role("listitem").all_inner_texts() == ["admin@example.org"]
+    visible(panel.get_by_text("This address keeps Administrator.", exact=False))
+    # The users table: who the upgrade writes, and from which rule.
+    users = panel.get_by_role("region", name="Users after the upgrade")
+    rows = users.get_by_role("row")
+    # The heading row, then admin, chair, helper and leader by address.
+    assert rows.count() == 5
+    helper = users.get_by_role("row", name="helper@workspace.example", exact=False)
+    assert helper.get_by_role("cell", name="Helper, Hal", exact=True).count() == 1
+    assert helper.get_by_role("cell", name="Staff", exact=True).count() == 1
+    assert (
+        helper.get_by_role(
+            "cell", name="Hosted-domain rule workspace.example", exact=True
+        ).count()
+        == 1
+    )
+    leader = users.get_by_role("row", name="leader@workspace.example", exact=False)
+    assert (
+        leader.get_by_role(
+            "cell", name="Exact-address rule (Staff, Ministry leader)", exact=True
+        ).count()
+        == 1
+    )
+    # The domain rules, the dropped deny rule and what is not carried over.
+    domains = panel.get_by_role("list", name="Hosted-domain rules")
+    assert domains.get_by_role("listitem").all_inner_texts() == [
+        "unused.example (Staff): 0 people become Staff users.",
+        "workspace.example (Staff, Ministry leader): 1 person becomes a Staff user.",
+    ]
+    denied = panel.get_by_role("list", name="Deny rules dropped")
+    assert denied.get_by_role("listitem").all_inner_texts() == [
+        "blocked@example.org (blocked): no recorded Google account uses this address."
+    ]
+    assert panel.get_by_role(
+        "list", name="Disabled Google accounts", exact=False
+    ).get_by_role("listitem").all_inner_texts() == ["None."]
+    # Read-only: beyond its table's page navigator (GET forms), nothing in
+    # the panel posts or takes a choice.
+    assert panel.locator("form[method=post], form[method=POST]").count() == 0
+    assert panel.locator("form:not([method=get])").count() == 0
+    assert panel.locator("input[type=checkbox], input[type=radio]").count() == 0
+    # Its headings sort on the server under their own prefix (#478, a full
+    # load here), carrying the other tables' places.
+    role = users.get_by_role("link", name="Role", exact=False)
+    href = role.get_attribute("href")
+    assert "upgrade_sort=-role" in href and "domains_page=1" in href
+    assert href.endswith("#upgrade-table")
+
+
+def test_minimal_upgrade_preview_keeps_the_one_administrator(page, component_origin):
+    """With only the mandatory Administrator, the panel still names them."""
+    page.goto(component_origin + "/portal-users-minimal")
+    panel = page.get_by_role("region", name="Upgrade preview", exact=True)
+    kept = panel.get_by_role("list", name="Administrators kept")
+    assert kept.get_by_role("listitem").all_inner_texts() == ["admin@example.org"]
+    for name in ("Hosted-domain rules", "Deny rules dropped"):
+        assert panel.get_by_role("list", name=name).get_by_role(
+            "listitem"
+        ).all_inner_texts() == ["None."]
