@@ -209,6 +209,16 @@ fresh authentication offers **Confirm with Google** as described under
 [identity and session security](../architecture/spec.md#identity-and-session-security). Forms that
 can re-render with inline field errors still do so.
 
+An Admin address (`/admin/…`) that no page answers, because no route matches
+or a view raises the framework's not-found error, gets the same treatment
+(#927): the page is titled **Page not found** and shows only fixed text,
+never anything from the address. A signed-in Admin sees the usual header and
+menu, from a read-only session check that renews nothing; a signed-out
+visitor sees the layout without the menu, and a script gets the closed JSON
+error. A not-found error a view reports itself keeps its own, more specific
+title and message. Every other unknown address, including static assets,
+images, hosted files and health probes, keeps the plain not-found response.
+
 Client validation improves feedback but never replaces server validation.
 Browser-local timezone conversion uses UTC ISO timestamps supplied by the
 server. The Admin portal [requires
@@ -741,8 +751,8 @@ layout ("Page not found") with a next step and a way back, never the plain
 text of the security middleware; nothing from the address is shown. Scripts
 get the closed JSON error. **Why.** A bare "Not Found" in a fixed-width font
 looks like a broken site. **Shared code.** `web/error_pages.py`
-(`BrowserErrorMiddleware`, and `not_found_response` (open #930)) and
-`error.html`. **Precedent.** #927, open #930. The general error-page rule is under
+(`BrowserErrorMiddleware`, and `not_found_response` (#930)) and
+`error.html`. **Precedent.** #927, #930. The general error-page rule is under
 [accessibility and client behavior](#accessibility-and-client-behavior).
 
 ## Admin page layout and help
