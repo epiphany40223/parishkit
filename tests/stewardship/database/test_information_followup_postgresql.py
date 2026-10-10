@@ -189,6 +189,10 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         assert b"search=" not in body
         for invalid in ({"sort": "submitted_at"}, {"size": "250"}, {"size": "5"}):
             assert search(browser, route, invalid)[0].status_code == 400
+        # The Family DUID heading sorts through the same vocabulary (#960).
+        response, body = search(browser, route, {"sort": "duid_desc"})
+        assert response.status_code == 200 and b"Please contact" in body
+        assert b'aria-sort="descending"' in body and b'value="duid"' in body
         update_path = reverse("admin:information_update", args=[item.pk])
         values = {
             "expected_version": str(item.version),

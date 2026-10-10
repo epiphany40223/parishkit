@@ -162,7 +162,7 @@ def test_report_page_says_plainly_that_no_talents_are_collected():
     html = page({"modules": ["ministry"], "talent_options": []}, result({}, {}))
     assert "This campaign does not collect talents" in html
     assert "Talents</" not in html and "Members with talents" not in html
-    assert "Painter" not in html and 'colspan="4"' in html
+    assert "Painter" not in html and 'colspan="5"' in html
     html = page({"modules": ["ministry"]}, result({PAINTER: ""}, {PAINTER: 1}))
     assert "does not collect talents" not in html
     assert "Members with talents or limitations" in html and "Painter" in html

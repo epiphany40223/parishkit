@@ -247,13 +247,19 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         for invalid in ({"sort": "member_name"}, {"sort": "-name"}, {"size": "7"}):
             response, _ = search(browser, route, {"ministry": "9"} | invalid)
             assert response.status_code == 400
+        # The Member DUID heading sorts the list (#960).
+        response, body = search(browser, route, {"ministry": "9", "sort": "duid_desc"})
+        assert response.status_code == 200 and b"Member Middle Example" in body
+        assert b'aria-sort="descending"' in body and b'value="duid"' in body
         # The summary sorts by Ministry name or Ministry DUID (#960), within
         # the leader's scope.
         response, body = search(browser, root, {"sort": "name_desc"})
         assert response.status_code == 200 and b"Food pantry" in body
         assert b"Choir" not in body and b'aria-sort="descending"' in body
+        assert b'name="sort" value="duid"' in body
         response, body = search(browser, root, {"sort": "duid_desc"})
         assert response.status_code == 200 and b"Food pantry" in body
+        assert b'aria-sort="descending"' in body
         assert search(browser, root, {"sort": "newest"})[0].status_code == 400
         # A GET has no Ministry selection: back to the summary (#867),
         # dropping any query rather than echoing it.

@@ -148,6 +148,10 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert b'aria-sort="descending"' in body and b'<a class="sort-link"' not in body
         assert b'name="families_size" value="25"' in body
         assert b'name="members_sort" value="latest"' in body
+        # The Member DUID heading sorts too (#960).
+        response, body = search(browser, route, {"members_sort": "-member_duid"})
+        assert response.status_code == 200 and b'aria-sort="descending"' in body
+        assert b'name="members_sort" value="member_duid"' in body
         for invalid in (
             {"members_sort": "submitted_at"},
             {"families_sort": "-talents"},

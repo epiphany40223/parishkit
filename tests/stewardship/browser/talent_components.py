@@ -39,6 +39,7 @@ def components(context, admin):
         "members": [
             {
                 "member_name": "Zed Able",
+                "member_duid": 31,
                 "family_name": "Baker",
                 "family_duid": 2,
                 "proposed": False,
@@ -48,6 +49,8 @@ def components(context, admin):
             },
             {
                 "member_name": "Amy Young",
+                # Added on the form, so not in ParishSoft yet.
+                "member_duid": None,
                 "family_name": "Carter",
                 "family_duid": 1,
                 "proposed": True,

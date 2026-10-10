@@ -78,11 +78,11 @@
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Information result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Additional-information results' %}"><table>
-<caption>{% translate "Family requests and current Staff workflow" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}<th scope="col">{% translate "Disposition" %}</th><th scope="col">{% translate "Text" %}</th><th scope="col">{% translate "Follow-up needed" %}</th><th scope="col">{% translate "Completed" %}</th></tr></thead><tbody>
-{% for row in table.rows %}<tr><td><a href="{% url 'admin:information_item' row.id %}{% if queue_token %}?queue={{ queue_token }}{% endif %}">{{ row.family_name }}</a><br>{% translate "DUID" %} {{ row.family_duid|duid }}</td>
+<caption>{% translate "Family requests and current Staff workflow" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}<th scope="col">{% translate "Disposition" %}</th><th scope="col">{% translate "Text" %}</th><th scope="col">{% translate "Follow-up needed" %}</th><th scope="col">{% translate "Completed" %}</th></tr></thead><tbody>
+{% for row in table.rows %}<tr><td><a href="{% url 'admin:information_item' row.id %}{% if queue_token %}?queue={{ queue_token }}{% endif %}">{{ row.family_name }}</a></td><td class="numeric">{{ row.family_duid|duid }}</td>
 <td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td><td>{{ row.disposition_label }}{% if row.previously_reported %}<br>{% translate "Previously emailed" %}{% endif %}</td><td>{{ row.text|truncatechars:240 }}</td>
 <td>{% if row.follow_up_needed %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td><td>{% if row.followed_up_at %}{{ row.completed_by }}<br><time datetime="{{ row.followed_up_at|date:'c' }}" data-local-instant>{{ row.followed_up_at|date:'c' }}</time>{% else %}{% translate "Not completed" %}{% endif %}</td></tr>
-{% empty %}<tr><td colspan="6">{% translate "No matching requests. Try All history in Request history, or clear the search and date filters." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="7">{% translate "No matching requests. Try All history in Request history, or clear the search and date filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
 {% endif %}

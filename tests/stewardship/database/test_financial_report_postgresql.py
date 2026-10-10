@@ -631,7 +631,7 @@ def test_native_page_filters_privately_and_denies_leaders(
     name = report(harness)["rows"][0]["family_name"].encode()
     # The surname alone ("Example") also appears in unrelated page text, so
     # match the Family's row header rather than the bare name.
-    name = b'<th scope="row">' + name + b"<br>"
+    name = b'<th scope="row">' + name
     route = reverse("admin:financial_report")
     browser, login = signed_in()
     assert login.status_code == 302
@@ -667,6 +667,10 @@ def test_native_page_filters_privately_and_denies_leaders(
         assert b'value="Private"' in body and b"search=" not in body
         response, body = search(browser, route, {"sort": "pledge", "size": "100"})
         assert response.status_code == 200 and b'<option value="100" selected>' in body
+        # The Family DUID heading sorts too (#960).
+        response, body = search(browser, route, {"sort": "duid_desc"})
+        assert response.status_code == 200 and name in body
+        assert b'aria-sort="descending"' in body and b'value="duid"' in body
         for invalid in ({"sort": "annual_pledge"}, {"size": "250"}, {"size": "all"}):
             assert search(browser, route, invalid)[0].status_code == 400
         # The campaign reports page offers the entry only with the module enabled.
