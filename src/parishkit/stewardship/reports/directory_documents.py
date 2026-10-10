@@ -7,8 +7,8 @@ and footer and in the XLSX "Report information" sheet.
 
 - The Family-code directory lists, as the page does (#932, #933), Family
   first (the surname, then the heads of household: "Squyres, Tracy and
-  Jeff"), then Family DUID, Envelope number, any Submissions count, What to
-  check and response dates, and Family code. When it is filtered
+  Jeff"), then Family DUID, Envelope number, Family code, and any
+  Submissions count, What to check and response dates. When it is filtered
   to Families that no campaign mail can reach (reach "neither"), it adds
   their phone numbers for follow-up calls.
 - Every export ends with Family head emails: each distinct head address once,
@@ -166,11 +166,11 @@ def export_headings(*, postal, reach, dates=(), counts=(), checks=False):
     """The export's columns: the mail merge, or codes (plus phones for "neither").
 
     The mail merge's columns never change. The code list follows the page:
-    the identity columns, the response ``counts``, What to check when
-    ``checks`` (a data check filter is applied) and the response ``dates``
-    (``directories.response_columns``, when the response columns are on),
-    then the Family code. Family head emails is
-    always the last column, after any phones.
+    the identity columns and the Family code (always in the same place),
+    then the response ``counts``, What to check when ``checks`` (a data
+    check filter is applied) and the response ``dates``
+    (``directories.response_columns``, when the response columns are on).
+    Family head emails is always the last column, after any phones.
 
     The directory page lists them so the Admin knows what the file contains.
     """
@@ -179,10 +179,10 @@ def export_headings(*, postal, reach, dates=(), counts=(), checks=False):
     phones = (PHONE_HEADING,) if reach == "neither" else ()
     return (
         IDENTITY_HEADINGS
+        + (CODE_HEADING,)
         + tuple(column.heading for column in counts)
         + ((CHECK_HEADING,) if checks else ())
         + tuple(column.heading for column in dates)
-        + (CODE_HEADING,)
         + phones
         + (EMAIL_HEADING,)
     )
@@ -316,13 +316,13 @@ def directory_document(
                 str(item["family_duid"]),
                 # Envelope number 0 is a value, not a blank (#933).
                 "" if item.get("envelope") is None else str(item["envelope"]).strip(),
+                item["code"] or "",
                 *(item[column.field] for column in counts),
                 *(("; ".join(item["checks"]),) if checks else ()),
                 *(
                     instant(item[column.field]) if item[column.field] else None
                     for column in dates
                 ),
-                item["code"] or "",
             )
             if phones:
                 row += (

@@ -901,7 +901,8 @@ response (Responded). The columns follow the shared order, most relevant
 column first
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)). The
 directory is a Family table, so Family (the row header) leads, then Family
-DUID and Envelope number, then any Submissions and What to check, then any
+DUID, Envelope number and Family code (which therefore never moves), then any
+Submissions and What to check, then any
 [response dates](#response-filters), and then the directory's own columns.
 Both Family and Family DUID sort. The name is the Family's
 surname followed by its heads of household, so same-surname Families can be
@@ -972,8 +973,9 @@ than show a head as having no email.
 Without [mailing columns](#mailing-columns), CSV, XLSX, and PDF exports are
 one header row plus one row per Family, with the page's columns in the
 page's order: Family (the same surname-and-heads name as the page), Family
-DUID, Envelope number, any Submissions, What to check and response dates (see
-[Response filters](#response-filters)), Family code and Family head emails.
+DUID, Envelope number, Family code, any Submissions, What to check and
+response dates (see [Response filters](#response-filters)), and Family head
+emails.
 The list filtered to Families no campaign mail can reach
 adds Phone numbers for follow-up calls, before Family head emails. A
 Family no longer active in ParishSoft has "(No longer active in ParishSoft)"
@@ -1109,8 +1111,8 @@ and Submissions; the Started choices show Form opened and Got past the first
 step; the Invited choices show Invitation delivered and Link followed; Not
 submitted shows Invitation delivered, Form opened and Got past the first
 step; No invitation delivered shows Link followed and Form opened.
-Submissions follows Envelope number, and the dates follow Submissions and
-What to check, in the order the stages happen, before Family code: Family
+Submissions follows Family code, and the dates follow Submissions and
+What to check, in the order the stages happen: Family
 leads this table, and dates lead only event or log tables
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)). Times are shown in the browser's time
 zone; a stage not reached reads "Not yet" (Link followed reads "No"). The
