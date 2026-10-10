@@ -619,10 +619,15 @@ def test_native_page_filters_privately_and_denies_leaders(
     harness = activate_response_service(harness)
     with web_login():
         pledge(harness, load_form(harness), shares={CHECK: ""})
-    name = report(harness)["rows"][0]["family_name"].encode()
+    reported = report(harness)
+    name = reported["rows"][0]["family_name"].encode()
+    # Named as in every Admin table: the surname, then the heads (#932).
+    assert name.startswith(b"Example, ")
+    years = reported["metadata"]["comparison_years"].encode()
+    assert years
     # The surname alone ("Example") also appears in unrelated page text, so
     # match the Family's row header rather than the bare name.
-    name = b'<th scope="row">' + name + b"<br>"
+    name = b'<th scope="row">' + name + b"</th>"
     route = reverse("admin:financial_report")
     browser, login = signed_in()
     assert login.status_code == 302
@@ -631,6 +636,18 @@ def test_native_page_filters_privately_and_denies_leaders(
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
         assert name in body and b"$1,234.50" in body and b"$102.88" in body
         assert b"$1,200.00" in body and b"$100.00" in body
+        # The ParishSoft headings name the comparison period's years, and
+        # each has a toggletip with the period's dates.
+        for heading in (b"ParishSoft pledged", b"ParishSoft contributed"):
+            assert heading + b" (" + years + b")" in body
+        assert b'aria-controls="financial-source-pledged-tip"' in body
+        assert b'aria-controls="financial-source-contributed-tip"' in body
+        # Family leads each row; Latest response is the last column.
+        head = body[body.index(b"Current live pledges by Family</caption>") :]
+        head = head[: head.index(b"</thead>")]
+        assert head.index(b"Family DUID") < head.index(b"ParishSoft contributed (")
+        assert head.index(b"ParishSoft contributed (") < head.index(b"Latest response")
+        assert b">Version<" not in body
         assert b'datetime=""' not in body and b"?search=" not in body
         # Identifying filters are private POST state, never a URL.
         assert get(browser, route + "?search=Private")[0].status_code == 400

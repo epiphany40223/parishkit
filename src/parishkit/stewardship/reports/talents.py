@@ -21,6 +21,7 @@ from django.utils.datastructures import MultiValueDict
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.service import talent_options
+from parishkit.stewardship.source.snapshot_names import name_rows
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.exports import csv_cell
@@ -102,6 +103,10 @@ def talents_report(campaign_id, query, principal, *, configuration):
     result = json.loads(value[0])
     if result.get("unavailable"):
         raise ReadUnavailable("Talent report inputs are unavailable.")
+    # Each Family reads "Squyres, Jeff and Tracy", as in every Admin table
+    # (#932), from the snapshot SQL read; the page and its downloads share it.
+    source = result["metadata"]["source_id"]
+    name_rows(source, result["members"] + result["families"])
     return shape_result(result, configuration=configuration)
 
 

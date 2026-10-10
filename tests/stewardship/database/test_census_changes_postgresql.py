@@ -50,6 +50,15 @@ def worklist(harness, principal=STAFF, **values):
         return census_changes(harness.campaign.pk, CensusQuery.parse(values), principal)
 
 
+def directory_name(duid):
+    """The Family's name as the directory shows it, from the current snapshot."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).get()
+    return snapshot_family_names(snapshot, [duid])[duid]
+
+
 def test_worklist_reads_proposals_with_their_status(response_service):
     """A live response's change is listed, worded, and To review only for an
     Administrator; Staff find it with the status filter; leaders never."""
@@ -68,6 +77,9 @@ def test_worklist_reads_proposals_with_their_status(response_service):
     assert row["label"] == "First name" and row["family_answer"] == "Requested"
     assert row["status"] == "to_review" and row["route_label"] == "Automatic"
     assert row["who"] and row["family_duid"]
+    # Named as in every Admin table: surname, then heads (#932).
+    assert ", " in row["family_name"]
+    assert row["family_name"] == directory_name(row["family_duid"])
     assert len(worklist(harness, status="to_review")["rows"]) == 1
     by_hand = worklist(harness, status="all", route="by_hand")["rows"]
     assert [item["label"] for item in by_hand] == ["Home address"]

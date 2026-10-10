@@ -10,6 +10,7 @@ from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.models import AdditionalInformationRevision
+from parishkit.stewardship.source.snapshot_names import name_rows
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import PageWindow, filters
 from parishkit.stewardship.web.tables import Sorting
@@ -124,6 +125,9 @@ def information_page(campaign_id, query, *, item_id=None, page_size=PAGE_SIZE):
     result = json.loads(value[0])
     if item_id is not None and not result["rows"]:
         raise ObjectDoesNotExist("Information item is unavailable.")
+    # Each Family reads "Squyres, Jeff and Tracy", as in every Admin table
+    # (#932); SQL still searches and orders by the surname that leads it.
+    name_rows(result["metadata"]["source_id"], result["rows"])
     for row in result["rows"]:
         row["disposition_label"] = DISPOSITIONS[row["disposition"]]
         for field in ("submitted_at", "followed_up_at"):

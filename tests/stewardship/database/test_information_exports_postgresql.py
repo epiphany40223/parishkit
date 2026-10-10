@@ -137,7 +137,9 @@ def test_information_capture_freezes_full_text_and_history(live_response_service
         assert row["notes"] == "First complete note"
         assert row["history"][0]["version"] == revision.expected_version + 1
         assert row["history"][0]["notes"] == "First complete note"
-        assert row["family_name"] == report["rows"][0]["family_name"]
+        # The capture keeps the surname SQL read; the page adds the heads
+        # after it (#932).
+        assert report["rows"][0]["family_name"].startswith(row["family_name"] + ", ")
         assert (
             create_information_export(harness.service.store, actor, **values).pk
             == request.pk

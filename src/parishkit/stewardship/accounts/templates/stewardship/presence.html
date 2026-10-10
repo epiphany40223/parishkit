@@ -3,14 +3,15 @@
 {% block content %}
 <h1>{% translate "Families on the form now" %}</h1>
 {% aboutpage "presence" %}<p>{% translate "A Family that signed in earlier but closed the form, or left it idle in a background tab, is not counted." %}</p>
-<p>{% translate "Presence does not extend a login. Closed, expired, or ineligible sessions are excluded. Multiple sessions may belong to one Family." %}</p>{% endaboutpage %}
+<p>{% translate "Presence does not extend a login. Closed, expired, or ineligible sessions are excluded. Multiple sessions may belong to one Family." %}</p>
+<p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can sort or copy it." %}</p>{% endaboutpage %}
 <p id="presence-count" data-table-sync>{% translate "Families with the Family form open in their browser within the last 90 seconds:" %} {{ presence.count|number }}</p>
 <p id="presence-as-of" data-table-sync>{% translate "As of:" %} <time datetime="{{ presence.as_of|instant }}" data-local-instant>{{ presence.as_of|instant }} UTC</time></p>
 {% translate "Pages of Families on the form" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="presence-table-caption"><table class="data-table"><caption id="presence-table-caption">{% translate "Recently visible Family sessions" %}</caption>
-<thead><tr>{% translate "Family" as heading %}{% sort_heading table "name" heading %}{% translate "DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Signed in" as heading %}{% sort_heading table "started" heading %}{% translate "Last activity" as heading %}{% sort_heading table "activity" heading %}{% translate "Form last seen open" as heading %}{% sort_heading table "heartbeat" heading %}{% translate "Section" as heading %}{% sort_heading table "section" heading %}</tr></thead>
+<thead><tr>{% translate "Family" as heading %}{% sort_heading table "name" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Signed in" as heading %}{% sort_heading table "started" heading %}{% translate "Last activity" as heading %}{% sort_heading table "activity" heading %}{% translate "Form last seen open" as heading %}{% sort_heading table "heartbeat" heading %}{% translate "Section" as heading %}{% sort_heading table "section" heading %}</tr></thead>
 <tbody>{% for row in table.rows %}<tr><th scope="row">{{ row.name }}</th><td class="numeric">{{ row.duid|duid }}</td><td><time datetime="{{ row.started_at|instant }}" data-local-instant>{{ row.started_at|instant }} UTC</time></td><td><time datetime="{{ row.last_activity_at|instant }}" data-local-instant>{{ row.last_activity_at|instant }} UTC</time></td><td><time datetime="{{ row.presence_at|instant }}" data-local-instant>{{ row.presence_at|instant }} UTC</time></td><td>{{ row.section|capfirst }}</td></tr>{% empty %}<tr><td colspan="6">{% translate "No Family has the form open right now. Select Refresh list to check again." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>

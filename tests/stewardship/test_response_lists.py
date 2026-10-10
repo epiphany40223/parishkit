@@ -233,28 +233,37 @@ def test_csv_is_complete_neutralized_and_in_the_chosen_zone():
     body = list_csv(spec, rows_of("submitted"), NEW_YORK)
     assert body.count(b"\r\n") == 4
     table = list(csv.reader(io.StringIO(body.decode("utf-8"))))
+    # Family leads (the most relevant column, #932), then its dates.
     assert table[0] == [
-        "First submitted",
         "Family",
         "Family DUID",
         "Envelope number",
         "Submissions",
+        "First submitted",
     ]
     first = ROWS[0].submitted_at.astimezone(NEW_YORK).isoformat(" ", "seconds")
-    assert table[1] == [first, "Adams, Ann", "1", "101", "2"]
+    assert table[1] == ["Adams, Ann", "1", "101", "2", first]
     assert first.endswith("-04:00")
     # A name starting with "=" can never run as a formula.
-    assert table[2][1] == "'=Baker, Bob"
+    assert table[2][0] == "'=Baker, Bob"
     # No envelope number is a blank cell, never a word.
-    assert table[3][3] == ""
+    assert table[3][2] == ""
 
 
 def test_data_quality_csv_says_what_to_check():
     """The file names the problem; a blank mailing name is an empty cell."""
     body = list_csv(LISTS["data-quality"], rows_of("data-quality"), NEW_YORK)
     table = list(csv.reader(io.StringIO(body.decode("utf-8"))))
-    assert table[0][3:5] == ["Mailing name", "What to check"]
-    assert table[1][:5] == ["Cole, Cy", "3", "103", "", "Blank mailing name"]
+    # Family, Family DUID and envelope lead; the date comes last (#932).
+    assert table[0] == [
+        "Family",
+        "Family DUID",
+        "Envelope number",
+        "Mailing name",
+        "What to check",
+        "First submitted",
+    ]
+    assert table[1][0:5] == ["Cole, Cy", "3", "103", "", "Blank mailing name"]
     assert table[2][2] == "0"
 
 
@@ -517,12 +526,12 @@ def test_xlsx_has_the_csv_rows_as_native_cells_and_the_details():
         first = ROWS[0].submitted_at.astimezone(NEW_YORK).replace(tzinfo=None)
         # A native date and time in the chosen zone; identifiers as text; the
         # count a number; a missing envelope number a truly empty cell.
-        assert table[1] == [first, "Adams, Ann", "1", "101", 2]
-        assert sheet.cell(2, 1).is_date
+        assert table[1] == ["Adams, Ann", "1", "101", 2, first]
+        assert sheet.cell(2, 5).is_date
         # "=Baker, Bob" is literal text, never a formula.
-        assert sheet.cell(3, 2).data_type == "s"
-        assert table[2][1] == "=Baker, Bob"
-        assert table[3][3] is None
+        assert sheet.cell(3, 1).data_type == "s"
+        assert table[2][0] == "=Baker, Bob"
+        assert table[3][2] is None
         information = {
             row[0].value: row[1].value for row in book["Report information"].iter_rows()
         }
@@ -557,7 +566,7 @@ def test_file_text_is_neutralized_in_every_format():
         )
     )
     try:
-        assert book["Families"].cell(2, 2).value == "Tab\\u000bName"
+        assert book["Families"].cell(2, 1).value == "Tab\\u000bName"
     finally:
         book.close()
     drawn = []
@@ -585,7 +594,7 @@ def test_file_text_is_neutralized_in_every_format():
 
 def csv_cell_text(body):
     """The Family cell of a one-row CSV."""
-    return list(csv.reader(io.StringIO(body.decode("utf-8"))))[1][1]
+    return list(csv.reader(io.StringIO(body.decode("utf-8"))))[1][0]
 
 
 def test_pdf_reads_as_the_page_with_its_details_on_every_page():
@@ -611,7 +620,7 @@ def test_pdf_reads_as_the_page_with_its_details_on_every_page():
         )
     document = drawn["document"]
     assert document.headings == tuple(str(c.heading) for c in spec.columns)
-    opened, progressed, family, duid, envelope = document.rows[0]
+    family, duid, envelope, opened, progressed = document.rows[0]
     # Got past the first step is not reached yet: the page's "Not yet".
     assert progressed == "Not yet"
     assert family == "Diaz, Dee" and duid == "4" and envelope == "0"
@@ -625,7 +634,7 @@ def test_pdf_reads_as_the_page_with_its_details_on_every_page():
         "1 Family in this file. Production responses. Show: Opened the form only.",
     )
     assert frame.notice == response_lists.PRIVACY
-    assert response_lists.list_table(document).headings[0] == "Form opened"
+    assert response_lists.list_table(document).headings[0] == "Family"
 
 
 def test_pdf_columns_fit_the_page_and_their_headings():
@@ -658,10 +667,12 @@ def test_pdf_columns_fit_the_page_and_their_headings():
 def test_counts_group_in_the_pdf_and_stay_numbers_in_xlsx():
     """A count over a thousand reads "1,234" in the PDF; XLSX keeps the int."""
     spec = LISTS["more-than-once"]
-    count = spec.columns[0]
+    count, envelope = (
+        next(column for column in spec.columns if column.key == key)
+        for key in ("submissions", "envelope")
+    )
     assert response_lists.pdf_text(count, 1234, NEW_YORK) == "1,234"
     assert response_lists.xlsx_value(count, 1234, NEW_YORK) == 1234
-    envelope = spec.columns[-1]
     assert response_lists.pdf_text(envelope, 4711, NEW_YORK) == "4711"
     assert response_lists.xlsx_value(envelope, 4711, NEW_YORK) == "4711"
     assert response_lists.pdf_text(envelope, None, NEW_YORK) == ""
