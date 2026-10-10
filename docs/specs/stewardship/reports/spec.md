@@ -1,18 +1,18 @@
 # Stewardship reports and exports
 
 Reports use an explicitly selected campaign and make their data-as-of source
-snapshot/time explicit. The selector is per user/request, encoded as a stable
-campaign UUID in the report URL and never written to the global current-campaign
-pointer. It lists every retained campaign for which that user has report scope;
+snapshot/time explicit. The selector is per user/request and never written to
+the global current-campaign pointer; no report URL names a campaign
+([addresses rule](../ui-conventions/spec.md#addresses-and-legacy-urls)). It lists every retained campaign for which that user has report scope;
 purging/purged campaigns expose only permitted status/tombstone views. The
 default is the current pointer when authorized/reportable, otherwise the most
-recent authorized retained campaign. Exports and pinned links persist the UUID,
-so creating a successor cannot silently change a historical report. Admin
+recent authorized retained campaign. Exports persist their campaign, so
+creating a successor cannot silently change a historical report. Admin
 inherits every report permission. Staff sees all reports below except logs;
 Ministry leaders see only Ministry reports and campaigns/rows for assigned
 Ministries.
 
-The campaign selector, the campaign UUID in report URLs and the default to the
+The campaign selector and the default to the
 most recent retained campaign are superseded for the Admin portal by the
 [navigation decisions](../admin-portal/spec.md#navigation-decisions) 10, 15
 and 19: reports show the current campaign, report URLs name no campaign, and
@@ -24,8 +24,9 @@ Exports keep their own identifiers.
 Every report has a title, purpose/help text, active filters, source/data-as-of
 metadata, accessible empty/error state, and role-aware column set. Tables are
 server-paginated, sortable only by allowlisted fields, searchable, and
-filterable. URLs may contain only non-identifying enumerated filters, sort keys,
-page cursors, and the campaign UUID. Free-text search and any filter containing
+filterable. URLs may contain only non-identifying enumerated filters, sort keys
+and page cursors, never a campaign identifier (Administrator decision,
+2026-10-10). Free-text search and any filter containing
 a Family/Member name, DUID, address, email, phone, code, census value, financial
 value, or other identifying text use a CSRF-protected POST body and never a URL
 or query string. Proxy/application access logs omit request bodies.

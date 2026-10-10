@@ -97,9 +97,14 @@ denominator displays an em dash rather than a misleading percentage.
 ### Dates and times
 
 **Rule.** Every Admin page shows and takes dates and times in the browser's
-own time zone, stored as UTC; no page labels a time "UTC". Exceptions: the
-ParishSoft refresh times stay in the parish's time zone, and the pages not yet
-moved keep the campaign zone until their #558 slice (below). **Why.** Staff read
+own time zone, stored as UTC; no page labels a time "UTC" or asks the reader
+to think in the campaign's or the parish's zone. Exceptions: the ParishSoft
+refresh times stay in the parish's time zone (permanent, below); and, as of
+2026-10-10, two older screens still take send times in the campaign's time
+zone, the first-campaign step's Mail schedules and the date-change review,
+until they are fixed under
+[#558](https://github.com/epiphany40223/parishkit/issues/558) (Administrator
+decision, 2026-10-10). **Why.** Staff read
 and type their own wall-clock time; a campaign-zone or UTC time on a page is a
 conversion the reader has to do in their head. **Shared code.**
 `data-local-instant` elements filled by `date-format-v1.js`;
@@ -126,10 +131,11 @@ twice when clocks fall back is the first occurrence; a time skipped when clocks
 spring forward is read with the offset in force before the change (2:30 AM
 becomes 3:30 AM daylight time), so the form is never refused for it. Emails,
 which cannot know a reader's browser, use the parish time zone and name it
-("9:15 PM Eastern"), never "UTC", with one recorded exception: operational and
-security alert emails keep their UTC stamp ([date format](#date-format)),
-pending Administrator decision
-([#956](https://github.com/epiphany40223/parishkit/issues/956)). Pages and emails move to these rules one
+("9:15 PM Eastern"), never "UTC". Operational and security alert emails
+follow the same rule: parish local time with the zone named (Administrator
+decision, 2026-10-10; until
+[#967](https://github.com/epiphany40223/parishkit/issues/967) lands they
+still print a UTC stamp). Pages and emails move to these rules one
 group at a time in the #558 PRs; the Ministry follow-up contact attempt is the
 first ([Admin portal](../admin-portal/spec.md#follow-up-workflows)), the System
 logs date filters the second ([Admin portal](../admin-portal/spec.md#logs)), and
@@ -178,11 +184,10 @@ zone, with the UTC offset so the repeated hour when clocks fall back stays
 unambiguous; Excel may treat such offset timestamps as text), and XLSX, the
 spreadsheet-native export, stores native dates in Excel's built-in
 locale-aware formats (14 for dates, 22 for timestamps). Operational and
-security alert emails keep their UTC stamp, which the database renders
-identically; this is the recorded exception to the
-[dates and times](#dates-and-times) rule that emails never say "UTC", pending
-Administrator decision
-([#956](https://github.com/epiphany40223/parishkit/issues/956)).
+security alert emails use the parish date format in the parish's time zone,
+with the zone named, like every other email
+([dates and times](#dates-and-times); open
+[#967](https://github.com/epiphany40223/parishkit/issues/967)).
 
 ### Accessibility and client behavior
 
@@ -496,10 +501,12 @@ button another gate still holds; the `pageshow` re-check;
 `test_campaign_setup_gates.py`, `test_prerequisite_gates.py` (open #946).
 **Precedent.** #553, #563 (and its slices, such as open #946), #921 / open #924.
 
-Known exception: a table's bulk action buttons give their reason as a
-visually hidden hint and a tooltip rather than a visible line, so ticking a
-row never moves them ([Admin tables](#admin-tables)). Whether that reason
-should become visible in reserved space is open on #563.
+This includes a table's bulk action buttons: while they are unavailable,
+their reason is visible text in a reserved line beside or below them, so
+ticking a row never moves anything ([Admin tables](#admin-tables);
+Administrator decision, 2026-10-10). The existing bulk bars still give it as
+a visually hidden hint with a tooltip until they change under
+[#879](https://github.com/epiphany40223/parishkit/issues/879).
 
 Wherever a form requires an acknowledgment checkbox (finishing setup, a test
 that may already have arrived, chosen-Family tests, Testing cleanup,
@@ -652,6 +659,10 @@ route to test and secure; Families cannot be asked to find a new link.
   snapshot, a cleanup request) refuses a record whose campaign is not current
   ("This campaign is no longer the current campaign", 410 Gone) until the
   single-campaign change (#145).
+- **No campaign in report URLs:** no Admin address names a campaign, report
+  pages included; the reports specification's former allowance for a
+  campaign UUID in report URLs is removed (Administrator decision,
+  2026-10-10, [#956](https://github.com/epiphany40223/parishkit/issues/956)).
 
 ### Not-found pages
 
@@ -719,8 +730,8 @@ troubleshooting (delivery, refusal and test references, a retained
 configuration version, an export's requester reference and data-load
 numbers, and the log cross-link identifiers) sit in a "Technical details"
 disclosure, closed by default, instead of in the page's main text. Nothing
-is removed, and CSV and XLSX exports keep every field
-([downloaded files](#downloaded-files)). An empty list says what to do
+is removed from the page; downloads leave these internal fields out of every
+format ([downloaded files](#downloaded-files)). An empty list says what to do
 next rather than only that it is empty.
 
 Template tests guard these rules: one fails when a paragraph shown without a
@@ -858,8 +869,10 @@ the two cannot drift.
 rule under the [global presentation rules](#dates-and-times).
 New and Edit scheduled email take send times in the browser's zone (see [New
 and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)); the first-campaign
-step and the date-change review still take them in the campaign's time zone
-until their #558 slice. The ParishSoft refresh times
+step and the date-change review still take them in the campaign's time zone,
+the dated exception (2026-10-10) in [dates and times](#dates-and-times), until
+they are fixed under
+[#558](https://github.com/epiphany40223/parishkit/issues/558). The ParishSoft refresh times
 are in the parish's time zone, the recorded exception to the browser-local
 rule that those rules describe (see also
 [ParishSoft refresh schedule settings](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)).
@@ -991,10 +1004,14 @@ a whole log.
 A table with bulk actions has a selection column. Its header checkbox and a
 Select all button choose every row on the current page; the bar above the
 table shows how many rows are selected and enables its action buttons only
-while at least one is. While none is, the disabled action buttons are
-described by a short, visually hidden hint saying what to select (also shown
-as their tooltip). Ticking a row never moves a control under the pointer: no
-visible line appears or disappears, and the count and Select all button sit
+while at least one is. While none is, a short visible hint in a reserved
+line beside or below the action buttons says what to select, and the buttons
+name it (`aria-describedby`); the line keeps its height when the hint clears
+(Administrator decision, 2026-10-10; the existing bars move from a visually
+hidden hint and tooltip under
+[#879](https://github.com/epiphany40223/parishkit/issues/879)). Ticking a row
+never moves a control under the pointer: the hint's line is reserved, and the
+count and Select all button sit
 after the action buttons, so their changing text cannot push them (#563). The
 server validates every submitted selection.
 
@@ -1107,18 +1124,46 @@ rows make a table unscannable. **Shared code.** The `table-scroll` class in
 
 ## Downloaded files
 
-**Rule.** Every Admin PDF and XLSX shares one design in the portal's design
-tokens. A PDF is the readable view: one table, record cards or address cards
-in a shared page frame, leaving out internal reference fields (campaign,
-source, item and response references, row versions and similar). CSV and
-XLSX stay the complete audit files with every column. A download follows its
-page's column order. **Why.** Staff print and share these files; internal
-references mean nothing to a reader, but the audit files must stay complete.
-**Shared code.** `reports/pdf_design.py` and `reports/xlsx_design.py` (open #929);
+**Rule.** Every format of a download (CSV, XLSX and PDF) carries the same
+columns, and those columns match its page: the same columns, names and order.
+Internal references and identifiers (row versions, campaign, source, item and
+response reference UUIDs, record ids and similar) are left out of every
+format, CSV included (Administrator decision, 2026-10-10,
+[#956](https://github.com/epiphany40223/parishkit/issues/956)). Every Admin
+PDF and XLSX shares one design in the portal's design tokens; a PDF lays the
+columns out as one table, record cards or address cards in a shared page
+frame. Identifiers a reader uses, such as Family and Member DUIDs and
+envelope numbers, are not internal references and stay. **Why.** Staff print
+and share these files; internal references mean nothing to a reader, and a
+column that is in one format and not another makes the files disagree about
+what the report holds. Troubleshooting uses the page's Technical details and
+the audit log, not a download. Every data export is offered as CSV, XLSX and PDF unless a recorded
+technical or design reason says otherwise (Administrator decision,
+2026-10-10); a page may add a format, such as the participation chart's PNG
+or System logs' JSON Lines. **Shared code.** `reports/pdf_design.py` and `reports/xlsx_design.py`;
 `web/design_tokens.py`. The format rules for each file type (CSV neutralizing,
 money, headers) are in the reports'
 [shared report behavior](../reports/spec.md#shared-report-behavior).
-**Precedent.** #926, open #929.
+**Precedent.** #926, #929, and the Administrator's decisions of 2026-10-10
+on [#958](https://github.com/epiphany40223/parishkit/pull/958).
+
+Recorded exceptions to the three formats:
+
+- **System logs:** CSV, XLSX and JSON Lines, no PDF. Its rows are wide raw
+  data (structured details up to the export limit) that do not print as a
+  readable page.
+
+Not data exports, so outside the rule: the deployment configuration
+document, hosted files (served as uploaded) and chart images.
+
+Current state, to be made consistent under
+[#966](https://github.com/epiphany40223/parishkit/issues/966): the Financial
+detail, Additional information and Ministry report CSV and XLSX files still
+carry internal columns (Family version, Response reference, Row type,
+Version, Proposed Member reference), and several files' report information
+still lists campaign and source references; the participation and System
+logs CSVs carry raw ids; Census changes and Talents lack PDF; Family test
+names is CSV only; and System logs lacks XLSX.
 
 ## Family portal
 
