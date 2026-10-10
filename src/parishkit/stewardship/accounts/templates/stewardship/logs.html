@@ -27,7 +27,7 @@
 {% button type="submit" aria-describedby="log-filter-hint" %}{% translate "Apply filters" %}{% endbutton %}
 </div>
 <p class="help" id="log-zone-help" data-browser-zone-note hidden>{% translate "From and Through are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
-<p class="help" id="log-filter-hint" data-complete-hint hidden></p>
+{% comment %}The gate's hint keeps one line reserved while empty (data-complete-hint="reserve"), so it showing or going never moves the table below (no layout shift, #953).{% endcomment %}<p class="help" id="log-filter-hint" data-complete-hint="reserve"></p>
 <details id="log-identifier-filters" class="log-more-filters"{% if query.private %} open{% endif %}><summary>{% translate "Filter by identifier" %}</summary>
 <p class="help">{% translate "Usually easier: select Show related entries, Same actor or Same campaign on any entry below. To filter by hand, copy an identifier from an entry's Technical details." %}</p>
 <div class="filter-bar">

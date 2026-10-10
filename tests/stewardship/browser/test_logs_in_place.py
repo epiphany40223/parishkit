@@ -13,7 +13,7 @@ import pytest
 
 from .log_components import LIVE
 from .test_in_place import MARK, MARKED, VIEWPORT, count_requests, scroll_below
-from .test_system_logs import posted
+from .test_system_logs import TABLE_TOP, posted
 from .waits import eventually, has_text, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -253,7 +253,8 @@ def test_sign_in_activity_applies_in_place(page, component_origin):
     Audit record is unticked. Apply then sends the choice in the POST body
     and lists the sign-in entries in place: no reload, the choice kept, and
     the address carrying it so a bookmark keeps it. Same actor on one of
-    them then keeps the choice."""
+    them then keeps the choice. The hint's line is reserved, so the table
+    never moves as it comes and goes."""
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + LIVE)
     page.evaluate(MARK)
@@ -268,27 +269,30 @@ def test_sign_in_activity_applies_in_place(page, component_origin):
     apply = page.get_by_role("button", name="Apply filters")
     hint = page.locator("#log-filter-hint")
     before = page.evaluate(BOXES)
+    top = page.evaluate(TABLE_TOP)
     activity.select_option("sign_in")
     assert page.evaluate(BOXES) == before
     for level in levels:
         assert box(level).is_disabled(), level
-    assert audit.is_enabled() and apply.is_enabled() and hint.is_hidden()
+    assert audit.is_enabled() and apply.is_enabled() and hint.text_content() == ""
     # Audit record unticked: Apply waits, its hint saying to tick it.
     audit.uncheck()
     assert apply.is_disabled()
     assert hint.text_content() == (
         "Sign-in activity is made of audit records; tick Audit record."
     )
+    # The hint's line was reserved, so the table did not move (#953).
+    assert page.evaluate(TABLE_TOP) == top
     # All activity gives the levels back, ticks kept; a level then counts.
     activity.select_option("")
     for level in levels:
         assert box(level).is_enabled(), level
-    assert apply.is_enabled() and hint.is_hidden()
+    assert apply.is_enabled() and hint.text_content() == ""
     activity.select_option("sign_in")
     assert apply.is_disabled()
     audit.check()
-    assert apply.is_enabled() and hint.is_hidden()
-    assert page.evaluate(BOXES) == before
+    assert apply.is_enabled() and hint.text_content() == ""
+    assert page.evaluate(BOXES) == before and page.evaluate(TABLE_TOP) == top
     answer_with(page, component_origin, "/logs-sign-in")
     with page.expect_request(lambda request: request.method == "POST") as request:
         apply.click()
