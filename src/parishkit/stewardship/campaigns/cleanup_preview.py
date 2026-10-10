@@ -26,11 +26,11 @@ from .work_locks import require_work_order
 # is built per row from the current source snapshot (SnapshotFamilyName,
 # through the (snapshot, source_key) unique indexes), the same "Surname,
 # heads" string snapshot_family_names shows, ordered by surname and then the
-# whole name as the Family codes directory is. The inventory is only
-# Families with Testing submissions, so that per-row lookup is bounded. id
-# is the unique tiebreak.
+# whole name and then the DUID, as the Family codes directory is. The
+# inventory is only Families with Testing submissions, so that per-row lookup
+# is bounded. id is the unique tiebreak.
 TESTING_FAMILY_SORTING = Sorting.by_column(
-    {"name": ("sort_surname", "sort_name"), "duid": ("family_duid",)},
+    {"name": ("sort_surname", "sort_name", "family_duid"), "duid": ("family_duid",)},
     default="duid",
     tiebreak=("id",),
 )
