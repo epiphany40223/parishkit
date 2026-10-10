@@ -582,6 +582,8 @@ Administrator may override.
    `pk-admin users preview-upgrade` and an **Upgrade preview** panel on the
    Portal users page. Both run one read-only function and list exactly what
    the conversion will do:
+   - first, every address that holds Administrator today, each kept as an
+     Administrator user (the list the operator confirms in step 3);
    - each domain rule, and every recorded Google identity it admits today
      that has signed in before (enabled, its email suffix and recorded
      hosted-domain claim matching the rule, and no address rule for its
@@ -595,6 +597,10 @@ Administrator may override.
 
    The Administrator can add any missing address as an ordinary user (an
    address rule) before the upgrade, so nobody they expect is locked out.
+   Losing any other user is acceptable: in Production only the parish's
+   existing Administrator access must survive, and anyone else can be
+   re-created as a user afterwards. So the conversion carries over what the
+   preview shows and needs no special handling for any other case.
 2. **Conversion as one configuration change.** The conversion follows the
    preview's rules exactly:
    - every Google identity that a domain rule admits today and that has signed
@@ -631,9 +637,10 @@ Administrator may override.
    requires a named operator and reason, and its tagged operator-upgrade
    ConfigurationChangeRequest records that operator as its actor, not a
    fabricated PortalUser. The order is fixed:
-   1. **Preview:** the command prints the same preview as step 1 and needs
-      explicit confirmation (an unattended run supplies it explicitly, never
-      by default).
+   1. **Preview:** the command prints the same preview as step 1, and the
+      operator must confirm the list of Administrators to be kept, not just
+      the run (an unattended run supplies that list explicitly and is refused
+      if it differs, never confirmed by default).
    2. **Convert:** the first migration of the release has already added the
       new columns while every SQL function still joins
       `stewardship_domain_rule`; the command then activates the converted
@@ -681,6 +688,16 @@ Administrator may override.
    A later cleanup migration drops those tables and the retired Ministry
    assignment tables once nothing reads them. Their history stays in the audit
    log and the immutable configuration versions.
+
+Acceptance criteria for the upgrade (Administrator decision, #952):
+
+- every address that holds Administrator before the upgrade can still sign
+  in as Administrator after it;
+- the conversion refuses, and the deployment stays down, rather than drop the
+  last Administrator or any Administrator on the confirmed list; and
+- if anything still goes wrong, the documented
+  [offline Admin-access recovery](#offline-admin-access-recovery) is the
+  fallback, and it works on a converted configuration.
 
 Once the conversion has activated, an application rollback to the previous
 release is not compatible: its code and SQL functions expect the sign-in
@@ -1695,7 +1712,10 @@ Required suites include:
   is refused and never silently rebased past the last-Admin or CSRF guards;
   the function-swap migration and service startup refuse an unconverted
   configuration, a failed or refused conversion leaves the services down, and
-  a repeated or resumed conversion is a no-op;
+  a repeated or resumed conversion is a no-op; every pre-upgrade
+  Administrator signs in as Administrator afterwards, a confirmed
+  Administrator list that differs from the preview is refused, and offline
+  Admin-access recovery works on a converted configuration;
 - limiter tests proving that pre-verification IP rejections contribute once
   without OAuth state allocation, provider calls, raw token retention, or
   duplicate counting, and that post-verification identity-limit rejections
