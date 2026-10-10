@@ -109,7 +109,7 @@ SITES = {
     "jobs/delivery_resolution.py::resolve_delivery": site(
         "outbox_delivery",
         WEB,
-        {"admin_operations.py", "jobs/delivery_views.py"},
+        {"admin_operations.py", "jobs/delivery_bulk.py", "jobs/delivery_views.py"},
     ),
     "jobs/family_mail_tasks.py::retry_preparation": site(
         "family_mail_prepare", WEB, {"jobs/task_retries.py"}

@@ -1,0 +1,37 @@
+{% load i18n stewardship delivery %}{% comment %}
+  Outgoing mail's bulk actions (#382 M4; jobs.delivery_bulk). The panel is
+  drawn only while some email qualifies (bulk_overview, which also lists
+  each action's email types with their counts), or while it answers a bulk
+  action. Each action is its own form, shown only when it applies, so no
+  field appears or disappears as another is chosen. Preview is unavailable
+  until the note (and, to record emails as not sent, the checkbox) is
+  filled in (data-require-complete, #553).
+
+  Preview and Confirm happen in place (#532): each form posts to this page,
+  which answers with its #bulk-review region holding the preview (with
+  Confirm), the result (with Continue while a batch is left) or the refusal.
+  Only that region and the table are swapped, so the forms keep their
+  typing and nothing above the region moves. Editing a form again withdraws
+  its preview (data-review-of), so Confirm only ever applies what is shown;
+  the server's signed preview stays the authority for which emails change.
+{% endcomment %}{% if bulk_overview or bulk_review or bulk_result or bulk_errors %}<details class="panel" id="bulk-panel"{% if bulk_review or bulk_result or bulk_errors %} open{% endif %}>
+<summary>{% translate "Fix many emails at once" %}</summary>
+<p>{% translate "After a mail outage, many emails can need the same decision. Each action here first shows how many emails it covers; nothing changes until you confirm. Every email is then checked and recorded on its own, exactly as on its own page, and an email that changed since the preview is skipped, not forced." %}</p>
+{% for kind, choice in bulk_overview.items %}{% if kind == "retry_failed" %}
+<form id="bulk-retry_failed" method="post" action="#bulk-review" class="panel" data-in-place data-require-complete data-in-place-message="{% translate 'Preview ready.' %}">
+  {% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="kind" value="retry_failed">
+  <h2>{% translate "Retry all failed emails" %}</h2>
+  <p>{% translate "Each failed email is sent again, as Retry failed delivery does on its own page. Codes and links that Families already received stay valid." %}</p>
+  {% include "stewardship/delivery-bulk-fields.html" with kind="retry_failed" %}
+  {% button type="submit" aria-describedby="bulk-retry_failed-hint" %}{% translate "Preview retry" %}{% endbutton %}<p class="help" id="bulk-retry_failed-hint" data-complete-hint hidden></p>
+</form>{% elif kind == "confirm_unsent" %}
+<form id="bulk-confirm_unsent" method="post" action="#bulk-review" class="panel" data-in-place data-require-complete data-in-place-message="{% translate 'Preview ready.' %}">
+  {% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="kind" value="confirm_unsent">
+  <h2>{% translate "Record all \"Not sure it arrived\" emails as not sent" %}</h2>
+  <p>{% translate "Use this only when the mail service's own records (for example the sending mailbox's Sent folder) show that these emails were not sent. They are recorded as failed and are not sent again; you can retry them afterwards. No address is blocked." %}</p>
+  {% include "stewardship/delivery-bulk-fields.html" with kind="confirm_unsent" %}
+  <div data-missing-hint="{% translate 'Confirm that you checked the mail service records to preview.' %}"><label><input type="checkbox" name="checked" value="yes" required> {% translate "I checked the mail service's own records, and these emails were not sent." %}</label></div>
+  {% button type="submit" aria-describedby="bulk-confirm_unsent-hint" %}{% translate "Preview recording as not sent" %}{% endbutton %}<p class="help" id="bulk-confirm_unsent-hint" data-complete-hint hidden></p>
+</form>{% endif %}{% endfor %}
+<div id="bulk-review" data-in-place-region>{% include "stewardship/delivery-bulk-review.html" %}</div>
+</details>{% endif %}
