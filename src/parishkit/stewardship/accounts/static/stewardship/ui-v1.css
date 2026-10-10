@@ -472,9 +472,6 @@ td > :last-child { margin-bottom: 0; }
 /* The note keeps its space while idle, so showing it never re-wraps the cell
    and moves the row's button under the pointer (#736). */
 .schedule-editing-idle { visibility: hidden; }
-/* A locked field's reason (data-locked-when, ui-v1.js) keeps its space while
-   the field is unlocked, so locking it never moves the controls (#951). */
-.lock-reason.is-idle { visibility: hidden; }
 /* The chosen email under a schedule's email list (#446). */
 .email-summary { margin-block-start: .35rem; }
 .email-summary p { margin-block: .2rem; }

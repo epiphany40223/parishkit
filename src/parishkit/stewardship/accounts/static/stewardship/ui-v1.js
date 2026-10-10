@@ -2326,11 +2326,11 @@
   };
   // A field marked data-locked-when="name=value" (or "name!=value") stays
   // where it is but is locked while the rule holds: it shows its
-  // data-locked-value, disabled, described by its reason (the element whose
-  // id is data-locked-reason). The reason's space is always kept (it is only
-  // made invisible, ui-v1.css .lock-reason), so locking moves nothing. The
-  // first use is the directory's Campaign mail can reach, which shows "By
-  // postal mail only" while Include mailing columns is ticked (#951).
+  // data-locked-value, disabled, so locking moves nothing. The field's own
+  // help (its toggletip) says why; a reason line under the field would make
+  // it taller than its neighbours in a bottom-aligned filter bar. The first
+  // use is the directory's Campaign mail can reach, which shows "By postal
+  // mail only" while Include mailing columns is ticked (#951).
   // data-show-when would hide the field and drop the reader's value; this
   // shows the value that applies and keeps the reader's own: a disabled
   // field is not sent, so the hidden input marked data-locked-own="<field
@@ -2347,8 +2347,7 @@
       const form = node.form;
       const control = form && form.elements.namedItem(name);
       const own = form && form.querySelector(`[data-locked-own="${CSS.escape(node.id)}"]`);
-      const reason = document.getElementById(node.dataset.lockedReason || "");
-      if (!control || !own || !reason) return;
+      if (!control || !own) return;
       const update = () => {
         if (!node.isConnected) return;
         const locked = (ruleValue(control) === value) !== negated;
@@ -2360,13 +2359,6 @@
         }
         node.disabled = locked;
         own.disabled = !locked;
-        reason.classList.toggle("is-idle", !locked);
-        // Described by the reason only while it applies.
-        const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
-          .filter((id) => id && id !== reason.id);
-        if (locked) described.push(reason.id);
-        if (described.length) node.setAttribute("aria-describedby", described.join(" "));
-        else node.removeAttribute("aria-describedby");
       };
       form.addEventListener("change", update);
       lockedUpdates.push({node, update});

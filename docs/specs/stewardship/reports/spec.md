@@ -1013,9 +1013,13 @@ invitation sender uses. The directory already lists only active parishioner
 Families, so with mailing columns on, Campaign mail can reach is always "By
 postal mail only" (no deliverable email and a usable mailing address),
 whatever reach was chosen. While the box is ticked, the Campaign mail can
-reach select shows "By postal mail only", disabled, with a short reason in
-space the page always keeps for it, so nothing moves (the page script's
-`data-locked-when`, re-applied on `pageshow`; #563, #736). The rule is
+reach select stays in place but shows "By postal mail only", disabled (the
+page script's `data-locked-when`, re-applied on `pageshow`; #563, #736). The
+filter bar shows no help line under either field, since a line there makes
+that field taller than the others and misaligns the bottom-aligned row
+(Administrator, pk-local batch 5, 2026-10-10): the box's and the select's
+toggletips and the About panel say what the box does and why the select is
+set. The rule is
 applied when the rows are selected, never to the page's own filters: the
 page still sends and keeps the reach the reader chose, which comes back when
 the box is unticked (Any by default), and the server applies the rule to

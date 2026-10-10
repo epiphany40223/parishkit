@@ -189,37 +189,43 @@ def test_contact_details_show_each_heads_email(
 def test_mailing_columns_lock_reach_to_postal_mail_only(page, component_origin):
     """Ticking mailing columns shows reach "By postal mail only", locked (#951).
 
-    The reader's own reach is still sent and comes back on unticking, and
-    the reason's space is always kept, so nothing on the filter bar moves.
+    The reader's own reach is still sent and comes back on unticking. No help
+    line sits under either field, so nothing on the filter bar moves and the
+    fields stay bottom-aligned with their neighbours (pk-local batch 5).
     """
     page.goto(component_origin + "/family-directory")
     reach = page.get_by_label("Campaign mail can reach", exact=True)
     mailing = page.get_by_label("Include mailing columns")
-    reason = page.locator("#directory-reach-locked")
+    response = page.get_by_label("Campaign response", exact=True)
     apply = page.get_by_role("button", name="Apply filters")
 
     def boxes():
         """Where the filter bar's controls are drawn."""
         summary = page.locator("#directory-summary")
         return [
-            item.bounding_box() for item in (reach, mailing, reason, apply, summary)
+            item.bounding_box() for item in (reach, mailing, response, apply, summary)
         ]
 
     assert reach.is_enabled() and reach.input_value() == "any"
-    assert reason.evaluate("node => getComputedStyle(node).visibility") == "hidden"
-    assert reach.get_attribute("aria-describedby") is None
+    assert reach.get_attribute("aria-describedby") == "directory-reach-tip"
+    assert page.locator("#table-filters p.help").count() == 0
+    # The reach select lines up with its neighbour: no reserved line below
+    # it pushes it up in the bottom-aligned bar.
+    reach_box, response_box = reach.bounding_box(), response.bounding_box()
+    assert abs(reach_box["y"] - response_box["y"]) < 1
     reach.select_option("email")
     before = boxes()
     mailing.check()
     assert reach.is_disabled() and reach.input_value() == "mail"
-    assert reason.evaluate("node => getComputedStyle(node).visibility") == "visible"
-    assert reason.inner_text() == "Set by Include mailing columns."
-    assert reach.get_attribute("aria-describedby") == "directory-reach-locked"
     assert boxes() == before
     mailing.uncheck()
     assert reach.is_enabled() and reach.input_value() == "email"
-    assert reason.evaluate("node => getComputedStyle(node).visibility") == "hidden"
     assert boxes() == before
+    # The toggletips say what the box does and why the select is set.
+    page.locator('[aria-controls="directory-reach-tip"]').click()
+    assert "By postal mail only" in page.locator("#directory-reach-tip").inner_text()
+    page.locator('[aria-controls="directory-mailing-tip"]').click()
+    assert "mail-merge" in page.locator("#directory-mailing-tip").inner_text()
     # While locked, the reader's own reach is what the form sends; the server
     # applies "By postal mail only" itself.
     mailing.check()
@@ -235,11 +241,8 @@ def test_mailing_columns_page_draws_reach_locked(page, component_origin):
     """With mailing columns on, the page arrives locked; unticking restores Any."""
     page.goto(component_origin + "/postal-directory")
     reach = page.get_by_label("Campaign mail can reach", exact=True)
-    reason = page.locator("#directory-reach-locked")
     assert reach.is_disabled() and reach.input_value() == "mail"
-    visible(reason)
     before = reach.bounding_box()
     page.get_by_label("Include mailing columns").uncheck()
     assert reach.is_enabled() and reach.input_value() == "any"
-    assert reason.evaluate("node => getComputedStyle(node).visibility") == "hidden"
     assert reach.bounding_box() == before

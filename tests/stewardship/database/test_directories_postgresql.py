@@ -223,21 +223,24 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
             assert response.status_code == 200 and b"No matching Families." in body
             assert harness.code.encode() not in body
             assert b'<option value="mail" selected>' in body
-            assert b'aria-describedby="directory-reach-locked" disabled>' in body
+            assert b'aria-describedby="directory-reach-tip" disabled>' in body
             assert (
                 f'<input type="hidden" name="reach" value="{own}" '
                 'data-locked-own="directory-reach">'
             ).encode() in body
             assert f'<input type="hidden" name="reach" value="{own}">'.encode() in body
             assert b'<input type="hidden" name="mailing" value="yes">' in body
-            assert b'class="help lock-reason" id="directory-reach-locked"' in body
+            # No help line under either field: the explanation is in the
+            # toggletips and the About panel (pk-local batch 5).
+            assert b"lock-reason" not in body and b"directory-mailing-help" not in body
+            assert b"Set by Include mailing columns." not in body
         # Without mailing columns the same filter finds the Family, without
         # the mailing columns.
         response, body = search(browser, route, {"reach": "email"})
         assert response.status_code == 200 and harness.code.encode() in body
         assert b'<option value="email" selected>' in body
         assert b'data-locked-own="directory-reach" disabled>' in body
-        assert b'class="help lock-reason is-idle"' in body
+        assert b'aria-describedby="directory-reach-tip">' in body
         assert b"Addressee" not in body and b"<td>1 Example Street<br>" not in body
         # The page is named for who it lists (#870), and the population
         # summary and code-privacy lines above the filters are gone.
