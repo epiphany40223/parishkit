@@ -220,7 +220,6 @@ SLASHLESS_EXPECTED = {
     "/admin/campaign/schedules/addition": "/admin/campaign/schedules/addition/",
     f"/admin/campaign/schedules/{T}": f"/admin/campaign/schedules/{T}/",
     "/admin/campaign/share-options": "/admin/campaign/share-options/",
-    "/admin/campaign/talents": "/admin/campaign/talents/",
     "/admin/campaign/reminder-workgroup": "/admin/campaign/reminder-workgroup/",
     f"/admin/campaign/content/test/{T}": f"/admin/campaign/content/test/{T}/",
     f"/admin/campaign/content/test/{T}/families": (

@@ -1628,12 +1628,12 @@ signatures:
   refusal page's clearance (`jobs.delivery_admin.clear_recipient_refusal`).
 - **PR 10:** campaign, content, Ministry, parish, branding and integration
   settings (including the backup folder probe) from `campaign_views`,
-  `content_views`, `campaign_ministry_views`, `share_views`, `talent_views`,
-  `parish_views`, `ministry_views` and `integration_views`. `files list`
-  needed none: the hosted file page's row builder was already
-  request-free; `files delete` and `files rename` only add a `record`
-  callback to `hosted_file_uses.delete_many` and `rename`, so the command's
-  event shares their transaction.
+  `content_views`, `campaign_ministry_views`, `share_views`, `parish_views`,
+  `ministry_views` and `integration_views`. `files list` needed none: the
+  hosted file page's row builder was already request-free; `files delete`
+  and `files rename` only add a `record` callback to
+  `hosted_file_uses.delete_many` and `rename`, so the command's event shares
+  their transaction.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions).
@@ -1808,7 +1808,7 @@ none.
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../admin-portal/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
-| `campaign_ministries`, `share_settings`, `talent_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign talents`, `campaign reminder-workgroup` (PR 10) |
+| `campaign_ministries`, `share_settings`, `reminder_workgroup` | `campaign ministries`, `campaign shares`, `campaign reminder-workgroup` (PR 10) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content preview`, `content confirm`, `content history` (PR 10) |
 | `parish_settings`, `ministries` | `parish`, `ministries` (PR 10) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |

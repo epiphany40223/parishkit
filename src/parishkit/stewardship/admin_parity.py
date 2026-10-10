@@ -130,7 +130,6 @@ LEDGER = {
     "campaign_clone": pending("PR 10", "campaign clone"),
     "campaign_ministries": pending("PR 10", "campaign ministries"),
     "share_settings": pending("PR 10", "campaign shares"),
-    "talent_settings": pending("PR 10", "campaign talents"),
     "reminder_workgroup": pending("PR 10", "campaign reminder-workgroup"),
     "content_catalog": pending("PR 10", "content list"),
     "content_edit": pending("PR 10", "content show", "content preview"),

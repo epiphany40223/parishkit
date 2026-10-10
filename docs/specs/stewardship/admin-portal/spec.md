@@ -466,7 +466,6 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Campaign setup | Campaign images | `/admin/campaign/images/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Dates and mail schedules | `/admin/campaign/schedules/` | Administrator | No current campaign |
 | Campaign setup | Share options | `/admin/campaign/share-options/` | Administrator | The campaign has no financial module, or it is not an unlocked Testing draft |
-| Campaign setup | Member talents | `/admin/campaign/talents/` | Administrator | The campaign has no Ministry module, or it is not an unlocked Testing draft |
 | Campaign setup | Reminder WorkGroup | `/admin/campaign/reminder-workgroup/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Go-live readiness | `/admin/campaign/go-live/` | Administrator | The campaign is not a draft (it points to Production activation) |
 | Campaign setup | Production activation | `/admin/campaign/production/` | Administrator | Production has not been confirmed for this campaign |
@@ -785,7 +784,6 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. |
 | `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here. |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
-| `talent_settings` | Member talents | Menu: Member talents | Administrator | Talents Members can share | `/admin/campaign/talents/` | (same) | Gains a Return link and About panel. |
 | `reminder_workgroup` | Reminder WorkGroup | Menu: Reminder WorkGroup | Administrator | (new, #861) | `/admin/campaign/reminder-workgroup/` | (same) | Edit, review, apply; stays editable while live. |
 | `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/go-live/` | (same) |  |
 | `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same) |  |
@@ -1028,8 +1026,8 @@ with the current step marked `aria-current="step"` and each step's state in
 text. It is orientation only and links nothing, so it cannot skip a review or
 confirmation. The flows are: making a settings change (Make changes, Review,
 Apply) on every settings editor (campaign settings, Campaign Ministries, Copy
-campaign, pages and emails, dates and mail schedules, share options, member
-talents, campaign images, Parish settings, Parish logos, each integration,
+campaign, pages and emails, dates and mail schedules, share options,
+campaign images, Parish settings, Parish logos, each integration,
 Ministries and Finish switching), the reviews started on Users (New user,
 Edit user and Import Ministry leaders) and every change's status
 page; going live (Check readiness, Testing cleanup, Family links, Confirm
@@ -2034,7 +2032,6 @@ The campaign editor includes:
 - campaign Ministry multi-select, initially all active Ministries;
 - Ministry leader roles (see [Ministry leader roles](#ministry-leader-roles));
 - editable/reorderable share options with stable IDs and placeholders;
-- editable/reorderable Member talents (see [Member talents](#member-talents));
 - initial and repeatable reminder date/time, subject, and templates;
 - daily/weekly digest local schedules;
 - additional-information toggle;
@@ -2383,8 +2380,7 @@ period and current and comparison funds. The time zone comes from the Parish
 profile, as it does for every new draft. The review then shows the whole new
 campaign, and confirming records one versioned configuration request, in the
 same format as every other campaign save, that adds the draft campaign with
-its [default content](#default-content) and the default share options;
-Member talents show their built-in defaults until edited.
+its [default content](#default-content) and the default share options.
 
 **After confirming.** The next page is the request's status page, as for any
 campaign save. The configuration installer applies the request, and the
@@ -2406,15 +2402,15 @@ full refresh has finished.
 
 **Guided steps.** While the current campaign is a draft in Testing mode, the
 Campaign setup pages show a stepper with the setup wizard's look: Basics,
-Ministries and funds, Share options and Member talents (each shown only when
-the campaign's modules use it), Pages and emails, Dates and mail schedules,
+Ministries and funds, Share options (shown only when the campaign's modules
+use it), Pages and emails, Dates and mail schedules,
 Campaign images, Preview and test email, and Go-live readiness. Each step is
 the existing settings page, not a separate staging page, so every save is
 that page's ordinary review, confirm and apply. Basics counts as completed
 when the campaign is created; any other step counts as completed once a
 change confirmed on that page has been applied for this campaign, or for
 Preview and test email once a test of the current invitation was accepted.
-Defaults (the default text, share options and talents) never complete a
+Defaults (the default text and share options) never complete a
 step, and Go-live readiness completes only by going live. Next and Back are
 plain links to the neighbouring step: they never save, discard or submit
 anything, so an Admin who leaves a page without confirming its review keeps
@@ -2429,17 +2425,6 @@ longer shown.
 Production, never sees Create the campaign, and its campaign, being active,
 never shows the stepper; nothing about its setup, campaign, Family codes or
 emailed links changes.
-
-### Member talents
-
-The talent checkboxes on each Member's ministry page (see
-[Family portal](../parishioner-portal/spec.md#talents-and-cannot-participate))
-are a campaign list edited like the share options: ordered rows with stable
-identities, explicit deletion, a free-text flag, a signed preview and confirm.
-A campaign that never edited its talents shows the built-in defaults, and the
-first save stores them with their fixed identities, so earlier answers still
-match; an emptied list stays empty. Talents are structural settings (above) and
-are offered only when Ministry stewardship is enabled.
 
 ### Production transition
 

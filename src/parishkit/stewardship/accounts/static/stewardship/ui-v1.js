@@ -1698,7 +1698,7 @@
   // what is applied. An edit made while Review is still in flight is not in
   // the review that answer brings, so that review is withdrawn as soon as
   // it arrives. Forms are noted by id (editedSince, above). A form that is
-  // its own region (Share options, Member talents, #750) is replaced by an
+  // its own region (Share options, #750) is replaced by an
   // answer that draws it: a Review's (accepted or refused) with the values
   // that were sent, and the quiet refresh once a change is applied with the
   // applied settings. Edits typed into it since it was sent are then gone,
