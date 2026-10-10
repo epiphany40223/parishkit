@@ -5,7 +5,8 @@ import re
 from uuid import UUID
 
 from django.db import connection
-from django.db.models import Q
+from django.db.models import Q, TextField
+from django.db.models.expressions import RawSQL
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
@@ -37,21 +38,22 @@ PURPOSES = (
     "daily_digest",
     "weekly_digest",
 )
-# Outgoing mail sorts on the server by When (created, the default, newest
-# first), Family DUID (duid; Administrator reports, which have no Family,
-# sort last either way), Purpose, Mode, State and Provider attempts. The
-# page's When cell also shows when the email last changed; changed sorts by
-# that for the command line's --sort, which takes these same tokens. The
-# Family name is not a column of the email: it is built from the latest
-# ParishSoft data for the shown page only (delivery_reads.with_family_names),
-# so it cannot order the whole outbox (#931). Only the state filter is
-# indexed (outbox_due, outbox_campaign_state); the orderings themselves are
-# not, so a page is a top-N sort of the filtered messages. The default "all"
-# view therefore scans the outbox, as its newest-first order always did; the
+# Outgoing mail is a log of emails (#931): it sorts on the server by When
+# (changed: the time of the email's current state, its last change; the
+# default, newest first), Family (name), Family DUID (duid), Purpose, Mode,
+# State and Provider attempts. The command line's --sort takes these same
+# tokens, plus created (when the email was created), which the page no
+# longer shows. Administrator reports, which have no Family, sort last
+# under name and duid in either direction, as do, under name, Families the
+# latest ParishSoft data no longer has. Only the state filter is indexed
+# (outbox_due, outbox_campaign_state); the orderings themselves are not, so
+# a page is a top-N sort of the filtered messages. The default "all" view
+# therefore scans the outbox, as its newest-first order always did; the
 # outbox grows by about one message per Family per mailing and is not
 # purged. id is the unique tiebreak.
 DELIVERY_SORTING = Sorting.by_column(
     {
+        "name": ("family_sort_surname", "family_sort_name"),
         "duid": ("family__family_duid",),
         "purpose": ("purpose",),
         "mode": ("mode",),
@@ -60,10 +62,79 @@ DELIVERY_SORTING = Sorting.by_column(
         "changed": ("updated_at",),
         "created": ("created_at",),
     },
-    default="-created",
+    default="-changed",
     descending_first={"attempts", "changed", "created"},
     tiebreak=("id",),
 )
+# Every character Python's str.strip() removes, so a name trimmed in SQL
+# matches family_names.py exactly (as directory_reports.sql's name_trim).
+_WHITESPACE = "".join(chr(code) for code in range(0x110000) if chr(code).isspace())
+# The Family name sort keys of one outbox message, read from the current
+# ParishSoft snapshot by its unique (snapshot, source_key) indexes: the
+# surname (family_names.family_display_name, "Family" without one), then the
+# whole "Squyres, Tracy and Jeff" name (family_names.family_heads_name), the
+# string with_family_names shows. Both are lowercased, as the Family codes
+# directory orders them (directory_reports.sql builds the same name). The
+# email stores no name, so this runs per message, and only when the name
+# sort is chosen: a few index lookups and small JSON parses each, however
+# large the outbox grows. NULL (sorted last) for an Administrator report or
+# a Family the snapshot lacks. {result} is the selected expression and
+# {family} the outer query's FamilyCampaign id column.
+_FAMILY_NAME_SQL = """(SELECT {result}
+FROM stewardship_family_campaign fc
+JOIN stewardship_source_current sc ON sc.singleton
+JOIN stewardship_snapshot_family sf
+    ON sf.snapshot_id=sc.snapshot_id AND sf.source_key=fc.family_duid::text
+JOIN stewardship_source_family sp ON sp.id=sf.payload_id
+CROSS JOIN LATERAL (SELECT sp.canonical::jsonb AS doc, %s::text AS ws) d
+CROSS JOIN LATERAL (SELECT coalesce(
+    nullif(btrim(d.doc->>'lastName',d.ws),''),
+    nullif(btrim(d.doc->>'mailingName',d.ws),''),
+    -- "first last" when there is no last name: the first name alone.
+    nullif(btrim(d.doc->>'firstName',d.ws),''),
+    'Family') AS surname) s
+WHERE fc.id={family})"""
+# The heads after the surname: each active head in DUID order, by first name
+# when they share the surname and in full otherwise, blanks skipped, joined
+# "A", "A and B", "A, B and C" (family_names.name_series).
+_HEADS_SQL = """(SELECT CASE WHEN cardinality(parts)<3
+        THEN array_to_string(parts,' and ')
+        ELSE array_to_string(parts[1:cardinality(parts)-1],', ')
+            ||' and '||parts[cardinality(parts)] END
+    FROM (SELECT array_agg(x.part ORDER BY h.head::bigint)
+            FILTER (WHERE x.part<>'') AS parts
+        FROM jsonb_array_elements_text(CASE
+            WHEN jsonb_typeof(d.doc->'active_head_duids')='array'
+            THEN d.doc->'active_head_duids' ELSE '[]'::jsonb END) h(head)
+        JOIN stewardship_snapshot_member sm
+            ON sm.snapshot_id=sc.snapshot_id AND sm.source_key=h.head
+        JOIN stewardship_source_member mp ON mp.id=sm.payload_id
+        CROSS JOIN LATERAL (SELECT mp.canonical::jsonb AS doc) m
+        CROSS JOIN LATERAL (SELECT
+            btrim(coalesce(m.doc->>'firstName',''),d.ws) AS first,
+            btrim(coalesce(m.doc->>'lastName',''),d.ws) AS last) t
+        CROSS JOIN LATERAL (SELECT CASE WHEN t.last=s.surname THEN t.first
+            ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END
+            AS part) x
+        WHERE m.doc->'active'='true'::jsonb) heads)"""
+
+
+def with_name_keys(selected, family="stewardship_outbox_message.family_id"):
+    """Annotate the Family name sort keys DELIVERY_SORTING's name orders by.
+
+    ``family`` is the SQL column holding each row's FamilyCampaign id: the
+    outbox message's by default (tests also key FamilyCampaign rows).
+    """
+    surname = _FAMILY_NAME_SQL.format(result="lower(s.surname)", family=family)
+    name = _FAMILY_NAME_SQL.format(
+        result=f"lower(s.surname||coalesce(', '||{_HEADS_SQL},''))", family=family
+    )
+    return selected.annotate(
+        family_sort_surname=RawSQL(surname, (_WHITESPACE,), output_field=TextField()),
+        family_sort_name=RawSQL(name, (_WHITESPACE,), output_field=TextField()),
+    )
+
+
 STATES = (
     "all",
     "delivery_unknown",
@@ -189,6 +260,8 @@ def listing(window, *, state, query, sort=DELIVERY_SORTING.default, send=None):
                 raise ValueError("Use an exact Family DUID or delivery ID.") from None
             selected = selected.filter(Q(pk=identifier) | Q(family_id=identifier))
     total = bounded_count(selected)
+    if DELIVERY_SORTING.tokens[sort][0] == "name":
+        selected = with_name_keys(selected)
     window, rows, has_next = read_window(
         window, DELIVERY_SORTING.order(selected, sort).values(*FIELDS), total
     )

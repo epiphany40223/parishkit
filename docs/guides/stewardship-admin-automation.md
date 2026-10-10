@@ -670,7 +670,10 @@ pk-admin delivery refusal-clear REFUSAL_ID --source-snapshot-id SNAPSHOT_ID \
 
 `delivery list` takes the page's `--state`, `--send` (send history's `send`
 value), `--search` (an exact Family DUID or delivery id, as input only),
-`--page`, `--size` and `--sort`. `delivery refusals` takes `--duid`.
+`--page`, `--size` and `--sort`. `--sort` takes the page's tokens:
+`changed` (when the email last changed; the default is `-changed`, latest
+first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
+`created`. `delivery refusals` takes `--duid`.
 
 | Field | What it holds |
 | --- | --- |

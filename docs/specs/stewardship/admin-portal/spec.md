@@ -3418,23 +3418,29 @@ Outgoing mail, a restore review that begins while it renders withholds it.
 Outgoing mail (`/admin/mail/outgoing/`, Administrators only) lists every
 email the system has sent or is about to send, with filters by delivery
 state, an exact Family DUID or delivery ID, and a
-[Family email send](#family-email-sends). Each row names the Family and,
-in a column of its own, its Family DUID
-([#931](https://github.com/epiphany40223/parishkit/issues/931)); an
-Administrator report has no Family. The name is the Family directory's
-surname-and-heads name from the latest ParishSoft data, read for the shown
-page only (at most three small queries, however many rows), or a muted "Not
-in current ParishSoft data" when that data no longer has the Family. The
-email itself stores no name, so the Family column does not sort; Family
-DUID does (sort token `duid`), which keeps each Family's emails together.
-The name opens the email's own page. The columns follow the Admin tables'
-shared order ([#932](https://github.com/epiphany40223/parishkit/issues/932)):
-When, Family, Family DUID, Purpose, Mode, State and Provider attempts. When
-shows the time the email was created and, on a second line with a muted
-"Changed" label, the time it last changed; it sorts by creation (token
-`created`, newest first by default), and the command line's `--sort` also
-takes `changed`. The table fits a 1280-pixel-wide screen beside the Admin
-menu without scrolling. Each email's own page shows its
+[Family email send](#family-email-sends). It reads as a log
+([#931](https://github.com/epiphany40223/parishkit/issues/931)): each row is
+one email, not one Family, and **When** shows a single time, that of the
+email's current state (when it last changed, such as when it was
+delivered). When sorts by that time (sort token `changed`), newest first by
+default; the email's own page keeps its whole timeline. Each row names the
+Family and, in a column of its own, its Family DUID; an Administrator
+report has no Family. The name is the Family directory's surname-and-heads
+name from the latest ParishSoft data, read for the shown page only (at
+most three small queries, however many rows), or a muted "Not in current
+ParishSoft data" when that data no longer has the Family. The name opens
+the email's own page. Family sorts on the server over the whole list (sort
+token `name`): by surname, then the whole shown name, as the Family
+directory orders them, each email's name read from the latest ParishSoft
+data inside the page's query; Family DUID sorts too (token `duid`). Either
+keeps each Family's emails together, and Administrator reports (and, by
+name, Families no longer in the data) sort last in both directions. The
+columns follow the Admin tables' shared order
+([#932](https://github.com/epiphany40223/parishkit/issues/932)): When,
+Family, Family DUID, Purpose, Mode, State and Provider attempts. The
+command line's `--sort` takes the same tokens and also `created`, when the
+email was created. The table fits a 1280-pixel-wide screen beside the
+Admin menu without scrolling. Each email's own page shows its
 history and offers the resolutions its state allows (an evidence note,
 confirming delivery or that it was not sent, a retry, or a duplicate-risk
 resend), each with a required note, as the

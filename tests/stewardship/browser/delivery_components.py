@@ -23,7 +23,8 @@ def components(now):
         version=4,
         attempt=1,
         updated_at=now,
-        created_at=now,
+        # Outgoing mail shows only the last change (#931), never this.
+        created_at=now - timedelta(hours=3),
     )
     refusal = dict(
         id=uuid4(), family_duid=12345, address="head@example.org", created_at=now
