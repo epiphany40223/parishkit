@@ -11,7 +11,9 @@ from html import unescape
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
+import psycopg
 import pytest
+from django.db import connection
 from django.test import Client
 from django.urls import reverse
 
@@ -30,10 +32,12 @@ from parishkit.stewardship.campaigns.models import (
     CampaignConfigurationIntent,
     ScheduleDefinition,
 )
+from parishkit.stewardship.campaigns.work_locks import WORK_ORDER_LOCK
 
+from ..policy_factory import address
 from .auth_builders import signed_in
 from .automation_builders import paired
-from .campaign_builders import campaign_clock, command
+from .campaign_builders import campaign_clock, change, command
 from .response_builders import activate_response_service
 from .test_admin_schedule_cli_postgresql import admin, confirm, events, preview
 from .test_campaign_views_postgresql import post, requested
@@ -261,6 +265,83 @@ def test_the_live_check_says_what_keeps_a_date_from_review(auth_service, google)
     assert ConfigurationChangeRequest.objects.count() == before
     assert not CampaignConfigurationIntent.objects.exists()
     assert not AuditEvent.objects.filter(event_type=EVENT).exists()
+
+
+def check_fields(page, value="2054-11-15"):
+    """The end-date form's fields for a live check, as the page posts them."""
+    return {"action": "preview", "end_date": value, "base_digest": digest(page)}
+
+
+@pytest.mark.parametrize("role", ["staff", "ministry_leader"])
+def test_the_live_check_needs_configure(auth_service, google, role):
+    """A signed-in role without Configure is refused the check (#944)."""
+    store = auth_service.store
+    live(store)
+    browser, _ = signed_in()
+    page = browser.get(reverse("admin:campaign_settings"))
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "add",
+                "section": "login_rules",
+                **address("reader@example.org", roles=(role,)),
+            }
+        ],
+    )
+    google[0]["email"] = "reader@example.org"
+    reader, _ = signed_in()
+    check = reverse("admin:campaign_end_date_check")
+    response = post(reader, check, check_fields(page))
+    assert response.status_code == 403
+    assert b"data-live-check-answer" not in response.content
+
+
+def test_the_live_check_needs_the_csrf_token(auth_service, google):
+    """A check posted without the page's CSRF token is refused (#944)."""
+    live(auth_service.store)
+    browser, _ = signed_in()
+    page = browser.get(reverse("admin:campaign_settings"))
+    check = reverse("admin:campaign_end_date_check")
+    response = browser.post(check, check_fields(page))
+    assert response.status_code == 403
+    assert b"data-live-check-answer" not in response.content
+    # The same post with the token is answered.
+    assert post(browser, check, check_fields(page)).status_code == 200
+
+
+def test_the_live_check_takes_no_work_order_lock(auth_service, google):
+    """The check answers while another connection holds the work-order lock,
+    so typing a date never waits on, or holds up, background work (#944).
+
+    A short statement timeout turns a regression into a fast failure
+    instead of a hang.
+    """
+    live(auth_service.store)
+    browser, _ = signed_in()
+    page = browser.get(reverse("admin:campaign_settings"))
+    check = reverse("admin:campaign_end_date_check")
+    settings = connection.settings_dict
+    with psycopg.connect(
+        host=settings["HOST"],
+        port=settings["PORT"],
+        user=settings["USER"],
+        password=settings["PASSWORD"],
+        dbname=settings["NAME"],
+        autocommit=True,
+    ) as holder:
+        holder.execute("SELECT pg_advisory_lock(%s,%s)", WORK_ORDER_LOCK)
+        with connection.cursor() as cursor:
+            cursor.execute("SET statement_timeout = '3s'")
+        try:
+            response = post(browser, check, check_fields(page, "2054-10-20"))
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("RESET statement_timeout")
+    assert response.status_code == 200, response.content
+    assert 'data-blocking="true"' in response.content.decode()
 
 
 @pytest.mark.parametrize("end_date", ["2054-11-15", "2054-10-29"])
