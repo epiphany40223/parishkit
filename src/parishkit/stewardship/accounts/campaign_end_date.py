@@ -21,7 +21,8 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.refusals import Refusal, stale_page
 
-from .schedule_changes import DOES_NOT_FIT, build_preview, preview_salt
+from .schedule_changes import build_preview, preview_salt
+from .schedule_forms import OUTSIDE_CAMPAIGN
 
 # What the review says about Family access and Family-facing dates.
 FAMILY_ACCESS = _(
@@ -124,12 +125,11 @@ def end_review(service, actor, state, campaign, form, live_at):
         salt=preview_salt(campaign.pk),
     )
     if context is None:
-        messages = [str(item) for errors in window.errors.values() for item in errors]
-        if not messages or DOES_NOT_FIT in messages:
-            # The date itself is fine, but saved mail no longer fits: most
-            # often an invitation or Reminder after a shortened end. Each one
-            # is resolved in the combined review, which applies them with
-            # the date (the schedule forms' own errors say which).
+        if stranded(schedules):
+            # The date itself is fine, but saved mail no longer fits: an
+            # invitation or Reminder after a shortened end. Each one is
+            # resolved in the combined review, which applies them with the
+            # date (the schedule forms' own errors say which).
             url = (
                 reverse("admin:schedule_settings")
                 + "?"
@@ -153,7 +153,9 @@ def end_review(service, actor, state, campaign, form, live_at):
                     "label": _("Change the end date and its mailings"),
                 },
             }
-        return {"refusal": Refusal(" ".join(messages))}
+        # Any other problem, with the date or a saved schedule, in its own
+        # words (the window's, then each schedule's).
+        return {"refusal": Refusal(" ".join(form_messages(window, schedules)))}
     if context["blocking"]:
         return {"refusal": Refusal(BLOCKING)}
     replanned = [
@@ -178,3 +180,23 @@ def end_review(service, actor, state, campaign, form, live_at):
             "preview": context["preview"],
         }
     }
+
+
+def stranded(schedules):
+    """Whether a saved mailing is refused only for falling outside the campaign."""
+    return any(
+        form.has_error("date", code=OUTSIDE_CAMPAIGN) for form in schedules.forms
+    )
+
+
+def form_messages(window, schedules):
+    """Every error of the bound window and schedule forms, in their own words."""
+    return [
+        str(item)
+        for errors in (
+            *window.errors.values(),
+            schedules.non_form_errors(),
+            *(errors for form in schedules.forms for errors in form.errors.values()),
+        )
+        for item in errors
+    ]

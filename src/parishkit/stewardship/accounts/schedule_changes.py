@@ -30,9 +30,8 @@ from .schedule_preview import fingerprint, work_summary
 # A preview that changes nothing is refused with this, not with the catch-all
 # rule text, which would wrongly suggest a schedule breaks a rule (#878).
 NO_CHANGES = _("Nothing has changed.")
-# The candidate breaks a schedule rule: most often mail that a date change
-# leaves outside the campaign. A live end-date review (#912) recognizes it to
-# offer the combined date-change review that resolves every such mailing.
+# The candidate breaks a schedule rule the forms did not catch: mail that
+# must fit the campaign, reminder order, distinct times or the record limit.
 DOES_NOT_FIT = (
     "Every Family mailing must fit the campaign; reminders must follow "
     "exactly one initial mailing and use distinct times. Resolve all "
