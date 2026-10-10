@@ -527,20 +527,29 @@ def test_only_admin_recovery_and_web_read_identities_and_member_names():
         assert not runtime_functions(role) & upgrade
 
 
+SETUP = dict(mode="testing", current_campaign_id=None, restore_review_required=False)
+
+
 @pytest.mark.parametrize(
-    ("schema", "refused"),
+    ("schema", "state", "refused"),
     [
-        ("source-cadence-v8", True),
-        ("campaign-content-v5", True),
-        (users_schema.SCHEMA, False),
+        ("source-cadence-v8", SETUP, True),
+        ("campaign-content-v5", SETUP, True),
+        (users_schema.SCHEMA, SETUP, False),
+        (users_schema.SCHEMA, SETUP | {"mode": "production"}, False),
         # Setup is exempt until the setup wizard writes users.
-        ("bootstrap-policy-v1", False),
+        ("bootstrap-policy-v1", SETUP, False),
+        # Only a deployment really still in setup, as initial_setup_hold
+        # judges it, is exempt.
+        ("bootstrap-policy-v1", SETUP | {"mode": "production"}, True),
+        ("bootstrap-policy-v1", SETUP | {"current_campaign_id": "c"}, True),
+        ("bootstrap-policy-v1", SETUP | {"restore_review_required": True}, True),
     ],
 )
-def test_startup_refuses_sign_in_rules_once_users_ship(schema, refused):
+def test_startup_refuses_sign_in_rules_once_users_ship(schema, state, refused):
     """Off in this release; on, only a users (or setup) configuration starts."""
     runtime = SimpleNamespace(
-        active_configuration=SimpleNamespace(validation_schema=schema)
+        active_configuration=SimpleNamespace(validation_schema=schema), **state
     )
     assert users_schema.USERS_ENABLED is False
     users_schema.require_users_form(runtime)
