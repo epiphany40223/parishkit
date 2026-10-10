@@ -647,7 +647,10 @@ Notes on the groups:
   the viewer may open (Staff see daily reports only, as today), newest first,
   so a digest page is no longer reachable only from its email. Sending a
   weekly report now is an Administrator action on this page and returns to
-  it, linking the report it produced.
+  it, linking the report it produced. Its button leads the page, above both
+  lists, so a long list of daily reports never hides it; while the campaign
+  has no Weekly Admin digest schedule (which the report needs) it is
+  unavailable, with a short hint after it linking Dates and mail schedules.
 - **Ministries** is the one home for Ministries: parish-wide
   [Ministry activity](#ministry-activity-management), with
   [this campaign's Ministries](#changing-a-live-campaigns-ministries) reached

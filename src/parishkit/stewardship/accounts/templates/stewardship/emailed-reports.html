@@ -2,9 +2,11 @@
 {% block title %}{% translate "Emailed reports" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Emailed reports" %}</h1>
-{% aboutpage "emailed-reports" %}<p>{% translate "The reports emailed to Administrators and Staff for the current campaign, newest first. Open one to see it as it was sent. Staff see the daily reports; Administrators also see the weekly reports and can send one now." %}</p>{% endaboutpage %}
+{% aboutpage "emailed-reports" %}<p>{% translate "The reports emailed to Administrators and Staff for the current campaign, newest first. Open one to see it as it was sent. Staff see the daily reports; Administrators also see the weekly reports and can send one now with Send a weekly report now, at the top of the page." %}</p>{% endaboutpage %}
 {% if requested %}<div class="notice" role="status" id="weekly-requested">{% if requested.report_id %}<p>{% translate "Your weekly report is ready." %} <a href="{% url 'admin:weekly_digest_snapshot' requested.report_id %}">{% translate "Open the weekly report" %}</a></p>{% else %}<p>{% translate "Your weekly report was requested. It is listed below once it is prepared." %} <a href="{% url 'admin:background_task_page' requested.task_id %}">{% translate "Follow its progress in Background work" %}</a></p>{% endif %}</div>{% endif %}
 {% if not campaign_id %}<p>{% translate "There is no current campaign, so there are no emailed reports to show." %}</p>{% else %}
+{% comment %}Send a weekly report now leads the page for an Administrator, so a long list of daily reports never hides it. Without a Weekly Admin digest schedule it is unavailable, with a hint after it that links where to add one; the hint is there from the page load, so nothing moves.{% endcomment %}
+{% if administrator %}<p data-weekly-now>{% if weekly_schedule %}{% url 'admin:weekly_digest_manual' as button_href %}{% button href=button_href variant="primary" %}{% translate "Send a weekly report now" %}{% endbutton %}{% else %}{% button type="button" disabled aria-describedby="weekly-now-reason" %}{% translate "Send a weekly report now" %}{% endbutton %} <span id="weekly-now-reason" class="help">{% translate "Available once the campaign has a Weekly Admin digest schedule." %} <a href="{% url 'admin:schedule_settings' %}">{% translate "Add one under Dates and mail schedules" %}</a></span>{% endif %}</p>{% endif %}
 <section aria-labelledby="daily-reports">
 <h2 id="daily-reports">{% translate "Daily reports" %}</h2>
 {% if daily %}<div class="table-wrap"><table><thead><tr><th scope="col">{% translate "Report" %}</th><th scope="col">{% translate "Figures as of" %}</th></tr></thead><tbody>
@@ -14,7 +16,6 @@
 </section>
 {% if administrator %}<section aria-labelledby="weekly-reports">
 <h2 id="weekly-reports">{% translate "Weekly reports" %}</h2>
-<p>{% url 'admin:weekly_digest_manual' as button_href %}{% button href=button_href variant="primary" %}{% translate "Send a weekly report now" %}{% endbutton %}</p>
 {% if weekly %}<div class="table-wrap"><table><thead><tr><th scope="col">{% translate "Report" %}</th><th scope="col">{% translate "Sent" %}</th></tr></thead><tbody>
 {% for row in weekly %}<tr><th scope="row"><a href="{% url 'admin:weekly_digest_snapshot' row.pk %}">{% translate "Weekly report" %}</a>{% if row.manual %} <span class="help">{% translate "(sent on request)" %}</span>{% endif %}</th><td><time datetime="{{ row.observed_at|date:'c' }}" data-local-instant>{{ row.observed_at|date:'c' }}</time></td></tr>{% endfor %}
 </tbody></table></div>{% if weekly|length >= shown %}<p class="help">{% blocktranslate %}Showing the {{ shown }} newest weekly reports.{% endblocktranslate %}</p>{% endif %}

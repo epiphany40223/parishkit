@@ -4,10 +4,14 @@ A digest page used to be reachable only from its email. This page lists the
 current campaign's daily reports and, for Administrators, its weekly reports,
 newest first, each linking its page (admin-portal spec, "Menu groups",
 Emailed reports). Staff see the daily reports only, as the report pages
-already allow. Send a weekly report now is an Administrator action on this
-page and returns here; ``?requested=<request>`` names the request just made,
-so the page can link the report it produced, or its background task while
-the report is still being prepared.
+already allow. Send a weekly report now is an Administrator action at the top
+of this page, above both lists, so a long list of daily reports never hides
+it. It is always shown to an Administrator, and unavailable, with a hint and
+a link to Dates and mail schedules, while the campaign has no Weekly Admin
+digest schedule, which the report needs. It returns here;
+``?requested=<request>`` names the request just made, so the page can link
+the report it produced, or its background task while the report is still
+being prepared.
 
 The list shows only identities and dates. Each report page still admits its
 own campaign and checks the reader's access when it is opened.
@@ -29,6 +33,7 @@ from parishkit.stewardship.web.security import private_response
 
 from .digest_models import DailyDigestReady, DailyDigestSnapshot
 from .export_views import _principal
+from .weekly_manual_views import _has_weekly_schedule
 from .weekly_models import WeeklyDigestSnapshot, WeeklyManualRequest
 
 # Each list shows this many of the newest reports: about two months of daily
@@ -104,6 +109,11 @@ def emailed_reports(request):
         requested = (
             _requested(request, campaign_id) if administrator and campaign_id else None
         )
+        # Send a weekly report now sends an extra Weekly Admin digest, so it
+        # is unavailable until that schedule exists (its page refuses too).
+        weekly_schedule = bool(
+            administrator and campaign_id and _has_weekly_schedule(campaign_id)
+        )
         response = render(
             request,
             "stewardship/emailed-reports.html",
@@ -113,6 +123,7 @@ def emailed_reports(request):
                 "daily": daily,
                 "weekly": weekly,
                 "requested": requested,
+                "weekly_schedule": weekly_schedule,
                 "shown": SHOWN,
             },
         )
