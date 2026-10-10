@@ -19,7 +19,7 @@ from django.utils.http import urlencode
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.presentation import parish_date
-from parishkit.stewardship.web.refusals import Refusal, stale_page
+from parishkit.stewardship.web.refusals import Refusal, UserFacingStale, stale_page
 
 from .schedule_changes import build_preview, preview_salt
 from .schedule_forms import OUTSIDE_CAMPAIGN
@@ -200,3 +200,36 @@ def form_messages(window, schedules):
         )
         for item in errors
     ]
+
+
+# The live check's answer once the end date can no longer change at all.
+END_LOCKED = _(
+    "The end date can't change now: the campaign closed or background work "
+    "started. Reload this page."
+)
+
+
+def end_check(service, actor, state, campaign, form, live_at):
+    """What keeps a typed end date from being reviewed, for the live check (#944).
+
+    Campaign settings checks the end date as it is typed, through a no-save
+    request (``campaign_views.campaign_end_date_check``), so Review changes
+    stays unavailable while the date cannot be reviewed. The answer is the
+    Review's own (``end_review``) with nothing recorded: ``{}`` when Review
+    may go ahead, else ``{"message": ..., "link": ...}``, the words shown at
+    the field and, for mail stranded outside the new window, the link to the
+    combined review (whose words then stand in for the refusal's fix).
+    """
+    try:
+        region = end_review(service, actor, state, campaign, form, live_at)
+    except UserFacingStale as error:
+        region = {"refusal": error.refusal}
+    if "review" in region:
+        return {}
+    refusal, link = region.get("refusal"), region.get("link")
+    if refusal is None:
+        # The form itself refused the date (empty or unreadable).
+        texts = [item for errors in form.errors.values() for item in errors]
+    else:
+        texts = [refusal.message] if link else [refusal.message, refusal.fix]
+    return {"message": " ".join(str(text) for text in texts if text), "link": link}

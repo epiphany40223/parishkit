@@ -24,7 +24,9 @@ campaign's Campaign settings, whose one editable setting is its end date
 ``LIVE_END_PENDING``), ``LIVE_END_REVIEW`` (its review) and
 ``LIVE_END_REFUSED`` (refused, linking to the combined date-change review);
 ``LIVE_END_REFUSING`` shows a change whose polled status settles as refused
-(#944).
+(#944). The end date's live check (#944) is answered, by date, with one of
+``END_CHECKS``' answers (the real check fragment): none, a past date, a date
+before the start, or mail the date would strand.
 """
 
 from datetime import date
@@ -65,6 +67,16 @@ END_REFUSAL = (
     "The campaign closed, or its previous end date passed, before the end "
     "date could change, so it was not applied."
 )
+# The live check's answers (#944), by the end date the browser test types.
+STRANDING = "Some scheduled emails would no longer fit the campaign."
+PASSED = "Choose an end date that has not already passed."
+BEFORE_START = "Choose an end date after the campaign's start date, October 1, 2054."
+END_CHECKS = {
+    "2054-11-15": "/campaign-end-check-clear",
+    "2026-10-05": "/campaign-end-check-passed",
+    "2054-09-30": "/campaign-end-check-before-start",
+    "2054-10-20": "/campaign-end-check-stranding",
+}
 # Where a refused shortening sends the Administrator (#912).
 COMBINED_REVIEW = "/admin/campaign/schedules/?end_date=2054-10-20"
 CAMPAIGN_VALUES = {
@@ -210,6 +222,16 @@ def components(context, admin):
             ),
         )
 
+    def check(message=None, link=None):
+        """The live end-date check's answer: ``message`` blocks Review."""
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/campaign-end-check.html",
+                {"message": message, "link": link},
+            ),
+        )
+
     pending = SimpleNamespace(state="staged", request_id=REQUEST, failure_code="")
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
     return {
@@ -245,6 +267,13 @@ def components(context, admin):
         ),
         SETTLED: page(editor("b" * 64), 2, receipt=applied),
         CAMPAIGN: campaign(None, 0),
+        END_CHECKS["2054-11-15"]: check(),
+        END_CHECKS["2026-10-05"]: check(PASSED),
+        END_CHECKS["2054-09-30"]: check(BEFORE_START),
+        END_CHECKS["2054-10-20"]: check(
+            STRANDING,
+            {"url": COMBINED_REVIEW, "label": "Change the end date and its mailings"},
+        ),
         LIVE_END: live_end(0),
         LIVE_END_REVIEW: live_end(
             1,

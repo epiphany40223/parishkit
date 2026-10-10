@@ -587,3 +587,60 @@ def campaign_settings(request, campaign_id):
         signing.BadSignature,
     ) as error:
         return error_response(error)
+
+
+@require_http_methods(["POST"])
+def campaign_end_date_check(request, campaign_id):
+    """A live campaign's end-date live check (#944): what blocks its Review.
+
+    Campaign settings posts its end-date form here each time the date
+    changes (ui-v1.js, ``form[data-live-check]``). The date is checked
+    exactly as a Review would check it (``campaign_end_date.end_check``),
+    including mail the new date would strand, and the answer is the message
+    the page shows at the field, or none. It saves nothing, records no
+    request or audit entry and is never cached; it needs the page's own
+    Configure capability, and only the end-date form's fields may be posted.
+    The page's Review is still checked in full on its own post.
+    """
+    from .campaign_end_date import END_LOCKED, end_check
+
+    try:
+        service = runtime()
+        actor = principal(request, service)
+        if (
+            request.GET
+            or not set(request.POST) <= END_FIELDS
+            or any(len(values) != 1 for _, values in request.POST.lists())
+        ):
+            raise ValueError("Invalid end date fields.")
+        with read_transaction():
+            state = _state(service)
+            configuration, campaigns, _source, held = state[:4]
+            campaign, editable = _target(configuration, campaigns, held, campaign_id)
+            end_form, live_at = _end_form(
+                request, "preview", state, campaign, editable, None
+            )
+            answer = (
+                {"message": END_LOCKED}
+                if end_form is None
+                else end_check(service, actor, state, campaign, end_form, live_at)
+            )
+        response = render(request, "stewardship/campaign-end-check.html", answer)
+        # As the page does: a revocation while checking is not answered.
+        if not allows(
+            authenticated_admin(request, store=service.store, read_only=True),
+            Capability.CONFIGURE,
+        ):
+            raise PermissionError("Configuration access was revoked.")
+        response["Cache-Control"] = "no-store"
+        return response
+    except (
+        ConfigError,
+        DatabaseError,
+        LimiterUnavailable,
+        PermissionError,
+        ValueError,
+        LookupError,
+        StaleRecordError,
+    ) as error:
+        return error_response(error)

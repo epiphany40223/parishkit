@@ -190,6 +190,15 @@ class ScheduleWindow(forms.Form):
                 ),
             )
             return values
+        if self.live_at is not None and values["end_date"] <= values["start_date"]:
+            # A live campaign's start is locked, so name it rather than the
+            # generic window refusal below (#944).
+            self.add_error(
+                "end_date",
+                _("Choose an end date after the campaign's start date, %(start)s.")
+                % {"start": parish_date(values["start_date"])},
+            )
+            return values
         try:
             interval = campaign_values(self.values())
         except ConfigError:

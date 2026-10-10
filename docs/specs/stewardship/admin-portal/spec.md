@@ -2626,11 +2626,28 @@ review is the Dates and mail schedules review of the same change, built from
 the saved schedules left as they are; it names the end date before and
 after and every digest re-planned for the new dates, and notes that Family
 codes and links already sent keep working until the new end date. A date
-that has passed, is unchanged, or would need the financial-period overlap
-acknowledged again is refused. When the new date would leave an invitation
-or Reminder outside the campaign, the review is refused with a link to the
-combined date-change review above, on Dates and mail schedules, with the
-proposed date filled in and only the end date open. Either Apply records
+that has passed, falls on or before the campaign's start date, is
+unchanged, or would need the financial-period overlap acknowledged again is
+refused. When the new date would leave an invitation or Reminder outside
+the campaign, the review is refused with a link to the combined date-change
+review above, on Dates and mail schedules, with the proposed date filled in
+and only the end date open.
+
+The date is checked as it is typed, so **Review changes** is available only when there is something to review and
+it can be reviewed. While the field is empty or holds the saved date,
+Review waits, with the gate's hint after it saying to choose a (different)
+end date, and no error is shown. Any other date is posted, after a short
+pause, to a no-save live check that applies the Review's own checks,
+including stranded mail, and records nothing. While it answers, Review waits;
+when it finds a problem, the field is marked in error (`aria-invalid`,
+described by the message) and the problem's words show in a line reserved
+under the field, so the message never moves Review, with the link to the
+combined review for stranded mail; Review waits with the same words as its
+hint. A date the check clears takes the error away. Calendar dates in these
+messages are the campaign's own and are never shifted into the browser's
+time zone. A check that cannot answer leaves Review available, and every
+Review is still checked in full by the server, whose refusals above still
+apply. Either Apply records
 the request and, in the same transaction, binds its exceptional end-edit
 intent and a `campaign_end_date_requested` audit event (subject: the
 request). The configuration installer applies it with that intent's owning

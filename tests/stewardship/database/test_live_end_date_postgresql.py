@@ -192,7 +192,7 @@ def test_a_past_or_unchanged_end_and_locked_fields_are_refused(auth_service, goo
     before = ConfigurationChangeRequest.objects.count()
     for value, message in (
         ("2054-10-31", "Nothing has changed."),
-        ("2020-01-01", "Check the campaign dates"),
+        ("2020-01-01", "Choose an end date after the campaign's start date"),
     ):
         refused = post(
             browser,
@@ -205,6 +205,62 @@ def test_a_past_or_unchanged_end_and_locked_fields_are_refused(auth_service, goo
     schedules = reverse("admin:schedule_settings")
     assert browser.get(f"{schedules}?start_date=2054-10-02").status_code == 400
     assert ConfigurationChangeRequest.objects.count() == before
+
+
+def test_the_live_check_says_what_keeps_a_date_from_review(auth_service, google):
+    """The page's no-save check answers each date as its Review would (#944)."""
+    store = auth_service.store
+    campaign = live(store)
+    browser, _ = signed_in()
+    page = browser.get(reverse("admin:campaign_settings"))
+    check = reverse("admin:campaign_end_date_check")
+    assert f'data-live-check="{check}"' in page.content.decode()
+    assert 'data-live-check-saved="2054-10-31"' in page.content.decode()
+    before = ConfigurationChangeRequest.objects.count()
+
+    def answer(value, base=None):
+        """The check's fragment for ``value``, as the page posts it."""
+        response = post(
+            browser,
+            check,
+            {
+                "action": "preview",
+                "end_date": value,
+                "base_digest": base or digest(page),
+            },
+        )
+        assert response.status_code == 200, response.content
+        assert response["Cache-Control"] == "no-store"
+        return unescape(response.content.decode())
+
+    assert 'data-blocking="false"' in answer("2054-11-15")
+    for value, message in (
+        ("2054-09-30", "Choose an end date after the campaign's start date"),
+        ("2054-10-31", "Nothing has changed."),
+        ("", "This field is required."),
+    ):
+        text = answer(value)
+        assert 'data-blocking="true"' in text and message in text, text
+    # A page out of date is told to reload.
+    stale = answer("2054-11-15", "f" * 64)
+    assert "This page changed in another tab" in stale and "<a " not in stale
+    # Stranded mail links to the combined review, as the Review does.
+    stranded = answer("2054-10-20")
+    assert 'data-blocking="true"' in stranded
+    assert "would no longer fit the campaign" in stranded
+    link = f"{reverse('admin:schedule_settings')}?end_date=2054-10-20"
+    assert f'href="{link}"' in stranded
+    assert "Change the end date and its mailings" in stranded
+    with campaign_clock(campaign.active_configuration.starts_at + timedelta(days=10)):
+        passed = answer("2054-10-05")
+    assert "Choose an end date that has not already passed." in passed
+    # Only the end-date form's fields, and only by POST.
+    assert post(browser, check, {"start_date": "2054-10-02"}).status_code == 400
+    assert browser.get(check).status_code == 405
+    # Nothing was recorded.
+    assert ConfigurationChangeRequest.objects.count() == before
+    assert not CampaignConfigurationIntent.objects.exists()
+    assert not AuditEvent.objects.filter(event_type=EVENT).exists()
 
 
 @pytest.mark.parametrize("end_date", ["2054-11-15", "2054-10-29"])

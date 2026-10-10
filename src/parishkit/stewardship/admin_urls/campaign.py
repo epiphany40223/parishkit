@@ -43,6 +43,12 @@ patterns = [
     # The group root opens the first entry the viewer may open now.
     path("campaign/", group_root("campaign"), name="campaign_root"),
     _page("campaign/settings/", campaign_views.campaign_settings, "campaign_settings"),
+    # Its live end-date check (#944), a fragment the page reads.
+    _page(
+        "campaign/settings/end-date-check/",
+        campaign_views.campaign_end_date_check,
+        "campaign_end_date_check",
+    ),
     _page("campaign/copy/", clone_views.campaign_clone, "campaign_clone"),
     _page("campaign/content/", content_views.content_settings, "content_catalog"),
     # History before the editor: "history/<revision>/" also has two segments.
