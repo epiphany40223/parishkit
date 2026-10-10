@@ -78,6 +78,8 @@ MULTIPLE_FIELDS = frozenset(
 # which names itself with this hidden field.
 LEADER_EDITOR = "leader_roles"
 LEADER_FIELDS = frozenset({"editor", "ministry_leader_roles", "base_digest"})
+# What a live campaign's end-date Review posts (#912).
+END_FIELDS = frozenset({"action", "csrfmiddlewaretoken", "end_date", "base_digest"})
 
 
 def _state(service):
@@ -262,16 +264,18 @@ def _page(
     form,
     *,
     editable,
+    end_form=None,
     status=200,
     leader_form=None,
     **region,
 ):
     """Keep locked structural values visible without rendering mutation controls.
 
-    ``region`` is ``review_region``'s ``review``, ``receipt`` or ``refusal``
-    for the editor's in-place review region (#532). A live campaign that asks
-    about Ministries shows its leader-role form (``leader_form``, #922) with
-    that region under it.
+    ``region`` is ``review_region``'s ``review``, ``receipt``, ``refusal`` or
+    ``link`` for the editor's in-place review region (#532). ``end_form`` is
+    a live campaign's end-date form (#912), whose review uses that region.
+    A live campaign that asks about Ministries shows its leader-role form
+    (``leader_form``, #922) with that region under it.
     """
     leaders = _leaders_editable(configuration, campaign, editable)
     if leaders:
@@ -282,7 +286,7 @@ def _page(
         # The live form edits the roles; the read-only settings do not
         # repeat them.
         form.fields.pop("ministry_leader_roles", None)
-    if editable or leaders:
+    if editable or leaders or end_form is not None:
         # Edit, review, apply (#196), all on this page; a locked campaign's
         # read-only page is not part of any flow.
         step = "review" if region.get("review") else "edit"
@@ -297,6 +301,7 @@ def _page(
             "campaign": campaign,
             "form": form,
             "editable": editable,
+            "end_form": end_form,
             "leader_form": leader_form if leaders else None,
             # A live campaign's Ministries keep their own editor (#342).
             "ministries_live": live_ministries_editable(
@@ -309,7 +314,11 @@ def _page(
             and ProductionConfirmation.objects.filter(
                 request__campaign=campaign
             ).exists(),
-            **review_region("campaign_settings", form, **region),
+            **review_region(
+                "campaign_settings",
+                end_form if end_form is not None else form,
+                **region,
+            ),
         },
         status=status,
     )
@@ -510,6 +519,40 @@ def _settings_form(configuration, campaign, data=None, *, digest=None, source=No
     return form
 
 
+def _end_form(request, action, state, campaign, editable, digest):
+    """A live campaign's end-date form and the instant it opened at (#912).
+
+    Returns ``(None, None)`` unless only the end date may change now
+    (``schedule_reads.live_end_at``). The form is bound to a Review's post;
+    otherwise it starts at the saved date and, as the settings form does,
+    at the version a shown change was reviewed at (``digest``) or else the
+    current one.
+    """
+    from datetime import date
+
+    from .campaign_end_date import LiveEndDateForm
+    from .schedule_reads import live_end_at
+
+    live_at = None if editable else live_end_at(state, campaign)
+    if live_at is None:
+        return None, None
+    configuration = state[0]
+    return (
+        LiveEndDateForm(
+            request.POST if action == "preview" else None,
+            initial={
+                "end_date": date.fromisoformat(
+                    campaign.active_configuration.values["end_date"]
+                ),
+                "base_digest": configuration.active_configuration.digest
+                if digest is None
+                else digest,
+            },
+        ),
+        live_at,
+    )
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def campaign_settings(request, campaign_id):
     """Read, preview and confirm a draft without direct runtime/configuration writes.
@@ -540,13 +583,23 @@ def campaign_settings(request, campaign_id):
                 multiple_fields=MULTIPLE_FIELDS,
             )
             if action == "confirm":
+                from .campaign_end_date import signed_for
+                from .schedule_changes import confirm_scope, preview_salt
+
+                # A live campaign's end date (#912) is reviewed and signed
+                # as the Dates and mail schedules change it is.
+                live_end = signed_for(request.POST.get("preview", ""), campaign_id)
                 try:
                     response = confirm(
                         request,
                         service,
                         actor,
-                        salt=SALT,
-                        current_scope=_scope,
+                        salt=preview_salt(campaign_id) if live_end else SALT,
+                        current_scope=(
+                            (lambda service: confirm_scope(service, campaign_id))
+                            if live_end
+                            else _scope
+                        ),
                         in_place=True,
                     )
                     response["Cache-Control"] = "no-store"
@@ -557,7 +610,9 @@ def campaign_settings(request, campaign_id):
                     # changed elsewhere needs a reload before the next
                     # Review (admin_editing.reviewed_base).
                     refusal = error.refusal
-                    digest = reviewed_base(request.POST, SALT)
+                    digest = reviewed_base(
+                        request.POST, preview_salt(campaign_id) if live_end else SALT
+                    )
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
@@ -576,10 +631,24 @@ def campaign_settings(request, campaign_id):
             state = _state(service)
             configuration, campaigns, source, held = state[:4]
             campaign, editable = _target(configuration, campaigns, held, campaign_id)
+            end_form, live_at = _end_form(
+                request,
+                # A leader-role Review posts no end date.
+                None if leaders else action,
+                state,
+                campaign,
+                editable,
+                digest,
+            )
             form = _settings_form(
                 configuration,
                 campaign,
-                request.POST if action == "preview" and not leaders else None,
+                # A live campaign's page shows these settings read-only;
+                # its Reviews post only the end date (end_form) or the
+                # leader roles (leader_form).
+                request.POST
+                if action == "preview" and not leaders and end_form is None
+                else None,
                 digest=digest,
                 source=source,
             )
@@ -610,7 +679,9 @@ def campaign_settings(request, campaign_id):
                         refusal=error.refusal,
                     )
             elif refusal is not None and (
-                editable or _leaders_editable(configuration, campaign, editable)
+                editable
+                or end_form is not None
+                or _leaders_editable(configuration, campaign, editable)
             ):
                 response = _page(
                     request,
@@ -618,8 +689,34 @@ def campaign_settings(request, campaign_id):
                     campaign,
                     form,
                     editable=editable,
+                    end_form=end_form,
                     status=409,
                     refusal=refusal,
+                )
+            elif (
+                request.method == "POST"
+                and end_form is not None
+                # Any other setting stays locked, refused below as before.
+                and set(request.POST) <= END_FIELDS
+            ):
+                from .campaign_end_date import end_review
+
+                try:
+                    region = end_review(
+                        service, actor, state, campaign, end_form, live_at
+                    )
+                    status = 200 if "review" in region else 400
+                except UserFacingStale as error:
+                    region, status = {"refusal": error.refusal}, 409
+                response = _page(
+                    request,
+                    configuration,
+                    campaign,
+                    form,
+                    editable=False,
+                    end_form=end_form,
+                    status=status,
+                    **region,
                 )
             elif request.method == "POST":
                 if not editable:
@@ -650,6 +747,7 @@ def campaign_settings(request, campaign_id):
                     campaign,
                     form,
                     editable=editable,
+                    end_form=end_form,
                     receipt=receipt,
                 )
         # Recheck access after the observation ends, so a GET's read-only

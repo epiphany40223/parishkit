@@ -29,9 +29,13 @@ answers Applied and follows to ``SHARE_SETTLED``, the applied list at version
 Member talents' editor is served at ``TALENTS`` with the stock talents. A
 live campaign's Ministry leader roles form (#922) is served at ``LEADERS``,
 with its review at ``LEADERS_REVIEW``; Apply's answer names the change at
-``LEADERS_PENDING``.
+``LEADERS_PENDING``. A live campaign's Campaign settings, whose one editable
+setting is its end date (#912), is served at ``LIVE_END`` (the editor, whose
+Apply leads to ``LIVE_END_PENDING``), ``LIVE_END_REVIEW`` (its review) and
+``LIVE_END_REFUSED`` (refused, linking to the combined date-change review).
 """
 
+from datetime import date
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -39,7 +43,13 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import setup_help
 from parishkit.stewardship.accounts.admin_editing import review_region
+from parishkit.stewardship.accounts.campaign_end_date import (
+    CAMPAIGN_END_TEXT,
+    FAMILY_ACCESS,
+    LiveEndDateForm,
+)
 from parishkit.stewardship.accounts.campaign_forms import (
+    CampaignForm,
     CampaignSettingsForm,
     LeaderRolesForm,
 )
@@ -49,6 +59,7 @@ from parishkit.stewardship.accounts.share_forms import (
     default_share_options,
 )
 from parishkit.stewardship.responses.service import default_talent_options
+from parishkit.stewardship.web.refusals import Refusal
 
 SETTINGS = "/settings-in-place"
 REVIEW = "/settings-in-place-review"
@@ -73,6 +84,12 @@ LEADERS_PENDING = f"{LEADERS}?request={REQUEST}"
 # The role labels the current rosters use, and the roles in effect.
 ROLE_CHOICES = [(name, name) for name in ("Chairperson", "Member", "Staff")]
 DEFAULT_ROLES = ["Chairperson", "Staff"]
+LIVE_END = "/campaign-end-in-place"
+LIVE_END_REVIEW = "/campaign-end-in-place-review"
+LIVE_END_REFUSED = "/campaign-end-in-place-refused"
+LIVE_END_PENDING = f"{LIVE_END}?request={REQUEST}"
+# Where a refused shortening sends the Administrator (#912).
+COMBINED_REVIEW = "/admin/campaign/schedules/?end_date=2054-10-20"
 CAMPAIGN_VALUES = {
     "name": "Sample campaign",
     "timezone": "America/New_York",
@@ -86,6 +103,7 @@ POSTS = {
     SETTINGS: (303, PENDING, ""),
     LEADERS: (303, LEADERS_PENDING, ""),
     SHARE: (303, SHARE_PENDING, ""),
+    LIVE_END: (303, LIVE_END_PENDING, ""),
     # A Review answered with a redirect to another page, which does not draw
     # the review region (Campaign settings' dates-only change, #532).
     "/settings-in-place-elsewhere": (303, "/in-place-other", ""),
@@ -287,6 +305,39 @@ def components(context, admin):
             sent[f"options-{index}-free_text"] = "on"
     sent["options-0-label"] = "Renamed option"
     renamed = [dict(options[0], label="Renamed option"), *options[1:]]
+
+    def live_end(step, **region):
+        """A live campaign's Campaign settings: only its end date can change."""
+        end_form = LiveEndDateForm(
+            initial={"end_date": date(2054, 10, 31), "base_digest": "a" * 64}
+        )
+        values = review_region("campaign_settings", end_form, **region)
+        if region.get("receipt"):
+            values["status_url"] = STATUS
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/campaign-settings.html",
+                context
+                | {
+                    "admin_chrome": admin | {"flow_steps": _steps(step)},
+                    "campaign": {
+                        "pk": REQUEST,
+                        "state": "active",
+                        "active_configuration": {"name": "Sample campaign"},
+                    },
+                    "editable": False,
+                    "form": CampaignForm(
+                        initial=CAMPAIGN_VALUES,
+                        ministries=[("4", "Community outreach")],
+                        funds=[("9", "Offertory")],
+                    ),
+                    "end_form": end_form,
+                }
+                | values,
+            ),
+        )
+
     pending = SimpleNamespace(state="staged", request_id=REQUEST, failure_code="")
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
     return {
@@ -380,6 +431,38 @@ def components(context, admin):
             previous=[dict(options[0], label="Changed elsewhere"), *options[1:]],
             digest="c" * 64,
             message="This preview is out of date.",
+        ),
+        LIVE_END: live_end(0),
+        LIVE_END_REVIEW: live_end(
+            1,
+            review={
+                "changes": [
+                    {
+                        "label": "Campaign end date",
+                        "before": "October 31, 2054",
+                        "after": "November 15, 2054",
+                    }
+                ],
+                "notes": [FAMILY_ACCESS, CAMPAIGN_END_TEXT],
+                "preview": "synthetic-signed-intent",
+            },
+        ),
+        LIVE_END_REFUSED: live_end(
+            0,
+            refusal=Refusal(
+                "Some scheduled emails would no longer fit the campaign.",
+                fix="Change the end date together with those mailings.",
+            ),
+            link={
+                "url": COMBINED_REVIEW,
+                "label": "Change the end date and its mailings",
+            },
+        ),
+        LIVE_END_PENDING: live_end(
+            2,
+            receipt=SimpleNamespace(
+                state="staged", request_id=REQUEST, failure_code=""
+            ),
         ),
         CAMPAIGN_REVIEW: campaign(
             None,

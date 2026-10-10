@@ -290,7 +290,14 @@ def summary_errors(form):
 
 
 def review_region(
-    page, form=None, *, review=None, receipt=None, refusal=None, message=None
+    page,
+    form=None,
+    *,
+    review=None,
+    receipt=None,
+    refusal=None,
+    message=None,
+    link=None,
 ):
     """Template context for an in-place settings page's review region (#532).
 
@@ -301,7 +308,9 @@ def review_region(
     the region's error summary, and ``message`` a plain refusal sentence.
     Otherwise a bound form's errors are. A ``review`` naming a ``template``
     draws its own content (an ordered list's before and after) in place of
-    the changed settings.
+    the changed settings. ``link`` (``{"url", "label"}``) follows the errors
+    when the page names where to resolve them, as a live end-date review does
+    for mail (#912).
     """
     if message is not None:
         errors = [{"field_id": None, "message": message}]
@@ -326,6 +335,8 @@ def review_region(
     return {
         "review": review,
         "review_errors": errors,
+        # Where to resolve what blocks the change, when a page names it.
+        "review_link": link,
         "receipt": receipt,
         "status_url": status_url,
     }
