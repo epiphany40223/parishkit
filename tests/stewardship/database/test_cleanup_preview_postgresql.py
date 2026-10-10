@@ -96,15 +96,15 @@ def test_testing_families_sort_on_the_server_by_name_or_duid(
     duids = [row["duid"] for row in rows]
     assert duids == sorted(duids)
     assert [row["duid"] for row in read("-duid")[0]] == duids[::-1]
-    # Shown as "Surname, heads" (snapshot_family_names), ordered by surname
-    # and then the whole name, as the Family codes directory orders them.
+    # Shown as "Surname, heads" (snapshot_family_names), ordered by surname,
+    # the whole name and then the DUID, as the Family codes directory is.
     names = snapshot_family_names(source_id, duids)
     assert any(", " in name for name in names.values())
 
     def key(row):
-        """The page's order: surname, then the whole shown name."""
+        """The page's order: surname, the whole shown name, then DUID."""
         surname = row["name"].split(", ", 1)[0]
-        return surname.lower(), row["name"].lower()
+        return surname.lower(), row["name"].lower(), row["duid"]
 
     by_name = read("name")[0]
     assert [row["name"] for row in by_name] == [names[row["duid"]] for row in by_name]
