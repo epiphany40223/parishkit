@@ -2267,6 +2267,7 @@ sign-in. The command shapes are defaults, pending Administrator confirmation.
 | URL names | Command or exemption |
 | --- | --- |
 | `integrations`, `integration_settings`, `integration_status`, `credential_status` | `integration show`, `integration status`, `integration set` for non-secret settings, `integration backup-probe` for the backup Drive folder check (PR 10); `integration set --target parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
+| `refresh_schedule_check` | `integration schedule-preview` (PR 10): the ParishSoft page's no-save live check of the refresh schedule editor's rows answers the same validation, preview and cost summary ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `dismiss_credential_result` | `integration dismiss` (PR 10) |
 | Key replacement through `integration_settings` | `integration key replace --target …`, `integration key status --watch` (PR 10; see [secret replacement](#secret-replacement)) |
 | `select_credential` | `integration key finish-switching` (PR 10) |
