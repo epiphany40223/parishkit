@@ -4331,6 +4331,11 @@ example Families of a refused change (PR 5) and the debug-off switch
   the Member DUID and the field to correct in plain words, never the value
   (not even a Member's name), sorted and paged in place, and says the Family
   can open the form after the correction and the next ParishSoft refresh.
+  The Family name is therefore the surname alone, the recorded exception to
+  the "Surname, heads" Family name rule
+  ([#932](https://github.com/epiphany40223/parishkit/issues/932)): the heads'
+  names are Member values, and a head's name can be the very value the form
+  refuses.
   The result is cached in memory per campaign, snapshot and campaign
   configuration, so a refresh clears it. The sentence is read on page load
   only, never by the 10-second status poll; if the check cannot run, it

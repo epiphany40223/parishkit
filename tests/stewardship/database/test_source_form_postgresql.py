@@ -6,6 +6,7 @@ import pytest
 
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.source.family_names import family_display_name
 
 from ..policy_factory import address
 from .auth_builders import signed_in
@@ -49,9 +50,10 @@ def test_the_list_follows_the_snapshot_and_never_shows_a_value(
     assert response.status_code == 200
     assert b"1 Family cannot open the Family form" in body
     assert f"<td>{family}</td><td>3</td><td>First name</td>".encode() in body
-    family_name = data.families[1].get("lastName") or ""
-    if family_name:
-        assert f'<th scope="row">{family_name.strip()}</th>'.encode() in body
+    # The surname alone, never "Surname, heads": a head's name is a Member
+    # value and may be the refused one (here, Member 3's first name).
+    family_name = family_display_name(data.families[1], "Unavailable Family")
+    assert f'<th scope="row">{family_name}</th>'.encode() in body
     assert b"<td>Last name</td>" in body
     assert b"private" not in body and b"x" * 101 not in body
     _, body = get(browser, HEALTH)
