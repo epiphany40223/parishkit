@@ -226,9 +226,15 @@ def digest(response):
 
 
 def region(body):
-    """The in-place review region of a rendered settings page."""
+    """The in-place review region of a rendered settings page.
+
+    The region may carry more attributes after its marker, such as
+    data-keep-height (#768).
+    """
     body = body.decode()
-    start = body.index('<div id="settings-review" data-in-place-region>')
+    start = re.search(
+        r'<div id="settings-review" data-in-place-region[ >]', body
+    ).start()
     return body[start : body.index("</div>", start)]
 
 
