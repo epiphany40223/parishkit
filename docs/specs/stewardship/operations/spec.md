@@ -665,6 +665,18 @@ Administrator may override.
    scripted upgrade and the deployment runbook gain this step in the code
    slice.
 
+   The scripted upgrade (`tools/stewardship-upgrade-host.sh`) cannot run this
+   order yet: its step 4 migrates to the newest migration and then applies
+   the grants, so it would reach the function swap before any conversion.
+   Either the release that swaps the functions also adds a targeted
+   migration to the release's first migration and a conversion step between
+   the grants and the swap, or the first migration and its two read
+   functions ship in an earlier release than the swap, so that the earlier
+   deploy has already migrated past them and applied their grants. Offline
+   Admin-access recovery never depends on those grants: only
+   `upgrade-users` requires them, and it refuses with an instruction to run
+   `database-grants` when they are missing.
+
    Considered and rejected: shipping the new SQL functions with a domain-join
    fallback until an Administrator converts online after startup. The
    application would then carry both authorization models in Python and SQL,
