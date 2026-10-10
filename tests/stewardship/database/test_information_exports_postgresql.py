@@ -23,7 +23,11 @@ from parishkit.stewardship.reports.export_services import (
     export_status,
 )
 from parishkit.stewardship.reports.export_tasks import export_handler
-from parishkit.stewardship.reports.information import InformationQuery, information_page
+from parishkit.stewardship.reports.information import (
+    InformationQuery,
+    information_page,
+    name_families,
+)
 from parishkit.stewardship.reports.information_documents import (
     HEADINGS,
     information_document,
@@ -81,9 +85,10 @@ def test_complete_capture_is_not_the_interactive_page(live_response_service):
             == 50
         )
         # Without internal references, each superseded item names its
-        # replacement by that later request's Submitted time (PR #929).
+        # replacement by that later request's Submitted time (PR #929). The
+        # rows are named first, as the export task names them (#932).
         rows = information_document(
-            snapshot.document,
+            name_families(snapshot.document),
             snapshot.parameters,
             parish_name="Parish",
             requested_at=snapshot.created_at,
