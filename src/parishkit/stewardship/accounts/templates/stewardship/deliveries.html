@@ -47,8 +47,9 @@
     <td class="numeric nowrap">{% if delivery.family__family_duid %}{{ delivery.family__family_duid|duid }}{% else %}—{% endif %}</td>
     <td>{{ delivery.purpose|delivery_label }}</td>
     <td>{{ delivery.mode|delivery_label }}</td>
+    {% comment %}The refused mark is a .cell-detail line, which wraps between words, not a nowrap .cell-line: unbroken, it widened State enough to overflow the table at 1280 px with wider (Linux) fonts.{% endcomment %}
     <td>{{ delivery.state|delivery_label }}{% if delivery.refused and delivery.family__family_duid %}
-      <span class="cell-line"><a href="{% url 'admin:delivery_refusals' %}?duid={{ delivery.family__family_duid }}">{% blocktranslate count counter=delivery.refused trimmed %}{{ counter }} address refused{% plural %}{{ counter }} addresses refused{% endblocktranslate %}</a></span>{% endif %}</td>
+      <span class="cell-detail"><a href="{% url 'admin:delivery_refusals' %}?duid={{ delivery.family__family_duid }}">{% blocktranslate count counter=delivery.refused trimmed %}{{ counter }} address refused{% plural %}{{ counter }} addresses refused{% endblocktranslate %}</a></span>{% endif %}</td>
     <td class="numeric">{{ delivery.attempt|number }}</td>
   </tr>{% empty %}<tr><td colspan="7">{% translate "No email matches this view. Choose All under Delivery state to see every email." %}</td></tr>{% endfor %}
   </tbody>
