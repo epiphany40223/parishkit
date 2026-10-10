@@ -17,6 +17,7 @@ from django.db.models import F
 
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.accounts.sessions import database_now
+from parishkit.stewardship.audit.models import AuditEvent
 
 from .auth_builders import signed_in
 from .test_runtime_auth_grants_postgresql import web_login
@@ -184,6 +185,10 @@ def test_a_rule_removed_before_the_insert_is_a_denial(
     assert not PortalSession.objects.exists()
     assert "pk_admin" not in client.cookies or not client.cookies["pk_admin"].value
     assert "SQL session guard" in caplog.text
+    # The late refusal names the account like any policy refusal (#968).
+    refused = AuditEvent.objects.get(event_type="admin_login_refused")
+    assert refused.actor_id == PortalUser.objects.get().pk
+    assert not AuditEvent.objects.filter(event_type="admin_login_denied").exists()
 
 
 def test_an_unrelated_integrity_error_is_not_a_denial(
