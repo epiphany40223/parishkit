@@ -165,8 +165,13 @@ def recover_admin_command(
     confirmed_email,
     operator_name,
     reason,
+    name=None,
 ):
-    """Apply only explicit additive recovery, retaining the ordinary Google login."""
+    """Apply only explicit additive recovery, retaining the ordinary Google login.
+
+    ``name`` is a new Administrator user's Name in the users form (#952);
+    without it the Name is the address's local part.
+    """
     from .accounts.authority import AuthorityStore
     from .accounts.configuration_schema import validate_sections
 
@@ -186,6 +191,7 @@ def recover_admin_command(
         confirmed_email=confirmed_email,
         operator_name=operator_name,
         reason=reason,
+        name=name,
         correlation_id=uuid4(),
         offline_interlock=lambda: StartupLease(
             RuntimeLayout(configuration).interlock, offline=True
@@ -203,8 +209,11 @@ def recover_admin_command(
     }
 
 
-def preview_recovery_command(configuration, *, deployment_id, target_email):
-    """Display coherent current rules and the exact proposed change without writing."""
+def preview_recovery_command(configuration, *, deployment_id, target_email, name=None):
+    """Display coherent current rules and the exact proposed change without writing.
+
+    ``name`` previews a new Administrator user's Name in the users form (#952).
+    """
     if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
         raise ConfigError("Recovery preview requires its explicit operator profile.")
     with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
@@ -223,14 +232,18 @@ def preview_recovery_command(configuration, *, deployment_id, target_email):
         if runtime.pk != _uuid(deployment_id):
             raise ConfigError("The confirmed deployment does not match.")
         _, version = intake_base(runtime.active_configuration.digest)
-        return {"recovery_preview": recovery_preview(version, runtime.pk, target_email)}
+        return {
+            "recovery_preview": recovery_preview(
+                version, runtime.pk, target_email, name=name
+            )
+        }
 
 
 # The users conversion (#952) is enabled in the release that also brings
 # the Users page and the swap of the SQL sign-in functions (its slice 4).
-# Until then this command only previews: nothing else in this release can
-# edit a configuration in the users form, so converting would leave the
-# Admin portal unable to change its settings.
+# Until then this command only previews: this release can edit a users
+# configuration, but its SQL sign-in functions and its Portal users page
+# still expect sign-in rules.
 USERS_UPGRADE_ENABLED = False
 
 
@@ -436,6 +449,7 @@ def execute_operator(args):
                 configuration,
                 deployment_id=args.confirm_deployment,
                 target_email=args.target_email,
+                name=args.name,
             )
         elif args.command == "upgrade-users":
             result = upgrade_users_command(
@@ -462,6 +476,7 @@ def execute_operator(args):
                 confirmed_email=args.confirm_email,
                 operator_name=args.operator_name,
                 reason=args.reason,
+                name=args.name,
             )
         else:
             raise ConfigError("Unsupported operator command.")

@@ -4742,10 +4742,20 @@ BEGIN
        OR operation ->> 'section' IS DISTINCT FROM 'login_rules'
        OR operation ->> 'operation' NOT IN ('add', 'update')
        OR target IS DISTINCT FROM NEW.recovery_target
-       OR (operation ->> 'operation' = 'add' AND operation -> 'values'
-           ->> 'creation_operation' IS DISTINCT FROM NEW.request_key::text)
-       OR operation -> 'values' -> 'grants' -> 'administrator'
-          IS DISTINCT FROM jsonb_build_object('manual', NEW.request_key::text) THEN
+       -- A users configuration (#952): add an Administrator user, or raise
+       -- one user to Administrator and change nothing else about it.
+       OR (NEW.request_schema = 'operator-recovery-users-v10'
+           AND (operation -> 'values' ->> 'role' IS DISTINCT FROM 'administrator'
+                OR (operation ->> 'operation' = 'add'
+                    AND operation -> 'values' ->> 'kind' IS DISTINCT FROM 'user')
+                OR (operation ->> 'operation' = 'update'
+                    AND operation -> 'values'
+                        IS DISTINCT FROM '{"role": "administrator"}'::jsonb)))
+       OR (NEW.request_schema <> 'operator-recovery-users-v10'
+           AND ((operation ->> 'operation' = 'add' AND operation -> 'values'
+                 ->> 'creation_operation' IS DISTINCT FROM NEW.request_key::text)
+                OR operation -> 'values' -> 'grants' -> 'administrator'
+                   IS DISTINCT FROM jsonb_build_object('manual', NEW.request_key::text))) THEN
         RAISE EXCEPTION 'Invalid offline recovery attribution'
             USING ERRCODE = '23514';
     END IF;
@@ -5232,6 +5242,13 @@ CREATE FUNCTION public.stewardship_request_checkpoint_v2() RETURNS trigger
                          -- activation the same way and restored the same way.
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
                             AND intent.request_schema='chair-seed-patch-v9'
+                            AND current_user<>'pk_stewardship_web')
+                         -- SQL's users-form guard refused the offline users
+                         -- upgrade (#952) inside its activation: refused and
+                         -- restored the same way, so the manifest never stays
+                         -- ahead of the database and recovery still runs.
+                        OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
+                            AND intent.request_schema='operator-upgrade-users-v10'
                             AND current_user<>'pk_stewardship_web')
                          -- A Ministry added to a live campaign that a source
                          -- promotion dropped, or that turned inactive, after
