@@ -131,6 +131,7 @@ DECLARE facts stewardship_daily_fact_set%ROWTYPE;
         ministry stewardship_ministry_export_snapshot%ROWTYPE;
         financial stewardship_financial_export_snapshot%ROWTYPE;
         names stewardship_family_test_names_export_snapshot%ROWTYPE;
+        timeline stewardship_timeline_export_snapshot%ROWTYPE;
         handoff boolean; inputs_valid boolean:=false;
 BEGIN
     PERFORM stewardship_export_campaign_lock_v1(NEW.campaign_id,false);
@@ -192,6 +193,14 @@ BEGIN
                 OR EXISTS(SELECT 1 FROM stewardship_export_request prior
                     WHERE prior.family_test_names_snapshot_id=names.id
                       AND prior.requester_id=NEW.requester_id));
+    ELSIF NEW.report='family_timeline' THEN
+        -- One Family's timeline (migration 0044): Administrator only, as
+        -- the page's full view, so any current Administrator may also
+        -- regenerate another's capture.
+        SELECT * INTO timeline FROM stewardship_timeline_export_snapshot WHERE id=NEW.timeline_snapshot_id;
+        inputs_valid:=timeline.id IS NOT NULL AND timeline.campaign_id=NEW.campaign_id
+            AND NEW.parameters=timeline.parameters
+            AND stewardship_export_authorized_v1(NEW.requester_id,true);
     END IF;
     IF inputs_valid IS DISTINCT FROM true OR NEW.actor_id IS DISTINCT FROM NEW.requester_id
        OR NOT stewardship_export_request_authorized_v1(NEW.requester_id,NEW)
@@ -267,7 +276,10 @@ BEGIN
                WHERE s.id=request.financial_snapshot_id AND s.row_count=NEW.row_count))
            OR (request.report='family_test_names' AND EXISTS(
                SELECT 1 FROM stewardship_family_test_names_export_snapshot s
-               WHERE s.id=request.family_test_names_snapshot_id AND s.row_count=NEW.row_count)))
+               WHERE s.id=request.family_test_names_snapshot_id AND s.row_count=NEW.row_count))
+           OR (request.report='family_timeline' AND EXISTS(
+               SELECT 1 FROM stewardship_timeline_export_snapshot s
+               WHERE s.id=request.timeline_snapshot_id AND s.row_count=NEW.row_count)))
        OR NOT EXISTS(SELECT 1 FROM stewardship_export_attempt a JOIN stewardship_task_run t ON t.id=a.run_id
            WHERE a.id=NEW.attempt_id AND a.request_id=request.id AND a.actor_id=NEW.actor_id
              AND t.state='running' AND t.fence=a.fence AND t.worker_id=a.actor_id

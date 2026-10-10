@@ -170,7 +170,7 @@ def is_packet(request):
     return request.report == "ministry" and request.parameters["action"] == "packet"
 
 
-def load_document(request, *, general=None):
+def load_document(request, *, general=None, store=None):
     """Load exactly one pinned ready generation inside the caller's campaign guard."""
     if is_packet(request):
         from .ministry_packets import packet_document
@@ -237,6 +237,10 @@ def load_document(request, *, general=None):
         from .family_test_names import names_document
 
         return names_document(request)
+    if request.report == "family_timeline":
+        from .timeline_documents import load_timeline
+
+        return load_timeline(request, general=general, store=store)
     facts = CampaignDailyFactSet.objects.get(
         pk=request.fact_set_id, campaign_id=request.campaign_id, state="ready"
     )
@@ -299,7 +303,7 @@ def _execute(execution, *, store, root, general=None):
             timeout_task=execution.claim.run_id,
         ) as guard,
     ):
-        document = load_document(request, general=general)
+        document = load_document(request, general=general, store=store)
 
         def render(stream):
             """Closed report dispatch consumes only the retained typed document."""
@@ -318,6 +322,7 @@ def _execute(execution, *, store, root, general=None):
                 "ministry",
                 "financial",
                 "family_test_names",
+                "family_timeline",
             }:
                 from .information_rendering import render_information
 

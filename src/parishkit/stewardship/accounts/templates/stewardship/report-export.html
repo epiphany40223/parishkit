@@ -57,6 +57,10 @@
 <dt>{% translate "Matching results" %}</dt><dd>{{ job.ministry_snapshot.row_count|number }}</dd>
 <dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.ministry_source_generation|number }}</dd>
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.ministry_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.ministry_snapshot.created_at|date:'c' }}</time></dd>
+{% elif job.timeline_snapshot_id %}
+<dt>{% translate "Timeline lines" %}</dt><dd>{{ job.timeline_snapshot.row_count|number }}</dd>
+<dt>{% translate "Mode" %}</dt><dd>{% if job.parameters.mode == 'testing' %}{% translate "Testing" %}{% else %}{% translate "Production" %}{% endif %}</dd>
+<dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.timeline_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.timeline_snapshot.created_at|date:'c' }}</time></dd>
 {% elif job.directory_snapshot_id %}
 <dt>{% translate "Matching Families" %}</dt><dd>{{ job.directory_snapshot.row_count|number }}</dd>
 <dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.directory_source_generation|number }}</dd>

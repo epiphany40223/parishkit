@@ -506,3 +506,64 @@ def export_directory(
         request_key=request_key,
         context=context,
     )
+
+
+def export_family_timeline(
+    caller, service, *, family_id, mode, fmt, zone, request_key, context
+):
+    """``export family-timeline``: the Family timeline page's export form.
+
+    ``family_id`` is the Family's campaign record id, the opaque id in the
+    page's address. Admits as the page's form post does (``CAMPAIGN_REPORT``,
+    recording activity) and, as the page, only an Administrator may export
+    the full timeline; the campaign must be one reports read. The capture,
+    the record and ``export_requested`` are the page's own
+    (``timeline_exports.create_timeline_export``); the file is fetched with
+    ``export fetch``. A Family of another campaign is ``not_available``. The
+    file can hold the Family's live code, so, as the page's view does, the
+    command calls ``require_fresh`` in the export lock (#547).
+    """
+    from .accounts.sessions import require_fresh
+    from .audit.schemas import Action
+    from .reports.family_timeline_views import _principal
+    from .reports.read_admission import admit_report_read
+    from .reports.timeline_exports import MODES, create_timeline_export
+
+    def parse(actor, campaign_id):
+        """The page's checks, in its order: Administrator, campaign, mode."""
+        if "administrator" not in actor.roles:
+            raise PermissionError("The timeline export is for Administrators.")
+        admit_report_read(campaign_id)
+        if mode not in MODES:
+            raise ValueError("The mode is production or testing.")
+        return None
+
+    def create(actor, campaign_id, parsed):
+        """The page's fresh gate and service, rechecking the campaign inside
+        its lock."""
+        admit_report_read(campaign_id)
+        # The automation branch records automation_fresh_gate (and its
+        # notice, which names the campaign) in this transaction.
+        caller.campaign_id = campaign_id
+        require_fresh(caller)
+        return create_timeline_export(
+            service.store,
+            actor.identity,
+            campaign_id=campaign_id,
+            family_id=family_id,
+            mode=mode,
+            format=fmt,
+            browser_timezone=zone,
+            request_key=request_key,
+        )
+
+    return _create(
+        caller,
+        service,
+        principal=_principal,
+        action=Action.ADMIN_CMD_EXPORT_FAMILY_TIMELINE,
+        parse=parse,
+        create=create,
+        request_key=request_key,
+        context=context,
+    )

@@ -787,6 +787,45 @@ the campaign's invitation schedules, and the sign-ins through the audit's
 event-type and time index, which scans the campaign's sign-in events rather
 than one Family's.
 
+#### Timeline export
+
+The Administrator's full view offers **Export this timeline** (CSV, XLSX or
+PDF, with the export time zone), the shared export lifecycle's
+`family_timeline` kind (ADM-11 PR 8g, frozen migration 0044). Its form posts
+the page's mode to `reports/families/<family>/exports/`, which only an
+Administrator may use, as only an Administrator sees the full timeline;
+Staff get no form, and their post is denied. The file can hold the Family's
+live code, so, like the Family directory's exports, creating or regenerating
+it needs a Google sign-in within five minutes
+([#547](https://github.com/epiphany40223/parishkit/issues/547)); a stale
+sign-in gets the step-up page, which returns to the timeline, and nothing is
+made. The form is drawn inside the
+page's table region, so an in-place mode switch draws it again with the mode
+it posts, and with no Testing rehearsal it is absent. The request captures
+what the page shows, through the page's own reads, inside the campaign's
+export lock: the Family's name, DUID, envelope number and email reach, the
+mode, the page's Summary (submitted and when, the last email, the furthest
+step and the last time the Family was seen) and every timeline line with its
+time, words and detail, into an immutable
+`stewardship_timeline_export_snapshot`. The file lists the lines oldest
+first. The page builds its timeline in
+Python, so the web supplies that document; the capture trigger admits it only
+from the web login, for a current Administrator, an admitted campaign, the
+active configuration and a Family of that campaign (with its DUID), with the
+document's keys and value types checked and its size bounded, and sets the
+event count itself. The Family code is never
+captured: the worker decrypts it into the file, under the key-set lock, only
+when the requester may see Family codes. The status page, download,
+retention, Retry, Cancel and Regenerate are the shared lifecycle's; a
+regeneration reuses the capture. A Testing export is bound to the rehearsal
+it was captured in, so once that rehearsal has ended (a new rehearsal, or the
+return to Production) it can no longer be regenerated; export it again
+instead. The request records `export_requested`
+with its line count, and the download `export_downloaded`, never a name, code
+or line of text. The command line's
+[`export family-timeline`](../admin-automation/spec.md#reports-and-exports)
+requests the same export.
+
 ## Additional information
 
 **Access:** Admin and Staff; both may edit its workflow.

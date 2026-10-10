@@ -11,6 +11,8 @@ from .family_timeline_components import (
     ADMIN,
     NEWEST,
     OLDEST,
+    REHEARSED_ADMIN,
+    REHEARSED_TESTING,
     STAFF,
     TESTING,
     UNAVAILABLE,
@@ -55,7 +57,14 @@ def test_times_are_shown_in_the_browsers_time_zone(page, component_origin):
     first = page.locator("#table tbody time[data-local-instant]").last
     assert first.get_attribute("datetime") == "2026-10-03T14:00:00+00:00"
     assert "7:00" in first.inner_text() and "PDT" in first.inner_text()
-    assert "UTC" not in page.locator("main").inner_text()
+    # No time is labeled UTC. The export form's time zone menu and its help
+    # offer UTC as a choice, which is not a shown time.
+    shown = page.evaluate(
+        "(() => { const main = document.querySelector('main').cloneNode(true);"
+        " main.querySelector('form#timeline-export')?.remove();"
+        " return main.textContent; })()"
+    )
+    assert "UTC" not in shown
 
 
 def test_mode_switch_refreshes_in_place(page, component_origin):
@@ -141,3 +150,69 @@ def test_unavailable_open_form_is_disabled_with_its_reason(page, component_origi
     reason = page.locator("#open-form-reason")
     visible(reason.get_by_text("accepts only Testing codes", exact=False))
     assert page.get_by_role("link", name="Open form in a new tab").count() == 0
+
+
+def export_form(page):
+    """The timeline export form in the table region."""
+    return page.locator("#table form#timeline-export")
+
+
+def test_the_export_form_starts_on_the_browsers_zone(page, component_origin):
+    """The form posts this view's mode, with the browser's zone preselected."""
+    errors = watch(page)
+    page.goto(component_origin + ADMIN)
+    form = export_form(page)
+    visible(form)
+    assert form.locator('input[name="mode"]').get_attribute("value") == "production"
+    # The fixture browser is Pacific; the menu starts there, not on UTC.
+    assert form.locator("#timeline-export-timezone").input_value() == (
+        "America/Los_Angeles"
+    )
+    assert_clean(page, errors)
+
+
+def test_the_export_form_follows_the_in_place_mode_switch(page, component_origin):
+    """Switching mode redraws the form with the mode it now posts, or removes it."""
+    errors = watch(page)
+    page.goto(component_origin + REHEARSED_ADMIN)
+    page.evaluate(MARK)
+    page.locator('[data-in-place="mode-testing"]').click()
+    page.wait_for_url(component_origin + REHEARSED_TESTING + "#table")
+    assert page.evaluate(MARKED) == "kept"
+    form = export_form(page)
+    visible(form)
+    assert form.locator('input[name="mode"]').get_attribute("value") == "testing"
+    # The fresh menu is preselected too.
+    assert form.locator("#timeline-export-timezone").input_value() == (
+        "America/Los_Angeles"
+    )
+    # Without a Testing rehearsal there is nothing to export: no form.
+    page.goto(component_origin + ADMIN)
+    page.locator('[data-in-place="mode-testing"]').click()
+    page.wait_for_url(component_origin + TESTING + "#table")
+    visible(page.locator("#table").get_by_text("no Testing rehearsal now"))
+    assert export_form(page).count() == 0
+    assert_clean(page, errors)
+
+
+def test_the_export_form_keeps_choices_across_a_redraw(page, component_origin):
+    """A format and zone picked before an in-place mode switch survive it."""
+    errors = watch(page)
+    page.goto(component_origin + REHEARSED_ADMIN)
+    form = export_form(page)
+    form.locator("#timeline-format").select_option("pdf")
+    form.locator("#timeline-export-timezone").select_option("UTC")
+    page.locator('[data-in-place="mode-testing"]').click()
+    page.wait_for_url(component_origin + REHEARSED_TESTING + "#table")
+    form = export_form(page)
+    assert form.locator('input[name="mode"]').get_attribute("value") == "testing"
+    assert form.locator("#timeline-format").input_value() == "pdf"
+    assert form.locator("#timeline-export-timezone").input_value() == "UTC"
+    assert_clean(page, errors)
+
+
+def test_staff_get_no_export_form(page, component_origin):
+    """Staff see the summary only, so no export is offered."""
+    page.goto(component_origin + STAFF)
+    visible(page.get_by_role("heading", name="Summary"))
+    assert export_form(page).count() == 0
