@@ -2,7 +2,9 @@
 
 Each list is one ``ResponseList``: which per-Family funnel rows it holds
 (``response_metrics.FamilyResponse``, the rows behind the dashboard's tiles),
-its columns, its one closed filter (``show``) and its default order. Four
+its columns, its closed filter (``show``, where it has one) and its default
+order. Every list also takes a private name, DUID or envelope-number
+search (``ListQuery.search``, #849/#860). Four
 lists are chosen from the funnel rows alone, so each one's length equals the
 dashboard figure it sits behind:
 
@@ -18,7 +20,8 @@ blank mailing name or envelope number 0, the two problems seen on launch day.
 
 Names, envelope numbers and mailing names come from the current source
 snapshot (``source.snapshot_names``) in two queries for any number of
-Families. Sorting, filtering and paging happen here in memory: the funnel
+Families. Sorting, filtering, searching and paging happen here in memory:
+the funnel
 rows are one statement of about 1,100 rows at launch scale. Everything in
 this module except ``read_list`` is a pure function, so it is tested without
 a database.
@@ -39,6 +42,7 @@ from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import CampaignWorkGate
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
+from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import csv_text
 from parishkit.stewardship.web.exports import csv_cell
@@ -214,19 +218,9 @@ LISTS = {
             columns=(FIRST_SUBMITTED, FAMILY, DUID, ENVELOPE, SUBMISSIONS),
             # Chronological: the first submission first.
             default_sort="submitted",
-            choices=(
-                Choice(EVERYONE, _("Everyone"), _keep_all),
-                Choice(
-                    "invited",
-                    _("With a delivered invitation"),
-                    lambda row: row.response.invited_at is not None,
-                ),
-                Choice(
-                    "uninvited",
-                    _("Without a delivered invitation"),
-                    lambda row: row.response.invited_at is None,
-                ),
-            ),
+            # The Administrator found the invitation filter unneeded here
+            # (#860): the list shows every Family that submitted.
+            choices=(Choice(EVERYONE, _("Everyone"), _keep_all),),
             viewed=Action.RESPONSE_SUBMITTED_LIST_VIEWED,
             exported=Action.RESPONSE_SUBMITTED_LIST_EXPORTED,
             selects=lambda family: family.submitted_at is not None,
@@ -384,41 +378,69 @@ LISTS = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class ListQuery:
-    """A list page's filter state: the system mode and the ``show`` choice.
+    """A list page's filter state: the mode, the ``show`` choice, the search.
 
-    Both are closed vocabularies, as are the shared table's sort, size and
-    page, so a list's URL never carries anything identifying.
+    The mode and ``show`` are closed vocabularies, as are the shared table's
+    sort, size and page, so a list's URL never carries anything identifying.
+    ``search`` can name a Family, so it travels only in CSRF-protected POST
+    bodies (``private``), never in a URL, a log line or the audit (#849);
+    ``repr=False`` keeps it out of tracebacks too.
     """
 
     mode: str = "production"
     show: str = EVERYONE
+    search: str = ""
 
     @classmethod
-    def parse(cls, spec, parameters, *, extra=()):
+    def parse(cls, spec, parameters, *, extra=(), private=False):
         """Validate a request's choices; return (query, the other values).
 
         ``parameters`` is a QueryDict. The table's sort, size and page (and
         any ``extra`` names, such as an export's time zone) are returned as
         single values for their own parsers; anything else is refused.
+        ``private`` marks a POST body, the only place a search may come from.
         """
         allowed = {"mode", "show"} | table_parameters() | set(extra)
+        if private:
+            allowed.add("search")
         values = filters(parameters, allowed=allowed)
-        query = cls(values.pop("mode", "production"), values.pop("show", EVERYONE))
+        show = spec.choice(values.pop("show", EVERYONE)).value
+        search = bounded_text(values.pop("search", "")).strip()
+        query = cls(values.pop("mode", "production"), show, search)
         if query.mode not in MODES:
             raise ValueError("Invalid response list mode.")
-        spec.choice(query.show)
         return query, values
 
     def carried(self):
-        """The (name, value) pairs every link and form keeps; defaults left out."""
+        """The closed (name, value) pairs links keep; defaults left out."""
         values = []
         if self.mode != "production":
             values.append(("mode", self.mode))
         if self.show != EVERYONE:
             values.append(("show", self.show))
         return values
+
+    def posted(self):
+        """What a POST form keeps: the closed choices and any search."""
+        return self.carried() + ([("search", self.search)] if self.search else [])
+
+    def matches(self, row):
+        """Whether a listed Family matches the search (every row without one).
+
+        As the directory's search matches its Family column: part of the
+        shown name (surname, then the heads of household), ignoring case.
+        A search of digits only also matches that exact Family DUID or
+        envelope number, the numbers staff copy from ParishSoft or a gift; a
+        partial number would match far too many Families to be useful.
+        """
+        text = self.search.casefold()
+        if not text:
+            return True
+        if text.isascii() and text.isdigit() and int(text) in (row.duid, row.envelope):
+            return True
+        return bool(row.name) and text in row.name.casefold()
 
     def url(self, key, **extra):
         """A list's URL with these choices and the non-empty ``extra`` ones."""
@@ -452,16 +474,18 @@ def candidates(spec, families, active=frozenset()):
     return [family for family in families if spec.selects(family)]
 
 
-def listed(spec, families, facts, choice):
-    """Join the candidate rows with their facts and apply the filter choice.
+def listed(spec, families, facts, query):
+    """Join the candidate rows with their facts; apply the filter and search.
 
-    The rows keep the funnel statement's DUID order, which breaks ties in
-    every sort. A data-quality row needs a problem to be listed at all.
+    ``query`` is the page's ``ListQuery``. The rows keep the funnel
+    statement's DUID order, which breaks ties in every sort. A data-quality
+    row needs a problem to be listed at all.
     """
     rows = [ListedFamily(family, facts.get(family.family_duid)) for family in families]
     if spec.needs_facts:
         rows = [row for row in rows if row.problems]
-    return [row for row in rows if choice.keeps(row)]
+    keeps = spec.choice(query.show).keeps
+    return [row for row in rows if keeps(row) and query.matches(row)]
 
 
 def cells(spec, row):
@@ -519,7 +543,7 @@ def current_snapshot():
     return SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
 
 
-def read_list(spec, scope, as_of, choice, snapshot=None):
+def read_list(spec, scope, as_of, query, snapshot=None):
     """Read one list's rows at ``as_of``: the funnel rows, then their facts.
 
     Runs inside the campaign read guard's read-only transaction. One funnel
@@ -543,4 +567,4 @@ def read_list(spec, scope, as_of, choice, snapshot=None):
     facts = snapshot_family_facts(
         snapshot, [family.family_duid for family in chosen], str(_("Family"))
     )
-    return listed(spec, chosen, facts, choice)
+    return listed(spec, chosen, facts, query)

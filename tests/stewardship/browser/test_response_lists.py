@@ -1,9 +1,10 @@
-"""The response lists sort, filter and switch mode in place, and download (#477).
+"""The response lists sort, filter, search and switch mode in place (#477, #849).
 
 The fixtures (``response_list_components``) serve the submitted list and the
-exact pages its heading, filter form and mode switch lead to. The CSV
-download is a CSRF POST; each test answers it itself and checks what the
-form sent, since the fixture server serves only GET pages.
+exact pages its heading and mode switch lead to. The filter form, the search
+and the CSV download are CSRF POSTs; each test answers them itself with a
+Playwright route (``answer_posts``) and checks what the form sent, since the
+fixture server serves only GET pages.
 """
 
 from urllib.parse import parse_qs
@@ -11,7 +12,16 @@ from urllib.parse import parse_qs
 import pytest
 from django.urls import reverse
 
-from .response_list_components import BY_FAMILY, DATA_QUALITY, SUBMITTED, UNINVITED
+from .response_list_components import (
+    BY_FAMILY,
+    DATA_QUALITY,
+    ENVELOPE_ZERO,
+    SEARCHED,
+    SEARCHED_BY_FAMILY,
+    SEARCHED_ENVELOPE,
+    SEARCHED_NONE,
+    SUBMITTED,
+)
 from .test_charts import assert_clean, watch
 from .waits import has_attribute, has_text, visible
 
@@ -41,6 +51,43 @@ def hidden_fields(page, form):
         for field in page.locator(f"#{form} input[type=hidden]").all()
         if field.get_attribute("name") != "csrfmiddlewaretoken"
     }
+
+
+def answer_posts(page, origin, path, choose):
+    """Answer the list's POSTs at ``path`` with fixture pages; return the bodies.
+
+    ``choose`` maps a parsed POST body to the fixture path whose page is the
+    answer. Each answer is read from the fixture server before the route is
+    installed, as the view would render it. A GET keeps going to the server.
+    """
+    pages = {
+        fixture: page.request.get(origin + fixture).text()
+        for fixture in (SEARCHED, SEARCHED_BY_FAMILY, SEARCHED_ENVELOPE)
+        + (SEARCHED_NONE, ENVELOPE_ZERO)
+    }
+    posted = []
+
+    def answer(route):
+        """Record the body and answer with the page the view would render."""
+        if route.request.method != "POST":
+            route.fallback()
+            return
+        body = parse_qs(route.request.post_data or "", keep_blank_values=True)
+        posted.append(body)
+        route.fulfill(status=200, content_type="text/html", body=pages[choose(body)])
+
+    page.route("**" + path, answer)
+    return posted
+
+
+def searched(body):
+    """The searched submitted list's page for the POST ``body``."""
+    search = body.get("search", [""])[0]
+    if search == "101":
+        return SEARCHED_ENVELOPE
+    if search == "zzz":
+        return SEARCHED_NONE
+    return SEARCHED_BY_FAMILY if body.get("sort") == ["family"] else SEARCHED
 
 
 @pytest.mark.parametrize("path", [SUBMITTED, DATA_QUALITY, "/response-list-paused"])
@@ -87,27 +134,30 @@ def test_heading_sorts_in_place_and_the_download_follows(page, component_origin)
 
 
 def test_filter_applies_in_place_and_the_download_posts_it(page, component_origin):
-    """The filter swaps the table in; the download posts the filter and order."""
+    """The filter posts and swaps the table in; the address keeps the choice."""
     errors = watch(page)
-    page.goto(component_origin + SUBMITTED)
+    page.goto(component_origin + DATA_QUALITY)
+    posted = answer_posts(page, component_origin, DATA_QUALITY, lambda _: ENVELOPE_ZERO)
     page.evaluate(MARK)
-    page.get_by_label("Show", exact=True).select_option("uninvited")
-    with page.expect_request(lambda request: "show=uninvited" in request.url):
-        page.get_by_role("button", name="Apply").click()
+    page.get_by_label("Check", exact=True).select_option("envelope")
+    page.get_by_role("button", name="Apply").click()
     visible(page.get_by_text("Showing 1–1 of 1").first)
-    assert families(page) == ["Evans, Eve"]
+    assert families(page) == ["Diaz, Dee"]
     assert page.evaluate(MARKED) == "kept"
-    assert page.url == component_origin + UNINVITED
+    assert posted[0]["show"] == ["envelope"] and posted[0]["search"] == [""]
+    # The address shows the closed choice (data-page-address), so Reload
+    # and Back keep it.
+    assert page.url == component_origin + DATA_QUALITY + "?show=envelope"
     # The download's scope and hidden choices followed the filter.
     has_text(
         page.locator("#list-export-scope"),
         "CSV of the 1 Family on this list, with the filter chosen.",
     )
     assert hidden_fields(page, "table-export") == {
-        "show": "uninvited",
-        "sort": "submitted",
+        "show": "envelope",
+        "sort": "family",
     }
-    posted = []
+    downloads = []
 
     def download(route):
         """Record the download POST; 204 keeps the page, as an attachment does.
@@ -115,19 +165,89 @@ def test_filter_applies_in_place_and_the_download_posts_it(page, component_origi
         (Playwright's WebKit renders a route-fulfilled attachment inline, so
         the test answers with No Content rather than a file.)
         """
-        posted.append((route.request.method, route.request.post_data))
+        downloads.append((route.request.method, route.request.post_data))
         route.fulfill(status=204)
 
     page.route(
-        "**" + reverse("admin:response_list_export", args=["submitted"]), download
+        "**" + reverse("admin:response_list_export", args=["data-quality"]), download
     )
     page.get_by_label("Time zone").select_option("America/Chicago")
     page.get_by_role("button", name="Download CSV").click()
     page.wait_for_timeout(500)
-    assert len(posted) == 1 and posted[0][0] == "POST"
-    body = parse_qs(posted[0][1])
-    assert body["show"] == ["uninvited"] and body["sort"] == ["submitted"]
+    assert len(downloads) == 1 and downloads[0][0] == "POST"
+    body = parse_qs(downloads[0][1])
+    assert body["show"] == ["envelope"] and body["sort"] == ["family"]
     assert body["timezone"] == ["America/Chicago"]
+    assert_clean(page, errors)
+
+
+def test_search_narrows_in_place_and_never_enters_the_address(page, component_origin):
+    """The search posts privately; sort and the download keep it, the URL never.
+
+    Families that submitted has no Show selector (#860), only the search.
+    """
+    errors = watch(page)
+    page.goto(component_origin + SUBMITTED)
+    assert page.locator("#list-show").count() == 0
+    posted = answer_posts(page, component_origin, SUBMITTED, searched)
+    page.evaluate(MARK)
+    box = page.get_by_label("Search by Family name, DUID or envelope number")
+    box.fill("e")
+    box.press("Enter")
+    visible(page.get_by_text("Showing 1–2 of 2").first)
+    assert families(page) == ["=Baker, Bob", "Evans, Eve"]
+    assert page.evaluate(MARKED) == "kept"
+    assert posted[-1]["search"] == ["e"]
+    assert page.url == component_origin + SUBMITTED
+    # The download follows the search, as a hidden POST field.
+    has_text(
+        page.locator("#list-export-scope"),
+        "CSV of the 2 Families on this list that match the search.",
+    )
+    assert hidden_fields(page, "table-export") == {
+        "search": "e",
+        "sort": "submitted",
+    }
+    # A heading is now a POST form carrying the search; the order goes in
+    # the address, the search does not.
+    page.get_by_role("button", name="Family (sort ascending)").click()
+    has_attribute(
+        page.locator("#table th[data-sort-column='family']"), "aria-sort", "ascending"
+    )
+    assert posted[-1]["search"] == ["e"] and posted[-1]["sort"] == ["family"]
+    assert families(page) == ["=Baker, Bob", "Evans, Eve"]
+    assert page.url == component_origin + SUBMITTED + "?sort=family"
+    assert box.input_value() == "e"
+    assert page.evaluate(MARKED) == "kept"
+    # An envelope number finds that Family; nothing found says so.
+    box.fill("101")
+    page.get_by_role("button", name="Search").click()
+    visible(page.get_by_text("Showing 1–1 of 1").first)
+    assert families(page) == ["Adams, Ann"]
+    box.fill("zzz")
+    page.get_by_role("button", name="Search").click()
+    visible(page.locator("#table td").get_by_text("No Families on this list match"))
+    assert page.get_by_role("button", name="Download CSV").is_disabled()
+    assert page.evaluate(MARKED) == "kept"
+    for body in posted:
+        assert "search" in body
+    assert_clean(page, errors)
+
+
+def test_mode_switch_clears_the_search_box(page, component_origin):
+    """The mode link leaves the search behind, and the box shows that."""
+    errors = watch(page)
+    page.goto(component_origin + SUBMITTED)
+    answer_posts(page, component_origin, SUBMITTED, searched)
+    box = page.get_by_label("Search by Family name, DUID or envelope number")
+    box.fill("e")
+    box.press("Enter")
+    visible(page.get_by_text("Showing 1–2 of 2").first)
+    page.locator('[data-in-place="mode-testing"]').click()
+    page.wait_for_url("**?mode=testing#table")
+    visible(page.locator("#table").get_by_text("no Testing responses to show"))
+    assert box.input_value() == ""
+    assert "search" not in hidden_fields(page, "table-export")
     assert_clean(page, errors)
 
 
@@ -158,7 +278,9 @@ def test_mode_switch_refreshes_in_place(page, component_origin):
     }
     assert page.get_by_role("button", name="Download CSV").is_disabled()
     # The way back to the dashboard follows the mode chosen.
-    dashboard = page.locator("#list-dashboard-link a").get_attribute("href")
+    dashboard = page.get_by_role("link", name="Response dashboard").get_attribute(
+        "href"
+    )
     assert dashboard.endswith("/responses/?mode=testing")
     assert_clean(page, errors)
 
