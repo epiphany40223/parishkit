@@ -131,7 +131,7 @@ def open_campaign(duids, state="active"):
 
 
 def test_an_open_campaigns_ministries_are_marked_in_one_query():
-    """Missing and "X-" campaign Ministries cost no second query (#417 review).
+    """Missing campaign Ministries cost no second query (#417 review).
 
     Missing DUIDs use a recent removal's name, else the DUID fallback.
     """
@@ -146,7 +146,8 @@ def test_an_open_campaigns_ministries_are_marked_in_one_query():
         {"duid": 8, "name": "Greeters"},
         {"duid": 77, "name": "Ministry 77"},
     ]
-    assert notice["retired"] == [{"duid": 3, "name": "X-Choir"}]
+    # A name starting "X-" is just a name (#971): no "retired" list.
+    assert "retired" not in notice
     assert notice["campaign_id"] == CAMPAIGN
     (refresh,) = notice["refreshes"]
     assert [row["in_campaign"] for row in refresh["added"]] == [True]
@@ -158,7 +159,7 @@ def test_an_open_campaigns_ministries_are_marked_in_one_query():
             configuration, campaign, second.promoted_at, promoted=True
         )
     assert len(queries) == 1
-    assert notice["missing"] == notice["retired"] == []
+    assert notice["missing"] == []
     assert notice["campaign_id"] is None
     (refresh,) = notice["refreshes"]
     assert not any(row["in_campaign"] for row in refresh["renamed"])
@@ -172,9 +173,9 @@ def test_the_notice_shows_only_recent_refreshes():
     notice = catalog_notice(None, None, now, promoted=True)
     (refresh,) = notice["refreshes"]
     assert [row["duid"] for row in refresh["renamed"]] == [3]
-    assert refresh["renamed"][0]["retired"] is True
+    assert "retired" not in refresh["renamed"][0]
     assert refresh["more"] == {"added": 0, "removed": 0, "renamed": 0}
-    assert notice["missing"] == notice["retired"] == []
+    assert notice["missing"] == []
     later = now + ministry_catalog.WINDOW + timedelta(minutes=1)
     assert catalog_notice(None, None, later, promoted=True) is None
 
@@ -188,7 +189,7 @@ def test_the_admin_home_page_shows_catalog_changes(auth_service, google):
     assert response.status_code == 200
     body = response.content.decode()
     assert "ParishSoft Ministry changes" in body
-    assert "Choir → X-Choir (DUID 3) — possibly retired" in body
+    assert "Choir → X-Choir (DUID 3)</li>" in body and "possibly retired" not in body
     assert "Greeters (DUID 8)" in body and "Lectors (DUID 9)" in body
 
 

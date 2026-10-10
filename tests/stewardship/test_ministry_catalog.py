@@ -15,11 +15,11 @@ from parishkit.stewardship.observability import (
     emit,
     emit_failure,
 )
+from parishkit.stewardship.source.catalog_names import clean_ministry_name
 from parishkit.stewardship.source.ministry_catalog import (
     MAX_LISTED,
     _entries,
     catalog_changes,
-    retired_name,
     selected_ministries,
 )
 
@@ -60,26 +60,21 @@ def test_long_lists_are_capped_but_counted():
 
 
 @pytest.mark.parametrize(
-    ("name", "retired"),
-    [("X-Choir", True), ("x-Choir", True), ("X Choir", False), ("Choir", False)],
+    "name", ["102-Altar Servers", "A-Lectors", "X-Choir", "x-Choir", "1. Ushers"]
 )
-def test_the_retired_prefix_is_a_hint(name, retired):
-    """Only a leading "X-" (either case) reads as possibly retired."""
-    assert retired_name(name) is retired
+def test_a_prefixed_name_is_an_opaque_string(name):
+    """A leading number, letter or "X-" is kept and means nothing (#971).
 
-
-def test_only_a_newly_prefixed_rename_is_marked_possibly_retired():
-    """A rename of an already retired name is not newly retired."""
-    record = {
-        "renamed": [
-            {"duid": 3, "before": "Choir", "name": "X-Choir"},
-            {"duid": 4, "before": "X-Ushers", "name": "X-Ushers (old)"},
-        ]
-    }
-    rows = _entries(record, "renamed", frozenset({3}))
-    assert [(row["duid"], row["retired"], row["in_campaign"]) for row in rows] == [
-        (3, True, True),
-        (4, False, False),
+    Such prefixes are one parish's naming convention, not ParishSoft's, so
+    the full name is shown and a rename to it carries no hint.
+    """
+    assert clean_ministry_name(5, name) == (name, False)
+    assert catalog_changes({5: "Choir"}, {5: name})["renamed"] == [
+        {"duid": 5, "before": "Choir", "name": name}
+    ]
+    record = {"renamed": [{"duid": 5, "before": "Choir", "name": name}]}
+    assert _entries(record, "renamed", frozenset({5})) == [
+        {"duid": 5, "name": name, "in_campaign": True, "before": "Choir"}
     ]
 
 
@@ -121,7 +116,6 @@ def test_the_notice_names_changes_and_links_to_ministry_activity():
     """The panel lists every kind and points at the pages that act on it."""
     notice = {
         "missing": [{"duid": 77, "name": "Ministry 77"}],
-        "retired": [{"duid": 3, "name": "X-Choir"}],
         "refreshes": [
             {
                 "promoted_at": datetime(2026, 9, 30, 6, tzinfo=UTC),
@@ -132,7 +126,6 @@ def test_the_notice_names_changes_and_links_to_ministry_activity():
                         "duid": 3,
                         "before": "Choir",
                         "name": "X-Choir",
-                        "retired": True,
                         "in_campaign": True,
                     }
                 ],
@@ -148,7 +141,9 @@ def test_the_notice_names_changes_and_links_to_ministry_activity():
     assert "no longer in ParishSoft" in html and "Ministry 77 (DUID 77)" in html
     assert "Lectors (DUID 12)" in html and "and 2 more" in html
     assert "Greeters (DUID 77) — in the current campaign" in html
-    assert "Choir → X-Choir (DUID 3) — possibly retired" in html
+    # The full new name, with no "possibly retired" guess (#971).
+    assert "Choir → X-Choir (DUID 3) — in the current campaign" in html
+    assert "retired" not in html and "X-”" not in html
     assert 'href="/admin/parish/ministries/"' in html
     assert "/admin/campaign/settings/#ministry-selections" in html
 

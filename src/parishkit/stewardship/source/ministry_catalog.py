@@ -23,7 +23,7 @@ from parishkit.stewardship.observability import Event, emit_failure
 
 from .catalog_names import clean_ministry_name
 from .snapshot_models import SourceCurrent, SourceSnapshot
-from .version_models import SnapshotMinistry, SourceMinistry
+from .version_models import SnapshotMinistry
 
 CURSOR_KEY = "ministry_catalog"
 KINDS = ("added", "removed", "renamed")
@@ -33,9 +33,6 @@ MAX_LISTED = 50
 # this many refreshes. Full refreshes run daily, so a week of them fits.
 WINDOW = timedelta(days=7)
 MAX_REFRESHES = 5
-# Some parishes retire a Ministry by renaming it with this prefix. It is only
-# a hint on the notice ("possibly retired"); nothing acts on it.
-RETIRED_PREFIX = "X-"
 # Campaign states whose Ministry selections Families can still be shown.
 OPEN_STATES = frozenset({"draft", "scheduled", "active"})
 
@@ -47,11 +44,6 @@ def _name(duid, raw):
     is not a place to repeat the repaired-name warning.
     """
     return clean_ministry_name(duid, raw)[0]
-
-
-def retired_name(name):
-    """Whether a display name carries the retired-Ministry prefix hint."""
-    return name[: len(RETIRED_PREFIX)].upper() == RETIRED_PREFIX.upper()
 
 
 def catalog_names(snapshot_id):
@@ -136,16 +128,14 @@ def _entries(record, kind, selected):
         }
         if kind == "renamed":
             entry["before"] = row["before"]
-            entry["retired"] = retired_name(row["name"]) and not retired_name(
-                row["before"]
-            )
         rows.append(entry)
     return rows
 
 
 # The home page's one read for the notice: the recorded changes of the most
 # recent promoted snapshots in the window, and the current catalog's rows for
-# the open campaign's selected DUIDs (none when the array is empty). The page
+# the open campaign's selected DUIDs that are still in it (none when the array
+# is empty). The page
 # has a fixed query budget, so both ride on one statement; each row says which
 # part it came from. Both parts use only columns the web role already reads.
 NOTICE_SQL = f"""
@@ -158,9 +148,8 @@ FROM (
     LIMIT {MAX_REFRESHES}
 ) AS recent
 UNION ALL
-SELECT 'ministry', NULL, NULL, membership.source_key, payload.canonical
+SELECT 'ministry', NULL, NULL, membership.source_key, NULL
 FROM {SnapshotMinistry._meta.db_table} AS membership
-JOIN {SourceMinistry._meta.db_table} AS payload ON payload.id = membership.payload_id
 WHERE membership.snapshot_id = (
     SELECT snapshot_id FROM {SourceCurrent._meta.db_table}
 ) AND membership.source_key = ANY(%s)
@@ -168,10 +157,10 @@ WHERE membership.snapshot_id = (
 
 
 def _read(now, selected):
-    """Run the notice's one query; return recent records and present names.
+    """Run the notice's one query; return recent records and present DUIDs.
 
-    Records are ``(promoted_at, generation, record)`` newest first; names
-    map each selected DUID still in the current catalog to its display name.
+    Records are ``(promoted_at, generation, record)`` newest first; the
+    present DUIDs are the selected ones still in the current catalog.
     """
     with connection.cursor() as cursor:
         cursor.execute(
@@ -187,11 +176,7 @@ def _read(now, selected):
         key=lambda row: row[:2],
         reverse=True,
     )
-    present = {
-        int(key): _name(int(key), json.loads(text).get("name"))
-        for part, _, _, key, text in rows
-        if part == "ministry"
-    }
+    present = {int(key) for part, _, _, key, _ in rows if part == "ministry"}
     return records, present
 
 
@@ -208,23 +193,21 @@ def _refreshes(records, selected):
     return refreshes
 
 
-def _campaign_attention(selected, present, removed_names):
-    """The campaign's selected Ministries now missing or named as retired.
+def _missing(selected, present, removed_names):
+    """The campaign's selected Ministries no longer in the current catalog.
 
-    ``present`` maps the selected DUIDs still in the current catalog to their
-    names. A missing Ministry's last known name comes from a recent removal
-    record when there is one, else the "Ministry <DUID>" fallback.
+    ``present`` holds the selected DUIDs still in the current catalog. A
+    missing Ministry's last known name comes from a recent removal record
+    when there is one, else the "Ministry <DUID>" fallback.
+
+    A Ministry name is an opaque string (#971): nothing here, or anywhere,
+    reads meaning into a prefix such as a number, a letter or "X-", since
+    those are one parish's naming conventions, not ParishSoft's.
     """
-    missing = [
+    return [
         {"duid": duid, "name": removed_names.get(duid) or _name(duid, None)}
-        for duid in sorted(selected - present.keys())
+        for duid in sorted(selected - present)
     ]
-    retired = [
-        {"duid": duid, "name": name}
-        for duid, name in sorted(present.items())
-        if retired_name(name)
-    ]
-    return missing, retired
 
 
 def selected_ministries(configuration, campaign):
@@ -249,7 +232,7 @@ def catalog_notice(configuration, campaign, now, *, promoted):
     is no catalog to compare with. Costs exactly one query.
 
     Entries are marked "in the current campaign", and the campaign's missing
-    or "X-" Ministries listed, only while that campaign is draft, scheduled or
+    Ministries listed, only while that campaign is draft, scheduled or
     open (``selected_ministries``); a closed campaign shows Families nothing.
     """
     if not promoted:
@@ -262,12 +245,11 @@ def catalog_notice(configuration, campaign, now, *, promoted):
         for refresh in reversed(refreshes)
         for row in refresh["removed"]
     }
-    missing, retired = _campaign_attention(selected, present, removed_names)
-    if not (refreshes or missing or retired):
+    missing = _missing(selected, present, removed_names)
+    if not (refreshes or missing):
         return None
     return {
         "refreshes": refreshes,
         "missing": missing,
-        "retired": retired,
         "campaign_id": campaign.pk if selected else None,
     }
