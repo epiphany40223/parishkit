@@ -47,6 +47,9 @@ write-back (ParishSoft publication) is not built yet; it is the
 Implementation tracking: [plans](../../plans/stewardship/README.md) and
 [per-spec task lists](../../tasks/stewardship/README.md).
 
+- [UX conventions](ui-conventions/spec.md): the general, portal-wide UX
+  rules of both portals, their shared code and precedents; it has precedence
+  over the other specifications for general UX rules.
 - [Architecture](architecture/spec.md): components, technology, security,
   deployment, configuration, and nonfunctional requirements.
 - [Data and reconciliation](data/spec.md): durable records, snapshots, campaign

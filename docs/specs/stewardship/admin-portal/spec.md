@@ -8,6 +8,9 @@ The [Admin automation interface](../admin-automation/spec.md) reaches the
 same actions and reads from the host command line, through the same service
 functions, checks and audit; new Admin actions follow its
 [rules for new Admin actions](../admin-automation/spec.md#rules-for-new-admin-actions).
+Every Admin page follows the [UX conventions](../ui-conventions/spec.md),
+which have precedence for general, portal-wide UX rules; this specification
+keeps only the rules of its own pages and links the conventions it follows.
 
 ## Login and denial behavior
 
