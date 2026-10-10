@@ -180,7 +180,33 @@ their UTC stamp, which the database renders identically.
 
 ### Accessibility and client behavior
 
-Detail: [Accessibility and client behavior](../architecture/spec.md#accessibility-and-client-behavior).
+The UI meets WCAG 2.2 AA: semantic landmarks, labels and instructions, keyboard
+operation, visible focus, sufficient contrast, error summaries with field
+links, non-color-only change indicators, reduced-motion support, and accessible
+table/chart alternatives. Generated PDFs use tagged structure where the chosen
+renderer supports it; every chart has an equivalent data table.
+
+A person never sees raw JSON. Request errors use closed, server-owned
+messages. Scripts that ask for JSON (`Accept: application/json`, or any
+non-navigation fetch) receive the machine-readable error codes. A browser
+navigation or HTML form submission (`Sec-Fetch-Mode: navigate`, or an
+explicit `text/html` Accept) instead receives an ordinary page in the site
+layout with the same status code. That page shows the message, the next step
+(correct and resubmit, reload, sign in again, or try later), a link back to
+the same-origin Admin page the person came from, and the home link. A missing
+fresh authentication offers **Confirm with Google** as described under
+[identity and session security](../architecture/spec.md#identity-and-session-security). Forms that
+can re-render with inline field errors still do so.
+
+Client validation improves feedback but never replaces server validation.
+Browser-local timezone conversion uses UTC ISO timestamps supplied by the
+server. The Admin portal [requires
+JavaScript](#javascript-requirement) and shows a plain
+notice without it. The Family multi-step flow may require JavaScript but must
+show a clear supported-browser message rather than silently fail. A browser
+too old for the Family flow's JavaScript likewise gets a plain notice asking
+the Family to update the device's software or use another device or browser; a
+small ES5 feature check reveals it and never alters the form.
 
 ### Charts
 
