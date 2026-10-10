@@ -1,7 +1,7 @@
 """Private directory filters and bounded, coherent source/credential reads."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from uuid import UUID
 
@@ -105,6 +105,19 @@ class DirectoryQuery:
             values["exact_code"] = code
         return cls(**values)
 
+    def postal(self):
+        """These filters as the mail merge applies them: "By postal mail only".
+
+        Postal invitations go only to active parishioner Families with no
+        deliverable head email (Administrator decision, #951), the rule the
+        invitation sender uses (``source.families.family_recipients``). The
+        directory lists only active parishioner Families, and reach ``mail``
+        keeps those without deliverable head email that have a usable
+        mailing address; Families with neither are on the "neither" list.
+        So whichever reach was asked for, mailing columns use ``mail``.
+        """
+        return replace(self, reach="mail")
+
     def form_values(self):
         """Templates escape private POST state for filters and page navigation."""
         return {
@@ -192,13 +205,19 @@ def selection_parameters(campaign_id, query, *, postal, mac):
     Persisting this selection never persists a plaintext code or a MAC key
     version. Regeneration therefore remains stable after ordinary key rotation.
     Unknown codes retain an explicit empty exact selection, not an unfiltered
-    query. Callers hold the campaign read/work barrier and key inventory lock.
+    query. A postal (mail-merge) selection always has reach ``mail``; see
+    ``DirectoryQuery.postal``. Callers hold the campaign read/work barrier and
+    key inventory lock.
     """
     if not isinstance(campaign_id, UUID) or not isinstance(query, DirectoryQuery):
         raise ValueError("Directory selection requires typed scope and filters.")
     if type(postal) is not bool:
         raise ValueError("Directory kind must be explicit.")
     query = DirectoryQuery.parse(query.form_values() | {"page": str(query.page)})
+    if postal:
+        # Every new mail merge, page view and CLI request lists only the
+        # Families postal invitations are for (#951).
+        query = query.postal()
     family_id = None
     if query.exact_code:
         candidates = mac.lookups(campaign_id, query.exact_code)

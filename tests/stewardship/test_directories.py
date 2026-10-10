@@ -11,6 +11,7 @@ from parishkit.stewardship.reports.directories import (
     address_lines,
     head_email_groups,
     head_emails_text,
+    selection_parameters,
 )
 
 
@@ -371,3 +372,23 @@ def test_directory_audit_records_every_reach_choice():
         values = DirectoryQuery(reach=reach).audit_values()
         assert values["directory_reach"] == reach
         assert sanitize(ContextKind.ACTION, values)["directory_reach"] == reach
+
+
+@pytest.mark.parametrize("reach", ["any", "email", "mail", "neither"])
+def test_mail_merge_always_lists_by_postal_mail_only(reach):
+    """Postal invitations are only for Families without deliverable email (#951).
+
+    Whatever reach is asked for, mailing columns use "By postal mail only"
+    and keep every other filter; the code list keeps the asked-for reach.
+    """
+    from uuid import uuid4
+
+    query = DirectoryQuery(reach=reach, phone="yes", response="no", sort="duid")
+    assert query.postal() == DirectoryQuery(
+        reach="mail", phone="yes", response="no", sort="duid"
+    )
+    campaign = uuid4()
+    postal = selection_parameters(campaign, query, postal=True, mac=None)
+    listed = selection_parameters(campaign, query, postal=False, mac=None)
+    assert postal["filters"] == listed["filters"] | {"reach": "mail"}
+    assert listed["filters"]["reach"] == reach and postal["postal"]

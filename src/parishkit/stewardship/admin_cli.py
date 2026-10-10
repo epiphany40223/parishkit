@@ -1262,6 +1262,9 @@ def export_directory(args, preamble, runtime, context):
 def export_postal(args, preamble, runtime, context):
     """Request a postal mail-merge export, as its form does (PR 8f).
 
+    Like the page, it lists only the Families postal invitations are for:
+    reach is always ``mail`` (#951; ``DirectoryQuery.postal``).
+
     Fresh-gated (#547), so it asks at the confirmation prompt first, as
     ``export financial`` does.
     """
@@ -1270,8 +1273,10 @@ def export_postal(args, preamble, runtime, context):
     confirm(
         context,
         (
-            "Create a mail-merge export: a file of every matching Family's "
-            "code and mailing address for the current campaign.",
+            "Create a mail-merge export: a file of the code and mailing "
+            "address of every matching active Family with no deliverable "
+            "head email and a usable mailing address (--filter reach is "
+            "always mail) for the current campaign.",
         ),
     )
     return request(

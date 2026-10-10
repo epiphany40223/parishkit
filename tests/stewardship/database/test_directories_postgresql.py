@@ -66,13 +66,14 @@ def test_native_directory_code_filters_contacts_and_response(
     assert (
         item["email_deliverable"] and item["email_eligible"] and not item["responded"]
     )
-    # Mailing columns ('postal') no longer narrow the rows (#202): the one
-    # Family, reachable by email, is listed with its mailing details.
+    # Mailing columns ('postal') list only the Families postal invitations
+    # are for (#951): the one Family, reachable by email, is not listed,
+    # whatever reach was asked for.
     mailing = page(harness, postal=True)
-    assert mailing["total"] == 1 and mailing["rows"][0]["email_deliverable"]
-    assert mailing["rows"][0]["mailable"] and mailing["postal_total"] == 0
-    assert page(harness, postal=True, reach="email")["total"] == 1
-    assert page(harness, postal=True, reach="mail")["total"] == 0
+    assert mailing["total"] == 0 and mailing["postal_total"] == 0
+    assert mailing["active_total"] == 1
+    for reach in ("any", "email", "mail", "neither"):
+        assert page(harness, postal=True, reach=reach)["total"] == 0
     for filters in (
         {"search": "EXAMP"},
         {"search": "1"},
@@ -201,21 +202,21 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         # The old postal page is Admin-only and keeps no redirect (#864).
         assert browser.get(legacy).status_code == 404
-        # Mailing columns are independent of the filters: the one Family,
-        # reachable by email, shows its addressee and mailing address.
+        # Mailing columns list only the Families postal invitations are for
+        # (#951): reach is always "By postal mail only", so the one Family,
+        # reachable by email, is not listed, whatever reach was asked for.
         for response, body in (
             read(browser, route + "?mailing=yes"),
             search(browser, route, {"mailing": "yes", "reach": "email"}),
+            search(browser, route, {"mailing": "yes", "reach": "neither"}),
             search(browser, route, {"mailing": "yes", "reason": "deliverable"}),
+            search(browser, route, {"mailing": "yes", "reach": "mail"}),
         ):
-            assert response.status_code == 200 and harness.code.encode() in body
-            assert b"<td>Member Example</td>" in body
-            assert b"<td>1 Example Street<br>" in body
-            assert b'<option value="email"' in body
-            assert b'<option value="deliverable"' in body
+            assert response.status_code == 200 and b"No matching Families." in body
+            assert harness.code.encode() not in body
+            assert b'<option value="mail" selected>' in body
+            assert b'<input type="hidden" name="reach" value="mail">' in body
             assert b'<input type="hidden" name="mailing" value="yes">' in body
-        response, body = search(browser, route, {"mailing": "yes", "reach": "mail"})
-        assert response.status_code == 200 and b"No matching Families." in body
         # Without mailing columns the same filter finds the Family, without
         # the mailing columns.
         response, body = search(browser, route, {"reach": "email"})
@@ -243,6 +244,8 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
     )
     # Mailing-column views keep the postal-outreach audit event.
     assert len(events) >= 3 and all("mailing" not in item for item in events)
+    # The audit records the reach the page applied, not the one asked for.
+    assert {item["directory_reach"] for item in events} == {"mail"}
 
 
 def test_postal_reasons_and_exact_statistics_complement(live_response_service):
@@ -264,7 +267,8 @@ def test_postal_reasons_and_exact_statistics_complement(live_response_service):
         postal = page(harness, postal=True)
         stats = calculate_statistics(capture_statistics(harness.campaign.pk))
         assert postal["postal_total"] == stats.active.no_deliverable_email
-        assert postal["total"] == report["total"]
+        # Only a Family without deliverable head email gets postal mail (#951).
+        assert postal["total"] == (0 if reason == "deliverable" else 1)
         assert report["active_total"] == stats.active.families == 1
         assert page(harness, reason=reason)["total"] == 1
     # No synthetic denial flags: write immutable provider refusal evidence using
@@ -311,8 +315,10 @@ def test_directory_pages_are_bounded_and_exclude_nonparishioners(response_servic
         1,
         *range(10, 61),
     ]
-    assert page(harness, postal=True)["total"] == 52
-    postal = page(harness, postal=True, reach="mail")
+    # Family 1 has deliverable email, and Family 90 is registered elsewhere,
+    # so neither gets postal mail (#951).
+    assert page(harness, postal=True)["total"] == 51
+    postal = page(harness, postal=True, reach="email")
     assert postal["total"] == 51 and len(postal["rows"]) == 50
     assert all(row["reason"] == "no_head" and row["code"] for row in postal["rows"])
     assert page(harness, search="Repeated")["total"] == 51

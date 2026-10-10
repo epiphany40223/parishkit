@@ -110,8 +110,10 @@ def test_complete_directory_capture_is_private_immutable_and_source_pinned(
             actor,
             **(values | {"postal": True, "request_key": uuid4()}),
         ).directory_snapshot
-        # Mailing columns do not narrow the capture (#202); reach does.
-        assert postal.row_count == 52
+        # The mail merge leaves out the one Family with deliverable email
+        # (#951): it always captures reach "mail".
+        assert postal.row_count == 51
+        assert postal.parameters["filters"]["reach"] == "mail"
         # The mail merge keeps the address only (#388 L6).
         rows = DirectoryExportSnapshot.objects.get(pk=postal.pk).document["rows"]
         assert any(row["address"] for row in rows)
@@ -377,18 +379,18 @@ def test_directory_export_staff_gates_and_service_boundaries(
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         request = create_directory_export(store, actor, **values)
-        # The mail merge covers the filtered rows, here the one Family that
-        # email reaches (#202).
+        # The mail merge lists only Families without deliverable head email
+        # (#951); the one Family here has it, so the file has no rows.
         assert (
             request.report == "postal_outreach"
-            and request.directory_snapshot.row_count == 1
+            and request.directory_snapshot.row_count == 0
         )
     with (
         task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
         connection.cursor() as cursor,
     ):
         cursor.execute("SELECT id,row_count FROM stewardship_directory_export_snapshot")
-        assert cursor.fetchone() == (request.directory_snapshot_id, 1)
+        assert cursor.fetchone() == (request.directory_snapshot_id, 0)
         with pytest.raises(DatabaseError):
             cursor.execute("SELECT document FROM stewardship_directory_export_snapshot")
     for role in (ServiceRole.WORKER, ServiceRole.SCHEDULER):
@@ -478,14 +480,15 @@ def test_directory_export_staff_gates_and_service_boundaries(
         )
 
 
-def test_postal_mail_merge_blanks_families_without_a_mailing_address(
+def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
     live_response_service, google, tmp_path, settings
 ):
-    """The postal file holds every filtered Family, as the page lists them.
+    """The postal file holds the Families postal invitations are for (#951).
 
-    Two Families have a street line but no city, so no usable mailing address.
-    They stay in the file (#202) with blank Addressee and address columns, so
-    the file's rows are exactly the page's and a partial address never prints.
+    None of the three Families has a head email. Two have a street line but
+    no city, so no usable mailing address: postal mail cannot reach them, so
+    they are on the "neither" list, not in the mail merge, and a partial
+    address never prints. The page and the file list the same one Family.
     """
     harness = live_response_service
     data = response_source()
@@ -519,28 +522,24 @@ def test_postal_mail_merge_blanks_families_without_a_mailing_address(
         assert (
             b"Across all active Families, 2 Families have neither a deliverable" in body
         )
-        # The "neither" list itself needs no notice about those Families.
-        response, neither = search(
+        # The "neither" list holds them; mailing columns always list "By
+        # postal mail only", so asking them for "neither" lists only Family 1.
+        response, neither = search(browser, route, {"reach": "neither"})
+        assert response.status_code == 200 and b"Unmailable" in neither
+        response, mailing = search(
             browser, route, {"mailing": "yes", "reach": "neither"}
         )
-        assert response.status_code == 200 and b"Unmailable" in neither
-        assert b"data-unreachable-notice" not in neither
-        # The mailing columns show what the mail-merge file will hold,
-        # including which rows have their address columns blank.
-        assert b"Matching Families: 3." in body
-        assert b"left out" not in body
+        assert response.status_code == 200 and b"Unmailable" not in mailing
+        assert b"Matching Families: 1." in mailing
+        # The mailing columns show what the mail-merge file will hold.
+        assert b"Matching Families: 1." in body and b"Unmailable" not in body
         for text in (
             b"Addressee",
             b"Mailing address",
-            b"No usable mailing address; address columns blank in the mail-merge",
-            b"Every listed Family is in the mail-merge file.",
-            # An unmailable Family's Addressee is a visible dash that screen
-            # readers announce, and its Mailing address cell says why; the
-            # street line its source does have is not shown there.
-            b'<td><span aria-hidden="true">\xe2\x80\x94</span>'
-            b'<span class="visually-hidden">No usable mailing address</span></td>\n'
-            b"<td>No usable mailing address; address columns blank in the "
-            b"mail-merge file</td>",
+            b"Every listed Family is in the mail-merge file: the active "
+            b"Families with no deliverable head email and a usable mailing "
+            b"address.",
+            b"<td>Member Example</td>",
             b'name="mailing" value="yes" checked',
             b'<input type="hidden" name="mailing" value="yes">',
             b"ParishSoft DUID, Family, Addressee, Family heads,",
@@ -569,21 +568,14 @@ def test_postal_mail_merge_blanks_families_without_a_mailing_address(
     assert response.status_code == 200
     rows = list(csv.reader(io.StringIO(body.decode())))
     assert rows[0][:4] == ["ParishSoft DUID", "Family", "Addressee", "Family heads"]
-    assert [row[:2] for row in rows[1:]] == [
-        ["1", "Example"],
-        ["10", "Unmailable"],
-        ["11", "Unmailable"],
-    ]
+    assert [row[:2] for row in rows[1:]] == [["1", "Example"]]
     assert "40000" in ",".join(rows[1]) and harness.code in rows[1]
-    # Addressee, Address line 1-3, City, State and ZIP are blank, although
-    # the source has a street line: a partial address is never printed.
-    for row in rows[2:]:
-        assert [row[2], *row[4:10]] == [""] * 7 and row[10]
-    # The mail merge ends with the head emails column (#604); these heads
-    # have none, and every row still lists them.
+    # The mail merge ends with the head emails column (#604); this head has
+    # none, and the row still lists them.
     assert rows[0][-1] == "Family head emails" and len(rows[0]) == 12
-    assert {row[11] for row in rows[1:]} == {"Member Example: (no email)"}
-    assert request.directory_snapshot.row_count == 3
+    assert rows[1][11] == "Member Example: (no email)"
+    assert request.directory_snapshot.row_count == 1
+    assert request.parameters["filters"]["reach"] == "mail"
     assert request.report == "postal_outreach"
     # The old postal export address is retired with no redirect (#758,
     # #864) and queues nothing.
@@ -596,16 +588,20 @@ def test_postal_mail_merge_blanks_families_without_a_mailing_address(
     assert not ExportRequest.objects.filter(request_key=legacy["request_key"]).exists()
 
 
-def test_mail_merge_covers_exactly_the_filtered_email_reachable_rows(
+def test_mail_merge_always_lists_by_postal_mail_only(
     live_response_service, google, tmp_path, settings
 ):
-    """Mailing columns do not narrow the rows: the file holds the filtered rows.
+    """Mailing columns always use "By postal mail only" (#951).
 
-    The one Family has deliverable email and a mailing address. Filtered to
-    "By email" with mailing columns on (#202), the page and the mail merge
-    both hold it, with its addressee and address.
+    The one Family has no head email and a mailing address. Asked for "By
+    email" with mailing columns on, the page, the capture, the status page's
+    return link and the mail merge all use reach ``mail`` and hold it.
     """
     harness = live_response_service
+    data = response_source()
+    data.members[3]["emailAddress"] = ""
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
     browser, _ = signed_in()
     root = tmp_path / "mailing-reports"
     root.mkdir(mode=0o700)
@@ -620,12 +616,13 @@ def test_mail_merge_covers_exactly_the_filtered_email_reachable_rows(
         response, body = search(browser, route, filters)
         assert response.status_code == 200 and b"Matching Families: 1." in body
         assert b"<td>1 Example Street<br>" in body
+        assert b'<option value="mail" selected>' in body
         response = post(browser, reverse("admin:family_directory_export"), fields)
         assert response.status_code == 302
     request = ExportRequest.objects.get(request_key=fields["request_key"])
     assert request.report == "postal_outreach"
     assert request.parameters["postal"] is True
-    assert request.parameters["filters"]["reach"] == "email"
+    assert request.parameters["filters"]["reach"] == "mail"
     assert request.directory_snapshot.row_count == 1
     # The status page names the mail merge and returns to the same filter
     # with mailing columns on (closed presets only).
@@ -633,7 +630,7 @@ def test_mail_merge_covers_exactly_the_filtered_email_reachable_rows(
         status, body = read(browser, response["Location"])
     assert status.status_code == 200
     assert b"Family-directory mail-merge export" in body
-    assert f'href="{route}?reach=email&amp;mailing=yes"'.encode() in body
+    assert f'href="{route}?reach=mail&amp;mailing=yes"'.encode() in body
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert execute_hint(
             request.task_id,
@@ -656,7 +653,7 @@ def test_mail_merge_covers_exactly_the_filtered_email_reachable_rows(
     assert lines[0].startswith("ParishSoft DUID,Family,Addressee,Family heads,")
     assert len(lines) == 2 and lines[1].startswith("1,Example,Member Example,")
     assert "1 Example Street" in lines[1] and harness.code in lines[1]
-    assert lines[1].endswith(",Member Example: valid@example.org")
+    assert lines[1].endswith(",Member Example: (no email)")
     events = AuditEvent.objects.filter(event_type="postal_outreach_viewed")
     assert events.exists()
 

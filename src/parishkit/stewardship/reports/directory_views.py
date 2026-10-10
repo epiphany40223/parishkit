@@ -3,9 +3,9 @@
 One page serves both uses that used to be separate pages: the Family-code
 directory and postal outreach. The "Include mailing columns" checkbox
 (``mailing``, off by default) adds the addressee and mailing-address columns
-and makes the export a postal mail merge. It is independent of the filters:
-the selection's ``postal`` flag chooses columns and the export kind, never
-which Families are listed (#202).
+and makes the export a postal mail merge. It also lists only the Families
+postal invitations are for: Campaign mail can reach is "By postal mail
+only", whatever reach was chosen (#951; ``DirectoryQuery.postal``).
 """
 
 from uuid import uuid4
@@ -152,6 +152,9 @@ def directory(request, campaign_id):
         # The selection pages 50 rows at a time, so that is the only size.
         pop_page_size(parameters, (PAGE_SIZE,), default=PAGE_SIZE)
         query = DirectoryQuery.parse(parameters)
+        if postal:
+            # The page shows, audits and exports the list it selects (#951).
+            query = query.postal()
         admit_report_read(campaign_id)
         _audit(
             principal,

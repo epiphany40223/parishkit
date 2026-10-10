@@ -1002,24 +1002,29 @@ only a keyed fingerprint when correlation is operationally necessary.
 
 ### Mailing columns
 
-An **Include mailing columns** checkbox, off by default, adds Addressee and
-Mailing address columns to the table and makes the export a postal mail
-merge. It is independent of every filter: it never changes which Families
-are listed, so any listed Family, including one that email reaches, shows its
-addressee and mailing address, and the mail merge covers exactly the listed
-Families, including those without a usable mailing address (as below). To
-list the Families postal mail
-is for, filter reach to "By postal mail only" (or email availability to a
-reason). Families without deliverable email are the
-complement of the deliverable-email
-statistics card, not of the syntactic eligible-email card. The Addressee
-column names the Family as the mail-merge file does; a Family without a
-usable mailing address has no addressee, and its Mailing address column says
-its address columns are blank in the file. Mailing columns show
-nothing the active parishioner family directory's contact details do not already show Admin and
-Staff, and Ministry leaders are denied either way. Viewing with mailing
-columns is audited as postal outreach, and its export is a `postal_outreach`
-export request.
+An **Include mailing columns** checkbox, off by default, lists the Families
+postal invitations are for, adds Addressee and Mailing address columns to the
+table and makes the export a postal mail merge. By Administrator decision
+([#951](https://github.com/epiphany40223/parishkit/issues/951)), postal
+delivery of invitations is only for active parishioner Families where no head
+of household has a deliverable email address: a valid address that has not
+been permanently refused (or whose refusal was resolved), the rule the
+invitation sender uses. The directory already lists only active parishioner
+Families, so with mailing columns on, Campaign mail can reach is always "By
+postal mail only" (no deliverable email and a usable mailing address),
+whatever reach was chosen; the page shows that choice, and the audit and the
+export record it. The other filters still narrow the list. Families with
+neither a deliverable email nor a usable mailing address cannot be mailed
+and stay on the "Can't be reached by email or mail" list. Families without
+deliverable email are the complement of the deliverable-email statistics
+card, not of the syntactic eligible-email card. The Addressee column names
+the Family as the mail-merge file does. Mailing columns show nothing the
+active parishioner family directory's contact details do not already show
+Admin and Staff, and Ministry leaders are denied either way. Viewing with
+mailing columns is audited as postal outreach, and its export is a
+`postal_outreach` export request. An export captured before #951 keeps its
+own filters, including a reach other than "By postal mail only", until it
+expires.
 
 Detail contains Family DUID, envelope number where present, Family/head names,
 head email addresses, family/member phone numbers, complete primary address, reason, and campaign
@@ -1033,12 +1038,10 @@ emails (as in the [active parishioner family directory](#active-parishioner-fami
 Family heads join the active heads' names naturally ("Aaron and Isabelle
 Williams" when they share a surname, "Aaron Williams and Isabelle Smith"
 otherwise); Addressee falls back to the Family name. The file has exactly the
-rows the filters list on the page. A Family without a usable mailing address
-cannot be mailed, but it keeps its row: its Addressee, Address line 1–3,
-City, State and ZIP are blank (never a partial address), and ParishSoft DUID,
-Family, Family heads and Family code stay for follow-up. The page's export
-panel says so, and the file's report details count the rows with no usable
-mailing address. Existing columns keep their names and order (Family head
+rows the filters list on the page. In a file captured before #951, a Family
+without a usable mailing address keeps its row: its Addressee, Address line
+1–3, City, State and ZIP are blank (never a partial address), and the file's
+report details count those rows. Existing columns keep their names and order (Family head
 emails was added at the end), so existing mail-merge templates keep working.
 The PDF lays the same content out as address blocks (a block without an
 address says "No usable mailing address"), leaving out the head emails,
