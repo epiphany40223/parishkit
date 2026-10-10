@@ -163,15 +163,19 @@ def test_receipt_privacy_is_enforced_at_configuration_apply(kind, slot, part, pr
         configuration_version(document)
 
 
-def test_retired_closing_note_is_only_accepted_from_applied_history():
-    """No new receipt closing note (#260); an applied one still verifies."""
+@pytest.mark.parametrize(
+    "kind,slot", [("page", "submission_confirmation"), ("email", "critical_alert")]
+)
+def test_retired_slot_is_only_accepted_from_applied_history(kind, slot):
+    """No new receipt closing note (#260) or critical alert (#913).
+
+    An applied one still verifies, so stored history stays harmless.
+    """
     from parishkit.stewardship.accounts.content_trust import trusted_content
 
     document = content_document()
     owner = document["sections"]["campaigns"][0]["id"]
-    document["sections"]["content"].append(
-        content(owner, kind="page", slot="submission_confirmation")
-    )
+    document["sections"]["content"].append(content(owner, kind=kind, slot=slot))
     with pytest.raises(ConfigError):
         configuration_version(document)
     with trusted_content():

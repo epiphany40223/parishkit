@@ -19,7 +19,7 @@ from parishkit.stewardship.web.contracts import filters
 from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime
 from .branding_context import branding_for
-from .content_forms import EMAIL_LABELS, PAGE_LABELS, sample_render
+from .content_forms import HISTORY_EMAIL_LABELS, PAGE_LABELS, sample_render
 from .integration_views import _checked
 from .limiting import LimiterUnavailable
 from .runtime_models import ConfigurationActivation
@@ -73,7 +73,9 @@ def content_history(request, campaign_id, revision_id=None):
                 {
                     "id": row["id"],
                     "label": (
-                        PAGE_LABELS if row["values"]["kind"] == "page" else EMAIL_LABELS
+                        PAGE_LABELS
+                        if row["values"]["kind"] == "page"
+                        else HISTORY_EMAIL_LABELS
                     )[row["values"]["slot"]],
                     "subject": row["values"]["subject"],
                 }

@@ -3,13 +3,35 @@
 from copy import deepcopy
 from uuid import UUID
 
-from .content_schema import EMAIL_SLOTS, PAGE_SLOTS, validate_content_records
+from .content_schema import (
+    EMAIL_SLOTS,
+    PAGE_SLOTS,
+    RETIRED_ALERT,
+    validate_content_records,
+)
 
 CONTENT_STEPS = tuple(
     f"{kind}_{slot}"
     for kind, slots in (("page", PAGE_SLOTS), ("email", EMAIL_SLOTS))
     for slot in sorted(slots)
 )
+# Retired content steps (#913) a draft saved before the change may still hold.
+# They can no longer be saved, so every reader of draft sections leaves them
+# behind (see without_retired) rather than refusing the whole draft.
+RETIRED_STEPS = frozenset({"_".join(RETIRED_ALERT)})
+
+
+def without_retired(sections):
+    """Draft sections minus any retired content step left from an older draft.
+
+    The step stays allowed in the frozen schema, but no new revision may use
+    its slot, so passing it on would make every later save and the final
+    preview refuse a draft the Admin cannot repair (the step cannot be
+    opened or cleared either).
+    """
+    return {
+        step: value for step, value in sections.items() if step not in RETIRED_STEPS
+    }
 
 
 def validate_content_step(step, record):
