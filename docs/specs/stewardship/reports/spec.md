@@ -556,9 +556,9 @@ longer in that data says so instead of a name.
 The Administrator removed the `submitted` list's filter (it offered Families
 with or without a delivered invitation), so that list simply shows every
 Family that submitted
-([#860](https://github.com/epiphany40223/parishkit/issues/860)). A saved link
-that still carries one of its old `show` values (`invited`, `uninvited`) opens
-the whole list rather than being refused; any other unknown value still is.
+([#860](https://github.com/epiphany40223/parishkit/issues/860)). Its old
+`show` values (`invited`, `uninvited`) are unknown values now and are refused
+like any other.
 
 Each list is a [shared Admin table](../admin-portal/spec.md#admin-tables):
 every column sorts (times and counts newest or largest first on the first

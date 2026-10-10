@@ -98,16 +98,18 @@ def test_filters_split_each_list():
         LISTS["submitted"].choice("progressed")
 
 
-def test_submitted_has_no_filter_but_accepts_old_links():
-    """Families that submitted lists everyone (#860); old Show values are ignored."""
+def test_submitted_has_no_filter_and_refuses_old_show_values():
+    """Families that submitted lists everyone (#860); its old Show values are gone."""
     spec = LISTS["submitted"]
     assert [choice.value for choice in spec.choices] == [EVERYONE]
-    for old in ("invited", "uninvited", EVERYONE):
-        query, _ = ListQuery.parse(spec, QueryDict(f"show={old}"))
-        assert query == ListQuery()
-        assert duids(rows_of("submitted", spec.choice(old).value)) == [1, 2, 5]
-    with pytest.raises(ValueError):
-        ListQuery.parse(spec, QueryDict("show=followed"))
+    query, _ = ListQuery.parse(spec, QueryDict(f"show={EVERYONE}"))
+    assert query == ListQuery()
+    assert duids(rows_of("submitted", EVERYONE)) == [1, 2, 5]
+    # No backward compatibility for old addresses: a retired value is just
+    # an unknown one.
+    for old in ("invited", "uninvited", "followed"):
+        with pytest.raises(ValueError):
+            ListQuery.parse(spec, QueryDict(f"show={old}"))
 
 
 def test_search_matches_part_of_a_name_or_an_exact_envelope():

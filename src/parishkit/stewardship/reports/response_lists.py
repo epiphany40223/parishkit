@@ -152,8 +152,6 @@ class ResponseList:
     list that is chosen by its ParishSoft facts instead (data quality), from
     the campaign's active Families. ``choices`` is the ``show`` filter, its
     first value keeping every row; a list with one choice has no filter.
-    ``retired`` names ``show`` values the list no longer offers but still
-    accepts, and ignores, so an old bookmark keeps working (#860).
     """
 
     key: str
@@ -167,7 +165,6 @@ class ResponseList:
     selects: Callable = None
     needs_facts: bool = False
     choice_label: str = _("Show")
-    retired: frozenset = frozenset()
 
     @property
     def sorting(self):
@@ -179,12 +176,7 @@ class ResponseList:
         )
 
     def choice(self, value):
-        """The filter choice named ``value``; anything else is refused.
-
-        A retired value is the first choice (every row), as if never sent.
-        """
-        if value in self.retired:
-            return self.choices[0]
+        """The filter choice named ``value``; anything else is refused."""
         for choice in self.choices:
             if choice.value == value:
                 return choice
@@ -227,10 +219,8 @@ LISTS = {
             # Chronological: the first submission first.
             default_sort="submitted",
             # The Administrator found the invitation filter unneeded here
-            # (#860): the list shows every Family that submitted. Links
-            # saved while it was offered still open the list.
+            # (#860): the list shows every Family that submitted.
             choices=(Choice(EVERYONE, _("Everyone"), _keep_all),),
-            retired=frozenset({"invited", "uninvited"}),
             viewed=Action.RESPONSE_SUBMITTED_LIST_VIEWED,
             exported=Action.RESPONSE_SUBMITTED_LIST_EXPORTED,
             selects=lambda family: family.submitted_at is not None,
@@ -410,8 +400,7 @@ class ListQuery:
         ``parameters`` is a QueryDict. The table's sort, size and page (and
         any ``extra`` names, such as an export's time zone) are returned as
         single values for their own parsers; anything else is refused.
-        ``private`` marks a POST body, the only place a search may come
-        from. A retired ``show`` value reads as the list's first choice.
+        ``private`` marks a POST body, the only place a search may come from.
         """
         allowed = {"mode", "show"} | table_parameters() | set(extra)
         if private:

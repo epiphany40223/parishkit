@@ -127,17 +127,16 @@ def test_lists_and_downloads_for_admin_and_staff(
         assert listed_duids(body) == [1]
         assert f'">{name}</a></th>'.encode() in body
         assert b"never counted in Production" in body
-        # The submitted list's retired Show values (#860) are accepted and
-        # ignored, so an old bookmark still lists every Family that submitted.
+        # The submitted list's retired Show values (#860) are unknown values
+        # now, refused like any other.
+        assert b'id="list-show"' not in body
         for retired in ("invited", "uninvited"):
-            response, body = get(
+            response, _ = get(
                 admin,
                 reverse("admin:response_list", args=["submitted"])
                 + f"?mode=testing&show={retired}",
             )
-            assert response.status_code == 200
-            assert listed_duids(body) == [1]
-            assert b'id="list-show"' not in body
+            assert response.status_code == 400
         # A submission implies the form was opened, so it is not "started".
         _, body = get(
             admin, reverse("admin:response_list", args=["started"]) + "?mode=testing"
@@ -241,7 +240,7 @@ def test_lists_and_downloads_for_admin_and_staff(
         assert b"Downloads are paused" in body
         assert b'<button type="submit" disabled>Download CSV</button>' in body
     events = AuditEvent.objects.filter(subject_id=harness.campaign.pk)
-    assert events.filter(event_type="response_submitted_list_viewed").count() == 5
+    assert events.filter(event_type="response_submitted_list_viewed").count() == 3
     assert events.filter(event_type="response_data_quality_list_viewed").count() == 2
     assert events.filter(event_type="response_data_quality_list_exported").count() == 1
     assert events.filter(
@@ -250,7 +249,7 @@ def test_lists_and_downloads_for_admin_and_staff(
     ).exists()
     # Each records its mode, Show choice and the snapshot its names came
     # from (#556), whether a search was used (#849), and nothing naming a
-    # Family. A retired Show value is recorded as no filter.
+    # Family.
     assert events.filter(
         event_type="response_submitted_list_viewed",
         auditcontext__context__contains={
