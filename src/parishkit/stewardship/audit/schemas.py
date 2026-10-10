@@ -305,6 +305,10 @@ FIELDS = {
         "directory_response",
         "directory_sort",
         "directory_reach",
+        # The directory's ParishSoft data to check filter and whether the
+        # response columns were on (#933): closed values.
+        "directory_data_check",
+        "directory_response_columns",
         "search_used",
         "exact_code_used",
         "ministry_duid",
@@ -396,6 +400,44 @@ REPORT_SORT_COLUMNS = (
     "last",
     "mailing",
     "problem",
+)
+# The active parishioner family directory's Response choices (#933), as
+# stewardship_safe_context_v1 admits them; "yes" and "no" are the older
+# Campaign response choices earlier entries recorded.
+DIRECTORY_RESPONSES = frozenset(
+    {
+        "any",
+        "yes",
+        "no",
+        "submitted",
+        "more-than-once",
+        "started",
+        "progressed",
+        "opened-only",
+        "never-opened",
+        "link-followed",
+        "link-not-followed",
+        "not-invited",
+        "not-submitted",
+    }
+)
+# The directory's sort tokens: Family either way, DUID, and each response
+# column either way (#933).
+DIRECTORY_SORTS = frozenset(
+    {"name", "name_desc", "duid"}
+    | {
+        f"{key}{suffix}"
+        for key in (
+            "invited",
+            "link",
+            "opened",
+            "progressed",
+            "submitted",
+            "last",
+            "submissions",
+        )
+        for suffix in ("", "_desc")
+    }
 )
 REPORT_SORTS = frozenset(
     token for key in REPORT_SORT_COLUMNS for token in (key, f"-{key}")
@@ -644,6 +686,7 @@ def sanitize(kind, values):
             "search_used",
             "exact_code_used",
             "ministry_operational",
+            "directory_response_columns",
         }:
             valid = type(value) is bool
             safe[key] = value
@@ -658,10 +701,15 @@ def sanitize(kind, values):
                     "deliverable",
                 },
                 "directory_phone": {"any", "yes", "no"},
-                "directory_response": {"any", "yes", "no"},
-                "directory_sort": {"name", "name_desc", "duid"},
+                # reports.directories.RESPONSES plus "any" (#933), and the
+                # older "yes" and "no" earlier entries recorded.
+                "directory_response": DIRECTORY_RESPONSES,
+                # reports.directories.DIRECTORY_SORTING's tokens (#933).
+                "directory_sort": DIRECTORY_SORTS,
                 # reports.directories.REACH plus "any" (#388 L1).
                 "directory_reach": {"any", "email", "mail", "neither"},
+                # reports.directories.CHECKS plus "any" (#933).
+                "directory_data_check": {"any", "anything", "mailing-name", "envelope"},
             }
             valid = type(value) is str and value in choices[key]
             safe[key] = value

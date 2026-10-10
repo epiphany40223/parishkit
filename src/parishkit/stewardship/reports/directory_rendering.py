@@ -13,18 +13,33 @@ import io
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
 
-from .directory_documents import HEAD_EMAILS_DETAIL, UNADDRESSED_DETAIL
+from .directory_documents import (
+    COUNTED_DETAIL,
+    HEAD_EMAILS_DETAIL,
+    UNADDRESSED_DETAIL,
+)
 from .information_rendering import information_xlsx
 
 # Relative column widths of the Family-code table. Family holds the surname
 # and the heads of household; long cells wrap within their column. Phone
 # numbers is wide enough that "Name (kind): +1 (555) 555-0123" fits a line.
+# The response columns (#933) are only in the file when the page shows them;
+# a compact time ("Sep 30, 2026 12:04 PM") wraps onto two lines at its weight.
 COLUMN_WEIGHTS = {
-    "Family": 21,
-    "ParishSoft DUID": 8,
-    "Family code": 9,
+    "Family": 18,
+    "Family DUID": 7,
+    "Envelope number": 6,
+    "Submissions": 8,
+    "What to check": 12,
+    "Invitation delivered": 10,
+    "Link followed": 10,
+    "Form opened": 10,
+    "Got past the first step": 10,
+    "First submitted": 10,
+    "Last submitted": 10,
+    "Family code": 8,
     "Phone numbers": 31,
-    "Family head emails": 31,
+    "Family head emails": 30,
 }
 # List cells whose entries ("; "-separated) each start a new line in the PDF.
 LIST_COLUMNS = frozenset({"Phone numbers", "Family head emails"})
@@ -52,16 +67,28 @@ def directory_table(document):
     )
 
 
+def pdf_cell(value):
+    """One PDF table cell's text: a time in the parish's compact format (as
+    the response lists print it), a count grouped as on the page, a missing
+    value blank, and any other text unchanged."""
+    if value is None:
+        return ""
+    if isinstance(value, int):
+        return f"{value:,}"
+    return dates.display_text(value, compact=True)
+
+
 def table_rows(document):
     """The PDF table's rows: each phone and each head's emails on its own line.
 
     Only the separating space becomes a line break, so every character of
-    the cell is still drawn; CSV and XLSX keep the one-line cell.
+    the cell is still drawn; CSV and XLSX keep the one-line cell. Response
+    times and counts are formatted by ``pdf_cell``.
     """
     lists = [heading in LIST_COLUMNS for heading in document.headings]
     for row in document.rows:
         yield [
-            value.replace("; ", ";\n") if listed else value
+            pdf_cell(value).replace("; ", ";\n") if listed else pdf_cell(value)
             for value, listed in zip(row, lists, strict=True)
         ]
 
@@ -108,11 +135,11 @@ def directory_frame(document):
             "(address left blank)"
         )
     lines = [f"{counts} · Filters: {details['Filters applied']}"]
-    # Head emails read from newer ParishSoft data than the capture.
-    if HEAD_EMAILS_DETAIL in details:
-        lines.append(
-            f"{HEAD_EMAILS_DETAIL} {dates.display_text(details[HEAD_EMAILS_DETAIL])}"
-        )
+    # Head emails read from newer ParishSoft data than the capture, and the
+    # moment the Response choice was counted (#933), when the file has them.
+    for key in (HEAD_EMAILS_DETAIL, COUNTED_DETAIL):
+        if key in details:
+            lines.append(f"{key} {dates.display_text(details[key])}")
     return PdfFrame.for_document(document, details=lines, stamp_key="Captured at")
 
 

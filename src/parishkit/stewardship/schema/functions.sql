@@ -5661,7 +5661,7 @@ BEGIN
             'previous_ministry_duids','added_ministry_duids','removed_ministry_duids',
             'decision','review_reason','file_slug','previous_file_slug','file_kind','file_size','file_fingerprint',
             'report_mode','report_filter','talent_option_id','snapshot_id',
-            'report_sort']
+            'report_sort','directory_data_check','directory_response_columns']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -5785,14 +5785,26 @@ BEGIN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
         ELSIF key LIKE '%\_fingerprint' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{64}$' THEN RETURN false; END IF;
-        ELSIF key IN ('retryable','search_used','exact_code_used','ministry_operational') THEN
+        ELSIF key IN ('retryable','search_used','exact_code_used','ministry_operational','directory_response_columns') THEN
             IF jsonb_typeof(value)<>'boolean' THEN RETURN false; END IF;
         ELSIF key='directory_reason' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','no_head','no_address','invalid_address','provider_refused','deliverable') THEN RETURN false; END IF;
-        ELSIF key IN ('directory_phone','directory_response') THEN
+        ELSIF key='directory_phone' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','yes','no') THEN RETURN false; END IF;
+        -- The directory's Response filter (#933): its closed choices, plus the
+        -- older yes and no that earlier entries recorded.
+        ELSIF key='directory_response' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','yes','no','submitted',
+                'more-than-once','started','progressed','opened-only','never-opened',
+                'link-followed','link-not-followed','not-invited','not-submitted') THEN RETURN false; END IF;
+        -- The directory's ParishSoft data to check filter (#933).
+        ELSIF key='directory_data_check' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','anything','mailing-name','envelope') THEN RETURN false; END IF;
         ELSIF key='directory_sort' THEN
-            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('name','name_desc','duid') THEN RETURN false; END IF;
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('name','name_desc','duid',
+                'invited','invited_desc','link','link_desc','opened','opened_desc',
+                'progressed','progressed_desc','submitted','submitted_desc','last','last_desc',
+                'submissions','submissions_desc') THEN RETURN false; END IF;
         -- How campaign mail can reach the listed Families (#388 L1).
         ELSIF key='directory_reach' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','email','mail','neither') THEN RETURN false; END IF;

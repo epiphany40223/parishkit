@@ -45,19 +45,121 @@ REACH = {
     "neither": "Neither email nor postal mail",
 }
 
-# The installed selection (stewardship_directory_report_v1) orders and pages
+# The Response filter (#933): which Families the response funnel selects, by
+# the same rules the response lists used, so a list's length equals its
+# Response dashboard tile. "any" (the first choice) keeps the active Families.
+# "not-submitted" (the earlier "Not yet responded") is split with no overlap
+# by "started", "never-opened" and "not-invited" for the Families with a
+# campaign record; "not-submitted" alone also lists active Families without
+# one. "not-invited" is a response status (no invitation email delivered),
+# not a postal list (#951; postal lists are the mailing columns).
+RESPONSES = {
+    "submitted": "Submitted",
+    "more-than-once": "Submitted more than once",
+    "not-submitted": "Not submitted",
+    "started": "Started, not submitted",
+    "progressed": "Started, got past the first step",
+    "opened-only": "Opened the form only",
+    "never-opened": "Invited, never opened",
+    "link-followed": "Invited, link followed but never opened",
+    "link-not-followed": "Invited, link not followed",
+    "not-invited": "No invitation delivered",
+}
+# The choices that list active Families only; every other choice also lists
+# the campaign's Families no longer active in ParishSoft (see
+# stewardship_directory_report_v2), so the page header drops "active".
+ACTIVE_ONLY_RESPONSES = frozenset({"any", "not-submitted", "not-invited"})
+# The ParishSoft data to check filter (#933): the two launch-day problems.
+CHECKS = {
+    "anything": "Anything to check",
+    "mailing-name": "Blank mailing name",
+    "envelope": "Envelope number 0",
+}
+# What to check, by the selection's row flag, in the page's words.
+CHECK_FLAGS = (
+    ("mailing_name_blank", "Blank mailing name"),
+    ("envelope_zero", "Envelope number 0"),
+)
+# A row the Response filter lists although the current ParishSoft data no
+# longer lists the Family as active and registered (reason "inactive"), and
+# the name shown when that data no longer has the Family at all.
+INACTIVE = "No longer active in ParishSoft"
+MISSING_NAME = "Not in the latest ParishSoft data"
+
+
+@dataclass(frozen=True)
+class ResponseColumn:
+    """One response column: its sort key, heading, row field and missing words.
+
+    ``count`` marks Submissions, a number rather than an instant.
+    """
+
+    key: str
+    heading: str
+    field: str
+    missing: str = "Not yet"
+    count: bool = False
+
+
+RESPONSE_COLUMNS = {
+    column.key: column
+    for column in (
+        ResponseColumn("invited", "Invitation delivered", "invited_at"),
+        ResponseColumn("link", "Link followed", "link_at", "No"),
+        ResponseColumn("opened", "Form opened", "form_opened_at"),
+        ResponseColumn("progressed", "Got past the first step", "progressed_at"),
+        ResponseColumn("submitted", "First submitted", "submitted_at"),
+        ResponseColumn("last", "Last submitted", "last_submitted_at"),
+        ResponseColumn("submissions", "Submissions", "submissions", "", count=True),
+    )
+}
+# The response columns each Response choice shows, as the response lists
+# showed them: the dates in the order the events happen (they lead the row,
+# #932), then Submissions where a list had it (after the envelope number).
+RESPONSE_COLUMN_SETS = {
+    "any": ("invited", "opened", "submitted", "submissions"),
+    "submitted": ("submitted", "submissions"),
+    "more-than-once": ("submitted", "last", "submissions"),
+    "started": ("opened", "progressed"),
+    "progressed": ("opened", "progressed"),
+    "opened-only": ("opened", "progressed"),
+    "never-opened": ("invited", "link"),
+    "link-followed": ("invited", "link"),
+    "link-not-followed": ("invited", "link"),
+    "not-submitted": ("invited", "opened", "progressed"),
+    "not-invited": ("link", "opened"),
+}
+
+
+def response_columns(response):
+    """The (date columns, count columns) the Response choice shows."""
+    columns = [RESPONSE_COLUMNS[key] for key in RESPONSE_COLUMN_SETS[response]]
+    return (
+        tuple(column for column in columns if not column.count),
+        tuple(column for column in columns if column.count),
+    )
+
+
+# The installed selection (stewardship_directory_report_v2) orders and pages
 # the directory itself, 50 rows at a time, so its closed ``sort`` vocabulary
 # is the whole list of column sorts: Family by the shown name (surname
-# first) either way, and DUID ascending. The other columns cannot be sorted
-# without changing that frozen SQL (schema freeze, #203): Family code would
-# also mean decrypting every Family's code per page view, and email
-# deliverability, response, addressee, mailing address and contact details
-# are computed per row inside the selection.
+# first) either way, DUID ascending, and each response column either way
+# (#933; times and counts newest or largest first on the first click, as the
+# response lists sorted them). The other columns cannot be sorted without
+# changing that frozen SQL: Family code would also mean decrypting every
+# Family's code per page view, and email deliverability, response, addressee,
+# mailing address and contact details are computed per row inside the
+# selection.
 DIRECTORY_SORTING = Sorting(
     {
         "name": ("family", False),
         "name_desc": ("family", True),
         "duid": ("duid", False),
+        **{
+            token: (key, descending)
+            for key in RESPONSE_COLUMNS
+            for token, descending in ((f"{key}_desc", True), (key, False))
+        },
     },
     "name",
 )
@@ -74,6 +176,10 @@ class DirectoryQuery:
     response: str = "any"
     sort: str = "name"
     reach: str = "any"
+    # ParishSoft data to check (#933) and whether the response columns show:
+    # closed values, like the filters above.
+    check: str = "any"
+    responses: str = "no"
     page: int = 1
 
     @classmethod
@@ -93,9 +199,11 @@ class DirectoryQuery:
             len(query.search) > 200
             or query.reason not in {"any", *REASONS}
             or query.phone not in {"any", "yes", "no"}
-            or query.response not in {"any", "yes", "no"}
+            or query.response not in {"any", *RESPONSES}
             or query.sort not in DIRECTORY_SORTING.tokens
             or query.reach not in {"any", *REACH}
+            or query.check not in {"any", *CHECKS}
+            or query.responses not in {"yes", "no"}
         ):
             raise ValueError("Invalid directory filters.")
         if query.exact_code:
@@ -103,6 +211,8 @@ class DirectoryQuery:
             if code is None:
                 raise ValueError("Invalid exact-code filter.")
             values["exact_code"] = code
+        if not query.sorted_column_shown():
+            values["sort"] = "name"
         return cls(**values)
 
     def postal(self):
@@ -110,13 +220,33 @@ class DirectoryQuery:
 
         Postal invitations go only to active parishioner Families with no
         deliverable head email (Administrator decision, #951), the rule the
-        invitation sender uses (``source.families.family_recipients``). The
-        directory lists only active parishioner Families, and reach ``mail``
-        keeps those without deliverable head email that have a usable
-        mailing address; Families with neither are on the "neither" list.
-        So whichever reach was asked for, mailing columns use ``mail``.
+        invitation sender uses (``source.families.family_recipients``). Reach
+        ``mail`` keeps the active Families without deliverable head email
+        that have a usable mailing address: a Family no longer active in
+        ParishSoft, which some Response choices list (#933), has no postal
+        reach, so it is left out; Families with neither are on the
+        "neither" list. So whichever reach was asked for, mailing columns
+        use ``mail``.
         """
         return replace(self, reach="mail")
+
+    def sorted_column_shown(self):
+        """Whether the column the sort orders by is on the page and export.
+
+        A response column shows only with Include response columns ticked and
+        only for the Response choices whose list had it
+        (``RESPONSE_COLUMN_SETS``). ``parse`` falls back to the name order
+        otherwise, so the page, the export and the audit entry never order
+        by a column nobody can see (#933).
+        """
+        column = self.sort.removesuffix("_desc")
+        return column not in RESPONSE_COLUMNS or (
+            self.responses == "yes" and column in RESPONSE_COLUMN_SETS[self.response]
+        )
+
+    def active_only(self):
+        """Whether the Response choice lists active Families only (#933)."""
+        return self.response in ACTIVE_ONLY_RESPONSES
 
     def form_values(self):
         """Templates escape private POST state for filters and page navigation."""
@@ -135,6 +265,9 @@ class DirectoryQuery:
             "directory_sort": self.sort,
             # How mail can reach the listed Families (#388 L1).
             "directory_reach": self.reach,
+            # ParishSoft data to check and the response columns (#933).
+            "directory_data_check": self.check,
+            "directory_response_columns": self.responses == "yes",
             "page": self.page,
             "search_used": bool(self.search),
             "exact_code_used": bool(self.exact_code),
@@ -234,8 +367,11 @@ def selection_parameters(campaign_id, query, *, postal, mac):
         family_id = str(identities[0]) if identities else None
     values = query.form_values()
     values.pop("exact_code")
+    # The response columns choose columns, not rows, like ``postal``.
+    responses = values.pop("responses") == "yes"
     return {
         "filters": values,
+        "responses": responses,
         "postal": postal,
         "exact": bool(query.exact_code),
         "family_id": family_id,
@@ -247,7 +383,8 @@ def add_codes(campaign_id, rows, *, general):
 
     Also adds each row's presentation values: the reason label, the address
     lines and ``display_name``, the surname followed by the heads of household
-    (the same string the SQL selection searched and ordered by).
+    (the same string the SQL selection searched and ordered by), plus the
+    response values (``add_responses``).
     """
     identities = {
         str(row.pk): row
@@ -265,9 +402,44 @@ def add_codes(campaign_id, rows, *, general):
             if identity and identity.code_ciphertext
             else None
         )
-        row["reason_label"] = REASONS[row["reason"]]
+        row["reason_label"] = (
+            INACTIVE if row["reason"] == "inactive" else REASONS[row["reason"]]
+        )
         row["address_lines"] = address_lines(row["address"])
-        row["display_name"] = family_heads_name(row["family_name"], row["heads"])
+        row["display_name"] = row_name(row)
+    add_responses(rows)
+
+
+def row_name(row):
+    """The Family as shown: surname and heads, or why there is no name.
+
+    A Family the Response filter lists after the current ParishSoft data
+    dropped it entirely has no name (``family_name`` None, #933).
+    """
+    if row["family_name"] is None:
+        return MISSING_NAME
+    return family_heads_name(row["family_name"], row["heads"])
+
+
+def add_responses(rows):
+    """Give each row its response instants as datetimes and its data checks.
+
+    The selection returns the funnel instants as ISO text (null when it did
+    not read the funnel or the Family had not reached the stage); captures
+    made before #933 have none of these keys, and read as nothing reached.
+    ``checks`` lists what to check in the ParishSoft record, in words.
+    """
+    for row in rows:
+        for column in RESPONSE_COLUMNS.values():
+            value = row.get(column.field)
+            if column.count:
+                row[column.field] = value or 0
+            elif isinstance(value, str):
+                row[column.field] = datetime.fromisoformat(value)
+            else:
+                row[column.field] = None
+        row["active"] = row.get("active", True)
+        row["checks"] = [label for flag, label in CHECK_FLAGS if row.get(flag)]
 
 
 # One statement chooses the snapshot to read head contacts from and reads
@@ -471,9 +643,11 @@ def directory_page(campaign_id, query, *, postal, general, mac):
         report = json.loads(result[0])
         add_codes(campaign_id, report["rows"], general=general)
         add_head_emails(report["metadata"]["source_id"], report["rows"])
-        report["metadata"]["source_as_of"] = datetime.fromisoformat(
-            report["metadata"]["source_as_of"]
-        )
+        metadata = report["metadata"]
+        metadata["source_as_of"] = datetime.fromisoformat(metadata["source_as_of"])
+        # When the response funnel was read: the page's "Counted at" (#933).
+        if metadata.get("counted_at"):
+            metadata["counted_at"] = datetime.fromisoformat(metadata["counted_at"])
         return report
 
 
@@ -517,7 +691,7 @@ def find_families(campaign_id, query):
         "rows": [
             {
                 "family_id": row["family_id"],
-                "display_name": family_heads_name(row["family_name"], row["heads"]),
+                "display_name": row_name(row),
                 "family_duid": row["family_duid"],
                 "envelope": row["envelope"],
             }

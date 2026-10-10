@@ -7,20 +7,25 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.reports.directories import (
+    CHECKS,
     DIRECTORY_SORTING,
+    INACTIVE,
+    MISSING_NAME,
     REACH,
     REASONS,
+    RESPONSES,
     DirectoryQuery,
     head_email_groups,
+    response_columns,
 )
 from parishkit.stewardship.reports.directory_documents import export_headings
 from parishkit.stewardship.source.family_names import family_heads_name
 from parishkit.stewardship.web.tables import report_table
 
 
-def _table(rows, total, mailing):
+def _table(rows, total, mailing, query=None):
     """The shared POST report table the view builds around one SQL page."""
-    query = DirectoryQuery(search="Example")
+    query = query or DirectoryQuery(search="Example")
     return report_table(
         rows,
         number=1,
@@ -90,6 +95,9 @@ def components(context, admin):
         "query_fields": query.form_values(),
         "reasons": REASONS,
         "reaches": REACH,
+        "responses": RESPONSES,
+        "checks": CHECKS,
+        "column_count": 7,
         "report_url": reverse("admin:family_directory"),
         "total": 51,
         "mutable": True,
@@ -108,6 +116,7 @@ def components(context, admin):
         "query_fields": query.form_values() | {"mailing": "yes"},
         "export_headings": export_headings(postal=True, reach="any"),
         "unreachable_total": 2,
+        "column_count": 9,
         "unreachable_url": reverse("admin:family_directory") + "?reach=neither",
         "table": _table(values["table_rows"], 51, "yes"),
     }
@@ -139,7 +148,54 @@ def components(context, admin):
         # The Family name links to its timeline (#590) beside the pane.
         "family_id": UUID(int=82),
     }
+    # The Response filter with its response columns and a data check
+    # (#933): a never-opened Family that followed its link, and one the
+    # current ParishSoft data no longer has.
+    responding = DirectoryQuery(
+        search="Example", response="link-followed", responses="yes", check="anything"
+    )
+    dates, counts = response_columns("link-followed")
+    invited = datetime(2026, 10, 1, 13, 5, tzinfo=UTC)
+    listed = values["table_rows"][0] | {
+        "family_id": UUID(int=83),
+        "active": True,
+        "date_cells": [(dates[0], invited), (dates[1], invited)],
+        "count_cells": [],
+        "checks": ["Envelope number 0"],
+    }
+    gone = listed | {
+        "family_id": UUID(int=84),
+        "family_name": None,
+        "display_name": MISSING_NAME,
+        "family_duid": 777,
+        "active": False,
+        "reason": "inactive",
+        "reason_label": INACTIVE,
+        "code": "HGFEDCBA",
+        "date_cells": [(dates[0], invited), (dates[1], None)],
+        "checks": [],
+        "heads": [],
+        "head_emails": [],
+        "phones": [],
+        "address": {},
+        "address_lines": (),
+        "mailable": False,
+    }
+    responses = {
+        "query": responding,
+        "query_fields": responding.form_values() | {"mailing": "no"},
+        "metadata": values["metadata"] | {"counted_at": invited},
+        "date_columns": dates,
+        "count_columns": counts,
+        "column_count": 7 + len(dates) + len(counts) + 1,
+        "export_headings": export_headings(
+            postal=False, reach="any", dates=dates, counts=counts, checks=True
+        ),
+        "table": _table([listed, gone], 2, "no", responding),
+        "total": 2,
+    }
     pages = {
+        "/directory-responses": values | code_list | responses,
         "/directory-head-emails": values
         | code_list
         | {"table": _table([head_emails], 1, "no"), "total": 1},

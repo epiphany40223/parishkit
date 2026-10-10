@@ -37,14 +37,17 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 
 from .directories import (
+    CHECKS,
     DIRECTORY_SORTING,
     FIND_MINIMUM,
     PAGE_SIZE,
     REACH,
     REASONS,
+    RESPONSES,
     DirectoryQuery,
     directory_page,
     find_families,
+    response_columns,
     testing_codes_context,
 )
 from .directory_documents import export_headings, head_names
@@ -138,6 +141,16 @@ def _mailing_rows(rows):
         row["addressee"] = head_names(row["heads"]) or row["family_name"]
 
 
+def _column_count(postal, dates, counts, checks):
+    """How many columns the table has, for its "No matching Families." row.
+
+    Family, Family DUID, Envelope number, Family code, Campaign email
+    deliverable, Responded and Contact details always; the response columns,
+    What to check and the two mailing columns when shown.
+    """
+    return 7 + len(dates) + len(counts) + int(checks) + (2 if postal else 0)
+
+
 @require_http_methods(["GET", "POST"])
 def directory(request, campaign_id):
     """Recheck roles/scope through rendering and streaming; audit after guard close."""
@@ -225,6 +238,16 @@ def directory(request, campaign_id):
                 mutable = False
             testing = testing_codes_context(campaign_id, principal)
             report_url = reverse("admin:family_directory")
+            # The response columns the Response choice shows (#933): its
+            # dates lead the row and Submissions follows the envelope number.
+            dates, counts = (
+                response_columns(query.response)
+                if query.responses == "yes"
+                else ((), ())
+            )
+            for row in report["rows"]:
+                row["date_cells"] = [(column, row[column.field]) for column in dates]
+                row["count_cells"] = [row[column.field] for column in counts]
             context = (
                 report
                 | testing
@@ -250,8 +273,19 @@ def directory(request, campaign_id):
                     ),
                     "reasons": REASONS,
                     "reaches": REACH,
+                    "responses": RESPONSES,
+                    "checks": CHECKS,
+                    "date_columns": dates,
+                    "count_columns": counts,
+                    "column_count": _column_count(
+                        postal, dates, counts, query.check != "any"
+                    ),
                     "export_headings": export_headings(
-                        postal=postal, reach=query.reach
+                        postal=postal,
+                        reach=query.reach,
+                        dates=dates,
+                        counts=counts,
+                        checks=query.check != "any",
                     ),
                     "unreachable_url": reverse("admin:family_directory")
                     + "?reach=neither",

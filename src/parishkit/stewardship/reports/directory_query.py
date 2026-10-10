@@ -1,3 +1,8 @@
-"""The installed selection kernel owns both bounded pages and complete exports."""
+"""The installed selection kernel owns both bounded pages and complete exports.
 
-DIRECTORY = "SELECT stewardship_directory_report_v1(%s,%s::jsonb,%s)::text"
+``stewardship_directory_report_v2`` (migration 0043, #933) is v1 plus the
+Response and ParishSoft data to check filters, the response columns and
+their sort orders; v1 stays installed but nothing calls it.
+"""
+
+DIRECTORY = "SELECT stewardship_directory_report_v2(%s,%s::jsonb,%s)::text"

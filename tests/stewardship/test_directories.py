@@ -1,16 +1,32 @@
 """Private directory parsing and native rendering without service startup."""
 
+from datetime import UTC, datetime
+from uuid import uuid4
+
 import pytest
 from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.audit.schemas import ContextKind, sanitize
+from parishkit.stewardship.audit.schemas import (
+    DIRECTORY_RESPONSES,
+    DIRECTORY_SORTS,
+    ContextKind,
+    sanitize,
+)
 from parishkit.stewardship.reports.directories import (
+    DIRECTORY_SORTING,
+    MISSING_NAME,
+    RESPONSE_COLUMN_SETS,
+    RESPONSE_COLUMNS,
+    RESPONSES,
     DirectoryQuery,
+    add_responses,
     address_lines,
     head_email_groups,
     head_emails_text,
+    response_columns,
+    row_name,
     selection_parameters,
 )
 
@@ -18,7 +34,10 @@ from parishkit.stewardship.reports.directories import (
 def test_directory_filters_preserve_private_post_state():
     """Friendly codes canonicalize; page state never becomes identifying URLs."""
     query = DirectoryQuery.parse(
-        QueryDict("search=Example&exact_code=abcd-efgh&phone=yes&response=no&page=2")
+        QueryDict(
+            "search=Example&exact_code=abcd-efgh&phone=yes&response=never-opened"
+            "&check=envelope&responses=yes&sort=invited_desc&page=2"
+        )
     )
     assert query.search == "Example" and query.exact_code == "ABCDEFGH"
     assert query.page == 2 and "page" not in query.form_values()
@@ -26,7 +45,111 @@ def test_directory_filters_preserve_private_post_state():
     audit = sanitize(ContextKind.ACTION, query.audit_values())
     assert audit["search_used"] and audit["exact_code_used"]
     assert audit["directory_phone"] == "yes" and audit["page"] == 2
+    # The Response, data check, response columns and order are closed (#933).
+    assert audit["directory_response"] == "never-opened"
+    assert audit["directory_data_check"] == "envelope"
+    assert audit["directory_response_columns"] is True
+    assert audit["directory_sort"] == "invited_desc"
     assert "Example" not in str(audit) and "ABCDEFGH" not in str(audit)
+    # The response columns choose columns, not rows: they leave the filters
+    # and travel beside them, like the mailing columns.
+    parameters = selection_parameters(uuid4(), DirectoryQuery(), postal=False, mac=None)
+    assert parameters["responses"] is False and "responses" not in parameters["filters"]
+    assert parameters["filters"]["check"] == "any"
+    on = DirectoryQuery(responses="yes", response="submitted")
+    parameters = selection_parameters(uuid4(), on, postal=True, mac=None)
+    assert parameters["responses"] is True and parameters["postal"] is True
+    assert parameters["filters"]["response"] == "submitted"
+
+
+@pytest.mark.parametrize(
+    "response, dates, counts",
+    [
+        ("any", ["invited", "opened", "submitted"], ["submissions"]),
+        ("submitted", ["submitted"], ["submissions"]),
+        ("more-than-once", ["submitted", "last"], ["submissions"]),
+        ("started", ["opened", "progressed"], []),
+        ("opened-only", ["opened", "progressed"], []),
+        ("never-opened", ["invited", "link"], []),
+        ("link-not-followed", ["invited", "link"], []),
+        ("not-submitted", ["invited", "opened", "progressed"], []),
+        ("not-invited", ["link", "opened"], []),
+    ],
+)
+def test_response_columns_follow_the_lists(response, dates, counts):
+    """Each Response shows the columns its old list had; dates lead (#932)."""
+    shown = response_columns(response)
+    assert [column.key for column in shown[0]] == dates
+    assert [column.key for column in shown[1]] == counts
+    assert all(not column.count for column in shown[0])
+
+
+@pytest.mark.parametrize(
+    "values, sort",
+    [
+        # Shown: the columns are on and the choice has the column.
+        ("responses=yes&response=submitted&sort=submitted_desc", "submitted_desc"),
+        ("responses=yes&sort=invited", "invited"),
+        # Hidden: the columns are off, or the choice does not show it.
+        ("response=submitted&sort=submitted_desc", "name"),
+        ("sort=invited_desc", "name"),
+        ("responses=yes&response=submitted&sort=invited_desc", "name"),
+        ("responses=yes&response=not-invited&sort=submissions", "name"),
+        # Family and DUID always show.
+        ("sort=duid", "duid"),
+        ("response=submitted&sort=name_desc", "name_desc"),
+    ],
+)
+def test_a_hidden_response_column_falls_back_to_the_name_order(values, sort):
+    """The page, the export and the audit never order by an unseen column."""
+    query = DirectoryQuery.parse(QueryDict(values))
+    assert query.sort == sort
+    assert query.audit_values()["directory_sort"] == sort
+    assert (
+        selection_parameters(uuid4(), query, postal=False, mac=None)["filters"]["sort"]
+        == sort
+    )
+
+
+def test_active_only_responses():
+    """Any, Not submitted and No invitation delivered list active Families only."""
+    choices = ("any", *RESPONSES)
+    active = {key for key in choices if DirectoryQuery(response=key).active_only()}
+    assert active == {"any", "not-submitted", "not-invited"}
+
+
+def test_every_response_and_sort_is_a_closed_audit_value():
+    """Python's vocabularies are exactly what the audit allowlist admits."""
+    assert {"any", *RESPONSES} | {"yes", "no"} == DIRECTORY_RESPONSES
+    assert set(DIRECTORY_SORTING.tokens) == DIRECTORY_SORTS
+    assert set(RESPONSE_COLUMN_SETS) == {"any", *RESPONSES}
+    # Every response column sorts both ways, newest or largest first.
+    for key in RESPONSE_COLUMNS:
+        assert DIRECTORY_SORTING.tokens[f"{key}_desc"] == (key, True)
+        assert DIRECTORY_SORTING.tokens[key] == (key, False)
+
+
+def test_response_rows_read_instants_checks_and_inactive_families():
+    """ISO instants become datetimes; old captures read as nothing reached."""
+    rows = [
+        {
+            "invited_at": "2026-10-01T09:00:00+00:00",
+            "submitted_at": None,
+            "submissions": 2,
+            "active": False,
+            "mailing_name_blank": True,
+            "envelope_zero": True,
+        },
+        {},
+    ]
+    add_responses(rows)
+    assert rows[0]["invited_at"] == datetime(2026, 10, 1, 9, tzinfo=UTC)
+    assert rows[0]["submitted_at"] is None and rows[0]["submissions"] == 2
+    assert rows[0]["checks"] == ["Blank mailing name", "Envelope number 0"]
+    assert rows[0]["active"] is False
+    assert rows[1]["active"] is True and rows[1]["checks"] == []
+    assert rows[1]["link_at"] is None and rows[1]["submissions"] == 0
+    assert row_name({"family_name": None, "heads": []}) == MISSING_NAME
 
 
 @pytest.mark.parametrize(
@@ -43,6 +166,11 @@ def test_directory_filters_preserve_private_post_state():
         "reason=private",
         "phone=maybe",
         "response=maybe",
+        # The older Campaign response values are no longer choices (#933).
+        "response=yes",
+        "check=maybe",
+        "responses=on",
+        "sort=-submitted",
         "sort=sql",
         "search=" + "x" * 201,
         "search=%00",
@@ -60,6 +188,8 @@ def test_invalid_directory_filters_are_value_free(values):
         {"directory_reason": "private-address@example.org"},
         {"directory_phone": "202-555-0123"},
         {"directory_response": "ABCDEFGH"},
+        {"directory_data_check": "Private Family"},
+        {"directory_response_columns": "yes"},
         {"directory_sort": "Private Family"},
         {"directory_reach": "postal"},
         {"search_used": "Private Family"},
@@ -183,10 +313,11 @@ def test_open_form_link_follows_the_mode_and_keeps_the_code_in_the_fragment(test
     # A Family's name opens its timeline by its opaque campaign record id;
     # a row without one (none in practice) stays plain text.
     assert (
-        f'<td><a href="{reverse("admin:family_timeline", args=[UUID(int=81)])}">'
-        "Example, Anna and John</a></td>"
+        f'<th scope="row"><a href="'
+        f'{reverse("admin:family_timeline", args=[UUID(int=81)])}">'
+        "Example, Anna and John</a></th>"
     ) in html
-    assert "<td>Codeless</td>" in html
+    assert '<th scope="row">Codeless</th>' in html
     assert html.count("Example, Anna and John") == (2 if testing else 3)
     assert ("data-open-form-notice" in html) is not testing
     assert ("appear next to the codes once the campaign is live" in html) is testing
@@ -219,6 +350,35 @@ def test_testing_notice_links_the_test_page_only_when_given(administrator):
     assert ("Try the Family form as a chosen Family" in html) is administrator
     assert ("send yourself a test invitation" in html) is administrator
     assert ("ask an Administrator for a test invitation" in html) is not administrator
+
+
+@pytest.mark.parametrize(
+    "response, active",
+    [
+        ("any", True),
+        ("not-submitted", True),
+        ("not-invited", True),
+        ("submitted", False),
+    ],
+)
+def test_population_header_follows_the_response_choice(response, active):
+    """The header drops "Active registered" when inactive Families may be listed."""
+    from uuid import UUID
+
+    html = render_to_string(
+        "stewardship/directory.html",
+        {
+            "campaign_id": UUID(int=80),
+            "metadata": {"name": "Campaign", "source_generation": 3},
+            "total": 0,
+            "table": _table([]),
+            "query": DirectoryQuery(response=response),
+        },
+    )
+    header = html.split('<p id="directory-population" data-table-sync>')[1]
+    header = header.split("</p>")[0]
+    assert ("Active registered Families from ParishSoft data load" in header) is active
+    assert "Families from ParishSoft data load 3" in header
 
 
 def test_directory_headings_and_pages_post_private_filters():
@@ -383,9 +543,11 @@ def test_mail_merge_always_lists_by_postal_mail_only(reach):
     """
     from uuid import uuid4
 
-    query = DirectoryQuery(reach=reach, phone="yes", response="no", sort="duid")
+    query = DirectoryQuery(
+        reach=reach, phone="yes", response="not-submitted", sort="duid"
+    )
     assert query.postal() == DirectoryQuery(
-        reach="mail", phone="yes", response="no", sort="duid"
+        reach="mail", phone="yes", response="not-submitted", sort="duid"
     )
     campaign = uuid4()
     postal = selection_parameters(campaign, query, postal=True, mac=None)
