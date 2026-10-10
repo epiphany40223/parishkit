@@ -153,6 +153,9 @@ FROZEN = {
     "0040_ministry_report_actor_scope.sql": (
         "21ccd2a08485c2e464614639d39fb396a62f90e6dd7e00bb88d44d93d1eb9ab5"
     ),
+    "0041_task_type_creators.sql": (
+        "c94558d9c9a56dac0303d38859935922d0e0c7e4ceadab366e5f370bc41fde72"
+    ),
 }
 
 

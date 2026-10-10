@@ -10003,10 +10003,16 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        -- Web, worker and scheduler create tasks for other services, so any
-        -- login may create a known type; only its owner may execute it.
+        -- Web, worker and scheduler create tasks for other services, but
+        -- each type only from the logins whose code creates it (#389);
+        -- only its owner may execute it.
         IF public.stewardship_task_type_login_v1(NEW.task_type) IS NULL THEN
             RAISE EXCEPTION 'Unknown task type' USING ERRCODE='42501';
+        END IF;
+        IF NOT current_user::text = ANY(
+                public.stewardship_task_type_creators_v1(NEW.task_type)) THEN
+            RAISE EXCEPTION 'This login cannot create this task type'
+                USING ERRCODE='42501';
         END IF;
         RETURN NEW;
     END IF;

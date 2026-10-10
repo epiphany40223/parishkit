@@ -65,6 +65,7 @@
 !src/parishkit/stewardship/schema/migrations/0038_admin_command_failure_log.sql
 !src/parishkit/stewardship/schema/migrations/0039_response_list_sort_audit.sql
 !src/parishkit/stewardship/schema/migrations/0040_ministry_report_actor_scope.sql
+!src/parishkit/stewardship/schema/migrations/0041_task_type_creators.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql
