@@ -1780,9 +1780,10 @@ The command line offers the same schedule, validation and preview (see the
 ### Ministry activity management
 
 Admins can mark a Ministry inactive or reactivate it through an Admin web
-screen. The screen lists the current Ministry catalog with name, DUID, local
-active/inactive state and campaign inclusion, and supports searching and
-filtering by name, DUID and status, in a shared [Admin table](../ui-conventions/spec.md#admin-tables).
+screen. The screen lists the current Ministry catalog with name, Ministry
+DUID, local active/inactive state and campaign inclusion, and supports
+searching and filtering by name, DUID and status, in a shared
+[Admin table](../ui-conventions/spec.md#admin-tables).
 Admins select one or more Ministries and activate or inactivate them together.
 Saves use the ordinary versioned YAML configuration-request workflow, with
 optimistic concurrency, an impact preview and audit; one bulk change is one
@@ -1941,10 +1942,12 @@ never change.
   submitted are not asked again and get no mail.
 
 The review lists each added and removed Ministry, with each one's submitted
-answers (current join and stop requests) and open follow-up requests, and the
-number of Families with a form open now. Every open form lists every offered
-Ministry, so all of those Families get the usual changed-baseline review before
-they can submit; the review cannot be narrowed to fewer Families. No mail is
+answers (current join and stop requests) and open follow-up requests (the
+removed Ministries' table has Ministry, Ministry DUID in its own column, then
+the two counts), and the number of Families with a form open now. Every
+open form lists every offered Ministry, so all of those Families get the
+usual changed-baseline review before they can submit; the review cannot be
+narrowed to fewer Families. No mail is
 sent.
 
 Confirming records a `campaign_ministries_requested` audit event for the
@@ -3941,10 +3944,13 @@ example Families of a refused change (PR 5) and the debug-off switch
   Administrators only, no menu entry). The list comes from the same check as
   the server's `source-form-check` command, over every portal-eligible
   Family of the current campaign and the current snapshot, so it includes
-  Families that have not tried the form. It shows the Family name and DUID,
-  the Member DUID and the field to correct in plain words, never the value
-  (not even a Member's name), sorted and paged in place, and says the Family
-  can open the form after the correction and the next ParishSoft refresh.
+  Families that have not tried the form. It shows the Family name, Family
+  DUID, Member DUID and the field to correct in plain words, never the value
+  (not even a Member's name, so it is the one Member table with no Member
+  name column; see
+  [Table column order](../ui-conventions/spec.md#table-column-order)), sorted and
+  paged in place, and says the Family can open the form after the correction
+  and the next ParishSoft refresh.
   The result is cached in memory per campaign, snapshot and campaign
   configuration, so a refresh clears it. The sentence is read on page load
   only, never by the 10-second status poll; if the check cannot run, it

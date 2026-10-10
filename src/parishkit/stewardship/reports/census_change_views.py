@@ -83,6 +83,12 @@ SORTING = Sorting.by_column(
         "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
         "duid": lambda row: row["family_duid"],
         "who": lambda row: _text(row["who"]),
+        # Members by DUID; New Members and household (Family) rows, which
+        # have none, follow them.
+        "member_duid": lambda row: (
+            row["member_duid"] is None,
+            row["member_duid"] or 0,
+        ),
         "what": lambda row: _text(row["label"]),
         # Automatic first, then By hand, whatever the labels say.
         "route": lambda row: not row["automatic"],

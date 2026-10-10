@@ -40,7 +40,8 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
     page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("name") == "activity"
     visible(page.get_by_role("button", name="Next").first)
-    heading = page.get_by_role("columnheader", name="Member")
+    # By its sort column: "Member DUID" would also match the name "Member".
+    heading = page.locator("th[data-sort-column='member']")
     assert heading.get_attribute("aria-sort") == "ascending"
 
 
@@ -52,13 +53,33 @@ def test_ministry_sort_heading_posts_privately(page, component_origin):
         lambda route: route.fulfill(body="Sorted"),
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("columnheader", name="Member").get_by_role("button").click()
+        page.locator("th[data-sort-column='member'] button").click()
     assert "sort=name_desc" in sent.value.post_data
     assert "search=Example" in sent.value.post_data
     assert "ministry=9" in sent.value.post_data and "page=" not in (
         sent.value.post_data
     )
     assert "?" not in sent.value.url
+
+
+def test_ministry_counts_look_like_links_and_post(page, component_origin):
+    """A Ministry's join and leave counts read as links (they only open a
+    list) but still open it with a POST, so the Ministry stays private."""
+    page.goto(component_origin + "/ministry-summary")
+    joining = page.get_by_role("button", name="join requests").first
+    assert joining.evaluate("node => node.classList.contains('link-button')")
+    style = joining.evaluate(
+        "node => { const s = getComputedStyle(node);"
+        " return [s.textDecorationLine, s.backgroundColor, s.borderTopWidth]; }"
+    )
+    assert style == ["underline", "rgba(0, 0, 0, 0)", "0px"]
+    page.route(
+        "**" + reverse("admin:ministry_joiners"),
+        lambda route: route.fulfill(body="Joining"),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        joining.click()
+    assert "ministry=" in sent.value.post_data and "?" not in sent.value.url
 
 
 def test_ministry_search_posts_privately(page, component_origin):
