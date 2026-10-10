@@ -129,6 +129,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export exact status",
         "export exact cancel",
         "export exact retry",
+        "export family-timeline",
     }
     # The users commands (#952), in the users group (PR 11): the reads of
     # slice 2, the changes of slice 5 and the leaders import of slice 6.
@@ -189,6 +190,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export financial",
                 "export directory",
                 "export postal",
+                "export family-timeline",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -562,6 +564,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_exact_create",
         "admin_cmd_export_exact_cancel",
         "admin_cmd_export_exact_retry",
+        "admin_cmd_export_family_timeline",
         "admin_cmd_digest_weekly_request",
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",

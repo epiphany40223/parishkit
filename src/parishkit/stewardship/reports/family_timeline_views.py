@@ -27,7 +27,7 @@ from django.db import DatabaseError, transaction
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_safe
+from django.views.decorators.http import require_POST, require_safe
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.campaign_family_test import (
@@ -144,7 +144,9 @@ def page_context(campaign, family_id, identity, mode, timeline, as_of, **options
     Family codes; without it the code and Open form are left out),
     ``testing_codes`` and ``family_test_url`` (the active parishioner family directory's
     Testing-mode link, given only to roles that may open that page), and
-    ``values``, the timeline table's validated ``sort`` and ``size``.
+    ``values``, the timeline table's validated ``sort`` and ``size``, and
+    ``export``, the export form's values (``export_context``), shown only on
+    the full view of a timeline (with no Testing rehearsal there is none).
     """
     full = options.get("full", False)
     values = options.get("values", {})
@@ -172,6 +174,28 @@ def page_context(campaign, family_id, identity, mode, timeline, as_of, **options
         "production_url": timeline_url(family_id, sort=sort),
         "testing_url": timeline_url(family_id, "testing", sort),
         "directory_url": reverse("admin:family_directory"),
+        "export": options.get("export") if full and timeline is not None else None,
+    }
+
+
+def export_context(campaign_id, family_id):
+    """The export form's values: its address, key, time zones and availability."""
+    from uuid import uuid4
+
+    from parishkit.stewardship.schema_primitives import timezone_names
+
+    from .export_services import admit_campaign
+
+    try:
+        admit_campaign(campaign_id, mutating=True)
+        mutable = True
+    except PermissionError:
+        mutable = False
+    return {
+        "url": reverse("admin:family_timeline_export", args=[family_id]),
+        "request_key": uuid4(),
+        "timezones": sorted(timezone_names()),
+        "mutable": mutable,
     }
 
 
@@ -350,6 +374,7 @@ def family_timeline(request, campaign_id, family_id):
                 testing_codes=testing_codes,
                 family_test_url=test_url,
                 values=values,
+                export=export_context(campaign_id, family.pk) if full else None,
             )
             page = render_to_string(
                 "stewardship/family-timeline.html", context, request=request
@@ -380,3 +405,73 @@ def family_timeline(request, campaign_id, family_id):
     finally:
         if finish is not None and not handed_off:
             finish(False)
+
+
+@require_POST
+def export(request, campaign_id, family_id):
+    """Queue this Family's timeline file, as the page's export form posts it.
+
+    The page's full timeline is the Administrator's view, so only an
+    Administrator may export it (``create_timeline_export`` rechecks inside its
+    lock). The form carries the page's mode, the format, the time zone and a
+    one-time request key; anything else is refused. The file can hold the
+    Family's live code, so, as for the Family directory's export (#547), it
+    needs a Google sign-in within five minutes: otherwise the step-up page,
+    which returns to this timeline, and nothing is made.
+    """
+    from uuid import UUID
+
+    from parishkit.stewardship.accounts import admin_navigation
+    from parishkit.stewardship.accounts.admin_editing import step_up_response
+    from parishkit.stewardship.accounts.sessions import (
+        FreshAuthenticationRequired,
+        require_fresh,
+    )
+
+    from .export_services import ExportRequestBound
+    from .export_ui import _redirect
+    from .timeline_exports import create_timeline_export
+
+    try:
+        service = runtime()
+        principal = _principal(request, service.store)
+        if not _full(principal):
+            raise PermissionError("The timeline export is for Administrators.")
+        parameters = request.POST.copy()
+        parameters.pop("csrfmiddlewaretoken", None)
+        fields = {"mode", "format", "browser_timezone", "request_key"}
+        if (
+            request.GET
+            or set(parameters) != fields
+            or any(len(parameters.getlist(key)) != 1 for key in parameters)
+        ):
+            return private_response("Invalid timeline export.\n", status=400)
+        admit_report_read(campaign_id)
+        try:
+            require_fresh(request)
+        except FreshAuthenticationRequired:
+            return step_up_response(
+                timeline_url(family_id),
+                admin_navigation.PAGES["family_timeline"].label,
+            )
+        result = create_timeline_export(
+            service.store,
+            principal.identity,
+            campaign_id=campaign_id,
+            family_id=family_id,
+            mode=parameters["mode"],
+            format=parameters["format"],
+            browser_timezone=parameters["browser_timezone"],
+            request_key=UUID(parameters["request_key"]),
+        )
+        return _redirect(result.pk)
+    except ExportRequestBound:
+        return private_response(
+            "This export form was already used for a different export.\n", status=409
+        )
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except (*SAFE_FAILURES, StorageInvariantError):
+        return report_unavailable()
+    except ValueError:
+        return private_response("Invalid timeline export.\n", status=400)

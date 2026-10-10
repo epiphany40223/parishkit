@@ -192,6 +192,17 @@ SITES = {
             "reports/ministry_export_views.py",
         },
     ),
+    "reports/timeline_exports.py::create_timeline_export": site(
+        # The Family timeline page's export form, regenerate and
+        # ``export family-timeline`` (ADM-11 PR 8g).
+        "report_export",
+        WEB,
+        {
+            "admin_family_exports.py",
+            "reports/export_services.py",
+            "reports/family_timeline_views.py",
+        },
+    ),
     "reports/weekly_manual.py::request_manual_report": site(
         "weekly_digest_prepare",
         WEB,
