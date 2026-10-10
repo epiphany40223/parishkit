@@ -409,9 +409,12 @@ success. Resolution transitions and resend creation follow the
 ### Source snapshot
 
 `SourceSnapshot` records form an ordered history. Each stores type (`full` or
-`delta`), start/completion/promotion times, ParishSoft organization ID,
-collection counts, validation result, source watermark/change cursor, and a
-content digest. These lightweight manifests remain indefinitely and record
+`delta`), state (`staging`, `ready`, `rejected`, `promoted` or `unchanged`),
+the refresh task and source fence that wrote it, the snapshot it was based
+on, start/completion/promotion times, the source generation it received when
+promoted, ParishSoft organization ID, collection counts, validation result,
+source watermark/change cursor, and a content digest. These lightweight
+manifests remain indefinitely and record
 whether their complete corpus is still reconstructable or has been compacted.
 A snapshot's cursor may also carry display-only comparisons with its base: the
 changed-record counts and the Ministry catalog differences described in
@@ -1578,16 +1581,17 @@ Snapshot promotion performs these effects transactionally:
 - resolve proposals that now match upstream;
 - mark three-way conflicts;
 - resolve Ministry requests whose requested roster state is now current;
-- refresh seeded Chairperson suggestions/assignment warnings; and
-- request the initial-invitation evaluation defined by
-  [background processing](../background-processing/spec.md#family-invitations-and-reminders)
-  for each newly active Family and each eligible nonresponder whose durable
-  deliverability generation changed from non-deliverable to deliverable.
+- refresh seeded Chairperson suggestions/assignment warnings.
 
-Provider-suppression removal outside snapshot promotion invokes the same
-transactional evaluation service after it increments the Family's deliverability
-generation. Stable occurrence and semantic-fulfillment keys make repeated
-evaluation harmless.
+Promotion plans no mail itself. A Family that becomes active, eligible or
+deliverable changes its row's planning columns, which the
+[Family schedule sweep](../background-processing/spec.md#family-schedule-sweep)
+sees and plans again under the
+[invitation rules](../background-processing/spec.md#family-invitations-and-reminders).
+An Administrator who clears a recipient refusal outside promotion
+(`jobs/delivery_admin.py`) changes deliverability the same way, and the
+sweep picks it up. Stable occurrence and semantic-fulfillment keys make
+repeated planning harmless.
 
 When `restore_review_required` is active, that request is durable deferred
 intent only: promotion does not materialize or dispatch an ordinary invitation.

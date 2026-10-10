@@ -751,7 +751,10 @@ Admin-editable template or caller flag.
 ## ParishSoft refresh
 
 A singleton durable PostgreSQL `SourceMutationLease` covers full, delta, and
-manual refresh plus ParishSoft publication execution. Its row stores owner task,
+manual refresh, ParishSoft publication execution, and the source retention
+each refresh runs first (its `compaction` phase; see
+[temporary retention and housekeeping](../operations/spec.md#temporary-retention-and-housekeeping)).
+Its row stores owner task,
 monotonically increasing fencing token, phase, heartbeat, and expiry. Claim,
 renewal, release, and takeover use short row-locking transactions; no database
 connection is held while waiting on ParishSoft. No refresh may run concurrently
@@ -1194,8 +1197,14 @@ For each delta indication, reload every affected Family and related Members/
 contacts available through supported endpoints. If the feed/cursor is
 ambiguous, discontinuous, unsupported, too large, or indicates relationship
 data that cannot be safely scoped, promote no delta and queue a full refresh.
-Ministry/fund data remains from the coherent prior full snapshot unless the
-delta loader can prove a complete replacement.
+Ministry, roster, fund and giving data always remain from the coherent prior
+full snapshot (`source/delta.py`); no delta replaces them. A delta in which
+a reloaded Family's set of Members changed or a Member moved between
+Families, one that meets a changed Family group definition, or one whose
+counts fall past the
+[drop threshold](#full-cycle) is likewise not promoted and queues a full
+refresh. A delta that runs out of its time bound is retried as itself
+instead, since a full refresh would only take longer.
 
 #### Deltas wait for a bulk Family send
 
@@ -1231,9 +1240,7 @@ A held slot creates no command, task or failure. Each scheduler loop decides
 again, so the first loop after the hold ends creates the current slots'
 refreshes, which catch up. The scheduler logs `source_refresh_held` at INFO
 to the process log once per held slot, correlated to the slot's command
-identity. Since delivery step 1 of the
-[refresh schedule plan](../../../plans/stewardship/refresh-schedule.md#delivery-plan),
-for a held **full** slot (a daytime time or, from step 2a, a `catch_up`),
+identity. For a held **full** slot (a daytime time or a `catch_up`),
 never a quick one, it also writes one durable operational entry through the shared
 operational-log writer, inside the slot's command correlation: the event
 `source_refresh_held` at INFO with the task-free `schedule` context schema.
@@ -1246,11 +1253,9 @@ event **and** the `schedule` schema. The worker, which runs the health
 check, needs a column grant to read that schema: `SELECT (schema)` on
 `stewardship_operational_log`, added to the worker's grants registry
 (`jobs/grants.py`) and applied by the upgrade's database-grants step, not a
-migration. Reusing an existing event and schema needs no change to the
-operational log's event check; if the `schedule` schema's safe-context
-check cannot carry this entry, a new event (for example
-`source_refresh_send_held`) is added instead, with a forward migration of
-that check. Neither is CRITICAL, so neither opens an incident. For a
+migration. The entry reuses that existing event and schema, so the
+operational log's event check needed no change. It is not CRITICAL, so it
+opens no incident. For a
 schedule that [skips refreshes around Family emails](#skipped-around-family-emails),
 the scheduler also records the slot as held in the slot decision record;
 other schedules record no slot decisions, so they keep exactly the
@@ -1341,8 +1346,11 @@ unchanged.
 
 #### Refreshes wait for go-live
 
-> **Status:** target of
-> [#462](https://github.com/epiphany40223/parishkit/issues/462).
+> **Status:** the scheduler side is built (`campaigns/go_live_sequencing.py`:
+> the hold, its logging and the data-age shift), but it is idle: nothing
+> begins an attempt until the Go live page's **Start go-live** does, which is
+> the rest of [#462](https://github.com/epiphany40223/parishkit/issues/462).
+> The "waiting for go-live" health line below is not built yet either.
 
 From the start of a go-live [attempt](../admin-portal/spec.md#go-live-page)
 (**Start go-live**, or **Refresh and prepare again**) until its hold end, the
@@ -1356,9 +1364,12 @@ makes the system [prepare the links again](#go-live-sequencing).
 The hold is derived from durable state, with no new flag: it is on while the
 current Testing campaign has a ProductionTransitionRequest in a state that
 owns the go-live gate, and its current attempt's **hold end** has not
-passed. The hold end is the earlier of 60 minutes after the attempt's
-refresh promoted and 3 hours after the attempt started. Activation,
-cancellation or Stop go-live ends the hold at once.
+passed. The hold end is the earlier of 60 minutes after the later of the
+attempt's refresh promoting and Production-transition cleanup completing,
+and 3 hours after the attempt started. The attempt's refresh is the first
+full refresh that started at or after the attempt began; a later full
+refresh does not restart the 60 minutes. Activation, cancellation or Stop
+go-live ends the hold at once.
 
 **Evidence and logging.** The hold's only evidence is the transition request
 and its attempts. The scheduler logs `go_live_refresh_held` at INFO to the
@@ -1437,9 +1448,12 @@ only), so an operator can tell a short read from a real change; see the
 [ParishSoft outage runbook](../../../guides/stewardship-launch-runbooks.md#parishsoft-outage).
 Quick updates take
 contacts from each reloaded Family's Member details and do not read the
-contact list. So is a load that ran out of its time budget, which is a
-slow provider, not bad data. Malformed records, and loads past their
-request or byte bounds, stay invalid. The provider-failure allowance is five of the
+contact list. So is a load that ran out of its time budget (900 seconds),
+which is a slow provider, not bad data; each such stop is recorded in the
+[timeout log](../operations/spec.md#observability-and-health)
+([#834](https://github.com/epiphany40223/parishkit/issues/834)).
+Malformed records, and loads past their request or byte bounds (10,000
+requests, 128 MiB), stay invalid. The provider-failure allowance is five of the
 run's claims that began a ParishSoft read (each records a refresh attempt
 before its first request), live and in recovery after a lost worker. A claim
 held for the source lease or a configuration activation before any read

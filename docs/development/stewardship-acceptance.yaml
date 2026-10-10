@@ -215,7 +215,7 @@ sections:
     "Installer idle polling": [OPS-04, OPS-08]
     "Pre-production development policy": [OPS-04, DAT-01]
     "Post-launch schema policy": [OPS-04, DAT-01]
-    "Production upgrades (deferred)": [OPS-04]
+    "Production upgrades": [OPS-04]
     "Offline bootstrap profile": [OPS-04]
     "Offline Admin-access recovery": [OPS-04]
     "Download capacity and timeouts": [OPS-04, ARC-08]
