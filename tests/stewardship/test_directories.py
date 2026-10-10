@@ -77,7 +77,7 @@ def test_directory_filters_preserve_private_post_state():
     ],
 )
 def test_response_columns_follow_the_lists(response, dates, counts):
-    """Each Response shows the columns its old list had; dates lead (#932)."""
+    """Each Response shows the columns its old list had, dates in event order."""
     shown = response_columns(response)
     assert [column.key for column in shown[0]] == dates
     assert [column.key for column in shown[1]] == counts
@@ -97,6 +97,7 @@ def test_response_columns_follow_the_lists(response, dates, counts):
         ("responses=yes&response=not-invited&sort=submissions", "name"),
         # Family and DUID always show.
         ("sort=duid", "duid"),
+        ("sort=duid_desc", "duid_desc"),
         ("response=submitted&sort=name_desc", "name_desc"),
     ],
 )

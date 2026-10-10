@@ -421,10 +421,10 @@ DIRECTORY_RESPONSES = frozenset(
         "not-submitted",
     }
 )
-# The directory's sort tokens: Family either way, DUID, and each response
-# column either way (#933).
+# The directory's sort tokens: Family, DUID and each response column, each
+# either way (#932, #933).
 DIRECTORY_SORTS = frozenset(
-    {"name", "name_desc", "duid"}
+    {"name", "name_desc", "duid", "duid_desc"}
     | {
         f"{key}{suffix}"
         for key in (

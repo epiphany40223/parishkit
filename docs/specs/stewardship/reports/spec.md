@@ -897,11 +897,13 @@ shows no population summary or separate code-privacy line above its filters;
 the page's About help covers code privacy. Each row has the Family's name,
 Family DUID, envelope number, manual code, current email
 eligibility/deliverability, and whether the Family has a current live
-response (Responded). The columns follow the shared order
-([#932](https://github.com/epiphany40223/parishkit/issues/932)): any
-[response dates](#response-filters) first, then Family (the row header),
-Family DUID, Envelope number, any Submissions and What to check, and then the
-directory's own columns. The name is the Family's
+response (Responded). The columns follow the shared order, most relevant
+column first
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). The
+directory is a Family table, so Family (the row header) leads, then Family
+DUID and Envelope number, then any Submissions and What to check, then any
+[response dates](#response-filters), and then the directory's own columns.
+Both Family and Family DUID sort. The name is the Family's
 surname followed by its heads of household, so same-surname Families can be
 told apart: "Smith, Anna and John" (three or more heads read "A, B and C"); a
 head whose surname differs from the Family's is shown in full ("Smith, Anna and
@@ -968,15 +970,17 @@ is being read, that request fails (the next one reads the new data) rather
 than show a head as having no email.
 
 Without [mailing columns](#mailing-columns), CSV, XLSX, and PDF exports are
-one header row plus one row per Family, with the page's columns: any
-response dates, Family (the same surname-and-heads name as the page), Family
-DUID, Envelope number, any Submissions and What to check (see
+one header row plus one row per Family, with the page's columns in the
+page's order: Family (the same surname-and-heads name as the page), Family
+DUID, Envelope number, any Submissions, What to check and response dates (see
 [Response filters](#response-filters)), Family code and Family head emails.
 The list filtered to Families no campaign mail can reach
 adds Phone numbers for follow-up calls, before Family head emails. A
 Family no longer active in ParishSoft has "(No longer active in ParishSoft)"
-after its name. The PDF narrows its widest columns, and wraps their text and
-headings, so a file with many columns still fits the landscape page. Family
+after its name. The PDF is the [shared design](#file-design)'s table: the
+columns share the page width, and long cells and headings wrap, so a file
+with many columns still fits the landscape page; times use the parish's
+compact date format and counts are grouped, as on the page. Family
 head emails reads like the Contact details: "Anna Example and Ben Example:
 family@example.org; Cara Example: (no email)", with invalid source text
 followed by "(not a valid address; fix in ParishSoft)". The emails are not
@@ -1077,8 +1081,10 @@ marked **No longer active in ParishSoft**. Its name and envelope number come
 from the current data when that data still has the Family; otherwise it
 reads "Not in the latest ParishSoft data". Campaign mail reaches it neither
 way: its email availability reads "No longer active in ParishSoft", it
-counts as reachable by neither email nor postal mail, and the mail-merge file
-leaves its address blank. Its code is still shown when the campaign has one,
+counts as reachable by neither email nor postal mail, and the postal mail
+merge leaves it out when mailing columns are on, since that list covers only
+the Families postal mail is for
+([#951](https://github.com/epiphany40223/parishkit/issues/951)). Its code is still shown when the campaign has one,
 but without an Open form link. The active and unreachable totals still count
 active Families only.
 
@@ -1102,8 +1108,11 @@ Submissions; Submitted more than once shows First submitted, Last submitted
 and Submissions; the Started choices show Form opened and Got past the first
 step; the Invited choices show Invitation delivered and Link followed; Not
 submitted shows Invitation delivered, Form opened and Got past the first
-step; No invitation delivered shows Link followed and Form opened. The dates lead the row and
-Submissions follows Envelope number. Times are shown in the browser's time
+step; No invitation delivered shows Link followed and Form opened.
+Submissions follows Envelope number, and the dates follow Submissions and
+What to check, in the order the stages happen, before Family code: Family
+leads this table, and dates lead only event or log tables
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). Times are shown in the browser's time
 zone; a stage not reached reads "Not yet" (Link followed reads "No"). The
 checkbox never changes which Families are listed,
 and the Family-code export gets the same columns; the mail-merge file keeps
@@ -1114,7 +1123,8 @@ not.
 Each response column sorts both ways (newest or largest first on the first
 click, Families that have not reached the stage last, then by name). These
 orders are part of the installed selection, so they page and export like
-the name and DUID orders. A response column orders the rows only while it is
+the Family and Family DUID orders, which also sort both ways (#932). A
+response column orders the rows only while it is
 shown: when Include response columns is off, or the chosen Response does not
 show that column, the order falls back to Family (by name), for the page, the
 export and the audit entry alike.

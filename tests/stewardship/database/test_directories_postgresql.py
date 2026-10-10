@@ -813,6 +813,19 @@ def test_directory_names_lead_with_the_surname_then_the_heads(live_response_serv
         8,
         9,
     ]
+    # Family DUID sorts both ways too (#932).
+    assert [row["family_duid"] for row in page(harness, sort="duid")["rows"]] == [
+        1,
+        7,
+        8,
+        9,
+    ]
+    assert [row["family_duid"] for row in page(harness, sort="duid_desc")["rows"]] == [
+        9,
+        8,
+        7,
+        1,
+    ]
     # Search matches the whole shown name, so a head's first name finds the Family.
     for text, expected in (
         ("zed", [7]),

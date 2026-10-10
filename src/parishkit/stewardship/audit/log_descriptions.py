@@ -772,7 +772,6 @@ VALUE_LABELS = {
             (key, _("{} (ascending)")),
             (f"{key}_desc", _("{} (descending)")),
         )
-        if token != "duid_desc"
     },
     "report_sort": {
         token: format_lazy(template, heading)

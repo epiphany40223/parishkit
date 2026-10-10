@@ -5801,7 +5801,7 @@ BEGIN
         ELSIF key='directory_data_check' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','anything','mailing-name','envelope') THEN RETURN false; END IF;
         ELSIF key='directory_sort' THEN
-            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('name','name_desc','duid',
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('name','name_desc','duid','duid_desc',
                 'invited','invited_desc','link','link_desc','opened','opened_desc',
                 'progressed','progressed_desc','submitted','submitted_desc','last','last_desc',
                 'submissions','submissions_desc') THEN RETURN false; END IF;

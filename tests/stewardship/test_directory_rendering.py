@@ -598,7 +598,7 @@ def test_directory_pdf_draws_its_details_heading_note_and_pages(monkeypatch):
 
 
 def test_response_columns_and_checks_follow_the_page():
-    """Dates lead, Submissions and What to check follow the envelope (#933).
+    """Family leads; Submissions, What to check, then dates follow (#932).
 
     A Family no longer active in ParishSoft is marked in its Family cell,
     and one the data no longer has at all is named as such. The details say
@@ -641,13 +641,13 @@ def test_response_columns_and_checks_follow_the_page():
         timezone="America/Detroit",
     )
     assert report.headings == (
-        "First submitted",
-        "Last submitted",
         "Family",
         "Family DUID",
         "Envelope number",
         "Submissions",
         "What to check",
+        "First submitted",
+        "Last submitted",
         "Family code",
         EMAIL_HEADING,
     )
@@ -655,23 +655,28 @@ def test_response_columns_and_checks_follow_the_page():
     render_directory(report, output, format="csv")
     lines = list(csv.reader(io.StringIO(output.getvalue().decode())))
     assert lines[1][:7] == [
-        "2026-10-01 09:00:00-04:00",
-        "2026-10-02 09:00:00-04:00",
         "'=Sample Family, Aaron Williams and Isabelle Williams",
         "12345",
         "0",
         "2",
         "Envelope number 0",
+        "2026-10-01 09:00:00-04:00",
+        "2026-10-02 09:00:00-04:00",
     ]
     assert lines[2][:7] == [
-        "",
-        "",
         "Not in the latest ParishSoft data (No longer active in ParishSoft)",
         "2",
         "",
         "3",
         "",
+        "",
+        "",
     ]
+    # The PDF prints the same cells as the page: compact times in the
+    # display time zone and grouped counts.
+    [first, _] = table_rows(report)
+    assert first[3] == "2"
+    assert first[5].startswith("Oct 1, 2026")
     details = dict(report.metadata)
     assert details["Responses counted at"].hour == 9
     assert "Response: Submitted more than once" in details["Filters applied"]
@@ -681,4 +686,3 @@ def test_response_columns_and_checks_follow_the_page():
         output = io.BytesIO()
         render_directory(report, output, format=format)
         assert output.getvalue()
-
