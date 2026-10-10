@@ -97,7 +97,10 @@ def test_shortened_draft_requires_every_stranded_mailing_to_be_reconciled(
     browser, _ = signed_in()
     page = browser.get(path)
     assert page.status_code == 200
-    assert flow_steps(page.content) == (STEPS, "Make changes")
+    # The list is not a step of a change (#878); the date-change review is.
+    assert flow_steps(page.content) is None
+    review = browser.get(f"{path}?end_date=2054-10-20")
+    assert flow_steps(review.content) == (STEPS, "Make changes")
     data, indexes = fields(store, campaign)
     data["window-end_date"] = "2054-10-20"
     before = ConfigurationChangeRequest.objects.count()
@@ -426,7 +429,8 @@ def test_access_revoked_while_a_read_page_renders_is_refused(
     _, path = setup(store)
     browser, _ = signed_in()
     admin = PortalUser.objects.get(email="admin@example.org")
-    genuine = schedule_views._page
+    # The list (#878) renders a GET without proposed dates.
+    genuine = schedule_views._list
 
     def revoking(*args, **kwargs):
         """Render as usual while a concurrent session disables the reader."""
@@ -438,21 +442,23 @@ def test_access_revoked_while_a_read_page_renders_is_refused(
             )
         return genuine(*args, **kwargs)
 
-    monkeypatch.setattr(schedule_views, "_page", revoking)
+    monkeypatch.setattr(schedule_views, "_list", revoking)
     assert browser.get(path).status_code == 403
 
 
 def test_schedule_table_marks_a_send_in_progress_read_only(
     auth_service, google, monkeypatch
 ):
-    """The table reads real work counts; a started send's editor stays closed.
+    """The date-change review's table reads real work counts (#448).
 
     Before the invitation's time both rows are Upcoming and editable. Once its
     time has passed with planned work, the invitation is Sending: no control,
-    and its editor is marked as a past send. The reminder stays editable.
+    and its editor is marked as a past send. The reminder stays editable. The
+    review shows with proposed dates (here the current start date again).
     """
     store = auth_service.store
     campaign, path = setup(store)
+    path = f"{path}?start_date=2054-10-01"
     browser, _ = signed_in()
     page = unescape(browser.get(path).content.decode())
     assert page.count('data-schedule-state="upcoming"') == 2

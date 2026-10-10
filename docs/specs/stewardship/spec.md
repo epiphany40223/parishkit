@@ -342,10 +342,12 @@ becomes 3:30 AM daylight time), so the form is never refused for it. Emails,
 which cannot know a reader's browser, use the parish time zone and name it
 ("9:15 PM Eastern"), never "UTC". Pages and emails move to these rules one
 group at a time in the #558 PRs; the Ministry follow-up contact attempt is the
-first ([Admin portal](admin-portal/spec.md#follow-up-workflows)) and the System
-logs date filters the second ([Admin portal](admin-portal/spec.md#logs)).
+first ([Admin portal](admin-portal/spec.md#follow-up-workflows)), the System
+logs date filters the second ([Admin portal](admin-portal/spec.md#logs)), and
+New and Edit scheduled email the third ([Admin
+portal](admin-portal/spec.md#new-and-edit-scheduled-email)).
 Until a page's PR lands, it keeps its current zone, including the campaign zone
-for schedules, campaign dates and report day buckets. One field is a recorded
+for the other schedule pages, campaign dates and report day buckets. One field is a recorded
 exception that stays in the parish's time zone after every #558 PR: the
 ParishSoft full-refresh times (Administrator decision). A refresh schedule is
 a recurring wall-clock schedule: the parish's own daylight-saving changes

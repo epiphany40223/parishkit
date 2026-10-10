@@ -733,6 +733,65 @@
       });
     });
   };
+  // New and Edit scheduled email (#878) show and take send times in this
+  // browser's time zone (#558), as every Admin time is. A schedule keeps
+  // campaign-local values, which the server converts from what is posted
+  // with the browser's zone (input[data-browser-zone], filled above). An
+  // unbound Edit page carries the schedule's moment as data-schedule-local
+  // (a UTC instant; a digest's next send), and its date, time and weekday
+  // are filled from it here, in this browser's zone, before the time entry
+  // first reads the time. A refused page has none: its fields hold what was
+  // typed. Without a zone Review and save stays unavailable and
+  // [data-zone-missing] says why.
+  // localParts: a moment (ms) as this browser's {date, time, weekday}, the
+  // time canonical as the time entry writes it and Monday 0.
+  const localParts = (moment) => {
+    const at = new Date(moment);
+    return {
+      date: `${String(at.getFullYear()).padStart(4, "0")}-${pad2(at.getMonth() + 1)}-${
+        pad2(at.getDate())}`,
+      time: canonicalTime({hour: at.getHours(), minute: at.getMinutes(),
+        second: at.getSeconds()}),
+      weekday: (at.getDay() + 6) % 7,
+    };
+  };
+  // localMoment: the moment (ms) a date ("YYYY-MM-DD") and canonical time
+  // stand for in this browser's zone. Like the server, a time skipped when
+  // clocks spring forward reads with the offset before the change, and one
+  // that occurs twice is the first.
+  const localMoment = (day, clock) => {
+    const [year, month, date] = day.split("-").map(Number);
+    const [hour, minute, second = 0] = clock.split(":").map(Number);
+    return new Date(year, month - 1, date, hour, minute, second).getTime();
+  };
+  document.querySelectorAll("form[data-schedule-entry]").forEach((form) => {
+    const zone = form.querySelector("input[data-browser-zone]");
+    if (zone && !zone.value) {
+      const missing = form.querySelector("[data-zone-missing]");
+      if (missing) missing.hidden = false;
+      form.querySelectorAll('button[type="submit"]').forEach((button) => {
+        button.disabled = true;
+        if (missing?.id) {
+          button.setAttribute("aria-describedby", [button.getAttribute("aria-describedby"),
+            missing.id].filter(Boolean).join(" "));
+        }
+      });
+    }
+    const moment = Date.parse(form.dataset.scheduleLocal || "");
+    if (Number.isNaN(moment)) return;
+    const parts = localParts(moment);
+    const field = (name) => form.querySelector(`[name="schedule-${name}"]`);
+    // Only fields the saved schedule uses hold a value to convert.
+    if (field("date")?.value) field("date").value = parts.date;
+    if (field("weekday")?.value) field("weekday").value = String(parts.weekday);
+    const time = field("time");
+    if (time) {
+      time.value = parts.time;
+      // A legacy time with seconds may be posted back unchanged (#631).
+      if (time.dataset.timeKept) time.dataset.timeKept = parts.time;
+    }
+  });
+
   // Everything above that binds to elements inside a table, so a table
   // swapped in by the in-place re-sort below behaves like one the page
   // loaded with.
@@ -2566,11 +2625,248 @@
     if (option.dataset.testNote) line(option.dataset.testNote);
   };
 
+  // Action tables (#879; admin-portal spec, "Row actions and confirmation").
+  // A control marked data-confirm-open="<dialog id>" (a row's Delete in
+  // components/table-actions.html, or the bulk bar's button) opens that
+  // components/confirm-dialog.html <dialog> as a modal, naming the row or the
+  // count of ticked rows. Cancel, Escape or the dialog closing changes
+  // nothing. Confirm posts the table form's fields (its CSRF token and any
+  // base version) plus the chosen rows' values, with fetch and no page load.
+  // The server answers with the configuration change's status page (or a
+  // redirect back to this page when nothing is left to wait for), and this
+  // follows that status until the change is applied, then redraws every
+  // region from the table region's data-refresh-url (the page's own address,
+  // sort included), closes the dialog and announces what was done. A
+  // refusal, or a change that did not apply, is shown inside the dialog,
+  // below its buttons, and nothing is redrawn. Focus stays in the dialog
+  // while it is open (Tab wraps), and returns to the control that opened it,
+  // or to the dialog's data-confirm-fallback element when that row is gone.
+  // The server checks every chosen row itself.
+  const CONFIRM_POLL_MS = 1000;
+  const CONFIRM_WAIT_MS = 30000;
+  const CONFIRM_REFUSED = {
+    403: "This was not done: you are not allowed to do this now, or your sign-in has ended. Reload the page.",
+    409: "This was not done: the page is out of date. Reload the page, then try again.",
+  };
+  const CONFIRM_UNAVAILABLE = "This was not done: the server can't do it right now. Try again in a moment.";
+  const CONFIRM_UNREACHABLE = "The server could not be reached. Reload the page to check whether this was done.";
+  const fillIn = (text, values) => String(text || "").replace(/\{(\w+)\}/g,
+    (whole, key) => (key in values ? String(values[key]) : whole));
+  const pause = (ms) => new Promise((resolve) => { window.setTimeout(resolve, ms); });
+  const focusable = (root) => [...root.querySelectorAll(
+    "a[href], button, input, select, textarea, [tabindex]:not([tabindex='-1'])")]
+    .filter((node) => !node.disabled && !node.hidden && node.getClientRects().length);
+  // The open dialog's request: {dialog, opener, form, chosen, values, busy, done}.
+  let confirming = null;
+  const wiredDialogs = new WeakSet();
+  const wireDialog = (dialog) => {
+    if (wiredDialogs.has(dialog)) return;
+    wiredDialogs.add(dialog);
+    // Escape asks to cancel; not while the request is in flight, since the
+    // change may already be under way.
+    dialog.addEventListener("cancel", (event) => {
+      if (confirming?.dialog === dialog && confirming.busy) event.preventDefault();
+    });
+    dialog.addEventListener("close", () => {
+      const state = confirming?.dialog === dialog ? confirming : null;
+      confirming = null;
+      if (!state || state.done) return;
+      const back = state.opener.isConnected ? state.opener
+        : document.getElementById(dialog.dataset.confirmFallback || "");
+      back?.focus();
+    });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Tab") return;
+      const nodes = focusable(dialog);
+      if (!nodes.length) return;
+      const [first, last] = [nodes[0], nodes[nodes.length - 1]];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+    dialog.querySelector("[data-confirm-cancel]")?.addEventListener("click", () => {
+      if (!confirming?.busy) dialog.close();
+    });
+    dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
+      if (confirming?.dialog === dialog && !confirming.busy) acceptConfirm(confirming);
+    });
+  };
+  const openConfirm = (dialog, opener) => {
+    const form = document.getElementById(dialog.dataset.confirmForm || "");
+    if (!(form instanceof HTMLFormElement)) return;
+    const chosen = opener.hasAttribute("data-bulk-action")
+      ? [...form.querySelectorAll("input[data-select-row]:checked")]
+        .filter((box) => !box.disabled)
+        .map((box) => ({field: box.name, value: box.value, name: box.dataset.confirmName}))
+      : [{field: opener.name, value: opener.value, name: opener.dataset.confirmName}];
+    if (!chosen.length || chosen.some((item) => !item.field || !item.value)) return;
+    wireDialog(dialog);
+    const values = {count: chosen.length.toLocaleString("en-US"), name: chosen[0].name || ""};
+    dialog.querySelector("[data-confirm-title]").textContent = fillIn(
+      chosen.length === 1 ? dialog.dataset.titleOne : dialog.dataset.titleMany, values);
+    const error = dialog.querySelector("[data-confirm-error]");
+    error.hidden = true;
+    error.replaceChildren();
+    dialog.querySelector("[data-confirm-status]").textContent = "";
+    dialog.querySelectorAll("[data-confirm-accept], [data-confirm-cancel]").forEach((button) => {
+      button.disabled = false;
+      button.removeAttribute("aria-disabled");
+      button.classList.remove("is-busy");
+    });
+    confirming = {dialog, opener, form, chosen, values, busy: false, done: false};
+    dialog.showModal();
+    // The safe choice takes focus first.
+    dialog.querySelector("[data-confirm-cancel]")?.focus();
+  };
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const opener = event.target.closest("[data-confirm-open]");
+    if (!opener || opener.disabled) return;
+    const dialog = document.getElementById(opener.dataset.confirmOpen);
+    if (!(dialog instanceof HTMLDialogElement)) return;
+    event.preventDefault();
+    openConfirm(dialog, opener);
+  });
+  // Show why the action was not done, below the dialog's buttons; ``link``
+  // is an optional same-origin {href, text} (a change's status page).
+  const refuseConfirm = (state, text, link) => {
+    const error = state.dialog.querySelector("[data-confirm-error]");
+    const line = document.createElement("p");
+    line.textContent = text;
+    error.replaceChildren(line);
+    if (link && sameOrigin(link.href)) {
+      const anchor = document.createElement("a");
+      anchor.href = link.href;
+      anchor.textContent = link.text;
+      error.append(anchor);
+    }
+    error.hidden = false;
+    state.dialog.querySelector("[data-confirm-status]").textContent = "";
+    const accept = state.dialog.querySelector("[data-confirm-accept]");
+    accept.classList.remove("is-busy");
+    accept.removeAttribute("aria-disabled");
+    // The same request would be refused again; Cancel stays.
+    accept.disabled = true;
+    const cancel = state.dialog.querySelector("[data-confirm-cancel]");
+    cancel.disabled = false;
+    state.busy = false;
+    cancel.focus();
+  };
+  // A refused answer's message: the server's own explanation when it gives
+  // one (a JSON refusal), else a plain one for its status.
+  const refusalText = (status, text) => {
+    try {
+      const refusal = JSON.parse(text)?.refusal;
+      if (refusal?.message) return [refusal.message, refusal.fix].filter(Boolean).join(" ");
+    } catch { /* not JSON: the plain message below */ }
+    return CONFIRM_REFUSED[status] || CONFIRM_UNAVAILABLE;
+  };
+  // A change's status page: {state, text} from its data-live-status region,
+  // or null for any other page (the change needed no waiting).
+  const changeStatus = (text) => {
+    const parsed = new DOMParser().parseFromString(text, "text/html");
+    const region = parsed.querySelector("[data-live-status]");
+    if (!region) return null;
+    return {
+      state: region.getAttribute("data-live-state") || "",
+      text: squeeze([...region.querySelectorAll("h2, p")].slice(0, 2)
+        .map((node) => node.textContent).join(" ")),
+    };
+  };
+  const acceptConfirm = async (state) => {
+    const {dialog, form, chosen} = state;
+    state.busy = true;
+    const accept = dialog.querySelector("[data-confirm-accept]");
+    accept.setAttribute("aria-disabled", "true");
+    accept.classList.add("is-busy");
+    dialog.querySelector("[data-confirm-cancel]").disabled = true;
+    dialog.querySelector("[data-confirm-error]").hidden = true;
+    dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.working || "Working…";
+    // The form's own fields (CSRF, base version), never its row boxes: the
+    // chosen rows are exactly the ones the dialog named.
+    const fields = new Set(chosen.map((item) => item.field));
+    const body = new URLSearchParams();
+    new FormData(form).forEach((value, name) => {
+      if (!fields.has(name) && typeof value === "string") body.append(name, value);
+    });
+    chosen.forEach((item) => body.append(item.field, item.value));
+    const read = async (url, init) => {
+      const response = await fetch(url, {...init, credentials: "same-origin",
+        headers: {"X-Requested-With": "fetch"}});
+      return {response, text: await response.text()};
+    };
+    let answer;
+    try {
+      answer = await read(form.action, {method: "POST", body});
+    } catch {
+      // It may have reached the server: never send it again.
+      refuseConfirm(state, CONFIRM_UNREACHABLE);
+      return;
+    }
+    if (!answer.response.ok) {
+      refuseConfirm(state, refusalText(answer.response.status, answer.text));
+      return;
+    }
+    // Follow the change until it is applied (a passive status read).
+    const statusUrl = answer.response.url;
+    let status = changeStatus(answer.text);
+    const deadline = Date.now() + CONFIRM_WAIT_MS;
+    while (status && !["applied", "failed", "cancelled"].includes(status.state)) {
+      if (Date.now() >= deadline) {
+        refuseConfirm(state, "The change is saved but not applied yet, so the list is unchanged for now.",
+          {href: statusUrl, text: "See the change's status"});
+        return;
+      }
+      await pause(CONFIRM_POLL_MS);
+      try {
+        const next = await read(statusUrl, {method: "GET"});
+        if (next.response.ok) status = changeStatus(next.text) || status;
+      } catch { /* keep waiting until the deadline */ }
+    }
+    if (status && status.state !== "applied") {
+      refuseConfirm(state, status.text || "The change was not applied. Nothing was changed.",
+        {href: statusUrl, text: "See the change's status"});
+      return;
+    }
+    // Applied: redraw every region from the table's own address.
+    const region = form.closest(REGIONS);
+    const address = region?.dataset.refreshUrl || window.location.href;
+    let fresh;
+    try {
+      const page = await read(address, {method: "GET"});
+      if (!page.response.ok) throw new Error("refresh refused");
+      fresh = new DOMParser().parseFromString(page.text, "text/html");
+    } catch {
+      // The change is applied; an ordinary load shows the list.
+      window.location.assign(address);
+      return;
+    }
+    state.done = true;
+    dialog.close();
+    const fallback = dialog.dataset.confirmFallback || "";
+    document.querySelectorAll(REGIONS).forEach((other) => {
+      const copy = fresh.getElementById(other.id);
+      if (isRegion(copy)) swapRegion(other, copy);
+    });
+    syncControls(fresh);
+    const target = (state.opener.isConnected && state.opener)
+      || document.getElementById(fallback) || document.querySelector("main h1");
+    target?.focus({preventScroll: true});
+    target?.scrollIntoView({block: "nearest"});
+    announce(fillIn(chosen.length === 1 ? dialog.dataset.doneOne : dialog.dataset.doneMany,
+      state.values));
+  };
+
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into
-  // the campaign-local calendar dates it produces. Dates are civil days,
-  // computed with UTC dates so the browser's own zone never shifts them; the
-  // send time is the campaign's wall-clock time, added later by the server
-  // per date. The rule: {frequency: "daily" | "weekly" | "monthly", start,
+  // the calendar dates it produces. Dates are civil days, computed with UTC
+  // dates so the browser's own zone never shifts them; the send time is
+  // added later by the server per date (the campaign's wall-clock time on
+  // the first-campaign step, the browser's on New scheduled email, #558).
+  // The rule: {frequency: "daily" | "weekly" | "monthly", start,
   // end (inclusive, "YYYY-MM-DD"), weekdays: [0 (Monday) … 6] for weekly,
   // and for monthly either {day: 1–31} or {ordinal: 1–4 or -1 (last),
   // weekday}}. A month without the chosen day (the 31st in September) is
@@ -2635,8 +2931,9 @@
   // anyway (configuration.validate_campaign_sections stays the authority):
   // inside the campaign dates, strictly after the initial invitation, not at
   // the instant of another Family mailing, at most REPEAT_LIMIT dates per
-  // rule and the form's MAX_NUM_FORMS rows in all. Every comparison is of
-  // campaign-local date and time text, the zone all schedule rows use.
+  // rule and the form's MAX_NUM_FORMS rows in all. Here every comparison is
+  // of campaign-local date and time text, the zone the step's rows use (New
+  // scheduled email compares moments instead; see repeatDates).
   const REPEAT_LIMIT = 30;
   const REPEAT_ERRORS = {
     dates: "Choose the first and last dates to repeat on.",
@@ -2654,6 +2951,133 @@
     return `${DAY_NAMES[mondayFirst(day)]}, ${MONTH_NAMES[day.getUTCMonth()]} ${
       day.getUTCDate()}, ${day.getUTCFullYear()}`;
   };
+  // The rule a repeat panel's controls describe, for expandRecurrence.
+  const repeatRule = (panel) => {
+    const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
+    return {
+      frequency: control("frequency").value,
+      start: control("from").value,
+      end: control("until").value,
+      weekdays: [...panel.querySelectorAll('[data-repeat="weekday"]:checked')]
+        .map((box) => Number(box.value)),
+      monthly: control("by").value === "day"
+        ? {day: Number(control("day").value)}
+        : {ordinal: Number(control("ordinal").value),
+          weekday: Number(control("month-weekday").value)},
+    };
+  };
+  // Show only the parts of a repeat rule its frequency (and, monthly, its
+  // "Repeat on") uses.
+  const showRepeatParts = (panel) => {
+    const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
+    const frequency = control("frequency").value;
+    panel.querySelectorAll("[data-repeat-when]").forEach((part) => {
+      part.hidden = part.dataset.repeatWhen !== frequency;
+    });
+    panel.querySelectorAll("[data-repeat-by]").forEach((part) => {
+      part.hidden = part.dataset.repeatBy !== control("by").value;
+    });
+  };
+  // Every date a repeat rule gives, and why any of them will not be added
+  // (shared by the first-campaign panel and New scheduled email, #878).
+  // ``existing`` is the Family mailings already scheduled, as {kind, date,
+  // time} campaign-local text; ``first`` and ``last`` the campaign's dates;
+  // ``room`` how many more of the ``limit`` schedules fit; ``sendTime`` the canonical send
+  // time, or "" when it does not read yet; ``email`` whether an email is
+  // chosen and ``emails`` whether any reminder email exists. Returns the
+  // dates that fit (``ready``), one {text, reason} item per date or skipped
+  // month, the summary line and the list's heading.
+  // New scheduled email takes dates and times in the browser's zone (#558)
+  // and passes ``at`` (localMoment), ``bounds`` (the campaign's [start, end)
+  // moments) and each existing mailing's ``at`` moment, so the timed checks
+  // compare moments, as the server does; ``first`` and ``last`` are then
+  // the browser-local days the campaign touches.
+  const repeatDates = ({rule, existing, first, last, room, limit, sendTime, email, emails,
+    at, bounds}) => {
+    const ready = [];
+    const items = [];
+    const when = (date) => (at ? at(date, sendTime) : `${date} ${sendTime}`);
+    // What the reserved summary line says: the first thing still missing,
+    // or how many dates will be added. Without a readable send time the
+    // timed checks (after the initial invitation, already scheduled then)
+    // cannot run, so no count is offered rather than one that is too high.
+    let summary = "";
+    const expanded = expandRecurrence(rule);
+    if (expanded.error) {
+      if (rule.start || rule.end) summary = REPEAT_ERRORS[expanded.error];
+      return {ready, items, summary, heading: ""};
+    }
+    const sends = (mailing) => (at ? mailing.at : `${mailing.date} ${mailing.time}`);
+    const initial = existing.find((mailing) => mailing.kind === "initial");
+    const taken = new Set(existing.map(sends));
+    expanded.dates.forEach((date) => {
+      let reason = "";
+      if (date < first || date > last) reason = "outside the campaign dates";
+      // Without a send time the remaining checks wait; the date is
+      // listed but not counted.
+      else if (!sendTime) reason = "";
+      else if (bounds && !(when(date) >= bounds.start && when(date) < bounds.end)) {
+        reason = "outside the campaign dates";
+      } else if (initial && when(date) <= sends(initial)) {
+        reason = "not after the initial invitation";
+      } else if (taken.has(when(date))) {
+        reason = "another email is already scheduled then";
+      } else if (ready.length >= REPEAT_LIMIT) {
+        reason = `over the limit of ${REPEAT_LIMIT} reminders at a time`;
+      } else if (ready.length >= room) {
+        reason = `over the limit of ${limit} schedules`;
+      }
+      if (!reason && sendTime) ready.push(date);
+      items.push({text: spokenDay(date), reason});
+    });
+    expanded.missing.forEach((month) => {
+      const [year, number] = month.split("-").map(Number);
+      items.push({text: `${MONTH_NAMES[number - 1]} ${year}`,
+        reason: `skipped: it has no day ${rule.monthly.day}`});
+    });
+    const left = items.filter((item) => item.reason).length;
+    const plural = (number, word) =>
+      `${number.toLocaleString("en-US")} ${word}${number === 1 ? "" : "s"}`;
+    if (!items.length) summary = "This rule gives no dates between the first and last date.";
+    else if (!sendTime) summary = "Enter a send time to check these dates.";
+    else if (!ready.length) summary = "Nothing to add: none of these dates can be used.";
+    else if (!email) summary = emails ? "Choose the email to send." : "Save a reminder email first.";
+    else {
+      summary = `${plural(ready.length, "reminder")} to add${
+        left ? `, ${left.toLocaleString("en-US")} not added` : ""}.`;
+    }
+    const heading = !sendTime ? "Dates this rule gives:"
+      : ready.length
+        ? `${ready.length.toLocaleString("en-US")} ${ready.length === 1 ? "reminder" : "reminders"} to add:`
+        : "Nothing to add yet:";
+    return {ready, items, summary, heading};
+  };
+  // Draw repeatDates' list: its heading, then one line per date, a date it
+  // will not add saying why.
+  const showRepeatDates = (list, {items, heading}) => {
+    const title = document.createElement("p");
+    title.textContent = heading;
+    const listing = document.createElement("ul");
+    items.forEach((item) => {
+      const entry = document.createElement("li");
+      entry.textContent = item.reason ? `${item.text}: not added, ${item.reason}` : item.text;
+      if (item.reason) entry.className = "help";
+      listing.append(entry);
+    });
+    list.replaceChildren(...(items.length ? [title, listing] : []));
+  };
+  // A summary line that is a live region is written a moment after typing
+  // pauses, and only when its text changes, so a screen reader hears one
+  // short sentence rather than every keystroke's result.
+  const quietLine = (line) => {
+    let timer;
+    return (text) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (line.textContent !== text) line.textContent = text;
+      }, 300);
+    };
+  };
   const repeatPanel = ({form, panel, template, rows, maximum, status, count, addScheduleRow}) => {
     const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
     const list = panel.querySelector("[data-repeat-dates]");
@@ -2666,17 +3090,8 @@
     email.replaceChildren(...reminders.map((option) => option.cloneNode(true)));
     panel.querySelector("[data-repeat-no-email]").hidden = reminders.length > 0;
     let ready = [];
-    // The summary is the panel's only live region. It is written a moment
-    // after typing pauses, and only when its text changes, so a screen
-    // reader hears one short sentence rather than every keystroke's result.
-    const summaryLine = panel.querySelector("[data-repeat-summary]");
-    let summaryTimer;
-    const announce = (text) => {
-      clearTimeout(summaryTimer);
-      summaryTimer = setTimeout(() => {
-        if (summaryLine.textContent !== text) summaryLine.textContent = text;
-      }, 300);
-    };
+    // The summary is the panel's only live region.
+    const announce = quietLine(panel.querySelector("[data-repeat-summary]"));
     // The Family mailings already in the form, as {kind, date, time} text.
     const mailings = () => [...rows.querySelectorAll("[data-schedule-row]")].flatMap((row) => {
       const value = (name) => row.querySelector(`[name$="-${name}"]`)?.value ?? "";
@@ -2688,100 +3103,28 @@
     });
     const windowDay = (name) => form.querySelector(`[name="window-${name}"]`)?.value
       || panel.dataset[`repeat${name === "start_date" ? "Start" : "End"}`];
-    const rule = () => ({
-      frequency: control("frequency").value,
-      start: control("from").value,
-      end: control("until").value,
-      weekdays: [...panel.querySelectorAll('[data-repeat="weekday"]:checked')]
-        .map((box) => Number(box.value)),
-      monthly: control("by").value === "day"
-        ? {day: Number(control("day").value)}
-        : {ordinal: Number(control("ordinal").value),
-          weekday: Number(control("month-weekday").value)},
-    });
     const update = () => {
-      const frequency = control("frequency").value;
-      panel.querySelectorAll("[data-repeat-when]").forEach((part) => {
-        part.hidden = part.dataset.repeatWhen !== frequency;
-      });
-      panel.querySelectorAll("[data-repeat-by]").forEach((part) => {
-        part.hidden = part.dataset.repeatBy !== control("by").value;
-      });
+      showRepeatParts(panel);
       const time = parseTime(control("time").value);
       reading.textContent = control("time").value.trim()
         ? (time.error ? time.message : `Reads as ${timeReading(time.value)}`) : "";
       // A time that does not read is shown as an error, like the row fields.
       reading.classList.toggle("is-error",
         Boolean(control("time").value.trim() && time.error));
-      ready = [];
-      const items = [];
-      // What the reserved summary line says: the first thing still missing,
-      // or how many dates will be added. Without a readable send time the
-      // timed checks (after the initial invitation, already scheduled then)
-      // cannot run, so no count is offered rather than one that is too high.
-      let summary = "";
-      const sendTime = time.error ? "" : canonicalTime(time.value);
-      const expanded = expandRecurrence(rule());
-      if (expanded.error) {
-        if (control("from").value || control("until").value) {
-          summary = REPEAT_ERRORS[expanded.error];
-        }
-      } else {
-        const existing = mailings();
-        const initial = existing.find((mailing) => mailing.kind === "initial");
-        const taken = new Set(existing.map((mailing) => `${mailing.date} ${mailing.time}`));
-        const [first, last] = [windowDay("start_date"), windowDay("end_date")];
-        expanded.dates.forEach((date) => {
-          let reason = "";
-          if (date < first || date > last) reason = "outside the campaign dates";
-          // Without a send time the remaining checks wait; the date is
-          // listed but not counted.
-          else if (!sendTime) reason = "";
-          else if (initial && `${date} ${sendTime}` <= `${initial.date} ${initial.time}`) {
-            reason = "not after the initial invitation";
-          } else if (taken.has(`${date} ${sendTime}`)) {
-            reason = "another email is already scheduled then";
-          } else if (ready.length >= REPEAT_LIMIT) {
-            reason = `over the limit of ${REPEAT_LIMIT} reminders at a time`;
-          } else if (Number.isFinite(maximum) && count() + ready.length >= maximum) {
-            reason = `over the limit of ${maximum} schedules`;
-          }
-          if (!reason && sendTime) ready.push(date);
-          items.push({text: spokenDay(date), reason});
-        });
-        expanded.missing.forEach((month) => {
-          const [year, number] = month.split("-").map(Number);
-          items.push({text: `${MONTH_NAMES[number - 1]} ${year}`,
-            reason: `skipped: it has no day ${rule().monthly.day}`});
-        });
-        const left = items.filter((item) => item.reason).length;
-        const plural = (number, word) =>
-          `${number.toLocaleString("en-US")} ${word}${number === 1 ? "" : "s"}`;
-        if (!items.length) summary = "This rule gives no dates between the first and last date.";
-        else if (!sendTime) summary = "Enter a send time to check these dates.";
-        else if (!ready.length) summary = "Nothing to add: none of these dates can be used.";
-        else if (!email.value) {
-          summary = reminders.length ? "Choose the email to send."
-            : "Save a reminder email first.";
-        } else {
-          summary = `${plural(ready.length, "reminder")} to add${
-            left ? `, ${left.toLocaleString("en-US")} not added` : ""}.`;
-        }
-      }
-      announce(summary);
-      const heading = document.createElement("p");
-      heading.textContent = !sendTime ? "Dates this rule gives:"
-        : ready.length
-          ? `${ready.length.toLocaleString("en-US")} ${ready.length === 1 ? "reminder" : "reminders"} to add:`
-          : "Nothing to add yet:";
-      const listing = document.createElement("ul");
-      items.forEach((item) => {
-        const entry = document.createElement("li");
-        entry.textContent = item.reason ? `${item.text}: not added, ${item.reason}` : item.text;
-        if (item.reason) entry.className = "help";
-        listing.append(entry);
+      const result = repeatDates({
+        rule: repeatRule(panel),
+        existing: mailings(),
+        first: windowDay("start_date"),
+        last: windowDay("end_date"),
+        room: Number.isFinite(maximum) ? maximum - count() : Infinity,
+        limit: maximum,
+        sendTime: time.error ? "" : canonicalTime(time.value),
+        email: Boolean(email.value),
+        emails: reminders.length > 0,
       });
-      list.replaceChildren(...(items.length ? [heading, listing] : []));
+      ready = result.ready;
+      announce(result.summary);
+      showRepeatDates(list, result);
       button.disabled = !ready.length || !email.value;
       // Rewrite the label only when it changes. Pressing the button blurs the
       // send time, whose change event runs this update between mousedown and
@@ -3031,6 +3374,100 @@
       count: () => first + added.length
         - rows.querySelectorAll('[name$="-DELETE"]:checked').length,
       addScheduleRow});
+  });
+
+  // New scheduled email's Repeat (#878, schedule-repeat-entry.html): for a
+  // Reminder, a Repeat checkbox swaps the send date for a repeat rule. The
+  // page's own send time and Email to send apply to every date. As the Admin
+  // types, the dates the rule gives are listed with the same checks as the
+  // first-campaign panel (repeatDates), against the saved invitations and
+  // reminders the page carries (data-repeat-mailings) and the schedules
+  // still free (data-repeat-room). Dates and the time are this browser's
+  // (#558): the saved mailings and the campaign's first and last moments
+  // come as UTC instants, and every timed check compares moments
+  // (localMoment). The dates that fit are kept as hidden
+  // repeat-dates fields, which Review and save posts; the server checks each
+  // date as an ordinary reminder. Repeat and its rule show only for a
+  // Reminder; with another mail type nothing of the rule is posted as a
+  // date, and the server refuses a repeat that is not a reminder anyway.
+  document.querySelectorAll("[data-repeat-entry]").forEach((panel) => {
+    const form = panel.closest("form");
+    const kind = form?.querySelector('[data-schedule-field="kind"] select');
+    const enabled = panel.querySelector('[data-repeat="enabled"]');
+    const rule = panel.querySelector("[data-repeat-rule]");
+    const time = form?.querySelector('[data-schedule-field="time"] input');
+    const email = form?.querySelector('[data-schedule-field="template_version"] select');
+    const summary = form?.querySelector("[data-repeat-summary]");
+    const list = form?.querySelector("[data-repeat-dates]");
+    const posted = form?.querySelector("[data-repeat-posted]");
+    if (!kind || !enabled || !rule || !time || !email || !summary || !list || !posted) return;
+    const date = form.querySelector('[data-schedule-field="date"]');
+    let existing = [];
+    try { existing = JSON.parse(panel.dataset.repeatMailings || "[]"); } catch { existing = []; }
+    existing = existing.map((mailing) => ({kind: mailing.kind, at: Date.parse(mailing.at)}))
+      .filter((mailing) => !Number.isNaN(mailing.at));
+    const bounds = {start: Date.parse(panel.dataset.repeatWindowStart),
+      end: Date.parse(panel.dataset.repeatWindowEnd)};
+    // The browser-local days the campaign touches: its first moment's day
+    // and its last moment's (just before its end). A day outside them is
+    // left out at once; the moments decide the days at either edge.
+    const first = localParts(bounds.start).date;
+    const last = localParts(bounds.end - 1).date;
+    const room = Number(panel.dataset.repeatRoom);
+    const limit = Number(panel.dataset.repeatLimit);
+    const announce = quietLine(summary);
+    const control = (name) => panel.querySelector(`[data-repeat="${name}"]`);
+    const update = () => {
+      const reminder = kind.value === "reminder";
+      const on = reminder && enabled.checked;
+      panel.hidden = !reminder;
+      rule.hidden = !on;
+      // The date field is the mail type's to show (scheduleRow); a repeat
+      // replaces it only while it is on. Its value is kept, so turning
+      // Repeat off again brings back what was typed.
+      if (reminder && date) date.hidden = on;
+      summary.hidden = !on;
+      posted.replaceChildren();
+      if (!on) {
+        summary.textContent = "";
+        list.replaceChildren();
+        return;
+      }
+      showRepeatParts(panel);
+      const reading = parseTime(time.value);
+      const result = repeatDates({
+        rule: repeatRule(panel),
+        existing,
+        first,
+        last,
+        at: localMoment,
+        bounds,
+        room: Number.isFinite(room) ? room : Infinity,
+        // The campaign's limit (the schedule forms' max_num).
+        limit,
+        sendTime: time.value.trim() && !reading.error ? canonicalTime(reading.value) : "",
+        email: Boolean(email.value),
+        emails: [...email.options].some((option) => option.dataset.kind === "reminder"),
+      });
+      announce(result.summary);
+      showRepeatDates(list, result);
+      result.ready.forEach((day) => {
+        const field = document.createElement("input");
+        field.type = "hidden";
+        field.name = "repeat-dates";
+        field.value = day;
+        posted.append(field);
+      });
+    };
+    // Prefill the dates with the campaign's own calendar dates (a pure date
+    // is never shifted), so the first list is useful.
+    control("from").value ||= panel.dataset.repeatStart || "";
+    control("until").value ||= panel.dataset.repeatEnd || "";
+    form.addEventListener("input", update);
+    form.addEventListener("change", update);
+    // The browser can restore the checkbox and the rule on Back.
+    window.addEventListener("pageshow", update);
+    update();
   });
 
   // Plain multi-select lists: say how many items are chosen, since a long list

@@ -1,0 +1,30 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% block title %}{% if new %}{% translate "New scheduled email" %}{% else %}{% translate "Edit scheduled email" %}{% endif %}{% endblock %}
+{% block content %}{% comment %}
+New and Edit scheduled email (#878; schedule_entry_views): one schedule's
+fields (schedule-row.html, so the mail type shows only its fields), plus, on
+New, the Repeat rule for reminders (schedule-repeat-entry.html). Review and
+save shows the review of the whole set of schedules, as every schedule change
+does; a refused one draws this page again with its errors. The repeat
+summary reserves its lines above the button and the date list sits below it,
+so neither moves the button.
+Send dates and times are shown and typed in the browser's time zone (#558):
+ui-v1.js fills the hidden zone field (data-browser-zone) and names the zone
+in the note, and on an unbound Edit page fills the fields from the saved
+moment in data-schedule-local. Without a zone, data-zone-missing shows and
+Review and save stays unavailable.
+{% endcomment %}
+<h1>{% if new %}{% translate "New scheduled email" %}{% else %}{% translate "Edit scheduled email" %}{% endif %}</h1>
+{% aboutpage "schedule-entry" %}{% include 'stewardship/schedule-guide.html' with window_text=window_text browser_times=True %}{% endaboutpage %}
+<p>{{ campaign.active_configuration.name }}</p>
+<p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}</p>
+<form method="post" action="{{ post_url }}" data-schedule-entry{% if local_from %} data-schedule-local="{{ local_from }}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="zone" value="" data-browser-zone>
+<p class="help" data-browser-zone-note hidden>{% translate "Enter the date and time in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
+<p class="notice notice-error" id="schedule-zone-missing" data-zone-missing hidden>{% translate "Your browser didn't report a time zone, so this send time can't be read. Check your computer's time zone setting, then reload this page." %}</p>
+{% if new %}{% translate "Scheduled email" as legend %}{% else %}{% firstof entry.schedule_label _("Scheduled email") as legend %}{% endif %}
+{% include 'stewardship/schedule-row.html' with form=entry legend=legend number=0 %}
+{% if repeat %}<p class="repeat-summary" role="status" data-repeat-summary hidden></p><div data-repeat-posted></div>{% endif %}
+<p>{% button type="submit" %}{% translate "Review and save" %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a></p>
+{% if repeat %}<div data-repeat-dates></div>{% endif %}
+</form>
+{% endblock %}

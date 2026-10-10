@@ -1,9 +1,12 @@
 {% load i18n %}{% comment %}
 What each mail type is and which are required; shared by the setup and
-regular schedule pages. The readiness rule (exactly one initial invitation)
+regular schedule pages, which pass the campaign dates in words
+(window_text) and its time zone (campaign_timezone). New and Edit scheduled
+email take times in the browser's zone (#558) and pass browser_times instead
+of a zone. The readiness rule (exactly one initial invitation)
 is setup_confirmation.ready_inputs and go_live_configuration.
 {% endcomment %}<section class="panel" aria-labelledby="schedule-guide-title"><h2 id="schedule-guide-title">{% translate "How mail schedules work" %}</h2>
-<p>{% blocktranslate trimmed with window=schedules.window_text timezone=schedules.timezone %}Each schedule sends one saved email. Times are in the campaign's time zone, {{ timezone }}, not your computer's. Initial invitations and reminders go out on a date within the campaign dates, currently {{ window }}.{% endblocktranslate %}</p>
+<p>{% if browser_times %}{% blocktranslate trimmed with window=window_text %}Each schedule sends one saved email. Send dates and times are entered in this computer's time zone. Initial invitations and reminders go out on a date within the campaign dates, currently {{ window }}.{% endblocktranslate %}{% else %}{% blocktranslate trimmed with window=window_text timezone=campaign_timezone %}Each schedule sends one saved email. Send times are entered in the campaign's time zone, {{ timezone }}. Initial invitations and reminders go out on a date within the campaign dates, currently {{ window }}.{% endblocktranslate %}{% endif %}</p>
 <dl class="schedule-guide">
 <dt>{% translate "Initial invitation (required)" %}</dt><dd>{% translate "The first email to every Family, with their personal link and code. Exactly one is required before setup can finish and the campaign can go live. Choose its date, time and email." %}</dd>
 <dt>{% translate "Reminder (optional)" %}</dt><dd>{% translate "A later email to Families who have not responded yet. Add as many as you like; each must be sent after the initial invitation, at a different date and time. Choose its date, time and email." %}</dd>

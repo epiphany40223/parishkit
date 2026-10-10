@@ -276,6 +276,8 @@ EXPECTED = {
     "/admin/campaign/images/logo/removal": "/admin/campaign/images/logo/removal/",
     f"/admin/campaign/images/logo/{T}": f"/admin/campaign/images/logo/{T}/",
     "/admin/campaign/schedules": "/admin/campaign/schedules/",
+    "/admin/campaign/schedules/addition": "/admin/campaign/schedules/addition/",
+    f"/admin/campaign/schedules/{T}": f"/admin/campaign/schedules/{T}/",
     "/admin/campaign/share-options": "/admin/campaign/share-options/",
     "/admin/campaign/talents": "/admin/campaign/talents/",
     "/admin/campaign/reminder-workgroup": "/admin/campaign/reminder-workgroup/",
@@ -435,12 +437,18 @@ def test_every_old_address_is_listed_once_and_expected():
         assert new in routes and not new.startswith(legacy.PREFIX)
 
 
+# Form actions posted only from their own page's script, at the reversed URL,
+# have no slashless form (legacy.SLASHLESS's rule): Delete scheduled emails
+# answers only the list's confirmation dialog (#878).
+POSTED_ONLY = {"schedule_delete"}
+
+
 def test_every_moved_page_has_its_slashless_form():
     """The one trailing-slash rule: each moved page's other form redirects."""
     pages = {
         str(pattern.pattern).rstrip("/")
         for pattern in GROUPS
-        if pattern.name in navigation.PAGES
+        if pattern.name in navigation.PAGES and pattern.name not in POSTED_ONLY
     }
     slashless = {old for old, _new in legacy.SLASHLESS}
     assert pages <= slashless

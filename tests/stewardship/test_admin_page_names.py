@@ -45,6 +45,8 @@ TEMPLATES = {
     "campaign_mail": "campaign-mail.html",
     "campaign_mail_families": "campaign-mail-families.html",
     "schedule_settings": "schedule-settings.html",
+    "schedule_new": "schedule-entry.html",
+    "schedule_edit": "schedule-entry.html",
     "share_settings": "share-settings.html",
     "artwork_settings": "artwork-settings.html",
     "artwork_upload": "artwork-settings.html",
@@ -126,8 +128,10 @@ OBJECT_NAMED = {
 # campaign" page named after the report opened (checked below), and a daily
 # report takes the title saved with the emailed report.
 VIEW_NAMED = {"reports", "daily_digest_snapshot"}
-# A sign-in rule change's status answers JSON only (the spec: not a page).
-NOT_PAGES = {"rule_request"}
+# A sign-in rule change's status answers JSON only (the spec: not a page),
+# and Delete scheduled emails answers the list's dialog with a change's
+# status page, never a page of its own.
+NOT_PAGES = {"rule_request", "schedule_delete"}
 # Pages whose new name waits for a later slice, with that slice. Portal users
 # becomes Sign-in rules when NAV-15 splits it; renaming the combined page now
 # would mislabel its Ministry assignment and Chairperson tables.

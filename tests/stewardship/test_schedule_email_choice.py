@@ -10,6 +10,7 @@ from parishkit.stewardship.accounts.campaign_mail import admits_test_mail
 from parishkit.stewardship.accounts.schedule_forms import (
     Schedules,
     email_choices,
+    email_names,
     email_usage,
     excerpt,
     schedule_labels,
@@ -84,19 +85,33 @@ def test_schedule_labels_number_reminders_in_the_given_order():
 
 
 def test_choices_say_who_sends_each_email_and_never_read_the_same():
-    """Usage tells emails apart; an ID is added only to break a tie."""
+    """Usage says who sends an email; its name tells look-alikes apart (#878)."""
     rows = emails()
     initial, first, second = rows
     labels = dict(email_choices(rows, {first["id"]: ["Reminder 1", "Reminder 2"]}))
-    assert labels[first["id"]] == "Please respond — sent by Reminder 1, Reminder 2"
-    assert labels[second["id"]] == "Please respond — not sent by any schedule"
-    assert labels[initial["id"]] == "Invitation — not sent by any schedule"
-    tie = dict(email_choices(rows, {}))
-    assert tie[first["id"]] == (
-        f"Please respond — not sent by any schedule ({first['id'][:8]})"
+    assert labels[first["id"]] == (
+        f"Please respond ({first['id'][:8]}) — sent by Reminder 1, Reminder 2"
     )
-    assert tie[second["id"]].endswith(f"({second['id'][:8]})")
-    assert tie[initial["id"]] == "Invitation — not sent by any schedule"
+    assert labels[second["id"]] == (
+        f"Please respond ({second['id'][:8]}) — not sent by any schedule"
+    )
+    assert labels[initial["id"]] == "Invitation — not sent by any schedule"
+
+
+def test_email_names_add_the_id_only_for_a_shared_subject_of_one_type():
+    """Two reminders share a subject; an invitation with it would not count."""
+    rows = emails()
+    initial, first, second = rows
+    names = email_names(rows)
+    assert names == {
+        initial["id"]: "Invitation",
+        first["id"]: f"Please respond ({first['id'][:8]})",
+        second["id"]: f"Please respond ({second['id'][:8]})",
+    }
+    assert email_names([initial, first]) == {
+        initial["id"]: "Invitation",
+        first["id"]: "Please respond",
+    }
 
 
 def test_a_saved_reminder_offers_its_type_with_usage_labels():
@@ -107,8 +122,14 @@ def test_a_saved_reminder_offers_its_type_with_usage_labels():
     reminder = schedules.forms[1]
     assert reminder.fields["template_version"].choices == [
         ("", "Choose a template"),
-        (first["id"], "Please respond — sent by Reminder 1, Reminder 2"),
-        (second["id"], "Please respond — not sent by any schedule"),
+        (
+            first["id"],
+            f"Please respond ({first['id'][:8]}) — sent by Reminder 1, Reminder 2",
+        ),
+        (
+            second["id"],
+            f"Please respond ({second['id'][:8]}) — not sent by any schedule",
+        ),
     ]
 
 

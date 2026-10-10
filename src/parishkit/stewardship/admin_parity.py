@@ -114,6 +114,11 @@ LEDGER = {
     "schedule_settings": command(
         "schedule show", "schedule preview", "schedule confirm"
     ),
+    # New, Edit and Delete build the same change document the schedule
+    # commands take (#878).
+    "schedule_new": command("schedule preview", "schedule confirm"),
+    "schedule_edit": command("schedule show", "schedule preview", "schedule confirm"),
+    "schedule_delete": command("schedule preview", "schedule confirm"),
     "configuration_request": command("config request show"),
     "campaign_settings": pending(
         "PR 10", "campaign show", "campaign preview", "campaign confirm"

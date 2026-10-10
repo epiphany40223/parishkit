@@ -270,6 +270,7 @@ def test_the_pages_form_errors_are_reported_by_field(admin, google):
     code, document = preview(admin, secret, {})
     assert code == 1 and document["error"]["code"] == "invalid"
     assert document["error"]["fields"][0]["field"] == "window"
+    assert document["error"]["fields"][0]["message"] == "Nothing has changed."
     code, document = preview(admin, secret, {"schedules": [{"id": str(uuid4())}]})
     assert code == 1 and document["error"]["fields"][0]["field"].startswith(
         "schedules."

@@ -145,6 +145,21 @@ class UnknownZone(ValueError):
     """The browser sent no time zone, or one outside the IANA catalog."""
 
 
+def browser_zone(zone):
+    """The browser's IANA ``zone`` as a ``ZoneInfo``, or :class:`UnknownZone`.
+
+    Only names in the frozen IANA catalog (aliases included, e.g.
+    "Asia/Calcutta") reach zoneinfo, which keeps paths and directory names
+    away from it; a catalog name this host's tzdata lacks is unknown too.
+    """
+    if zone not in timezone_names():
+        raise UnknownZone("Unknown time zone.")
+    try:
+        return ZoneInfo(zone)
+    except ZoneInfoNotFoundError:
+        raise UnknownZone("Unknown time zone.") from None
+
+
 def browser_instant(day, clock, zone):
     """Convert a date and time typed in the browser's time zone to a UTC instant.
 
@@ -167,14 +182,7 @@ def browser_instant(day, clock, zone):
     """
     if not (_DAY.fullmatch(day) and _CLOCK.fullmatch(clock)):
         raise ValueError("Use the date and time controls' own format.")
-    # The frozen IANA catalog (aliases included, e.g. "Asia/Calcutta") keeps
-    # paths and directory names away from zoneinfo.
-    if zone not in timezone_names():
-        raise UnknownZone("Unknown time zone.")
-    try:
-        tzinfo = ZoneInfo(zone)
-    except ZoneInfoNotFoundError:  # a catalog name this host's tzdata lacks
-        raise UnknownZone("Unknown time zone.") from None
+    tzinfo = browser_zone(zone)
     local = datetime.combine(date.fromisoformat(day), time.fromisoformat(clock))
     try:
         return local.replace(tzinfo=tzinfo).astimezone(UTC)

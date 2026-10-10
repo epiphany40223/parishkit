@@ -1,6 +1,7 @@
 """Bounded logical mail schedules and combined draft-date reconciliation."""
 
 import json
+from collections import Counter
 from datetime import date
 from uuid import uuid4
 
@@ -46,6 +47,14 @@ NO_TEMPLATES = _(
     "No invitation, reminder or digest email is saved yet, so there is nothing "
     "to choose. Save those emails with the page and email templates first."
 )
+
+
+def window_text(campaign):
+    """A campaign's dates in words ("<start> – <end>"), from its values."""
+    return " – ".join(
+        parish_date(date.fromisoformat(campaign[name]))
+        for name in ("start_date", "end_date")
+    )
 
 
 def schedulable(templates):
@@ -251,33 +260,48 @@ def excerpt(text, limit=120):
     return f"{kept} …" if kept else "…"
 
 
+def email_names(emails):
+    """Each saved email's one readable name, by its ID (#878).
+
+    The name is the email's subject. When another email of the same mail
+    type has the same subject, the start of the email's ID is added, as
+    Pages and emails shows it, so the schedule email lists and the scheduled
+    emails table never show two emails under one name.
+    """
+    subjects = Counter(
+        (row["values"]["slot"], row["values"]["subject"]) for row in emails
+    )
+    return {
+        row["id"]: f"{row['values']['subject']} ({row['id'][:8]})"
+        if subjects[(row["values"]["slot"], row["values"]["subject"])] > 1
+        else row["values"]["subject"]
+        for row in emails
+    }
+
+
 def email_choices(emails, usage):
     """Labels that tell saved emails apart (#446).
 
-    Each email reads "<subject> — sent by Reminder 2" or "<subject> — not
-    sent by any schedule", the verb the summary under the list uses too.
-    Two emails that would still read the same get the start of their ID, so
-    no two choices look identical.
+    Each email reads "<name> — sent by Reminder 2" or "<name> — not sent by
+    any schedule", where the name is ``email_names``'s and the verb the one
+    the summary under the list uses too.
     """
-    labels = {}
-    for row in emails:
-        users = usage.get(row["id"], [])
-        labels[row["id"]] = (
-            _("%(subject)s — sent by %(users)s")
-            % {"subject": row["values"]["subject"], "users": ", ".join(users)}
-            if users
-            else _("%(subject)s — not sent by any schedule")
-            % {"subject": row["values"]["subject"]}
-        )
-    counts = {}
-    for label in labels.values():
-        counts[label] = counts.get(label, 0) + 1
+    names = email_names(emails)
     return [
         (
-            identifier,
-            f"{label} ({identifier[:8]})" if counts[label] > 1 else str(label),
+            row["id"],
+            str(
+                _("%(subject)s — sent by %(users)s")
+                % {
+                    "subject": names[row["id"]],
+                    "users": ", ".join(usage[row["id"]]),
+                }
+                if usage.get(row["id"])
+                else _("%(subject)s — not sent by any schedule")
+                % {"subject": names[row["id"]]}
+            ),
         )
-        for identifier, label in labels.items()
+        for row in emails
     ]
 
 
@@ -530,8 +554,7 @@ class ScheduleSet(BaseFormSet):
     @property
     def window_text(self):
         """The campaign dates in words, for instructions and date errors."""
-        start, end = self.window
-        return f"{parish_date(start)} – {parish_date(end)}"
+        return window_text(self.campaign)
 
     @property
     def timezone(self):

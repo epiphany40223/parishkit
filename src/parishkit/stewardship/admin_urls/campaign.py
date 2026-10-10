@@ -24,6 +24,7 @@ from ..accounts import (
     content_views,
     go_live_views,
     reminder_workgroup_views,
+    schedule_entry_views,
     schedule_views,
     share_views,
     talent_views,
@@ -94,6 +95,23 @@ patterns = [
         "artwork_preview",
     ),
     _page("campaign/schedules/", schedule_views.schedule_settings, "schedule_settings"),
+    # New, Edit and Delete for the scheduled emails list (#878). "addition/" and
+    # "deletion/" come before the schedule's own address, which takes a UUID.
+    _page(
+        "campaign/schedules/addition/",
+        schedule_entry_views.schedule_new,
+        "schedule_new",
+    ),
+    _page(
+        "campaign/schedules/deletion/",
+        schedule_entry_views.schedule_delete,
+        "schedule_delete",
+    ),
+    _page(
+        "campaign/schedules/<uuid:schedule_id>/",
+        schedule_entry_views.schedule_edit,
+        "schedule_edit",
+    ),
     _page("campaign/share-options/", share_views.share_settings, "share_settings"),
     _page("campaign/talents/", talent_views.talent_settings, "talent_settings"),
     _page(
