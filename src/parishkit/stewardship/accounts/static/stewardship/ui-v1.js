@@ -4032,12 +4032,60 @@
     tip.querySelector(".toggletip-bubble").hidden = true;
     if (returnFocus) tip.querySelector(".toggletip-button").focus();
   }
+  function floating(bubble) {
+    // ui-v1.css fixes a bubble inside a .table-scroll box to the viewport.
+    // As an absolute child it would grow the box's scroll area (a one-row
+    // table would gain a scrollbar) or be clipped by it; fixed, it is
+    // outside the box's overflow, so the table never changes size or scroll.
+    return getComputedStyle(bubble).position === "fixed";
+  }
+  function place(tip) {
+    // Put a floating bubble under its button, or above it when only there
+    // it fits, aligned with the button's start and kept inside the viewport
+    // (its CSS max-width already fits a phone). Rerun on scroll and resize,
+    // since a fixed bubble does not move with its button by itself.
+    const bubble = tip.querySelector(".toggletip-bubble");
+    const anchor = tip.querySelector(".toggletip-button").getBoundingClientRect();
+    const edge = 8, gap = 6, box = bubble.getBoundingClientRect();
+    const width = document.documentElement.clientWidth;
+    const height = document.documentElement.clientHeight;
+    const start = getComputedStyle(bubble).direction === "rtl" ? anchor.right - box.width : anchor.left;
+    const below = anchor.bottom + gap, above = anchor.top - gap - box.height;
+    const fitsBelow = below + box.height <= height - edge;
+    bubble.style.left = Math.max(edge, Math.min(start, width - edge - box.width)) + "px";
+    bubble.style.top = (fitsBelow || above < edge ? below : above) + "px";
+  }
+  function scrolledOut(tip) {
+    // Whether the tip's button has left its .table-scroll box's visible
+    // area. Fixed to the viewport, the bubble would otherwise stay drawn
+    // over the page, pointing at a button the box no longer shows.
+    const box = tip.closest(".table-scroll")?.getBoundingClientRect();
+    if (!box) return false;
+    const anchor = tip.querySelector(".toggletip-button").getBoundingClientRect();
+    return anchor.right <= box.left || anchor.left >= box.right
+      || anchor.bottom <= box.top || anchor.top >= box.bottom;
+  }
+  function follow() {
+    // Keep an open floating bubble with its button as the page or the
+    // table's box scrolls, and as the window changes size; close it once
+    // the box scrolls its button out of view.
+    const tip = document.querySelector(".toggletip-open");
+    if (!tip || !floating(tip.querySelector(".toggletip-bubble"))) return;
+    if (scrolledOut(tip)) close(tip);
+    else place(tip);
+  }
+  document.addEventListener("scroll", follow, true);
+  window.addEventListener("resize", follow);
   function open(tip) {
     document.querySelectorAll(".toggletip-open").forEach((other) => close(other));
     const bubble = tip.querySelector(".toggletip-bubble");
     tip.classList.add("toggletip-open");
     tip.querySelector(".toggletip-button").setAttribute("aria-expanded", "true");
     bubble.hidden = false;
+    if (floating(bubble)) {
+      place(tip);
+      return;
+    }
     // Keep the bubble on screen: a button near the right edge of a phone
     // would otherwise push it past the viewport (and scroll the page).
     bubble.style.insetInlineStart = "";

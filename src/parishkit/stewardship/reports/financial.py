@@ -20,10 +20,12 @@ from parishkit.stewardship.responses.financial_inputs import (
 )
 from parishkit.stewardship.responses.financial_presentation import option_labels
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
+from parishkit.stewardship.source.snapshot_names import name_file_rows
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.tables import Sorting
 
+from .financial_documents import period_years
 from .information import parse_page
 from .money import MoneyAmount, source_cents
 
@@ -257,12 +259,33 @@ def financial_page(
         raise PermissionError("Financial stewardship is not enabled for this campaign.")
     if result.get("unavailable"):
         raise ReadUnavailable("Financial report inputs are unavailable.")
-    return shape_result(
+    result = shape_result(
         result,
         campaign_id=campaign_id,
         parish_name=parish_name,
         configuration=configuration,
     )
+    name_families(result)
+    metadata = result["metadata"]
+    metadata["comparison_years"] = period_years(
+        metadata["comparison_start"], metadata["comparison_end"]
+    )
+    return result
+
+
+def name_families(result):
+    """Name each row's Family as every Admin table does, "Squyres, Jeff and Tracy".
+
+    The name (#932) is read from the snapshot the projection itself was read
+    from, so the page and an export rendered later from its capture name a
+    Family alike. SQL still searches and orders by the surname, which leads
+    that name. Once the 15-minute refresh has compacted that snapshot, a late
+    export render keeps the captured surname for every row rather than mixing
+    in later data, and the file's "Family names" detail says which form it
+    used.
+    """
+    name_file_rows(result["metadata"], result["rows"])
+    return result
 
 
 def shape_result(result, *, campaign_id, parish_name, configuration):

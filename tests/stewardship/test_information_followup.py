@@ -122,3 +122,29 @@ def test_native_multiline_notes_keep_browser_length_and_stable_resaves():
     assert information_views.change_values(values) == first
     values["notes"] = "one\rtwo"
     assert information_views.change_values(values)["notes"] == "one\ntwo"
+
+
+def test_name_families_names_rows_from_their_snapshot_as_the_sql_does(monkeypatch):
+    """The page and the export name Families from the rows' own snapshot (#932).
+
+    A Family without a surname falls back to "Family", as the report's SQL
+    names it, rather than the helper's general default.
+    """
+    from parishkit.stewardship.reports import information
+
+    calls = []
+
+    def name_file_rows(metadata, rows, default):
+        """Record the call and add heads, as the shared helper does."""
+        calls.append((metadata["source_id"], default))
+        for row in rows:
+            row["family_name"] += ", Ann and Bo"
+
+    monkeypatch.setattr(information, "name_file_rows", name_file_rows)
+    result = {
+        "metadata": {"source_id": "snap"},
+        "rows": [{"family_duid": 1, "family_name": "Example"}],
+    }
+    assert information.name_families(result) is result
+    assert result["rows"][0]["family_name"] == "Example, Ann and Bo"
+    assert calls == [("snap", "Family")]

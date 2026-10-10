@@ -13,12 +13,14 @@ from parishkit.stewardship.reports.financial_documents import (
     HEADINGS,
     UNPROVEN,
     financial_document,
+    headings,
 )
 from parishkit.stewardship.reports.information_rendering import (
     render_information,
     visible_text,
 )
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_FULL
 from parishkit.stewardship.web.dates import Span, csv_text
 
 MOMENT = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
@@ -60,6 +62,7 @@ def result(rows, *, proven=True):
             "source_id": str(UUID(int=95)),
             "source_generation": 12,
             "source_as_of": MOMENT,
+            "family_names": FAMILY_NAMES_FULL,
             "giving_observed_at": (
                 MOMENT.replace(day=10).isoformat() if proven else None
             ),
@@ -104,11 +107,10 @@ def test_rows_word_money_status_shares_and_local_instants():
         source_contributions=MoneyAmount(None),
     )
     built = document([row(), unproven, row(active=False)])
-    assert built.item_count == 3 and built.headings is HEADINGS
+    assert built.item_count == 3 and len(built.headings) == len(HEADINGS)
     assert built.rows[0] == (
         "Example <Family>",
         "1234567",
-        "Active",
         MoneyAmount(123450),
         "Monthly",
         MoneyAmount(10288),
@@ -117,13 +119,14 @@ def test_rows_word_money_status_shares_and_local_instants():
         MoneyAmount(10000),
         datetime(2026, 9, 19, 11, 4, tzinfo=NEW_YORK),
         datetime(2026, 9, 1, 11, 4, tzinfo=NEW_YORK),
-        "2",
-        str(UUID(int=97)),
     )
+    # The page's columns in its order, without status or internal references
+    # (decisions B1 and E1).
+    assert "Family status" not in HEADINGS and "Family version" not in HEADINGS
+    assert "Response reference" not in HEADINGS
     # A zero pledge has no frequency or installment; unproven money is typed
     # unavailable, which every renderer words, never a zero.
-    assert built.rows[1][2:9] == (
-        "Status unavailable",
+    assert built.rows[1][2:8] == (
         MoneyAmount(0),
         "No frequency",
         "",
@@ -131,11 +134,11 @@ def test_rows_word_money_status_shares_and_local_instants():
         MoneyAmount(None),
         MoneyAmount(None),
     )
-    assert built.rows[2][2] == "Inactive"
     metadata = dict(built.metadata)
     assert metadata["Report"] == "Financial stewardship detail"
     # Typed display-zone values; each renderer formats them (see #221).
     assert metadata["Source as of"] == datetime(2026, 9, 19, 11, 4, tzinfo=NEW_YORK)
+    assert metadata["Family names"] == FAMILY_NAMES_FULL
     # The money's own read time is stated apart from the source promotion time.
     assert metadata["ParishSoft giving read as of"] == datetime(
         2026, 9, 10, 11, 4, tzinfo=NEW_YORK
@@ -166,7 +169,7 @@ def test_an_unproven_capture_says_unavailable_never_zero():
     metadata = dict(built.metadata)
     assert metadata["ParishSoft contributions through"] == UNPROVEN
     assert metadata["ParishSoft giving read as of"] == "Unavailable"
-    assert built.rows[0][7] == MoneyAmount(None)
+    assert built.rows[0][6] == MoneyAmount(None)
 
 
 def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
@@ -184,28 +187,26 @@ def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
     # Each entry stores as about eight thousand characters: four per cell.
     assert built.item_count == 2 and len(built.rows) == 6
     assert [cell[1] for cell in built.rows] == ["1234567"] * 5 + ["2"]
-    # A continuation row carries the Family, the wording and the reference only.
-    assert built.rows[1][2:6] == ("", "", "", "") and built.rows[1][7:12] == ("",) * 5
-    assert built.rows[1][6].startswith("(continued) Option ")
-    assert built.rows[1][12] == str(UUID(int=97))
+    # A continuation row carries the Family and the wording only.
+    assert built.rows[1][2:5] == ("", "", "") and built.rows[1][6:] == ("",) * 4
+    assert built.rows[1][5].startswith("(continued) Option ")
     expected = visible_text("; ".join(f"{s['label']}: {s['text']}" for s in shares))
     # Every character survives a workbook round trip, in order, in the
     # writer's own spelling, and no stored cell exceeds the maximum.
     output = io.BytesIO()
     render_information(built, output, format="xlsx")
     sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial detail"]
-    cells = [str(sheet.cell(index, 7).value) for index in range(2, 7)]
+    cells = [str(sheet.cell(index, 6).value) for index in range(2, 7)]
     assert all(len(cell) <= 32_767 for cell in cells)
     assert "; ".join(cell.removeprefix("(continued) ") for cell in cells) == expected
     # The CSV lays out the same six rows, with the continuation cells in the
-    # share column and nothing in the status or money columns.
+    # share column and nothing in the money columns.
     output = io.BytesIO()
     render_information(built, output, format="csv")
     records = list(csv.reader(io.StringIO(output.getvalue().decode())))
     data = records[2:]
     assert len(data) == 6 and [item[1] for item in data] == [c[1] for c in built.rows]
-    assert data[1][6].startswith("(continued) ") and data[1][2] == data[1][3] == ""
-    assert data[1][12] == str(UUID(int=97))
+    assert data[1][5].startswith("(continued) ") and data[1][2] == data[1][3] == ""
     output = io.BytesIO()
     render_information(built, output, format="pdf")
     assert output.getvalue().startswith(b"%PDF")
@@ -270,28 +271,37 @@ def test_every_format_renders_from_one_document(format):
 
 
 def test_comparison_headings_match_the_page():
-    """CSV and XLSX head the ParishSoft columns with the page's labels (#404)."""
+    """CSV and XLSX head the ParishSoft columns with the page's labels (#404)
+    and its comparison years (#932)."""
     from pathlib import Path
 
     from openpyxl import load_workbook
 
     import parishkit.stewardship.accounts as accounts
 
-    expected = ["ParishSoft pledged", "ParishSoft contributed"]
-    assert list(HEADINGS[7:9]) == expected
+    labels = ["ParishSoft pledged", "ParishSoft contributed"]
+    assert list(HEADINGS[6:8]) == labels
     assert not any(heading.startswith("Source") for heading in HEADINGS)
+    # The sample period runs July 2025 to June 2026, as the page words it.
+    expected = [f"{label} (2025–2026)" for label in labels]
+    assert list(document([row()]).headings[6:8]) == expected
+    # Only those two headings change; a one-year period names one year.
+    single = headings("2026-01-01", "2026-12-31")
+    assert single[6:8] == ("ParishSoft pledged (2026)", "ParishSoft contributed (2026)")
+    assert single[:6] + single[8:] == HEADINGS[:6] + HEADINGS[8:]
+    assert headings("", "") is HEADINGS
     output = io.BytesIO()
     render_information(document([row()]), output, format="csv")
     header = next(csv.reader(io.StringIO(output.getvalue().decode())))
-    assert header[7:9] == expected
+    assert header[6:8] == expected
     output = io.BytesIO()
     render_information(document([row()]), output, format="xlsx")
     sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial detail"]
-    assert [sheet["H1"].value, sheet["I1"].value] == expected
+    assert [sheet["G1"].value, sheet["H1"].value] == expected
     template = (
         Path(accounts.__file__).parent / "templates/stewardship/financial-report.html"
     ).read_text(encoding="utf-8")
-    for heading in expected:
+    for heading in labels:
         assert f'{{% translate "{heading}"' in template
     # The stopgap About sentence mapping the old export names is gone.
     assert "Source pledged" not in template
@@ -336,16 +346,16 @@ def test_xlsx_money_cells_are_exact_summable_numbers():
     render_information(money_document(), output, format="xlsx")
     book = load_workbook(io.BytesIO(output.getvalue()))
     sheet = book["Financial detail"]
-    # Columns D, F, H and I: annual, installment, ParishSoft pledged, contributed.
+    # Columns C, E, G and H: annual, installment, ParishSoft pledged, contributed.
     for reference, expected in {
-        "D2": "1234.50",
-        "F2": "102.88",
-        "H2": "1200.00",
-        "I2": "100.00",
-        "D3": "0.00",
-        "H3": "-50.00",
-        "D4": "0.01",
-        "F4": "0.01",
+        "C2": "1234.50",
+        "E2": "102.88",
+        "G2": "1200.00",
+        "H2": "100.00",
+        "C3": "0.00",
+        "G3": "-50.00",
+        "C4": "0.01",
+        "E4": "0.01",
     }.items():
         cell = sheet[reference]
         assert cell.data_type == "n", reference
@@ -353,10 +363,10 @@ def test_xlsx_money_cells_are_exact_summable_numbers():
         assert Decimal(str(round(float(cell.value), 2))) == Decimal(expected), reference
     # Unavailable stays the word; a missing installment stays blank, never 0;
     # an amount beyond Excel's precision stays exact text.
-    assert sheet["I3"].value == "Unavailable" and sheet["I3"].data_type == "s"
-    assert sheet["F3"].value is None
-    assert sheet["H4"].value == "$123,456,789,012,345.67"
-    assert sheet["H4"].data_type == "s"
+    assert sheet["H3"].value == "Unavailable" and sheet["H3"].data_type == "s"
+    assert sheet["E3"].value is None
+    assert sheet["G4"].value == "$123,456,789,012,345.67"
+    assert sheet["G4"].data_type == "s"
     metadata = book["Report information"]
     total = next(
         cells[1]
@@ -381,7 +391,7 @@ def test_csv_money_is_the_canonical_amount_and_pdf_keeps_the_page_text():
     render_information(built, output, format="csv")
     records = list(csv.reader(io.StringIO(output.getvalue().decode())))
     first, second, third = records[2:]
-    assert first[3:9] == [
+    assert first[2:8] == [
         "1234.50",
         "Monthly",
         "102.88",
@@ -391,21 +401,24 @@ def test_csv_money_is_the_canonical_amount_and_pdf_keeps_the_page_text():
     ]
     # A negative amount is a plain signed decimal, with no apostrophe; an
     # unavailable amount stays the word and an absent one blank (#388 L5).
-    assert (second[3], second[5], second[7], second[8]) == (
+    assert (second[2], second[4], second[6], second[7]) == (
         "0.00",
         "",
         "-50.00",
         "Unavailable",
     )
     # Beyond Excel's digits too: the exact amount, never rounded.
-    assert third[7] == "123456789012345.67"
+    assert third[6] == "123456789012345.67"
     # The report-total metadata trailer is a canonical amount too.
     assert records[0].index("Total annual pledges") == first.index("1234.51")
     lines = [
         f"{label}: {text}" for label, text in card_text(information_records(built))
     ]
     assert "Annual pledge: $1,234.50" in lines
-    assert "ParishSoft pledged: -$50.00" in lines
+    # A card wraps the long heading ("ParishSoft pledged (2025–2026)") onto
+    # a second label line (#929); the value sits beside its first line.
+    at = lines.index("ParishSoft pledged : -$50.00")
+    assert lines[at + 1] == "(2025–2026): "
     assert "Total annual pledges: $1,234.51" in lines
 
 
@@ -415,14 +428,14 @@ def test_xlsx_money_is_accurate_to_the_cent_despite_doubles():
 
     from openpyxl import load_workbook
 
-    amounts = {"D2": 9757, "F2": 82381, "H2": 1, "I2": -9757}
+    amounts = {"C2": 9757, "E2": 82381, "G2": 1, "H2": -9757}
     built = document(
         [
             row(
-                annual=MoneyAmount(amounts["D2"]),
-                installment=MoneyAmount(amounts["F2"]),
-                source_pledge=MoneyAmount(amounts["H2"]),
-                source_contributions=MoneyAmount(amounts["I2"]),
+                annual=MoneyAmount(amounts["C2"]),
+                installment=MoneyAmount(amounts["E2"]),
+                source_pledge=MoneyAmount(amounts["G2"]),
+                source_contributions=MoneyAmount(amounts["H2"]),
             )
         ]
     )

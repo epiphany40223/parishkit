@@ -1242,7 +1242,7 @@ orders offers that selection's sort orders on the columns they order and its
 page sizes; its other columns do not sort, since the schema owns those
 orders. In v1 that covers:
 
-- the active parishioner family directory (Family and DUID, 50 rows; Family code would need
+- the active parishioner family directory (Family and Family DUID, 50 rows; Family code would need
   every code decrypted per view);
 - Financial stewardship detail (Family, Annual pledge and latest response);
 - the Additional information queue (Family and Submitted);
@@ -1353,6 +1353,37 @@ changes.
 - **Server checks** are those of the action itself: the dialog only asks, and
   the server validates every chosen row and refuses the whole request when
   any one cannot be acted on.
+
+#### Table column order
+
+Admin tables put their columns in one order, set out with its reasons in the
+UX conventions' [table column order](../ui-conventions/spec.md#table-column-order)
+and [Family and Member names](../ui-conventions/spec.md#family-and-member-names)
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). In short:
+the selection checkbox, then the most relevant column (the Family name for
+Family tables, the Member or Ministry name, or the identifying name or
+address for configuration and account tables; event and log tables keep the
+time first), then the Family name and **Family DUID**, Member name and
+**Member DUID**, Ministry name and **Ministry DUID**, each DUID in its own
+column, then everything else, and actions last. Every Family name is the
+surname, then the active heads ("Squyres, Jeff and Tracy"), from the shared
+helper; where an installed SQL selection searches and orders the rows
+([Admin tables](#admin-tables)), it still searches and orders by the
+surname, and those tables' DUID columns do not sort until one forward
+migration adds the orders
+([#960](https://github.com/epiphany40223/parishkit/issues/960)).
+
+A template guard test keeps each DUID out of its name's cell: it reads
+every Admin template, components included. In each `<td>` and each
+`<th>` whose attributes include `scope="row"`, it refuses a DUID label
+followed by a printed value, and a printed `*duid` variable beside any other
+printed value (values inside tag attributes or `<option>` choices do not
+count). It allows only the tables not yet split, which it lists by name
+with the exact number of such cells each holds.
+
+Downloads keep their own documented columns until #932 reorders them; the
+postal mail-merge file never changes order (see
+[mailing columns](../reports/spec.md#mailing-columns)).
 
 ### In-place controls
 
@@ -1598,7 +1629,10 @@ the label, for fields whose format or rule is needed every time (an example
 address, "one per line", a key's paste rule), and a warning that blocks the
 field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
-opening the tip. Checkbox help stays beside the box.
+opening the tip. Checkbox help stays beside the box. A toggletip in a table
+heading is described by its bubble alone, and its bubble floats over the
+page, so opening it never changes the size or scroll of the table's box;
+it closes when that box scrolls its button out of view.
 
 Internal identifiers and bookkeeping fields that matter only for
 troubleshooting (delivery, refusal and test references, a retained
@@ -1810,10 +1844,11 @@ Administrators have two always-visible indicators:
 - **Families on the form now**: count of Family sessions with a heartbeat
   within the last 90 seconds, that is, Families with the form open in their
   browser; a Family that signed in but closed the form is not counted. Detail
-  lists the Family name as on the active parishioner family directory (surname, then the
-  active heads of household, e.g. "Squyres, Jeff and Tracy"), DUID, start
-  time, last activity, and form section; it never shows answers or
-  credentials.
+  lists, in the [column order](#table-column-order) for Admin tables, the
+  Family name as on the active parishioner family directory (surname, then
+  the active heads of household, e.g. "Squyres, Jeff and Tracy"), Family
+  DUID, the sign-in time, last activity, when the form was last seen open and
+  the form section; it never shows answers or credentials.
 - **Background work**: count/state of queued and running task runs. Detail shows
   type, initiator, start/heartbeat, phase, processed/total counts and percent,
   sanitized status, and links to completed/failed records. A distinct Admin-only

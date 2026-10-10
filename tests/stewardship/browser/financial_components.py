@@ -99,6 +99,7 @@ def components(context, admin):
             timezone="UTC",
             comparison_start="2025-07-01",
             comparison_end="2026-06-30",
+            comparison_years="2025–2026",
             giving_through=date(2026, 6, 30),
         ),
     )

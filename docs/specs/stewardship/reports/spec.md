@@ -604,10 +604,10 @@ per-Family rows as the [funnel](#response-funnel):
 
 | List | Families listed | Columns | Filter |
 | --- | --- | --- | --- |
-| `submitted` | with a submission (Submitted) | First submitted, Family, Family DUID, Envelope number, Submissions | none |
-| `started` | form opened, nothing submitted (Form opened minus Submitted) | Form opened, Got past the first step, Family, Family DUID, Envelope number | got past the first step, or opened the form only |
-| `not-opened` | a delivered invitation, form never opened | Invitation delivered, Link followed, Family, Family DUID, Envelope number | link followed or not |
-| `more-than-once` | more than one submission (Submitted more than once) | Submissions, First submitted, Last submitted, Family, Family DUID, Envelope number | none |
+| `submitted` | with a submission (Submitted) | Family, Family DUID, Envelope number, Submissions, First submitted | none |
+| `started` | form opened, nothing submitted (Form opened minus Submitted) | Family, Family DUID, Envelope number, Form opened, Got past the first step | got past the first step, or opened the form only |
+| `not-opened` | a delivered invitation, form never opened | Family, Family DUID, Envelope number, Invitation delivered, Link followed | link followed or not |
+| `more-than-once` | more than one submission (Submitted more than once) | Family, Family DUID, Envelope number, Submissions, First submitted, Last submitted | none |
 | `data-quality` | active Families of the campaign whose current ParishSoft record has a blank mailing name or envelope number 0 | Family, Family DUID, Envelope number, Mailing name, What to check, First submitted | blank mailing name, or envelope number 0 |
 
 Each of the first four lists has exactly the Families its count on the
@@ -854,11 +854,31 @@ than one Family's.
 **Access:** Admin and Staff; both may edit its workflow.
 
 One row per distinct `AdditionalInformationItem` shows submission time, Family
-name/DUID, text excerpt/full detail, follow-up-needed, followed-up time/actor,
-disposition, replacement/withdrawal link, and Staff notes. The default queue
-shows only `current_actionable`; history filters expose superseded/withdrawn
-items. Search covers authorized text, Family name/DUID, notes, date, disposition,
-and workflow state. Exports include complete text and workflow history option.
+name, Family DUID (its own column), text excerpt/full detail,
+follow-up-needed, followed-up time/actor, disposition, replacement/withdrawal
+link, and Staff notes, in the Admin table
+[column order](../admin-portal/spec.md#table-column-order): Family (surname,
+then heads, as on the
+[active parishioner family directory](#active-parishioner-family-directory)),
+Family DUID, Submitted, then the rest. The default queue shows only
+`current_actionable`; history filters expose superseded/withdrawn items.
+Search covers authorized text, Family name/DUID, notes, date, disposition,
+and workflow state. The installed SQL selection searches and sorts by the
+Family's surname, which leads the shown name, so a head's first name does
+not match the Family name and Families that share a surname keep the
+selection's order rather than sorting by their heads; the Family DUID
+column does not sort yet
+([#960](https://github.com/epiphany40223/parishkit/issues/960)). Exports
+include complete text and workflow history option, and name each Family as
+the page does, from the snapshot their capture was read from; a Family
+without a surname is "Family", as the selection names it. The name form is
+chosen once for the whole file, in the same database read as the names: if
+compaction has begun on that snapshot by the time the file is rendered,
+every row keeps the captured surname instead, so one file never mixes the
+two forms. The file's "Family names" report detail says which form it uses
+("Surname, then heads of household", or "Surname only" with the reason). A
+late render (a retry, or regenerating an expired file) can therefore differ
+from an earlier render of the same capture only in that name form.
 The CSV and XLSX share one set of columns and carry no internal item
 references (the Administrator, 2026-10-09). A "Row type" column says whether a
 row is the "Item" or one of its "Earlier workflow" revisions. Earlier workflow
@@ -885,8 +905,9 @@ Families, are left out by design, and the page's name says so
 ([#870](https://github.com/epiphany40223/parishkit/issues/870)). The page
 shows no population summary or separate code-privacy line above its filters;
 the page's About help covers code privacy. Each row has the Family's name,
-Family DUID, manual code, current email eligibility/deliverability, and
-response status. The name is the Family's
+Family DUID (in its own column, headed "Family DUID"), manual code, current
+email eligibility/deliverability, and response status; the name is the row
+header. The name is the Family's
 surname followed by its heads of household, so same-surname Families can be
 told apart: "Smith, Anna and John" (three or more heads read "A, B and C"); a
 head whose surname differs from the Family's is shown in full ("Smith, Anna and
@@ -1158,7 +1179,12 @@ changes; the
 
 ### Census change rows
 
-Rows are grouped by Family (name and DUID), one row per change:
+Rows are grouped by Family, one row per change. The columns follow the
+Admin table [column order](../admin-portal/spec.md#table-column-order):
+Family (surname, then heads, as on the
+[active parishioner family directory](#active-parishioner-family-directory);
+the search, sort and downloads use the same name), Family DUID (sortable),
+then:
 
 - **Who**: the Member, "New Member" with the proposed Member's name, or the
   Family for its household fields (home and mailing address, email opt-out).
@@ -1202,8 +1228,11 @@ reaches ParishSoft (with *Hide automatic changes* for staff working by
 hand), kind of change (contact details, moved, deceased, new Member), a
 Family name or DUID search, and submitted date. Sorting, paging and filters
 act [in place](../admin-portal/spec.md#in-place-controls). The filtered list
-downloads as CSV or XLSX (PDF later) with the page's columns and values,
-audited with a count like the other report downloads.
+downloads as CSV or XLSX (PDF later) with the page's values,
+audited with a count like the other report downloads. The files keep their
+earlier column order (Family first, Submitted last) until the export slice
+of [#932](https://github.com/epiphany40223/parishkit/issues/932) reorders
+them, so a spreadsheet that reads columns by position keeps working.
 
 The read-only page and its downloads are enough for staff to apply every
 change by hand if publication is not ready; that is why it comes first.
@@ -1242,14 +1271,35 @@ in ParishSoft stays *To do* until it is ticked.
 **Access:** Admin and Staff only.
 
 This required report closes the operational path for report/export-only
-pledges. One row per currently effective live Family response shows Family name
-and DUID, submission/version time, annual pledge, frequency, approximate
-installment, selected share-option labels, Other text, active status, and
-source comparison pledge/contribution aggregates with as-of time. The page and
+pledges. One row per currently effective live Family response shows, in the
+Admin table [column order](../admin-portal/spec.md#table-column-order), the
+Family name first (surname, then heads, as on the
+[active parishioner family directory](#active-parishioner-family-directory);
+search and the Family sort still use the surname), Family DUID in its own
+column (not sortable: the installed selection does not order by it), Annual
+pledge, Frequency, Approximate installment, Share methods (selected
+share-option labels with any Other text), the ParishSoft comparison pledge
+and contribution aggregates, Latest response (the time the Family last
+updated its response) and last First response (when it first responded).
+The page and every export format (CSV, XLSX, PDF) have exactly these
+columns in this order (the Administrator's decisions B1 and E1, #932): the
+report lists only active Families, so no format has a Family status
+column, and no format carries internal references (Family version or
+response reference). The page's two aggregate headings carry the
+comparison period's years, as the Family form words them ("ParishSoft
+pledged (2026)", or "(2026–2027)" for a period spanning two years), each with
+a toggletip naming the period's dates. The comparison period is the
+campaign's configured comparison financial period, usually the giving year
+before the upcoming stewardship year that Families pledge for; the pledge
+total counts ParishSoft pledges dated in it, and the contribution total gifts
+dated in it up to the latest giving data read. The page and
 every export format (CSV, XLSX, PDF) head those two aggregates "ParishSoft
-pledged" and "ParishSoft contributed", and say "ParishSoft" rather than
-"Source" in the export metadata that describes them, so a downloaded file names
-its figures as the page does.
+pledged" and "ParishSoft contributed" with the same years ("ParishSoft
+pledged (2026)"), and say "ParishSoft" rather than "Source" in the export
+metadata that describes them, so a downloaded file names its figures as the
+page does. The exports also name each Family as the page does, from the
+snapshot their capture was read from, choosing the name form once per file
+as the [Additional information](#additional-information) exports do.
 
 Filters include active/inactive, first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method. Summary shows
@@ -1268,7 +1318,11 @@ From each Family's currently effective live response, one table lists Members
 who shared a talent (with any Other text, worded from the campaign's current
 talent list) or who cannot participate in any ministries, and a second lists
 Families who cannot attend Mass or prayer services (see
-[Family portal](../parishioner-portal/spec.md#talents-and-cannot-participate)).
+[Family portal](../parishioner-portal/spec.md#talents-and-cannot-participate)),
+with the columns Family, Family DUID and Latest response, each sortable.
+Both tables name each Family as the
+[active parishioner family directory](#active-parishioner-family-directory)
+does (surname, then heads), on the page and in the downloads.
 Testing responses are excluded. Filters are a name or Family DUID search and
 one choice of everything, cannot participate, cannot attend, or a single
 talent; a summary counts each. The filtered result downloads immediately as CSV

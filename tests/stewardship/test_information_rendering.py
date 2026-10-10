@@ -32,6 +32,7 @@ from parishkit.stewardship.reports.pdf_design import (
     safe,
     text_width,
 )
+from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_FULL
 
 
 def card_text(records):
@@ -62,6 +63,7 @@ def document_metadata():
         source_id="source",
         source_generation=1234,
         source_as_of=instant,
+        family_names=FAMILY_NAMES_FULL,
         observed_at=instant,
         timezone="America/Detroit",
     )
@@ -216,7 +218,7 @@ def test_xlsx_values_are_literal_complete_and_structured():
         assert sheet.freeze_panes == "A2" and sheet.print_title_rows == "$1:$1"
         assert sheet.auto_filter.ref == "A1:P3"
         # Native date-time cells in Excel's locale-aware built-in format 22.
-        requested = book["Report information"]["B9"]
+        requested = book["Report information"]["B10"]
         assert requested.value == datetime(2026, 10, 2, 9, 0)
         assert requested.is_date and requested.number_format == BUILTIN_FORMATS[22]
     finally:
@@ -268,7 +270,7 @@ def test_format_exclusions_have_lossless_visible_notation():
     book = load_workbook(io.BytesIO(stream.getvalue()))
     try:
         assert book["Information"]["H2"].value == expected
-        assert "Unsupported characters" in book["Report information"]["B17"].value
+        assert "Unsupported characters" in book["Report information"]["B18"].value
     finally:
         book.close()
     lines = "\n".join(text for _, text in card_text(information_records(report)))

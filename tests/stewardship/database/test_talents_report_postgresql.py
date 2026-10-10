@@ -69,6 +69,15 @@ def report(harness, principal=STAFF, **values):
         )
 
 
+def directory_name(duid):
+    """The Family's name as the directory shows it, from the current snapshot."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).get()
+    return snapshot_family_names(snapshot, [duid])[duid]
+
+
 def test_report_lists_talents_limitations_and_filters(response_service):
     """Rows come from the effective live response, worded and filterable."""
     harness = response_service
@@ -80,6 +89,10 @@ def test_report_lists_talents_limitations_and_filters(response_service):
     row = result["members"][0]
     assert row["talents"] == ["Painter", "Other: Organ"]
     assert row["cannot_serve"] is True and row["member_name"]
+    # Both tables name the Family as every Admin table does (#932).
+    family = result["families"][0]
+    assert ", " in row["family_name"] and family["family_name"] == row["family_name"]
+    assert row["family_name"] == directory_name(row["family_duid"])
     assert result["summary"]["cannot_attend"] == 1
     assert dict(result["summary"]["talents"])["Painter"] == 1
     assert len(report(harness, talent=PAINTER)["members"]) == 1

@@ -81,6 +81,7 @@ def _text(value):
 SORTING = Sorting.by_column(
     {
         "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
+        "duid": lambda row: row["family_duid"],
         "who": lambda row: _text(row["who"]),
         "what": lambda row: _text(row["label"]),
         # Automatic first, then By hand, whatever the labels say.

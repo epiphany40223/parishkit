@@ -175,11 +175,12 @@ def test_lists_and_downloads_for_admin_and_staff(
         assert response["Cache-Control"] == "no-store"
         assert "stewardship-responses-data-quality-" in response["Content-Disposition"]
         table = list(csv.reader(io.StringIO(body.decode("utf-8"))))
-        assert table[0][:4] == [
+        assert table[0][:5] == [
             "Family",
             "Family DUID",
             "Envelope number",
             "Mailing name",
+            "What to check",
         ]
         assert [row[1] for row in table[1:]] == [str(ENVELOPE_ZERO), str(BLANK_MAILING)]
         assert body.endswith(b"\r\n")
@@ -190,9 +191,9 @@ def test_lists_and_downloads_for_admin_and_staff(
         )
         assert response.status_code == 200
         table = list(csv.reader(io.StringIO(body.decode("utf-8"))))
-        assert [row[2] for row in table[1:]] == ["1"]
+        assert [row[1] for row in table[1:]] == ["1"]
         # The shared CSV time text: ISO 8601 with a space separator.
-        assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\+00:00", table[1][0])
+        assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\+00:00", table[1][4])
         for invalid in (
             {"timezone": "Mars/Base"},
             {"size": "all"},

@@ -23,7 +23,11 @@ from parishkit.stewardship.reports.export_services import (
     export_status,
 )
 from parishkit.stewardship.reports.export_tasks import export_handler
-from parishkit.stewardship.reports.information import InformationQuery, information_page
+from parishkit.stewardship.reports.information import (
+    InformationQuery,
+    information_page,
+    name_families,
+)
 from parishkit.stewardship.reports.information_documents import (
     HEADINGS,
     information_document,
@@ -81,9 +85,10 @@ def test_complete_capture_is_not_the_interactive_page(live_response_service):
             == 50
         )
         # Without internal references, each superseded item names its
-        # replacement by that later request's Submitted time (PR #929).
+        # replacement by that later request's Submitted time (PR #929). The
+        # rows are named first, as the export task names them (#932).
         rows = information_document(
-            snapshot.document,
+            name_families(snapshot.document),
             snapshot.parameters,
             parish_name="Parish",
             requested_at=snapshot.created_at,
@@ -137,7 +142,9 @@ def test_information_capture_freezes_full_text_and_history(live_response_service
         assert row["notes"] == "First complete note"
         assert row["history"][0]["version"] == revision.expected_version + 1
         assert row["history"][0]["notes"] == "First complete note"
-        assert row["family_name"] == report["rows"][0]["family_name"]
+        # The capture keeps the surname SQL read; the page adds the heads
+        # after it (#932).
+        assert report["rows"][0]["family_name"].startswith(row["family_name"] + ", ")
         assert (
             create_information_export(harness.service.store, actor, **values).pk
             == request.pk
@@ -222,6 +229,11 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
     route = reverse("admin:information_queue")
     query = InformationQuery()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        name = information_page(harness.campaign.pk, query)["rows"][0]["family_name"]
+    # Surname, then heads, as on every Admin table.
+    assert ", " in name
+    name = name.encode()
     first = None
     for format in ("csv", "xlsx", "pdf"):
         fields = query.form_values() | dict(
@@ -294,6 +306,9 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
             assert "additional_information." + format in response["Content-Disposition"]
             if format == "csv":
                 assert b"Complete exported Family request" in body
+                # The file names the Family as the page does (#932), from the
+                # snapshot its capture read; CSV quotes the comma.
+                assert b',"' + name + b'",' in body
     harness, form, answers, _ = revisit(harness)
     answers["additional_information"] = (
         "A later Family request must not replace the export"

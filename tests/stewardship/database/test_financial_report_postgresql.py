@@ -32,6 +32,7 @@ from parishkit.stewardship.reports.financial import (
     financial_page,
     giving_proof,
 )
+from parishkit.stewardship.reports.financial_documents import HEADINGS
 from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
 from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.snapshots import promote_snapshot
@@ -619,10 +620,15 @@ def test_native_page_filters_privately_and_denies_leaders(
     harness = activate_response_service(harness)
     with web_login():
         pledge(harness, load_form(harness), shares={CHECK: ""})
-    name = report(harness)["rows"][0]["family_name"].encode()
+    reported = report(harness)
+    name = reported["rows"][0]["family_name"].encode()
+    # Named as in every Admin table: the surname, then the heads (#932).
+    assert name.startswith(b"Example, ")
+    years = reported["metadata"]["comparison_years"].encode()
+    assert years
     # The surname alone ("Example") also appears in unrelated page text, so
     # match the Family's row header rather than the bare name.
-    name = b'<th scope="row">' + name + b"<br>"
+    name = b'<th scope="row">' + name + b"</th>"
     route = reverse("admin:financial_report")
     browser, login = signed_in()
     assert login.status_code == 302
@@ -631,6 +637,22 @@ def test_native_page_filters_privately_and_denies_leaders(
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
         assert name in body and b"$1,234.50" in body and b"$102.88" in body
         assert b"$1,200.00" in body and b"$100.00" in body
+        # The ParishSoft headings name the comparison period's years, and
+        # each has a toggletip with the period's dates.
+        for heading in (b"ParishSoft pledged", b"ParishSoft contributed"):
+            assert heading + b" (" + years + b")" in body
+        assert b'aria-controls="financial-source-pledged-tip"' in body
+        assert b'aria-controls="financial-source-contributed-tip"' in body
+        # Each tip's button is described by its bubble, not its whole heading.
+        assert b'aria-describedby="financial-source-pledged-tip"' in body
+        # The page has the downloads' columns in their order (decisions B1
+        # and E1, #932): Family leads, First response follows Latest response.
+        head = body[body.index(b"Current live pledges by Family</caption>") :]
+        head = head[: head.index(b"</thead>")]
+        assert head.count(b'scope="col"') == len(HEADINGS)
+        places = [head.index(heading.encode()) for heading in HEADINGS]
+        assert places == sorted(places)
+        assert b">Version<" not in body
         assert b'datetime=""' not in body and b"?search=" not in body
         # Identifying filters are private POST state, never a URL.
         assert get(browser, route + "?search=Private")[0].status_code == 400
