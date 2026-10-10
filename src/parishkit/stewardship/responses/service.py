@@ -1,10 +1,11 @@
-"""Per-Member talents and the "cannot participate in ministries" answer.
+"""Per-Member "cannot participate in ministries" answer, and retired talents.
 
-Both are recorded alongside the Ministry page. Talent options are campaign
-configuration (``talent_options``, same shape as financial share options).
-A campaign that never edited them uses ``DEFAULT_TALENTS``, whose identities
-are fixed so answers stay comparable across configuration versions; the SQL
-guard's ``stewardship_talent_defaults_v1()`` must list the same options.
+The answer is recorded alongside the Ministry page, in a per-Member entry
+that also holds a ``talents`` map. The Family form no longer asks for
+talents (#970): every campaign resolves to no talent options, so each new
+entry's map is empty. Older submissions keep the talents they recorded.
+``DEFAULT_TALENTS`` stays because the installed SQL guard's
+``stewardship_talent_defaults_v1()`` still lists the same options.
 """
 
 from .census import clean_text
@@ -34,18 +35,15 @@ class InvalidServiceAnswers(ValueError):
         super().__init__("Please review the talents and ministry choices.")
 
 
-def default_talent_options():
-    """The editable list a campaign starts from, as configuration values."""
-    return [
-        {"id": option.id, "label": option.label, "free_text": option.free_text}
-        for option in DEFAULT_TALENTS
-    ]
+def configured_talent_options(configuration):
+    """The talent list a campaign's configuration names, for its digest only.
 
-
-def talent_options(configuration):
-    """Resolve a campaign's talent options, falling back to the defaults.
-
-    Only Ministry-enabled campaigns collect talents; others resolve to none.
+    No campaign offers talents now (#970), but ``inputs.definition_digest``
+    still hashes this list exactly as before: a Family's form issued earlier
+    keeps its stored definition digest, and a different digest for the same
+    configuration would refuse that Family's submission as unverifiable. Only
+    Ministry-enabled campaigns name talents; a never-edited list resolves to
+    ``DEFAULT_TALENTS``. Never use this to offer talents.
     """
     if "ministry" not in configuration["modules"]:
         return ()
@@ -53,6 +51,16 @@ def talent_options(configuration):
     if values is None:
         return DEFAULT_TALENTS
     return tuple(ShareOption(**value) for value in values)
+
+
+def talent_options(configuration):
+    """No campaign offers talents any more (#970), whatever its configuration.
+
+    An older campaign's ``talent_options`` value stays as inert history. With
+    no options offered, the Family form shows no Talents question and only an
+    empty talents map validates.
+    """
+    return ()
 
 
 def _talents(value, options):

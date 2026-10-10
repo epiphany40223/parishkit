@@ -107,6 +107,7 @@ from .in_place_components import SLOW as IN_PLACE_SLOW
 from .in_place_components import components as in_place_components
 from .information_components import POSTS as INFORMATION_POSTS
 from .information_components import components as information_components
+from .limitations_components import components as limitations_components
 from .live_status_components import POSTS as LIVE_STATUS_POSTS
 from .live_status_components import components as live_status_components
 from .log_components import components as log_components
@@ -132,7 +133,6 @@ from .settings_components import components as settings_components
 from .source_form_components import components as source_form_components
 from .step_up_components import components as step_up_components
 from .system_health_components import components as system_health_components
-from .talent_components import components as talent_components
 from .user_components import components as user_components
 from .weekly_components import components as weekly_components
 
@@ -2262,7 +2262,7 @@ def component_origin():
     responses.update(send_history_components(context, admin))
     responses.update(system_health_components(context, admin))
     responses.update(hosted_file_components(context, admin))
-    responses.update(talent_components(context, admin))
+    responses.update(limitations_components(context, admin))
     responses.update(census_components(context, admin))
     responses.update(workgroup_components(context, admin))
     responses.update(schedule_list_components(context, admin))

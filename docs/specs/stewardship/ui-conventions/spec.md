@@ -1356,9 +1356,10 @@ System logs export above. A download written straight from its page registers
 with `web.exports.page_download`; the guard finds every registered and routed
 one, and fails until a new one has a case there or a recorded exception. The postal mail merge's PDF is a sheet of address
 labels holding the mailing columns, not the Family heads and head emails;
-whether to record that as an exception is open on #966. Talents is being
-removed under
-[#970](https://github.com/epiphany40223/parishkit/issues/970).
+whether to record that as an exception is open on #966. The Limitations
+report (formerly Talents and limitations,
+[#970](https://github.com/epiphany40223/parishkit/issues/970)) is outside
+the guard and has no PDF.
 
 ## Family portal
 

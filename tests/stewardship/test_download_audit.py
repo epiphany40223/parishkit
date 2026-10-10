@@ -2,9 +2,10 @@
 
 A response list also records its sort token (``report_sort``, #851).
 
-The response lists and the Talents report record closed choices only: the
-system mode, each report's own filter key, a configured talent's UUID and the
-ParishSoft snapshot read, never search text. Python's ``sanitize`` and the SQL
+The response lists and the Limitations report record closed choices only: the
+system mode, each report's own filter key, a configured talent's UUID (kept
+for rows recorded before talents were retired, #970) and the ParishSoft
+snapshot read, never search text. Python's ``sanitize`` and the SQL
 allowlist (``stewardship_safe_context_v1``) accept the same contexts; the
 PostgreSQL side runs ``DOWNLOAD_AUDIT_CASES`` in
 database/test_audit_context_postgresql.py.

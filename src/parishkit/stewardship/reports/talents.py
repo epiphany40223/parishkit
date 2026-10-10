@@ -1,11 +1,11 @@
-"""Talents and limitations report over effective live responses (#247).
+"""Limitations report over effective live responses (#247, #970).
 
-Lists Members who chose a talent or cannot participate in ministries, and
-Families who cannot attend Mass or prayer services. Talent wording comes from
-the campaign's current talent list (or the built-in defaults); a talent the
-parish has since removed reads "Unavailable talent". A campaign that offers
-no talents (its list was emptied, or it has no Ministry page) reports only
-the limitations: no talent column, count or filter appears anywhere.
+Lists Members who cannot participate in ministries, and Families who cannot
+attend Mass or prayer services. The report was "Talents and limitations"
+until talents were retired (#970): no campaign offers talents now, so it
+always runs in its limitations-only mode, with no talent column, count or
+filter anywhere, and older answers' stored talents are left out. The talent
+branches below go with the rest of the talent code (#970 slice 2).
 """
 
 import csv
@@ -91,7 +91,7 @@ def talent_labels(configuration):
 def talents_report(campaign_id, query, principal, *, configuration):
     """Read and word the complete report for Admin or Staff."""
     if not allows(principal, Capability.CAMPAIGN_REPORT):
-        raise PermissionError("The talents report is unavailable.")
+        raise PermissionError("The Limitations report is unavailable.")
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT stewardship_talent_report_v1(%s,%s::jsonb)::text",
@@ -99,10 +99,10 @@ def talents_report(campaign_id, query, principal, *, configuration):
         )
         value = cursor.fetchone()
     if value is None or value[0] is None:
-        raise ReadUnavailable("Talent report inputs are unavailable.")
+        raise ReadUnavailable("Limitations report inputs are unavailable.")
     result = json.loads(value[0])
     if result.get("unavailable"):
-        raise ReadUnavailable("Talent report inputs are unavailable.")
+        raise ReadUnavailable("Limitations report inputs are unavailable.")
     # Each Family reads "Squyres, Jeff and Tracy", as in every Admin table
     # (#932), from the snapshot SQL read; the page and its downloads share it.
     source = result["metadata"]["source_id"]
@@ -226,7 +226,7 @@ def talents_xlsx(result, zone):
                 # is never a formula, and escapes characters XLSX cannot hold,
                 # such as a vertical tab pasted into a ParishSoft name.
                 xlsx_cell(sheet, row_number, column, value)
-        style_table(sheet, freeze_first_column=True, title=f"Talents: {title}")
+        style_table(sheet, freeze_first_column=True, title=f"Limitations: {title}")
     output = io.BytesIO()
     book.save(output)
     return output.getvalue()

@@ -371,7 +371,7 @@ def test_ministry_summary_and_request_counts(response_service, google, cli):
     # The talents summary is the page's, counts only.
     parity(
         "talents_report_viewed",
-        lambda: read(browser, "/admin/reports/talents/"),
+        lambda: read(browser, "/admin/reports/limitations/"),
         lambda: run("report", "talents"),
     )
     code, document = run("report", "talents")

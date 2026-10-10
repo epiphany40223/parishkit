@@ -478,7 +478,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Responses and reports | Response dashboard | `/admin/reports/responses/` | Administrator, Staff | No current campaign |
 | Responses and reports | Participation | `/admin/reports/participation/` | Administrator, Staff | No current campaign |
 | Responses and reports | Financial stewardship | `/admin/reports/financial/` | Administrator, Staff | The campaign has no financial module |
-| Responses and reports | Talents and limitations | `/admin/reports/talents/` | Administrator, Staff | The campaign has no Ministry module |
+| Responses and reports | Limitations | `/admin/reports/limitations/` | Administrator, Staff | The campaign has no Ministry module |
 | Responses and reports | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
 | Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign |
 | Responses and reports | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
@@ -503,7 +503,7 @@ Notes on the groups:
   report: the [response dashboard](../reports/spec.md#response-funnel),
   [participation](../reports/spec.md#campaign-statistics),
   [Financial stewardship](../reports/spec.md#financial-stewardship-detail),
-  [Talents and limitations](../reports/spec.md#talents-and-limitations),
+  [Limitations](../reports/spec.md#limitations),
   [Census changes](../reports/spec.md#pending-census-changes),
   [Additional information](../reports/spec.md#additional-information), the
   Ministry report and its [follow-up](#follow-up-workflows) queue, and the
@@ -808,7 +808,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `report_export` | _report name_ export | The report it came from | Administrator, Staff, Ministry leader | Participation export / Financial stewardship export / Ministry export / Additional-information export / Family-directory export; Report export | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). Its actions post to `cancellation/`, `retries/`, `download/` and `regeneration/`. |
 | `report_exact` | Latest-data export | Participation | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
-| `talents_report` | Talents and limitations | Menu: Talents and limitations | Administrator, Staff | (same) | `/admin/reports/talents/` | (same) |  |
+| `limitations_report` | Limitations | Menu: Limitations | Administrator, Staff | Talents and limitations | `/admin/reports/limitations/` | (same) | Renamed when talents were retired (#970); the old address is gone. Its CSV/XLSX download (`limitations/exports/`) is a non-page action. |
 | `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX/PDF download (`census/exports/`) is a non-page action. |
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |

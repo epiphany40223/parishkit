@@ -190,7 +190,7 @@ LEDGER = {
     # without the Family keys, 8f the Family directory's exports (the code
     # MAC keyring loaded only for them), and 8g the rest: the one-Family
     # timeline (a new export kind, a schema change), the in-memory downloads
-    # (talents, response lists; after #752's audit fields) and the exact
+    # (limitations, response lists; after #752's audit fields) and the exact
     # daily exports.
     # The aggregate report reads (PR 8c): counts and summaries only; the
     # rows behind them are the Family-level exports (PR 8e and 8f).
@@ -200,7 +200,7 @@ LEDGER = {
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
-    "talents_report": command("report talents"),
+    "limitations_report": command("report talents"),
     "census_changes": pending("PR 8g", "report census"),
     "information_queue": command("report information"),
     # One Family's submission and its follow-up history: read with the
@@ -224,7 +224,7 @@ LEDGER = {
     # Creating a financial export is fresh-gated (#547): the command calls
     # the caller-aware require_fresh, as the page's view does.
     "financial_export": command("export financial"),
-    "talents_export": pending("PR 8g", "export talents"),
+    "limitations_export": pending("PR 8g", "export limitations"),
     "census_changes_export": pending("PR 8g", "export census"),
     "ministry_export": command("export ministry"),
     "information_export": command("export information"),

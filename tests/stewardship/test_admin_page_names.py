@@ -91,7 +91,7 @@ TEMPLATES = {
     "logs": "logs.html",
     "participation": "participation.html",
     "financial_report": "financial-report.html",
-    "talents_report": "talents-report.html",
+    "limitations_report": "limitations-report.html",
     "census_changes": "census-changes.html",
     "response_dashboard": "response-dashboard.html",
     "information_queue": "information.html",

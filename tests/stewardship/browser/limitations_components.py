@@ -1,4 +1,4 @@
-"""The talents report: two shared tables on one page, as the view renders them.
+"""The Limitations report: two shared tables on one page, as the view renders them.
 
 The in-place re-sort tests (#478) need a page whose tables must keep each
 other's choices. Each fixture path renders the report under one combination
@@ -18,7 +18,7 @@ from parishkit.stewardship.reports.talents import TalentQuery
 CAMPAIGN = UUID(int=90)
 # The report page's own path: what every heading, navigator and filter form
 # posts back to, and what the tests route.
-PATH = reverse("admin:talents_report")
+PATH = reverse("admin:limitations_report")
 
 
 def components(context, admin):
@@ -28,12 +28,12 @@ def components(context, admin):
         "metadata": {"name": "Sample campaign"},
         "summary": {
             "members": 2,
-            "cannot_serve": 1,
+            "cannot_serve": 2,
             "cannot_attend": 2,
-            "talents": [("Music", 1)],
+            "talents": [],
         },
-        "collects_talents": True,
-        "talent_choices": [("music", "Music")],
+        "collects_talents": False,
+        "talent_choices": [],
         # Default order is by Family: Baker's member before Carter's. By
         # Member name the order reverses.
         "members": [
@@ -42,8 +42,8 @@ def components(context, admin):
                 "family_name": "Baker",
                 "family_duid": 2,
                 "proposed": False,
-                "talents": ["Music"],
-                "cannot_serve": False,
+                "talents": [],
+                "cannot_serve": True,
                 "submitted_at": when,
             },
             {
@@ -70,7 +70,7 @@ def components(context, admin):
         return (
             "text/html",
             render_to_string(
-                "stewardship/talents-report.html",
+                "stewardship/limitations-report.html",
                 context
                 | {"admin_chrome": admin}
                 | data
@@ -86,18 +86,20 @@ def components(context, admin):
         )
 
     return {
-        "/talents-report": page({}),
-        "/talents-report-families-desc": page({"families_sort": "-family"}),
-        "/talents-report-both": page(
+        "/limitations-report": page({}),
+        "/limitations-report-families-desc": page({"families_sort": "-family"}),
+        "/limitations-report-both": page(
             {"families_sort": "-family", "members_sort": "member"}
         ),
-        # What Show "Cannot participate in ministries" returns (#484): one
-        # Member, one Family and a smaller summary.
-        "/talents-report-cannot-serve": page(
+        # What Show "Cannot participate in ministries" returns (#484), here
+        # narrowed as a search would be: one Member, one Family and a smaller
+        # summary.
+        "/limitations-report-cannot-serve": page(
             {},
             result
             | {
-                "summary": result["summary"] | {"members": 1, "cannot_attend": 1},
+                "summary": result["summary"]
+                | {"members": 1, "cannot_serve": 1, "cannot_attend": 1},
                 "members": result["members"][1:],
                 "families": result["families"][1:],
             },

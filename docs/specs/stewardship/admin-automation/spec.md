@@ -2105,7 +2105,7 @@ file is regenerated from the retained capture, in its original format.
 | `reports` | `report list` (PR 8c) |
 | `participation` | `report participation` (PR 8c) |
 | `participation_chart`, `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
-| `financial_report`, `talents_report`, `information_queue` | `report financial`, `report talents`, `report information`: summaries and counts (PR 8c); Family-level rows only as exports (PR 8e, PR 8g for talents) |
+| `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report talents`, `report information`: summaries and counts (PR 8c); Family-level rows only as exports (PR 8e, PR 8g for limitations) |
 | `information_item` | One Family's submission and its follow-up history: `followup …` (PR 11), with the Ministry follow-up items; it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report`, `ministry_joiners`, `ministry_leavers` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for a list's count (PR 8c); rows only as exports (PR 8e) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
@@ -2114,7 +2114,7 @@ file is regenerated from the retained capture, in its original format.
 | `family_directory`, `family_directory_export` with mailing columns | Export only: `export postal`, the mail merge (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `find_family` | Permanent: a search by name; the command line takes no text that names a Family, and `export directory` is the file. This follows the pending "no search" default (PR 8e); if the Administrator allows searches, it becomes `--filter search=` on `export directory` |
 | `family_timeline` | One Family's timeline, so export only: `export family-timeline` (PR 8g; it needs a new export kind, a schema change, proposed on #463) |
-| `talents_export` | `export talents` (PR 8g, with #752's audit fields) |
+| `limitations_export` | `export limitations` (PR 8g, with #752's audit fields) |
 | `census_changes`, `census_changes_export` | `report census`, counts; Family-level rows only as `export census` (PR 8g) |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b) |
 | `report_exact_create` | `export exact …` (PR 8g) |

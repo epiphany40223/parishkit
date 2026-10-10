@@ -1,7 +1,10 @@
-"""New Family/Member answers in real browsers (issue #247).
+"""New Family/Member answers in real browsers (issues #247 and #970).
 
-Welcome "cannot attend", Member talents, "cannot participate" (locks every
-Ministry) and financial "cannot contribute" (hides the pledge fields).
+Welcome "cannot attend", "cannot participate" (locks every Ministry) and
+financial "cannot contribute" (hides the pledge fields). The form no longer
+asks for talents (#970): the server offers none, so no Talents question or
+review line appears; ``old_form`` is a form served before then, for a tab
+that stays open across the change.
 """
 
 from copy import deepcopy
@@ -19,7 +22,6 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
-PAINTER, OTHER = DEFAULT_TALENTS[0].id, DEFAULT_TALENTS[-1].id
 ATTEND = (
     "Because of physical limitations, I/we cannot attend Mass or prayer services "
     "at this time."
@@ -37,19 +39,33 @@ AXE = """async () => (await axe.run(document, {
 
 
 def service_form(**kwargs):
-    """The Ministry fixture plus the talents the server now offers."""
+    """The Ministry fixture with the service section the server sends now."""
     form = ministry_form(**kwargs)
     form["cannot_attend"] = False
     form["service"] = {
-        "talent_options": [
-            {"id": option.id, "label": option.label, "free_text": option.free_text}
-            for option in DEFAULT_TALENTS
-        ],
+        "talent_options": [],
         "talent_text_limit": 200,
         "members": {"3": {"cannot_serve": False, "talents": {}}},
         "proposed_members": {},
     }
     return form
+
+
+def old_form():
+    """A form served before talents were retired, offering the old defaults."""
+    form = service_form()
+    form["service"]["talent_options"] = [
+        {"id": option.id, "label": option.label, "free_text": option.free_text}
+        for option in DEFAULT_TALENTS
+    ]
+    return form
+
+
+def no_talents_anywhere(page):
+    """No Talents panel, question or review line is on the page."""
+    expect(page.locator(".talents-panel")).to_have_count(0)
+    assert page.get_by_text("Talents to share", exact=False).count() == 0
+    assert page.get_by_text("special talent", exact=False).count() == 0
 
 
 def recorder(submissions):
@@ -63,35 +79,20 @@ def recorder(submissions):
 
 
 @pytest.mark.parametrize("width", [390, 1280])
-def test_talents_and_ministry_lock_restore_and_submit(
-    page, component_origin, axe_source, width
-):
-    """Checking the lock stops every Ministry; unchecking restores the choices."""
+def test_ministry_lock_restore_and_submit(page, component_origin, axe_source, width):
+    """Checking the lock stops every Ministry; unchecking restores the choices.
+
+    No Talents question appears anywhere (#970), and each Member's answer is
+    sent with no talents, which the server accepts.
+    """
     page.set_viewport_size({"width": width, "height": 900})
     submissions, errors = [], []
     page.on("pageerror", lambda error: errors.append(str(error)))
     begin(page, component_origin, service_form(), recorder(submissions))
     show(page, page.get_by_label(ATTEND)).check()
-    show(page, page.get_by_label("Painter")).check()
-    page.get_by_label("Other", exact=True).check()
-    page.get_by_label("Please describe your talent").fill(" Organ ")
-    # Talents come last on the Member's page, below the ministry updates,
-    # in a panel styled like Ministry participation.
-    talents = page.locator(".talents-panel")
-    ministries = page.locator(".ministry-panel")
-    assert talents.evaluate(
-        "(t, m) => Boolean(m.compareDocumentPosition(t) &"
-        " Node.DOCUMENT_POSITION_FOLLOWING)",
-        ministries.element_handle(),
-    )
-    expect(talents.get_by_role("heading", level=4)).to_have_text("Talents to share")
-    heading_style = (
-        "e => [getComputedStyle(e).fontSize, getComputedStyle(e).fontWeight]"
-    )
-    assert talents.locator("h4").evaluate(heading_style) == ministries.locator(
-        "h4"
-    ).evaluate(heading_style)
     # The Family's own choice before the lock: join Food pantry.
+    show(page, page.get_by_text("Click here to join more ministries", exact=True))
+    no_talents_anywhere(page)
     page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_label("Search ministries").fill("pantry")
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
@@ -116,8 +117,7 @@ def test_talents_and_ministry_lock_restore_and_submit(
     expect(
         page.locator(".ministry-joining li", has_text="Food pantry").first
     ).to_be_hidden()
-    # The talents question is hidden while the Member cannot participate.
-    expect(page.locator(".talents-panel")).to_have_count(0)
+    no_talents_anywhere(page)
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -129,15 +129,12 @@ def test_talents_and_ministry_lock_restore_and_submit(
     expect(
         page.locator(".ministry-joining li", has_text="Food pantry").first
     ).to_be_visible()
-    # ...and the talents the Family had chosen.
-    expect(page.get_by_label("Painter")).to_be_checked()
-    expect(page.get_by_label("Please describe your talent")).to_have_value(" Organ ")
-    # The visible talents panel is accessible too.
+    no_talents_anywhere(page)
     assert page.evaluate(AXE) == []
     page.get_by_label(SERVE).check()
     review(page)
     expect(page.get_by_text(ATTEND, exact=True)).to_be_visible()
-    assert page.get_by_text("Talents to share", exact=False).count() == 0
+    no_talents_anywhere(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(
         show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
@@ -153,7 +150,7 @@ def test_talents_and_ministry_lock_restore_and_submit(
 
 
 def test_keyboard_reaches_every_new_control(page, component_origin):
-    """Talents and the lock are ordinary, labeled, keyboard-operable checkboxes."""
+    """The lock is an ordinary, labeled, keyboard-operable checkbox."""
     page.set_viewport_size({"width": 390, "height": 900})
     begin(page, component_origin, service_form(), recorder([]))
     lock = show(page, page.get_by_label(SERVE))
@@ -218,7 +215,6 @@ def test_refresh_keeps_set_aside_choices_for_unchecking(page, component_origin):
     page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_label("Search ministries").fill("pantry")
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
-    show(page, page.get_by_label("Painter")).check()
     page.get_by_label(SERVE).check()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
@@ -227,8 +223,6 @@ def test_refresh_keeps_set_aside_choices_for_unchecking(page, component_origin):
     expect(
         page.locator(".ministry-joining li", has_text="Food pantry").first
     ).to_be_visible()
-    # The talents set aside by the lock come back after the refresh too.
-    expect(page.get_by_label("Painter")).to_be_checked()
 
 
 def test_refresh_locks_a_limitation_set_in_another_tab(page, component_origin):
@@ -236,25 +230,15 @@ def test_refresh_locks_a_limitation_set_in_another_tab(page, component_origin):
     form, submissions = service_form(), []
     fresh = deepcopy(form)
     fresh["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": [4]}
-    fresh["service"]["members"]["3"] = {
-        "cannot_serve": True,
-        "talents": {OTHER: "Organ"},
-    }
+    fresh["service"]["members"]["3"] = {"cannot_serve": True, "talents": {}}
     begin(page, component_origin, form, refreshing(submissions, fresh))
-    show(page, page.get_by_label("Painter")).check()
+    show(page, page.get_by_text("Click here to join more ministries", exact=True))
     page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_label("Search ministries").fill("pantry")
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(show(page, page.get_by_label(SERVE))).to_be_checked()
-    # Hidden while locked; unchecking shows the talents merged one by one:
-    # this tab's Painter and the other tab's Other.
-    expect(page.locator(".talents-panel")).to_have_count(0)
-    page.get_by_label(SERVE).uncheck()
-    expect(page.get_by_label("Painter")).to_be_checked()
-    expect(page.get_by_label("Please describe your talent")).to_have_value("Organ")
-    page.get_by_label(SERVE).check()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(
@@ -280,36 +264,17 @@ def test_refresh_keeps_a_hidden_pledge_for_unchecking(page, component_origin):
     expect(page.get_by_label("Annual pledge (USD)")).to_have_value("120")
 
 
-def test_refresh_drops_a_note_when_its_option_stops_taking_text(page, component_origin):
-    """A local Other note is not resubmitted once Other takes no text."""
-    form, submissions = service_form(), []
-    fresh = deepcopy(form)
-    fresh["service"]["talent_options"][-1]["free_text"] = False
-    begin(page, component_origin, form, refreshing(submissions, fresh))
-    show(page, page.get_by_label("Other", exact=True)).check()
-    page.get_by_label("Please describe your talent").fill("Organ")
-    review(page)
-    page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(show(page, page.get_by_label("Other", exact=True))).to_be_checked()
-    assert page.get_by_label("Please describe your talent").count() == 0
-    review(page)
-    page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(
-        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
-    ).to_be_visible()
-    assert submissions[1]["service"]["members"]["3"]["talents"] == {OTHER: ""}
-
-
-def test_loaded_limitation_hides_talents_and_restores_them(page, component_origin):
-    """A saved "cannot participate" hides saved talents until it's unchecked."""
+def test_loaded_limitation_unchecks_and_checks_again(page, component_origin):
+    """A saved "cannot participate" can be unchecked and checked again."""
     form, submissions = service_form(), []
     form["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": [4]}
-    form["service"]["members"]["3"] = {"cannot_serve": True, "talents": {PAINTER: ""}}
+    form["service"]["members"]["3"] = {"cannot_serve": True, "talents": {}}
     begin(page, component_origin, form, recorder(submissions))
     expect(show(page, page.get_by_label(SERVE))).to_be_checked()
-    expect(page.locator(".talents-panel")).to_have_count(0)
     page.get_by_label(SERVE).uncheck()
-    expect(page.get_by_label("Painter")).to_be_checked()
+    choir = page.get_by_role("group", name="Choir", include_hidden=True)
+    expect(choir.get_by_label("Continue in this ministry")).to_be_enabled()
+    no_talents_anywhere(page)
     page.get_by_label(SERVE).check()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
@@ -322,28 +287,6 @@ def test_loaded_limitation_hides_talents_and_restores_them(page, component_origi
     }
 
 
-def test_refresh_keeps_another_tabs_talents_under_this_tabs_lock(
-    page, component_origin
-):
-    """A lock's set-aside only reapplies this tab's own changes after refresh."""
-    form, submissions = service_form(), []
-    form["service"]["members"]["3"]["talents"] = {PAINTER: ""}
-    fresh = deepcopy(form)
-    # Another tab removed Painter and added Other ("Organ").
-    fresh["service"]["members"]["3"]["talents"] = {OTHER: "Organ"}
-    begin(page, component_origin, form, refreshing(submissions, fresh))
-    show(page, page.get_by_label("Florist")).check()
-    page.get_by_label(SERVE).check()
-    review(page)
-    page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(show(page, page.get_by_label(SERVE))).to_be_checked()
-    page.get_by_label(SERVE).uncheck()
-    # This tab's Florist, and the other tab's removal and Other, all kept.
-    expect(page.get_by_label("Florist")).to_be_checked()
-    expect(page.get_by_label("Painter")).not_to_be_checked()
-    expect(page.get_by_label("Please describe your talent")).to_have_value("Organ")
-
-
 def test_refresh_locked_elsewhere_restores_this_tabs_own_choices(
     page, component_origin
 ):
@@ -354,7 +297,7 @@ def test_refresh_locked_elsewhere_restores_this_tabs_own_choices(
     fresh["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": [4]}
     fresh["service"]["members"]["3"] = {"cannot_serve": True, "talents": {}}
     begin(page, component_origin, form, refreshing(submissions, fresh))
-    show(page, page.get_by_label("Painter")).check()
+    show(page, page.get_by_text("Click here to join more ministries", exact=True))
     page.get_by_text("Click here to join more ministries", exact=True).click()
     page.get_by_label("Search ministries").fill("pantry")
     page.get_by_role("checkbox", name="Food pantry", exact=True).check()
@@ -365,7 +308,6 @@ def test_refresh_locked_elsewhere_restores_this_tabs_own_choices(
     page.get_by_label(SERVE).uncheck()
     choir = page.get_by_role("group", name="Choir", include_hidden=True)
     expect(choir.get_by_label("Continue in this ministry")).to_be_checked()
-    expect(page.get_by_label("Painter")).to_be_checked()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(
@@ -374,76 +316,19 @@ def test_refresh_locked_elsewhere_restores_this_tabs_own_choices(
     assert submissions[1]["ministries"]["members"]["3"] == {"join": [9], "leave": []}
     assert submissions[1]["service"]["members"]["3"] == {
         "cannot_serve": False,
-        "talents": {PAINTER: ""},
+        "talents": {},
     }
-
-
-def test_refresh_unlocked_elsewhere_drops_the_stale_set_aside(page, component_origin):
-    """If another tab unlocks the Member, a later lock captures current talents."""
-    florist = DEFAULT_TALENTS[1].id
-    form, submissions = service_form(), []
-    form["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": [4]}
-    form["service"]["members"]["3"] = {"cannot_serve": True, "talents": {PAINTER: ""}}
-    fresh = deepcopy(form)
-    fresh["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": []}
-    fresh["service"]["members"]["3"] = {"cannot_serve": False, "talents": {florist: ""}}
-    begin(page, component_origin, form, refreshing(submissions, fresh))
-    review(page)
-    page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(show(page, page.get_by_label(SERVE))).not_to_be_checked()
-    expect(page.get_by_label("Florist")).to_be_checked()
-    expect(page.get_by_label("Painter")).not_to_be_checked()
-    page.get_by_label(SERVE).check()
-    page.get_by_label(SERVE).uncheck()
-    expect(page.get_by_label("Florist")).to_be_checked()
-    expect(page.get_by_label("Painter")).not_to_be_checked()
-
-
-@pytest.mark.parametrize("width", [390, 1280])
-def test_emptied_talent_list_shows_no_talents_anywhere(
-    page, component_origin, axe_source, width
-):
-    """A campaign whose talent list was emptied shows no Talents panel or line.
-
-    "Cannot participate" still appears and works, and each Member's answer
-    is sent with no talents, which the server accepts.
-    """
-    page.set_viewport_size({"width": width, "height": 900})
-    form, submissions, errors = service_form(), [], []
-    form["service"]["talent_options"] = []
-    page.on("pageerror", lambda error: errors.append(str(error)))
-    begin(page, component_origin, form, recorder(submissions))
-    lock = show(page, page.get_by_label(SERVE))
-    expect(page.locator(".talents-panel")).to_have_count(0)
-    assert page.get_by_text("Talents to share", exact=False).count() == 0
-    assert page.get_by_text("special talent", exact=False).count() == 0
-    page.evaluate(axe_source)
-    assert page.evaluate(AXE) == []
-    # Toggling the separate limitation never brings an empty panel back.
-    lock.check()
-    lock.uncheck()
-    expect(page.locator(".talents-panel")).to_have_count(0)
-    review(page)
-    assert page.get_by_text("Talents to share", exact=False).count() == 0
-    page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(
-        show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
-    ).to_be_visible()
-    assert submissions[0]["service"] == {
-        "members": {"3": {"cannot_serve": False, "talents": {}}},
-        "proposed_members": {},
-    }
-    assert not errors, errors
 
 
 def test_set_aside_talents_no_longer_offered_are_not_restored(page, component_origin):
     """Unchecking the lock restores only talents the refreshed form still offers.
 
-    This tab sets Painter aside under the lock; another tab saves the Member
-    locked and the parish empties the list. Painter must not come back with
-    no checkbox left to remove it (the server would refuse it).
+    A tab opened before talents were retired (#970) sets Painter aside under
+    the lock; another tab saves the Member locked, and the refresh offers no
+    talents. Painter must not come back with no checkbox left to remove it
+    (the server would refuse it).
     """
-    form, submissions = service_form(), []
+    form, submissions = old_form(), []
     fresh = deepcopy(form)
     fresh["ministries"]["members"]["3"] = {"current": [4], "join": [], "leave": [4]}
     fresh["service"]["members"]["3"] = {"cannot_serve": True, "talents": {}}
@@ -467,9 +352,9 @@ def test_set_aside_talents_no_longer_offered_are_not_restored(page, component_or
     }
 
 
-def test_list_emptied_mid_session_removes_the_panel(page, component_origin):
-    """A refresh after the parish empties the list drops the panel and talents."""
-    form, submissions = service_form(), []
+def test_retired_mid_session_removes_the_panel(page, component_origin):
+    """A tab opened before #970 drops the panel and talents on its refresh."""
+    form, submissions = old_form(), []
     fresh = deepcopy(form)
     fresh["service"]["talent_options"] = []
     begin(page, component_origin, form, refreshing(submissions, fresh))
@@ -566,7 +451,7 @@ def test_a_members_section_error_names_the_member_and_links_to_them(
     expect(page.locator("#member-section-3")).to_be_focused()
     # A change in the section is the correction: the line and its
     # description go.
-    page.get_by_label("Painter").check()
+    page.get_by_label(SERVE).check()
     expect(page.locator("#member-section-3-error")).to_have_count(0)
     expect(page.locator("#member-section-3")).not_to_have_attribute(
         "aria-describedby", "member-section-3-error"

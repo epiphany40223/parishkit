@@ -10,7 +10,7 @@ the GET fixture the view would have rendered.
 
 import pytest
 
-from .talent_components import PATH as TALENTS
+from .limitations_components import PATH as LIMITATIONS
 from .waits import eventually, has_attribute, has_text, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -240,19 +240,19 @@ def test_filter_and_export_forms_follow_a_post_tables_sort(page, component_origi
 def test_two_tables_on_one_page_keep_each_others_choices(page, component_origin):
     """Sorting one table swaps every region from the fetched page, so a second
     table keeps the first table's choice and the filter form carries both."""
-    page.goto(component_origin + "/talents-report")
+    page.goto(component_origin + "/limitations-report")
     families = "#families-table tbody th[scope=row]"
     assert page.locator(families).all_inner_texts() == ["Baker", "Carter"]
     members = "#members-table tbody th[scope=row]"
     assert page.locator(members).all_inner_texts()[0].startswith("Zed")
     fulfil_post_with(
         page,
-        "**" + TALENTS,
+        "**" + LIMITATIONS,
         component_origin,
         lambda request: (
-            "/talents-report-both"
+            "/limitations-report-both"
             if "members_sort=member" in request.post_data
-            else "/talents-report-families-desc"
+            else "/limitations-report-families-desc"
         ),
     )
     page.locator("#families-table").get_by_role(
@@ -618,16 +618,16 @@ def test_repeated_filter_submission_sends_one_request(page, component_origin):
     assert len(held) == 1
 
 
-def test_talents_filter_updates_both_tables_and_the_summary(page, component_origin):
+def test_limitations_filter_updates_both_tables_and_the_summary(page, component_origin):
     """A filter on a two-table report swaps both tables and the summary above
     them, and the live region names each table's rows."""
-    page.goto(component_origin + "/talents-report")
+    page.goto(component_origin + "/limitations-report")
     page.evaluate(MARK)
     fulfil_post_with(
         page,
-        "**" + TALENTS,
+        "**" + LIMITATIONS,
         component_origin,
-        lambda request: "/talents-report-cannot-serve",
+        lambda request: "/limitations-report-cannot-serve",
     )
     page.get_by_label("Show", exact=True).select_option("cannot_serve")
     with page.expect_request(lambda request: request.method == "POST") as sent:
@@ -643,7 +643,7 @@ def test_talents_filter_updates_both_tables_and_the_summary(page, component_orig
     ]
     members = page.locator("#members-table tbody th[scope=row]").all_inner_texts()
     assert len(members) == 1 and members[0].startswith("Amy")
-    summary = page.locator("#talents-summary dd")
+    summary = page.locator("#limitations-summary dd")
     assert summary.first.inner_text() == "1"
     assert page.evaluate(MARKED) == "kept"
 

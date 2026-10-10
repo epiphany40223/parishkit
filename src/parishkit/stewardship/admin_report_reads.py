@@ -46,7 +46,7 @@ REPORT_COMMANDS = {
     "response_dashboard": "report responses",
     "participation": "report participation",
     "financial_report": "report financial",
-    "talents_report": "report talents",
+    "limitations_report": "report talents",
     "information_queue": "report information",
     "ministry_report": "report ministry",
 }

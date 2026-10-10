@@ -173,7 +173,7 @@ XLSX tables share one style (`reports/xlsx_design.py`): a bold white-on-teal
 heading row as tall as its most-wrapped heading, Arial text, a frozen heading
 row (and the identifying first column on Family-keyed sheets that start
 with it: the Family-code directory, financial detail, additional
-information, census changes and talents, and the response list of ParishSoft data to check; the postal mail
+information, census changes and limitations, and the response list of ParishSoft data to check; the postal mail
 merge starts with the DUID and freezes only its
 heading row), filters, light zebra banding as a
 display rule, widths fitted to the content within limits with long text
@@ -1390,47 +1390,56 @@ or regenerating one needs the same fresh sign-in as a
 [active parishioner family directory](#active-parishioner-family-directory) export, returning to this report. No
 Ministry leader receives aggregate or Family financial detail.
 
-## Talents and limitations
+## Limitations
 
 **Access:** Admin and Staff only.
 
+The page is at `/admin/reports/limitations/`. It was "Talents and
+limitations" until the Family form stopped asking for talents
+([#970](https://github.com/epiphany40223/parishkit/issues/970)); the old
+address is gone, with no redirect.
+
 From each Family's currently effective live response, one table lists Members
-who shared a talent (with any Other text, worded from the campaign's current
-talent list) or who cannot participate in any ministries, and a second lists
-Families who cannot attend Mass or prayer services (see
-[Family portal](../parishioner-portal/spec.md#talents-and-cannot-participate)),
+who cannot participate in any ministries, and a second lists Families who
+cannot attend Mass or prayer services (see
+[Family portal](../parishioner-portal/spec.md#cannot-participate-in-ministries)),
 with the columns Family, Family DUID and Latest response, each sortable.
 Both tables name each Family as the
 [active parishioner family directory](#active-parishioner-family-directory)
 does (surname, then heads), on the page and in the downloads.
 The Members table follows the same
 [column order](../admin-portal/spec.md#table-column-order): Member (the row
-header), Family, Family DUID, Talents (when collected), Cannot participate
-and Latest response, each sortable. It has no Member DUID column yet: the
-installed selection does not return the Member's key, so adding one needs a
-forward migration ([#932](https://github.com/epiphany40223/parishkit/issues/932)).
-The downloads keep their own column order until #932's export slice.
-Testing responses are excluded. Filters are a name or Family DUID search and
-one choice of everything, cannot participate, cannot attend, or a single
-talent; a summary counts each. The filtered result downloads immediately as CSV
-(Members, then Families) or XLSX (one sheet each), in a chosen display
-timezone. A download is rendered in memory on the web connection under the
-interactive campaign read guard, not through the dedicated download pool, whose
-login cannot read the response and source data the report needs. Viewing and
-downloading are audited with the row count, the Show choice (`report_filter`:
-a closed word, or `option` with the chosen talent's settings id in
-`talent_option_id`), whether the search box was used (`search_used`) and the
-ParishSoft snapshot read (`snapshot_id`, recorded only when a refresh did not
-promote a new one while the report ran)
-([#556](https://github.com/epiphany40223/parishkit/issues/556)). The search
-text itself is never recorded, because it can name a Family. These answers are
-never written to
-ParishSoft. When the campaign offers no talents, the
-page says so plainly and lists only the limitations: no Talents column, talent
-counts or talent filters appear on the page or in the downloads, and Members
-listed only for talents an earlier response chose are left out. The Ministry
-follow-up queue also notes when a
-leave comes from a Member who cannot participate in any ministries.
+header), Family, Family DUID, Cannot participate and Latest response, each
+sortable. It has no Member DUID column yet: the installed selection does not
+return the Member's key, so adding one needs a forward migration
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). The
+downloads keep their own column order until #932's export slice. Testing
+responses are excluded. Filters are a name or Family DUID search and one
+choice of everything, cannot participate or cannot attend; a summary counts
+each. Talents that older responses recorded are never shown: no talent
+column, count or filter appears on the page or in the downloads, and Members
+listed only for such talents are left out.
+
+The filtered result downloads immediately as CSV (Members, then Families) or
+XLSX (one sheet each), in a chosen display timezone, with the columns
+Family, Family DUID, Member, Cannot participate in ministries and Latest
+response for Members, and Family, Family DUID, Cannot attend Mass and Latest
+response for Families. A download is rendered in memory on the web
+connection under the interactive campaign read guard, not through the
+dedicated download pool, whose login cannot read the response and source
+data the report needs.
+
+Viewing and downloading are audited with the row count, the Show choice
+(`report_filter`, a closed word), whether the search box was used
+(`search_used`) and the ParishSoft snapshot read (`snapshot_id`, recorded
+only when a refresh did not promote a new one while the report ran)
+([#556](https://github.com/epiphany40223/parishkit/issues/556)). The events
+keep the names they had as Talents and limitations
+(`talents_report_viewed` and `talents_report_exported`), and System logs
+still word older events' `option` choice and `talent_option_id`. The search
+text itself is never recorded, because it can name a Family. These answers
+are never written to ParishSoft. The Ministry follow-up queue also notes when
+a leave comes from a Member who cannot participate in any ministries.
 
 ## System logs
 

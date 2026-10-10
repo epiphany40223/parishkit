@@ -89,8 +89,9 @@ BROKEN_LABELS = """() => {
         "/hosted-files",
         "/delivery-refusals",
         "/background",
-        # Sortable headings: POST buttons (talents) and GET links (ministries).
-        "/talents-report",
+        # Sortable headings: POST buttons (limitations) and GET links
+        # (ministries).
+        "/limitations-report",
         "/ministries",
         # The data-age lines and the late refresh's run button (#510).
         "/home-data-age",
