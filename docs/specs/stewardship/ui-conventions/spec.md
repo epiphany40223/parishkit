@@ -795,7 +795,9 @@ Admin pages put the page's data first and keep explanation one deliberate
 click away, without removing any of it. A page leads with its heading, its own
 data line (such as the campaign name or counts), safety notices (such as
 Testing mode) and then its data or form; at most a one-line hint that prevents
-a likely mistake stays visible above the data. A caution that prevents a
+a likely mistake stays visible above the data. A line of cross-links to
+related pages may sit above the heading instead, when an About panel left
+open would otherwise push it out of view (#938). A caution that prevents a
 likely mistake (what an action cannot undo or stop, or a lasting consequence
 it has) is never only in the panel: it stays visible beside its control as a
 one-line hint or a notice. The page's introduction and longer explanation of
