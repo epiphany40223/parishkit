@@ -533,8 +533,8 @@ confirmation dialog shows a refusal below its buttons
 scrollbar's space ([page help](#page-help)); `data-complete-hint="reserve"`
 on a complete-gate hint keeps its one line's height while empty instead of
 hiding it (#959); a field that a choice makes inapplicable stays in
-place, greyed, rather than disappearing, through `data-enabled-when` (open
-#959) or `data-locked-when` (open #957) ([conditional
+place, greyed, rather than disappearing, through `data-enabled-when` (#959)
+or `data-locked-when` (open #957) ([conditional
 fields](#conditional-fields)). **Precedent.** #736 and its review
 (Administrator, 2026-10-08), #563, open #957, #959.
 

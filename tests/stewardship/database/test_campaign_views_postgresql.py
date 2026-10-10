@@ -567,9 +567,15 @@ def leader_post(browser, row, roles, *, version):
 
 
 def leader_region(body):
-    """The leader-role panel's own in-place review region (#922, E2)."""
+    """The leader-role panel's own in-place review region (#922, E2).
+
+    The region may carry more attributes after its marker, such as
+    data-keep-height (#768, #973).
+    """
     body = body.decode()
-    start = body.index('<div id="leader-roles-review" data-in-place-region>')
+    start = re.search(
+        r'<div id="leader-roles-review" data-in-place-region[ >]', body
+    ).start()
     return body[start : body.index("</div>", start)]
 
 
@@ -625,7 +631,9 @@ def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google)
     # end date's (Administrator decision E2) ...
     status = browser.get(response["Location"])
     assert "Change status" in leader_region(status.content)
-    assert status.content.decode().count('id="settings-status-title"') == 1
+    # Its heading's id is its region's, so the two regions never share one.
+    assert status.content.decode().count('id="leader-roles-review-status-title"') == 1
+    assert 'id="settings-review-status-title"' not in status.content.decode()
     # ... and so does a refused Apply (a preview now out of date).
     stale = post(browser, url(row), {"action": "confirm", "preview": token(later)})
     assert stale.status_code == 409

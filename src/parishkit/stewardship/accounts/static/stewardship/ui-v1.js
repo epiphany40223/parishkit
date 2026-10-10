@@ -1122,8 +1122,15 @@
     // Charts keep their space until the fresh ones are drawn (chart-v1.js).
     if (window.ParishCharts) window.ParishCharts.hold(region, fresh);
     // A data-keep-height region (a settings page's review region) keeps the
-    // height the reader's place needs (heldHeight, above) (#736).
-    if (region.hasAttribute("data-keep-height")) fresh.style.minHeight = heldHeight(region);
+    // height the reader's place needs (heldHeight, above) (#736). One whose
+    // fresh copy is empty holds nothing: every in-place answer redraws every
+    // region, so a panel's review region that another panel's Review empties
+    // (Campaign settings' end date, then its leader roles) would otherwise
+    // keep a blank gap until the page reloads (#973).
+    const empty = !fresh.firstElementChild && !fresh.textContent.trim();
+    if (region.hasAttribute("data-keep-height")) {
+      fresh.style.minHeight = empty ? "" : heldHeight(region);
+    }
     region.replaceWith(fresh);
     enhanceSwapped(fresh);
   };

@@ -29,9 +29,11 @@ answers Applied and follows to ``SHARE_SETTLED``, the applied list at version
 Member talents' editor is served at ``TALENTS`` with the stock talents. A
 live campaign's Ministry leader roles form (#922) is served at ``LEADERS``,
 with its review at ``LEADERS_REVIEW``; Apply's answer names the change at
-``LEADERS_PENDING``. A live campaign's Campaign settings, whose one editable
-setting is its end date (#912), is served at ``LIVE_END`` (the editor, whose
-Apply leads to ``LIVE_END_PENDING``), ``LIVE_END_REVIEW`` (its review) and
+``LEADERS_PENDING``. ``LEADERS_END_REVIEW`` is that page answering its end
+date's Review, so a test can review both panels in turn. A live campaign's
+Campaign settings, whose one editable setting is its end date (#912), is
+served at ``LIVE_END`` (the editor, whose Apply leads to
+``LIVE_END_PENDING``), ``LIVE_END_REVIEW`` (its review) and
 ``LIVE_END_REFUSED`` (refused, linking to the combined date-change review);
 ``LIVE_END_REFUSING`` shows a change whose polled status settles as refused
 (#944). The end date's live check (#944) is answered, by date, with one of
@@ -85,6 +87,7 @@ CAMPAIGN_REVIEW = "/campaign-in-place-review"
 LEADERS = "/campaign-leaders-in-place"
 LEADERS_REVIEW = "/campaign-leaders-in-place-review"
 LEADERS_PENDING = f"{LEADERS}?request={REQUEST}"
+LEADERS_END_REVIEW = "/campaign-leaders-in-place-end-review"
 # The role labels the current rosters use, and the roles in effect.
 ROLE_CHOICES = [(name, name) for name in ("Chairperson", "Member", "Staff")]
 DEFAULT_ROLES = ["Chairperson", "Staff"]
@@ -224,11 +227,12 @@ def components(context, admin):
             ),
         )
 
-    def leaders(step, **region):
+    def leaders(step, review_in="leaders", **region):
         """A live campaign's page at ``step``: settings read-only, the end
         date's panel (#912) and the leader roles in their own form with its
         own review region under it, which shows the leader-role answers
-        (#922, Administrator decision E2)."""
+        (#922, Administrator decision E2). ``review_in="end"`` puts the
+        answers in the end date's region instead."""
         form = setup_help.apply(
             CampaignSettingsForm(
                 None,
@@ -279,7 +283,7 @@ def components(context, admin):
                     ),
                     "end_saved": "2054-10-31",
                     "leader_form": leader_form,
-                    "review_in": "leaders",
+                    "review_in": review_in,
                 }
                 | review_region("campaign_settings", None, **region),
             ),
@@ -440,6 +444,21 @@ def components(context, admin):
             },
         ),
         LEADERS_PENDING: leaders(2, receipt=pending),
+        LEADERS_END_REVIEW: leaders(
+            1,
+            review_in="end",
+            review={
+                "changes": [
+                    {
+                        "label": "Campaign end date",
+                        "before": "October 31, 2054",
+                        "after": "November 15, 2054",
+                    }
+                ],
+                "notes": [],
+                "preview": "synthetic-signed-intent",
+            },
+        ),
         SHARE: share(None, 0),
         TALENTS: share(
             None,

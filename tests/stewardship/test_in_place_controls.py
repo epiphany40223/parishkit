@@ -435,3 +435,42 @@ def test_option_lists_word_their_review_hint(page):
     assert 'data-require-change="base_digest"' in form
     assert 'translate "Change an option to review it." as option_hint' in text
     assert "review-changes-button.html' with hint=option_hint" in text
+
+
+@pytest.mark.parametrize("shown", ["review", "receipt"])
+def test_two_settings_review_regions_never_share_a_heading_id(shown):
+    """Campaign settings draws settings-review.html in two regions on one
+    live page (the end date's and the leader roles', #912 and #922). The
+    review's and the status's heading ids start with the region's id, so two
+    regions holding content at once never repeat an id, and each section is
+    labelled by the heading inside it (#973)."""
+    context = {
+        "review": {"changes": [], "notes": [], "preview": "signed"},
+        "receipt": SimpleNamespace(state="applied"),
+    }
+    if shown == "receipt":
+        del context["review"]
+    regions = {}
+    for region in ("settings-review", "leader-roles-review"):
+        extra = {} if region == "settings-review" else {"region_id": region}
+        regions[region] = render_to_string(
+            "stewardship/settings-review.html", context | extra
+        )
+    ids = re.findall(r'\bid="([^"]+)"', "".join(regions.values()))
+    assert len(ids) == len(set(ids)) == 2, ids
+    suffix = "-title" if shown == "review" else "-status-title"
+    for region, html in regions.items():
+        labelled = re.search(r'aria-labelledby="([^"]+)"', html).group(1)
+        assert labelled == region + suffix
+        assert f'<h2 id="{labelled}"' in html
+
+
+def test_every_campaign_settings_review_region_keeps_its_height():
+    """Each review region Campaign settings draws, the live panels' end date
+    and leader roles included, keeps its height while it changes, so a
+    shorter status never moves the page under the reader (No layout shift,
+    #736, #973)."""
+    text = (TEMPLATES / "campaign-settings.html").read_text()
+    tags = re.findall(r'<div id="[\w-]+-review" data-in-place-region[^>]*>', text)
+    assert len(tags) == 5
+    assert all("data-keep-height" in tag for tag in tags), tags

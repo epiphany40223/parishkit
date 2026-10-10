@@ -125,7 +125,7 @@ def test_review_apply_and_status_happen_in_place(page, component_origin):
     # The status is shown where the review was, and the address names the
     # change (a reload shows its status again, never re-posts).
     visible(panel.get_by_role("heading", name="Change status"))
-    assert page.evaluate(FOCUSED, "#settings-status-title")
+    assert page.evaluate(FOCUSED, "#settings-review-status-title")
     assert current_step(page) == "Apply"
     assert page.url == f"{component_origin}{PENDING}#settings-review"
     # Change status answers Applied, and the follow-up refreshes the page in
@@ -299,7 +299,7 @@ def test_a_live_campaigns_leader_roles_are_reviewed_and_applied_in_place(
     assert "editor=leader_roles" in reviews[0]
     assert "ministry_leader_roles=Chairperson" in reviews[0]
     assert "ministry_leader_roles=Staff" not in reviews[0]
-    assert page.evaluate(FOCUSED, "#settings-review-title")
+    assert page.evaluate(FOCUSED, "#leader-roles-review-title")
     panel = page.locator("#leader-roles #leader-roles-review")
     assert "Chairperson, Staff" in panel.inner_text()
     # The end date's panel stays, with nothing in its own region.
@@ -662,7 +662,7 @@ def test_focus_brings_the_status_into_view_on_a_short_window(page, component_ori
     page.get_by_role("button", name="Apply changes").click()
     heading = page.get_by_role("heading", name="Change status")
     visible(heading)
-    assert page.evaluate(FOCUSED, "#settings-status-title")
+    assert page.evaluate(FOCUSED, "#settings-review-status-title")
     from playwright.sync_api import expect
 
     expect(heading).to_be_in_viewport()
