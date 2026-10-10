@@ -21,12 +21,13 @@ from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 
 from .delivery_metadata import DELIVERY_SORTING, FIELDS, family_duid, listing, messages
 
-# Every Refused addresses column sorts on the server; the default keeps the
-# old Family DUID, then address, order. No index orders these keys (the
-# recipient_refusal_identity index leads with organization_id, then
-# family_duid), so each is a top-N sort over the unresolved refusals, a
-# small set (one row per refused Family address). id is the unique
-# tiebreak.
+# Every Refused addresses column but Family and Email sorts on the server;
+# the default keeps the old Family DUID, then address, order. id has no
+# column (the refusal's own page shows it under Technical details) but keeps
+# its sort for the command line's --sort id, and is the unique tiebreak. No
+# index orders these keys (the recipient_refusal_identity index leads with
+# organization_id, then family_duid), so each is a top-N sort over the
+# unresolved refusals, a small set (one row per refused Family address).
 REFUSAL_SORTING = Sorting.by_column(
     {
         "address": ("address",),
@@ -156,8 +157,9 @@ def with_refusal_counts(rows):
     Outgoing mail marks such an email ("1 address refused", #935): a refused
     address does not fail an email another address accepted, so without the
     mark a Delivered email would hide that one head of household never got
-    it. One grouped query for the shown page, however many rows; an email
-    with none counts 0.
+    it. Each address counts once: a retry that is refused again records a
+    second refusal of the same address against the same email. One grouped
+    query for the shown page, however many rows; an email with none counts 0.
     """
     from django.db.models import Count
 
@@ -171,7 +173,7 @@ def with_refusal_counts(rows):
         )
         .annotate(message=recording_message())
         .values("message")
-        .annotate(count=Count("id"))
+        .annotate(count=Count("address", distinct=True))
         .values_list("message", "count")
     )
     return [row | {"refused": counts.get(row["id"], 0)} for row in rows]

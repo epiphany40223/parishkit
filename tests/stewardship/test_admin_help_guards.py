@@ -130,11 +130,10 @@ INTERNAL_TERMS = (
     "refusal id",
     "correlation",
 )
-# Reviewed exceptions: filter fields an Admin types an identifier into, and a
-# sortable list column. Each is (template, term).
+# Reviewed exceptions: filter fields an Admin types an identifier into. Each
+# is (template, term).
 INTERNAL_ALLOWED = {
     ("logs.html", "correlation"),
-    ("delivery-refusals.html", "refusal id"),
 }
 
 

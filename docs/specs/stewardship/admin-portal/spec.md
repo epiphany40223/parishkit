@@ -3454,7 +3454,8 @@ defines.
 An email whose delivery recorded a [refused address](#refused-addresses)
 that is still unresolved is marked in its State cell, on a second line,
 "1 address refused" or "N addresses refused"
-([#935](https://github.com/epiphany40223/parishkit/issues/935)). A
+([#935](https://github.com/epiphany40223/parishkit/issues/935)), counting
+each address once even when a retry was refused again. A
 permanently refused address does not fail an email that another address
 accepted, so the email can be Delivered and still have missed one head of
 household; the mark makes that visible. It links to Refused addresses
@@ -3563,14 +3564,16 @@ changes. It filters by an exact Family DUID (`?duid=`), which the
 [Outgoing mail](#outgoing-mail) mark uses. The columns follow the Admin
 tables' shared order
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)): Refused
-at, Family, Family DUID, Address, Recorded by and Refusal ID
-([#935](https://github.com/epiphany40223/parishkit/issues/935)). The
-Family's name is read as Outgoing mail reads it (the latest ParishSoft data,
-for the shown page only, at most three small queries) and shows "Not in
-current ParishSoft data" when that data no longer has the Family; the
-Family column does not sort. The address opens the refusal's own page, and
-Recorded by's **Open email** opens the email whose delivery recorded it. A
-link above the list leads back to Outgoing mail. The two pages stay
+at, Family, Family DUID, Address and Email
+([#935](https://github.com/epiphany40223/parishkit/issues/935)); the
+refusal's ID shows only under Technical details on its own page, though
+the command line can still sort by it (`--sort id`). The Family's name is
+read as Outgoing mail reads it (the latest ParishSoft data, for the shown
+page only, at most three small queries) and shows "Not in current
+ParishSoft data" when that data no longer has the Family; the Family and
+Email columns do not sort. The address opens the refusal's own page, and
+the Email column's **Open email** opens the email whose delivery recorded
+it. A link above the list leads back to Outgoing mail. The two pages stay
 separate: a refusal is per address and outlives the email that recorded
 it, so it is not a row or a state of Outgoing mail.
 
