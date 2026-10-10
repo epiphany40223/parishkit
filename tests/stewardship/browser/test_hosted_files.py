@@ -108,6 +108,20 @@ def test_only_unused_files_offer_actions(page, component_origin, axe_source, wid
     assert delete.get_attribute("title") == "Delete parish-picnic"
     head = page.locator("table.hosted-files thead th")
     assert head.last.inner_text() == "Actions"
+    # No Uploaded column (pk-local batch 5): the sortable headings are these.
+    sorted_by = [
+        text.split("\n")[0].strip()
+        for text in page.locator(
+            "table.hosted-files thead th[data-sort-column]"
+        ).all_inner_texts()
+    ]
+    assert [name.rstrip("▲▼↕ ") for name in sorted_by] == [
+        "Name",
+        "Placeholder",
+        "Type",
+        "Size",
+        "Used in",
+    ]
     edit.scroll_into_view_if_needed()
     boxes = [edit.bounding_box(), delete.bounding_box()]
     sizes = [(round(b["width"], 1), round(b["height"], 1)) for b in boxes]

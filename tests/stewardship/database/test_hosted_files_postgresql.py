@@ -603,6 +603,10 @@ def test_the_library_sorts_every_column_on_the_server(auth_service, google, medi
     by_name = browser.get(LIBRARY, {"sort": "name"}).content.decode()
     assert by_name.index("alpha.pdf") < by_name.index("Bravo.pdf")
     assert browser.get(LIBRARY, {"sort": "original_name"}).status_code == 400
+    # The table has no Uploaded column, so it has no such sort either
+    # (pk-local batch 5).
+    assert ">Uploaded<" not in default and "data-local-instant" not in default
+    assert browser.get(LIBRARY, {"sort": "uploaded"}).status_code == 400
 
 
 def other_connection():

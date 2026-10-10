@@ -495,9 +495,12 @@ from Family pages and emails.") opens the About panel, following the Admin
   selection column and **Delete selected** bulk action, as an action table
   ([row actions and confirmation](../admin-portal/spec.md#row-actions-and-confirmation)).
   Its headings sort
-  the whole library on the server (Name, Placeholder, Type, Size, Uploaded,
-  and Used in by its number of uses), by placeholder name until a heading is
-  chosen. The columns are:
+  the whole library on the server (Name, Placeholder, Type, Size, and Used
+  in by its number of uses), by placeholder name until a heading is chosen.
+  The table has no Uploaded column (Administrator, pk-local batch 5,
+  2026-10-10); who uploaded a file and when stay in its row
+  (`uploaded_by_id`, `created_at`) and the upload's audit record. The
+  columns are:
   - Preview: a 48-pixel thumbnail for images, loaded from the file's public
     link; a type label for documents.
   - Name: the original file name, which opens the file in a new tab.
@@ -507,7 +510,6 @@ from Family pages and emails.") opens the About panel, following the Admin
     capped at 600.
   - Type: for example "PDF", "Word document" or "PNG image, 1,200 × 800".
   - Size.
-  - Uploaded: the Admin's name and the date, in the parish date format.
   - Used in: the uses from [current content](#current-content), or "Not
     used".
   - Actions, last: for an unused file, **Edit** (its **Change placeholder

@@ -10,7 +10,6 @@ whose refresh address shows both unused files gone, for Delete selected, and
 """
 
 import json
-from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -35,7 +34,6 @@ POSTS = {}
 
 def components(context, admin):
     """The library with one used document and one unused image."""
-    moment = datetime(2026, 9, 29, 15, 4, tzinfo=UTC)
 
     def row(slug, kind, *, uses=(), image=False):
         """One library row shaped as ``hosted_file_views._rows`` builds it."""
@@ -47,7 +45,6 @@ def components(context, admin):
             size=123456,
             width=800 if image else None,
             height=400 if image else None,
-            created_at=moment,
         )
         return {
             "file": file,
@@ -60,7 +57,6 @@ def components(context, admin):
             "image": image,
             "type": "PNG image" if image else "PDF",
             "uses": list(uses),
-            "uploader": "admin@example.org",
             "missing": False,
         }
 

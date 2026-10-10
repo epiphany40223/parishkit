@@ -50,7 +50,6 @@ server refuses to delete or rename one anyway (hosted_file_views).
       {% translate "Placeholder" as heading %}{% sort_heading table "placeholder" heading %}
       {% translate "Type" as heading %}{% sort_heading table "type" heading %}
       {% translate "Size" as heading %}{% sort_heading table "size" heading "numeric" %}
-      {% translate "Uploaded" as heading %}{% sort_heading table "uploaded" heading %}
       {% translate "Used in" as heading %}{% sort_heading table "uses" heading %}
       <th scope="col">{% translate "Actions" %}</th>
     </tr></thead>
@@ -65,10 +64,9 @@ server refuses to delete or rename one anyway (hosted_file_views).
         <button type="button" class="button-secondary" data-copy="image-tag-{{ row.file.pk }}" hidden>{% translate "Copy image tag" %}</button>{% endif %}</td>
       <td>{{ row.type }}{% if row.image %}, {{ row.file.width }} × {{ row.file.height }}{% endif %}</td>
       <td class="numeric">{{ row.file.size|filesizeformat }}</td>
-      <td>{{ row.uploader }}<br><time datetime="{{ row.file.created_at|instant }}" data-local-instant>{{ row.file.created_at|instant }}</time></td>
       <td>{% if row.uses %}<ul>{% for use in row.uses %}<li>{{ use.description }}</li>{% endfor %}</ul>{% else %}{% translate "Not used" %}{% endif %}</td>
       {% if row.uses %}{% table_actions name=row.file.slug %}{% else %}{% table_actions name=row.file.slug edit=row.edit_url delete=row.file.pk confirm="hosted-file-delete" field="file_id" %}{% endif %}
-    </tr>{% empty %}<tr><td colspan="9">{% translate "No files yet. Upload a PDF, Office document or image to link it from pages and emails." %}</td></tr>{% endfor %}
+    </tr>{% empty %}<tr><td colspan="8">{% translate "No files yet. Upload a PDF, Office document or image to link it from pages and emails." %}</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>

@@ -41,7 +41,6 @@ from .hosted_file_models import (
     HostedFile,
 )
 from .limiting import LimiterUnavailable
-from .policy_models import PortalUser
 
 # The one request body larger than the 6 MB default: a 10 MB file plus form
 # overhead. Caddy admits the same bound on this route only.
@@ -143,11 +142,10 @@ LIBRARY_SORTING = Sorting.by_column(
         "placeholder": lambda row: row["file"].slug,
         "type": lambda row: str(row["type"]).casefold(),
         "size": lambda row: row["file"].size,
-        "uploaded": lambda row: row["file"].created_at,
         "uses": lambda row: len(row["uses"]),
     },
     default="placeholder",
-    descending_first={"size", "uploaded", "uses"},
+    descending_first={"size", "uses"},
 )
 
 
@@ -162,11 +160,6 @@ def _rows(files):
     origin = hosted_files.public_origin()
     root = hosted_files.media_root()
     uses = hosted_file_uses.file_uses([row.pk for row in files])
-    uploaders = dict(
-        PortalUser.objects.filter(
-            pk__in={row.uploaded_by_id for row in files}
-        ).values_list("pk", "email")
-    )
     return [
         {
             "file": row,
@@ -182,7 +175,6 @@ def _rows(files):
             "type": KIND_LABELS[row.kind],
             "uses": uses.get(row.pk, []),
             "edit_url": reverse("admin:hosted_file_rename", args=[row.pk]),
-            "uploader": uploaders.get(row.uploaded_by_id, ""),
             "missing": not storage.exists(root, row.pk, row.size),
         }
         for row in files
