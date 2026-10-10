@@ -279,6 +279,13 @@
       // the region above them changes height.
       const sideways = new Map([...region.querySelectorAll(".table-scroll")]
         .map((node, index) => [scrollKey(node, index), node.scrollLeft]));
+      // Anchoring cannot help at the foot of the page, where a shorter status
+      // (Applied is shorter than its running indicator) shortens the page and
+      // the browser pulls everything above down. A region inside a
+      // [data-keep-height] one (a settings page's review region, ui-v1.js)
+      // therefore keeps that one's height (#736).
+      const keep = region.closest("[data-keep-height]");
+      if (keep) keep.style.minHeight = `${keep.offsetHeight}px`;
       region.replaceChildren(...[...fresh.childNodes].map((node) => document.importNode(node, true)));
       // Mirror the fresh region's attributes (pending, state markers such as
       // data-export-state) so the page and its tests see the current state.
