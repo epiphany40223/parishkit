@@ -608,6 +608,18 @@ states (shown and hidden fields, unavailable buttons and their hints, a
 table's selection, the campaign modules and mail schedule rows) are worked
 out again when the page is shown (`pageshow`, #563).
 
+An action the server would refuse for a reason the page already knows is
+shown unavailable, named by that visible reason (`aria-describedby`), rather
+than left enabled or left out (#563). This covers Save and continue on a
+setup credential step while an earlier step is not done, Finish setup while
+setup is not ready, and Send on a campaign test email while a test is on its
+way. On Send to chosen Families, Send is unavailable with the first reason
+the reviewed Families cannot be sent: test codes not ready, campaign work in
+progress, a Family that cannot be sent a test, or more Families than the
+remaining allowance. Check these Families waits for a DUID. Prepare inactive
+Family links is unavailable while links cannot be prepared yet or earlier
+links still exist. The server still checks each of these.
+
 ### Field errors and live checks
 
 **Rule.** An error is shown at its field: the message beside it, the field

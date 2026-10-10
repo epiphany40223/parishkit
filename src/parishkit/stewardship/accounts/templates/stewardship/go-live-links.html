@@ -5,8 +5,11 @@
 <h1>{% translate "Prepare Family links" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="notice">{% translate "Each Family gets a new link for the live campaign. The links stay inactive until you give the final go-live confirmation. Preparing them sends no email and does not change Family codes." %}</p>
-{% if inputs_unavailable %}<p role="status">{% translate "Links can't be prepared yet. Finish Testing cleanup and wait for any running ParishSoft refresh to finish, then try again." %}</p>{% endif %}
-{% if prepare %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}">{% button type="submit" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</form>{% endif %}
+{% comment %}Prepare is always shown: while the server would refuse it, it is
+unavailable and described by the reason (#563).{% endcomment %}
+{% if prepare %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}">{% button type="submit" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</form>
+{% else %}<p role="status" id="prepare-unavailable">{% if inputs_unavailable %}{% translate "Links can't be prepared yet. Finish Testing cleanup and wait for any running ParishSoft refresh to finish, then try again." %}{% else %}{% translate "Links are already prepared or being prepared below. To prepare new ones, cancel and discard those first, then reload this page." %}{% endif %}</p>
+<p>{% button type="button" disabled=True aria-describedby="prepare-unavailable" %}{% translate "Prepare inactive Family links" %}{% endbutton %}</p>{% endif %}
 {% comment %}Anchor id only, no data-table-region: live-status-v1.js owns the
 history panels below, so paging stays a full load that lands here.{% endcomment %}
 <div id="{{ table.anchor }}">

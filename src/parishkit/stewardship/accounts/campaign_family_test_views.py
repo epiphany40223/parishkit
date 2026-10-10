@@ -7,6 +7,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
@@ -56,7 +57,13 @@ class FamilyTestForm(forms.Form):
 
     families = forms.CharField(
         max_length=400,
-        widget=forms.Textarea(attrs={"rows": 4}),
+        widget=forms.Textarea(
+            attrs={
+                "rows": 4,
+                # The complete gate's hint while the box is empty (#563).
+                "data-missing-hint": _("Enter at least one Family DUID to check."),
+            }
+        ),
         label=_("Family DUIDs, one per line (at most ten)"),
     )
 
@@ -142,6 +149,39 @@ def _pending(item):
     return item["state"] == "queued"
 
 
+def _unavailable(preview):
+    """Why the reviewed Families cannot be sent tests now, or None if they can.
+
+    The confirmation rechecks every one of these on the server. Naming the
+    first that applies lets the page show Send unavailable with its reason
+    instead of leaving it out (#563).
+    """
+    if preview.epoch_id is None:
+        return _(
+            "Test codes for this campaign are not ready yet, so no Family test "
+            "can be sent."
+        )
+    if preview.held:
+        return _(
+            "Campaign work is in progress. When it finishes, check these "
+            "Families again to send."
+        )
+    if not all(choice.eligible for choice in preview.families):
+        return _(
+            "A chosen Family cannot be sent a test (see its status above). "
+            "Remove it from the list and check the Families again."
+        )
+    if len(preview.families) > preview.available:
+        return ngettext(
+            "Only %(count)s more Family test may be requested now. Choose fewer "
+            "Families, or wait for earlier tests to finish.",
+            "Only %(count)s more Family tests may be requested now. Choose fewer "
+            "Families, or wait for earlier tests to finish.",
+            preview.available,
+        ) % {"count": preview.available}
+    return None
+
+
 def _page(
     request, service, campaign_id, revision_id, *, duids=(), form=None, restored=False
 ):
@@ -156,6 +196,7 @@ def _page(
         confirm = FamilyTestConfirmForm(
             initial={"preview": signing.dumps(preview.binding(), salt=SALT)}
         )
+    unavailable = _unavailable(preview) if duids else None
     items = [item | {"label": _label(item)} for item in recent_tickets(campaign_id)]
     # The Recent Family tests region follows itself (live-status-v1.js) while
     # a test is on its way. The script swaps only that region and never
@@ -202,10 +243,10 @@ def _page(
             ],
             "confirm": confirm,
             # The signed review is issued for any reviewed list; confirmation
-            # rechecks eligibility and the allowance, so only the button hides.
-            "sendable": not preview.held
-            and all(choice.eligible for choice in preview.families)
-            and len(preview.families) <= preview.available,
+            # rechecks eligibility and the allowance, so only the button is
+            # shown unavailable, with this reason.
+            "unavailable": unavailable,
+            "sendable": unavailable is None,
             "items": items,
             "refresh": refresh,
             "refresh_url": reverse("admin:campaign_mail_families", args=[revision_id]),
