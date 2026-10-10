@@ -75,8 +75,8 @@ def create(request, campaign_id):
 def packet_selection(parameters):
     """Closed form grammar: ticked Ministries, or none for every authorized one.
 
-    One control has one meaning, so a native form without scripts cannot reach
-    an ambiguous state such as "all" selected beside individually ticked boxes.
+    One control has one meaning, so the form cannot reach an ambiguous state
+    such as "all" selected beside individually ticked boxes.
     """
     fields = {"format", "browser_timezone", "request_key"}
     keys = set(parameters)

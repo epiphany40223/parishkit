@@ -7,7 +7,7 @@
 <p>{% translate "A mail scanner that opens a Family's personal link counts as a link follow, so that stage includes such prefetches. A Family that submitted counts as having opened the form and progressed, since a submission passes every step; other progress is recorded from ParishKit 1.2.0 on." %}</p>
 <p>{% translate "The activity chart counts each Family the first time it followed its link, opened the form or submitted, in the campaign's time zone. The dashed lines mark when each invitation and reminder was scheduled." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
-{# The mode and grain links refresh this region in place (ui-v1.js, a[data-in-place]); without script they load the page at the region. #}
+{# The mode and grain links refresh this region in place (ui-v1.js, a[data-in-place]); their real href, with this region's fragment, is the request the script makes. #}
 <div id="response-dashboard" data-in-place-region>
 <p>{{ campaign.active_configuration.name }} — {% if testing %}{% translate "Testing rehearsal" %}{% else %}{% translate "Production" %}{% endif %}</p>
 {% if can_test %}<nav class="choice-links" aria-label="{% translate 'Responses shown' %}"><a href="{{ production_url }}#response-dashboard" data-in-place="mode-production"{% if not testing %} aria-current="page"{% endif %}>{% translate "Production" %}</a> <a href="{{ testing_url }}#response-dashboard" data-in-place="mode-testing"{% if testing %} aria-current="page"{% endif %}>{% translate "Testing rehearsal" %}</a></nav>{% endif %}

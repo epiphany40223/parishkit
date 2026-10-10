@@ -3,7 +3,6 @@
 import pytest
 from django.urls import reverse
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -92,63 +91,59 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_role("alert").get_by_text("retry later", exact=False).count()
 
 
-def test_financial_filters_and_pages_without_scripts(browser_engine, component_origin):
-    """Identifying filters and page changes post natively, never through the URL."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/financial-report")
-        page.get_by_label("Search Family name or Family DUID").fill("Private name")
-        page.get_by_label("At most").fill("5000.00")
-        page.get_by_label("Frequency").select_option("monthly")
-        page.route("**/financial/", lambda route: route.fulfill(body="Filtered"))
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Apply filters").click()
-        body = sent.value.post_data
-        assert "search=Private+name" in body and "pledge_max=5000.00" in body
-        assert "frequency=monthly" in body and f"share={ONLINE}" in body
-        assert "Private" not in sent.value.url and "?" not in sent.value.url
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Filtered", exact=True))
+def test_financial_filters_and_pages_post_privately(page, component_origin):
+    """Identifying filters and page changes post in the body, never the URL."""
+    page.goto(component_origin + "/financial-report")
+    page.get_by_label("Search Family name or Family DUID").fill("Private name")
+    page.get_by_label("At most").fill("5000.00")
+    page.get_by_label("Frequency").select_option("monthly")
+    page.route("**/financial/", lambda route: route.fulfill(body="Filtered"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    body = sent.value.post_data
+    assert "search=Private+name" in body and "pledge_max=5000.00" in body
+    assert "frequency=monthly" in body and f"share={ONLINE}" in body
+    assert "Private" not in sent.value.url and "?" not in sent.value.url
+    # Let the routed answer finish loading before the next navigation,
+    # which it would otherwise interrupt (#623).
+    visible(page.get_by_text("Filtered", exact=True))
 
-        # Pagination carries the applied filters, not the edited form fields.
-        page.goto(component_origin + "/financial-report")
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Next", exact=True).first.click()
-        body = sent.value.post_data
-        assert "page=2" in body and "search=Example" in body
-        assert "pledge_min=100.00" in body and "?" not in sent.value.url
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Filtered", exact=True))
+    # Pagination carries the applied filters, not the edited form fields.
+    page.goto(component_origin + "/financial-report")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Next", exact=True).first.click()
+    body = sent.value.post_data
+    assert "page=2" in body and "search=Example" in body
+    assert "pledge_min=100.00" in body and "?" not in sent.value.url
+    # Let the routed answer finish loading before the next navigation,
+    # which it would otherwise interrupt (#623).
+    visible(page.get_by_text("Filtered", exact=True))
 
-        # A sortable heading posts the same filters with its sort token.
-        page.goto(component_origin + "/financial-report")
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Annual pledge", exact=False).click()
-        body = sent.value.post_data
-        assert "sort=pledge_desc" in body and "search=Example" in body
-        assert "page=" not in body and "?" not in sent.value.url
-        # Let the routed answer finish loading before the next navigation,
-        # which it would otherwise interrupt (#623).
-        visible(page.get_by_text("Filtered", exact=True))
+    # A sortable heading posts the same filters with its sort token.
+    page.goto(component_origin + "/financial-report")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Annual pledge", exact=False).click()
+    body = sent.value.post_data
+    assert "sort=pledge_desc" in body and "search=Example" in body
+    assert "page=" not in body and "?" not in sent.value.url
+    # Let the routed answer finish loading before the next navigation,
+    # which it would otherwise interrupt (#623).
+    visible(page.get_by_text("Filtered", exact=True))
 
-        # The export carries the applied filters, the chosen format and the
-        # one-time key natively; without scripts the timezone stays UTC.
-        page.goto(component_origin + "/financial-report")
-        page.get_by_label("Export format").select_option("pdf")
-        page.route(
-            "**" + reverse("admin:financial_export"),
-            lambda route: route.fulfill(body="Queued"),
-        )
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Queue complete export").click()
-        body = sent.value.post_data
-        assert "format=pdf" in body and "browser_timezone=UTC" in body
-        assert "search=Example" in body and "request_key=" in body
-        assert "page=" not in body and sent.value.url.endswith(
-            reverse("admin:financial_export")
-        )
-    finally:
-        context.close()
+    # The export carries the applied filters, the chosen format and the
+    # one-time key. The fixture does not offer the browser's zone
+    # (America/Los_Angeles), so the export timezone stays UTC.
+    page.goto(component_origin + "/financial-report")
+    page.get_by_label("Export format").select_option("pdf")
+    page.route(
+        "**" + reverse("admin:financial_export"),
+        lambda route: route.fulfill(body="Queued"),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Queue complete export").click()
+    body = sent.value.post_data
+    assert "format=pdf" in body and "browser_timezone=UTC" in body
+    assert "search=Example" in body and "request_key=" in body
+    assert "page=" not in body and sent.value.url.endswith(
+        reverse("admin:financial_export")
+    )

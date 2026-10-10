@@ -2,7 +2,6 @@
 
 import pytest
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -54,26 +53,19 @@ def test_report_chart_scope_export_controls_and_accessibility(
         )
 
 
-def test_report_and_exports_work_without_scripts(browser_engine, component_origin):
-    """No JavaScript is required to choose scope, read exact values or export."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/participation")
-        assert "$3,234.56" in page.locator("table").inner_text()
-        visible(page.get_by_role("button", name="Apply report options"))
-        visible(page.get_by_role("button", name="Generate export"))
-        visible(page.get_by_role("button", name="Queue export with the latest data"))
-        assert page.locator("[data-digest-controls]").is_hidden()
-        page.goto(component_origin + "/report-export")
-        visible(page.get_by_role("button", name="Download export"))
-        page.goto(component_origin + "/report-exact")
-        visible(page.get_by_role("button", name="Cancel export"))
-        visible(page.get_by_role("link", name="Refresh status"))
-        page.goto(component_origin + "/report-export-expired")
-        visible(page.get_by_role("button", name="Regenerate expired file"))
-    finally:
-        context.close()
+def test_report_and_export_pages_offer_their_actions(page, component_origin):
+    """Scope, exact values and each export state's action are on the page."""
+    page.goto(component_origin + "/participation")
+    assert "$3,234.56" in page.locator("table").inner_text()
+    visible(page.get_by_role("button", name="Apply report options"))
+    visible(page.get_by_role("button", name="Generate export"))
+    visible(page.get_by_role("button", name="Queue export with the latest data"))
+    page.goto(component_origin + "/report-export")
+    visible(page.get_by_role("button", name="Download export"))
+    page.goto(component_origin + "/report-exact")
+    visible(page.get_by_role("button", name="Cancel export"))
+    page.goto(component_origin + "/report-export-expired")
+    visible(page.get_by_role("button", name="Regenerate expired file"))
 
 
 def test_export_status_updates_itself_and_downloads_once(page, component_origin):

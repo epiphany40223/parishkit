@@ -85,8 +85,8 @@ def aboutpage(parser, token):
     Usage: ``{% aboutpage "setup-credential" %}…{% endaboutpage %}``. The key
     names the page type. The panel starts closed so the page's data comes
     first (#227); it is a native disclosure, so it opens with a click or the
-    keyboard even without script. ui-v1.js remembers, per browser, which page
-    types an Admin left open.
+    keyboard with no script of its own. ui-v1.js remembers, per browser,
+    which page types an Admin left open.
     """
     bits = token.split_contents()
     if len(bits) != 2:

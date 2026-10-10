@@ -2,7 +2,6 @@
 
 import pytest
 
-from .conftest import no_script_context
 from .response_dashboard_components import PATH
 from .test_charts import assert_clean, watch
 from .waits import has_text
@@ -151,22 +150,3 @@ def test_switches_refresh_the_dashboard_in_place(page, component_origin):
     assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-testing"
     assert page.locator("[data-chart]").count() == 0
     assert_clean(page, errors)
-
-
-def test_switches_are_plain_links_without_scripts(browser_engine, component_origin):
-    """With no JavaScript a switch loads the other view as an ordinary page,
-    landing on the dashboard region rather than at the top (#519)."""
-    context = no_script_context(browser_engine, viewport={"width": 1000, "height": 400})
-    try:
-        page = context.new_page()
-        page.goto(component_origin + PATH)
-        page.locator('[data-in-place="grain-day"]').click()
-        page.wait_for_url("**?grain=day#response-dashboard")
-        assert page.locator("#activity-heading").inner_text() == (
-            "Response activity by day"
-        )
-        assert page.evaluate("window.scrollY") > 0
-        region = "document.getElementById('response-dashboard')"
-        assert -2 < page.evaluate(region + ".getBoundingClientRect().top") < 100
-    finally:
-        context.close()

@@ -1,11 +1,10 @@
-"""Three-engine private native directories, accessible contacts and no-script use."""
+"""Three-engine private native directories and accessible contacts."""
 
 from uuid import UUID
 
 import pytest
 from django.urls import reverse
 
-from .conftest import no_script_context
 from .waits import visible
 
 pytestmark = pytest.mark.parametrize(
@@ -61,51 +60,39 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     assert "Private" not in sent.value.url and "abcd" not in sent.value.url
 
 
-def test_directory_pagination_works_without_scripts(browser_engine, component_origin):
-    """Codes, contacts and private navigation do not depend on JavaScript."""
-    context = no_script_context(browser_engine)
-    try:
-        page = context.new_page()
-        page.goto(component_origin + "/postal-directory")
-        visible(page.get_by_text("ABCDEFGH", exact=True))
-        visible(page.get_by_role("columnheader", name="Mailing address"))
-        page.route("**/families/", lambda route: route.fulfill(body="Next page"))
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Next", exact=True).first.click()
-        # Paging keeps the mailing columns on.
-        assert (
-            "page=2" in sent.value.post_data
-            and "search=Example" in sent.value.post_data
-            and "mailing=yes" in sent.value.post_data
-        )
-        assert "Example" not in sent.value.url and "?" not in sent.value.url
-    finally:
-        context.close()
+def test_directory_pagination_posts_privately(page, component_origin):
+    """Paging posts the applied filters in the body, never in the URL."""
+    page.goto(component_origin + "/postal-directory")
+    visible(page.get_by_text("ABCDEFGH", exact=True))
+    visible(page.get_by_role("columnheader", name="Mailing address"))
+    page.route("**/families/", lambda route: route.fulfill(body="Next page"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Next", exact=True).first.click()
+    # Paging keeps the mailing columns on.
+    assert (
+        "page=2" in sent.value.post_data
+        and "search=Example" in sent.value.post_data
+        and "mailing=yes" in sent.value.post_data
+    )
+    assert "Example" not in sent.value.url and "?" not in sent.value.url
 
 
-@pytest.mark.parametrize("scripts", [True, False])
 def test_complete_directory_export_controls_are_private_native_and_gated(
-    browser_engine, component_origin, scripts
+    browser_engine, component_origin
 ):
     """Export applied filters, not unsaved edits or the current page, on mobile."""
     options = {
         "timezone_id": "America/Detroit",
         "viewport": {"width": 320, "height": 900},
     }
-    context = (
-        browser_engine.new_context(**options)
-        if scripts
-        else no_script_context(browser_engine, **options)
-    )
+    context = browser_engine.new_context(**options)
     try:
         page = context.new_page()
         page.goto(component_origin + "/family-directory")
         # The export controls are collapsed until asked for.
         assert not page.get_by_label("Export format").is_visible()
         page.get_by_text("Export complete results").click()
-        assert page.get_by_label("Export timezone").input_value() == (
-            "America/Detroit" if scripts else "UTC"
-        )
+        assert page.get_by_label("Export timezone").input_value() == "America/Detroit"
         visible(page.get_by_text("51 estimated matching Families", exact=False))
         page.get_by_label(
             "Search by Family name, any member's name, DUID, envelope number or address"

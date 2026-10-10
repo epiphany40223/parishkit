@@ -32,7 +32,7 @@
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
 <div class="filter-bar"><div class="short"><label for="directory-format">{% translate "Export format" %}</label><select id="directory-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>{% include 'stewardship/export-dates-help.html' %}</div>
 <div><label for="directory-export-timezone">{% translate "Export timezone" %}</label><select id="directory-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select></div></div>
-<p class="help">{% translate "Your browser timezone is selected when available; without scripts, UTC is selected. You can change this selection before exporting." %}</p>
+<p class="help">{% translate "Your browser timezone is selected when available; otherwise UTC is selected. You can change this selection before exporting." %}</p>
 <p class="help" id="directory-export-mailing-help" data-table-sync{% if not mailing %} hidden{% endif %}>{% translate "The CSV has one header row and then one row per Family, ready for a word processor's mail merge." %}</p>
 {% include 'stewardship/export-fresh-help.html' %}
 {% button type="submit" %}{% translate "Queue complete export" %}{% endbutton %}</fieldset></form></details>
