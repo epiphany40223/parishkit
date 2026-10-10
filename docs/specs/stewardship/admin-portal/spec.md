@@ -1151,8 +1151,9 @@ which have precedence for it.
 #### Table column order
 
 This general rule lives in the [UX conventions](../ui-conventions/spec.md#table-column-order),
-which have precedence for it. Downloads keep their own documented columns
-until #932 reorders them; the postal mail-merge file never changes order
+which have precedence for it. Downloads follow the page's column order
+except where a report's section says otherwise; the postal mail-merge file
+never changes order
 (see [mailing columns](../reports/spec.md#mailing-columns)).
 
 ### In-place controls
