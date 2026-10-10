@@ -4946,9 +4946,10 @@ types internal type names one at a time:
   signed out, a new sign-in that replaced the previous session, and a
   session replaced by one carrying the person's changed roles);
 - `admin_login_refused`, a sign-in by a Google account that Google verified
-  and policy then refused (no rule, a rule with no role, a disabled identity,
-  or the SQL session guard finding the Admin rule gone at the session
-  insert). Its actor is that account's `PortalUser`, so the Actor column
+  and policy then refused (no user with that address, a disabled identity,
+  or the SQL session guard finding the user gone at the session insert;
+  until the users code of #952 lands, no rule or a rule with no role stands
+  for no user). Its actor is that account's `PortalUser`, so the Actor column
   names the address, and it carries no context. It is recorded at most once
   per account every ten minutes, and at most 20 times per deployment in any
   ten minutes across all accounts. Anyone can create Google accounts
