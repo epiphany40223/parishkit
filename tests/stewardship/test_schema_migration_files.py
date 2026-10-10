@@ -150,6 +150,9 @@ FROZEN = {
     "0039_response_list_sort_audit.sql": (
         "f819e94675c5a67e5c9a2c32661583d3a1bef0cf7e7b2967f180a71993b9e283"
     ),
+    "0040_ministry_report_actor_scope.sql": (
+        "21ccd2a08485c2e464614639d39fb396a62f90e6dd7e00bb88d44d93d1eb9ab5"
+    ),
 }
 
 

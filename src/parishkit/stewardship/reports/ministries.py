@@ -152,12 +152,24 @@ def campaign_ids(principal):
 
     Labels remain behind the response guard. This same predicate controls both
     the default redirect and explicit selection, never the global pointer.
+    The scope is the actor's current one in SQL (stewardship_ministry_scope_v1,
+    as the report itself reads it), narrowed by Python's view of the same actor
+    so that neither can widen the other (#389 L3).
     """
     if not can_report(principal):
         raise PermissionError("Ministry report access is unavailable.")
     with connection.cursor() as cursor:
         cursor.execute(
-            """SELECT c.id FROM stewardship_campaign c
+            """WITH scope AS MATERIALIZED (
+                SELECT coalesce(q.s->'operational'='true'::jsonb,false)
+                        AND %s AS operational,
+                    ARRAY(SELECT m.value::bigint FROM jsonb_array_elements_text(
+                        coalesce(q.s->'ministries','[]'::jsonb)) m(value)
+                        WHERE m.value::bigint=ANY(%s::bigint[])) AS ministries
+                FROM (SELECT stewardship_ministry_scope_v1(%s) AS s) q
+            )
+            SELECT c.id FROM stewardship_campaign c
+            CROSS JOIN scope p
             JOIN stewardship_campaign_configuration cc
                 ON cc.id=c.active_configuration_id
             LEFT JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id
@@ -168,10 +180,10 @@ def campaign_ids(principal):
             WHERE c.state IN ('draft','scheduled','active','closed','archived')
                 AND cc.values->'modules' ? 'ministry'
                 AND ss.state='promoted' AND ss.compacted_at IS NULL
-                AND (%s OR EXISTS(SELECT 1
+                AND (p.operational OR EXISTS(SELECT 1
                     FROM jsonb_array_elements_text(cc.values->'ministry_duids') n
                     WHERE n::bigint BETWEEN 1 AND 2147483647
-                        AND n::bigint=ANY(%s::bigint[]))
+                        AND n::bigint=ANY(p.ministries))
                     -- A Ministry removed from a live campaign keeps its
                     -- current (not withdrawn) requests in the report, as the
                     -- report SQL does (#342).
@@ -179,23 +191,40 @@ def campaign_ids(principal):
                     JOIN stewardship_ministry_request r ON r.submission_id=s.id
                     WHERE s.campaign_id=c.id AND s.mode='live'
                         AND r.state NOT IN ('cancelled','superseded')
-                        AND r.ministry_duid=ANY(%s::bigint[])))
+                        AND r.ministry_duid=ANY(p.ministries)))
             ORDER BY c.created_at DESC,c.id""",
             [
                 allows(principal, Capability.MINISTRY_REPORT),
                 sorted(value for value in principal.ministries if value < 2**31),
-                sorted(value for value in principal.ministries if value < 2**31),
+                principal.identity,
             ],
         )
         return tuple(row[0] for row in cursor.fetchall())
 
 
+def within_principal(principal, capability, operational, ministries):
+    """Cross-check SQL's scope against Python's view of the same actor.
+
+    SQL derives the scope from the actor (stewardship_ministry_scope_v1) and
+    is authoritative. A scope wider than Python's (operational when Python
+    is not, or a Ministry Python does not hold) means the two have drifted,
+    so the page is refused rather than shown.
+    """
+    if allows(principal, capability):
+        return True
+    return not operational and all(
+        allows(principal, capability, ministry_id=duid) for duid in ministries
+    )
+
+
 def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="join"):
     """Read under the response guard using its freshly resolved actor, not a cookie.
 
-    SQL intersects the server's current role scope with campaign selection before
-    reading requests. Contact redaction occurs inside the query, before detached
-    values reach the renderer. No credential or financial columns are selected.
+    SQL derives the actor's current role scope (stewardship_ministry_report_v2,
+    #389 L3) and intersects it with campaign selection before reading
+    requests; Python's scope is a pre-check and a cross-check. Contact
+    redaction occurs inside the query, before detached values reach the
+    renderer. No credential or financial columns are selected.
     """
     if not can_report(principal) or (
         ministry_id is not None
@@ -212,15 +241,14 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
         raise ValueError("Invalid Ministry action.")
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT stewardship_ministry_report_v1("
-            "campaign_uuid => %s, filters => %s::jsonb, operational => %s, "
-            "ministry_scope => %s::bigint[], ministry_id => %s, request_action => %s, "
+            "SELECT stewardship_ministry_report_v2("
+            "campaign_uuid => %s, filters => %s::jsonb, actor_uuid => %s, "
+            "ministry_id => %s, request_action => %s, "
             "page_limit => %s, page_offset => %s)::text",
             [
                 campaign_id,
                 json.dumps(query.form_values()),
-                allows(principal, Capability.MINISTRY_REPORT),
-                sorted(value for value in principal.ministries if value < 2**31),
+                principal.identity,
                 ministry_id,
                 action,
                 query.page_size,
@@ -235,8 +263,17 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
         raise PermissionError("Ministry reporting is not enabled for this campaign.")
     if result.get("unavailable"):
         raise ReadUnavailable("Ministry report inputs are unavailable.")
-    if not result["authorized"] and (
-        ministry_id is not None or not allows(principal, Capability.MINISTRY_REPORT)
+    scope = result["authorization_scope"]
+    # Only an actor SQL itself treats as operational may read an unauthorized
+    # (empty) summary: a campaign with no Ministries. Anyone else, including
+    # a principal Python treats as Admin or Staff whom SQL does not (a drift
+    # that would otherwise show a silently empty page), is refused, as the
+    # follow-up cross-check refuses (#389 L3).
+    if (
+        not result["authorized"]
+        and (ministry_id is not None or not scope["operational"])
+    ) or not within_principal(
+        principal, Capability.MINISTRY_REPORT, scope["operational"], scope["ministries"]
     ):
         raise PermissionError("Ministry report access is unavailable.")
     if ministry_id is not None and not result["summaries"]:

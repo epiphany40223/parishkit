@@ -21,7 +21,7 @@ from .test_background_grants_postgresql import task_login
 from .test_live_ministries_postgresql import applied, select
 from .test_ministry_exports_postgresql import leader
 from .test_ministry_followup_postgresql import requests
-from .test_ministry_reports_postgresql import setup
+from .test_ministry_reports_postgresql import actor, setup
 from .test_report_workspace_postgresql import read as get
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -44,13 +44,13 @@ def test_counts_are_exact_and_follow_the_leaders_scope(response_service):
     """A leader counts only its own Ministries' open requests, exactly."""
     harness = setup(response_service)
     requests()  # A join for Ministry 9, a leave for Ministry 4.
-    scoped = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
+    scoped = actor(harness, ("ministry_leader",), (9,))
     mine = summary(harness, scoped)
     assert counts(mine) == [(9, True, 1, 0)] and mine["ministries"][0]["name"]
-    both = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({4, 9}))
+    both = actor(harness, ("ministry_leader",), (4, 9))
     assert sorted(counts(summary(harness, both))) == [(4, True, 0, 1), (9, True, 1, 0)]
     # Someone with no Ministry in scope gets no panel at all.
-    nobody = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset())
+    nobody = actor(harness, ("ministry_leader",), ())
     assert summary(harness, nobody) is None
 
 
@@ -59,7 +59,7 @@ def test_a_removed_ministry_with_open_requests_stays_listed(response_service):
     harness = setup(response_service)
     requests()
     assert applied(select(harness, [4]))  # Ministry 9 leaves the campaign.
-    scoped = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
+    scoped = actor(harness, ("ministry_leader",), (9,))
     assert counts(summary(harness, scoped)) == [(9, False, 1, 0)]
 
 

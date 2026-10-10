@@ -26,7 +26,7 @@ from .campaign_builders import campaign_clock, change, close_campaign, command
 from .test_background_grants_postgresql import task_login
 from .test_ministry_followup_postgresql import read as followup
 from .test_ministry_packets_postgresql import packet, sections
-from .test_ministry_reports_postgresql import page, setup
+from .test_ministry_reports_postgresql import actor, page, setup
 from .test_ministry_responses_postgresql import respond, revisit, start
 from .test_policy_postgresql import user
 from .test_response_http_postgresql import answers_for
@@ -484,8 +484,8 @@ def test_scheduled_campaign_takes_the_exemption(response_service, monkeypatch, b
 def test_leader_of_a_removed_ministry_still_opens_the_campaign(response_service):
     """The report's campaign list keeps a campaign with the leader's requests."""
     harness = setup(response_service)
-    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
-    other = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({77}))
+    leader = actor(harness, ("ministry_leader",), (9,))
+    other = actor(harness, ("ministry_leader",), (77,))
 
     def readable(principal):
         """Campaigns the leader may choose, read as the web login."""
@@ -510,7 +510,7 @@ def test_removed_ministry_without_current_requests_leaves_reports(response_servi
     assert 9 not in summaries(harness)
     # Python admission agrees with SQL: the leader cannot choose the campaign,
     # and a stale packet form naming the Ministry is a bad selection.
-    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
+    leader = actor(harness, ("ministry_leader",), (9,))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert harness.campaign.pk not in campaign_ids(leader)
     with pytest.raises(ValueError, match="not in this campaign"):

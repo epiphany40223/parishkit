@@ -22,6 +22,7 @@ from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import restricted_download_pool
 from .test_information_followup_postgresql import search
 from .test_ministry_followup_postgresql import read as followup
+from .test_ministry_reports_postgresql import actor
 from .test_ministry_responses_postgresql import respond, start
 from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import answers_for, load_form
@@ -92,7 +93,9 @@ def test_report_lists_talents_limitations_and_filters(response_service):
         with pytest.raises(ValueError):
             TalentQuery.parse(invalid)
     # The ministry follow-up queue explains why this Member is leaving.
-    queue = followup(harness, STAFF)
+    # The queue resolves scope from the actor in SQL (#389 L3), so it needs a
+    # real portal user rather than the invented STAFF Principal.
+    queue = followup(harness, actor(harness, ("staff",), ()))
     assert [(row["action"], row["cannot_serve"]) for row in queue["rows"]] == [
         ("leave", True)
     ]
