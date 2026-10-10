@@ -2179,8 +2179,10 @@ of #469.
 
 Campaign settings shows the campaign's Ministry leader roles with its
 Ministry selections, only while Ministry stewardship is on (#922). They are
-checkboxes, one per role label the current ParishSoft rosters use, plus any
-saved name no roster uses now; with no saved value the default roles
+checkboxes, one per role label the current ParishSoft rosters use (each
+label's whitespace collapsed as the comparison reads it, and only labels that
+can be saved), plus any saved name no roster uses now; with no saved value
+the default roles
 (Chairperson and Staff) are ticked. The help says, in plain words, that
 people with any of these ParishSoft Ministry roles can sign in and see their
 Ministry's reports and follow-up with no sign-in rule, using an email address

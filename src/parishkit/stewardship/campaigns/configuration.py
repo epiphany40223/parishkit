@@ -86,13 +86,25 @@ LEADER_ROLE_LIMIT = 50
 ROLE_NAME_LIMIT = 200
 
 
-def leader_role_key(name):
-    """The form SQL compares a role name in: ASCII lowercase, otherwise exact.
+def leader_role_label(name):
+    """A role label with each run of Unicode whitespace as one space, trimmed.
 
-    ParishSoft role labels are ASCII; like the SQL match, this never applies
-    locale-dependent or Unicode case folding.
+    ``str.split()`` splits on exactly the characters ``str.isspace()``
+    accepts, the no-break space included; SQL's
+    stewardship_ministry_leader_role_key_v1 collapses the same set.
     """
-    return name.translate(
+    return " ".join(name.split())
+
+
+def leader_role_key(name):
+    """The form SQL compares a role name in (#922).
+
+    Whitespace collapsed as ``leader_role_label`` does, then ASCII letters
+    lowercased, otherwise exact: the same rule as SQL's
+    stewardship_ministry_leader_role_key_v1, which never applies
+    locale-dependent or Unicode case folding either.
+    """
+    return leader_role_label(name).translate(
         str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
     )
 
