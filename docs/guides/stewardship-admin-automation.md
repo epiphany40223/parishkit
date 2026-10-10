@@ -444,6 +444,22 @@ schedule from 0, or `window` or `schedules` for a problem between fields),
 | `created` | False when this token was confirmed before: the original request is returned and nothing changes |
 | `request` | The request, as `config request show` prints it |
 
+| `config request cancel` field | What it holds |
+| --- | --- |
+| `cancelled` | False when this same cancellation was recorded before; nothing changes |
+| `request` | The request, as `config request show` prints it, before the installer ends it |
+
+`config request cancel REQUEST_ID --reason TEXT` cancels a live campaign's
+end-date change that is stuck before it applied, for example one the
+configuration installer keeps failing on. Through `pk-admin` it needs
+`--yes`, since it cannot read a typed answer (its first words are
+`config request show`'s). It records your reason and the cancellation, and
+the installer then
+restores the previous settings and marks the change failed; the end date
+stays as it was. See the
+[specification](../specs/stewardship/admin-automation/spec.md#schedules-and-configuration)
+for which changes it accepts.
+
 | `config request show` field | What it holds |
 | --- | --- |
 | `request_id`, `sequence` | The request and its latest checkpoint |
@@ -1174,3 +1190,4 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   `delivery refusal-clear`, which prompt. `delivery show`'s `actions` may
   now include `resend` (it listed only `delivery resolve` actions); an
   offered `resend` is `delivery resend`.
+- `pk-admin/1` (#944): additive. `config request cancel`, which prompts.

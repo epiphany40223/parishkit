@@ -138,6 +138,10 @@ DESCRIPTIONS = {
         "An automation session sent a sample test email to the Testing "
         "recipient, as the Preview and test email page does."
     ),
+    "admin_cmd_config_request_cancel": _(
+        "An automation session cancelled a live campaign's end-date change "
+        "that had not applied."
+    ),
     "admin_cmd_task_retry": _(
         "An automation session retried a failed background task, as the "
         "task's Retry button does."

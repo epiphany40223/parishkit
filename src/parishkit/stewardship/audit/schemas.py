@@ -148,6 +148,8 @@ class Action(StrEnum):
     # change, admin_cmd_<area>_<verb>, whose subject is the automation
     # session (see the specification's "Audit attribution").
     ADMIN_CMD_SCHEDULE_CONFIRM = "admin_cmd_schedule_confirm"
+    # The operator's cancellation of a stuck live end-date change (#944).
+    ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"
     ADMIN_CMD_TASK_RETRY = "admin_cmd_task_retry"
     ADMIN_CMD_REFRESH_START = "admin_cmd_refresh_start"
     ADMIN_CMD_TEST_SAMPLE = "admin_cmd_test_sample"

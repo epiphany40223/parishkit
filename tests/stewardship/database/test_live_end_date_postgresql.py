@@ -519,3 +519,84 @@ def test_claimed_close_work_refuses_cleanly_and_the_queue_moves_on(tmp_path):
     assert (refused.state, refused.failure_code) == ("failed", "invalid_candidate")
     assert settled[later].state == "applied"
     coherent(store)
+
+
+def test_the_command_line_cancels_a_stuck_end_change(admin, google, monkeypatch):
+    """``config request cancel``: journaled, restored by the installer, audited.
+
+    The change is stuck before its YAML switch: its candidate is prepared,
+    but a failure that is not a refusal (here, a synthetic outage) stops
+    every installer pass, so the queue would wait on it forever. The
+    cancellation's journal is recovered before anything else is tried, so
+    the next pass ends it even while that failure persists.
+    """
+    from parishkit.stewardship.accounts.configuration_installation import (
+        DatabaseMaterializer,
+    )
+    from parishkit.stewardship.campaigns import admission
+    from parishkit.stewardship.campaigns.live_end_date import refusal_text
+    from parishkit.stewardship.runtime_process import next_configuration_request
+
+    from .test_admin_schedule_cli_postgresql import one
+
+    store = admin.service.store
+    campaign = live(store)
+    before = store.active()
+    _, secret, row = paired(admin.service)
+    code, document = preview(admin, secret, {"window": {"end_date": "2054-11-15"}})
+    assert code == 0, document
+    code, confirmed = confirm(admin, secret, document["result"]["preview"]["token"])
+    request_id = UUID(confirmed["result"]["request"]["request_id"])
+    checkpoint = DatabaseMaterializer.checkpoint
+
+    def interrupted(materializer, state, **kwargs):
+        """The installer stops once the candidate is prepared, before its receipt."""
+        if state == "prepared":
+            raise RuntimeError("synthetic interruption")
+        return checkpoint(materializer, state, **kwargs)
+
+    def outage(*args, **kwargs):
+        """A failure that is not a refusal, on every pass."""
+        raise RuntimeError("synthetic outage")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(DatabaseMaterializer, "checkpoint", interrupted)
+        with pytest.raises(RuntimeError, match="synthetic interruption"):
+            installed(store, request_id)
+    monkeypatch.setattr(admission, "validate_installation", outage)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="synthetic outage"):
+            drain(store)
+    assert next_configuration_request() == request_id
+    assert store.active() == before
+    argv = ("config", "request", "cancel", str(request_id), "--yes")
+    code, refused = one(admin, *argv, "--reason", " ", secret=secret)
+    assert code == 1 and refused["error"]["code"] == "invalid", refused
+    reason = "The parish decided to keep the date."
+    code, cancelled = one(admin, *argv, "--reason", reason, secret=secret)
+    assert code == 0, cancelled
+    assert cancelled["result"]["cancelled"] is True
+    assert cancelled["result"]["request"]["state"] == "validating"
+    assert journal_reason(request_id) == reason
+    assert AuditEvent.objects.filter(
+        event_type="admin_cmd_config_request_cancel"
+    ).values_list("actor_id", "subject_id").get() == (row.principal_id, row.pk)
+    # Repeating the same cancellation changes nothing and records nothing.
+    code, again = one(admin, *argv, "--reason", reason, secret=secret)
+    assert code == 0 and again["result"]["cancelled"] is False
+    assert (
+        AuditEvent.objects.filter(event_type="admin_cmd_config_request_cancel").count()
+        == 1
+    )
+    # The installer's next pass ends it first, though the outage persists.
+    settled = drain(store)
+    status = settled[request_id]
+    assert (status.state, status.failure_code) == ("failed", "invalid_candidate")
+    coherent(store)
+    assert store.active() == before
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.end_date.isoformat() == "2054-10-31"
+    assert "An Administrator cancelled this change" in str(refusal_text(status))
+    # A settled change can no longer be cancelled.
+    code, late = one(admin, *argv, "--reason", "Another reason", secret=secret)
+    assert code == 1 and late["error"]["code"] == "stale_version", late

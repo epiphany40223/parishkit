@@ -2,7 +2,9 @@
 
 ``schedule preview`` and ``schedule confirm`` change mail schedules and the
 draft campaign dates as the Dates and mail schedules page does, through the same
-functions (``accounts.schedule_changes``, ``admin_editing.confirm_intent``):
+functions (``accounts.schedule_changes``, ``admin_editing.confirm_intent``),
+and ``config request cancel`` cancels a live end-date change that has not
+applied (#944):
 
 - ``schedule preview`` admits the caller as the page's form post does
   (recording activity, so it needs a full-scope session), binds the operator's
@@ -566,3 +568,124 @@ def confirm_schedule(caller, service, campaign_id, *, token, context):
     return ScheduleConfirm(
         created=bool(created), request=config_request(receipt).to_document()
     )
+
+
+# The longest cancellation reason: the abort journal's column.
+REASON_LIMIT = 1024
+
+
+@dataclass(frozen=True)
+class ConfigCancel(ReadModel):
+    """A live end-date change's cancellation and the request's status then.
+
+    ``cancelled`` is false when this same cancellation was already recorded
+    (a repeat), which changes nothing. The request is still unfinished until
+    the configuration installer restores the previous settings and records
+    it as failed; ``config request show`` follows it.
+    """
+
+    cancelled: bool
+    request: dict
+
+
+def cancel_end_change(caller, service, request_id, *, reason, context):
+    """``config request cancel``: abort an unapplied live end-date change (#944).
+
+    The operator's path out of a stuck change, which the data specification
+    requires to go through the abort journal: in one durable transaction, as
+    the installer's own lock order has it (the configuration lock, the
+    runtime row, then the request), the current Administrator records the
+    immutable ``CampaignConfigurationAbort`` with ``reason`` and the
+    command's ``admin_cmd_config_request_cancel`` event. The journal's own
+    trigger refuses a change that applied, has not started (``staged``) or
+    whose base is no longer applied (``stale_version``). The configuration
+    installer then restores the previous YAML and records the request as
+    failed, before any other request; nothing else is undone.
+
+    A change that has not started is the change's own Administrator's to
+    cancel, as Change status allows; another's is ``stale_version``, since
+    the installer refuses or applies it within seconds. Only a request with
+    a bound live end-date change is found here; any other is
+    ``not_available``.
+    """
+    from django.db import IntegrityError, connection, transaction
+
+    from .accounts.configuration_requests import _checkpoint, _status
+    from .accounts.request_models import ConfigurationChangeRequest
+    from .accounts.runtime_models import SystemConfiguration
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .campaigns.configuration_intents import journal_abort
+    from .campaigns.live_end_date import admit_end_edit, end_intent
+    from .campaigns.models import Campaign, CampaignConfigurationAbort
+    from .observability import _guard_refusal, current_correlation
+    from .storage import StaleRecordError
+
+    reason = (reason or "").strip()
+    if not reason or len(reason) > REASON_LIMIT:
+        raise ValueError(f"Give a reason of at most {REASON_LIMIT} characters.")
+    actor = _admit_change(caller, service)
+    context["request_id"] = str(request_id)
+    correlation = current_correlation()
+
+    def cancel():
+        """Journal the abort, or cancel an unstarted change; return whether new."""
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736220, 1])
+        runtime = SystemConfiguration.objects.select_for_update().get()
+        intent = end_intent(request_id)
+        request = (
+            ConfigurationChangeRequest.objects.select_for_update(of=("self",))
+            .filter(pk=request_id, authority="admin")
+            .first()
+        )
+        if intent is None or request is None:
+            raise NotAvailable("No live end-date change has this id.")
+        status = _status(request)
+        abort = CampaignConfigurationAbort.objects.filter(intent=intent).first()
+        if abort is not None and abort.reason == reason:
+            return False
+        if status.state == "staged" and request.actor_id == actor.identity:
+            _checkpoint(
+                request,
+                sequence=status.sequence + 1,
+                state="cancelled",
+                actor_id=actor.identity,
+                correlation_id=correlation,
+            )
+            return True
+        if status.state in {"staged", "applied", "failed", "cancelled"}:
+            raise StaleRecordError("This change can no longer be cancelled here.")
+        campaign = Campaign.objects.select_for_update().get(pk=intent.campaign_id)
+        admit_end_edit("abort_configuration", campaign, runtime, intent)
+        journal_abort(
+            intent, reason=reason, actor_id=actor.identity, correlation_id=correlation
+        )
+        return True
+
+    try:
+        with transaction.atomic(durable=True):
+            created = cancel()
+            if created:
+                record_action(
+                    Action.ADMIN_CMD_CONFIG_REQUEST_CANCEL,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=actor.identity,
+                    subject_id=caller.automation_session_id,
+                    context={"outcome": Outcome.SUCCEEDED},
+                )
+            status = _status(ConfigurationChangeRequest.objects.get(pk=request_id))
+    except IntegrityError as error:
+        if not _guard_refusal(error):
+            raise
+        # The journal's trigger: applied, or its base no longer applied.
+        _ended_or_raise(
+            caller,
+            service,
+            actor,
+            StaleRecordError("This change can no longer be cancelled."),
+        )
+    except (NotAvailable, StaleRecordError, PermissionError) as error:
+        _ended_or_raise(caller, service, actor, error)
+    context["committed"] = True
+    return ConfigCancel(cancelled=created, request=config_request(status).to_document())
