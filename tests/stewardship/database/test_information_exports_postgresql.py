@@ -224,6 +224,11 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
     route = reverse("admin:information_queue")
     query = InformationQuery()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        name = information_page(harness.campaign.pk, query)["rows"][0]["family_name"]
+    # Surname, then heads, as on every Admin table.
+    assert ", " in name
+    name = name.encode()
     first = None
     for format in ("csv", "xlsx", "pdf"):
         fields = query.form_values() | dict(
@@ -296,6 +301,9 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
             assert "additional_information." + format in response["Content-Disposition"]
             if format == "csv":
                 assert b"Complete exported Family request" in body
+                # The file names the Family as the page does (#932), from the
+                # snapshot its capture read; CSV quotes the comma.
+                assert b',"' + name + b'",' in body
     harness, form, answers, _ = revisit(harness)
     answers["additional_information"] = (
         "A later Family request must not replace the export"

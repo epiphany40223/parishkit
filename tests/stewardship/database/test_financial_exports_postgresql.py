@@ -176,10 +176,15 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
     harness = activate_response_service(harness)
     with web_login():
         pledge(harness, load_form(harness), shares={CHECK: ""})
-    name = report(harness)["rows"][0]["family_name"].encode()
+    shown = report(harness)
+    name = shown["rows"][0]["family_name"].encode()
+    # The page's name, surname then heads (#932), which the files repeat.
+    assert name.startswith(b"Example, ")
+    years = shown["metadata"]["comparison_years"]
+    assert years
     # Pages must not show the Family's row; the bare surname ("Example")
     # also appears in unrelated page text.
-    row = b'<th scope="row">' + name + b"<br>"
+    row = b'<th scope="row">' + name + b"</th>"
     browser, login = signed_in()
     assert login.status_code == 302
     actor = user("admin@example.org").pk
@@ -263,20 +268,24 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
             )
             assert "financial." + format in response["Content-Disposition"]
             if format == "csv":
+                # The file names the Family as the page does (#932), from
+                # the snapshot its capture read; CSV quotes the comma.
+                assert b'\r\n"' + name + b'",' in body
                 # CSV money is the canonical amount (#388 L5).
-                # The file keeps the surname its capture read; only the page
-                # adds the heads (#932), and its name leads with that surname.
-                surname = name.partition(b",")[0]
-                assert b"\r\n" + surname + b"," in body
                 assert b",1234.50," in body and b",1200.00," in body
                 assert b"$" not in body
                 assert b"Financial stewardship detail" in body
-                # The comparison columns carry the page's labels (#404).
-                assert b"ParishSoft pledged,ParishSoft contributed" in body
+                # The comparison columns carry the page's labels (#404) and
+                # its comparison years (#932).
+                assert (
+                    f"ParishSoft pledged ({years}),"
+                    f"ParishSoft contributed ({years})".encode()
+                ) in body
             elif format == "xlsx":
                 # The real worker's file holds summable dollar-formatted numbers.
                 sheet = load_workbook(BytesIO(body))["Financial detail"]
-                assert sheet.cell(1, 8).value == "ParishSoft pledged"
+                assert sheet.cell(1, 8).value == f"ParishSoft pledged ({years})"
+                assert sheet.cell(2, 1).value == name.decode()
                 for column, expected in ((4, 1234.5), (8, 1200)):
                     cell = sheet.cell(2, column)
                     assert (cell.data_type, cell.value) == ("n", expected)

@@ -220,10 +220,11 @@ def load_document(request, *, general=None):
             head_emails_as_of=emails_as_of,
         )
     if request.report == "additional_information":
+        from .information import name_families
         from .information_documents import information_document
 
         return information_document(
-            request.information_snapshot.document,
+            name_families(request.information_snapshot.document),
             request.parameters,
             parish_name=request.configuration.parish.name,
             requested_at=request.created_at,

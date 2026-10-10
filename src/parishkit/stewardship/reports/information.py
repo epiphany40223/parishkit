@@ -101,6 +101,19 @@ def parse_page(value):
     return int(value)
 
 
+def name_families(result):
+    """Name each row's Family as every Admin table does, "Squyres, Jeff and Tracy".
+
+    The name (#932) is read from the snapshot the rows were read from, for
+    the page and for an export rendered later from its capture alike; SQL
+    still searches and orders by the surname that leads it. A Family without
+    a surname is "Family", as the SQL names it. Once that snapshot has been
+    compacted, a late export render keeps the captured surname.
+    """
+    name_rows(result["metadata"]["source_id"], result["rows"], default="Family")
+    return result
+
+
 def information_page(campaign_id, query, *, item_id=None, page_size=PAGE_SIZE):
     """Detach one coherent source/item page under the caller's campaign guard.
 
@@ -125,9 +138,7 @@ def information_page(campaign_id, query, *, item_id=None, page_size=PAGE_SIZE):
     result = json.loads(value[0])
     if item_id is not None and not result["rows"]:
         raise ObjectDoesNotExist("Information item is unavailable.")
-    # Each Family reads "Squyres, Jeff and Tracy", as in every Admin table
-    # (#932); SQL still searches and orders by the surname that leads it.
-    name_rows(result["metadata"]["source_id"], result["rows"])
+    name_families(result)
     for row in result["rows"]:
         row["disposition_label"] = DISPOSITIONS[row["disposition"]]
         for field in ("submitted_at", "followed_up_at"):
