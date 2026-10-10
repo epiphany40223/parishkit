@@ -4394,11 +4394,9 @@ BEGIN
     -- limit is ADMIN_ABSOLUTE (12 hours, accounts/session_policy.py); an
     -- authority rotation copies the older row's earlier deadline. The
     -- principal must be a live PortalUser whose current address or domain
-    -- rule grants Administrator or Staff (the same projection as
-    -- stewardship_export_authorized_v1), or who leads at least one Ministry
-    -- through a ParishSoft role (#922, stewardship_ministry_leader_scope_v1).
-    -- A rule's Ministry leader role alone no longer admits anyone. Python
-    -- may grant fewer roles than this, never more.
+    -- rule grants at least one Admin role (the same projection as
+    -- stewardship_export_authorized_v1). Python may grant fewer roles than
+    -- the rule names, never more.
     IF NEW.expires_at > statement_timestamp() + interval '12 hours'
        OR NEW.authenticated_at > statement_timestamp()
        OR NEW.last_activity_at > statement_timestamp()
@@ -4410,8 +4408,7 @@ BEGIN
         LEFT JOIN stewardship_domain_rule d ON d.configuration_id=r.active_configuration_id
             AND d.domain=lower(u.hosted_domain) AND d.domain=split_part(lower(u.email),'@',2)
         WHERE u.id=NEW.principal_id AND NOT u.disabled
-            AND (coalesce(a.roles,d.roles,'[]'::jsonb) ?| ARRAY['administrator','staff']
-                 OR jsonb_array_length(public.stewardship_ministry_leader_scope_v1(u.id))>0))
+            AND coalesce(a.roles,d.roles,'[]'::jsonb) ?| ARRAY['administrator','staff','ministry_leader'])
     THEN
         RAISE EXCEPTION 'Admin session requires a current authorized principal and bounded lifetime'
             USING ERRCODE='23514';

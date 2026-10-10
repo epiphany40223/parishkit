@@ -98,19 +98,19 @@ def test_address_rows_show_granted_roles_provenance_and_denial():
     )
 
 
-# What every retired leader grant says (#922).
+# What every retired Ministry assignment says (#922).
 RETIRED = (
-    "Ministry leader roles on sign-in rules and Ministry assignments no longer "
-    "grant anything: Ministry leaders now come from their ParishSoft Ministry "
-    "roles."
+    "Ministry assignments no longer grant anything: a Ministry leader sees "
+    "the Ministries of their ParishSoft Ministry roles."
 )
 
 
-def test_rule_leader_roles_and_assignments_say_they_grant_nothing():
-    """Ministry leaders come from ParishSoft roles (#922), and the rows say so.
+def test_rule_leader_roles_admit_and_assignments_say_they_grant_nothing():
+    """A rule's role is held; assignments grant no Ministry (#922), and say so.
 
-    A rule's Ministry leader role, seeded or manual, grants nothing, and no
-    assignment is in force, whatever the promoted source confirms.
+    A rule's Ministry leader role, seeded or manual, is granted, since a rule
+    is what admits a Ministry leader (2026-10-10). No assignment is in force,
+    whatever the promoted source confirms, and each row holding one says so.
     """
     rule = address("chair@example.org", roles=("ministry_leader",), seeded=True)
     held = assignment("chair@example.org", ministry=9, seeded=True)
@@ -123,15 +123,15 @@ def test_rule_leader_roles_and_assignments_say_they_grant_nothing():
         AppliedPolicy(records, [], frozenset({held["id"]})),
     ):
         chair, leader, other = address_rows(policy)
-        assert chair["granted"] == [] and leader["granted"] == []
+        assert text(chair["granted"]) == text(leader["granted"]) == ["Ministry leader"]
         assert text(other["granted"]) == ["Staff"]
         assert [item["active"] for item in chair["assignments"]] == [False]
-        for row in (chair, leader, other):
+        for row in (chair, other):
             assert text(row["warnings"]) == [RETIRED]
+        assert leader["warnings"] == []
         # Provenance is still shown as recorded.
         assert text(chair["grants"][0]["origins"]) == ["Parish source Chairperson"]
         assert text([chair["origin"]]) == ["Parish source Chairperson"]
-    # An Administrator's own Ministry leader role is not a retired grant.
     (admin,) = address_rows(AppliedPolicy([address()], []))
     assert admin["warnings"] == []
 

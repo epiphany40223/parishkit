@@ -99,7 +99,11 @@ def test_domain_and_exact_policy_take_effect_on_next_lookup(tmp_path):
 
 
 def test_a_seed_overlay_grants_nothing_and_leaves_yaml_alone(tmp_path):
-    """Since #922 an active seed overlay grants no scope either; YAML is kept."""
+    """Since #922 an active seed overlay grants no scope either; YAML is kept.
+
+    The seeded rule's Ministry leader role is held whatever the overlay says:
+    a rule admits (Administrator decision, 2026-10-10).
+    """
     seed = assignment(seeded=True)
     store, version, _ = initialized(
         tmp_path,
@@ -110,7 +114,7 @@ def test_a_seed_overlay_grants_nothing_and_leaves_yaml_alone(tmp_path):
         ],
     )
     leader = user("leader@example.org")
-    assert not current_principal(store, leader.pk).roles
+    assert current_principal(store, leader.pk).roles == {"ministry_leader"}
     overlay = AssignmentOverlay.objects.create(
         assignment_record_id=UUID(seed["id"]),
         active=True,
@@ -123,7 +127,7 @@ def test_a_seed_overlay_grants_nothing_and_leaves_yaml_alone(tmp_path):
     AssignmentOverlay.objects.filter(pk=overlay.pk).update(
         active=False, reason="chair_missing", version=F("version") + 1
     )
-    assert not current_principal(store, leader.pk).roles
+    assert current_principal(store, leader.pk).roles == {"ministry_leader"}
     assert store.active().digest == version.digest
 
 
@@ -419,13 +423,13 @@ def test_missing_grant_projection_cannot_commit(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("restoration", ["assignment", "independent_role"])
 def test_unsuppressing_seeded_login_advances_denial_epoch(tmp_path, restoration):
-    """A policy change advances the denial epoch even when unchanged role arrays
-    grant nothing new: since #922 neither an assignment nor a manual origin
-    makes a rule's Ministry leader role effective."""
+    """A policy change advances the denial epoch even when role arrays are
+    unchanged. Since 2026-10-10 the rule's Ministry leader role is held
+    throughout; since #922 an assignment gives no Ministry."""
     leader = address("leader@example.org", ("ministry_leader",), seeded=True)
     store, version, actor = initialized(tmp_path, [address(), leader])
     identity = user("leader@example.org")
-    assert not current_principal(store, identity.pk).roles
+    assert current_principal(store, identity.pk).roles == {"ministry_leader"}
     before = PolicyEpoch.objects.count()
     if restoration == "assignment":
         change(
@@ -460,5 +464,5 @@ def test_unsuppressing_seeded_login_advances_denial_epoch(tmp_path, restoration)
             ).state
             == "applied"
         )
-    assert not current_principal(store, identity.pk).roles
+    assert current_principal(store, identity.pk).roles == {"ministry_leader"}
     assert PolicyEpoch.objects.count() == before + 1

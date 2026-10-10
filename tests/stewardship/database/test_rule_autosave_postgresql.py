@@ -113,9 +113,7 @@ def test_an_intent_is_recorded_once_and_reported_applied_with_its_digest(
         assert recovered.status_code == 202 and state(recovered.json()) == applied
     assert applied["state"] == "applied"
     assert applied["applied_digest"] == store.active().digest
-    # The role is recorded, but a rule's Ministry leader role grants nothing
-    # since Ministry leaders come from ParishSoft roles (#922).
-    assert "ministry_leader" not in current_principal(store, account.pk).roles
+    assert "ministry_leader" in current_principal(store, account.pk).roles
     request = ConfigurationChangeRequest.objects.get(pk=receipt["request_id"])
     patched = request.patch[0]["values"]
     assert patched["grants"]["ministry_leader"] == {"manual": str(request.pk)}

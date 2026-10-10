@@ -54,23 +54,20 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 def leader(harness, google, *, roles=("ministry_leader",)):
     """Sign in leader@example.org, whom setup() made a ParishSoft leader of
-    Food pantry (9) (#922); any other roles come from an exact-address rule.
+    Food pantry (9) (#922), through an exact-address rule with ``roles``.
 
-    Returns the browser, the portal user, that rule (or None) and None, where
-    the manually assigned Ministry was before Ministry leaders came from
-    ParishSoft.
+    Returns the browser, the portal user, that rule and None, where the
+    manually assigned Ministry was before Ministry leaders' Ministries came
+    from ParishSoft.
     """
-    rule = None
-    others = tuple(role for role in roles if role != "ministry_leader")
-    if others:
-        rule = address("leader@example.org", roles=others)
-        store = harness.service.store
-        change(
-            store,
-            store.active(),
-            uuid4(),
-            [{"operation": "add", "section": "login_rules", **rule}],
-        )
+    rule = address("leader@example.org", roles=roles)
+    store = harness.service.store
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "login_rules", **rule}],
+    )
     google[0]["email"] = "leader@example.org"
     browser, login = signed_in()
     assert login.status_code == 302
@@ -406,7 +403,7 @@ def test_operational_capture_cannot_survive_staff_downgrade(
     google,
     tmp_path,
 ):
-    """Retaining the same Ministry assignment does not retain operational columns."""
+    """Still leading the same Ministry does not retain operational columns."""
     harness = setup(response_service)
     _, actor, rule, _ = leader(harness, google, roles=("staff", "ministry_leader"))
     store = harness.service.store
@@ -430,9 +427,19 @@ def test_operational_capture_cannot_survive_staff_downgrade(
         store.active(),
         uuid4(),
         [
-            # The Staff rule goes; the leader keeps leading Food pantry
-            # through ParishSoft.
-            {"operation": "remove", "section": "login_rules", "id": rule["id"]}
+            # Staff goes; the rule's Ministry leader role stays, and the
+            # leader keeps leading Food pantry through ParishSoft.
+            {
+                "operation": "update",
+                "section": "login_rules",
+                "id": rule["id"],
+                "values": {
+                    "roles": ["ministry_leader"],
+                    "grants": {
+                        "ministry_leader": rule["values"]["grants"]["ministry_leader"]
+                    },
+                },
+            }
         ],
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):

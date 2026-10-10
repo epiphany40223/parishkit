@@ -2672,10 +2672,11 @@ checkboxes, one per role label the current ParishSoft rosters use (each
 label's whitespace collapsed as the comparison reads it, and only labels that
 can be saved), plus any saved name no roster uses now; with no saved value
 the default roles
-(Chairperson and Staff) are ticked. The help says, in plain words, that
-people with any of these ParishSoft Ministry roles can sign in and see their
-Ministry's reports and follow-up with no sign-in rule, using an email address
-their ParishSoft Member record lists. At least one role is required. Leaving
+(Chairperson and Staff) are ticked. The help says, in plain words, that a
+Ministry leader sees the reports and follow-up of each Ministry where they
+hold one of these ParishSoft Ministry roles, matched by an email address
+their ParishSoft Member record lists, and that signing in still needs a
+sign-in rule. At least one role is required. Leaving
 the roles in effect unchanged writes nothing, so a campaign keeps following
 the default until someone changes it.
 
@@ -3945,19 +3946,20 @@ rechecked transactionally at request creation and activation.
 
 ### Ministry leaders from ParishSoft
 
-Ministry leaders are not entered in the Admin portal (Administrator decision,
-2026-10-09, #922). Anyone holding one of the campaign's
-[Ministry leader roles](#ministry-leader-roles) in a Ministry in ParishSoft
-leads it, and signs in with Google using an email address their ParishSoft
-Member record lists; no sign-in rule is needed. Sign-in rules still decide
-who is an Administrator or Staff. The
-[data specification](../data/spec.md#ministry-leaders) defines the rule. A
-change in ParishSoft reaches the portal with the next full refresh.
+Which Ministries a Ministry leader sees is not entered in the Admin portal
+(Administrator decision, 2026-10-09, #922). A person signed in through a
+login rule granting Ministry leader or higher leads each Ministry where they
+hold one of the campaign's [Ministry leader roles](#ministry-leader-roles) in
+ParishSoft, matched by an email address their ParishSoft Member record lists.
+A ParishSoft role without a login rule admits no one, and a Ministry leader
+who holds no such role signs in and sees no Ministry (Administrator decision,
+2026-10-10). The [data specification](../data/spec.md#ministry-leaders)
+defines the rule. A change in ParishSoft reaches the portal with the next full
+refresh.
 
-The Ministry leader role on sign-in rules, Ministry assignments and the
-Chairperson suggestion, confirmation and review flows remain from the earlier
-model until they are removed (#922). They grant nothing: the Portal users page
-says so beside each such role and assignment.
+Ministry assignments and the Chairperson suggestion, confirmation and review
+flows remain from the earlier model until they are removed (#922). They
+grant no Ministry: the Portal users page says so beside each assignment.
 
 ## Manual ParishSoft refresh
 

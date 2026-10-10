@@ -102,10 +102,11 @@ def actor(harness, roles, scope):
 
     The report reads its scope in SQL from the actor
     (stewardship_ministry_scope_v1, #389 L3), so a Principal invented in
-    Python alone reads nothing. A Ministry leader is the address of the
-    leader Member setup() promoted for that scope (#922); a leader of a
-    Ministry no Member here leads is an address ParishSoft lists nowhere, so
-    it leads nothing. Anyone else gets an exact-address rule with the roles.
+    Python alone reads nothing. Every actor gets an exact-address rule with
+    the roles, as signing in needs (2026-10-10). A Ministry leader's address
+    is that of the leader Member setup() promoted for that scope (#922); a
+    leader of a Ministry no Member here leads is an address ParishSoft lists
+    nowhere, so it leads nothing.
     """
     key = (harness.campaign.pk, tuple(sorted(roles)), tuple(sorted(scope)))
     if key not in _ACTORS:
@@ -115,19 +116,19 @@ def actor(harness, roles, scope):
             assert LEADERS.get(email, list(key[2])) == list(key[2])
         else:
             email = "report-{}-none@example.org".format("-".join(key[1]))
-            store = harness.service.store
-            change(
-                store,
-                store.active(),
-                uuid4(),
-                [
-                    {
-                        "operation": "add",
-                        "section": "login_rules",
-                        **address(email, roles=roles),
-                    }
-                ],
-            )
+        store = harness.service.store
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {
+                    "operation": "add",
+                    "section": "login_rules",
+                    **address(email, roles=roles),
+                }
+            ],
+        )
         _ACTORS[key] = user(email).pk
     return Principal(_ACTORS[key], frozenset(roles), frozenset(scope))
 
@@ -198,7 +199,19 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
 ):
     """Real Google policy and source promotion change visibility without copied PII."""
     harness = setup(response_service)
-    # leader@example.org leads Food pantry (9) in ParishSoft: no rule (#922).
+    # A rule admits leader@example.org (2026-10-10); it leads Food pantry
+    # (9) because ParishSoft says so (#922), not through an assignment.
+    store = harness.service.store
+    rule = address("leader@example.org", roles=("ministry_leader",))
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "login_rules", **rule}],
+        ).state
+        == "applied"
+    )
     google[0]["email"] = "leader@example.org"
     browser, _ = signed_in()
     root = reverse("admin:ministry_report")

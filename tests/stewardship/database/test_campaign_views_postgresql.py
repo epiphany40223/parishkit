@@ -584,7 +584,7 @@ def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google)
     assert "read-only" in body
     assert 'name="editor" value="leader_roles"' in body
     assert body.count('id="leader_ministry_leader_roles_0"') == 1
-    assert "can sign in and see their Ministry" in body
+    assert "sees the reports and follow-up of each Ministry" in body
     for role in ("Chairperson", "Staff"):
         assert re.search(
             rf'value="{role}"[^>]*id="leader_ministry_leader_roles_\d+"[^>]*checked',

@@ -3,10 +3,10 @@
 Pure shaping over the applied canonical policy records. It decides nothing:
 every role shown comes from the one policy evaluator, given the hosted-domain
 claim a recorded Google identity actually presented, so this page never
-reasons from an email suffix the way a sign-in itself refuses to. Ministry
-leaders come from their ParishSoft Ministry roles (#922), not from these
-records, so a rule's Ministry leader role and every Ministry assignment shown
-here grant nothing; the rows say so.
+reasons from an email suffix the way a sign-in itself refuses to. A rule's
+Ministry leader role lets a person sign in, but the Ministries they see come
+from their ParishSoft Ministry roles (#922), so no Ministry assignment shown
+here grants anything; the rows say so.
 
 An identity here is a dict with `email`, `hosted_domain`, `disabled` and
 `last_login`. Google's stable subject owns identity, so one address can have
@@ -24,11 +24,10 @@ ROLE_LABELS = {
     "staff": _("Staff"),
     "ministry_leader": _("Ministry leader"),
 }
-# What a rule's Ministry leader role or a Ministry assignment does now (#922).
+# What a Ministry assignment does now (#922).
 RETIRED_LEADER = _(
-    "Ministry leader roles on sign-in rules and Ministry assignments no longer "
-    "grant anything: Ministry leaders now come from their ParishSoft Ministry "
-    "roles."
+    "Ministry assignments no longer grant anything: a Ministry leader sees "
+    "the Ministries of their ParishSoft Ministry roles."
 )
 # Neutral nouns: the same origin names a rule's creation, a role grant and an
 # assignment's source, and a seeded rule was created by reconciling the parish
@@ -206,9 +205,7 @@ def address_rows(policy):
         granted, ministries = policy.resolve(email, None)
         held = policy.held(email)
         warnings = []
-        if held or (
-            "ministry_leader" in values["roles"] and "administrator" not in granted
-        ):
+        if held:
             warnings.append(RETIRED_LEADER)
         if email.rsplit("@", 1)[1] in policy.domains:
             warnings.append(

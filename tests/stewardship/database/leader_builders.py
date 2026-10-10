@@ -1,9 +1,11 @@
 """Ministry leaders as ParishSoft defines them (#922), for PostgreSQL tests.
 
-A Ministry leader is an active Member of an active Family holding one of
-the campaign's leader roles on a Ministry's current roster, signing in with an
-email address their Member record lists. Tests therefore make leaders the way
-ParishSoft does: they add Members to the synthetic source and promote it.
+A Ministry leader signs in through a login rule granting the role and
+leads the Ministries where an active Member of an active Family, listing
+their email address, holds one of the campaign's leader roles on a current
+roster. Tests therefore make leaders' Ministries the way ParishSoft does:
+they add Members to the synthetic source and promote it; ``grant_role`` adds
+the rule too.
 
 Leader Members join the fixture's memberless Family 2 by default, registered
 at another parish: their active Membership makes it an active Family that is
@@ -123,13 +125,15 @@ def make_leader(store, campaign, email, ministries=(9,)):
 
     For tests without the response harness: this promotes the response
     fixture's source with the leader Member (setting up the source singletons
-    and key rings a first promotion needs) and turns on Ministry stewardship
-    for these Ministries in the draft ``campaign``.
+    and key rings a first promotion needs), turns on Ministry stewardship for
+    these Ministries in the draft ``campaign``, and adds the exact-address
+    Ministry leader rule that signing in needs (2026-10-10).
     """
     from parishkit.stewardship.campaigns.domain import EnabledModules
     from parishkit.stewardship.campaigns.models import Campaign
     from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
 
+    from ..policy_factory import address
     from .campaign_builders import change
     from .credential_builders import keys
     from .response_builders import response_source
@@ -140,15 +144,17 @@ def make_leader(store, campaign, email, ministries=(9,)):
     promote(snapshot, claim, campaign, keys())
     campaign = Campaign.objects.get(pk=campaign.pk)
     values = campaign.active_configuration.values
-    if "ministry" in values["modules"] and set(ministries) <= set(
+    patch = [
+        {
+            "operation": "add",
+            "section": "login_rules",
+            **address(email, roles=("ministry_leader",)),
+        }
+    ]
+    if "ministry" not in values["modules"] or not set(ministries) <= set(
         values["ministry_duids"]
     ):
-        return
-    result = change(
-        store,
-        store.active(),
-        uuid4(),
-        [
+        patch.append(
             {
                 "operation": "update",
                 "section": "campaigns",
@@ -160,18 +166,19 @@ def make_leader(store, campaign, email, ministries=(9,)):
                     "ministry_duids": sorted({*values["ministry_duids"], *ministries}),
                 },
             }
-        ],
-    )
+        )
+    result = change(store, store.active(), uuid4(), patch)
     assert result.state == "applied"
 
 
 def grant_role(store, email, role):
     """Give ``email`` one Admin role as the current model grants it.
 
-    Administrator and Staff come from an exact-address sign-in rule. A
-    Ministry leader leads through a ParishSoft role in the current campaign
-    (#922): this creates a draft campaign if there is none and makes
-    ``email`` a ParishSoft leader of Ministry 9 in it (``make_leader``).
+    Every role comes from an exact-address sign-in rule. A Ministry
+    leader's Ministries come from a ParishSoft role in the current campaign
+    (#922), so for that role this creates a draft campaign if there is none
+    and makes ``email`` a ruled ParishSoft leader of Ministry 9 in it
+    (``make_leader``).
     """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.models import Campaign

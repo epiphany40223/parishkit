@@ -1226,18 +1226,18 @@ def test_domain_admitted_users_read_through_the_actor_as_before(response_service
 
     harness = setup(response_service)
     store = harness.service.store
-    # head@leaders.example leads Food pantry (9) in ParishSoft (#922); no
-    # rule names it.
+    # A domain rule admits head@leaders.example, which leads Food pantry (9)
+    # in ParishSoft (#922).
     change(
         store,
         store.active(),
         uuid4(),
         [
-            {
-                "operation": "add",
-                "section": "login_rules",
-                **domain("staff.example", roles=("staff",)),
-            }
+            {"operation": "add", "section": "login_rules", **record}
+            for record in (
+                domain("staff.example", roles=("staff",)),
+                domain("leaders.example", roles=("ministry_leader",)),
+            )
         ],
     )
     staff = current_principal(
