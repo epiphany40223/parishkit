@@ -109,3 +109,13 @@ def test_clone_requires_explicit_mail_dates_but_preserves_digest_structure():
     schedules = [row for row in patch if row["section"] == "schedules"]
     assert len(schedules) == 1 and schedules[0]["values"]["kind"] == "weekly_digest"
     assert all(row["operation"] == "add" for row in patch)
+
+
+def test_clone_leaves_a_retired_critical_alert_behind():
+    """A clone cannot re-author the never-sent critical alert template (#913)."""
+    document, source = example()
+    alert = content(source["id"], kind="email", slot="critical_alert")
+    document["sections"]["content"].append(alert)
+    _, cloned, _ = clone_structures(document, source, uuid4())
+    assert len(cloned) == len(document["sections"]["content"]) - 1
+    assert "critical_alert" not in {row["values"]["slot"] for row in cloned}

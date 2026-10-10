@@ -7,8 +7,10 @@ import pytest
 
 from parishkit.stewardship.accounts.content_forms import (
     EMAIL_LABELS,
+    HISTORY_EMAIL_LABELS,
     PAGE_LABELS,
     ContentForm,
+    applicable_slots,
     page_slots,
     revision_patch,
     sample_render,
@@ -32,7 +34,11 @@ def fields(**changes):
 
 def test_slots_and_module_visibility():
     """Every schema slot has a human name; disabled module fields are not offered."""
-    assert set(PAGE_LABELS) == PAGE_SLOTS and set(EMAIL_LABELS) == EMAIL_SLOTS
+    assert set(PAGE_LABELS) == PAGE_SLOTS and set(HISTORY_EMAIL_LABELS) == EMAIL_SLOTS
+    # The never-sent critical alert (#913) only labels history.
+    assert set(EMAIL_LABELS) == EMAIL_SLOTS - {"critical_alert"}
+    assert "retired" in str(HISTORY_EMAIL_LABELS["critical_alert"])
+    assert ("email", "critical_alert") not in applicable_slots(campaign()["values"])
     slots = page_slots(campaign(additional_information=False)["values"])
     assert "census" in slots and "member_census" in slots
     assert not {"additional", "ministry", "financial"} & slots.keys()

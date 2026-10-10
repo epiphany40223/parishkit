@@ -37,10 +37,12 @@ from parishkit.stewardship.web.presentation import campaign_year
 
 from .campaign_factory import campaign, financial
 
-# The retired receipt closing note (#260) has no default.
+# The retired receipt closing note (#260) and the never-sent critical alert
+# (#913) have no default.
 LIVE_PAGE_SLOTS = PAGE_SLOTS - {"submission_confirmation"}
+LIVE_EMAIL_SLOTS = EMAIL_SLOTS - {"critical_alert"}
 SLOTS = [("page", slot) for slot in sorted(LIVE_PAGE_SLOTS)] + [
-    ("email", slot) for slot in sorted(EMAIL_SLOTS)
+    ("email", slot) for slot in sorted(LIVE_EMAIL_SLOTS)
 ]
 PARISH = {
     "name": "Sample Parish",
@@ -68,7 +70,7 @@ def saved(kind, slot):
 
 def test_every_slot_has_a_default():
     """No named slot is left without approved text."""
-    assert set(PAGES) == LIVE_PAGE_SLOTS and set(EMAILS) == EMAIL_SLOTS
+    assert set(PAGES) == LIVE_PAGE_SLOTS and set(EMAILS) == LIVE_EMAIL_SLOTS
 
 
 @pytest.mark.parametrize("kind,slot", SLOTS)
@@ -95,11 +97,8 @@ def test_default_passes_every_content_validator(kind, slot):
         FamilyMailTemplate(value["subject"], value["html"], value["text"])
     if slot == "confirmation":
         validate_receipt_content(value["subject"] or "", value["html"], value["text"])
-    if slot in {"daily_digest", "weekly_digest", "critical_alert"}:
-        # Critical alerts have no dedicated validator; they must still use only
-        # public campaign facts, like the digests.
-        validate_admin_digest_content(value["subject"], value["html"], value["text"])
     if slot in {"daily_digest", "weekly_digest"}:
+        validate_admin_digest_content(value["subject"], value["html"], value["text"])
         DigestTemplate(value["subject"], value["html"], value["text"])
 
 
@@ -282,7 +281,7 @@ def test_default_content_selects_new_page_revisions_for_a_new_campaign():
     assert [
         (row["values"]["kind"], row["values"]["slot"]) for row in records
     ] == applicable_slots(values)
-    assert len(records) == 10 + 6
+    assert len(records) == 10 + 5
     assert all(matches_default(row["values"]) for row in records)
     assert versions == {
         row["values"]["slot"]: row["id"]

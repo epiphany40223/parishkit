@@ -172,6 +172,10 @@ def test_content_http_csrf_preview_and_clear(setup_http, monkeypatch):
             "values": None,
         }
         assert browser.get("/admin/setup/content/page/financial").status_code == 404
+        # The never-sent critical alert (#913) is neither listed nor editable.
+        assert b"Critical alert" not in browser.get("/admin/setup/content").content
+        alert = "/admin/setup/content/email/critical_alert"
+        assert browser.get(alert).status_code == 404
     assert not setup_http.configured()
 
 
@@ -344,7 +348,7 @@ def test_reset_all_replaces_every_slot_only_when_confirmed(setup_http, monkeypat
         )
         assert all(matches_default(row["values"]) for row in rows.values())
         report = browser.get(done["Location"])
-        assert b"Reset 11 page(s) and 6 email(s)" in report.content
+        assert b"Reset 11 page(s) and 5 email(s)" in report.content
         # Everything already matches its default: a repeat replaces nothing.
         again = post(
             browser,
@@ -371,7 +375,7 @@ def test_fill_result_names_kept_customized_slots_and_badges(setup_http, monkeypa
         )
         assert "Reset to the default text" in report
         assert report.count("— Customized") == 1
-        assert report.count("— Default text") == 11 + 6 - 1
+        assert report.count("— Default text") == 11 + 5 - 1
         assert "— Empty" not in report
         # Without a fill result, the list shows only the badges.
         plain = browser.get(url).content.decode()
@@ -403,7 +407,7 @@ def test_saving_the_first_campaign_fills_every_applicable_slot(setup_http, monke
         browser.get(url)
         saved = post(browser, url, campaign_fields(values, attempt.version))
         assert saved.status_code == 302, saved.content
-        # Census only, no additional-information prompt: 10 pages, 6 emails.
+        # Census only, no additional-information prompt: 10 pages, 5 emails.
         rows = content_rows()
         pages = {step for step in rows if step.startswith("page_")}
         assert len(pages) == 10 and "page_additional" not in pages
@@ -414,7 +418,7 @@ def test_saving_the_first_campaign_fills_every_applicable_slot(setup_http, monke
         # One version bump covers the campaign and all of its content.
         assert SetupAttempt.objects.get().version == attempt.version + 1
         assert saved["Location"] == (
-            "/admin/setup/content?filled_pages=10&filled_emails=6"
+            "/admin/setup/content?filled_pages=10&filled_emails=5"
         )
         listing = browser.get(saved["Location"])
         assert b"Filled in the default text for 10 page(s)" in listing.content

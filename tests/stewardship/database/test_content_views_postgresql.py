@@ -234,6 +234,9 @@ def test_content_stale_base_noop_and_route_scope(auth_service, google):
     )
     assert browser.get(catalog + "page/financial/").status_code == 404
     assert browser.get(catalog + "unknown/welcome/").status_code == 404
+    # The never-sent critical alert (#913) is neither listed nor editable.
+    assert b"Critical alert" not in browser.get(catalog).content
+    assert browser.get(catalog + "email/critical_alert/").status_code == 404
     assert browser.get(path + "?html=hidden").status_code == 400
     assert post(browser, catalog, values(store)).status_code == 400
 

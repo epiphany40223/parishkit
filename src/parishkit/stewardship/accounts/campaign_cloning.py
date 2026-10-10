@@ -9,6 +9,7 @@ from copy import deepcopy
 from uuid import UUID, uuid5
 
 from .campaign_forms import initial_fields
+from .content_schema import RETIRED_ALERT
 from .receipt_note import fold, legacy_note
 
 
@@ -28,6 +29,9 @@ def clone_structures(document, source, target):
         }
         for row in sections.get("content", [])
         if row["values"]["campaign_id"] == str(source["id"])
+        # A clone's records are newly authored, and a retired, never-sent
+        # alert template (#913) cannot be, so it is left behind.
+        and (row["values"]["kind"], row["values"]["slot"]) != RETIRED_ALERT
     ]
     content = _fold_note(content, target)
     previous = {
