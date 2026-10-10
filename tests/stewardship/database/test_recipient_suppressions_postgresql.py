@@ -50,10 +50,20 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def email(
-    harness, *, mode="production", address="valid@example.org", intended=None, duid=1
+    harness,
+    *,
+    mode="production",
+    address="valid@example.org",
+    intended=None,
+    routed=None,
+    duid=1,
 ):
     """Create one synthetic initial email to Family ``duid`` through the real
-    outbox storage; returns its status, not yet submitted."""
+    outbox storage; returns its status, not yet submitted.
+
+    ``routed`` names every Production recipient (default: ``address`` alone),
+    for an email sent to more than one head of household.
+    """
     family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=duid)
     return create_message(
         identity=DeliveryIdentity(
@@ -68,7 +78,7 @@ def email(
         render=rendering(
             configuration_id=harness.campaign.active_configuration.configuration_id,
             intended_recipients=(address,) if intended is None else intended,
-            routed_recipients=(address,)
+            routed_recipients=(routed or (address,))
             if mode == "production"
             else ("test@example.org",),
         ),
@@ -79,9 +89,18 @@ def email(
     )
 
 
-def refused(harness, *, mode="production", address="valid@example.org", intended=None):
+def refused(
+    harness,
+    *,
+    mode="production",
+    address="valid@example.org",
+    intended=None,
+    routed=None,
+):
     """Record a synthetic provider refusal through real task/outbox state edges."""
-    status = email(harness, mode=mode, address=address, intended=intended)
+    status = email(
+        harness, mode=mode, address=address, intended=intended, routed=routed
+    )
     failed = change(
         submit(status),
         DeliveryAction.FAIL_UNACCEPTED,

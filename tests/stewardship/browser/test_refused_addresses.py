@@ -66,8 +66,7 @@ def test_refused_addresses_name_the_family_and_link_the_email(page, component_or
         "Family",
         "Family DUID",
         "Address",
-        "Recorded by",
-        "Refusal ID",
+        "Email",
     ]
     # Family is a plain heading; the others sort on the server.
     assert table.locator("thead th").nth(1).locator(".sort-link").count() == 0
