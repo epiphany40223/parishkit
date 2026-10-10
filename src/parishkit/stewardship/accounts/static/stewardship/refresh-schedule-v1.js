@@ -10,8 +10,9 @@
 // the line beside Save (the only live region, changed only when its words
 // change, which also says the problems of the schedule as a whole), the
 // problems at each row, the summary and the seven-day list. Nothing it draws
-// sits above the rows, and the control being edited is kept where it was on
-// the screen, so a check never moves it under the pointer (#736). Each row's
+// sits above the rows, each row keeps room for a line of messages, and the
+// control under the pointer (else the one being edited) is kept where it
+// was on the screen, so a check never moves it under the pointer (#736). Each row's
 // controls are described by its messages and marked invalid while it has
 // problems. The words this script writes come from the editor's
 // data-*-text attributes, translated by the template.
@@ -153,15 +154,35 @@
   };
   const markRows = () => SCOPES.forEach((scope) => rowList(scope).forEach(markRow));
 
-  // Keep the focused control (the one being edited, or Add after a Remove)
-  // where it is on the screen while ``change`` redraws messages above it.
-  const keepInPlace = (change) => {
-    const anchor = document.activeElement;
-    const watched = anchor && anchor !== document.body && form.contains(anchor);
-    const before = watched ? anchor.getBoundingClientRect().top : 0;
+  // The last pointer position on the screen, so a redraw can keep what is
+  // under the pointer in place (#736). A touch or pen lifts away when it
+  // ends, and a mouse that leaves the window points at nothing.
+  let pointer = null;
+  const track = (event) => { pointer = {x: event.clientX, y: event.clientY}; };
+  document.addEventListener("pointermove", track, {passive: true});
+  document.addEventListener("pointerdown", track, {passive: true});
+  document.addEventListener("pointerup", (event) => {
+    if (event.pointerType !== "mouse") pointer = null;
+  });
+  document.documentElement.addEventListener("pointerleave", () => { pointer = null; });
+
+  // Keep one control where it is on the screen while ``change`` redraws or
+  // replaces things above it, scrolling by the amount it moved. Each row
+  // keeps room for one line of messages (ui-v1.css), so most messages move
+  // nothing; this covers longer ones and replaced rows. The control is
+  // ``anchor`` when given, else the one under the pointer within the form
+  // (the rule #736 is about), else the focused one (the one being edited,
+  // or Add after a Remove).
+  const keepInPlace = (change, anchor) => {
+    const pointed = pointer && document.elementFromPoint(pointer.x, pointer.y);
+    const focused = document.activeElement;
+    const target = anchor
+      || (pointed && form.contains(pointed) ? pointed : null)
+      || (focused && focused !== document.body && form.contains(focused) ? focused : null);
+    const before = target ? target.getBoundingClientRect().top : 0;
     change();
-    if (!watched || !anchor.isConnected) return;
-    const shift = anchor.getBoundingClientRect().top - before;
+    if (!target || !target.isConnected) return;
+    const shift = target.getBoundingClientRect().top - before;
     if (shift) window.scrollBy(0, shift);
   };
 
@@ -336,7 +357,8 @@
   // Until then, each check refills them from the rows.
   const textError = root.querySelector("[data-schedule-text-error]");
   textLists().forEach((area) => area.addEventListener("input", () => { textEdited = true; }));
-  root.querySelector("[data-schedule-text-apply]").addEventListener("click", () => {
+  const apply = root.querySelector("[data-schedule-text-apply]");
+  apply.addEventListener("click", () => {
     const read = {};
     for (const area of textLists()) {
       const result = window.ParishTimeEntry.parseTimes(area.value, 0, "");
@@ -356,10 +378,13 @@
       return;
     }
     textError.textContent = "";
-    clearRows("rules");
-    clearRows("skips");
-    read.full.forEach((at) => addRow("rules", {kind: "full", shape: "at", at}));
-    read.quick.forEach((at) => addRow("rules", {kind: "quick", shape: "at", at}));
+    // The rows above change in number: keep this button where it is.
+    keepInPlace(() => {
+      clearRows("rules");
+      clearRows("skips");
+      read.full.forEach((at) => addRow("rules", {kind: "full", shape: "at", at}));
+      read.quick.forEach((at) => addRow("rules", {kind: "quick", shape: "at", at}));
+    }, apply);
     textEdited = false;
     schedule(0);
   });

@@ -744,8 +744,10 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    sentence ("Full every 2 hours from 08:00 to 18:00") and wrap on narrow
    screens; "from" and "to" sit beside their fields, and each time's reading
    line stays under its own field. Remove ends the line (on its own line on
-   narrow screens). The line beside Save keeps room for two lines and the
-   "not checked" note for one, so neither moves Save when its words change. */
+   narrow screens). Each row keeps room for one line of messages, the line
+   beside Save for two lines, and the "not checked" note and the "Edit as
+   text" error (after its button) for one, so a message that comes or goes
+   moves nothing under the pointer (#736). */
 .schedule-row { padding: .75rem 1rem 1rem; margin-block: .75rem; }
 .schedule-row > legend { font-size: .95rem; }
 .schedule-row-fields > .schedule-row-remove { margin-inline-start: auto; }
@@ -757,14 +759,19 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .schedule-labelled > .time-reading { grid-column: 2; }
 .schedule-row-fields select { width: auto; }
 .schedule-row-fields input[type=text] { width: 7.5rem; }
-.schedule-row-messages > :first-child { margin-top: .5rem; }
-.schedule-row-messages:empty { display: none; }
+/* An invalid row control keeps its size: the second pixel of its error
+   border is drawn as a shadow, so marking it moves nothing (#736). */
+.schedule-row-fields :is(input, select)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+.schedule-row-fields :is(input, select)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px rgb(17 94 86 / 22%); }
+.schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
+.schedule-row-messages > * { margin: 0; }
+.schedule-row-messages > * + * { margin-top: .25rem; }
 .schedule-preset-list { list-style: none; padding: 0; display: grid; gap: .5rem; }
 .schedule-preset-list .help { display: block; margin-top: .25rem; }
 .schedule-switch { margin-block: 1.25rem; }
 .schedule-switch label { display: inline; margin: 0; }
 .schedule-text textarea { min-height: 3.5rem; }
-.schedule-stale { min-height: 1lh; }
+.schedule-stale, .schedule-text-error { min-height: 1lh; }
 .schedule-day-times { list-style: none; padding: 0; margin: 0; columns: 14rem auto; }
 .schedule-day-times s { color: var(--muted); }
 .schedule-time-full { font-weight: 600; }

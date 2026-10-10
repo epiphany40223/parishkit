@@ -310,3 +310,104 @@ def test_messages_above_the_edited_control_do_not_move_it(page, component_origin
     has_text(message, "")
     # Scrolling moves by whole pixels.
     assert abs(top(field) - before) < 1
+
+
+def tops(page, *locators):
+    """Where each of ``locators`` sits on the screen, as a tuple."""
+    return tuple(top(page.locator(item)) for item in locators)
+
+
+def steady(before, after):
+    """Whether nothing moved (scrolling moves by whole pixels)."""
+    return all(abs(a - b) < 1 for a, b in zip(before, after, strict=True))
+
+
+def scroll_to(page, locator, y):
+    """Scroll so ``locator`` sits ``y`` pixels from the top of the screen."""
+    page.evaluate(
+        "y => window.scrollTo(0, y)", page.evaluate("window.scrollY") + top(locator) - y
+    )
+
+
+BELOW_RULES = (
+    '[data-row-add="rules"]',
+    '[data-row-add="skips"]',
+    '[name="skip_around_family_emails"]',
+    SAVE,
+)
+
+
+def test_a_row_message_moves_nothing_below_its_row(page, component_origin):
+    """A row keeps room for a line of messages: a bad time's message, and
+    its clearing, leave Add, the skips, the switch and Save where they are
+    (#736)."""
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    field = page.locator('[name="rules-1-at"]')
+    field.scroll_into_view_if_needed()
+    before = tops(page, *BELOW_RULES)
+    field.fill("08:10")
+    recorded(page, requests, 1)
+    contains(page.locator("#rules-1-messages"), "At: Use :00, :15, :30 or :45.")
+    assert steady(before, tops(page, *BELOW_RULES))
+    field.fill("08:15")
+    recorded(page, requests, 2)
+    has_text(page.locator("#rules-1-messages"), "")
+    assert steady(before, tops(page, *BELOW_RULES))
+
+
+def test_a_longer_message_keeps_the_control_under_the_pointer(page, component_origin):
+    """A message longer than its row's kept line goes: the page scrolls so
+    the control under the pointer stays put, also once the edited field has
+    lost focus (nothing focused to steady)."""
+    page.set_viewport_size({"width": 480, "height": 1200})
+    requests = answering(page, CLOSE)
+    page.goto(component_origin + "/refresh-schedule-close")
+    message = page.locator("#rules-0-messages")
+    contains(message, "00:00 is only 10 minutes after the 23:50 full refresh")
+    assert message.bounding_box()["height"] > 60
+    add = page.locator('[data-row-add="rules"]')
+    # The field and Add both on the screen, so neither action scrolls.
+    field = page.locator('[name="rules-1-at"]')
+    scroll_to(page, field, 100)
+    add.hover()
+    before = top(add)
+    # Typed without the pointer, then left before the check answers.
+    field.fill("23:30")
+    page.evaluate("document.activeElement.blur()")
+    recorded(page, requests, 1)
+    has_text(message, "")
+    assert abs(top(add) - before) < 1
+
+
+def test_edit_as_text_moves_nothing_under_the_pointer(page, component_origin):
+    """The lists' error is drawn after Use these lists in kept room, and
+    using the lists keeps the button (and Save after it) in place while the
+    rows above it change."""
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    page.get_by_text("Edit as text").click()
+    full = page.locator("#refresh-text-full")
+    apply = page.get_by_role("button", name="Use these lists")
+    for name in ("#refresh-text-full", "#refresh-text-quick"):
+        described = page.locator(name).get_attribute("aria-describedby").split()
+        assert "refresh-text-error" in described
+    scroll_to(page, apply, 500)
+    watched = ("[data-schedule-text-apply]", SAVE)
+    before = tops(page, *watched)
+    full.fill("2am, 25:00")
+    apply.click()
+    contains(page.locator("#refresh-text-error"), "has no hour 25")
+    assert steady(before, tops(page, *watched))
+    full.fill("2am, 14:00")
+    page.locator("#refresh-text-quick").fill("")
+    apply.click()
+    assert rule_rows(page).count() == 2
+    has_text(page.locator("#refresh-text-error"), "")
+    assert steady(before, tops(page, *watched))
+    recorded(page, requests, 1)
+    from playwright.sync_api import expect
+
+    # The answer is in place once the seven-day list loses 16:00.
+    expect(page.locator('[data-schedule-part="preview"]')).not_to_contain_text("16:00")
+    assert steady(before, tops(page, *watched))

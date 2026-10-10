@@ -65,7 +65,13 @@ SKIP_FIELDS = ("shape", "at", "start", "last")
 # post at most 64 * 6 + 16 * 4 + 9 = 457 editor names (posted_names), with
 # room for the token, the action and the page's other settings; a test pins
 # the sum. More rules than 64 never matter: "every" rules give any number of
-# times.
+# times. Raising these to MAX_ROWS (96) is not safe: 96 rules alone post
+# 576 names. The page shows a stored document in full and saves it back, so
+# these caps must not go below what stored documents hold: this page saves
+# at most these, and a converted schedule has far fewer rows (at most
+# MAX_LEGACY_FULL_TIMES full times plus a few rules). A document stored
+# with more rows by another path (valid_shape allows MAX_ROWS) could not be
+# saved back from this page.
 RULE_ROWS = 64
 SKIP_ROWS = 16
 

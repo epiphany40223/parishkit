@@ -36,9 +36,9 @@ words, translated here.
 <div class="schedule-switch"><input type="checkbox" name="skip_around_family_emails" id="id_skip_around_family_emails" aria-describedby="id_skip_around_family_emails_help"{% if editor.switch %} checked{% endif %}> <label for="id_skip_around_family_emails">{% translate "Skip refreshes around Family emails" %}</label>
 <p class="help" id="id_skip_around_family_emails_help">{% translate "Refreshes are skipped while a reminder is being prepared and while a Family email is being sent, so ParishSoft reads never slow the email down. The nightly full refresh still runs." %}</p></div>
 <details class="schedule-text" data-schedule-text-panel><summary>{% translate "Edit as text" %}</summary>
-<p class="help" id="refresh-text-help">{% translate "The full refresh and quick update times the rules give, as two lists you can copy or paste, separated by commas. Use these lists replaces your rules and skips with one “at” rule for each time." %}</p>
-<p><label for="refresh-text-full">{% translate "Full refresh times" %}</label><textarea id="refresh-text-full" rows="2" spellcheck="false" aria-describedby="refresh-text-help" data-schedule-text="full">{{ schedule.text_lists.full }}</textarea></p>
-<p><label for="refresh-text-quick">{% translate "Quick update times" %}</label><textarea id="refresh-text-quick" rows="2" spellcheck="false" aria-describedby="refresh-text-help" data-schedule-text="quick">{{ schedule.text_lists.quick }}</textarea></p>
-<p class="errorlist" data-schedule-text-error></p>
-<p>{% button type="button" variant="secondary" data-schedule-text-apply %}{% translate "Use these lists" %}{% endbutton %}</p></details>
+<p class="help" id="refresh-text-help">{% translate "The full refresh and quick update times the rules give, as two lists you can copy or paste, separated by commas. Use these lists replaces your rules and skips with one “at” rule for each time." %} {% blocktranslate with most=editor.rules.max_num %}So the two lists together can have at most {{ most }} times; a schedule with more (such as quick updates every 15 minutes) is changed with its rules instead.{% endblocktranslate %}</p>
+<p><label for="refresh-text-full">{% translate "Full refresh times" %}</label><textarea id="refresh-text-full" rows="2" spellcheck="false" aria-describedby="refresh-text-help refresh-text-error" data-schedule-text="full">{{ schedule.text_lists.full }}</textarea></p>
+<p><label for="refresh-text-quick">{% translate "Quick update times" %}</label><textarea id="refresh-text-quick" rows="2" spellcheck="false" aria-describedby="refresh-text-help refresh-text-error" data-schedule-text="quick">{{ schedule.text_lists.quick }}</textarea></p>
+<p>{% button type="button" variant="secondary" data-schedule-text-apply %}{% translate "Use these lists" %}{% endbutton %}</p>
+<p class="errorlist schedule-text-error" id="refresh-text-error" data-schedule-text-error></p></details>
 </section>{% endwith %}
