@@ -1,4 +1,4 @@
-"""The response lists and their CSV over HTTP, read as the restricted web login.
+"""The response lists and their downloads over HTTP, as the restricted web login.
 
 The campaign is the response-metrics ``funnel`` fixture (#477): five eligible
 Families, the corpus Family signed in through its rehearsal credential, with
@@ -238,7 +238,7 @@ def test_lists_and_downloads_for_admin_and_staff(
         response, body = get(admin, reverse("admin:response_list", args=["submitted"]))
         assert response.status_code == 200
         assert b"Downloads are paused" in body
-        assert b'<button type="submit" disabled>Download CSV</button>' in body
+        assert b'<button type="submit" disabled>Download</button>' in body
     events = AuditEvent.objects.filter(subject_id=harness.campaign.pk)
     assert events.filter(event_type="response_submitted_list_viewed").count() == 3
     assert events.filter(event_type="response_data_quality_list_viewed").count() == 2
@@ -438,4 +438,94 @@ def test_search_is_private_and_matches_a_name_duid_or_envelope(
     # The text is in no audit record and no log line.
     for context in events.values_list("auditcontext__context", flat=True):
         assert part not in str(context) and blank.name not in str(context)
+    assert part not in caplog.text
+
+
+def test_xlsx_and_pdf_downloads_follow_the_list_and_are_audited(
+    quality_funnel, auth_service, google, settings, caplog
+):
+    """XLSX and PDF (#850): the CSV's rows and order, private, audited alike.
+
+    Each is rendered on request on the restricted web login, as the CSV is,
+    with the filter, search, order and time zone posted in the form; the
+    search text never reaches the filename, the file's details or the audit.
+    """
+    from openpyxl import load_workbook
+
+    harness, _epoch = quality_funnel
+    settings.STEWARDSHIP_DOWNLOAD_POOL = None
+    snapshot = SourceCurrent.objects.get().snapshot_id
+    blank = snapshot_family_facts(snapshot, [BLANK_MAILING], "")[BLANK_MAILING]
+    part = blank.name[1:8].swapcase()
+    export = reverse("admin:response_list_export", args=["data-quality"])
+    choices = {"sort": "-duid", "timezone": "America/New_York"}
+    admin, login = signed_in()
+    assert login.status_code == 302
+    with restricted_download_pool(settings):
+        _, body = search(admin, export, choices | {"format": "csv"})
+        csv_rows = list(csv.reader(io.StringIO(body.decode("utf-8"))))
+        response, body = search(admin, export, choices | {"format": "xlsx"})
+        assert response.status_code == 200
+        assert response["Content-Type"] == response_list_views.FORMATS["xlsx"]
+        assert response["Cache-Control"] == "no-store"
+        disposition = response["Content-Disposition"]
+        assert "stewardship-responses-data-quality-" in disposition
+        assert disposition.rstrip('"').endswith(".xlsx")
+        book = load_workbook(io.BytesIO(body))
+        try:
+            rows = [
+                ["" if value is None else str(value) for value in row]
+                for row in book["Families"].iter_rows(values_only=True)
+            ]
+            information = {
+                key: value
+                for key, value in book["Report information"].iter_rows(values_only=True)
+            }
+        finally:
+            book.close()
+        # The same headings, Families and order as the CSV.
+        assert rows[0] == csv_rows[0]
+        assert [row[1] for row in rows[1:]] == [row[1] for row in csv_rows[1:]]
+        assert [row[1] for row in rows[1:]] == [str(ENVELOPE_ZERO), str(BLANK_MAILING)]
+        assert information["Display time zone"] == "America/New_York"
+        assert information["Families in this file"] == "2"
+        assert information["Search applied"] == "No"
+        assert information["Campaign"] == harness.campaign.active_configuration.name
+        # The search follows into the PDF, never its filename.
+        response, body = search(
+            admin, export, choices | {"format": "pdf", "search": part}
+        )
+        assert response.status_code == 200
+        assert response["Content-Type"] == "application/pdf"
+        assert body.startswith(b"%PDF")
+        assert response["Content-Disposition"].rstrip('"').endswith(".pdf")
+        assert part not in response["Content-Disposition"]
+        # An unknown format, or one in the URL, is refused.
+        assert search(admin, export, choices | {"format": "docx"})[0].status_code == 400
+        assert search(admin, export + "?format=pdf", choices)[0].status_code == 400
+    events = AuditEvent.objects.filter(
+        subject_id=harness.campaign.pk,
+        event_type="response_data_quality_list_exported",
+    )
+    contexts = list(events.values_list("auditcontext__context", flat=True))
+    assert len(contexts) == 3
+    # Recorded as the CSV is, sort order included (#851); the format itself
+    # is not recorded, since that needs a schema change.
+    assert sorted(context["search_used"] for context in contexts) == [
+        False,
+        False,
+        True,
+    ]
+    for context in contexts:
+        assert context["outcome"] == "succeeded"
+        assert set(context) == {
+            "outcome",
+            "count",
+            "report_mode",
+            "report_filter",
+            "report_sort",
+            "search_used",
+            "snapshot_id",
+        }
+        assert part not in str(context)
     assert part not in caplog.text

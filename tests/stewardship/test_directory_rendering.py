@@ -503,3 +503,63 @@ def test_current_head_emails_are_dated_in_the_report_details(monkeypatch):
         )
         assert render_directory(report, output, format="pdf")
         assert any(HEAD_EMAILS_DETAIL in value for value in drawn)
+
+
+def test_directory_pdf_draws_its_details_heading_note_and_pages(monkeypatch):
+    """Pin what the shared page drawing (``draw_pages``) puts on each page.
+
+    Every page repeats the title, both header lines, the table heading, the
+    privacy footer, the Testing note and "Page n of m", as before the
+    drawing was shared with the response lists.
+    """
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    pages = []
+    save = PdfPages.savefig
+
+    def savefig(pdf, figure, *args, **kwargs):
+        """Record each page's text, in drawing order, then save the page."""
+        pages.append([text.get_text() for text in figure.texts])
+        return save(pdf, figure, *args, **kwargs)
+
+    monkeypatch.setattr(PdfPages, "savefig", savefig)
+    payload = dict(
+        metadata=dict(
+            name="Annual campaign",
+            id="campaign",
+            source_id="source",
+            source_generation=1,
+            source_as_of=MOMENT.isoformat(),
+        ),
+        total=20,
+        rows=[item(family_duid=duid) for duid in range(1, 21)],
+    )
+    report = directory_document(
+        payload,
+        {
+            "filters": {"search": "", "reason": "any", "phone": "any"},
+            "postal": False,
+            "exact": False,
+        },
+        testing=True,
+        parish_name="Sample Parish",
+        captured_at=MOMENT,
+        requested_at=MOMENT,
+        timezone="UTC",
+    )
+    details = dict(report.metadata)
+    output = io.BytesIO()
+    assert render_directory(report, output, format="pdf") == 2
+    assert len(pages) == 2
+    for number, drawn in enumerate(pages, 1):
+        title, subtitle, counts, heading, *lines, footer, note, page = drawn
+        assert title == "Family-code directory"
+        assert subtitle.startswith("Sample Parish · Annual campaign · Captured ")
+        assert counts == (
+            "20 Families in this file. Filters: " + details["Filters applied"]
+        )
+        assert heading.split() == " ".join(report.headings).split()
+        assert lines[0].startswith("=Sample Family, Aaron Williams and")
+        assert footer == details["Privacy"]
+        assert note == details["Testing mode"]
+        assert page == f"Page {number} of 2"

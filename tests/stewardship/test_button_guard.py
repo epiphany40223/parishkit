@@ -38,8 +38,6 @@ RAW_ALLOWED = {
     "hosted-files.html": 2,
     "logs.html": 3,
     "family-timeline.html": 1,
-    # A compound disabled condition (paused or no rehearsal or no rows).
-    "response-list.html": 1,
 }
 
 COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}", re.S)
