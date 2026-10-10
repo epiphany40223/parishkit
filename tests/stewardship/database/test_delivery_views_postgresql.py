@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from django.db import connection, transaction
 from django.db.models import F
+from django.http import QueryDict
 from django.test.utils import CaptureQueriesContext
 from django.utils.html import escape
 
@@ -18,6 +19,10 @@ from parishkit.stewardship.family_delivery import (
     FamilyDeliveryStatus,
 )
 from parishkit.stewardship.jobs import delivery_views
+from parishkit.stewardship.jobs.delivery_metadata import (
+    DELIVERY_SORTING,
+    with_name_keys,
+)
 from parishkit.stewardship.jobs.delivery_reads import read_listing, with_family_names
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.jobs.family_mail_dispatch import (
@@ -29,17 +34,20 @@ from parishkit.stewardship.jobs.outbox_storage import change_message
 from parishkit.stewardship.jobs.recipient_models import RecipientRefusalResolution
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.web.presentation import instant
 
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
-from .response_builders import activate_response_service
+from .response_builders import activate_response_service, response_source
 from .test_background_grants_postgresql import task_login
 from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
 from .test_daily_digest_planning_postgresql import INSTANT as DIGEST_INSTANT
 from .test_family_mail_dispatch_postgresql import claim, prepare
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_recipient_suppressions_postgresql import refused, remember
+from .test_source_families_postgresql import prepare as prepare_source
+from .test_source_families_postgresql import promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -177,9 +185,11 @@ def family_name(message):
 
 
 def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  # noqa: F811
-    """#931: the Family's name opens the email; its DUID is a separate column
-    that still sorts on the server, while the name column does not sort."""
+    """#931: the Family's name opens the email; its DUID is a separate column.
+    Both sort on the server, and When is the one time of the email's current
+    state (its last change), not when it was created."""
     message = uncertain(family_mail)
+    assert message.updated_at != message.created_at
     duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
     name = family_name(message)
     assert name and name != "Family"
@@ -193,10 +203,19 @@ def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  
         f"{escape(name)}</a></th>"
     ) in html
     assert f'<td class="numeric nowrap">{duid}</td>' in html
-    # Family is a plain heading; Family DUID is the sorted one.
-    assert '<th scope="col">Family</th>' in html
+    # Family DUID is the sorted heading; Family sorts too (token name).
     heading = html.split('aria-sort="descending"')[1].split("</th>")[0]
     assert "Family DUID" in heading
+    assert "sort=name" in html
+    # When: one time, the last change, newest first by default.
+    when = f'<td class="nowrap"><time datetime="{instant(message.updated_at)}"'
+    assert when in html
+    assert f'datetime="{instant(message.created_at)}"' not in html
+    assert "Changed" not in html
+    with task_login(ServiceRole.WEB, exact=True):
+        default = browser.get("/admin/mail/outgoing/").content.decode()
+    heading = default.split('aria-sort="descending"')[1].split("</th>")[0]
+    assert ">When<" in heading
     # The name is only shown, never searched: the filter stays exact.
     assert browser.get("/admin/mail/outgoing/", {"q": name}).status_code == 400
     # Family DUID's sort token is duid; the older recipient is not kept.
@@ -242,6 +261,97 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
         digest.pk: None,
         gone["id"]: None,
     }
+
+    # Family sorts the whole list by name: the Administrator report, which
+    # has no Family, comes last in both directions.
+    with task_login(ServiceRole.WEB, exact=True):
+        for sort in ("name", "-name"):
+            assert [
+                row["id"] for row in read_listing(QueryDict(f"sort={sort}"))["rows"]
+            ] == [
+                message.pk,
+                digest.pk,
+            ]
+            response = browser.get("/admin/mail/outgoing/", {"sort": sort})
+            assert response.status_code == 200
+            html = response.content.decode()
+            assert html.index(escape(family_name(message))) < html.index(
+                "Administrator report</a>"
+            )
+
+
+def test_family_name_sort_keys_match_the_shown_names(response_service):
+    """#931: the SQL name keys Outgoing mail sorts by are exactly the names the
+    page shows (snapshot_family_names), lowercased, and order Families by
+    surname, then the whole name, as the Family codes directory does."""
+    data = response_source()
+
+    def family(duid, **values):
+        """One more active parishioner Family, like the fixture's first."""
+        data.families[duid] = (
+            data.families[1]
+            | {
+                "familyDUID": duid,
+                "familyID": duid + 100,
+                "firstName": "",
+                "mailingName": "",
+            }
+            | values
+        )
+
+    def member(duid, family_duid, first, last, kind="Head", **values):
+        """One more active Member of ``family_duid``."""
+        data.members[duid] = (
+            data.members[3]
+            | {
+                "memberDUID": duid,
+                "familyDUID": family_duid,
+                "firstName": first,
+                "lastName": last,
+                "memberType": kind,
+                "emailAddress": "",
+            }
+            | values
+        )
+
+    family(20, lastName="Smith")
+    member(2001, 20, "Carl", "Smith")
+    family(21, lastName="smith")
+    member(2102, 21, "Bob", "Jones", "Husband")
+    member(2101, 21, "Ann", "smith", "Wife")
+    member(2103, 21, "Cy", "smith", "Wife", memberStatus="Inactive")
+    family(22, lastName="Adams")
+    family(23, lastName="", mailingName="Zed Household")
+    family(24, lastName="", firstName="Yolanda")
+    member(2401, 24, "", "")
+    snapshot, claim = prepare_source(data)
+    promote(snapshot, claim, response_service.campaign, response_service.rings)
+    current = SourceCurrent.objects.get().snapshot_id
+    keyed = with_name_keys(
+        FamilyCampaign.objects.filter(campaign=response_service.campaign),
+        family="stewardship_family_campaign.id",
+    )
+    with task_login(ServiceRole.WEB, exact=True):
+        rows = list(
+            DELIVERY_SORTING.order(keyed, "name").values(
+                "family_duid", "family_sort_surname", "family_sort_name"
+            )
+        )
+    shown = snapshot_family_names(current, [row["family_duid"] for row in rows])
+    assert [row["family_sort_name"] for row in rows] == [
+        shown[row["family_duid"]].lower() for row in rows
+    ]
+    assert {row["family_duid"]: shown[row["family_duid"]] for row in rows} == {
+        1: "Example, Member",
+        2: "Empty",
+        20: "Smith, Carl",
+        21: "smith, Ann and Bob Jones",
+        22: "Adams",
+        23: "Zed Household",
+        24: "Yolanda",
+    }
+    # Surname first, then the whole name: both Smiths sort by "smith".
+    assert [row["family_duid"] for row in rows] == [22, 2, 1, 21, 20, 24, 23]
 
 
 @pytest.mark.parametrize(
