@@ -569,3 +569,91 @@ def test_reports_root_takes_a_ministry_leader_to_ministry_requests(
     moved = browser.get(reverse("admin:reports").rstrip("/"))
     assert moved.status_code == 301
     assert moved["Location"] == reverse("admin:reports")
+
+
+def test_unknown_address_shows_the_signed_in_admin_chrome(auth_service, google):
+    """A signed-in Admin's 404 keeps the header and menu, renewing nothing (#927).
+
+    No view runs for an unknown address, so the not-found page makes the
+    read-only session check itself. A signed-out visitor gets the minimal
+    layout, and a script gets the closed JSON.
+    """
+    from parishkit.stewardship.accounts.models import PortalSession
+
+    browser, _ = signed_in()
+    before = PortalSession.objects.values_list("last_activity_at", "version").get(
+        revoked_at__isnull=True
+    )
+    page = {"HTTP_ACCEPT": "text/html", "HTTP_SEC_FETCH_MODE": "navigate"}
+    response = browser.get("/admin/no-such-page", **page)
+    body = response.content.decode()
+    assert response.status_code == 404
+    assert "<h1>Page not found</h1>" in body
+    assert 'class="admin-sidebar"' in body
+    assert "no-such-page" not in body
+    after = PortalSession.objects.values_list("last_activity_at", "version").get(
+        revoked_at__isnull=True
+    )
+    assert after == before
+    signed_out = Client().get("/admin/no-such-page", **page)
+    assert signed_out.status_code == 404
+    assert b"<h1>Page not found</h1>" in signed_out.content
+    assert b"admin-sidebar" not in signed_out.content
+    script = browser.get("/admin/no-such-page", HTTP_ACCEPT="application/json")
+    assert script.status_code == 404
+    assert script.json()["refusal"]["message"] == "There is no page at this address."
+
+
+def test_unknown_address_leaves_an_ended_session_alone(auth_service, google):
+    """An idle Admin's 404 revokes nothing and sets no cookie (#927).
+
+    The read-only chrome check finds the session past its idle deadline, so
+    the page keeps the menu-less layout; revoking it is left to a real page.
+    """
+    from datetime import timedelta
+
+    from parishkit.stewardship.accounts.models import PortalSession
+    from parishkit.stewardship.accounts.session_policy import ADMIN_IDLE
+
+    from .test_session_renewal_postgresql import backdate
+
+    browser, _ = signed_in()
+    page = {"HTTP_ACCEPT": "text/html", "HTTP_SEC_FETCH_MODE": "navigate"}
+    # A first page sets the CSRF cookie. Every page re-sends that unchanged
+    # token, so the only Set-Cookie allowed is that same value: no session
+    # cookie is cleared or rotated.
+    assert b"admin-sidebar" in browser.get("/admin/no-such-page", **page).content
+    csrf = browser.cookies["pk_admin_csrf"].value
+    row = backdate(ADMIN_IDLE + timedelta(seconds=1))
+    response = browser.get("/admin/no-such-page", **page)
+    assert response.status_code == 404
+    assert b"<h1>Page not found</h1>" in response.content
+    assert b"admin-sidebar" not in response.content
+    assert list(response.cookies) == ["pk_admin_csrf"]
+    assert response.cookies["pk_admin_csrf"].value == csrf
+    after = PortalSession.objects.get(pk=row.pk)
+    assert after.revoked_at is None
+    assert (after.last_activity_at, after.version) == (
+        row.last_activity_at,
+        row.version,
+    )
+
+
+def test_unknown_address_during_restore_review_shows_no_menu(auth_service, google):
+    """During a restore review the 404 keeps the menu-less layout (#927).
+
+    The access gate closes every real Admin page then, but it never runs for
+    an unknown address, so the not-found page must not offer the menu itself.
+    """
+    from .auth_builders import unguarded
+
+    browser, _ = signed_in()
+    page = {"HTTP_ACCEPT": "text/html", "HTTP_SEC_FETCH_MODE": "navigate"}
+    assert b"admin-sidebar" in browser.get("/admin/no-such-page", **page).content
+    with unguarded():
+        SystemConfiguration.objects.update(restore_review_required=True)
+    assert browser.get(reverse("admin:reports"))["Location"] == "/admin/maintenance"
+    response = browser.get("/admin/no-such-page", **page)
+    assert response.status_code == 404
+    assert b"<h1>Page not found</h1>" in response.content
+    assert b"admin-sidebar" not in response.content
