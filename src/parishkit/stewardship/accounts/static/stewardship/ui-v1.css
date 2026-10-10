@@ -593,7 +593,8 @@ details.technical-details dd { overflow-wrap: anywhere; }
 /* Toggletips (ui-v1.js): a small round "i" button beside a label that opens
    one short help bubble on click or tap. In a .label-row the bubble opens
    in the page flow on its own line under the label, pushing the field down
-   rather than covering it; anywhere else it floats below its button. */
+   rather than covering it; anywhere else it floats below its button. A
+   filter bar is the exception (see the rule after .label-row's). */
 .label-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-block: 1rem .35rem; }
 .label-row > label, .label-row > legend { margin: 0; }
 .toggletip { position: relative; display: inline-block; vertical-align: middle; }
@@ -607,6 +608,13 @@ details.technical-details dd { overflow-wrap: anywhere; }
    never grows or scrolls the table's .table-scroll box. */
 .table-scroll .toggletip-bubble { position: fixed; inset: auto; }
 .label-row .toggletip-bubble { position: static; flex: 1 0 100%; width: auto; max-width: 40rem; box-shadow: none; }
+/* A .filter-bar aligns its fields at the bottom (align-items: end), so an
+   in-flow bubble would make its field taller and push the label and the "i"
+   button up under the pointer, breaking the "No layout shift" rule. There
+   the bubble floats below its whole field instead and moves nothing;
+   ui-v1.js still nudges it left to keep it inside the viewport. */
+.filter-bar > div { position: relative; }
+.filter-bar .label-row .toggletip-bubble { position: absolute; top: calc(100% + .4rem); inset-inline-start: 0; flex: none; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); box-shadow: var(--shadow); }
 
 /* A Member's section groups fields without a second box around them. */
 fieldset.member-section { border: 0; border-radius: 0; background: none; padding: 0; margin: 0; }
