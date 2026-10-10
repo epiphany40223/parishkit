@@ -418,7 +418,10 @@ def test_csv_money_is_the_canonical_amount_and_pdf_keeps_the_page_text():
         f"{label}: {text}" for label, text in card_text(information_records(built))
     ]
     assert "Annual pledge: $1,234.50" in lines
-    assert "ParishSoft pledged (2025–2026): -$50.00" in lines
+    # A card wraps the long heading ("ParishSoft pledged (2025–2026)") onto
+    # a second label line (#929); the value sits beside its first line.
+    at = lines.index("ParishSoft pledged : -$50.00")
+    assert lines[at + 1] == "(2025–2026): "
     assert "Total annual pledges: $1,234.51" in lines
 
 
