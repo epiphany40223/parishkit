@@ -705,6 +705,28 @@ def test_release_reads_the_digest_only_from_the_application_image_line(tmp_path)
     assert not any(other in c for c in calls)
 
 
+def test_release_refuses_a_log_naming_two_application_images(tmp_path):
+    """Two different digests on "Application image:" lines are refused."""
+    work, remote, sha = release_repo(tmp_path)
+    other = IMAGE.replace("e" * 64, "f" * 64)
+    result, calls = run_release(
+        tmp_path,
+        work,
+        "--yes",
+        "1.2.3",
+        "77",
+        ci_runs="77\n",
+        FAKE_HEAD=sha,
+        FAKE_RELEASE_RUN="99",
+        FAKE_LOG_EXTRA=f"publish Application image: `{other}`",
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Release run 99 names more than one" in result.stderr
+    # Neither digest is verified or printed.
+    assert not any(c.startswith("gh attestation verify oci:") for c in calls)
+
+
 def test_release_refuses_a_named_run_the_listing_omits(tmp_path):
     """A run gh run list never shows is refused: release.yml could not see it.
 
