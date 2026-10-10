@@ -5446,10 +5446,12 @@ BEGIN
            SELECT 1 FROM stewardship_schedule_occurrence o WHERE o.id=NEW.recovery_occurrence_id
            AND o.definition_id=h.definition_id AND o.mode=h.mode AND o.target=h.target AND o.slot=h.slot AND o.state='pending'
        )) OR (NEW.state<>'resend_authorized' AND NEW.recovery_occurrence_id IS NOT NULL)
-       -- Decisions belong to the review: once it is released (gate off with a
-       -- release stamped), nothing is decided until a later page (#757).
-       OR EXISTS(SELECT 1 FROM stewardship_system_configuration released
-           WHERE NOT released.restore_review_required AND released.restore_released_at IS NOT NULL)
+       -- An undecided hold is still decided after release (#757), but only
+       -- for the current campaign: the planner never acts on another
+       -- campaign's holds, so a decision there would mean nothing.
+       OR NOT EXISTS(SELECT 1 FROM stewardship_schedule_definition held
+           JOIN stewardship_system_configuration current_runtime ON current_runtime.current_campaign_id=held.campaign_id
+           WHERE held.id=h.definition_id)
        -- Another (earlier restore's) hold still keeps this email back, so a
        -- resend would silently do nothing: settle that one first.
        OR (NEW.state='resend_authorized' AND EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold other

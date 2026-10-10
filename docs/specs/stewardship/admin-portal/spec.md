@@ -2844,12 +2844,18 @@ copy, so a later "send again" would send nothing. "Send again" is refused
 while another restore's hold still keeps the same email back. Each decision is
 versioned, append-only and audited.
 
-Decisions are taken only during the review: once the site is released, the
-guard refuses them, and settling the remaining holds is #757. An undecided
-hold stays in force after release. An undecided invitation also keeps back
-every reminder of that Family. Besides the listing, the web login may insert a
-hold row directly; the hold guard admits one only during a review and for its
-current restore, and a hold only keeps mail back.
+An undecided hold stays in force after release, and an undecided invitation
+also keeps back every reminder of that Family, so a hold left undecided during
+the review can still be decided after release, by the same rules
+([#757](https://github.com/epiphany40223/parishkit/issues/757)). After
+release a decision is admitted for an undecided hold of any restore, but only
+for the current campaign: the planner never acts on another campaign's holds.
+"Send again" on a held reminder is refused once a later reminder was
+delivered to the same Family, because it would arrive out of order; that hold
+can only be assumed sent. The Admin page for these decisions is still to
+come. Besides the listing, the web login may insert a hold row directly; the
+hold guard admits one only during a review and for its current restore, and a
+hold only keeps mail back.
 
 **Release.** A freshly authenticated Administrator confirms release. It is
 refused while any email still needs a hold (the list must be found first, and

@@ -1103,7 +1103,9 @@ the backup is not in the restored data; if it was invited before the restore,
 a refresh after release invites it again. Holds never apply to operational
 notifications. An undecided hold keeps its own email back for good. An
 undecided invitation also keeps back every reminder of that Family, so the
-release preview counts those Families. Settling holds after release is #757.
+release preview counts those Families. A hold left undecided can still be
+decided after release, as the
+[restore release workflow](../admin-portal/spec.md#restore-release) says.
 The Admin can resolve each hold as assumed delivered or authorize resend after
 acknowledging duplicate risk; neither the restore command nor the release may
 globally treat unknown delivery as provider success.

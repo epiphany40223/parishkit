@@ -14,10 +14,13 @@ the ordinary planner would send them again. The review is the pause between:
    assume it was sent, or send it again.
 4. ``release_review`` reopens the site. Its SQL refuses while any email still
    needs a hold, so every hold can be decided during the review; one left
-   undecided stays in force.
+   undecided stays in force until an Administrator decides it after release
+   (``settle_held_email`` again, #757).
 
-Every rule lives in the SQL guards of migration 0017; these functions only
-order the locks and supply exact inputs. No Family code or link is created,
+Every rule lives in the SQL guards (migration 0017, and the after-release
+decision guard of #757), except that a resend of a reminder a later reminder
+superseded is refused here; these functions otherwise only order the locks
+and supply exact inputs. No Family code or link is created,
 replaced or cancelled anywhere here: the backup's codes and links keep working.
 Release and every decision need an Administrator who signed in with Google in
 the last five minutes; the session and sign-in are recorded with the decision.
@@ -34,7 +37,12 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StaleRecordError
 
-from .models import RestoreDeliveryHold, RestoreHoldResolution, RuntimeTransition
+from .models import (
+    RestoreDeliveryHold,
+    RestoreHoldResolution,
+    RuntimeTransition,
+    ScheduleFulfillment,
+)
 from .work_locks import lock_current_campaign_exports, lock_work_order
 
 # The two decisions on a held email. Each is final (the SQL guard enforces
@@ -158,11 +166,15 @@ def settle_held_email(
     """Record one Administrator decision on a held email; returns the record.
 
     ``assumed_delivered`` keeps it from ever being sent; ``resend_authorized``
-    lets the ordinary planner send the restored link once the site is
-    released. Both are final and are refused once the site is released; a
-    resend is also refused while another restore's hold still keeps the same
-    email back. A repeat of the same decision returns the first record; a
-    different one on a changed hold is stale.
+    lets the ordinary planner send the restored link (once the site is
+    released, or at once after release). A hold is decided once, during the
+    review or after release (#757), and only for the current campaign; a
+    decided hold never changes. A resend is refused while another restore's
+    hold still keeps the same email back (the SQL guard), and, for a
+    reminder, once a later reminder was delivered to the same Family
+    (``ValueError``): it would arrive out of order, so it can only be assumed
+    sent. A repeat of the same decision returns the first record; a different
+    one on a changed hold is stale.
     """
     _uuid(hold_id, actor_id, session_id)
     if state not in DECISIONS:
@@ -171,11 +183,14 @@ def settle_held_email(
         raise ValueError("A held-email decision needs a short note.")
     if type(expected_version) is not int or expected_version < 1:
         raise ValueError("The hold version must be a positive integer.")
-    with _review_transaction(correlation_id) as runtime:
-        if not runtime.restore_review_required:
-            # Decisions belong to the review; settling after release is #757.
-            raise StaleRecordError("The site was already released.")
-        hold = RestoreDeliveryHold.objects.select_for_update().get(pk=hold_id)
+    with _review_transaction(correlation_id):
+        # Lock only the hold: web may read the schedule definition but not
+        # lock it.
+        hold = (
+            RestoreDeliveryHold.objects.select_for_update(of=("self",))
+            .select_related("definition__current_revision")
+            .get(pk=hold_id)
+        )
         existing = RestoreHoldResolution.objects.filter(
             hold=hold, version=expected_version + 1
         ).first()
@@ -189,6 +204,8 @@ def settle_held_email(
             return existing
         if hold.version != expected_version:
             raise StaleRecordError("This held email changed; reload it.")
+        if state == "resend_authorized" and _later_reminder_delivered(hold):
+            raise ValueError("A later reminder was already delivered; assume it sent.")
         return RestoreHoldResolution.objects.create(
             hold=hold,
             version=expected_version + 1,
@@ -244,3 +261,27 @@ def release_review(
             authenticated_at=authenticated_at,
             correlation_id=correlation_id,
         )
+
+
+def _later_reminder_delivered(hold):
+    """Whether a reminder due after this held one already reached its Family.
+
+    After release the planner goes on sending later reminders while an
+    earlier one stays held. Sending the earlier one again then would arrive
+    out of order, so a held reminder superseded this way may only be assumed
+    sent. Due times are read from each schedule's current revision, as the
+    planner reads them; an invitation is never superseded.
+    """
+    definition = hold.definition
+    # A removed schedule has no current revision; the planner sends nothing
+    # for it, so there is nothing to put out of order.
+    if definition.kind != "reminder" or definition.current_revision is None:
+        return False
+    return ScheduleFulfillment.objects.filter(
+        definition__campaign_id=definition.campaign_id,
+        definition__kind="reminder",
+        definition__current_revision__due_at__gt=definition.current_revision.due_at,
+        mode=hold.mode,
+        target=hold.target,
+        disposition="delivered",
+    ).exists()

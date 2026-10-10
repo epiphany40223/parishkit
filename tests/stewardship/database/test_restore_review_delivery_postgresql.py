@@ -120,6 +120,28 @@ def test_send_again_plans_one_email_coalesced_with_due_reminders(auth_service):
     assert again.created == 0 and again.selected == first.selected
 
 
+def test_an_invitation_decided_after_release_is_planned(auth_service):
+    """Undecided at release, no invitation is planned; sent again later, it is
+    (#757)."""
+    family, actor = third_family(auth_service, invitation=None)
+    target = f"family:{family.pk}"
+    plan(family, actor)
+    assert not ScheduleOccurrence.objects.filter(
+        target=target, definition__kind="initial"
+    ).exists()
+    invitation = RestoreDeliveryHold.objects.get(
+        target=target, definition__kind="initial"
+    )
+    with campaign_clock(NOW):
+        decide(invitation, "resend_authorized", actor)
+    # The invitation is the one email now; the reminder planned meanwhile is
+    # coalesced into it.
+    result = plan(family, actor)
+    assert not result.held and result.created == 1 and result.coalesced == 1
+    selected = ScheduleOccurrence.objects.get(pk=result.selected)
+    assert selected.definition.kind == "initial"
+
+
 def test_an_assumed_invitation_lets_reminders_go_on(auth_service):
     """Assumed sent counts as the invitation: the latest due reminder is planned."""
     family, actor = third_family(auth_service, invitation="assumed_delivered")

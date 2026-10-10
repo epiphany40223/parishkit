@@ -514,28 +514,56 @@ def test_release_reopens_the_site_and_keeps_unsettled_holds(auth_service, google
     # Every unsettled hold still keeps its email from being prepared or sent
     # (the shared exclusion the planner, claim and dispatch guards use).
     assert all(excluded(row) for row in held(state="unreviewed"))
-    # Decisions belong to the review: after release they are refused, by the
-    # owner and by the guard (settling later is #757).
-    hold = held().first()
+    # An undecided hold is still decided after release (#757), by a freshly
+    # signed-in Administrator through the web login, and audited.
+    hold = held().order_by("target", "definition__kind").first()
     signed_in()
-    with pytest.raises(StaleRecordError, match="already released"):
-        as_web(
-            settle_held_email,
-            hold_id=hold.pk,
-            expected_version=1,
-            state="resend_authorized",
-            evidence="Not in the provider's log; send again.",
-        )
+    decision = as_web(
+        settle_held_email,
+        hold_id=hold.pk,
+        expected_version=1,
+        state="resend_authorized",
+        evidence="Not in the provider's log; send again.",
+    )
+    hold.refresh_from_db()
+    assert (hold.state, hold.version) == ("resend_authorized", 2)
+    assert not excluded(hold)
+    assert AuditEvent.objects.filter(
+        event_type="restore_hold_resolved", subject_id=decision.pk
+    ).exists()
+    # A decision stays final after release too.
     with pytest.raises(DatabaseError, match="resend binding"), transaction.atomic():
         RestoreHoldResolution.objects.create(
             hold_id=hold.pk,
-            version=2,
-            state="resend_authorized",
-            evidence="Send again.",
+            version=3,
+            state="assumed_delivered",
+            evidence="Assume it went out.",
             actor_id=administrator().principal_id,
             correlation_id=uuid4(),
         )
-    assert excluded(hold)
+    # Without a fresh sign-in, or from a login other than web, it is refused.
+    other = held(state="unreviewed").first()
+    current = administrator()
+    stale = dict(
+        hold_id=other.pk,
+        expected_version=1,
+        state="assumed_delivered",
+        evidence="Family moved away.",
+        actor_id=current.principal_id,
+        session_id=current.pk,
+        correlation_id=uuid4(),
+    )
+    with (
+        task_login(ServiceRole.WEB, exact=True),
+        pytest.raises(DatabaseError, match="fresh Administrator"),
+    ):
+        settle_held_email(
+            authenticated_at=current.authenticated_at - timedelta(minutes=10), **stale
+        )
+    with task_login(ServiceRole.WORKER, exact=True), pytest.raises(DatabaseError):
+        settle_held_email(authenticated_at=current.authenticated_at, **stale)
+    other.refresh_from_db()
+    assert other.state == "unreviewed" and excluded(other)
     # A second release is refused.
     with pytest.raises(DatabaseError, match="cannot be released"):
         as_web(
@@ -580,6 +608,99 @@ def test_restoring_the_same_backup_after_release_starts_a_new_review(
         runtime.restore_activated_at,
     ) == (again.restore_id, BACKUP, later)
     assert RuntimeTransition.objects.filter(action="restore_begin").count() == 2
+
+
+def released_with_holds(auth_service):
+    """Release a review of the live campaign leaving all 8 holds undecided."""
+    live_campaign(auth_service)
+    signed_in()
+    with campaign_clock(NOW):
+        begin()
+        as_web(list_held_emails_for)
+        as_web(
+            release_review,
+            request_id=uuid4(),
+            expected_runtime_version=SystemConfiguration.objects.get().version,
+        )
+    assert held(state="unreviewed").count() == 8
+    signed_in()
+
+
+def test_a_hold_of_a_campaign_no_longer_current_is_not_decided(auth_service, google):
+    """After release only the current campaign's holds are decided (#757)."""
+    released_with_holds(auth_service)
+    hold = held().first()
+
+    class Restored(Exception):
+        """Rolls the simulated campaign change back."""
+
+    # The runtime row is loaded with no current campaign as offline input,
+    # like restored_occurrence; the planner would never act on the hold.
+    with pytest.raises(Restored), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL session_replication_role = replica")
+            cursor.execute(
+                "UPDATE stewardship_system_configuration SET current_campaign_id=NULL"
+            )
+            cursor.execute("SET LOCAL session_replication_role = origin")
+        with (
+            pytest.raises(DatabaseError, match="resend binding"),
+            transaction.atomic(),
+        ):
+            RestoreHoldResolution.objects.create(
+                hold_id=hold.pk,
+                version=2,
+                state="assumed_delivered",
+                evidence="Assume it went out.",
+                actor_id=administrator().principal_id,
+                correlation_id=uuid4(),
+            )
+        raise Restored
+    # Back on the current campaign, the same decision is admitted.
+    with transaction.atomic():
+        RestoreHoldResolution.objects.create(
+            hold_id=hold.pk,
+            version=2,
+            state="assumed_delivered",
+            evidence="Assume it went out.",
+            actor_id=administrator().principal_id,
+            correlation_id=uuid4(),
+        )
+    hold.refresh_from_db()
+    assert hold.state == "assumed_delivered"
+
+
+def test_a_reminder_a_later_one_superseded_may_only_be_assumed_sent(
+    auth_service, google
+):
+    """Sending an earlier reminder after a later one would arrive out of order."""
+    released_with_holds(auth_service)
+    third = FamilyCampaign.objects.get(family_duid=3)
+    first, second = ScheduleDefinition.objects.filter(kind="reminder").order_by(
+        "current_revision__due_at"
+    )[:2]
+    earlier = held(target=f"family:{third.pk}", definition=first).get()
+    later = held(target=f"family:{third.pk}", definition=second).get()
+    arguments = dict(
+        hold_id=earlier.pk,
+        expected_version=1,
+        state="resend_authorized",
+        evidence="Not in the provider's log; send again.",
+    )
+    # The later reminder reached the Family (after release, say).
+    restored_occurrence(second, third)
+    with pytest.raises(ValueError, match="later reminder"):
+        as_web(settle_held_email, **arguments)
+    earlier.refresh_from_db()
+    assert earlier.state == "unreviewed"
+    as_web(settle_held_email, **(arguments | {"state": "assumed_delivered"}))
+    earlier.refresh_from_db()
+    assert earlier.state == "assumed_delivered"
+    # The later reminder itself and the invitation are not superseded.
+    as_web(settle_held_email, **(arguments | {"hold_id": later.pk}))
+    invitation = held(target=f"family:{third.pk}", definition__kind="initial").get()
+    as_web(settle_held_email, **(arguments | {"hold_id": invitation.pk}))
+    assert held(target=f"family:{third.pk}", state="resend_authorized").count() == 2
 
 
 def test_release_needs_a_fresh_administrator(auth_service, google):
