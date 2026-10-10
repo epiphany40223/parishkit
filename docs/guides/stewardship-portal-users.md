@@ -18,7 +18,7 @@ authorizes, the latest successful sign-in by any recorded account at that
 domain, and warnings. Exact-address
 rules show the rule's origin, the configured roles with each grant's origin, the
 roles current policy grants now, Ministry assignments with their source and
-whether the parish source currently confirms them, the last successful sign-in
+whether the latest ParishSoft data confirms them, the last successful sign-in
 and warnings. An empty role set is labelled **Explicit deny**. A third table
 appears only when an assignment belongs to someone with no exact rule, who
 relies on a domain rule, and says whether it is in effect now.

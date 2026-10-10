@@ -353,7 +353,10 @@ def test_keeping_the_role_independently_survives_the_source(
     principal = current_principal(store, account.pk)
     assert "ministry_leader" in principal.roles and principal.ministries == frozenset()
     kept = address_row(browser)
-    assert "Ministry leader (Administrator entry; Parish source Chairperson)" in kept
+    assert (
+        "Ministry leader (Added by an Administrator; From a Chairperson suggestion)"
+        in kept
+    )
     # No longer a leader only through a Chairperson, so nothing to keep.
     with web():
         body = browser.get(PAGE).content.decode()

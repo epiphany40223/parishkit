@@ -222,7 +222,9 @@ def test_chair_review_waits_for_a_usable_reason(page, component_origin):
     form = page.locator('form:has(input[name="reason"])')
     reason = form.locator('input[name="reason"]')
     buttons = [
-        form.get_by_role("button", name="Review restore as Administrator entry"),
+        form.get_by_role(
+            "button", name="Review restore as an Administrator's assignment"
+        ),
         form.get_by_role("button", name="Review removal"),
     ]
     hint = form.locator("[data-complete-hint]")

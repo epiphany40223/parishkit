@@ -114,6 +114,7 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
     # no rule names gets none until one does.
     with web():
         text = post(browser, proposal(store)).content.decode()
+        assert "Ministry DUID 4) will be added by an Administrator" in text
         assert "exact-address rule granting Ministry leader" in text
         admin = post(browser, proposal(store, identity="admin@example.org"))
         assert (
@@ -136,7 +137,7 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
     with web():
         body = browser.get(PAGE).content.decode()
     listed = address_row(body, "leader@example.org")
-    assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
+    assert "Choir (Ministry DUID 4) (Added by an Administrator)" in listed
     # The assignment's own removal form, not the rule editor's removal button.
     assert "Review assignment removal" in listed
     with web():
@@ -153,7 +154,7 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
         bad = post(browser, proposal(store, identity="not an address"))
         assert bad.status_code == 400
         removal = post(browser, proposal(store, operation="remove")).content.decode()
-        assert "assignment to Choir (Ministry DUID 4) will be removed" in removal
+        assert "assignment an Administrator added to Choir (Ministry DUID 4)" in removal
         assert "Any scope this assignment gave ends" in removal
     applied(store, browser, proposal(store, operation="remove"))
     assert not MinistryAssignment.objects.filter(
@@ -223,7 +224,7 @@ def test_an_address_without_a_rule_is_assigned_and_told_how_it_takes_effect(
     with web():
         body = browser.get(PAGE).content.decode()
     listed = row(body[body.index('id="domain-assignments"') :], "helper@example.org")
-    assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
+    assert "Choir (Ministry DUID 4) (Added by an Administrator)" in listed
     assert "No login rule gives this person the Ministry leader role." in listed
     assert "Review assignment removal" in listed
 
@@ -250,7 +251,7 @@ def test_an_assignment_to_a_deactivated_ministry_is_still_removed(auth_service, 
     with web():
         body = browser.get(PAGE).content.decode()
     listed = address_row(body, "leader@example.org")
-    assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
+    assert "Choir (Ministry DUID 4) (Added by an Administrator)" in listed
     assert listed.count("Review assignment removal") == 2
     assert '<option value="4">' not in listed
     with web():
@@ -260,7 +261,7 @@ def test_an_assignment_to_a_deactivated_ministry_is_still_removed(auth_service, 
             "is not active in the latest ParishSoft data" in inactive.content.decode()
         )
         removal = post(browser, proposal(store, operation="remove")).content.decode()
-        assert "assignment to Choir (Ministry DUID 4) will be removed" in removal
+        assert "assignment an Administrator added to Choir (Ministry DUID 4)" in removal
         # A Ministry the catalog never had is removed by DUID alone.
         dropped = proposal(store, operation="remove", ministry_duid=77)
         assert "no longer names" in post(browser, dropped).content.decode()
@@ -287,7 +288,7 @@ def test_without_a_promoted_catalog_only_removals_are_possible(auth_service, goo
         body = browser.get(PAGE).content.decode()
         assert "Add a Ministry assignment" not in body
         listed = address_row(body, "leader@example.org")
-        assert "Ministry DUID 77 (Administrator entry)" in listed
+        assert "Ministry DUID 77 (Added by an Administrator)" in listed
         assert "Review assignment removal" in listed
         assert "Assign to Ministry" not in listed
         assert post(browser, proposal(store)).status_code == 503

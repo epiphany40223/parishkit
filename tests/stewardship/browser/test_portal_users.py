@@ -45,7 +45,7 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     # Google verified that person's attempt; being refused is not a sign-in.
     assert blocked.get_by_text("None on record", exact=True).count() == 1
     assert blocked.locator("time").count() == 0
-    # A Chairperson-only role is suspended until the parish source confirms it.
+    # A Chairperson-only role is suspended until ParishSoft data confirms it.
     chair = page.get_by_role("row", name="chair@example.org", exact=False)
     assert chair.get_by_text(
         "The Ministry leader role is suspended", exact=False

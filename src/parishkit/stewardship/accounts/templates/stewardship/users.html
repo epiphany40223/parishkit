@@ -40,7 +40,7 @@ swaps in place while another loads in full would lose the in-place choice.
 {% button type="submit" aria-describedby="new-domain-hint" %}{% translate "Review new domain rule" %}{% endbutton %}<p class="help" id="new-domain-hint" data-complete-hint hidden></p></fieldset></form>
 
 <h2 id="address-rules">{% translate "Exact-address rules" %}</h2>
-<p>{% translate "Roles granted now are what current policy gives this address. Administrator includes Staff and Ministry leader. A Ministry leader role that came only from a Chairperson is suspended while the parish source no longer confirms that Chairperson. Whether a particular Google identity may sign in at all is separate: a disabled identity is refused whatever its address is granted, and a warning says so. Ticking no role at all is an explicit deny." %}</p>
+<p>{% translate "Roles granted now are what current policy gives this address. Administrator includes Staff and Ministry leader. A Ministry leader role that came only from a Chairperson is suspended while ParishSoft data no longer shows that Chairperson. Whether a particular Google identity may sign in at all is separate: a disabled identity is refused whatever its address is granted, and a warning says so. Ticking no role at all is an explicit deny." %}</p>
 <div id="{{ address_table.anchor }}">
 {% translate "Exact-address rule pages" as address_label %}{% include "stewardship/table-navigator.html" with table=address_table label=address_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="address-rules"><table class="data-table">

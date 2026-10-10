@@ -15,7 +15,7 @@ Claude only (Codex out of quota). Nine raw findings, three validated, all
 corrected:
 
 - High: the active-catalog check gated removals as well as additions, so an
-  Administrator entry assignment to a Ministry since deactivated, or dropped
+  assignment an Administrator added to a Ministry since deactivated, or dropped
   from the catalog, could not be removed although the page offered the
   button. The catalog now gates additions only; a removal is judged by the
   applied policy, the catalog serves it the Ministry's name, and the preview
@@ -41,9 +41,9 @@ corrected:
 - Medium: a removal still read the catalog through the Ministry activity
   editor's state, which is unavailable without a promoted source of the
   configured organization, while the page offered the removal button for
-  every Administrator entry, the same class of gap round 1 corrected in a
-  narrower precondition, and the page gated additions on a looser condition
-  than the route. A removal now reads the applied configuration and, for the
+  every assignment an Administrator added, the same class of gap round 1
+  corrected in a narrower precondition, and the page gated additions on a
+  looser condition than the route. A removal now reads the applied configuration and, for the
   Ministry's name only, the promoted snapshot if any; one shared definition
   of a usable catalog decides both the page's addition forms and the route.
 - Medium: three preview wordings and the dropped-from-catalog removal were

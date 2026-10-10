@@ -159,7 +159,7 @@ def test_a_confirmation_creates_the_seeded_rule_assignment_and_evidence(
     with web():
         body = browser.get(PAGE).content.decode()
     row = suggestion_row(body, "valid@example.org")
-    assert "Parish source Chairperson</td>" in row and "suspended" not in row
+    assert "From a Chairperson suggestion</td>" in row and "suspended" not in row
     assert "Exact-address rule: Staff, Ministry leader" in row
     # Confirming the same Ministry again is refused before anything is signed.
     with web():
@@ -191,7 +191,7 @@ def test_an_ambiguous_address_needs_its_member_chosen_for_each_row(
     with web():
         refused = post(browser, proposal(store, selection=both))
         assert refused.status_code == 400
-        assert "Choose a Member under Member to seed" in refused.content.decode()
+        assert "Choose one under Member to confirm" in refused.content.decode()
         # One row answered, the other left at its blank choice.
         partial = post(
             browser,

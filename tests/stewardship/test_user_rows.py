@@ -82,7 +82,7 @@ def test_address_rows_show_granted_roles_provenance_and_denial():
     assert text(admin["granted"]) == ["Administrator", "Staff", "Ministry leader"]
     assert admin["last_login"] == LATER and not admin["deny"]
     assert [text(grant["origins"]) for grant in admin["grants"]] == [
-        ["Administrator entry"]
+        ["Added by an Administrator"]
     ]
     assert blocked["deny"] and blocked["grants"] == [] and blocked["granted"] == []
     # An explicit deny never shows a sign-in merely because someone tried.
@@ -112,11 +112,11 @@ def test_seeded_leader_is_suspended_until_the_source_confirms_a_chair():
     assert chair["assignments"][0]["active"] is False
     # The whole list: a suspended role is not told to go and get the role.
     assert text(chair["warnings"]) == [
-        "The Ministry leader role is suspended: no Chairperson assignment is "
-        "currently confirmed by the parish source."
+        "The Ministry leader role is suspended: the latest ParishSoft data "
+        "confirms no Chairperson assignment."
     ]
-    assert text(chair["grants"][0]["origins"]) == ["Parish source Chairperson"]
-    assert text([chair["origin"]]) == ["Parish source Chairperson"]
+    assert text(chair["grants"][0]["origins"]) == ["From a Chairperson suggestion"]
+    assert text([chair["origin"]]) == ["From a Chairperson suggestion"]
     assert text(leader["warnings"]) == [
         "Ministry leader with no active Ministry assignment."
     ]

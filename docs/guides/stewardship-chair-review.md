@@ -24,9 +24,9 @@ row offers the decisions the specification names, and each exact-address
 rule whose Ministry leader role comes only from a seed offers **Keep role
 independently**:
 
-- **Restore as Administrator entry** removes the seed and adds a manual
-  assignment of the same address to the same Ministry, which the parish
-  source never rewrites, so the scope stays in force until an Administrator
+- **Restore as an Administrator's assignment** removes the Chairperson
+  assignment and adds a manual assignment of the same address to the same
+  Ministry, which ParishSoft data never changes, so the scope stays in force until an Administrator
   removes it.
 - **Remove** drops the seeded assignment alone; the rule and its roles stay,
   and a Ministry leader role held only by that seed then reads as suspended

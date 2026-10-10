@@ -5,13 +5,13 @@
 {% aboutpage "ministry-assignments" %}<p>{% translate "Which Ministries each Ministry leader leads. An assignment takes effect only through a rule granting Ministry leader: the address's exact-address rule, or its hosted-domain rule when the Google account presents that claim. Change who may sign in on" %} <a href="{% url 'admin:users' %}">{% translate "Sign-in rules" %}</a>.</p>{% endaboutpage %}
 {% if assignable %}<form method="post" action="{% url 'admin:assignments' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="operation" value="add">
 <fieldset><legend>{% translate "Add a Ministry assignment" %}</legend>
-<p>{% translate "An assignment is an Administrator entry the parish source never rewrites. It takes effect only through a rule granting Ministry leader: the address's exact-address rule, or its hosted-domain rule when the Google account presents that claim. The review states which applies." %}</p>
+<p>{% translate "An Administrator adds an assignment here, and ParishSoft data never changes it. It takes effect only through a rule granting Ministry leader: the address's exact-address rule, or its hosted-domain rule when the Google account presents that claim. The review states which applies." %}</p>
 <label for="new-assignment-address">{% translate "Email address" %}</label> <input id="new-assignment-address" name="identity" type="email" maxlength="254" required autocomplete="off">
 <label>{% translate "Ministry" %} <select name="ministry_duid" required><option value="">{% translate "Choose" %}</option>{% for duid, name in assignable %}<option value="{{ duid }}">{{ name }} ({{ duid }})</option>{% endfor %}</select></label>
 {% button type="submit" %}{% translate "Review new assignment" %}{% endbutton %}</fieldset></form>{% endif %}
 
 <h2 id="address-assignments">{% translate "Ministry assignments for exact-address rules" %}</h2>
-<p>{% translate "Addresses with their own sign-in rule that hold a Ministry assignment. An assignment is an Administrator entry the parish source never rewrites; it takes effect only through a rule granting Ministry leader." %}</p>
+<p>{% translate "Addresses with their own sign-in rule that hold a Ministry assignment. An Administrator adds an assignment here, and ParishSoft data never changes it; it takes effect only through a rule granting Ministry leader." %}</p>
 <div id="{{ assigned_table.anchor }}">
 {% translate "Exact-address assignment pages" as assigned_label %}{% include "stewardship/table-navigator.html" with table=assigned_table label=assigned_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="address-assignments"><table class="data-table">

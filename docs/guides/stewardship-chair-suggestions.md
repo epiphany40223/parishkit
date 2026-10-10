@@ -12,8 +12,8 @@ follows the [pre-production development policy](../specs/stewardship/operations/
 ## Scope
 
 The Portal users page gains a fourth table. Each row is a current Chairperson
-of an active Ministry in the promoted parish source, with the valid address
-the source records: the Member's name and DUID, the Ministry's name and DUID,
+of an active Ministry in the latest ParishSoft data, with the valid address
+ParishSoft records: the Member's name and DUID, the Ministry's name and DUID,
 whether the contact is publishable, the login rule the address has today with
 its roles, any assignment already configured for that Ministry and whether it
 is in force, and an ambiguity when the address is used by more than one active

@@ -175,7 +175,7 @@ def test_shared_addresses_and_existing_policy_are_shown_not_guessed(
     )
     # The real effect ran and found no retained identity for the seed, so the
     # assignment is suspended, exactly as a sign-in would see it.
-    assert "Parish source Chairperson; suspended" in suggestion
+    assert "From a Chairperson suggestion; suspended" in suggestion
     overlay = AssignmentOverlay.objects.get(assignment_record_id=seeded["id"])
     assert overlay.active is False and overlay.reason == "missing_binding"
 

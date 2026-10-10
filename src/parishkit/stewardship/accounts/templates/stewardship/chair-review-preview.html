@@ -4,9 +4,9 @@
 <h1>{% translate "Review Chairperson decision" %}</h1>
 <section class="panel">
   <h2>{% translate "Exact address" %}: {{ identity }}</h2>
-  {% if decision == 'keep_role' %}<p>{% translate "The Ministry leader role keeps its Parish source Chairperson origin and gains an Administrator entry, so the parish source no longer suspends it. No Ministry assignment is created and no row scope is broadened." %}</p>
-  {% elif decision == 'restore' %}<p>{% blocktranslate with duid=ministry_duid %}The suspended Parish source Chairperson assignment to Ministry DUID {{ duid }} is removed and an Administrator entry assignment to the same Ministry added. The parish source never rewrites an Administrator's assignment; the review of the seed closes when the request activates.{% endblocktranslate %}</p>
-  {% else %}<p>{% blocktranslate with duid=ministry_duid %}The Parish source Chairperson assignment to Ministry DUID {{ duid }} is removed. The rule and its roles are left as they are; a Ministry leader role held only by that seed then reads as suspended until the rule is changed or another suggestion confirmed. The review of the seed closes when the request activates.{% endblocktranslate %}</p>{% endif %}
+  {% if decision == 'keep_role' %}<p>{% translate "The Ministry leader role keeps its origin from a Chairperson suggestion and is also marked as added by an Administrator, so ParishSoft data no longer suspends it. No Ministry assignment is created and no row scope is broadened." %}</p>
+  {% elif decision == 'restore' %}<p>{% blocktranslate with duid=ministry_duid %}The suspended Chairperson assignment to Ministry DUID {{ duid }} is removed and an assignment an Administrator added to the same Ministry takes its place. ParishSoft data never changes an Administrator's assignment; the review of the Chairperson assignment closes when the request activates.{% endblocktranslate %}</p>
+  {% else %}<p>{% blocktranslate with duid=ministry_duid %}The Chairperson assignment to Ministry DUID {{ duid }} is removed. The rule and its roles are left as they are; a Ministry leader role held only through that Chairperson assignment then reads as suspended until the rule is changed or another suggestion confirmed. The review of the Chairperson assignment closes when the request activates.{% endblocktranslate %}</p>{% endif %}
   {% if reason %}<p>{% translate "Reason recorded in the audit:" %} {{ reason }}</p>{% endif %}
   <p>{% translate "Confirm to save this change." %}</p>
 </section>

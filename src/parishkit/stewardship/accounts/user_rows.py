@@ -21,12 +21,13 @@ ROLE_LABELS = {
     "staff": _("Staff"),
     "ministry_leader": _("Ministry leader"),
 }
-# Neutral nouns: the same origin names a rule's creation, a role grant and an
-# assignment's source, and a seeded rule was created by reconciling the parish
-# source, not by the Chairperson it names.
+# One phrase per origin names a rule's creation, a role grant and an
+# assignment's source. They use the plain terms of the Portal users error pages
+# (#846); a Chairperson origin comes from confirming a Chairperson suggestion,
+# not from the Chairperson it names.
 ORIGIN_LABELS = {
-    "manual": _("Administrator entry"),
-    "chair-seed": _("Parish source Chairperson"),
+    "manual": _("Added by an Administrator"),
+    "chair-seed": _("From a Chairperson suggestion"),
 }
 
 
@@ -209,8 +210,8 @@ def address_rows(policy):
         if "ministry_leader" in values["roles"] and "ministry_leader" not in granted:
             warnings.append(
                 _(
-                    "The Ministry leader role is suspended: no Chairperson "
-                    "assignment is currently confirmed by the parish source."
+                    "The Ministry leader role is suspended: the latest ParishSoft "
+                    "data confirms no Chairperson assignment."
                 )
             )
         elif (
@@ -220,8 +221,9 @@ def address_rows(policy):
             and "administrator" not in granted
         ):
             warnings.append(_("Ministry leader with no active Ministry assignment."))
-        # Only when the role is not configured at all: for a suspended seeded
-        # role the remedy is the parish source, not granting a role it has.
+        # Only when the role is not configured at all: for a suspended
+        # Chairperson role the remedy is ParishSoft data, not granting a role
+        # it has.
         if (
             held
             and "ministry_leader" not in values["roles"]

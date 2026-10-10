@@ -54,7 +54,7 @@ def test_rows_group_by_address_and_ministry_in_ministry_order():
         "suspended": False,
     }
     assert row["assignments"] == []
-    assert str(row["source"]) == "Parish source Chairperson"
+    assert str(row["source"]) == "From a Chairperson suggestion"
 
 
 def test_a_ministry_without_a_name_sorts_and_shows_empty():
@@ -135,7 +135,7 @@ def test_current_rule_and_assignment_are_shown_from_policy():
     assert exact["rule"]["kind"] == "address" and exact["rule"]["roles"] == []
     assert exact["rule"]["suspended"] is True and exact["rule"]["deny"] is False
     (seed,) = exact["assignments"]
-    assert str(seed["source"]) == "Parish source Chairperson"
+    assert str(seed["source"]) == "From a Chairperson suggestion"
     assert seed["active"] is False
     assert deny["rule"] == {
         "kind": "address",
@@ -170,8 +170,8 @@ def test_manual_and_seeded_assignments_are_both_shown_in_fixed_order():
         )
         shown = [(str(item["source"]), item["active"]) for item in row["assignments"]]
         assert shown == [
-            ("Administrator entry", True),
-            ("Parish source Chairperson", False),
+            ("Added by an Administrator", True),
+            ("From a Chairperson suggestion", False),
         ]
         # The manual assignment keeps the seeded role in force.
         assert text(row["rule"]["roles"]) == ["Ministry leader"]

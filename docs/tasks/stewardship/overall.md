@@ -935,9 +935,9 @@ Gate 3 remain open.
 
 That [manual assignment editor increment](../../guides/stewardship-assignment-editor.md)
 lets the Administrator assign an address to an active Ministry of the
-promoted catalog or remove an Administrator entry assignment from the Portal
-users page, each an ordinary policy request whose preview states the rule
-the assignment depends on, and names each assignment's Ministry beside its
+promoted catalog or remove an assignment an Administrator added from the
+Portal users page, each an ordinary policy request whose preview states the
+rule the assignment depends on, and names each assignment's Ministry beside its
 DUID. Four review/fix rounds were single-source under the second Codex
 exemption, the fourth, a correction check, validating nothing. PR #87 merged
 through protected auto-merge as `af474230`; its

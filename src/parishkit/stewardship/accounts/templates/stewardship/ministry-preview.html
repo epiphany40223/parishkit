@@ -6,7 +6,7 @@
   {% if changing %}
   <h2>{% if new_active %}{% blocktranslate count counter=changing|length %}Activate {{ counter }} Ministry{% plural %}Activate {{ counter }} Ministries{% endblocktranslate %}{% else %}{% blocktranslate count counter=changing|length %}Inactivate {{ counter }} Ministry{% plural %}Inactivate {{ counter }} Ministries{% endblocktranslate %}{% endif %}</h2>
   <ul>{% for ministry in changing %}<li>{{ ministry.name }} ({% translate "DUID" %} {{ ministry.duid }}): {% if ministry.active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %} → {% if new_active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</li>{% endfor %}</ul>
-  <p>{% translate "Source-seeded leader assignments to re-evaluate:" %} {{ seeded_count|number }}</p>
+  <p>{% translate "Chairperson assignments to re-evaluate:" %} {{ seeded_count|number }}</p>
   <p>{% translate "Manual assignments preserved:" %} {{ manual_count|number }}</p>
   {% else %}
   <h2>{% translate "Nothing to change" %}</h2>

@@ -41,7 +41,7 @@ def test_rows_state_the_suspension_and_what_the_evaluator_grants_now():
     (row,) = suspended_rows(AppliedPolicy(records, []), [review()])
     assert row["email"] == "c@example.org" and row["ministry_name"] == "Choir"
     assert row["member_duid"] == 3 and row["generation"] == 7
-    assert str(row["reason"]).startswith("The parish source no longer shows")
+    assert str(row["reason"]).startswith("The latest ParishSoft data no longer shows")
     assert row["granted"] == [] and row["leading"] is False
     assert row["manual"] is False and row["last_login"] is None
 

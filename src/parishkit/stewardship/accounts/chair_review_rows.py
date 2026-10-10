@@ -16,13 +16,16 @@ from .user_rows import ORIGIN_LABELS, _latest, role_labels
 
 REASON_LABELS = {
     "relationship_missing": _(
-        "The parish source no longer shows this Member as a current "
+        "The latest ParishSoft data no longer shows this Member as a current "
         "Chairperson of this Ministry."
     ),
-    "missing_binding": _("No retained identity binds this seed to a Member."),
+    "missing_binding": _(
+        "No retained identity ties this Chairperson assignment to a Member."
+    ),
     "ministry_inactive": _("The Ministry is inactive in the applied activity."),
     "organization_changed": _(
-        "The configured ParishSoft organization is not the seed's."
+        "The configured ParishSoft organization is not the one this "
+        "Chairperson assignment came from."
     ),
 }
 

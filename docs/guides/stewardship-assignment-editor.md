@@ -12,10 +12,10 @@ and follows the [pre-production development policy](../specs/stewardship/operati
 ## Scope
 
 An Administrator assigns an address to an active Ministry of the promoted
-catalog, or removes an Administrator entry assignment, from the Portal users
-page: an **Assign to Ministry** form on each exact-address rule's row, a
-**Review assignment removal** button beside each Administrator entry
-assignment in the exact-address and domain-assignment tables, worded apart
+catalog, or removes an assignment an Administrator added, from the Portal
+users page: an **Assign to Ministry** form on each exact-address rule's row, a
+**Review assignment removal** button beside each assignment an Administrator
+added in the exact-address and domain-assignment tables, worded apart
 from the rule's own removal, and an **Add a Ministry assignment** form for
 an address that has no rule yet. Each is previewed and
 confirmed exactly as a rule change is and applied as an ordinary policy
@@ -35,10 +35,11 @@ request that carries it and a removed record, so the editor needs no schema,
 no writer and no new guard: pure builders in `assignment_edits` produce the
 patch for an addition or a removal and refuse, by closed reason, a second
 manual assignment of the same address to the same Ministry and a removal of
-something that is not an Administrator entry, naming a Chairperson seed as
-such so the Administrator is sent to the review that decides seeds. A seed of
-the same pair may exist beside a manual assignment, as policy admits, and the
-parish source never rewrites a manual one.
+something an Administrator did not add, naming a Chairperson assignment as
+such so the Administrator is sent to the review that decides Chairperson
+assignments. A Chairperson assignment of the same pair may exist beside a
+manual assignment, as policy admits, and ParishSoft data never changes a
+manual one.
 
 ### The catalog and the effect are stated, not inferred
 
@@ -140,7 +141,7 @@ cancelled and retained-history runs are not counted as acceptance.
 
 The manual assignment editor increment is delivered: an Administrator
 assigns an address to an active Ministry of the promoted catalog, or removes
-an Administrator entry assignment whatever the catalog now says, from the
+an assignment an Administrator added whatever the catalog now says, from the
 Portal users page, each previewed with its effect as the evaluator decides
 it and applied as an ordinary policy request. ADM-07 stays open for the
 autosave queue and the tests of .05. M5 and Gate 3 remain open.

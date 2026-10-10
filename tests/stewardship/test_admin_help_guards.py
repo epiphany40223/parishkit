@@ -67,7 +67,7 @@ LONG_PARAGRAPH_ALLOWED = {
     "chair-review-preview.html": 55,
     "setup-content.html": 60,
     "setup-source-progress.html": 67,
-    "users.html": 73,
+    "users.html": 72,
 }
 
 # The page's introduction: everything between its heading and the first

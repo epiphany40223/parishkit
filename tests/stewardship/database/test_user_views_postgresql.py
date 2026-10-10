@@ -197,11 +197,11 @@ def test_chairperson_suspension_matches_what_a_sign_in_receives(seeded_service, 
     assert not granted["missing@example.org"].roles
     confirmed = row(body, "confirmed@example.org")
     assert "suspended" not in confirmed
-    assert "Ministry DUID 9 (Parish source Chairperson)" in confirmed
+    assert "Ministry DUID 9 (From a Chairperson suggestion)" in confirmed
     assert "<td>Ministry leader</td>" in confirmed
     missing = row(body, "missing@example.org")
     assert "The Ministry leader role is suspended" in missing
-    assert "Ministry DUID 4 (Parish source Chairperson; suspended)" in missing
+    assert "Ministry DUID 4 (From a Chairperson suggestion; suspended)" in missing
     assert "<td>None</td>" in missing
 
 
