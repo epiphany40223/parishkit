@@ -225,8 +225,9 @@ def test_recovery_wrappers_refuse_wrong_identity_and_nonapplied_receipt(
     )
     with pytest.raises(ConfigError, match="applied durable receipt"):
         operator_commands.recover_admin_command(configuration, **values)
+    # The preview reads the runtime recovery works from (#952).
     monkeypatch.setattr(
-        "parishkit.stewardship.accounts.configuration_installation.coherent_configuration",
+        "parishkit.stewardship.accounts.operator_recovery.recovery_runtime",
         lambda _: SimpleNamespace(pk=uuid4()),
     )
     with pytest.raises(ConfigError, match="deployment does not match"):

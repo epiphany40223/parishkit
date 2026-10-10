@@ -669,7 +669,15 @@ Administrator may override.
    YAML/database mismatch, which the existing installer protocol must recover
    first, or the last-Administrator guard), the services stay down: the
    deployment fails closed and never runs the new SQL functions on an
-   unconverted configuration. An interrupted run resumes by operation ID. The
+   unconverted configuration. An interrupted run resumes by operation ID.
+   When SQL's activation guard refuses the conversion after the YAML manifest
+   already names it, the refusal is recorded as the request's failure in the
+   activation transaction and the installer selects the base manifest again,
+   as for any other refused activation (#952 slice 3). The configuration
+   stays coherent on its sign-in rules, so
+   [offline Admin-access recovery](#offline-admin-access-recovery) still
+   runs; a failed receipt is terminal, so a new attempt needs a new
+   operation ID. The
    scripted upgrade and the deployment runbook gain this step in the code
    slice.
 
@@ -804,6 +812,11 @@ authorization; bootstrap retains its empty-deployment-only behavior.
 Require an initialized, supported database and matching active YAML/database
 configuration. An unresolved configuration installation or mismatch must be
 recovered through the existing installer protocol first, never overwritten.
+One mismatch is that protocol's own unfinished step and never blocks
+recovery: a manifest naming the candidate of a request whose activation was
+refused and recorded as failed (such as a users upgrade SQL refused), over
+that request's base. Recovery selects the base manifest again before it
+begins, and its preview shows that base (#952).
 The command displays deployment/parish identity, current Administrator users,
 the exact normalized target email, and a minimal diff. Require a named
 operator, reason, and explicit confirmation of deployment identity and target
