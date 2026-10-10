@@ -12,6 +12,7 @@ from parishkit.stewardship.reports.census_changes import (
     HEADINGS,
     CensusQuery,
     census_csv,
+    census_xlsx,
     display,
     select,
     shape,
@@ -208,13 +209,44 @@ def test_parse_refuses_values_outside_the_closed_choices(values):
 
 
 def test_csv_keeps_its_own_column_order_in_the_chosen_zone():
-    """The download keeps its own column order, times in the chosen zone."""
+    """The download keeps its own column order, times in the chosen zone,
+    with Member DUID appended last so positional readers keep working."""
     result = select(rows(), CensusQuery(), administrator=False)
     text = census_csv(result, ZoneInfo("America/Chicago")).decode()
     table = list(csv.reader(io.StringIO(text)))
     assert tuple(table[0]) == HEADINGS
-    assert table[1][2] == "Pat Sample" and table[1][-1] == "2054-10-05T09:30:00-05:00"
+    assert HEADINGS[-2:] == ("Submitted", "Member DUID")
+    assert table[1][2] == "Pat Sample" and table[1][-2] == "2054-10-05T09:30:00-05:00"
     assert len(table) == 4
+
+
+def test_downloads_word_member_duid_as_the_page_does():
+    """CSV and XLSX end with the Member DUID: the DUID, "New Member" for a
+    Member added on the form, and blank for a household change (#932)."""
+    from openpyxl import load_workbook
+
+    proposed = row(
+        id="2",
+        entity_kind="proposed_member",
+        entity_key="p-1",
+        field="new_member",
+        submitted_value={"first_name": "Lee", "last_name": "Sample"},
+        member_name=None,
+    )
+    family = row(id="3", entity_kind="family", entity_key="7001", field="home_address")
+    result = {"rows": [shape(item) for item in (row(), proposed, family)]}
+    zone = ZoneInfo("UTC")
+    table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
+    assert [line[-1] for line in table] == ["Member DUID", "41", "New Member", ""]
+    sheet = load_workbook(io.BytesIO(census_xlsx(result, zone)))["Census changes"]
+    column = sheet.max_column
+    assert column == len(HEADINGS)
+    assert [sheet.cell(line, column).value for line in range(1, 4)] == [
+        "Member DUID",
+        "41",
+        "New Member",
+    ]
+    assert sheet.cell(4, column).value in (None, "")
 
 
 def test_family_duid_column_sorts_both_ways():
