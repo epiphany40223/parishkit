@@ -147,7 +147,9 @@ own renderer):
   Node or a browser, and reports the image's CSS width and height. These are
   the engine's two formats; how a report page offers the downloads above is
   specified in a later increment (the [response dashboard](#response-dashboard)
-  does not offer them yet). Rendering happens only in workers and
+  does not offer them yet). No task calls this renderer yet: the daily
+  digest's chart is the participation graph's own renderer, and its funnel
+  is drawn with table cells. Rendering happens only in workers and
   [export tasks](../background-processing/spec.md#exports-and-graph-rendering),
   never on a page view, and always in a short-lived helper process isolated
   like the mail helpers (no environment, no error text back): the worker
@@ -819,8 +821,10 @@ family@example.org; Cara Example: (no email)", with invalid source text
 followed by "(not a valid address; fix in ParishSoft)". The emails are not
 part of the export's captured selection; they are read when the file is
 rendered, from the captured ParishSoft data while it is still kept.
-ParishSoft data is refreshed every 15 minutes and superseded data is soon
-compacted, so a render that comes later (a retry, or regenerating an expired
+ParishSoft data is refreshed often (every 15 minutes under the default
+[refresh schedule](../background-processing/spec.md#refresh-schedule)) and
+superseded data is soon compacted, so a render that comes later (a retry,
+or regenerating an expired
 file) reads the same heads' emails from the current ParishSoft data instead,
 and the file's report details add "Head emails as of" that data's refresh
 time. CSV files carry no report details, so that note appears only in XLSX
@@ -1049,6 +1053,9 @@ change by hand if publication is not ready; that is why it comes first.
 
 ### Manual census resolution
 
+Not built yet ([#528](https://github.com/epiphany40223/parishkit/issues/528)):
+the Census changes page and its downloads are read-only today.
+
 On *By hand* rows in *To do* or *Conflict*, Staff and Admin may mark
 **Entered in ParishSoft** (execution *resolved_external*) or **Ignore**
 (decision *ignored*), each with an optional note, acting in place. A
@@ -1131,8 +1138,9 @@ leave comes from a Member who cannot participate in any ministries.
 
 **Access:** Admin only.
 
-The report behavior, levels, source filters, timezone export, and text/JSONL
-formats are defined by the [Admin log specification](../admin-portal/spec.md#logs).
+The report behavior, levels, source filters, timezone export, and CSV and
+JSON Lines formats are defined by the
+[Admin log specification](../admin-portal/spec.md#logs).
 It is included in the shared report/export audit pipeline but not offered to
 Staff.
 
