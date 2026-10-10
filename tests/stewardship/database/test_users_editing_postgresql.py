@@ -224,6 +224,24 @@ def test_recovery_adds_an_administrator_user_and_keeps_every_administrator(tmp_p
     )
 
 
+def test_a_recovery_replay_previews_the_stored_name(tmp_path):
+    """A resumed recovery previews the Name it applies, not this run's --name."""
+    store, _ = converted(tmp_path)
+    kwargs = recovery_arguments()
+
+    def interrupted(_preview):
+        """Stop after the request is stored, before it installs."""
+        raise RuntimeError("synthetic operator interruption")
+
+    with pytest.raises(RuntimeError, match="interruption"):
+        recover_admin(store, **kwargs, name="Doe, Jane", before_apply=interrupted)
+    previews = []
+    result = recover_admin(store, **kwargs, before_apply=previews.append)
+    assert result.state == "applied"
+    assert previews[0]["name"] == "Doe, Jane"
+    assert users(store)["replacement@example.org"] == ("Doe, Jane", "administrator")
+
+
 def test_recovery_raises_an_existing_user(tmp_path):
     """A Staff user becomes an Administrator and keeps their Name."""
     store, _ = converted(tmp_path)

@@ -839,7 +839,10 @@ email; unattended invocation must supply equivalent explicit confirmations,
 never default to yes. The permitted patch only raises the
 [user](../admin-portal/spec.md#portal-user-management) with that address to
 Administrator, or creates that user as an Administrator when absent (its Name
-is `--name` when given, otherwise the email's local part). Preserve every
+is `--name` when given, otherwise the email's local part). An existing user
+keeps its Name, so a different `--name` is refused, by the preview as by
+recovery itself; a resumed operation previews the Name its stored request
+gives. Preserve every
 other user, all existing Administrators, and all unrelated configuration.
 Account rebinding, removal, or general configuration edits are not accepted;
 removal of an obsolete Admin is a later normal authenticated action.

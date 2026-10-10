@@ -316,6 +316,18 @@ def test_recovery_preview_shows_the_users_form():
     assert operator_recovery.recovery_preview(base, uuid4(), "admin@example.org")[
         "already_granted"
     ]
+    # The preview refuses a different Name for an existing user, exactly as
+    # recovery itself does; the user's own Name is accepted.
+    with pytest.raises(ConfigError, match="keeps an existing user's Name"):
+        operator_recovery.recovery_preview(
+            base, uuid4(), "staff@example.org", name="Other, Name"
+        )
+    assert (
+        operator_recovery.recovery_preview(
+            base, uuid4(), "staff@example.org", name="Staff, Sam"
+        )["name"]
+        == "Staff, Sam"
+    )
 
 
 def test_sign_in_rules_recovery_has_no_name():
