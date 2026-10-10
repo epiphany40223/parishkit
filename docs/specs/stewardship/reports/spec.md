@@ -928,9 +928,9 @@ line and a city, plus a state or postal code), or neither. A one-click
 "Can't be reached by email or mail" preset opens the page filtered to
 neither. It and the mailing-columns preset (`?mailing=yes`) are the only
 values accepted in a link, since neither carries a private value. The page
-with mailing columns (unless it already lists them) and the Admin home page
-show how many active Families across the campaign no campaign mail can reach,
-linking to that list.
+with mailing columns (which never lists those Families) and the Admin home
+page show how many active Families across the campaign no campaign mail can
+reach, linking to that list.
 
 The old postal-outreach page and export addresses
 (`reports/<campaign>/postal/` and its `export`) are retired with no redirect
@@ -1012,8 +1012,17 @@ been permanently refused (or whose refusal was resolved), the rule the
 invitation sender uses. The directory already lists only active parishioner
 Families, so with mailing columns on, Campaign mail can reach is always "By
 postal mail only" (no deliverable email and a usable mailing address),
-whatever reach was chosen; the page shows that choice, and the audit and the
-export record it. The other filters still narrow the list. Families with
+whatever reach was chosen. While the box is ticked, the Campaign mail can
+reach select shows "By postal mail only", disabled, with a short reason in
+space the page always keeps for it, so nothing moves (the page script's
+`data-locked-when`, re-applied on `pageshow`; #563, #736). The rule is
+applied when the rows are selected, never to the page's own filters: the
+page still sends and keeps the reach the reader chose, which comes back when
+the box is unticked (Any by default), and the server applies the rule to
+every request whatever the page sends. The audit records the reach applied,
+and an export's captured filters hold reach `mail`; its status page returns
+to the directory with mailing columns on and no reach preset. The other
+filters still narrow the list. Families with
 neither a deliverable email nor a usable mailing address cannot be mailed
 and stay on the "Can't be reached by email or mail" list. Families without
 deliverable email are the complement of the deliverable-email statistics
