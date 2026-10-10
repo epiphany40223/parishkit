@@ -1,0 +1,5 @@
+{% load i18n %}{% comment %}
+  An ordered-option list's review (Share options, Member talents; #750),
+  drawn inside settings-review.html: the order and labels before and after.
+{% endcomment %}<section><h3>{% translate "Current order and labels" %}</h3><ol>{% for option in review.before %}<li>{{ option.label }}{% if option.free_text %} — {% translate "free-text response" %}{% endif %}</li>{% empty %}<li>{% translate "None" %}</li>{% endfor %}</ol></section>
+<section><h3>{% translate "Proposed order and labels" %}</h3><ol>{% for option in review.after %}<li>{{ option.label }}{% if option.free_text %} — {% translate "free-text response" %}{% endif %}</li>{% empty %}<li>{% translate "None" %}</li>{% endfor %}</ol></section>

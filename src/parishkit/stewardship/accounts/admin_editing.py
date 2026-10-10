@@ -53,7 +53,9 @@ from .sessions import FreshAuthenticationRequired, authenticated_admin, require_
 # names are the pages' URL names; Change status's in-place follow-up may lead
 # only to one of them.
 REVIEW_REGION = "settings-review"
-IN_PLACE_PAGES = frozenset({"parish_settings", "campaign_settings"})
+IN_PLACE_PAGES = frozenset(
+    {"parish_settings", "campaign_settings", "share_settings", "talent_settings"}
+)
 
 
 def principal(
@@ -256,10 +258,19 @@ def reviewed_base(parameters, salt):
 def summary_errors(form):
     """A refused form's errors for the in-place review region's summary.
 
-    The form itself is not replaced in place (its scripts and the reader's
-    typing stay), so the summary names each field and links to it. A hidden
-    field's error (a stale version) has nothing to link to.
+    The form itself may not be replaced in place (its scripts and the
+    reader's typing stay), so the summary names each field and links to it.
+    A hidden field's error (a stale version) has nothing to link to. A
+    formset's errors are its own, then each row's.
     """
+    if hasattr(form, "forms"):
+        # A formset: its own errors, then each row's.
+        errors = [
+            {"field_id": None, "message": message} for message in form.non_form_errors()
+        ]
+        for row in form.forms:
+            errors.extend(summary_errors(row))
+        return errors
     errors = []
     for name, messages in form.errors.items():
         field = None if name == NON_FIELD_ERRORS else form[name]
@@ -277,16 +288,23 @@ def summary_errors(form):
     return errors
 
 
-def review_region(page, form=None, *, review=None, receipt=None, refusal=None):
+def review_region(
+    page, form=None, *, review=None, receipt=None, refusal=None, message=None
+):
     """Template context for an in-place settings page's review region (#532).
 
     ``review`` is the reviewed change (its ``changes``, ``notes`` and signed
     ``preview``); ``receipt`` the status of a change already confirmed, whose
     live region polls Change status's passive read and, once the change is
     applied, refreshes ``page`` in place; ``refusal`` a ``Refusal`` shown as
-    the region's error summary. Otherwise a bound form's errors are.
+    the region's error summary, and ``message`` a plain refusal sentence.
+    Otherwise a bound form's errors are. A ``review`` naming a ``template``
+    draws its own content (an ordered list's before and after) in place of
+    the changed settings.
     """
-    if refusal is not None:
+    if message is not None:
+        errors = [{"field_id": None, "message": message}]
+    elif refusal is not None:
         errors = [
             {
                 "field_id": None,

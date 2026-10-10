@@ -1815,14 +1815,25 @@ def component_origin():
                 ),
             },
         ),
+        # Share options with its review shown in place (#750).
         (
             "/share-preview",
-            "share-preview",
+            "share-settings",
             {
-                "campaign": {"pk": uuid4()},
-                "preview": "synthetic-signed-intent",
-                "before": [],
-                "after": default_share_options(),
+                "campaign": {
+                    "pk": uuid4(),
+                    "active_configuration": {"name": "Sample campaign"},
+                },
+                "base_digest": "a" * 64,
+                "formset": ShareOptions(
+                    prefix="options", previous=default_share_options()
+                ),
+                "review": {
+                    "template": "stewardship/option-review.html",
+                    "preview": "synthetic-signed-intent",
+                    "before": [],
+                    "after": default_share_options(),
+                },
             },
         ),
         (

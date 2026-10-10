@@ -746,6 +746,13 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
 :where(.admin-body) h1 { font-size: clamp(1.5rem, 2.5vw, 1.9rem); margin-block: 0 .5rem; }
 :where(.admin-body) h2 { margin-block: 1.25rem .5rem; }
 :where(.admin-body) .panel { padding: clamp(.85rem, 2vw, 1.25rem); margin-block: .85rem; }
+/* A region that holds its height (ui-v1.js heldHeight, #736) is a flow
+   root, so its children's margins stay inside it from page load: a margin
+   escaping through it would let the first hold pull the page up. Its first
+   child's top margin is dropped, so the space above the region matches the
+   collapsed spacing it had before it became a flow root. */
+[data-keep-height] { display: flow-root; }
+[data-keep-height] > :first-child { margin-top: 0; }
 :where(.admin-body main) details { margin-block: .75rem; }
 :where(.admin-body main) details[open] { padding-bottom: .75rem; }
 :where(.admin-body) .table-scroll { margin-block: .75rem; }

@@ -20,7 +20,7 @@
 {% include 'stewardship/campaign-fields.html' %}
 {% comment %}The complete hint sits after the button so its line never moves a control above it (#563).{% endcomment %}{% include 'stewardship/components/review-changes-button.html' with describedby="settings-complete-hint" %}<p class="help" id="settings-complete-hint" data-complete-hint hidden></p>
 </form>
-<div id="settings-review" data-in-place-region>{% include 'stewardship/settings-review.html' %}</div>
+<div id="settings-review" data-in-place-region data-keep-height>{% include 'stewardship/settings-review.html' %}</div>
 {% else %}
 <p role="status">{% translate "These settings can't be changed now. They can change only on the current Testing-mode draft, before it has ever been live, and not while background work or going live is under way. Background work usually finishes in minutes; going live holds them until it completes or is cancelled." %}</p>
 {% if ministries_live %}<section class="panel" id="ministry-selections"><h2>{% translate "Ministry selections" %}</h2>

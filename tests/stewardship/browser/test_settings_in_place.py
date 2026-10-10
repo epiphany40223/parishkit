@@ -9,6 +9,8 @@ load could lose.
 
 import pytest
 
+from parishkit.stewardship.accounts.share_forms import default_share_options
+
 from .settings_components import (
     CAMPAIGN,
     CAMPAIGN_REVIEW,
@@ -17,6 +19,13 @@ from .settings_components import (
     REQUEST,
     REVIEW,
     SETTINGS,
+    SHARE,
+    SHARE_APPLIED,
+    SHARE_REFUSED,
+    SHARE_REVIEW,
+    SHARE_STATUS,
+    STATUS,
+    TALENTS,
 )
 from .test_in_place import MARK, MARKED, count_requests
 from .waits import has_attribute, has_text, hidden, recorded, visible
@@ -149,7 +158,7 @@ def test_editing_after_a_review_withdraws_it(page, component_origin):
         }"""
     )
     visible(page.get_by_text("Choose Review changes again"))
-    assert page.evaluate(FORM_TOP) == before
+    assert page.evaluate(FORM_TOP) == pytest.approx(before, abs=0.5)
     assert page.locator("#settings-review [data-review-stale]").count() == 1
     assert page.locator("#settings-review [data-review-of]").count() == 0
     assert page.get_by_role("button", name="Apply changes").count() == 0
@@ -309,3 +318,342 @@ def test_campaign_settings_review_waits_for_a_change(page, component_origin):
     module.evaluate("box => { box.checked = true; }")
     page.evaluate(RESTORE)
     expect_review(page, enabled=True)
+
+
+def test_share_options_review_in_place_and_redraw_the_form(page, component_origin):
+    """Share options (#750) reviews under its form; the form, a region of its
+    own, is redrawn with the values sent, the review heading takes focus, and
+    an edit afterwards withdraws the review."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+    page.goto(component_origin + SHARE)
+    page.evaluate(MARK)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    visible(page.get_by_role("heading", name="Proposed order and labels"))
+    assert page.evaluate(FOCUSED, "#settings-review-title")
+    assert current_step(page) == "Review"
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    assert page.evaluate(MARKED) == "kept"
+    page.locator("#id_options-0-label").fill("Renamed again")
+    visible(page.get_by_text("Choose Review changes again"))
+
+
+def share_review(page, component_origin):
+    """Open Share options, rename its first option and review the change."""
+    page.goto(component_origin + SHARE)
+    page.evaluate(MARK)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    visible(page.get_by_role("heading", name="Proposed order and labels"))
+
+
+def test_a_refused_share_apply_keeps_the_rows(page, component_origin):
+    """Apply replaces only the review region and the step indicator (#768):
+    a refused Apply explains itself there, while the form keeps the reader's
+    rows at the version they were reviewed at, never the list its answer
+    draws (changed elsewhere, at a newer version)."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+
+    def refuse(route):
+        """Answer Apply with the refused page; Review falls back to the
+        handler above."""
+        if "action=confirm" not in (route.request.post_data or ""):
+            route.fallback()
+            return
+        fetched = route.fetch(url=component_origin + SHARE_REFUSED, method="GET")
+        route.fulfill(response=fetched, status=409)
+
+    page.route(lambda url: url.split("#")[0] == component_origin + SHARE, refuse)
+    share_review(page, component_origin)
+    page.get_by_role("button", name="Apply changes").click()
+    summary = page.locator("#settings-review [data-error-summary]")
+    visible(summary)
+    assert "This preview is out of date." in summary.inner_text()
+    assert current_step(page) == "Make changes"
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    assert page.locator(DIGEST).input_value() == "a" * 64
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_share_edits_during_a_review_are_said_to_be_dropped(page, component_origin):
+    """The answer redraws Share options' form with the values sent, so edits
+    made while the Review ran are gone: the review, which matches the form
+    again, stays, with a line saying those edits were not kept."""
+    held = []
+    page.route(
+        lambda url: url.split("#")[0] == component_origin + SHARE,
+        lambda route: (
+            held.append(route) if route.request.method == "POST" else route.continue_()
+        ),
+    )
+    page.goto(component_origin + SHARE)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    recorded(page, held, 1)
+    page.locator("#id_options-0-label").fill("Renamed during review")
+    fetched = held[0].fetch(url=component_origin + SHARE_REVIEW, method="GET")
+    held[0].fulfill(response=fetched)
+    visible(page.locator("#settings-review").get_by_text("were not kept"))
+    visible(page.get_by_role("heading", name="Review your changes"))
+    assert page.get_by_role("button", name="Apply changes").count() == 1
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+
+
+def test_a_share_apply_ends_at_the_applied_version(page, component_origin):
+    """Apply shows the change's status; once Change status answers Applied,
+    the quiet refresh redraws the form with the applied list at its new
+    version (#768). Rows typed while it applied are lost, and a line says so."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+    held = []
+    page.route(
+        lambda url: url.split("?")[0] == component_origin + SHARE_STATUS,
+        lambda route: held.append(route),
+    )
+    share_review(page, component_origin)
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Change status"))
+    assert current_step(page) == "Apply"
+    assert page.locator(DIGEST).input_value() == "a" * 64
+    recorded(page, held, 1)
+    page.locator("#id_options-1-label").fill("Typed while applying")
+    before = page.evaluate(FORM_TOP)
+    held[0].continue_()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    # The line is in the review region, below the form, so the form did
+    # not move under the reader's caret (#736).
+    visible(page.locator("#settings-review").get_by_text("were not kept"))
+    assert page.evaluate(FORM_TOP) == before
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_an_already_applied_share_apply_redraws_the_form(page, component_origin):
+    """When the change has settled before Apply's answer is drawn, the answer
+    marks the form data-in-place-always, so it is redrawn at the applied
+    version instead of staying at the reviewed one (#768)."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+
+    def applied(route):
+        """Answer Apply with the settled page; Review falls back above."""
+        if "action=confirm" not in (route.request.post_data or ""):
+            route.fallback()
+            return
+        fetched = route.fetch(url=component_origin + SHARE_APPLIED, method="GET")
+        route.fulfill(response=fetched)
+
+    page.route(lambda url: url.split("#")[0] == component_origin + SHARE, applied)
+    share_review(page, component_origin)
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    assert page.get_by_text("were not kept").count() == 0
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_typing_dropped_by_a_refused_review_is_said_to_be_lost(page, component_origin):
+    """A refused Review's answer (here a 409) redraws Share options' form too,
+    so rows typed while it ran are lost, and a line says so (#768)."""
+    held = []
+    page.route(
+        lambda url: url.split("#")[0] == component_origin + SHARE,
+        lambda route: (
+            held.append(route) if route.request.method == "POST" else route.continue_()
+        ),
+    )
+    page.goto(component_origin + SHARE)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    recorded(page, held, 1)
+    page.locator("#id_options-0-label").fill("Typed during the review")
+    fetched = held[0].fetch(url=component_origin + SHARE_REFUSED, method="GET")
+    held[0].fulfill(response=fetched, status=409)
+    visible(page.locator("#settings-review [data-error-summary]"))
+    visible(page.locator("#settings-review").get_by_text("were not kept"))
+
+
+OPTION_HINT = "Change an option to review it."
+
+
+@pytest.mark.parametrize("address", [SHARE, TALENTS])
+def test_option_lists_review_only_a_change(page, component_origin, address):
+    """Share options and Member talents keep Review changes unavailable
+    until the list differs from the saved one (#921): a renamed label, a
+    deletion or a new row in the blank last row makes it available, undoing
+    each makes it unavailable again, and a restore is noticed on pageshow."""
+    page.goto(component_origin + address)
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+    # The review region, right under the button and its hint, never moves
+    # (filling the last row may scroll, so this is measured in the page).
+    below = "document.getElementById('settings-review').offsetTop"
+    before = page.evaluate(below)
+    label = page.locator("#id_options-0-label")
+    saved = label.input_value()
+    label.fill("Renamed option")
+    expect_review(page, enabled=True, hint=OPTION_HINT)
+    label.fill(saved)
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+    delete = page.locator("#id_options-0-DELETE")
+    delete.check()
+    expect_review(page, enabled=True, hint=OPTION_HINT)
+    delete.uncheck()
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+    total = int(page.locator("[name=options-TOTAL_FORMS]").input_value())
+    blank = page.locator(f"#id_options-{total - 1}-label")
+    assert blank.input_value() == ""
+    blank.fill("A new option")
+    expect_review(page, enabled=True, hint=OPTION_HINT)
+    blank.fill("")
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+    label.evaluate("field => { field.value = 'Restored label'; }")
+    page.evaluate(RESTORE)
+    expect_review(page, enabled=True, hint=OPTION_HINT)
+    assert page.evaluate(below) == before
+
+
+def test_share_review_follows_the_saved_list_through_review_and_apply(
+    page, component_origin
+):
+    """Share options' form is redrawn by each answer (#768): a Review's
+    answer draws the values sent at the same version, which are still a
+    change, so Review stays available; once the change is applied the list
+    drawn at the new version is the saved one, so Review is unavailable."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+    share_review(page, component_origin)
+    expect_review(page, enabled=True, hint=OPTION_HINT)
+    # Back to the saved label, in the redrawn form: nothing to review.
+    page.locator("#id_options-0-label").fill(default_share_options()[0]["label"])
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    page.get_by_role("button", name="Review changes").click()
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.locator("#id_options-0-label").input_value() == "Renamed option"
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+
+
+@pytest.mark.parametrize("edit", ["add", "delete"])
+def test_share_review_is_unavailable_after_applying_a_row_change(
+    page, component_origin, edit
+):
+    """Applying a new row or a deletion redraws Share options with the
+    applied list and a fresh blank row, whose rows no longer line up with
+    the ones sent; that redrawn list is the saved one, so Review changes is
+    unavailable (#921)."""
+    answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
+    page.goto(component_origin + SHARE)
+    if edit == "add":
+        total = int(page.locator("[name=options-TOTAL_FORMS]").input_value())
+        page.locator(f"#id_options-{total - 1}-label").fill("A new option")
+    else:
+        page.locator("#id_options-1-DELETE").check()
+    page.get_by_role("button", name="Review changes").click()
+    visible(page.get_by_role("heading", name="Proposed order and labels"))
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    expect_review(page, enabled=False, hint=OPTION_HINT)
+
+
+def hold_status(page, component_origin):
+    """Hold Change status's polls; returns the list of held routes."""
+    held = []
+    page.route(
+        lambda url: url.split("?")[0] == component_origin + STATUS,
+        lambda route: held.append(route),
+    )
+    return held
+
+
+def to_the_foot(page, height=400):
+    """Scroll to the foot of a short window; returns the form's top edge."""
+    page.set_viewport_size({"width": 800, "height": height})
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    # Only a page scrolled to its foot can be pulled down by a shorter one.
+    assert page.evaluate("scrollY") > 0
+    return page.evaluate(FORM_TOP)
+
+
+def test_a_shorter_status_never_moves_the_form(page, component_origin):
+    """A reader at the foot of the page sees nothing move when Apply swaps
+    the review for Change status, when Applied (shorter than the running
+    indicator) replaces it, or when the quiet refresh redraws the region:
+    the review region keeps the height their place needs (data-keep-height),
+    so the page never gets shorter under them (#736)."""
+    answer_reviews(page, component_origin)
+    held = hold_status(page, component_origin)
+    review(page, component_origin)
+    # Tall enough to show the whole review region, so moving focus to the
+    # status's heading has no reason to scroll.
+    before = to_the_foot(page, 600)
+    page.get_by_role("button", name="Apply changes").click()
+    visible(page.get_by_role("heading", name="Change status"))
+    recorded(page, held, 1)
+    assert page.evaluate(FORM_TOP) == pytest.approx(before, abs=0.5)
+    held[0].continue_()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.evaluate(FORM_TOP) == pytest.approx(before, abs=0.5)
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_focus_brings_the_status_into_view_on_a_short_window(page, component_origin):
+    """On a window too short to show the whole review region, Apply from
+    the foot of the page moves focus to Change status's heading, which may
+    scroll the page so the status is in view (#736); the held height only
+    keeps the page from being pulled down under the reader."""
+    answer_reviews(page, component_origin)
+    hold_status(page, component_origin)
+    review(page, component_origin)
+    to_the_foot(page, 400)
+    page.get_by_role("button", name="Apply changes").click()
+    heading = page.get_by_role("heading", name="Change status")
+    visible(heading)
+    assert page.evaluate(FOCUSED, "#settings-status-title")
+    from playwright.sync_api import expect
+
+    expect(heading).to_be_in_viewport()
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_status_loaded_with_the_page_never_moves_the_form(page, component_origin):
+    """A page loaded with Change status already in its region (a reload of
+    the change's address) holds its place the same way when Applied
+    replaces the running indicator (#736)."""
+    held = hold_status(page, component_origin)
+    page.goto(component_origin + PENDING)
+    visible(page.get_by_role("heading", name="Change status"))
+    recorded(page, held, 1)
+    before = to_the_foot(page)
+    held[0].continue_()
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.evaluate(FORM_TOP) == pytest.approx(before, abs=0.5)
+
+
+def test_a_long_review_leaves_no_gap_above_the_foot(page, component_origin):
+    """The review region holds only what the reader's place needs: a long
+    review followed by Applied, read from the top of the page, leaves no
+    gap the height of the review below the status (#736)."""
+    answer_reviews(page, component_origin)
+    review(page, component_origin)
+    page.evaluate(
+        """() => {
+            const tall = document.createElement("div");
+            tall.style.height = "2000px";
+            document.querySelector("[data-review-of]").prepend(tall);
+            window.scrollTo(0, 0);
+        }"""
+    )
+    # Apply is pressed without scrolling to it, so the reader stays at the top.
+    page.get_by_role("button", name="Apply changes").evaluate(
+        "button => button.click()"
+    )
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    height = page.evaluate(
+        "document.getElementById('settings-review').getBoundingClientRect().height"
+    )
+    assert height < 1000

@@ -6,22 +6,31 @@
   ui-v1.js in-place mechanism), while the form keeps their typing and only
   takes its hidden version. The region holds, at most one at a time:
   - a refusal's error summary (review_errors), linked to the form's fields;
-  - the review (review): each change with its current and proposed value,
-    the change's notes, and Apply, which posts the signed preview. Editing
-    the form again withdraws it in place (data-review-of; ui-v1.js greys it
-    out, removes Apply and puts its note in the data-review-note line), so
-    Apply can only ever apply what is shown;
+  - the review (review): each change with its current and proposed value
+    (or, when the review names its own template, what that draws: an
+    ordered list's before and after), the change's notes, and Apply, which
+    posts the signed preview. Apply is data-in-place-only: its answer
+    replaces only this region and the step indicator, so a form that is a
+    region of its own (Share options, Member talents) keeps the reader's
+    rows and version, unless the answer marks it data-in-place-always (the
+    change has already been applied). A data-table-sync form (Parish and
+    Campaign settings) still takes the answer's hidden version, which the
+    page draws at the version the change was reviewed at until it is
+    applied (admin_editing.receipt_base). Editing the form again withdraws
+    it in place (data-review-of; ui-v1.js greys it out, removes Apply and
+    puts its note in the data-review-note line), so Apply can only ever
+    apply what is shown;
   - the status of the change just applied (receipt), polled live from
     Change status (status_url) until it settles.
 {% endcomment %}{% if review_errors %}{% include 'stewardship/components/errors.html' with errors=review_errors %}{% endif %}
 {% if review %}<section class="panel" data-review-of="settings-form" aria-labelledby="settings-review-title">
 <h2 id="settings-review-title" tabindex="-1" data-in-place-focus>{% translate "Review your changes" %}</h2>
 {% for note in review.notes %}<p class="notice" role="note">{{ note }}</p>{% endfor %}
-{% for change in review.changes %}<section><h3>{{ change.label }}</h3>
+{% if review.template %}{% include review.template %}{% else %}{% for change in review.changes %}<section><h3>{{ change.label }}</h3>
 <p>{% translate "Current:" %} {{ change.before|default_if_none:'—'|linebreaksbr }}</p>
-<p>{% translate "Proposed:" %} {{ change.after|default_if_none:'—'|linebreaksbr }}</p></section>{% endfor %}
+<p>{% translate "Proposed:" %} {{ change.after|default_if_none:'—'|linebreaksbr }}</p></section>{% endfor %}{% endif %}
 <p data-review-note>{% translate "Nothing is saved until you choose Apply changes." %}</p>
-<form method="post" action="#settings-review" data-in-place data-in-place-message="{% translate 'Change sent.' %}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ review.preview }}">
+<form method="post" action="#settings-review" data-in-place data-in-place-only="flow-steps" data-in-place-message="{% translate 'Change sent.' %}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ review.preview }}">
 {% button type="submit" %}{% translate "Apply changes" %}{% endbutton %}</form>
 </section>{% elif receipt %}<section class="panel" aria-labelledby="settings-status-title">
 <h2 id="settings-status-title" tabindex="-1" data-in-place-focus>{% translate "Change status" %}</h2>
