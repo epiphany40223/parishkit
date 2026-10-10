@@ -80,6 +80,8 @@ def test_worklist_reads_proposals_with_their_status(response_service):
     # Named as in every Admin table: surname, then heads (#932).
     assert ", " in row["family_name"]
     assert row["family_name"] == directory_name(row["family_duid"])
+    # Member 3's change carries its Member DUID; the Family's has none (#932).
+    assert row["member_duid"] == 3 and home["member_duid"] is None
     assert len(worklist(harness, status="to_review")["rows"]) == 1
     by_hand = worklist(harness, status="all", route="by_hand")["rows"]
     assert [item["label"] for item in by_hand] == ["Home address"]
@@ -110,6 +112,12 @@ def test_native_page_and_downloads(response_service, google, settings):
             assert search(browser, route, invalid)[0].status_code == 400
         response, body = search(browser, route, {"sort": "-submitted"})
         assert response.status_code == 200 and b'aria-sort="descending"' in body
+        # Member DUID has its own column beside Who, and sorts in place (#932).
+        response, body = search(
+            browser, route, {"status": "all", "sort": "member_duid"}
+        )
+        assert response.status_code == 200 and b'aria-sort="ascending"' in body
+        assert b'<td class="numeric">3</td>' in body
         export = route + "exports/"
         response, body = search(
             browser, export, {"format": "csv", "timezone": "UTC", "status": "all"}

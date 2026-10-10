@@ -40,7 +40,8 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
     page.keyboard.press("Tab")
     assert page.locator(":focus").get_attribute("name") == "activity"
     visible(page.get_by_role("button", name="Next").first)
-    heading = page.get_by_role("columnheader", name="Member")
+    # By its sort column: "Member DUID" would also match the name "Member".
+    heading = page.locator("th[data-sort-column='member']")
     assert heading.get_attribute("aria-sort") == "ascending"
 
 
@@ -52,7 +53,7 @@ def test_ministry_sort_heading_posts_privately(page, component_origin):
         lambda route: route.fulfill(body="Sorted"),
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("columnheader", name="Member").get_by_role("button").click()
+        page.locator("th[data-sort-column='member'] button").click()
     assert "sort=name_desc" in sent.value.post_data
     assert "search=Example" in sent.value.post_data
     assert "ministry=9" in sent.value.post_data and "page=" not in (

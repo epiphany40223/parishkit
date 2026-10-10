@@ -208,12 +208,18 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         )
         assert b"/ministries/9/" not in body
         assert b'name="ministry" value="9"' in body
+        # The summary's Ministry DUID has its own column (#932).
+        assert b'<td class="numeric">9</td>' in body
+        assert b"\xe2\x80\x94 DUID 9</td>" not in body
         response, body = search(browser, route, {"ministry": "9"})
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
         assert b"/ministries/9/" not in body
         assert b'name="ministry" value="9"' in body
         assert b"Not published" in body and b"valid@example.org" not in body
         assert b"+1 (202) 555-0123" in body and b"1960-01-01" not in body
+        # Submitted, Member, then Member DUID in its own column (#932).
+        assert b'data-sort-column="submitted"' in body
+        assert b'"numeric">Member DUID</th>' in body and b"DUID 3" not in body
         assert (
             search(browser, reverse("admin:ministry_leavers"), {"ministry": "4"})[
                 0

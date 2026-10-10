@@ -1087,17 +1087,31 @@ rather than shown an empty report. The Admin Home's My Ministries panel and the
 follow-up menu count read through the same function and cross-check, so neither
 shows more than the queue would.
 
-The sorted summary has Ministry name/DUID, join-request count, leave-request
-count, unresolved count, and follow-up progress. Counts use latest live request
-state while retaining links to superseded/history views.
+The sorted summary has the Ministry name (the row header, with its
+activity and campaign notes), Ministry DUID in its own column, join-request
+count, leave-request count, unresolved count, and follow-up progress. Counts
+use latest live request state while retaining links to superseded/history
+views.
 
 Each Ministry links to:
 
-- prospective joiners: Member name/DUID, gender, age as of report date,
-  publishable email/phones for leaders, operational contact for Admin/Staff,
-  Family mailing address, request/submission date, status/outcome; and
-- requested leavers: Member name/DUID, current role where known, request date,
-  status/outcome.
+- prospective joiners: Member name, Member DUID, status/outcome, then
+  gender, age as of report date, publishable email/phones for leaders,
+  operational contact for Admin/Staff and Family mailing address, and last
+  the request/submission date; and
+- requested leavers: Member name, Member DUID, status/outcome, current role
+  where known, and last the request date.
+
+Both lists and the summary follow the Admin table
+[column order](../admin-portal/spec.md#table-column-order), leading with the
+Member or the Ministry: each DUID has its
+own column next to its name, and a Member added on the form, who has no
+ParishSoft DUID yet, shows "New Member" there, followed by the note that the
+Member was added on the form and the proposed Member's reference under
+technical details; the row header is just the name. Neither DUID column
+sorts: the installed selection orders the rows and has no DUID order. Exports keep
+their own columns until the export slice of
+[#932](https://github.com/epiphany40223/parishkit/issues/932).
 
 Each list opens by a POST from its Ministry's form on the summary. A GET of
 either list's address (typed, bookmarked, refreshed or reached with Back)
@@ -1188,6 +1202,10 @@ then:
 
 - **Who**: the Member, "New Member" with the proposed Member's name, or the
   Family for its household fields (home and mailing address, email opt-out).
+- **Member DUID**, in its own column beside Who and sortable: the Member's
+  ParishSoft DUID, "New Member" for a Member added on the form, and blank
+  for a household change. Rows without a DUID follow the Members on the
+  first click.
 - **What changed**: the field's plain label (Mobile phone, Home address,
   Moved to another household, Deceased, New Member, and so on).
 - **ParishSoft now**, **Family's answer**, and **Edited value** (only when an
@@ -1323,6 +1341,13 @@ with the columns Family, Family DUID and Latest response, each sortable.
 Both tables name each Family as the
 [active parishioner family directory](#active-parishioner-family-directory)
 does (surname, then heads), on the page and in the downloads.
+The Members table follows the same
+[column order](../admin-portal/spec.md#table-column-order): Member (the row
+header), Family, Family DUID, Talents (when collected), Cannot participate
+and Latest response, each sortable. It has no Member DUID column yet: the
+installed selection does not return the Member's key, so adding one needs a
+forward migration ([#932](https://github.com/epiphany40223/parishkit/issues/932)).
+The downloads keep their own column order until #932's export slice.
 Testing responses are excluded. Filters are a name or Family DUID search and
 one choice of everything, cannot participate, cannot attend, or a single
 talent; a summary counts each. The filtered result downloads immediately as CSV

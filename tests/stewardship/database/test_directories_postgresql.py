@@ -112,7 +112,7 @@ def test_native_directory_code_filters_contacts_and_response(
         for text in (
             b"Family DUID",
             b"Campaign email deliverable",
-            b"<td>1</td>",
+            b'<td class="numeric">1</td>',
             b"<td>Yes</td>",
         ):
             assert text in body

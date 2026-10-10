@@ -134,35 +134,36 @@ def test_campaign_without_talents_reports_only_limitations():
     assert rows[0][3] == "Talents"
 
 
-def test_report_page_says_plainly_that_no_talents_are_collected():
-    """The page explains the empty list instead of showing talent columns."""
+def page(configuration, raw, paging=None):
+    """Render the report page from a shaped result, as the view does."""
     from django.template.loader import render_to_string
 
     from parishkit.stewardship.reports.talent_views import tables
 
-    def page(configuration, raw):
-        """Render the report page from a shaped result, as the view does."""
-        shaped = shape_result(raw, configuration=configuration)
-        query = TalentQuery()
-        members, families = tables(shaped, query, {}, "/report")
-        return render_to_string(
-            "stewardship/talents-report.html",
-            shaped
-            | {
-                "metadata": {"name": "Renewal"},
-                "members_table": members,
-                "families_table": families,
-                "campaign_id": "00000000-0000-4000-8000-000000000000",
-                "query": query,
-                "query_fields": query.form_values(),
-                "export_timezones": ["UTC"],
-            },
-        )
+    shaped = shape_result(raw, configuration=configuration)
+    query = TalentQuery()
+    members, families = tables(shaped, query, paging or {}, "/report")
+    return render_to_string(
+        "stewardship/talents-report.html",
+        shaped
+        | {
+            "metadata": {"name": "Renewal"},
+            "members_table": members,
+            "families_table": families,
+            "campaign_id": "00000000-0000-4000-8000-000000000000",
+            "query": query,
+            "query_fields": query.form_values(),
+            "export_timezones": ["UTC"],
+        },
+    )
 
+
+def test_report_page_says_plainly_that_no_talents_are_collected():
+    """The page explains the empty list instead of showing talent columns."""
     html = page({"modules": ["ministry"], "talent_options": []}, result({}, {}))
     assert "This campaign does not collect talents" in html
     assert "Talents</" not in html and "Members with talents" not in html
-    assert "Painter" not in html and 'colspan="4"' in html
+    assert "Painter" not in html and 'colspan="5"' in html
     html = page({"modules": ["ministry"]}, result({PAINTER: ""}, {PAINTER: 1}))
     assert "does not collect talents" not in html
     assert "Members with talents or limitations" in html and "Painter" in html
@@ -181,3 +182,23 @@ def test_a_talent_filter_no_longer_offered_reads_as_everything():
         assert query.offered(emptied) is query
     stale = TalentQuery(search="Alex", talent=RETIRED).offered(defaults)
     assert stale.form_values() == {"search": "Alex", "talent": "any"}
+
+
+def test_members_table_leads_with_the_member_then_family_and_family_duid():
+    """Member, Family, Family DUID, the rest, then Latest response (#932);
+    the Family DUID has its own cell and sorts in place."""
+    raw = result({PAINTER: ""}, {PAINTER: 2})
+    raw["members"].append(
+        raw["members"][0]
+        | {"family_name": "Other", "family_duid": 7, "member_name": "B"}
+    )
+    html = page({"modules": ["ministry"]}, raw, {"members_sort": "duid"})
+    start = html.index("<h2>Members</h2>")
+    members = html[start : html.index("<h2>Families that cannot attend")]
+    columns = ["member", "family", "duid", "talents", "cannot_serve", "latest"]
+    positions = [members.index(f'data-sort-column="{key}"') for key in columns]
+    assert positions == sorted(positions)
+    assert '<td>Example</td>\n<td class="numeric">10</td>' in members
+    assert "DUID 10" not in members
+    # Sorted by Family DUID: 7 comes before 10.
+    assert members.index(">7</td>") < members.index(">10</td>")

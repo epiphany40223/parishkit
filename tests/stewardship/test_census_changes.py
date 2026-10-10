@@ -225,3 +225,81 @@ def test_family_duid_column_sorts_both_ways():
     assert [item["family_duid"] for item in up] == [13, 7001, 7002]
     down = SORTING.sort_rows(shaped, "-duid")
     assert [item["family_duid"] for item in down] == [7002, 7001, 13]
+
+
+def test_member_duid_comes_from_a_member_rows_key():
+    """A Member change shows its DUID; New Members and the Family have none."""
+    assert shape(row())["member_duid"] == 41
+    proposed = row(
+        entity_kind="proposed_member",
+        entity_key="p-1",
+        field="new_member",
+        submitted_value={"first_name": "Lee", "last_name": "Sample"},
+        member_name=None,
+    )
+    assert shape(proposed)["member_duid"] is None
+    family = row(entity_kind="family", entity_key="7001", field="home_address")
+    assert shape(family)["member_duid"] is None
+    # A key that is not a plain integer is left blank, never a broken page.
+    assert shape(row(entity_key="x41"))["member_duid"] is None
+
+
+def test_member_duid_column_sorts_with_blank_rows_after_members():
+    """Member DUID sorts in place both ways (#932); rows without one follow
+    the Members on the first click."""
+    shaped = [
+        shape(row(id="a", entity_key="900")),
+        shape(row(id="b", entity_kind="family", entity_key="7001")),
+        shape(row(id="c", entity_key="41")),
+    ]
+    assert SORTING.tokens["member_duid"] == ("member_duid", False)
+    up = SORTING.sort_rows(shaped, "member_duid")
+    assert [item["id"] for item in up] == ["c", "a", "b"]
+    down = SORTING.sort_rows(shaped, "-member_duid")
+    assert [item["id"] for item in down] == ["b", "a", "c"]
+
+
+def test_page_shows_member_duid_beside_who():
+    """Who is followed by its own Member DUID column; a New Member says so."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.web.tables import paginate
+
+    rows = [
+        shape(row()),
+        shape(
+            row(
+                id="2",
+                entity_kind="proposed_member",
+                entity_key="p-1",
+                field="new_member",
+                submitted_value={"first_name": "Lee"},
+            )
+        ),
+    ]
+    table = paginate(rows, {}, sorting=SORTING)
+    html = render_to_string(
+        "stewardship/census-changes.html",
+        {
+            "table": table,
+            "query": CensusQuery(),
+            "query_fields": {},
+            "summary": [],
+            "status_choices": [],
+            "route_choices": [],
+            "kind_choices": [],
+            "export_timezones": ["UTC"],
+        },
+    )
+    headings = [
+        "Family",
+        "Family DUID",
+        "Who",
+        "Member DUID",
+        "What changed",
+        "Submitted",
+    ]
+    positions = [html.index(f">{heading}<") for heading in headings]
+    assert positions == sorted(positions)
+    assert '<td class="numeric">41</td>' in html
+    assert '<td class="numeric">New Member</td>' in html
