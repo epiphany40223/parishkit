@@ -496,3 +496,82 @@ def test_a_pointer_on_a_replaced_message_keeps_its_row_in_place(page, component_
     has_text(message, "")
     has_text(page.locator("#rules-1-messages"), "")
     assert within_half_a_pixel(before, tops(page, "#rules-1"))
+
+
+@pytest.mark.parametrize("focused", [False, True], ids=["unfocused", "focused"])
+def test_a_pointer_above_the_switch_keeps_the_switch_in_place(
+    page, component_origin, focused
+):
+    """Just above the switch (no skips) the pointer points at the editor,
+    whose top never moves: the first block below the pointer, the switch,
+    is kept in place while rule 1's long message clears above it, whether
+    or not a field is focused."""
+    requests, message, field = close_page_with_field_at(page, component_origin, 300)
+    assert page.locator('[data-schedule-rows="skips"] > *').count() == 0
+    switch = page.locator(".schedule-switch")
+    scroll_to(page, switch, 700)
+    box = switch.bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] - 3
+    page.mouse.move(x, y)
+    pointed = "([x, y]) => document.elementFromPoint(x, y)"
+    assert page.evaluate(f"{pointed}.matches('[data-refresh-schedule]')", [x, y])
+    field.fill("23:30")
+    if not focused:
+        page.evaluate("document.activeElement.blur()")
+    before = tops(page, ".schedule-switch")
+    recorded(page, requests, 1)
+    has_text(message, "")
+    assert within_half_a_pixel(before, tops(page, ".schedule-switch"))
+
+
+def test_a_pointer_outside_the_form_keeps_what_it_points_at_in_place(
+    page, component_origin
+):
+    """Over the page heading, outside the form, the heading itself is kept
+    in place (nothing outside the form is redrawn), not the focused field
+    whose row's message grows above it."""
+    requests, message, field = close_page_with_field_at(page, component_origin, 300)
+    field.fill("23:30")
+    recorded(page, requests, 1)
+    has_text(message, "")
+    field.fill("23:50")
+    # Rule 4's field is focused without scrolling it into view, with the
+    # heading at the top of the screen under the pointer.
+    page.evaluate(
+        """() => {
+          document.querySelector('[name="rules-3-at"]').focus({preventScroll: true});
+          window.scrollTo(0, 0);
+        }"""
+    )
+    box = page.locator("h1").bounding_box()
+    x, y = box["x"] + 5, box["y"] + box["height"] / 2
+    page.mouse.move(x, y)
+    assert page.evaluate(
+        "([x, y]) => document.elementFromPoint(x, y).matches('h1')", [x, y]
+    )
+    before = tops(page, "h1")
+    recorded(page, requests, 2)
+    contains(message, "00:00 is only 10 minutes after the 23:50 full refresh")
+    assert message.bounding_box()["height"] > 60
+    assert within_half_a_pixel(before, tops(page, "h1"))
+
+
+def test_a_focused_invalid_field_shows_the_focus_ring_in_forced_colors(
+    page, component_origin
+):
+    """In forced colors the invalid mark is an outline, which must not hide
+    the 3px keyboard focus ring of an invalid field."""
+    page.emulate_media(forced_colors="active")
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    field = page.locator('[name="rules-1-at"]')
+    field.fill("08:10")
+    recorded(page, requests, 1)
+    contains(page.locator("#rules-1-messages"), "At: Use :00, :15, :30 or :45.")
+    page.evaluate("document.activeElement.blur()")
+    assert field.get_attribute("aria-invalid") == "true"
+    assert page.evaluate("matchMedia('(forced-colors: active)').matches")
+    assert field.evaluate("node => getComputedStyle(node).outlineWidth") == "1px"
+    field.focus()
+    assert field.evaluate("node => node.matches(':focus-visible')")
+    assert field.evaluate("node => getComputedStyle(node).outlineWidth") == "3px"
