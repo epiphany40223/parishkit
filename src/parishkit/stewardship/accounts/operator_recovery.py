@@ -174,6 +174,10 @@ def recovery_preview(version, deployment_id, target_email, name=None):
     }
     if users.uses_users(version.document()):
         user = next((rule for rule in rules if rule["email"] == email), None)
+        # The preview refuses exactly what recovery itself refuses
+        # (``_users_patch``), so it never promises a Name apply rejects.
+        if user is not None and name is not None and name != user["name"]:
+            raise ConfigError("Recovery keeps an existing user's Name.")
         return identity | {
             "form": "users",
             "current_admin_rules": sorted(
@@ -251,6 +255,24 @@ def _refused_selection(store):
             ),
         )
     )
+
+
+def _stored_name(request, version, email):
+    """The Name for the preview: the one the stored request gives a new user.
+
+    The preview then shows what the request applies even on a replay, which
+    never uses that run's ``--name``. None when there is no Name to show
+    beyond the configuration's own: a sign-in rule has none, and a user the
+    configuration already holds keeps (and the preview shows) its own Name.
+    """
+    document = version.document()
+    if not users.uses_users(document) or any(
+        record["values"]["email"] == email
+        for record in document["sections"]["login_rules"]
+    ):
+        return None
+    operation = request.patch[0]
+    return operation["values"].get("name") if operation["operation"] == "add" else None
 
 
 def recover_admin(
@@ -367,13 +389,9 @@ def recover_admin(
             # YAML/DB activation window. Do not require a newly coherent YAML
             # manifest here and thereby prevent replay of this exact operation.
             _, current = intake_base(runtime.active_configuration.digest)
-            # A sign-in rule has no Name to preview.
             before_apply(
                 recovery_preview(
-                    current,
-                    deployment_id,
-                    email,
-                    name if users.uses_users(current.document()) else None,
+                    current, deployment_id, email, _stored_name(request, current, email)
                 )
             )
         result = _install_request(store, request=request, correlation_id=correlation_id)
