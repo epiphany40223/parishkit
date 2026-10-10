@@ -387,10 +387,9 @@ LABELLED = """region => {
 }"""
 
 
-def test_each_panel_reviews_under_its_own_heading(page, component_origin):
-    """Reviewing the end date and then the leader roles, with no reload,
-    labels each panel's review by a heading whose id starts with that
-    panel's region id, so no id repeats on the page (#973)."""
+def answer_panel_reviews(page, origin):
+    """Answer each Campaign settings panel's Review POST with that panel's
+    review, and the end date's live checks; return the Review bodies."""
     reviews = []
 
     def answer(route):
@@ -404,12 +403,18 @@ def test_each_panel_reviews_under_its_own_heading(page, component_origin):
         reviews.append(request.post_data)
         leaders = "editor=leader_roles" in request.post_data
         fixture = LEADERS_REVIEW if leaders else LEADERS_END_REVIEW
-        route.fulfill(
-            response=route.fetch(url=component_origin + fixture, method="GET")
-        )
+        route.fulfill(response=route.fetch(url=origin + fixture, method="GET"))
 
-    page.route(lambda url: url.split("#")[0] == component_origin + LEADERS, answer)
-    answer_checks(page, component_origin)
+    page.route(lambda url: url.split("#")[0] == origin + LEADERS, answer)
+    answer_checks(page, origin)
+    return reviews
+
+
+def test_each_panel_reviews_under_its_own_heading(page, component_origin):
+    """Reviewing the end date and then the leader roles, with no reload,
+    labels each panel's review by a heading whose id starts with that
+    panel's region id, so no id repeats on the page (#973)."""
+    reviews = answer_panel_reviews(page, component_origin)
     page.goto(component_origin + LEADERS)
     page.evaluate(MARK)
     end_region = page.locator("#end-date #settings-review")
@@ -431,3 +436,39 @@ def test_each_panel_reviews_under_its_own_heading(page, component_origin):
     assert page.evaluate(LABELLED, "leader-roles-review") == "leader-roles-review-title"
     assert page.evaluate(DUPLICATE_IDS) == []
     assert page.evaluate(MARKED) == "kept"
+
+
+# The emptied end-date region's inline min-height and its drawn height.
+HELD_GAP = """() => {
+    const region = document.querySelector('#end-date #settings-review');
+    return [region.style.minHeight, region.getBoundingClientRect().height];
+}"""
+
+
+def test_a_review_region_another_panel_empties_keeps_no_gap(page, component_origin):
+    """An end-date Review, then a leader-role Review from the foot of the
+    page, empties the end-date region, and that region holds no height: a
+    keep-height region whose fresh copy is empty reserves nothing, so no
+    blank gap stays above the leader panel (#973)."""
+    answer_panel_reviews(page, component_origin)
+    page.goto(component_origin + LEADERS)
+    end_region = page.locator("#end-date #settings-review")
+    leader_region = page.locator("#leader-roles #leader-roles-review")
+    end_review = page.locator("#end-date").get_by_role("button", name="Review changes")
+    page.locator("#end-date").get_by_label("Campaign end date").fill("2054-11-15")
+    enabled(end_review)
+    end_review.click()
+    visible(end_region.get_by_role("heading", name="Review your changes"))
+    page.get_by_role("group", name="Ministry leader roles").get_by_label(
+        "Staff"
+    ).uncheck()
+    # The reader is at the foot of the page when the answer arrives; a
+    # Playwright click would first scroll Review into view, so the button
+    # is clicked from script.
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    page.locator("#leader-roles").get_by_role("button", name="Review changes").evaluate(
+        "button => button.click()"
+    )
+    visible(leader_region.get_by_role("heading", name="Review your changes"))
+    assert end_region.inner_text().strip() == ""
+    assert page.evaluate(HELD_GAP) == ["", 0]
