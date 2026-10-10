@@ -62,6 +62,26 @@ def test_ministry_sort_heading_posts_privately(page, component_origin):
     assert "?" not in sent.value.url
 
 
+def test_ministry_counts_look_like_links_and_post(page, component_origin):
+    """A Ministry's join and leave counts read as links (they only open a
+    list) but still open it with a POST, so the Ministry stays private."""
+    page.goto(component_origin + "/ministry-summary")
+    joining = page.get_by_role("button", name="join requests").first
+    assert joining.evaluate("node => node.classList.contains('link-button')")
+    style = joining.evaluate(
+        "node => { const s = getComputedStyle(node);"
+        " return [s.textDecorationLine, s.backgroundColor, s.borderTopWidth]; }"
+    )
+    assert style == ["underline", "rgba(0, 0, 0, 0)", "0px"]
+    page.route(
+        "**" + reverse("admin:ministry_joiners"),
+        lambda route: route.fulfill(body="Joining"),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        joining.click()
+    assert "ministry=" in sent.value.post_data and "?" not in sent.value.url
+
+
 def test_ministry_search_posts_privately(page, component_origin):
     """Private search and history selection submit only in a POST body."""
     page.goto(component_origin + "/ministry-detail")

@@ -1096,7 +1096,11 @@ count, leave-request count, unresolved count, and follow-up progress. Counts
 use latest live request state while retaining links to superseded/history
 views.
 
-Each Ministry links to:
+Each Ministry links to the two lists below from its join-request and
+leave-request counts. Opening a list only reads, so each count looks like a
+link; it is a small POST form styled as one, because this report keeps every
+filter, the Ministry included, in private POST state
+([Admin tables](../admin-portal/spec.md#admin-tables)):
 
 - prospective joiners: Member name, Member DUID, status/outcome, then
   gender, age as of report date, publishable email/phones for leaders,
