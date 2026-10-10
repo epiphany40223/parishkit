@@ -2421,6 +2421,16 @@ CRITICAL and other privileged operational notifications follow the
 [operational routing exception](#mode-routing), including while the deployment
 is in Testing or restore review.
 
+Times in operational alerts (first and latest observation, in email and
+Slack) and in security alerts ("When") follow the
+[UX date and time rules](../ui-conventions/spec.md#dates-and-times), never UTC
+(#967), using the parish profile of the configuration routing the alert.
+Every applied configuration has exactly one profile, so there is no fallback
+zone, and no alert routes before setup. Alert times show minutes, not seconds.
+The outbox admission recompiles each alert in SQL and compares it byte for
+byte, so the SQL twin (`stewardship_alert_time_v1`, frozen migration
+`0043_alert_local_time.sql`) renders the same text for every date format.
+
 Slack delivery failure is logged and cannot mask the original error. If email
 itself is failing, the system does not recursively create email-failure alerts;
 Slack/logs remain. Sensitive values and full free text never enter Slack.

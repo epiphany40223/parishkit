@@ -197,6 +197,8 @@ def test_sql_rejects_private_text_and_missing_recipient_receipt(routing, monkeyp
 
 def test_closed_content_compilers_agree_for_every_kind_and_recovery(routing):
     """One shared setup compares application content and its SQL admission contract."""
+    store = routing[0]
+    configuration = store.active().version_id
     with work_transaction():
         for kind in IncidentKind:
             incident = record_observation(
@@ -205,11 +207,16 @@ def test_closed_content_compilers_agree_for_every_kind_and_recovery(routing):
             record_recovery(kind)
             for notice in OperationalNotice.objects.filter(incident=incident):
                 for mode in SystemMode:
-                    expected = asdict(render_alert(notice_alert(notice.pk, mode)))
+                    expected = asdict(
+                        render_alert(notice_alert(notice.pk, mode, configuration))
+                    )
+                    # Parish local time, named, never UTC (#967).
+                    assert " UTC" not in expected["text"]
+                    assert " ED" in expected["text"] or " ES" in expected["text"]
                     with connection.cursor() as cursor:
                         cursor.execute(
-                            "SELECT stewardship_ops_content_v1(%s,%s)",
-                            [notice.pk, mode.value],
+                            "SELECT stewardship_ops_content_v2(%s,%s,%s)",
+                            [notice.pk, mode.value, configuration],
                         )
                         assert json.loads(cursor.fetchone()[0]) == expected
 

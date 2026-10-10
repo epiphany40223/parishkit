@@ -159,6 +159,9 @@ FROZEN = {
     "0042_ministry_leaders_from_roles.sql": (
         "71d3037323f029197f1d8d595f0e16a0bd4069612e2c43c25965ca64817fd612"
     ),
+    "0043_alert_local_time.sql": (
+        "b30abe5ec194cd8071485a3225eb21d96fe1c571706ba9e3601273e95524aae0"
+    ),
 }
 
 

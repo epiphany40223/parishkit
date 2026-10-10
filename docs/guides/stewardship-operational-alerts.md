@@ -107,6 +107,10 @@ The first checkpoint provides a closed incident taxonomy, validated non-personal
 facts and fixed subject/HTML/plaintext alternatives. Mode and recovery are
 explicit, counts use USA grouping, and timestamps are labelled UTC. UTC timezone
 objects returned by database adapters normalize without changing presentation.
+(Since [#967](https://github.com/epiphany40223/parishkit/issues/967) the
+timestamps show parish local time with the zone named instead.)
+Byte-exact alert matching relies on the app image's and the PostgreSQL image's
+time zone data agreeing for the parish zone.
 At this checkpoint the compiler was not yet connected to a dispatch owner;
 the subsequent email-dispatch checkpoint below supplies that boundary.
 

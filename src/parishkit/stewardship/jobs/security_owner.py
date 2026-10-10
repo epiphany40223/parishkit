@@ -138,7 +138,9 @@ SECURITY = AlertOwner(
     pending_sources=_pending,
     source_exists=_source_exists,
     capture=_capture,
-    alert=lambda cohort, mode: event_alert(cohort.event_id, SystemMode(mode)),
+    alert=lambda cohort, mode: event_alert(
+        cohort.event_id, SystemMode(mode), cohort.configuration_id
+    ),
     mail_render=_mail_render,
     current_mail=lambda store, cohort, address, semantic_key: current_mail(
         store, event_id=cohort.event_id, address=address, semantic_key=semantic_key

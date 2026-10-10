@@ -8,7 +8,10 @@ Campaign gates and Testing redirection deliberately do not apply to this owner.
 from dataclasses import dataclass
 from uuid import UUID
 
-from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
+from parishkit.stewardship.accounts.configuration_models import (
+    AppliedIntegration,
+    Parish,
+)
 from parishkit.stewardship.accounts.models import AddressRule
 from parishkit.stewardship.campaigns.domain import SystemMode
 from parishkit.stewardship.campaigns.work_locks import require_work_order
@@ -17,6 +20,7 @@ from parishkit.stewardship.operational_delivery import (
     OperationalSlack,
 )
 from parishkit.stewardship.runtime_background import mail_authority
+from parishkit.stewardship.web import dates
 
 from .family_mail_dispatch import FamilyDeliveryHeld
 from .operational_content import (
@@ -76,8 +80,25 @@ def current_routing(store):
     )
 
 
-def notice_alert(notice_id, mode):
-    """Reload immutable facts by opaque identity; never accept a caller's prose."""
+def parish_clock(configuration_id):
+    """The parish zone and date format code an alert's times are shown in.
+
+    Every applied configuration has exactly one parish profile (the
+    configuration schema requires it), so there is no fallback zone. The SQL
+    twins read the same row through stewardship_alert_time_v1 (#967).
+    """
+    zone, style = Parish.objects.values_list("timezone", "date_format").get(
+        configuration_id=configuration_id
+    )
+    return zone, dates.normalized(style)
+
+
+def notice_alert(notice_id, mode, configuration_id):
+    """Reload immutable facts by opaque identity; never accept a caller's prose.
+
+    ``configuration_id`` is the configuration routing the alert, whose parish
+    profile sets the zone and date format of its times.
+    """
     require_work_order()
     if not isinstance(notice_id, UUID) or not isinstance(mode, SystemMode):
         raise TypeError("Operational content requires a typed notice and mode.")
@@ -91,6 +112,7 @@ def notice_alert(notice_id, mode):
         notice.first_seen,
         notice.observed_at,
         notice.occurrences,
+        *parish_clock(configuration_id),
     )
 
 
@@ -101,7 +123,7 @@ def current_mail(store, *, notice_id, address, semantic_key):
         raise FamilyDeliveryHeld("Operational mail channel is not configured.")
     if address not in route.admins:
         raise PermissionError("Operational mail recipient or channel is unavailable.")
-    alert = notice_alert(notice_id, route.mode)
+    alert = notice_alert(notice_id, route.mode, route.configuration_id)
     return mail_render(
         configuration_id=route.configuration_id,
         sender=route.sender,
@@ -136,5 +158,7 @@ def current_slack(store, *, notice_id, delivery_id):
     if route.slack_channel is None:
         raise PermissionError("Operational Slack channel is unavailable.")
     return OperationalSlack(
-        delivery_id, route.slack_channel, notice_alert(notice_id, route.mode)
+        delivery_id,
+        route.slack_channel,
+        notice_alert(notice_id, route.mode, route.configuration_id),
     )

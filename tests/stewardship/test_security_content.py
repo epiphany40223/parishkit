@@ -27,6 +27,8 @@ def alert(**values):
             "occurred_at": MOMENT,
             "before_roles": ("staff",),
             "after_roles": ("administrator", "staff"),
+            "timezone": "America/New_York",
+            "date_format": "us_long",
         }
         | values
     )
@@ -42,7 +44,11 @@ def test_renders_every_fact_in_fixed_order_and_escapes_markup():
     assert content.text.startswith("Administrator added to an exact address\n\n")
     assert "Target: <b>new</b>@example.org" in content.text
     assert "Roles before: Staff\nRoles after: Administrator, Staff" in content.text
-    assert "By: admin@example.org\nWhen: 09/21/2026 14:30:05 UTC" in content.text
+    assert (
+        "By: admin@example.org\nWhen: September 21, 2026 at 10:30 AM EDT"
+        in content.text
+    )
+    assert "UTC" not in content.text and "UTC" not in content.html
     assert "Deployment mode: Production" in content.text
     assert content.text.endswith(
         "Event reference: 00000000-0000-0000-0000-000000000007"
@@ -71,6 +77,32 @@ def test_mode_is_visible_and_times_are_canonical_utc():
     assert "Deployment mode: Testing" in content.text
     with pytest.raises(ValueError):
         alert(occurred_at=MOMENT.astimezone(timezone(timedelta(hours=-4))))
+
+
+@pytest.mark.parametrize(
+    "occurred_at,shown",
+    [
+        # US fall back, November 1, 2026: both 1:30 AMs, told apart by zone.
+        (datetime(2026, 11, 1, 5, 30, tzinfo=UTC), "November 1, 2026 at 1:30 AM EDT"),
+        (datetime(2026, 11, 1, 6, 30, tzinfo=UTC), "November 1, 2026 at 1:30 AM EST"),
+        # US spring forward, March 8, 2026.
+        (datetime(2026, 3, 8, 6, 59, tzinfo=UTC), "March 8, 2026 at 1:59 AM EST"),
+        (datetime(2026, 3, 8, 7, 0, tzinfo=UTC), "March 8, 2026 at 3:00 AM EDT"),
+    ],
+)
+def test_when_names_the_parish_zone_across_daylight_saving_changes(occurred_at, shown):
+    """The event time uses the parish offset in force at that instant (#967)."""
+    content = render_security_alert(alert(occurred_at=occurred_at))
+    assert f"When: {shown}\n" in content.text
+
+
+def test_when_follows_the_parish_zone_and_date_format():
+    """The configured zone and date format decide the text; both are validated."""
+    content = render_security_alert(alert(timezone="Europe/Berlin", date_format="iso"))
+    assert "When: 2026-09-21 16:30 CEST\n" in content.text
+    for values in ({"timezone": "Not/AZone"}, {"date_format": None}):
+        with pytest.raises(ValueError):
+            alert(**values)
 
 
 @pytest.mark.parametrize(
