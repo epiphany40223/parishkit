@@ -211,7 +211,10 @@ def components(context, admin):
                         "active_configuration": {"name": "Sample campaign"},
                     },
                     "editable": False,
+                    # Read-only beside the end-date form, as the view draws
+                    # it, so no id repeats (#944).
                     "form": CampaignForm(
+                        auto_id="saved_%s",
                         initial=CAMPAIGN_VALUES,
                         ministries=[("4", "Community outreach")],
                         funds=[("9", "Offertory")],

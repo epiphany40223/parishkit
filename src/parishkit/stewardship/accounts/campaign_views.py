@@ -488,6 +488,10 @@ def campaign_settings(request, campaign_id):
                 # A live campaign's page shows these settings read-only; its
                 # Review posts only the end date (end_form).
                 request.POST if action == "preview" and end_form is None else None,
+                # Locked, the form is drawn read-only beside a live
+                # campaign's end-date form, so its ids must not repeat that
+                # form's id_end_date (#944).
+                auto_id="id_%s" if editable else "saved_%s",
                 initial=initial,
                 previous=previous,
                 ministries=ministries,
