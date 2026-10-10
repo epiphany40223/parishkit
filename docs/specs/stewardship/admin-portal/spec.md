@@ -3447,9 +3447,8 @@ only the count of names found.
 A default name is the Member's, surname first ("Smith, Ann"): the
 Administrator's #952 comment of 2026-10-10 asks for the leaders table's names
 in "Last, first" form, and a new user's Name uses the same form so the two
-tables match. The UX conventions spec
-([#958](https://github.com/epiphany40223/parishkit/pull/958)) has no
-Member-name rule yet; it should add one, which this section will then link.
+tables match, as the
+[Member-name rule](../ui-conventions/spec.md#family-and-member-names) asks.
 One help line under the field is always present,
 so nothing moves when the answer arrives: "Suggested from ParishSoft: Smith,
 Ann; Smith, Bob", or "No ParishSoft Member lists this address". The lookup

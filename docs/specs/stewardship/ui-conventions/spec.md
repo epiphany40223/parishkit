@@ -611,11 +611,6 @@ settings review, apply and follow the change in place
 ([in-place review](#in-place-controls), #532); every other editor still uses
 its separate Review and Change status pages.
 
-Exception being removed: Portal users' role checkboxes autosave through an
-intent queue
-([portal user management](../admin-portal/spec.md#portal-user-management)),
-which #952 replaces them with Edit, Review and Apply.
-
 ### Conditional fields
 
 **Rule.** A field is shown only when it is relevant to the choices already
@@ -1093,7 +1088,8 @@ changes.
 1. the selection checkbox, when the table has bulk actions;
 2. the most relevant column first: the Family name for a Family worklist or
    report, the Member name for Member rows, the thing's name or address for
-   a configuration or account table (Portal users: the email address), and
+   a configuration or account table (the
+   [Users table](../admin-portal/spec.md#users-table): the email address), and
    the event time only for tables whose rows are events or log entries;
 3. the Family name (the row header), then **Family DUID** in its own column;
 4. the envelope number, when shown;
@@ -1140,7 +1136,9 @@ orders by surname, then the whole name. **Precedent.** #471, #932 (Administrator
 A Member's own name is shown "Last, first" ("Smith, Ann"), so a column of
 Member or person names sorts by surname too (Administrator, 2026-10-10, on
 [#952](https://github.com/epiphany40223/parishkit/issues/952)); first used by
-the Users page's leaders table and user Names (open #963).
+the Users page's
+[leaders table](../admin-portal/spec.md#parishsoft-ministry-leaders-without-a-user)
+and [user Names](../admin-portal/spec.md#name-from-parishsoft) (#963).
 
 Recorded exception: System health's "Families the form cannot open" shows the
 Family's surname only (from the shared `family_display_name`), never the
@@ -1161,7 +1159,8 @@ rows make a table unscannable. **Shared code.** The `table-scroll` class in
 Recorded exception: the Users page keeps every row to one line (the
 Administrator asked for one-line rows on #952). A long email or Name is cut
 off with "…"; the full value stays the cell's text, appears in a `title`
-tooltip, and is shown whole on the user's Edit page (#952, open #963).
+tooltip, and is shown whole on the user's Edit page
+([Users table](../admin-portal/spec.md#users-table), #952, #963).
 
 ## Downloaded files
 
