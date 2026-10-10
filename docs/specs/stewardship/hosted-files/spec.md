@@ -74,11 +74,13 @@ disk write until the database transaction ends:
 1. Upload validates and normalizes the bytes in memory, writes them with
    `O_CREAT|O_EXCL`, calls `fsync` on the file and the directory, and only then
    inserts the row. A failure after the write removes the file.
-2. Deletion deletes the row (the database refuses a deletion that is still in
-   use, see [deletion](#deletion)), commits, and then unlinks the file.
-3. While holding the lock, each upload and deletion also removes any file in
-   `hosted-files/` that has no row, which can be left by a crash between a disk
-   step and its commit. The sweep never follows links and removes only names
+2. Deletion deletes the rows (the database refuses a deletion that is still
+   in use, see [deletion](#deletion)), commits, and then unlinks the files. A
+   deletion of several files holds the lock once and deletes them all in one
+   transaction.
+3. While holding the lock, each upload and deletion also removes, once, any
+   file in `hosted-files/` that has no row, which can be left by a crash
+   between a disk step and its commit. The sweep never follows links and removes only names
    that are 32-character hex UUIDs.
 
 Serving starts from the row, so a leftover file is never served, and a row
@@ -449,12 +451,15 @@ is no separate confirmation or results page. Only unused files offer Delete
 and a selection box. Confirming posts the chosen files, and the server
 refuses the whole request, deleting nothing, when any of them is in use by
 then ("A chosen file is now used by a page, an email or unsent mail, so
-nothing was deleted."). Otherwise each file is deleted in its own
-transaction, which locks it and rechecks its uses; a file already deleted
-counts as deleted. On success the table redraws in place without the files.
-Should one fail after others were deleted (it came into use meanwhile, or the
-storage lock was busy), the dialog says some were deleted but not all and
-asks the Admin to reload; if the first fails, it says nothing was deleted.
+nothing was deleted."). The deletion is all or nothing: holding the storage
+lock once, one transaction locks every chosen row (in primary-key order),
+rechecks their uses, deletes them all and records one `hosted_file_deleted`
+audit event per file; the files' bytes are removed and the library swept, once,
+only after it commits. A file already deleted counts as deleted. A busy
+storage lock or a database failure rolls everything back ("The library was
+busy, so nothing was deleted."), so a request never deletes only some of its
+files. On success the table, the file count and usage line, and the upload
+notice (gone once its file is) redraw in place.
 This replaced the earlier per-file results page (where one file's refusal
 never blocked the others), so the library follows the portal-wide rule that a
 request is refused whole when any chosen row cannot be acted on.
@@ -656,9 +661,8 @@ Unit and database tests must cover:
    and archived campaigns that are no longer current.
 9. Deletion and renaming are refused while in use, by both the view and the
    database triggers, with the uses listed. A deletion naming any file in use
-   deletes nothing; one that fails part-way says so. A deletion racing a
-   content save
-   serializes, so the content save or the deletion fails and never both
+   deletes nothing, and a failure on any chosen file rolls back the whole
+   deletion. A deletion racing a content save serializes, so the content save or the deletion fails and never both
    succeed. The token is unchanged after a rename.
 10. Storage: files are written `0600` under `hosted-files/` with no
     user-controlled path. Orphans are swept under the lock. A leftover file

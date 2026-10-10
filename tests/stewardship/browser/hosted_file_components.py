@@ -96,7 +96,14 @@ def components(context, admin):
     )
 
     def page(shown, refresh_url, action=DELETE):
-        """The library listing ``shown``, redrawn from ``refresh_url``."""
+        """The library listing ``shown``, redrawn from ``refresh_url``.
+
+        Its usage line counts ``shown``, and its upload notice names the
+        picnic image while that is listed, as the view's ``?uploaded=`` does.
+        """
+        picnic = next(
+            (r["file"] for r in shown if r["file"].slug == "parish-picnic"), None
+        )
         html = render_to_string(
             "stewardship/hosted-files.html",
             library
@@ -104,6 +111,9 @@ def components(context, admin):
                 "table": paginate(shown, {}, sorting=LIBRARY_SORTING),
                 "refresh_url": refresh_url,
                 "count": len(shown),
+                "total": sum(r["file"].size for r in shown),
+                "uploaded": picnic,
+                "uploaded_placeholder": placeholder("parish-picnic") if picnic else "",
             },
         )
         return "text/html", html.replace(f'action="{DELETE}"', f'action="{action}"')

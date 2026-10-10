@@ -127,6 +127,10 @@ def test_delete_asks_then_redraws_the_library_in_place(
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + LIBRARY)
     failures = watch(page)
+    usage = page.locator("#hosted-file-usage")
+    assert usage.inner_text().startswith("3 of 100 files, 361.7")
+    notice = page.locator("#hosted-file-uploaded")
+    assert "Uploaded parish-picnic.png" in notice.inner_text()
     delete = page.get_by_role("button", name="Delete parish-picnic")
     identifier = delete.get_attribute("value")
     delete.click()
@@ -151,6 +155,9 @@ def test_delete_asks_then_redraws_the_library_in_place(
     has_count(rows(page), 2)
     hidden(dialog(page))
     assert slugs(page) == ["{{ file.ministry-guide }}", "{{ file.parish-map }}"]
+    # The usage line and the upload notice, outside the table, redraw too.
+    assert usage.inner_text().startswith("2 of 100 files, 241.1")
+    assert notice.inner_text().strip() == ""
     # The row is gone, so focus lands on the table.
     eventually(page, "document.activeElement.id === 'hosted-file-table'")
     visible(page.locator("main > [role=status]", has_text="Deleted parish-picnic."))

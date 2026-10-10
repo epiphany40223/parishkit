@@ -12,13 +12,18 @@
 <p>{% translate "A file marked Missing is still listed, but its stored copy is gone from the server, usually after a backup was restored; its link shows the “no longer available” page. Upload the file again, change the pages and emails to use the new one, then delete the missing entry." %}</p>
 {% endaboutpage %}
 <p class="notice">{% translate "Anyone with a file's link can open it, so never upload anything private." %}</p>
-{% if uploaded %}<p class="notice" role="status">{% blocktranslate with name=uploaded.original_name placeholder=uploaded_placeholder %}Uploaded {{ name }} as <code>{{ placeholder }}</code>.{% endblocktranslate %}</p>{% endif %}
+{% comment %}
+The upload notice and the usage line sit outside the table region, so each
+has an id and data-table-sync: an in-place redraw after a deletion replaces
+them from the refreshed page (refresh_url keeps ?uploaded=, so the notice
+stays while its file exists and goes with it), as a reload would (#879).
+{% endcomment %}<div id="hosted-file-uploaded" data-table-sync>{% if uploaded %}<p class="notice" role="status">{% blocktranslate with name=uploaded.original_name placeholder=uploaded_placeholder %}Uploaded {{ name }} as <code>{{ placeholder }}</code>.{% endblocktranslate %}</p>{% endif %}</div>
 <div id="hosted-file-notice" data-table-sync>{% if notice %}<p class="notice notice-error" role="alert">{{ notice }}</p>{% endif %}</div>
 <form method="post" action="{% url 'admin:hosted_file_upload' %}" enctype="multipart/form-data" class="panel">{% csrf_token %}
 <h2>{% translate "Upload a file" %}</h2>
 {{ form.as_div }}
 {% button type="submit" %}{% translate "Upload" %}{% endbutton %}</form>
-<p>{% blocktranslate with count=count max_files=max_files used=total|filesizeformat limit=max_bytes|filesizeformat %}{{ count }} of {{ max_files }} files, {{ used }} of {{ limit }} used.{% endblocktranslate %}</p>
+<p id="hosted-file-usage" data-table-sync>{% blocktranslate with count=count max_files=max_files used=total|filesizeformat limit=max_bytes|filesizeformat %}{{ count }} of {{ max_files }} files, {{ used }} of {{ limit }} used.{% endblocktranslate %}</p>
 {% translate "Hosted file pages" as navigator_label %}{% comment %}
 The file table is an action table (admin-portal spec, "Row actions and
 confirmation", #879). Its region (id table.anchor) holds the navigator, the
