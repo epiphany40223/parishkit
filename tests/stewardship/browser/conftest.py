@@ -81,7 +81,6 @@ from ..test_schedule_forms import data_for
 from ..test_setup_final_steps import wizard as final_wizard
 from .automation_components import POSTS as AUTOMATION_POSTS
 from .automation_components import SLOW_GETS as AUTOMATION_SLOW_GETS
-from .automation_components import SLOW_POSTS as AUTOMATION_SLOW_POSTS
 from .automation_components import canonical
 from .automation_components import components as automation_components
 from .census_components import components as census_components
@@ -100,6 +99,7 @@ from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
 from .go_live_families_components import components as go_live_families_components
 from .hosted_file_components import IMAGE_TOKEN
+from .hosted_file_components import POSTS as HOSTED_FILE_POSTS
 from .hosted_file_components import components as hosted_file_components
 from .in_place_components import FORM as IN_PLACE_FORM
 from .in_place_components import POSTS as IN_PLACE_POSTS
@@ -2290,6 +2290,7 @@ def component_origin():
         | LIVE_STATUS_POSTS
         | SETTINGS_POSTS
         | SCHEDULE_LIST_POSTS
+        | HOSTED_FILE_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),
             f"{IN_PLACE_FORM}/invalid": (200, None, responses["/in-place-invalid"][1]),
@@ -2409,7 +2410,7 @@ def component_origin():
                 return
             if self.path in posts:
                 status, location, body = posts[self.path]
-                if self.path in IN_PLACE_SLOW | AUTOMATION_SLOW_POSTS:
+                if self.path in IN_PLACE_SLOW:
                     time.sleep(1.5)
                 self.send_response(status)
                 if location:

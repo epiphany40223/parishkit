@@ -100,7 +100,7 @@ LEDGER = {
     "automation_access": permanent(
         "the human side of the automation interface: listing every session"
     ),
-    "automation_session": permanent(
+    "automation_sessions": permanent(
         "the human side of the automation interface: revoking a session"
     ),
     "automation_notices": permanent(
