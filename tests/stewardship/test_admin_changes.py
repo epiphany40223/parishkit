@@ -162,6 +162,11 @@ GOLDEN = {
         {"created": True, "request": REQUEST_DOCUMENT},
     ),
     "config request show": (config_request, REQUEST_DOCUMENT),
+    # The cancellation of a stuck live end-date change (#944).
+    "config request cancel": (
+        lambda: admin_changes.ConfigCancel(cancelled=True, request=REQUEST_DOCUMENT),
+        {"cancelled": True, "request": REQUEST_DOCUMENT},
+    ),
 }
 IMPACT = {"delivered", "cancellable", "failed", "blocking", "occurrences", "outboxes"}
 SIDE = {
@@ -201,6 +206,7 @@ ALLOWED = {
     | IMPACT,
     "schedule confirm": {"created", "request"} | set(REQUEST_DOCUMENT),
     "config request show": set(REQUEST_DOCUMENT),
+    "config request cancel": {"cancelled", "request"} | set(REQUEST_DOCUMENT),
 }
 
 
@@ -226,7 +232,7 @@ def test_each_documents_members_are_exactly_its_allowlist(command):
 
 
 def test_every_change_command_has_a_golden_document():
-    """The three PR 4 commands, and the catalog lists each model's fields."""
+    """The PR 4 commands, and the catalog lists each model's fields."""
     entries = {entry["name"]: entry for entry in admin_cli.catalog()}
     assert {spec.name for spec in admin_cli.COMMANDS if spec.pr == 4} == set(GOLDEN)
     for command, (build, _) in GOLDEN.items():
