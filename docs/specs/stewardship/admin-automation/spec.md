@@ -1709,9 +1709,10 @@ This limits accidents; it does not hide data from the host operator (see
 This is the parity ledger: every `admin:` URL name at the time of writing,
 and the separate actions some pages carry, grouped by area. "Command" names
 the planned command and its PR; "Permanent", "Pending" and "Deferred" are
-exemptions. The old addresses kept as redirects (#525, every `legacy_…`
-name in `admin_urls/legacy.py`) are permanent exemptions: each only
-redirects to its new page, whose row covers it. `test_admin_route_parity`
+exemptions. Each page's form without its trailing slash (#525, every
+`…_slashless` name in `admin_urls/slashless.py`) is a permanent exemption:
+it only redirects to its page, whose row covers it. Old Admin addresses are
+not kept (#864). `test_admin_route_parity`
 checks that every other ledger route is named here.
 
 ### Status and session routes

@@ -858,6 +858,21 @@ role's menu), `tests/stewardship/test_admin_page_names.py`,
 `tests/stewardship/database/test_emailed_reports_postgresql.py` (the list for
 each role, the request notice, the manual form returning to the page).
 
+Follow-up #864 drops every old Admin address that NAV-6 to NAV-11 kept as a
+redirect (the Administrator's decision of 2026-10-08, reaffirmed 2026-10-09):
+`admin_urls/legacy.py` and its campaign-UUID 410 handling are removed, so
+each old address, the retired campaign choosers and the old Ministry reports
+root included, answers 404. Each page's form without its trailing slash
+still redirects to the page (`admin_urls/slashless.py`), the header's
+presence count keeps polling `/admin/presence?format=count`, and the old
+hosted-file upload address leaves the ingress's large-body route. The
+checklist text above records what each NAV pull request delivered at the
+time. It is proven by `tests/stewardship/test_admin_url_scheme.py` (old
+addresses resolve to nothing, every slashless row) and
+`tests/stewardship/database/test_admin_url_scheme_postgresql.py` (old
+addresses are 404 through the real middleware, the presence count still
+polls).
+
 ## ADM-13: System health page
 
 Scope and dependencies: [ADM-13 work package](../../plans/stewardship/admin-portal.md#adm-13-system-health-page).
