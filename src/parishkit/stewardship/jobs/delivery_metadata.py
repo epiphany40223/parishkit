@@ -9,7 +9,7 @@ from django.db.models import Q, TextField
 from django.db.models.expressions import RawSQL
 from django.utils.translation import gettext_lazy as _
 
-from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
+from parishkit.stewardship.web.tables import Fixed, Sorting, bounded_count, read_window
 
 from .outbox_models import OutboxMessage
 from .send_history import email_ids
@@ -52,11 +52,19 @@ PURPOSES = (
 # outbox grows by about one message per Family per mailing and is not
 # purged. Under name, Families that show the same name then sort by Family
 # DUID, so each Family's emails stay together, as the Family codes directory
-# orders tied names (directory_reports.sql). id is the unique tiebreak.
+# orders tied names (directory_reports.sql). Under name and duid, one
+# Family's emails then read newest change first in either direction (#934),
+# as the log's default does. id is the unique tiebreak.
+_FAMILY_EMAILS = (Fixed("-updated_at"), Fixed("-id"))
 DELIVERY_SORTING = Sorting.by_column(
     {
-        "name": ("family_sort_surname", "family_sort_name", "family__family_duid"),
-        "duid": ("family__family_duid",),
+        "name": (
+            "family_sort_surname",
+            "family_sort_name",
+            "family__family_duid",
+            *_FAMILY_EMAILS,
+        ),
+        "duid": ("family__family_duid", *_FAMILY_EMAILS),
         "purpose": ("purpose",),
         "mode": ("mode",),
         "state": ("state",),

@@ -3434,8 +3434,9 @@ token `name`): by surname, then the whole shown name, then Family DUID
 for Families that show the same name, as the Family directory orders them,
 each email's name read from the latest ParishSoft data inside the page's
 query; Family DUID sorts too (token `duid`). Either
-keeps each Family's emails together, and Administrator reports (and, by
-name, Families no longer in the data) sort last in both directions. The
+keeps each Family's emails together, newest change first (then newest
+email) in both directions, and Administrator reports (and, by name,
+Families no longer in the data) sort last in both directions. The
 columns follow the Admin tables' shared order
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)): When,
 Family, Family DUID, Purpose, Mode, State and Provider attempts. The
