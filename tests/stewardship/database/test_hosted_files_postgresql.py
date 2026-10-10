@@ -8,7 +8,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.test import Client
 
 from parishkit.config import ConfigError
@@ -557,9 +557,12 @@ def test_the_library_page_uses_the_shared_table(auth_service, google, media):
     assert '<dialog id="hosted-file-delete"' in page
     assert f'data-refresh-url="{LIBRARY}"' in page
     assert 'data-copy="placeholder-' in page
-    # The redraw address keeps the sort and page, never the upload notice.
+    # The redraw address keeps the sort, page and upload notice; the notice
+    # and the usage line sit outside the region, so each is synced (#879).
     shown = browser.get(LIBRARY, {"sort": "-size", "uploaded": "x"}).content.decode()
-    assert f'data-refresh-url="{LIBRARY}?sort=-size"' in shown
+    assert f'data-refresh-url="{LIBRARY}?sort=-size&amp;uploaded=x"' in shown
+    assert '<div id="hosted-file-uploaded" data-table-sync>' in shown
+    assert '<p id="hosted-file-usage" data-table-sync>' in shown
 
 
 def test_a_deletion_naming_a_file_in_use_deletes_nothing(auth_service, google, media):
@@ -859,28 +862,48 @@ def test_bulk_delete_reports_a_busy_library(auth_service, google, media):
     assert not HostedFile.objects.exists()
 
 
-def test_a_deletion_that_fails_part_way_says_so(
-    auth_service, google, media, monkeypatch
-):
-    """The first file goes, the second is busy: the refusal says not all went."""
+def test_a_bulk_deletion_is_all_or_nothing(auth_service, google, media, monkeypatch):
+    """One transaction: a failure on the second file leaves the first too; on
+    success every file is audited, its bytes go and the library is swept once."""
     from parishkit.stewardship.accounts import hosted_file_uses
 
     browser, _ = signed_in()
     first = uploaded(browser, "a.pdf", samples.pdf(), slug="a")
     second = uploaded(browser, "b.pdf", samples.pdf(), slug="b")
-    real = hosted_file_uses.delete
+    chosen = {"file_id": [str(first.pk), str(second.pk)]}
+    real_audit = hosted_file_uses.audit
 
-    def busy_second(actor, file_id):
-        """Delete the first file for real; the second finds the lock busy."""
-        if file_id == second.pk:
-            raise ConfigError("busy")
-        return real(actor, file_id)
+    def fail_second(action, actor, row, **extra):
+        """Audit the first deletion, then fail as the database might."""
+        if row.pk == second.pk:
+            raise DatabaseError("brief outage")
+        return real_audit(action, actor, row, **extra)
 
-    monkeypatch.setattr(hosted_file_uses, "delete", busy_second)
-    response = post(browser, DELETE, {"file_id": [str(first.pk), str(second.pk)]})
+    monkeypatch.setattr(hosted_file_uses, "audit", fail_second)
+    response = post(browser, DELETE, chosen)
     assert response.status_code == 409
-    assert "deleted, but not all" in unescape(response.content.decode())
-    assert list(HostedFile.objects.values_list("pk", flat=True)) == [second.pk]
+    assert "so nothing was deleted" in unescape(response.content.decode())
+    assert HostedFile.objects.count() == 2
+    assert not AuditEvent.objects.filter(event_type="hosted_file_deleted").exists()
+    assert (media / storage.DIRECTORY / first.pk.hex).exists()
+    monkeypatch.setattr(hosted_file_uses, "audit", real_audit)
+    sweeps = []
+    real_sweep = storage.sweep
+
+    def counted(root, keep):
+        """Count each sweep, and check it runs after the rows are gone."""
+        sweeps.append(list(keep))
+        return real_sweep(root, keep)
+
+    monkeypatch.setattr(storage, "sweep", counted)
+    assert post(browser, DELETE, chosen).status_code == 302
+    assert sweeps == [[]]
+    assert not HostedFile.objects.exists()
+    assert not (media / storage.DIRECTORY / first.pk.hex).exists()
+    assert not (media / storage.DIRECTORY / second.pk.hex).exists()
+    assert AuditEvent.objects.filter(event_type="hosted_file_deleted").count() == 2
+    # The per-file service still answers for one file.
+    assert hosted_file_uses.delete(None, first.pk) == "already_deleted"
 
 
 def test_a_large_upload_spills_to_disk_and_is_stored_exactly(

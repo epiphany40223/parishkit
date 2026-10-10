@@ -69,35 +69,63 @@ def delete(actor, file_id):
     """Delete one unused file for real; return "deleted" or "already_deleted".
 
     A file still in use raises ``HostedFileError("in_use", uses)``. The bytes
-    are removed only after the row's deletion commits.
+    are removed only after the row's deletion commits. See ``delete_many``.
     """
+    (outcome,) = delete_many(actor, [file_id]).values()
+    return outcome
+
+
+def delete_many(actor, file_ids):
+    """Delete unused files all together or not at all; return their outcomes.
+
+    The answer maps each ID, as a UUID, to "deleted" or "already_deleted"
+    (no row was left to delete).
+    Under one hold of the storage lock and in one transaction, every chosen
+    row is locked (in primary-key order, so two deletions never deadlock),
+    their uses are rechecked, and all are deleted, with one
+    ``HOSTED_FILE_DELETED`` audit row per file. Any file in use raises
+    ``HostedFileError("in_use", uses)`` and a busy lock or database problem
+    raises too, and either way nothing is deleted. Only after the commit are
+    the files' bytes removed and the library swept, once.
+    """
+    file_ids = [UUID(str(value)) for value in file_ids]
     root = media_root()
     with storage.storage_lock(root):
         with transaction.atomic():
-            row = HostedFile.objects.select_for_update().filter(pk=file_id).first()
-            if row is None:
-                return "already_deleted"
-            uses = file_uses([row.pk]).get(row.pk, [])
+            rows = list(
+                HostedFile.objects.select_for_update()
+                .filter(pk__in=file_ids)
+                .order_by("pk")
+            )
+            ids = [row.pk for row in rows]
+            uses = _uses_of(ids)
             if uses:
                 raise HostedFileError("in_use", uses)
             try:
                 with transaction.atomic():
-                    HostedFile.objects.filter(pk=row.pk).delete()
+                    HostedFile.objects.filter(pk__in=ids).delete()
             except IntegrityError as error:
                 if not _in_use(error):
                     raise
-                raise HostedFileError(
-                    "in_use", file_uses([row.pk]).get(row.pk, [])
-                ) from None
-            audit(Action.HOSTED_FILE_DELETED, actor, row)
-        # The row is gone, so the file is deleted whatever happens next: a
-        # file left on disk is never served and the next sweep removes it.
+                raise HostedFileError("in_use", _uses_of(ids)) from None
+            for row in rows:
+                audit(Action.HOSTED_FILE_DELETED, actor, row)
+        # The rows are gone, so the files are deleted whatever happens next:
+        # a file left on disk is never served and the next sweep removes it.
         try:
-            storage.remove(root, row.pk)
+            for value in ids:
+                storage.remove(root, value)
             storage.sweep(root, HostedFile.objects.values_list("pk", flat=True))
         except ConfigError:
             pass
-    return "deleted"
+    return {
+        value: "deleted" if value in ids else "already_deleted" for value in file_ids
+    }
+
+
+def _uses_of(file_ids):
+    """Every current use of any of ``file_ids``, as one list."""
+    return [use for uses in file_uses(file_ids).values() for use in uses]
 
 
 def file_uses(file_ids):

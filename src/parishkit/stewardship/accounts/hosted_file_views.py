@@ -199,9 +199,10 @@ def _library(request, *, form=None, status=200, notice=None):
             (row for row in files if str(row.pk) == selected["uploaded"]), None
         )
     table = paginate(_rows(files), selected, sorting=LIBRARY_SORTING)
-    # The table region redraws from this address after a deletion: the page
-    # as shown (sort, page and size), without the one-off upload notice.
-    shown = urlencode([pair for pair in selected.items() if pair[0] != "uploaded"])
+    # The table region, the usage line and the upload notice redraw from
+    # this address after a deletion: the page as shown (sort, page and size)
+    # and its upload notice, which the redraw drops once that file is gone.
+    shown = urlencode(selected)
     refresh_url = reverse("admin:hosted_files") + (f"?{shown}" if shown else "")
     response = render(
         request,
@@ -308,13 +309,6 @@ DELETE_REFUSALS = {
         gettext_lazy("The library was busy, so nothing was deleted."),
         gettext_lazy("Try again in a moment."),
     ),
-    "partly": (
-        gettext_lazy(
-            "Some of the chosen files were deleted, but not all: one came into "
-            "use or the library was busy."
-        ),
-        gettext_lazy("Reload the page to see which files remain, then try again."),
-    ),
 }
 
 
@@ -329,13 +323,13 @@ def delete(request):
     """Delete the files the confirmation dialog names, then return to the library.
 
     The dialog (admin-portal spec, "Row actions and confirmation") posts the
-    chosen ``file_id`` values. The whole request is refused, and nothing is
-    deleted, when any chosen file is in use. Otherwise each file is deleted
-    on its own (``hosted_file_uses.delete`` locks it and rechecks its uses;
-    one already gone counts as deleted). Should one fail after others went
-    (it came into use meanwhile, or the storage lock was busy), the answer
-    says so, so the reader reloads. Success redirects to the library, which
-    the dialog then redraws in place.
+    chosen ``file_id`` values. ``hosted_file_uses.delete_many`` deletes them
+    all or none: under one hold of the storage lock and in one transaction it
+    locks every chosen row, rechecks their uses and deletes them (one already
+    gone counts as deleted). So the whole request is refused, and nothing is
+    deleted, when any chosen file is in use, or when the storage lock is busy
+    or the database fails. Success redirects to the library, which the dialog
+    then redraws in place.
     """
     try:
         actor = principal(request, runtime())
@@ -343,21 +337,14 @@ def delete(request):
         if request.FILES or set(request.POST) - {"file_id", "csrfmiddlewaretoken"}:
             raise unexpected_fields()
         ids = _selected(request)
-        if hosted_file_uses.file_uses(ids):
-            raise _delete_refusal("in_use")
-        for done, value in enumerate(ids):
-            try:
-                hosted_file_uses.delete(actor, value)
-            except (hosted_files.HostedFileError, ConfigError, DatabaseError) as error:
-                # In use since the check, or busy storage or a brief database
-                # problem: this file is untouched, and so are the rest.
-                if done:
-                    reason = "partly"
-                elif isinstance(error, hosted_files.HostedFileError):
-                    reason = "in_use"
-                else:
-                    reason = "busy"
-                raise _delete_refusal(reason) from None
+        try:
+            hosted_file_uses.delete_many(actor, ids)
+        except hosted_files.HostedFileError:
+            raise _delete_refusal("in_use") from None
+        except (ConfigError, DatabaseError):
+            # Busy storage or a brief database problem: the transaction
+            # rolled back, so every chosen file is untouched.
+            raise _delete_refusal("busy") from None
         return _no_store(HttpResponseRedirect(reverse("admin:hosted_files")))
     except ERRORS as error:
         return error_response(error)
