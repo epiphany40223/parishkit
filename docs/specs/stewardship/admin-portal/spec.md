@@ -1765,8 +1765,14 @@ as the UI and rechecks it at submission. A stale form cannot create new actions
 for an inactive Ministry, and omission of hidden fields never cancels retained
 requests. Use the ordinary changed-baseline reconfirmation flow for stale forms.
 
-A Ministry's name never affects its visibility. ParishSoft names are stored as
-loaded and repaired only where they are shown: on the Family form, this screen,
+A Ministry's name never affects its visibility. A Ministry name is an opaque
+string: every page, report, export, email and the Family form shows the full
+ParishSoft name, and nothing parses, splits or strips it. A leading number or
+letter (such as `102-Altar Servers`) or a marker such as `X-` is one parish's
+naming convention, not ParishSoft's, so it is kept and means nothing to the
+application (Administrator decision, 2026-10-10,
+[#971](https://github.com/epiphany40223/parishkit/issues/971)). ParishSoft
+names are stored as loaded and repaired only where they are shown: on the Family form, this screen,
 Campaign settings, Create the campaign and (before #142) first-campaign setup.
 A name the form can already show
 is used exactly as before, only trimmed, so valid labels and Family form
@@ -1838,17 +1844,15 @@ told apart without a new event name.
 The Admin home page shows Administrators with configuration access a
 "ParishSoft Ministry changes" panel listing the changes recorded by promoted
 snapshots from the last seven days (at most five refreshes, newest first). A
-rename whose new name starts with `X-` and whose old name did not is labeled as
-possibly retired: some parishes rename a retired Ministry that way. It is a
-display hint only and changes no behavior. The panel links to Ministry
-activity, where an Administrator can mark a Ministry inactive.
+rename shows the old and the new full names and reads nothing into either
+(#971). The panel links to Ministry activity, where an Administrator can mark
+a retired Ministry inactive.
 
 While the current campaign is in draft, scheduled or open, entries for
 Ministries in its selections are marked "in the current campaign", the panel
 also links to that campaign's Ministry selections, and it lists, independent of
 the seven days, the campaign's selected Ministries that are missing from the
-current catalog (Families cannot see them) or whose current name starts with
-`X-`. A closed or archived campaign shows Families nothing, so none of this
+current catalog (Families cannot see them). A closed or archived campaign shows Families nothing, so none of this
 applies to it. The whole panel costs the home page one query.
 
 No System logs entry is written: the closed operational-event list is enforced
