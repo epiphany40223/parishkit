@@ -865,32 +865,33 @@ Administrator (Administrator decision, 2026-10-10, made with the Portal Users
 revamp); a ParishSoft role alone admits no one. Until the users code of
 [#952](https://github.com/epiphany40223/parishkit/issues/952) lands, the code
 still admits by login rule as an interim: a login rule granting one of those
-roles stands in for the user. ParishSoft decides only which Ministries such a person leads: a person leads a Ministry
-for the current campaign when an active Member of an active Family holds one
-of the campaign's Ministry leader roles on that Ministry's current roster in
-the promoted ParishSoft data, and the person signs in with a valid email
-address on that Member's ParishSoft contact record (#922). A person whose
-highest role is Ministry leader and who leads no Ministry can sign in but sees
-no Ministry. Both flags are the promoted source's own: a Member is active
-unless ParishSoft marks them Inactive or Deceased, and a Family is active
-unless it is in ParishSoft's "Inactive" Family group or has no active
-Member, the same Family flag Portal eligibility requires. The Family need
-not be registered at the parish: a non-parishioner can lead a Ministry, an
-inactive Member cannot (Administrator decision, 2026-10-10). The Ministry
-must be catalog-present, selected in the current campaign, which asks about Ministries, and not marked inactive in the
-applied [Ministry activity](#ministry-activity-policy). The current campaign
-may still be a draft. Role labels match with each run of whitespace (any
-Unicode whitespace, the no-break space included) read as one space, the ends
-trimmed and ASCII letters case-insensitive, otherwise exactly
+roles stands in for the user. ParishSoft decides only which Ministries such a
+person leads: a person leads a Ministry for the current campaign when an active
+Member of an active Family holds one of the campaign's Ministry leader roles on
+that Ministry's current roster in the promoted ParishSoft data, and the person
+signs in with a valid email address on that Member's ParishSoft contact record
+(#922). A person whose highest role is Ministry leader and who leads no
+Ministry can sign in but sees no Ministry. Both flags are the promoted source's
+own: a Member is active unless ParishSoft marks them Inactive or Deceased, and
+a Family is active unless it is in ParishSoft's "Inactive" Family group or has
+no active Member, the same Family flag Portal eligibility requires. The Family
+need not be registered at the parish: a non-parishioner can lead a Ministry, an
+inactive Member cannot (Administrator decision, 2026-10-10). The Ministry must
+be catalog-present, selected in the current campaign, which asks about
+Ministries, and not marked inactive in the applied [Ministry
+activity](#ministry-activity-policy). The current campaign may still be a
+draft. Role labels match with each run of whitespace (any Unicode whitespace,
+the no-break space included) read as one space, the ends trimmed and ASCII
+letters case-insensitive, otherwise exactly
 (`stewardship_ministry_leader_role_key_v1`; Python's `leader_role_key` is the
 same rule). Addresses match case-insensitively, with no Gmail dot or plus
-folding, whatever the contact's publication flag says. An address that
-several leader Members list gets the union of their Ministries. No current
-campaign, or a campaign without Ministry stewardship, means no Ministry
-leaders. An address's one user gives its role
-([Portal user management](../admin-portal/spec.md#portal-user-management));
-until #952 lands, the interim code still picks the login rule (an exact
-address over a hosted-domain rule). Ministry assignments grant no Ministry.
+folding, whatever the contact's publication flag says. An address that several
+leader Members list gets the union of their Ministries. No current campaign, or
+a campaign without Ministry stewardship, means no Ministry leaders. An
+address's one user gives its role ([Portal user
+management](../admin-portal/spec.md#portal-user-management)); until #952 lands,
+the interim code still picks the login rule (an exact address over a
+hosted-domain rule). Ministry assignments grant no Ministry.
 
 The campaign's `ministry_leader_roles` value lists the role names: one to 50
 distinct trimmed names, none repeated once compared as above. Campaign
@@ -912,7 +913,8 @@ execute it. `stewardship_ministry_scope_v1` and Python's
 `current_principal()` read that scope, so Python never restates the rule and
 can never grant more than SQL. The Admin session guard (#306) admits by the
 user's role alone (by login rule in the interim code). Every role comes only
-from users, never from ParishSoft; Staff and Administrators see every
+from users (until #952 lands, from login rules in the interim code), never
+from ParishSoft; Staff and Administrators see every
 Ministry. Scope is recomputed on every request,
 so a full refresh that removes a role or an address takes effect on the next
 request. Nothing is cached
