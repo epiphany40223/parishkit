@@ -3633,6 +3633,16 @@ the button posts it, never putting it in an address
 of [#952](https://github.com/epiphany40223/parishkit/issues/952) lands, the
 interim page's exact-address rows carry these buttons in the same cell.
 
+Until the users upgrade, the interim page also ends with the read-only
+**Upgrade preview** panel of the
+[users upgrade](../operations/spec.md#users-upgrade-from-sign-in-rules),
+reached by a "See the users upgrade preview" link beside the heading (#952
+slice 2). It lists first the Administrators the upgrade keeps, then a table
+of the users it writes (Email, Name, Role and the rule each comes from,
+sorting as the Users table does), the hosted-domain rules, the deny rules it
+drops and what it does not carry over. It has no controls and is gone once
+the configuration holds users.
+
 ### Users table
 
 The page opens with **New user** above one table of users. Its columns are
