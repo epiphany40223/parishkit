@@ -1767,15 +1767,16 @@ requests. Use the ordinary changed-baseline reconfirmation flow for stale forms.
 
 A Ministry's name never affects its visibility. A Ministry name is an opaque
 string: every page, report, export, email and the Family form shows the full
-ParishSoft name, and nothing parses, splits or strips it. A leading number or
+ParishSoft name (only a workbook's sheet tab is cut to Excel's 31-character
+limit), and nothing reads meaning into a prefix. A leading number or
 letter (such as `102-Altar Servers`) or a marker such as `X-` is one parish's
 naming convention, not ParishSoft's, so it is kept and means nothing to the
 application (Administrator decision, 2026-10-10,
 [#971](https://github.com/epiphany40223/parishkit/issues/971)). ParishSoft
-names are stored as loaded and repaired only where they are shown: on the Family form, this screen,
-Campaign settings, Create the campaign and (before #142) first-campaign setup.
-A name the form can already show
-is used exactly as before, only trimmed, so valid labels and Family form
+names are stored as loaded and repaired only where they are shown: on the
+Family form, this screen, Campaign settings, Create the campaign and
+(before #142) first-campaign setup. A name the form can already show is used exactly
+as before, only trimmed, so valid labels and Family form
 digests never change because of this rule. An unusable name is repaired:
 whitespace (including tabs, newlines and non-breaking spaces) becomes single
 spaces, and control and other invisible characters are removed. That includes
@@ -1860,8 +1861,7 @@ in SQL, so a new event would be a schema change. A durable
 `ministry_catalog_changed` event can be added after the schema freeze.
 ParishSoft's own Ministry active/inactive flag is not compared. It is not
 reliable enough to decide visibility (see above), but a Ministry turned
-inactive there may be a stronger retirement signal than the `X-` hint; adding
-it to the notice is tracked for after launch in
+inactive there may signal retirement; adding it to the notice is tracked in
 [#342](https://github.com/epiphany40223/parishkit/issues/342).
 
 #### Changing a live campaign's Ministries
