@@ -2198,6 +2198,8 @@
   //     empty value on a field) makes those controls required while shown;
   //   - data-required-when="name=value" makes a field required while the
   //     form's control "name" has that value (notes for the outcome Other);
+  //     "name!=value" while it has any other value (the ParishSoft key in
+  //     setup, once the organization ID differs from the saved one);
   //   - data-require-one on a group of checkboxes needs at least one ticked
   //     (the System logs Show choices, #601): while none is, each box is
   //     marked invalid with the group's data-missing-hint.
@@ -2206,10 +2208,13 @@
   // disabled is used and only buttons this gate disabled are re-enabled.
   const requiredWhen = (form) => {
     form.querySelectorAll("[data-required-when]").forEach((node) => {
-      const [name, value] = node.dataset.requiredWhen.split("=");
+      const rule = node.dataset.requiredWhen;
+      const negated = rule.includes("!=");
+      const [name, value] = rule.split(negated ? "!=" : "=");
       const control = form.elements.namedItem(name);
       // A hidden (disabled) control's leftover value does not count.
-      node.required = Boolean(control) && !control.disabled && ruleValue(control) === value;
+      node.required = Boolean(control) && !control.disabled
+        && (ruleValue(control) === value) !== negated;
     });
   };
   const requireOne = (form) => {

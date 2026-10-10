@@ -11,13 +11,13 @@
 <p class="notice">{% translate "The system will remain in Testing mode. This does not activate a live campaign or send invitations to Families." %}</p>
 <p class="notice">{% translate "After you confirm, these settings are locked, and only this sign-in can continue or cancel setup, so stay signed in until setup finishes." %}</p>
 {% if readiness_problem %}
-<p role="status">{{ readiness_problem }}</p>
+<p role="status" id="setup-readiness">{{ readiness_problem }}</p>
 <p><a href="{% url 'admin:setup_mail' %}">{% translate "Send and check the required email test" %}</a></p>
 {% if draft.sections.slack.enabled %}<p><a href="{% url 'admin:setup_notification' %}">{% translate "Send and check the required Slack test" %}</a></p>{% endif %}
 {% endif %}
 <form method="post" class="panel">{% csrf_token %}
 {{ form.as_div }}
-{% translate "Check readiness and finish setup" as submit %}{% include 'stewardship/setup-navigation.html' with disabled=readiness_problem %}
+{% translate "Check readiness and finish setup" as submit %}{% if readiness_problem %}{% include 'stewardship/setup-navigation.html' with disabled_reason="setup-readiness" %}{% else %}{% include 'stewardship/setup-navigation.html' %}{% endif %}
 </form>
 <details><summary>{% translate "Reviewed configuration identity" %}</summary><code>{{ candidate_digest }}</code></details>
 {% endblock %}

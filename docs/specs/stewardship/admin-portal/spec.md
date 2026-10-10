@@ -135,7 +135,9 @@ continue validates, saves and opens the next applicable page, or redisplays
 the page with its errors), a short introduction, and plain-language help for
 every field. Revisiting a page shows its saved values; a credential page never
 shows the secret but says that one is saved (with its public scope, such as
-the ParishSoft organization), lets it be kept by leaving the key empty, and
+the ParishSoft organization), lets it be kept by leaving the key empty
+(unless it was entered for settings changed since, or the ParishSoft
+organization ID is changed, when the key is required again), and
 explains that it can be replaced until setup finishes and afterwards from
 Integrations. A page whose prerequisites are unmet explains what is missing
 and links the step that fixes it, keeping the HTTP status of the underlying
@@ -201,6 +203,18 @@ reader's values but without the events that set the page up, so these
 states (shown and hidden fields, unavailable buttons and their hints, a
 table's selection, the campaign modules and mail schedule rows) are worked
 out again when the page is shown (`pageshow`, #563).
+
+An action the server would refuse for a reason the page already knows is
+shown unavailable, named by that visible reason (`aria-describedby`), rather
+than left enabled or left out (#563). This covers Save and continue on a
+setup credential step while an earlier step is not done, Finish setup while
+setup is not ready, and Send on a campaign test email while a test is on its
+way. On Send to chosen Families, Send is unavailable with the first reason
+the reviewed Families cannot be sent: test codes not ready, campaign work in
+progress, a Family that cannot be sent a test, or more Families than the
+remaining allowance. Check these Families waits for a DUID. Prepare inactive
+Family links is unavailable while links cannot be prepared yet or earlier
+links still exist. The server still checks each of these.
 
 A field error is shown at that field: its message sits directly beside it,
 and the field is marked in error (`aria-invalid="true"`, described by the
