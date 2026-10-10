@@ -125,6 +125,10 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert response.status_code == 200 and response["Content-Type"] == "text/csv"
         assert "stewardship-census-changes-" in response["Content-Disposition"]
         assert b"Requested" in body and b"How it reaches ParishSoft" in body
+        # Member DUID is appended last, so positional readers keep working.
+        lines = body.decode().splitlines()
+        assert lines[0].endswith(",Submitted,Member DUID")
+        assert any(line.endswith(",3") for line in lines[1:])
         response, body = search(
             browser, export, {"format": "xlsx", "timezone": "UTC", "status": "all"}
         )
@@ -133,6 +137,8 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert book.sheetnames == ["Census changes"]
         answers = [cell.value for cell in book["Census changes"]["F"][1:]]
         assert "Requested" in answers
+        duids = [cell.value for cell in book["Census changes"]["K"]]
+        assert duids[0] == "Member DUID" and "3" in duids
         assert search(browser, export, {"format": "pdf"})[0].status_code == 400
     assert AuditEvent.objects.filter(event_type="census_changes_viewed").exists()
     assert AuditEvent.objects.filter(event_type="census_changes_exported").exists()

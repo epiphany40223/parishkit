@@ -1248,9 +1248,11 @@ Family name or DUID search, and submitted date. Sorting, paging and filters
 act [in place](../admin-portal/spec.md#in-place-controls). The filtered list
 downloads as CSV or XLSX (PDF later) with the page's values,
 audited with a count like the other report downloads. The files keep their
-earlier column order (Family first, Submitted last) until the export slice
-of [#932](https://github.com/epiphany40223/parishkit/issues/932) reorders
-them, so a spreadsheet that reads columns by position keeps working.
+earlier columns in their earlier order, so a spreadsheet that reads columns
+by position keeps working: Family first, Submitted after Status, then the
+page's Member DUID as a new last column, worded as on the page (the DUID,
+"New Member", or blank for a household change)
+([#932](https://github.com/epiphany40223/parishkit/issues/932)).
 
 The read-only page and its downloads are enough for staff to apply every
 change by hand if publication is not ready; that is why it comes first.

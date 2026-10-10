@@ -75,6 +75,9 @@ STATUS_CHOICES = ("open", *[key for key in STATUSES if key not in HISTORY], "all
 ROUTES = ("any", "automatic", "by_hand")
 KINDS = ("any", "contact", "moved", "deceased", "new_member")
 EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
+# The download's columns. Member DUID is the page's column after Who, but
+# here it is appended last (#932), so a reader that finds the other columns
+# by position keeps working.
 HEADINGS = (
     "Family",
     "Family DUID",
@@ -86,6 +89,7 @@ HEADINGS = (
     "How it reaches ParishSoft",
     "Status",
     "Submitted",
+    "Member DUID",
 )
 
 
@@ -418,6 +422,17 @@ def select(rows, query, *, administrator):
     }
 
 
+def export_member_duid(row):
+    """The Member DUID cell as the page words it.
+
+    The Member's DUID, "New Member" for a Member added on the form, and
+    blank for a household change.
+    """
+    if row["member_duid"] is not None:
+        return str(row["member_duid"])
+    return "New Member" if row["entity_kind"] == "proposed_member" else ""
+
+
 def export_rows(result, zone):
     """The filtered rows as plain text, times in the requested timezone."""
     return [
@@ -432,13 +447,14 @@ def export_rows(result, zone):
             row["route_label"],
             row["status_label"],
             row["submitted_at"].astimezone(zone).isoformat(timespec="seconds"),
+            export_member_duid(row),
         )
         for row in result["rows"]
     ]
 
 
 def census_csv(result, zone):
-    """One CSV of the filtered rows, with the page's columns."""
+    """One CSV of the filtered rows: the page's columns, Member DUID last."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
     writer.writerow(HEADINGS)
