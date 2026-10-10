@@ -18,7 +18,9 @@ from . import users_schema as users
 from .configuration_installation import (
     _install_request,
     _selected_over,
+    abandon_interrupted_upgrade,
     coherent_configuration,
+    interrupted_upgrade,
     restore_refused,
 )
 from .configuration_requests import _own_transaction, _status
@@ -218,15 +220,17 @@ def recovery_runtime(store):
 
     A refused activation (``failed`` with ``actor_unauthorized`` or
     ``invalid_candidate``) leaves the manifest naming its candidate until the
-    installer selects the base again; recovery does that itself before it
-    begins. So that state is not the incoherence the operator must resolve
-    first, and the preview reads the database's active configuration, the
-    base. Any other disagreement still refuses (#952).
+    installer selects the base again, and so does a users upgrade
+    interrupted before it activated (``interrupted_upgrade``); recovery
+    restores the base itself before it begins. So neither state is the
+    incoherence the operator must resolve first, and the preview reads the
+    database's active configuration, the base. Any other disagreement still
+    refuses (#952).
     """
     try:
         return coherent_configuration(store)
     except ConfigError:
-        if not _refused_selection(store):
+        if not _refused_selection(store) and interrupted_upgrade(store) is None:
             raise
     return SystemConfiguration.objects.select_related("active_configuration").get()
 
@@ -278,7 +282,10 @@ def recover_admin(
     Name for a new user is ``name`` or the address's local part. A manifest
     left ahead of the database by a recorded activation refusal (such as SQL
     refusing the users upgrade) is first returned to its base, so recovery
-    works in that state too.
+    works in that state too. So is one left by a users upgrade that stopped
+    before activating (a crash or a lost connection): recovery records that
+    upgrade failed and restores its base first, so no failed upgrade can
+    lock the Administrator out.
     """
     if any(
         not isinstance(value, UUID)
@@ -307,6 +314,9 @@ def recover_admin(
             raise ConfigError("Recovery requires one initialized deployment.") from None
         if runtime.pk != deployment_id:
             raise ConfigError("The confirmed deployment does not match.")
+        # Undo a users upgrade that stopped before activating (#952): the
+        # database never left its base, so only the manifest moves back.
+        abandon_interrupted_upgrade(store, correlation_id=correlation_id)
         request = ConfigurationChangeRequest.objects.filter(
             authority="operator_recovery", request_key=operation_id
         ).first()

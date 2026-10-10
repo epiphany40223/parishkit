@@ -212,10 +212,11 @@ def recover_admin_command(
 def preview_recovery_command(configuration, *, deployment_id, target_email, name=None):
     """Display coherent current rules and the exact proposed change without writing.
 
-    A manifest left ahead of the database by a recorded activation refusal
-    is not incoherence the operator must resolve first: recovery itself
-    selects the base again before it begins, so the preview shows that base
-    rather than refusing (#952). ``name`` previews a new Administrator
+    A manifest left ahead of the database by a recorded activation refusal,
+    or by a users upgrade interrupted before it activated, is not
+    incoherence the operator must resolve first: recovery itself selects the
+    base again before it begins, so the preview shows that base rather than
+    refusing (#952). ``name`` previews a new Administrator
     user's Name in the users form.
     """
     if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
@@ -270,14 +271,13 @@ def upgrade_users_command(
         with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
             configure_operator_database(configuration)
             from .accounts.authority import AuthorityStore
-            from .accounts.configuration_installation import coherent_configuration
             from .accounts.configuration_schema import validate_sections
             from .accounts.request_admission import intake_base
-            from .accounts.users_upgrade import upgrade_preview
+            from .accounts.users_upgrade import upgrade_preview, upgrade_runtime
             from .runtime_database import admit_offline_database
 
             admit_offline_database(configuration, users_upgrade=True)
-            runtime = coherent_configuration(
+            runtime = upgrade_runtime(
                 AuthorityStore(configuration.paths["authority"], validate_sections)
             )
             if runtime.pk != _uuid(deployment_id):
