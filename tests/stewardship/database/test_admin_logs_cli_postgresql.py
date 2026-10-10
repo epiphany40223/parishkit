@@ -345,3 +345,30 @@ def test_a_command_read_past_the_pages_limit_is_stopped_and_recorded(
     assert len(stops) == 2
     for stop in stops:
         assert stop["what"] == "statement_timeout" and "limit_seconds" in stop
+
+
+def test_logs_list_activity_lists_the_pages_sign_in_activity(admin, google):
+    """``--activity sign_in`` lists the page's Sign-in activity (#953): only
+    the group's audit types, the same entries the page lists."""
+    from parishkit.stewardship.audit.log_rows import ACTIVITY_TYPES
+
+    browser, secret, _ = paired(admin.service, scope="read-only")
+    # Sampled and anonymous by design (accounts.auth_incidents).
+    AuditEvent.objects.create(event_type="admin_login_denied")
+    code, document, _ = admin(
+        "logs", "list", "--activity", "sign_in", "--show", "audit", secret=secret
+    )
+    assert code == 0, document
+    types = [entry["type"] for entry in document["result"]["entries"]]
+    assert "admin_login_denied" in types and "admin_login" in types
+    assert set(types) <= set(ACTIVITY_TYPES["sign_in"])
+    response = page(
+        browser,
+        "/admin/system/logs/",
+        {"applied": "yes", "audit": "yes", "activity": "sign_in"},
+    )
+    assert response.status_code == 200
+    assert counted("system_logs_viewed")[-1] == len(types)
+    # A group the page does not list is a usage error, before any read.
+    code, document, _ = admin("logs", "list", "--activity", "everything", secret=secret)
+    assert code == 2 and document["error"]["code"] == "usage"

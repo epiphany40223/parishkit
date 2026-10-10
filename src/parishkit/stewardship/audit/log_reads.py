@@ -137,9 +137,12 @@ def sources(query, through):
 
     Either is None when the filters exclude that source entirely. Text and
     Ministry filters (#536) apply to both, through ``log_search.narrowed``.
+    An Activity group (#953) is a closed list of audit types, so it leaves
+    operational entries out and narrows audit records to that list; a typed
+    type then narrows further within it.
     """
     operational = audit = None
-    if not (query.campaign or query.subject) and query.levels:
+    if not (query.campaign or query.subject or query.activity_types) and query.levels:
         operational = OperationalLog.objects.filter(level__in=query.levels)
         if query.event:
             operational = operational.filter(event=query.event)
@@ -147,6 +150,8 @@ def sources(query, through):
         operational = filtered(operational, query, through)
     if query.audits:
         audit = AuditEvent.objects.all()
+        if query.activity_types:
+            audit = audit.filter(event_type__in=query.activity_types)
         if query.event:
             audit = audit.filter(event_type=query.event)
         if query.campaign:

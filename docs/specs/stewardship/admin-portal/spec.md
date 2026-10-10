@@ -3938,7 +3938,10 @@ sort by their headings (the automation specification's
 owns the parameters).
 
 The Admin user page contains sorted domain and exact-address tables. Rows show
-normalized value, effective roles, source, last login, and warnings. Role
+normalized value, effective roles, source, last login, and warnings. A small
+"See sign-in activity in System logs" link beside the page heading opens
+[sign-in activity](#sign-in-activity) on System logs, with only the closed
+link filters in its address. Role
 checkbox changes autosave through a `ConfigurationChangeRequest` with a
 transient Applying/Applied/error indicator; each request uses the expected
 active YAML digest to prevent lost updates. A security-policy change is
@@ -5175,8 +5178,9 @@ Only Admins access the combined log screen. It supports:
   out, `both` includes them), and carries only the checkboxes from then on.
   The critical-events banner's link ticks Critical alone, without audit
   records, and "Same campaign" ticks Audit record alone;
-- action/type, campaign, entity, actor, task/request correlation, text,
-  Ministry, date range, and the six Show (level and audit record) filters.
+- action/type, Activity ([sign-in activity](#sign-in-activity)), campaign,
+  entity, actor, task/request correlation, text, Ministry, date range, and
+  the six Show (level and audit record) filters.
   The entity filter is the audit subject identifier (audit records only, like
   campaign), under "Filter by identifier" with the other identifiers;
 - text search ([#536](https://github.com/epiphany40223/parishkit/issues/536)):
@@ -5196,8 +5200,8 @@ Only Admins access the combined log screen. It supports:
   index is a schema change left until the log needs one
   ([#765](https://github.com/epiphany40223/parishkit/issues/765));
 - bookmarkable views (#536): a GET may carry only the filters that are not
-  private (the Show choices, type, Ministry, From and Through with their
-  zone, rows per page and sort). The search text, identifiers (actor,
+  private (the Show choices, Activity, type, Ministry, From and Through with
+  their zone, rows per page and sort). The search text, identifiers (actor,
   correlation, campaign, subject) and the paging snapshot stay in POST
   bodies, following the [Admin tables](#admin-tables) rule that private
   filters keep POST state, because a web address is kept in the server's
@@ -5289,6 +5293,46 @@ requires choosing UTC or the browser's timezone (offered by the page); the
 file's timestamps carry their UTC offset. Logins/logouts, configuration, polls/tasks, each email and
 reason/recipient routing, report execution/export, errors, Family access,
 submission changes, workflow changes, publication, and purge are recorded.
+
+### Sign-in activity
+
+An Administrator sees every recorded Admin portal sign-in event in one list
+([#953](https://github.com/epiphany40223/parishkit/issues/953)) by choosing
+"Sign-in activity" in the filter bar's Activity choice; "All activity", the
+default, applies no group. The group is a fixed list of audit types, so no one
+types internal type names one at a time:
+
+- `admin_login`, a successful sign-in to the portal by any portal role;
+- `admin_step_up`, a sign-in confirmed again for a protected action;
+- `admin_logout`, `admin_timeout`, `admin_revoked`,
+  `admin_reauthenticated` and `admin_privileges_changed`, the
+  [session endings](../architecture/spec.md#identity-and-session-security)
+  (sign out, inactivity or absolute expiry, access removed or all sessions
+  signed out, a new sign-in that replaced the previous session, and a
+  session replaced by one carrying the person's changed roles); and
+- `admin_login_denied`, the sampled record of refused sign-ins: at most one
+  per deployment every five minutes, with no actor, so public traffic cannot
+  allocate unbounded audit rows.
+
+The server maps the choice to that closed `event_type` list. Operational
+entries are left out while it is chosen, since none is sign-in activity: the
+five level boxes stay in place but greyed out and are not sent
+(`data-enabled-when`), so choosing it moves nothing, and Apply waits until
+Audit record is ticked, the gate's hint line below the filter bar saying so
+(`data-required-when`). A request that bypasses the page with Audit record
+unticked gets an empty table that says to tick it. A typed type
+narrows further within the group. Every other filter, the snapshot paging,
+the 60-second read limit and the view's own count-only audit record apply as
+for any other view. Rows keep the log's columns, Time first in browser-local
+time, and the Actor column names the person by address. "Same actor" on an
+entry carries the choice, so it lists that person's sign-in activity. The
+choice is a link filter, so a bookmark or the page's own link keeps it, and the
+download carries it, so the file holds exactly the entries the page lists. The
+Portal users page links to it ([portal user management](#portal-user-management)).
+
+Per-user sign-in history, a per-account record of refused sign-ins by
+verified Google identities and a list of live Admin sessions are later
+slices of #953.
 
 ## Campaign purge
 

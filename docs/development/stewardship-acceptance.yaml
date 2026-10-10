@@ -125,6 +125,7 @@ sections:
     "What stays on the host": [ADM-13]
     "System health decisions": [ADM-13]
     "Logs": [ADM-08]
+    "Sign-in activity": [ADM-08]
     "Campaign purge": [ADM-10, BG-11]
   parishioner-portal/spec.md:
     "Availability and entry": [FAM-01]
