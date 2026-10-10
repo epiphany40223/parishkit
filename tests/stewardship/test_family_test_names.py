@@ -15,14 +15,24 @@ from uuid import UUID
 
 import pytest
 
-from parishkit.stewardship.reports import export_services
+from parishkit.stewardship.reports import export_services, family_test_names
 from parishkit.stewardship.reports.family_test_names import names_document
 from parishkit.stewardship.reports.information_rendering import render_information
+from parishkit.stewardship.reports.pdf_design import PdfFrame
 
 CAMPAIGN = UUID("00000000-0000-4000-8000-000000000041")
 REVISION = UUID("00000000-0000-4000-8000-000000000042")
 REQUESTER = UUID("00000000-0000-4000-8000-000000000043")
 CAPTURED = datetime(2054, 10, 6, 15, 30, tzinfo=UTC)
+CAMPAIGN_NAME = "Stewardship 2055"
+
+
+@pytest.fixture(autouse=True)
+def named_campaign(monkeypatch):
+    """The capture's campaign name, without a database."""
+    monkeypatch.setattr(
+        family_test_names, "campaign_name", lambda request: CAMPAIGN_NAME
+    )
 
 
 def request(rows, *, row_count=None):
@@ -63,6 +73,15 @@ def test_the_file_lists_every_reviewed_family_in_order():
         # A name that looks like a formula stays text, as every export's.
         ["5", "'=HYPERLINK(1)"],
     ]
+
+
+def test_the_pdf_frame_names_the_campaign():
+    """Like every report, the file names its campaign; the PDF eyebrow shows it."""
+    document = names_document(request([(1, "A")]))
+    assert ("Campaign", CAMPAIGN_NAME) in document.metadata
+    assert PdfFrame.for_document(document).eyebrow == (
+        f"Example Parish · {CAMPAIGN_NAME}"
+    )
 
 
 def test_a_capture_missing_a_row_is_refused():

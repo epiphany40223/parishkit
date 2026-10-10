@@ -209,6 +209,16 @@ def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
     output = io.BytesIO()
     render_information(built, output, format="pdf")
     assert output.getvalue().startswith(b"%PDF")
+    # The PDF joins each continuation to its Family's one card.
+    from parishkit.stewardship.reports.information_rendering import (
+        information_records,
+    )
+
+    _, first, second = information_records(built)
+    assert first.title == "Example <Family> (DUID 1234567)"
+    shares = [value for label, value in first.fields if label == "Share methods"]
+    assert len(shares) == 5 and shares[1].startswith("(continued) ")
+    assert second.title == "Example <Family> (DUID 2)"
     # A long share label is a wrapped metadata value, so the PDF still renders.
     long = row(shares=[{"label": "L" * 150, "text": ""}])
     shaped = result([long])
@@ -361,8 +371,10 @@ def test_xlsx_money_cells_are_exact_summable_numbers():
 def test_csv_money_is_the_canonical_amount_and_pdf_keeps_the_page_text():
     """CSV writes plain signed decimals; PDF still writes the page's text."""
     from parishkit.stewardship.reports.information_rendering import (
-        information_lines,
+        information_records,
     )
+
+    from .test_information_rendering import card_text
 
     built = money_document()
     output = io.BytesIO()
@@ -389,7 +401,9 @@ def test_csv_money_is_the_canonical_amount_and_pdf_keeps_the_page_text():
     assert third[7] == "123456789012345.67"
     # The report-total metadata trailer is a canonical amount too.
     assert records[0].index("Total annual pledges") == first.index("1234.51")
-    lines = list(information_lines(built))
+    lines = [
+        f"{label}: {text}" for label, text in card_text(information_records(built))
+    ]
     assert "Annual pledge: $1,234.50" in lines
     assert "ParishSoft pledged: -$50.00" in lines
     assert "Total annual pledges: $1,234.51" in lines

@@ -24,6 +24,10 @@ from parishkit.stewardship.reports.export_services import (
 )
 from parishkit.stewardship.reports.export_tasks import export_handler
 from parishkit.stewardship.reports.information import InformationQuery, information_page
+from parishkit.stewardship.reports.information_documents import (
+    HEADINGS,
+    information_document,
+)
 from parishkit.stewardship.reports.information_exports import create_information_export
 from parishkit.stewardship.responses.information import update_information
 from parishkit.stewardship.responses.models import AdditionalInformationItem
@@ -76,6 +80,25 @@ def test_complete_capture_is_not_the_interactive_page(live_response_service):
             sum(row["disposition"] == "superseded" for row in snapshot.document["rows"])
             == 50
         )
+        # Without internal references, each superseded item names its
+        # replacement by that later request's Submitted time (PR #929).
+        rows = information_document(
+            snapshot.document,
+            snapshot.parameters,
+            parish_name="Parish",
+            requested_at=snapshot.created_at,
+            timezone="UTC",
+        ).rows
+        at, by = (
+            HEADINGS.index("Submitted"),
+            HEADINGS.index("Replaced by request submitted"),
+        )
+        items = snapshot.document["rows"]
+        submitted = {item["id"]: row[at] for item, row in zip(items, rows, strict=True)}
+        assert [row[by] for row in rows] == [
+            submitted.get(item["replacement_id"], "") for item in items
+        ]
+        assert sum(row[by] != "" for row in rows) == 50
 
 
 def test_information_capture_freezes_full_text_and_history(live_response_service):
@@ -266,7 +289,7 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
             response, body = search(browser, export_action(job_route, "download"), {})
             assert response.status_code == 200
             assert body.startswith(
-                {"csv": b"Record,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
+                {"csv": b"Row type,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
             )
             assert "additional_information." + format in response["Content-Disposition"]
             if format == "csv":

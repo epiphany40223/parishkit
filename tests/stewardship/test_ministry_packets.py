@@ -7,7 +7,6 @@ from datetime import UTC, date, datetime
 import pytest
 from openpyxl import load_workbook
 
-from parishkit.stewardship.reports.information_rendering import PAGE_LINES
 from parishkit.stewardship.reports.ministry_exports import (
     MAX_PACKET_MINISTRIES,
     packet_parameters,
@@ -16,11 +15,14 @@ from parishkit.stewardship.reports.ministry_packets import (
     HEADINGS,
     MAX_CELL_CHARACTERS,
     packet_document,
-    packet_pages,
+    packet_records,
     render_packet,
     sheet_names,
 )
+from parishkit.stewardship.reports.pdf_design import PdfFrame, record_pages
 from parishkit.stewardship.web.dates import Span
+
+from .test_information_rendering import card_text
 
 MOMENT = datetime(2026, 9, 20, 2, 30, tzinfo=UTC)
 OUTCOME = HEADINGS.index("Outcome")
@@ -324,6 +326,11 @@ def test_xlsx_has_one_literal_sheet_per_ministry_with_safe_distinct_names():
     ]
 
 
+def pages(document):
+    """The packet's PDF pages, each a list of card pieces."""
+    return list(record_pages(packet_records(document), PdfFrame.for_document(document)))
+
+
 def test_pdf_starts_each_ministry_on_a_new_page_and_keeps_all_text():
     """Overflow adds pages; it never truncates or merges two Ministries."""
     many = [item(member_name=f"Member {number:03d}") for number in range(40)]
@@ -333,21 +340,50 @@ def test_pdf_starts_each_ministry_on_a_new_page_and_keeps_all_text():
         dict(duid=9, name="Choir", chairs=[], rows=[long]),
     ]
     document = packet(sections)
-    pages = list(packet_pages(document))
-    assert all(0 < len(page) <= PAGE_LINES for page in pages)
-    firsts = [page[0] for page in pages]
-    assert firsts[0].startswith("Report: ")
-    assert sum(line.startswith("Ministry: ") for line in firsts) == 2
-    assert [line for line in firsts if line.startswith("Ministry: ")] == [
-        "Ministry: Altar Servers",
-        "Ministry: Choir",
+    laid_out = pages(document)
+    # The report card, then each Ministry's details card, opens a page.
+    firsts = [page[0].titles[0] for page in laid_out]
+    infos = [
+        piece.titles[0]
+        for page in laid_out
+        for piece in page
+        if piece.record.style == "info"
     ]
-    text = "\n".join(line for page in pages for line in page)
-    assert all(f"Member {number:03d}" in text for number in range(40))
+    assert infos == [
+        "About this report",
+        "Altar Servers (DUID 4)",
+        "Choir (DUID 9)",
+    ]
+    assert all(title in firsts for title in infos)
+    text = "\n".join(text for _, text in card_text(packet_records(document)))
+    assert all(f"Member {number:03d} (DUID 12345)" in text for number in range(40))
     assert text.count("word") == 400
+    # Blank packet cells print as write-in rules, never left out.
+    member = next(
+        piece for page in laid_out for piece in page if piece.record.style == "card"
+    )
+    kinds = [line.kind for line in member.lines] + [
+        line.right[0] for line in member.lines if line.right
+    ]
+    assert kinds.count("write") == 3
     assert rendered(document, "pdf").startswith(b"%PDF")
     with pytest.raises(ValueError):
         render_packet(document, io.BytesIO(), format="zip")
+
+
+def test_every_packet_format_states_the_privacy_line():
+    """The packet carries the privacy line like every other report file."""
+    privacy = "Sensitive parish information. Share only with authorized recipients."
+    document = packet()
+    assert dict(document.metadata)["Privacy"] == privacy
+    assert f"Privacy,{privacy}" in rendered(document, "csv").decode()
+    book = load_workbook(io.BytesIO(rendered(document, "xlsx")))
+    assert [privacy] == [
+        value
+        for (label, value) in book["Report information"].iter_rows(values_only=True)
+        if label == "Privacy"
+    ]
+    assert PdfFrame.for_document(document).notice == privacy
 
 
 def test_xlsx_refuses_a_value_beyond_the_cell_limit_instead_of_truncating():
@@ -362,8 +398,21 @@ def test_xlsx_refuses_a_value_beyond_the_cell_limit_instead_of_truncating():
     # CSV and PDF have no such limit and keep the complete value, even as one
     # unbroken token that the PDF paginator must wrap across many pages.
     assert ("Q" * (limit + 1)).encode() in rendered(packet(over), "csv")
-    wrapped = "".join(line for page in packet_pages(packet(over)) for line in page)
+    laid_out = pages(packet(over))
+    wrapped = "".join(
+        line.text
+        for page in laid_out
+        for piece in page
+        for line in piece.lines
+        if line.kind == "field"
+    )
     assert wrapped.count("Q") == limit + 1
+    # The Ministry card is taller than a page: each later piece repeats its
+    # title, marked continued.
+    titles = [page[0].titles[0] for page in laid_out[1:]]
+    assert titles[0] == "Choir (DUID 9)"
+    assert len(titles) > 2
+    assert all(title == "Choir (DUID 9) (continued)" for title in titles[1:])
 
 
 def test_stewardship_year_is_the_configured_label_not_a_derived_date():

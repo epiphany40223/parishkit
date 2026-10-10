@@ -5,11 +5,10 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
-from openpyxl.styles import Font
-from openpyxl.utils import get_column_letter
 
 from .information_rendering import MONEY_FORMAT, excel_amount, xlsx_cell
 from .participation import participation_table
+from .xlsx_design import style_information, style_table
 
 
 def _cell(sheet, row, column, value):
@@ -44,8 +43,7 @@ def participation_xlsx(document, output):
     if document.financial_enabled:
         headings.append("pledge_usd")
     for column, heading in enumerate(headings, 1):
-        _cell(sheet, 1, column, heading).font = Font(bold=True)
-        sheet.column_dimensions[get_column_letter(column)].width = 28
+        _cell(sheet, 1, column, heading)
     for index, row in enumerate(rows, 2):
         for column, heading in enumerate(headings, 1):
             value = row[heading]
@@ -71,13 +69,7 @@ def participation_xlsx(document, output):
                 cell.number_format = MONEY_FORMAT
             elif type(value) is int:
                 cell.number_format = "#,##0"
-    sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = sheet.dimensions
-    sheet.print_title_rows = "1:1"
-    sheet.page_setup.orientation = "landscape"
-    sheet.page_setup.fitToWidth = 1
-    sheet.sheet_properties.pageSetUpPr.fitToPage = True
-    sheet.oddFooter.center.text = "Page &P of &N"
+    style_table(sheet, title="Participation")
     metadata = book.create_sheet("Report information")
     for index, (label, value) in enumerate(
         (
@@ -99,9 +91,8 @@ def participation_xlsx(document, output):
         ),
         1,
     ):
-        _cell(metadata, index, 1, label).font = Font(bold=True)
+        _cell(metadata, index, 1, label)
         _cell(metadata, index, 2, value)
-    metadata.column_dimensions["A"].width = 32
-    metadata.column_dimensions["B"].width = 85
+    style_information(metadata, title="Participation")
     book.save(output)
     book.close()

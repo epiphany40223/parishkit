@@ -18,14 +18,7 @@ from parishkit.stewardship.web.exports import csv_cell
 from parishkit.stewardship.web.presentation import campaign_year
 from parishkit.stewardship.web.presentation import phone as format_phone
 
-from .information_rendering import (
-    FORMAT_NOTE,
-    PAGE_LINES,
-    record_lines,
-    visible_text,
-    write_pages,
-    xlsx_cell,
-)
+from .information_rendering import FORMAT_NOTE, visible_text, xlsx_cell
 from .ministries import NOT_IN_CAMPAIGN, OUTCOMES, STATE_LABELS
 
 TITLE = "Ministry follow-up packet"
@@ -183,6 +176,12 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
         ),
         ("Ministry sections", f"{len(sections):,}"),
         ("Request rows", f"{count:,}"),
+        # The PDF footer, the XLSX information sheet and the CSV head all
+        # carry this line, as every other report's files do.
+        (
+            "Privacy",
+            "Sensitive parish information. Share only with authorized recipients.",
+        ),
         (
             "Blank cells",
             "Nothing is recorded yet; complete them by hand. A blank outcome is an "
@@ -242,10 +241,11 @@ def sheet_names(names):
 def packet_xlsx(document, output):
     """One workbook with a literal-text sheet per Ministry, plus report information."""
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font
-    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Alignment
 
-    def write(sheet, row, column, value, *, bold=False):
+    from .xlsx_design import style_details, style_information, style_table
+
+    def write(sheet, row, column, value):
         """Literal strings or native dates, so no value can become a formula."""
         if (
             not isinstance(value, date)
@@ -254,7 +254,6 @@ def packet_xlsx(document, output):
             raise ValueError("A packet value exceeds the spreadsheet cell limit.")
         cell = xlsx_cell(sheet, row, column, value)
         cell.alignment = Alignment(wrap_text=True, vertical="top")
-        cell.font = Font(bold=bold)
 
     book = Workbook()
     try:
@@ -263,58 +262,69 @@ def packet_xlsx(document, output):
         for title, section in zip(titles, document.sections, strict=True):
             sheet = book.create_sheet(title)
             for index, (key, value) in enumerate(section.details, 1):
-                write(sheet, index, 1, key, bold=True)
+                write(sheet, index, 1, key)
                 write(sheet, index, 2, value)
             head = len(section.details) + 2
             for column, heading in enumerate(document.headings, 1):
-                write(sheet, head, column, heading, bold=True)
-                sheet.column_dimensions[get_column_letter(column)].width = (
-                    48 if heading == "Outcome" else 28
-                )
+                write(sheet, head, column, heading)
             for offset, row in enumerate(section.rows, 1):
                 for column, value in enumerate(row, 1):
                     write(sheet, head + offset, column, value)
-            sheet.freeze_panes = sheet.cell(head + 1, 1)
-            sheet.print_title_rows = f"{head}:{head}"
-            sheet.page_setup.orientation = "landscape"
-            sheet.page_setup.fitToWidth = 1
-            sheet.sheet_properties.pageSetUpPr.fitToPage = True
-            sheet.oddFooter.center.text = "Page &P of &N"
+            # The Ministry's details sit above its member table, labeled
+            # like the report information; the table's header stays frozen.
+            # Each detail value spans the table's width rather than wrapping
+            # inside the narrow column the table gave column B.
+            style_table(
+                sheet, header_row=head, widths={"Outcome": 48}, title=document.title
+            )
+            style_details(
+                sheet, range(1, head - 1), widths=False, span=len(document.headings)
+            )
         information = book.create_sheet("Report information")
         for index, (key, value) in enumerate(
             chain(document.metadata, (("Text representation", FORMAT_NOTE),)), 1
         ):
-            write(information, index, 1, key, bold=True)
+            write(information, index, 1, key)
             write(information, index, 2, value)
-        information.column_dimensions["A"].width = 32
-        information.column_dimensions["B"].width = 90
+        style_information(information, title=document.title)
         book.save(output)
     finally:
         book.close()
 
 
-def packet_pages(document):
-    """Paginate so the report information and each Ministry start a new page."""
-    groups = chain(
-        ((document.metadata, (("Text representation", FORMAT_NOTE),)),),
+def packet_records(document):
+    """The report-information card, then each Ministry's details and members.
+
+    Each Ministry's details card starts a new page. Blank cells print as
+    write-in rules, since a packet is completed by hand.
+    """
+    from .pdf_design import detail_record, report_record, row_records
+
+    values = chain(
+        (value for section in document.sections for _, value in section.details),
         (
-            chain(
-                (section.details,),
-                (zip(document.headings, row, strict=True) for row in section.rows),
-            )
+            value
             for section in document.sections
+            for row in section.rows
+            for value in row
         ),
     )
-    for group in groups:
-        lines = tuple(record_lines(group))
-        for start in range(0, len(lines), PAGE_LINES):
-            yield lines[start : start + PAGE_LINES]
+    yield report_record(document.metadata, values=values)
+    for section in document.sections:
+        yield detail_record(section.details, style="info", new_page=True)
+        yield from row_records(document.headings, section.rows, keep_blank=True)
 
 
 def packet_pdf(document, output):
     """Count pages first so every page can state its position in the packet."""
-    page_count = sum(1 for _ in packet_pages(document))
-    return write_pages(document, output, packet_pages(document), page_count)
+    from .pdf_design import PdfFrame, write_records
+
+    return write_records(
+        output,
+        PdfFrame.for_document(document),
+        lambda: packet_records(document),
+        requested_at=document.requested_at,
+    )
 
 
 def render_packet(document, output, *, format):

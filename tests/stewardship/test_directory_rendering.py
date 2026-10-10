@@ -17,11 +17,13 @@ from parishkit.stewardship.reports.directory_documents import (
     head_names,
 )
 from parishkit.stewardship.reports.directory_rendering import (
-    COLUMN_WIDTHS,
     address_blocks,
+    directory_frame,
+    directory_table,
     render_directory,
-    table_lines,
+    table_rows,
 )
+from parishkit.stewardship.reports.pdf_design import CELL_PAD, text_width
 
 SHARED = [{"value": "williams@example.org", "valid": True}]
 EMAILS = "Aaron Williams and Isabelle Williams: williams@example.org"
@@ -68,7 +70,7 @@ def item(**values):
     )
 
 
-def document(rows, *, postal=False, reach="any"):
+def document(rows, *, postal=False, reach="any", testing=False):
     """Build a document the way the export worker does."""
     payload = dict(
         metadata=dict(
@@ -99,6 +101,7 @@ def document(rows, *, postal=False, reach="any"):
         captured_at=MOMENT,
         requested_at=MOMENT,
         timezone="America/Detroit",
+        testing=testing,
     )
 
 
@@ -287,9 +290,10 @@ def test_postal_pdf_blocks_name_a_missing_mailing_address():
     )
     blocks = list(address_blocks(report))
     assert len(blocks) == 2
-    assert blocks[0][0] == "Aaron and Isabelle Williams"
-    assert blocks[1][0] == "No usable mailing address"
-    assert "ParishSoft DUID 2" in " ".join(blocks[1])
+    assert blocks[0][0] == ("Aaron and Isabelle Williams", "title")
+    # Said in words (and set as a warning), never by color alone.
+    assert blocks[1][0] == ("No usable mailing address", "warning")
+    assert "ParishSoft DUID 2" in " ".join(text for text, _ in blocks[1])
 
 
 def test_xlsx_and_pdf_carry_the_same_columns_and_details():
@@ -307,9 +311,9 @@ def test_xlsx_and_pdf_carry_the_same_columns_and_details():
         (row[0].value, row[1].value) for row in book["Report information"].iter_rows()
     )["Privacy"].startswith("Sensitive: Family codes.")
     book.close()
-    line = next(table_lines(report))[0]
-    assert "=Sample Family, Aaron Williams and" in line
-    assert "ABCDEFGH" in line and "Aaron Williams and Isabelle" in line
+    cells = directory_table(report).cells(report.rows[0])
+    assert "".join(cells[0]) == "=Sample Family, Aaron Williams and Isabelle Williams"
+    assert cells[2] == ["ABCDEFGH"] and "".join(cells[3]) == EMAILS
     for postal in (False, True):
         output = io.BytesIO()
         assert render_directory(document([item()], postal=postal), output, format="pdf")
@@ -421,24 +425,40 @@ def test_testing_codes_context_follows_the_mode_and_role(
 def test_pdf_table_rows_fit_the_page_with_phones_and_emails():
     """Wrapped cells keep the widest table (phones and emails) on the page.
 
-    The landscape page holds about 138 monospaced characters at 9 pt.
+    Every wrapped line fits its column by the font's own glyph widths, the
+    columns fill exactly the body width, and a cell's lines rejoin to the
+    whole value: nothing is clipped or dropped.
     """
+    from parishkit.stewardship.reports.pdf_design import BODY_SIZE, BODY_WIDTH
+
     long = [{"value": "a.very.long.address.for.wrapping@example.org", "valid": True}]
     report = document(
         [item(heads=[{"name": "Ann Lee", "emails": long}])], reach="neither"
     )
-    lines = [line for block in table_lines(report) for line in block]
-    assert lines and max(map(len, lines)) <= 138
-    # The email column starts after Family, DUID, code and phones (and their
-    # two-space gaps); its wrapped pieces rejoin to the whole address.
-    start = sum(COLUMN_WIDTHS[name] + 2 for name in report.headings[:-1])
-    assert (
-        "".join(line[start:] for line in lines)
-        == "Ann Lee: a.very.long.address.for.wrapping@example.org"
+    table = directory_table(report)
+    assert sum(table.widths) == pytest.approx(BODY_WIDTH)
+    cells = table.cells(report.rows[0])
+    for cell, width in zip(cells, table.widths, strict=True):
+        assert all(text_width(line, BODY_SIZE) <= width - 2 * CELL_PAD for line in cell)
+    assert "".join(cells[-1]) == (
+        "Ann Lee: a.very.long.address.for.wrapping@example.org"
     )
+    # In the PDF each phone starts its own line and fits it unbroken.
+    phones = [
+        dict(owner="Isabelle Williams", kind="mobile", value="202-555-0123"),
+        dict(owner="Family", kind="home", value="202-555-0100"),
+    ]
+    report = document([item(phones=phones)], reach="neither")
+    [row] = table_rows(report)
+    assert table.cells(row)[3] == [
+        "Isabelle Williams (mobile): +1 (202) 555-0123;",
+        "Family (home): +1 (202) 555-0100",
+    ]
+    # CSV and XLSX keep the one-line cell.
+    assert report.rows[0][3].count("\n") == 0
 
 
-def test_current_head_emails_are_dated_in_the_report_details(monkeypatch):
+def test_current_head_emails_are_dated_in_the_report_details():
     """Emails read from newer data than the capture say how current they are.
 
     The detail is in the XLSX information sheet and the PDF header, never a
@@ -481,47 +501,49 @@ def test_current_head_emails_are_dated_in_the_report_details(monkeypatch):
     }
     book.close()
     assert HEAD_EMAILS_DETAIL in information
-    from parishkit.stewardship.reports import directory_rendering
-
-    drawn = []
-    original = directory_rendering.visible_text
-
-    def visible(value, **kwargs):
-        """Record the header text the PDF draws."""
-        drawn.append(value)
-        return original(value, **kwargs)
-
-    monkeypatch.setattr(directory_rendering, "visible_text", visible)
     for postal in (False, True):
-        drawn.clear()
-        output = io.BytesIO()
         report = directory_document(
             payload,
             parameters | {"postal": postal},
             head_emails_as_of=later,
             **common,
         )
-        assert render_directory(report, output, format="pdf")
-        assert any(HEAD_EMAILS_DETAIL in value for value in drawn)
+        # The PDF header states it on every page.
+        assert any(
+            line.startswith(HEAD_EMAILS_DETAIL)
+            for line in directory_frame(report).details
+        )
+        assert render_directory(report, io.BytesIO(), format="pdf")
 
 
 def test_directory_pdf_draws_its_details_heading_note_and_pages(monkeypatch):
-    """Pin what the shared page drawing (``draw_pages``) puts on each page.
+    """Pin what the shared page frame and table draw on each directory page.
 
-    Every page repeats the title, both header lines, the table heading, the
-    privacy footer, the Testing note and "Page n of m", as before the
-    drawing was shared with the response lists.
+    Every page repeats the title, the parish and campaign line, the capture
+    time, the counts and filters line, the table heading, the privacy
+    footer, the Testing note and "Page N of M". The response lists' PDF
+    shares this frame and table drawing (``pdf_design``).
     """
     from matplotlib.backends.backend_pdf import PdfPages
 
-    pages = []
+    from parishkit.stewardship.reports import pdf_design
+
+    pages, current = [], []
+    text = pdf_design.Canvas.text
     save = PdfPages.savefig
 
+    def record(canvas, x, y, value, *args, **kwargs):
+        """Collect each drawn string for the page being drawn."""
+        current.append(value)
+        return text(canvas, x, y, value, *args, **kwargs)
+
     def savefig(pdf, figure, *args, **kwargs):
-        """Record each page's text, in drawing order, then save the page."""
-        pages.append([text.get_text() for text in figure.texts])
+        """Close the page's text list, then save the page."""
+        pages.append(list(current))
+        current.clear()
         return save(pdf, figure, *args, **kwargs)
 
+    monkeypatch.setattr(pdf_design.Canvas, "text", record)
     monkeypatch.setattr(PdfPages, "savefig", savefig)
     payload = dict(
         metadata=dict(
@@ -531,8 +553,8 @@ def test_directory_pdf_draws_its_details_heading_note_and_pages(monkeypatch):
             source_generation=1,
             source_as_of=MOMENT.isoformat(),
         ),
-        total=20,
-        rows=[item(family_duid=duid) for duid in range(1, 21)],
+        total=40,
+        rows=[item(family_duid=duid) for duid in range(1, 41)],
     )
     report = directory_document(
         payload,
@@ -548,18 +570,24 @@ def test_directory_pdf_draws_its_details_heading_note_and_pages(monkeypatch):
         timezone="UTC",
     )
     details = dict(report.metadata)
-    output = io.BytesIO()
-    assert render_directory(report, output, format="pdf") == 2
-    assert len(pages) == 2
+    frame = directory_frame(report)
+    count = render_directory(report, io.BytesIO(), format="pdf")
+    assert count == len(pages) > 1
     for number, drawn in enumerate(pages, 1):
-        title, subtitle, counts, heading, *lines, footer, note, page = drawn
+        eyebrow, title, stamp, counts, *rest = drawn
+        assert eyebrow == "SAMPLE PARISH · ANNUAL CAMPAIGN"
         assert title == "Family-code directory"
-        assert subtitle.startswith("Sample Parish · Annual campaign · Captured ")
-        assert counts == (
-            "20 Families in this file. Filters: " + details["Filters applied"]
+        assert stamp == "Captured October 2, 2026 at 1:00 PM UTC"
+        assert counts.startswith("40 Families in this file · Filters: ")
+        assert f"Page {number} of {count}" in rest
+        # The heading row repeats, each heading wrapped to its column.
+        assert all(
+            line in rest
+            for cell in directory_table(report).heading_cells
+            for line in cell
         )
-        assert heading.split() == " ".join(report.headings).split()
-        assert lines[0].startswith("=Sample Family, Aaron Williams and")
-        assert footer == details["Privacy"]
-        assert note == details["Testing mode"]
-        assert page == f"Page {number} of 2"
+        assert [line for kind, line in frame.footer_lines if kind == "notice"] == [
+            details["Privacy"]
+        ]
+        assert details["Privacy"] in rest
+        assert any(details["Testing mode"].startswith(line) for line in rest)

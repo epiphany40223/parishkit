@@ -28,6 +28,7 @@ from parishkit.stewardship.responses.models import Submission
 from parishkit.stewardship.responses.page_content import public_substitutions
 from parishkit.stewardship.web import dates
 
+from ..test_information_rendering import card_text
 from .auth_builders import signed_in
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
@@ -139,7 +140,10 @@ def test_family_pages_placeholders_mail_and_exports_follow_the_setting(
     def capture(document, output):
         """Record the style and the drawn lines, then render normally."""
         seen.append(
-            (dates.current(), list(information_rendering.information_lines(document)))
+            (
+                dates.current(),
+                list(card_text(information_rendering.information_records(document))),
+            )
         )
         return original(document, output)
 
@@ -166,8 +170,9 @@ def test_family_pages_placeholders_mail_and_exports_follow_the_setting(
     requested = request.created_at.astimezone(ZoneInfo("America/Detroit"))
     assert style == "eu_dot"
     assert any(
-        line.startswith("Requested at: " + requested.strftime("%d.%m.%Y %H:%M"))
-        for line in lines
+        label == "Requested at"
+        and text.startswith(requested.strftime("%d.%m.%Y %H:%M"))
+        for label, text in lines
     )
 
 
