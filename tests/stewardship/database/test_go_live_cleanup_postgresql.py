@@ -37,6 +37,7 @@ from parishkit.stewardship.readiness_delivery import DeliveryOutcome
 from parishkit.stewardship.source.setup_completion import complete_setup
 
 from .credential_builders import keys
+from .preview_builders import OUT_OF_DATE, assert_out_of_date, previews_aged
 from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_campaign_mail_postgresql import deliver
@@ -241,7 +242,7 @@ def test_admin_cancels_queued_or_completed_cleanup_without_activation(
 
 
 def test_http_acknowledgement_progress_and_cancel_are_private_and_passive(
-    ready_cleanup, settings, real_limiter
+    ready_cleanup, settings, real_limiter, monkeypatch
 ):
     """Actual HTTP/CSRF/session checks wrap the same admitted command owners."""
     from django.test import Client
@@ -268,6 +269,17 @@ def test_http_acknowledgement_progress_and_cancel_are_private_and_passive(
         assert browser.post(path, values).status_code == 403
         assert post(browser, path, values | {"acknowledge": "no"}).status_code == 400
         assert post(browser, path, values | {"actor": "other"}).status_code == 400
+        # An expired preview is the plain out-of-date refusal linking back to
+        # readiness (#398); the browser sees it on the error page.
+        with previews_aged(monkeypatch):
+            assert_out_of_date(post(browser, path, values), path)
+            csrf = {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
+            page = browser.post(path, values | csrf, HTTP_ACCEPT="text/html")
+        assert page.status_code == 409
+        assert OUT_OF_DATE.encode() in page.content
+        assert f'<a href="{path}">Review the changes again</a>'.encode() in (
+            page.content
+        )
         assert not ProductionTransitionRequest.objects.exists()
         started = post(browser, path, values)
         assert started.status_code == 302, started.content
@@ -290,6 +302,11 @@ def test_http_acknowledgement_progress_and_cancel_are_private_and_passive(
         assert (
             browser.post(location, {"control": controls["cancel"]}).status_code == 403
         )
+        with previews_aged(monkeypatch):
+            assert_out_of_date(
+                post(browser, location, {"control": controls["cancel"]}), location
+            )
+        assert browser.get(location).context["status"].state != "cancelled"
         assert (
             post(browser, location, {"control": controls["cancel"]}).status_code == 302
         )
@@ -394,7 +411,7 @@ def test_readiness_confirmation_rechecks_actor_expiry_close_and_changed_configur
             lambda self: signing.b62_encode(int(time()) - 301),
         )
         expired = signing.dumps(binding, salt=go_live_commands.SALT)
-    with web_login(), pytest.raises(signing.SignatureExpired):
+    with web_login(), pytest.raises(StaleRecordError, match="out of date"):
         go_live_commands.start_cleanup(
             request, service, campaign.pk, **(options | {"preview_token": expired})
         )

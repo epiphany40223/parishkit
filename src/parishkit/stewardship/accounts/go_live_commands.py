@@ -23,6 +23,7 @@ from parishkit.stewardship.deployment import DeploymentProfile, _origin
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.origin_check import check_public_origin
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
+from parishkit.stewardship.web.refusals import load_preview, return_link
 
 from .admin_editing import editable_configuration, principal
 from .go_live_inputs import collect_inputs
@@ -70,6 +71,20 @@ def verify_preview(request, service, campaign_id):
     return inputs, verified, token
 
 
+def _load(request, preview_token):
+    """Check the preview's signature and five-minute lifetime.
+
+    An expired preview is the plain "This preview is out of date" refusal
+    linking back to the readiness page, not a generic invalid value.
+    """
+    return load_preview(
+        preview_token,
+        salt=SALT,
+        link=return_link(request),
+        max_age=PREVIEW_SECONDS,
+    )
+
+
 def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
     """Recheck one exact preview; retry returns its original durable receipt.
 
@@ -86,7 +101,7 @@ def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
         or len(preview_token) > 4096
     ):
         raise ValueError("Explicit irreversible cleanup acknowledgement is required.")
-    binding = signing.loads(preview_token, salt=SALT, max_age=PREVIEW_SECONDS)
+    binding = _load(request, preview_token)
     if (
         type(binding) is not dict
         or set(binding) != {"actor", "campaign", "key", "digest", "origin", "profile"}
@@ -95,7 +110,7 @@ def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
         raise ValueError("Invalid go-live preview.")
     with work_transaction():
         # Waiting for another operation's lock must not extend the DNS proof.
-        signing.loads(preview_token, salt=SALT, max_age=PREVIEW_SECONDS)
+        _load(request, preview_token)
         actor = principal(request, service)
         reauthenticated_at = require_fresh(request)
         if binding["actor"] != str(actor.identity) or binding["campaign"] != str(
@@ -119,7 +134,7 @@ def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
         inputs = collect_inputs(request, service, campaign_id)
         if inputs.problems or inputs.digest != binding["digest"]:
             raise StaleRecordError("Review current readiness and inventory again.")
-        signing.loads(preview_token, salt=SALT, max_age=PREVIEW_SECONDS)
+        _load(request, preview_token)
         instant = database_now()
         if (
             inputs.source.expires_at is None

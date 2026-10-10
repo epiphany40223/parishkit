@@ -25,6 +25,7 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from . import test_setup_preparation_postgresql as setup_inputs
 from .campaign_builders import campaign_clock
+from .preview_builders import assert_out_of_date, previews_aged
 from .test_confirmation_readiness_postgresql import (  # noqa: F401
     bootstrapped,
     config_role,
@@ -131,6 +132,10 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
             ).status_code
             == 400
         )
+        # An expired preview is the plain out-of-date refusal (#398).
+        with previews_aged(monkeypatch):
+            assert_out_of_date(post(item.browser, item.path, confirm_values), item.path)
+        assert not ProductionWithdrawal.objects.exists()
         response = post(item.browser, item.path, confirm_values)
         assert response.status_code == 302, response.content
         receipt = ProductionWithdrawal.objects.get()

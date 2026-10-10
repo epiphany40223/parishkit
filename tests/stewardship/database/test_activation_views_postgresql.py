@@ -36,6 +36,7 @@ from parishkit.stewardship.jobs.storage import _status
 
 from . import test_go_live_cleanup_postgresql as cleanup_tests
 from .credential_builders import keys
+from .preview_builders import assert_out_of_date, previews_aged
 from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_cleanup_tasks_postgresql import run
@@ -81,7 +82,9 @@ def ready_links(request, monkeypatch, settings, real_limiter):
     return browser, path, rings[0], login
 
 
-def test_admin_prepares_retries_and_discards_without_activating(ready_links):
+def test_admin_prepares_retries_and_discards_without_activating(
+    ready_links, monkeypatch
+):
     """An HTTP command records intent; only the separate maintained worker seals."""
     browser, path, ring, login = ready_links
     with web_login():
@@ -109,6 +112,10 @@ def test_admin_prepares_retries_and_discards_without_activating(ready_links):
             ).status_code
             == 409
         )
+        # An expired control is the plain out-of-date refusal (#398).
+        with previews_aged(monkeypatch):
+            assert_out_of_date(post(browser, path, values), path)
+        assert not ProductionTokenPreparation.objects.exists()
         assert browser.post(path, values).status_code == 403
         assert post(browser, path, values | {"actor": "other"}).status_code == 400
         assert post(browser, path, values).status_code == 302

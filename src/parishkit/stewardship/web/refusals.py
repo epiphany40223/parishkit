@@ -119,6 +119,9 @@ def unexpected_fields():
 # Signed previews stay valid for fifteen minutes. The limit is enforced here;
 # pages no longer announce it, and an expired preview gets a plain refusal.
 PREVIEW_MAX_AGE = 900
+# The go-live, Production, withdrawal and delivery controls bind exact
+# irreversible intent and keep a shorter five-minute lifetime.
+CONTROL_PREVIEW_MAX_AGE = 300
 
 
 def expired_preview(link=None):
@@ -135,13 +138,30 @@ def expired_preview(link=None):
     )
 
 
-def load_preview(token, *, salt, link=None):
+def load_preview(token, *, salt, link=None, max_age=None):
     """Verify a signed preview, turning expiry into the plain stale refusal.
 
-    Tampered or foreign tokens still raise ``BadSignature`` (a generic 400);
-    only a genuine, expired signature becomes the recoverable refusal.
+    ``max_age`` is the preview's lifetime in seconds, ``PREVIEW_MAX_AGE`` when
+    not given (read at call time, so tests can shorten it). Tampered or
+    foreign tokens still raise ``BadSignature`` (a generic 400); only a
+    genuine, expired signature becomes the recoverable refusal, which the
+    command line reports as ``stale_version``.
     """
     try:
-        return signing.loads(token, salt=salt, max_age=PREVIEW_MAX_AGE)
+        return signing.loads(
+            token,
+            salt=salt,
+            max_age=PREVIEW_MAX_AGE if max_age is None else max_age,
+        )
     except signing.SignatureExpired:
         raise expired_preview(link) from None
+
+
+def return_link(request):
+    """The page a web form was posted from, for a stale refusal's link back.
+
+    Every page using it answers GET and POST on one path, so the path shows
+    the page again. A command-line caller (or a request with an empty path)
+    has no page and gets ``None``.
+    """
+    return getattr(request, "path", None) or None
