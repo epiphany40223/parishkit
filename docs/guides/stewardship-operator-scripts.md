@@ -63,8 +63,11 @@ A refusal or failure exits with 1, a usage error with 2, and Ctrl-C with
   with `gh attestation verify` (refusing, with nothing on stdout, if it
   fails), and prints the published image digest for the
   [scripted upgrade](stewardship-deployment-runbook.md#scripted-upgrade).
-  Pushing a release tag needs a human's explicit authorization; running
-  the script is that act.
+  Its arguments and output are unchanged by the verification, but it needs
+  a `gh` whose `attestation verify` has `--signer-workflow`, `--source-ref`
+  and `--deny-self-hosted-runners`; it checks that first and refuses an
+  older `gh` before it tags anything. Pushing a release tag needs a human's
+  explicit authorization; running the script is that act.
 
 ## Upgrades
 

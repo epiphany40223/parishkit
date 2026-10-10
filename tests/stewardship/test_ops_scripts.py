@@ -209,7 +209,8 @@ def test_sql_state_literals_are_real_states():
 # FAKE_RELEASE_RUN one that exists once the bare remote FAKE_REMOTE holds a
 # tag; a run's log names IMAGE on its "Application image:" line, plus
 # FAKE_LOG_EXTRA (another line) when set; `attestation verify` passes unless
-# FAKE_ATTEST_FAIL is set.
+# FAKE_ATTEST_FAIL is set, and its --help names the flags release.sh uses
+# except FAKE_GH_LACKS (one flag), as an older gh does.
 FAKE_GH = rf"""
 echo "gh $*" >>"$FAKE_DIR/gh.calls"
 runs=$FAKE_DIR/ci_runs
@@ -264,6 +265,10 @@ case "$*" in
     "run view"*--log*)
         echo "publish Application image: \`{IMAGE}\`"
         if [ -n "${{FAKE_LOG_EXTRA-}}" ]; then echo "$FAKE_LOG_EXTRA"; fi ;;
+    "attestation verify --help")
+        for f in --signer-workflow --source-ref --deny-self-hosted-runners; do
+            [ "$f" = "${{FAKE_GH_LACKS-}}" ] || echo "      $f   a flag"
+        done ;;
     "attestation verify"*)
         if [ -n "${{FAKE_ATTEST_FAIL-}}" ]; then
             echo "Error: verification failed" >&2; exit 1
@@ -547,9 +552,11 @@ def test_release_refuses_a_run_release_yml_would_not_check(tmp_path):
     assert "is not the full CI run that release.yml will check" in result.stderr
     # The listing names 78; a persistent disagreement decides none (#730).
     assert "(that is 'none')" in result.stderr
-    # The named run is read directly first (#730), then the listing decides,
-    # re-read a bounded number of times while another run decides.
-    assert calls[0] == "gh api repos/epiphany40223/parishkit/actions/runs/77"
+    # gh's attestation support is checked first, then the named run is read
+    # directly (#730), then the listing decides, re-read a bounded number of
+    # times while another run decides.
+    assert calls[0] == "gh attestation verify --help"
+    assert calls[1] == "gh api repos/epiphany40223/parishkit/actions/runs/77"
     listings = [c for c in calls if "--workflow ci.yml --event workflow_dispatch" in c]
     assert len(listings) == 4
     assert "run 78 decides instead of run 77" in result.stderr
@@ -725,6 +732,28 @@ def test_release_refuses_a_log_naming_two_application_images(tmp_path):
     assert "Release run 99 names more than one" in result.stderr
     # Neither digest is verified or printed.
     assert not any(c.startswith("gh attestation verify oci:") for c in calls)
+
+
+def test_release_refuses_a_gh_that_cannot_verify_before_tagging(tmp_path):
+    """A gh lacking an attestation verify flag is refused before the tag."""
+    work, remote, sha = release_repo(tmp_path)
+    for flag in ("--source-ref", "--deny-self-hosted-runners", "--signer-workflow"):
+        result, calls = run_release(
+            tmp_path / flag,
+            work,
+            "--yes",
+            "1.2.3",
+            "77",
+            ci_runs="77\n",
+            FAKE_HEAD=sha,
+            FAKE_RELEASE_RUN="99",
+            FAKE_GH_LACKS=flag,
+        )
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert f"cannot run gh attestation verify {flag}" in result.stderr
+        assert calls == ["gh attestation verify --help"]
+        assert remote_tag(remote, "v1.2.3") == ""
 
 
 def test_release_refuses_a_named_run_the_listing_omits(tmp_path):

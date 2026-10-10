@@ -11,6 +11,8 @@
 #      from it, and check that its committed pyproject.toml version (read
 #      with tomllib, as release.yml does) is VERSION and that tag vVERSION
 #      exists neither locally nor on the remote. Land the version bump first.
+#      Check too that this gh can run step 6's gh attestation verify with
+#      its flags, so an older gh is refused before anything is tagged.
 #   2. Ask release_evidence.py which full run decides for that commit (the
 #      run release.yml will check). CI_RUN_ID must be that run. Without it,
 #      use that run when it passed or is still running, and otherwise
@@ -130,6 +132,20 @@ if [ -n "$remote_tag" ]; then
     ops_refuse "Tag $tag already exists on $remote"
 fi
 ops_log "main is $sha (version $version)"
+
+# Step 6 verifies the image with gh attestation verify; a gh too old for it
+# or its flags would otherwise fail there, after the tag is pushed, with a
+# misleading "did not verify". Ask its help text now, before any tag exists.
+help_status=0
+gh_help=$(ops_gh attestation verify --help 2>&1) || help_status=$?
+if [ "$help_status" = "$OPS_TIMEOUT_STATUS" ]; then
+    exit "$OPS_TIMEOUT_STATUS"
+fi
+for flag in --signer-workflow --source-ref --deny-self-hosted-runners; do
+    if [ "$help_status" -ne 0 ] || ! grep -q -e "$flag" <<<"$gh_help"; then
+        ops_refuse "This gh ($(command -v gh)) cannot run gh attestation verify $flag; upgrade gh before releasing"
+    fi
+done
 
 # The ids of the newest workflow_dispatch CI runs on this commit, newest first.
 dispatch_runs() {
