@@ -63,7 +63,11 @@ def test_read_admission_classifies_only_known_campaign_closure(
 
 @pytest.mark.parametrize("current", [None, "other"])
 def test_read_admission_refuses_a_campaign_that_is_not_current(monkeypatch, current):
-    """Until #145 only the current campaign is reported (rule 10): 410, no read."""
+    """Until #145 only the current campaign is reported (rule 10): 410, no read.
+
+    With no current campaign at all the refusal says so plainly instead of
+    calling the requested campaign "no longer" current.
+    """
     from parishkit.stewardship.reports import read_admission
     from parishkit.stewardship.web.refusals import UserFacingGone
 
@@ -76,7 +80,11 @@ def test_read_admission_refuses_a_campaign_that_is_not_current(monkeypatch, curr
     monkeypatch.setattr(read_admission, "admit_campaign", admission)
     with pytest.raises(UserFacingGone) as caught:
         read_admission.admit_report_read(uuid4())
-    assert str(caught.value) == "This campaign is no longer the current campaign."
+    assert str(caught.value) == (
+        "This campaign is no longer the current campaign."
+        if current
+        else "There is no current campaign."
+    )
     system.objects.values_list.assert_called_once_with("current_campaign_id", flat=True)
     admission.assert_not_called()
 
