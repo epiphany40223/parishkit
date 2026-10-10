@@ -125,3 +125,30 @@ def test_missing_ministry_recipient_or_integration_is_explicitly_reported():
         "integration_configuration_incomplete",
         "admin_recipient_required",
     )
+
+
+def test_selected_family_email_that_lost_its_code_blocks_readiness():
+    """Sending refuses it, so go-live readiness does too (#838)."""
+    document, owner = configured()
+    values = document["sections"]["content"][0]["values"]
+    values["html"] = "<p>Open {{ family_url }}</p><!-- {{ family_code }} -->"
+    assert check(document, owner).problems == ("family_email_unsendable",)
+
+
+def test_other_re_save_recommended_content_does_not_block_readiness():
+    """Content that only sends its cleaned form, or that no schedule sends, is ready."""
+    document, owner = configured()
+    sections = document["sections"]
+    # The selected invitation keeps its code and link; cleaning drops a comment.
+    sections["content"][0]["values"]["html"] += "<!-- old note -->"
+    # An invitation that lost its code, but that no schedule selects.
+    sections["content"].append(
+        content(
+            owner,
+            kind="email",
+            slot="initial",
+            subject="Unused",
+            html="<p>Open {{ family_url }}</p><!-- {{ family_code }} -->",
+        )
+    )
+    assert check(document, owner).ready

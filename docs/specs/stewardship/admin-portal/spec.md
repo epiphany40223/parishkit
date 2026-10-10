@@ -2819,6 +2819,18 @@ Going live is a dedicated workflow, not a toggle. It requires:
   [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)
   stands in for the fresh authentication).
 
+Readiness also lists the current campaign's saved pages and emails that
+today's sanitizer would change, the rows **Pages and emails** marks
+"Re-save recommended" or "Can't be sent until fixed"
+([retained content](../data/spec.md#content-and-email-templates)),
+each linking to its editor
+([#838](https://github.com/epiphany40223/parishkit/issues/838)). Only an
+invitation or reminder that a mail schedule selects and that is marked
+"Can't be sent until fixed" is a readiness problem
+(`family_email_unsendable`), because sending refuses it; the rest send their
+cleaned form, so they are listed without blocking. Production confirmation
+re-reads the same check.
+
 The Admin-only Family list (the **Testing submissions** page) opens only
 while the campaign is the current Testing draft, as does Go-live readiness,
 the only page that links to it. Afterwards the list answers with a plain
@@ -4111,6 +4123,13 @@ example Families of a refused change (PR 5) and the debug-off switch
   only, never by the 10-second status poll; if the check cannot run, it
   says so instead. Opening the list records `source_form_viewed` with the
   number of Families listed.
+- **Pages and emails to re-save (#838).** Below that, one sentence says how
+  many of the current campaign's saved pages and emails should be re-saved,
+  linking **Pages and emails**, followed by the same linked list as
+  [Go-live readiness](#production-transition). It is read on page load only,
+  in its own read-only snapshot, never by the 10-second status poll, and is
+  not one of the problems; with no current campaign, or when the read cannot
+  run, the sentence says so instead.
 - **Panels.** Below the problems come the panels described under
   [health panels](#health-panels), in this order: why sends are waiting, mail
   sender, ParishSoft refresh, backups, debug logging and version. During a

@@ -114,8 +114,12 @@ def _content_state(record):
     return "default" if matches_default(record["values"]) else "custom"
 
 
-def _catalog(request, configuration, campaign):
-    """List named page slots and independent email revisions for per-mail selection."""
+def catalog_entries(configuration, campaign):
+    """The Pages and emails list's rows: (pages, emails), without rendering.
+
+    Shared with ``resave_recommended``, so go-live readiness and System
+    health flag exactly the rows this list marks (#838).
+    """
     records = _records(configuration, campaign.pk)
     # A retired closing note counts as part of the confirmation email (#260).
     note = legacy_note(records, campaign.pk)
@@ -200,6 +204,44 @@ def _catalog(request, configuration, campaign):
                 "revisions": revisions,
             }
         )
+    return pages, emails
+
+
+def resave_recommended(configuration, campaign):
+    """The campaign's saved pages and emails that today's sanitizer would change.
+
+    Each entry has the page or email ``label``, the email's ``subject`` (None
+    for a page), the editor ``url`` and ``blocked``: an invitation or reminder
+    that lost its Family code or link, so sending refuses it (#832, #838).
+    """
+    pages, emails = catalog_entries(configuration, campaign)
+    flagged = [
+        {
+            "label": page["label"],
+            "subject": None,
+            "url": page["url"],
+            "blocked": page["resave"].blocked,
+        }
+        for page in pages
+        if page["resave"]
+    ]
+    flagged += [
+        {
+            "label": email["label"],
+            "subject": revision["subject"],
+            "url": revision["url"],
+            "blocked": revision["resave"].blocked,
+        }
+        for email in emails
+        for revision in email["revisions"]
+        if revision["resave"]
+    ]
+    return flagged
+
+
+def _catalog(request, configuration, campaign):
+    """List named page slots and independent email revisions for per-mail selection."""
+    pages, emails = catalog_entries(configuration, campaign)
     return render(
         request,
         "stewardship/content-catalog.html",

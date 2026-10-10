@@ -14,6 +14,8 @@ from parishkit.stewardship.system_health import (
     group_processes,
 )
 
+from .go_live_components import RESAVE
+
 PAGE = "/system-health"
 HEALTHY = "/system-health-healthy"
 STATUS = "/system-health/status"
@@ -145,6 +147,9 @@ def components(context, admin):
                 if troubled
                 else None,
                 "poll_interval": POLL_MILLISECONDS,
+                # Content to re-save (#838) on the troubled page; none on
+                # the healthy one.
+                "resave": list(RESAVE) if troubled else [],
             }
             | extra
         )

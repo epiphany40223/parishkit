@@ -8,6 +8,7 @@ source freshness, public-origin reachability or permission to change modes.
 
 from dataclasses import dataclass
 
+from .content_forms import stale_markup
 from .integration_selection import integration_records
 
 
@@ -103,6 +104,15 @@ def configuration_readiness(document, campaign_id, *, ministries, funds):
             }
         )
     )
+    # Rendering re-sanitizes retained HTML (#385); a selected invitation or
+    # reminder whose Family code or link survived only in markup that cleaning
+    # removes is refused at render, so it blocks here rather than at
+    # preparation (#838). Other re-save-recommended content still sends.
+    if any(
+        getattr(stale_markup(content[reference]), "blocked", False)
+        for reference in templates
+    ):
+        problems.append("family_email_unsendable")
     return ConfigurationReadiness(tuple(problems), templates, admins)
 
 
