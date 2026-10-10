@@ -748,14 +748,21 @@ The source of truth is `stewardship_automation_session`.
   `ended=yes` (the checkbox, unticked by default), `live_sort` and
   `ended_sort` (each table's sort, from that table's fixed tokens, newest
   approval first by default); any other parameter, value or token is
-  refused. Host, status and action columns do not sort. The checkbox, the
-  headings and Revoke refresh the page in place, each keeping the others'
-  choices (see the portal's
+  refused. Host, status and action columns do not sort. The checkbox and the
+  headings refresh the page in place, each keeping the others' choices (see
+  the portal's
   [in-place controls](../ui-conventions/spec.md#in-place-controls)).
-  Any live one is revoked with a CSRF-protected in-place POST to
-  `/admin/users/automation/sessions/<session>/` (`revoked_by_owner` for one's
-  own, `revoked_by_administrator` otherwise), whose query carries the page's
-  state so the page it returns to is unchanged.
+  The live table is an action table
+  ([row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation);
+  [#879](https://github.com/epiphany40223/parishkit/issues/879)): each live
+  session has a Revoke icon button in its Actions column,
+  which asks in the confirmation dialog first. Confirming sends a
+  CSRF-protected POST of that one `session_id` to the collection,
+  `/admin/users/automation/sessions/` (`revoked_by_owner` for one's own,
+  `revoked_by_administrator` otherwise), whose query carries the page's
+  state; both tables then redraw in place from the page's own address. A
+  request naming no session, several, or a malformed one is refused, and a
+  session that has already ended is left as it is. There is no bulk revoke.
   The list stays off the Users page, which lists only who may sign in
   (#952). Approving a new session from this page first asks
   for a fresh sign-in, as the approval page does.
@@ -982,7 +989,17 @@ success or failure, to standard error:
   mirrors Automation access (the default
   [posted on #621](https://github.com/epiphany40223/parishkit/issues/621#issuecomment-6024219079),
   pending Administrator confirmation). Every later change of meaning needs
-  `pk-admin/2`.
+  `pk-admin/2`, except where an entry here records otherwise.
+- A documented exception: `delivery list --sort` changed meaning in #931
+  (the Family DUID token `recipient` became `duid`, `name` was added, and
+  the default moved from `-created` to `-changed`) and stayed on
+  `pk-admin/1`, with a changelog entry, because the command's only users
+  are the Administrator and the operator, and the Administrator's standing
+  decisions are to fail forward and keep no legacy forms: no old Admin
+  addresses, aliases or redirects
+  ([#864](https://github.com/epiphany40223/parishkit/issues/864)). The
+  command follows the page it mirrors, so a version bump would only carry
+  a legacy form the Administrator declined.
 - Output never contains credentials, session secrets or digests, Family
   access tokens, cipher material or exception text. Family-level personal data
   follows [personal data on the command line](#personal-data-on-the-command-line).
@@ -1723,7 +1740,7 @@ checks that every other ledger route is named here.
 | `campaign_root`, `mail_root`, `parish_root` | Permanent: a menu group's root URL, which only redirects to the group's first open entry; that entry covers it |
 | `login`, `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
 | `maintenance` | Permanent: the status page the access gate shows |
-| `automation_access`, `automation_approval`, `automation_session` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
+| `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
 | `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c) |
 | `response_list`, `response_list_export` | Family-level rows, so export only: `export responses` (PR 8g) |
 
@@ -2121,7 +2138,11 @@ Administrator confirmation).
 
 `export directory` and `export postal` (PR 8f) are the Family directory's
 export form, for the Family-code directory and the mail merge, through
-its own service, `create_directory_export`. The service holds the code MAC
+its own service, `create_directory_export`. As on the page, the mail merge
+always uses reach `mail` ([mailing columns](../reports/spec.md#mailing-columns)),
+so `export postal` accepts `--filter reach=mail` or `reach=any` and refuses
+any other reach as a usage error (exit 2) before it prompts, rather than
+quietly exporting another list. The service holds the code MAC
 keyring's inventory steady while it binds the selection, so this process
 loads that one keyring (`family_code_mac`), and only for these commands
 and only for a new request: a repeated request key runs the service's own

@@ -1,7 +1,15 @@
-"""Synthetic mail metadata for actual-template browser acceptance, never sends."""
+"""Synthetic mail metadata for actual-template browser acceptance, never sends.
+
+A refused address's page is also served at its real address (``REFUSAL``),
+with a "cleared" view (``CLEARED``), and the fixture server answers its
+clearance POST with a real Post/Redirect/Get redirect (``POSTS``), for the
+in-place clearance test (#935).
+"""
 
 from datetime import timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
+
+from django.urls import reverse
 
 from parishkit.stewardship.jobs.delivery_bulk import BulkResult
 from parishkit.stewardship.jobs.delivery_metadata import DELIVERY_SORTING
@@ -9,22 +17,39 @@ from parishkit.stewardship.jobs.delivery_views import REFUSAL_SORTING
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import window_table
 
+REFUSAL_ID = UUID(int=935)
+REFUSAL = reverse("admin:delivery_refusal", args=[REFUSAL_ID])
+CLEAR = reverse("admin:delivery_refusal_clear", args=[REFUSAL_ID])
+CLEARED = REFUSAL + "?cleared=1"
+# The fixture server's answer to Clear verified refusal (status, Location,
+# body), as the view answers it.
+POSTS = {CLEAR: (303, CLEARED, "")}
+
 
 def components(now):
     """Keep each operational state visible without browser provider credentials."""
     message = dict(
         id=uuid4(),
         family__family_duid=12345,
+        # The Family's name beside its DUID (#931), long enough to wrap.
+        family_name="Castellanos, Maximiliana and Bartholomew",
         state="delivery_unknown",
         purpose="initial",
         mode="production",
         version=4,
         attempt=1,
         updated_at=now,
-        created_at=now,
+        # Outgoing mail shows only the last change (#931), never this.
+        created_at=now - timedelta(hours=3),
     )
     refusal = dict(
-        id=uuid4(), family_duid=12345, address="head@example.org", created_at=now
+        id=REFUSAL_ID,
+        family_duid=12345,
+        address="head@example.org",
+        created_at=now,
+        # The Family's name and the email that recorded it (#935).
+        family_name="Castellanos, Maximiliana and Bartholomew",
+        message_id=message["id"],
     )
     task = dict(id=uuid4(), state="failed")
     yield (
@@ -42,6 +67,45 @@ def components(now):
             ),
             states=["all", "delivery_unknown"],
             selected_state="delivery_unknown",
+            query="",
+        ),
+    )
+    # Each kind of recipient (#931): a named Family, a Family the latest
+    # ParishSoft data no longer has, and an Administrator report. The first
+    # two emails have unresolved refused addresses (#935), counted in the
+    # link line.
+    yield (
+        "/deliveries-names",
+        "deliveries",
+        dict(
+            refusal_count=3,
+            table=window_table(
+                PageWindow(1, 25),
+                [
+                    message | dict(refused=2),
+                    message
+                    | dict(
+                        id=uuid4(),
+                        family__family_duid=4021,
+                        family_name=None,
+                        refused=1,
+                    ),
+                    message
+                    | dict(
+                        id=uuid4(),
+                        family__family_duid=None,
+                        family_name=None,
+                        purpose="daily_digest",
+                        state="delivered",
+                    ),
+                ],
+                False,
+                total=(3, False),
+                sorting=DELIVERY_SORTING,
+                sort=DELIVERY_SORTING.default,
+            ),
+            states=["all", "delivery_unknown"],
+            selected_state="all",
             query="",
         ),
     )
@@ -182,6 +246,29 @@ def components(now):
         ],
     )
     yield "/delivery", "delivery", delivery
+    # A message retried after a failure: each recorded change is one short
+    # row of the attempt history table, newest first (#934).
+    yield (
+        "/delivery-attempts",
+        "delivery",
+        delivery
+        | dict(
+            events=[
+                dict(
+                    attempt=attempt,
+                    action=action,
+                    state=state,
+                    created_at=now - timedelta(minutes=minutes),
+                )
+                for attempt, action, state, minutes in (
+                    (2, "mark_unknown", "delivery_unknown", 0),
+                    (2, "submit", "submitting", 5),
+                    (1, "retry_unaccepted", "retry_wait", 30),
+                    (1, "submit", "submitting", 35),
+                )
+            ]
+        ),
+    )
     # The evidence and attempt history over two pages, as Next page and
     # Previous page fetch them in place (#519 PR 6).
     first = delivery | dict(next_query="page=2")
@@ -214,14 +301,28 @@ def components(now):
             )
         ),
     )
+    # A refused address's page, under a Family the latest data no longer
+    # has (#935); at its real address, before and after clearance.
+    detail = dict(
+        refusal=refusal,
+        message_id=message["id"],
+        can_clear=True,
+        source=dict(snapshot_id=uuid4(), generation=2),
+        command_id=uuid4(),
+    )
+    yield "/delivery-refusal", "delivery-refusal", detail
+    named = detail | dict(family_name=refusal["family_name"])
+    yield REFUSAL, "delivery-refusal", named
     yield (
-        "/delivery-refusal",
+        CLEARED,
         "delivery-refusal",
-        dict(
-            refusal=refusal,
-            can_clear=True,
-            source=dict(snapshot_id=uuid4(), generation=2),
-            command_id=uuid4(),
+        named
+        | dict(
+            resolved=dict(
+                reason="verified_admin",
+                evidence_note="Called the Family; the mailbox works again.",
+                created_at=now,
+            )
         ),
     )
     yield (

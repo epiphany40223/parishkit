@@ -15,11 +15,13 @@ and footer and in the XLSX "Report information" sheet.
   captured source, or from the current ParishSoft data once that has been
   compacted, which the report details then say ("Head emails as of").
 - The postal export is a mail merge for envelope labels and cover letters. It
-  holds exactly the filtered Families, like the page. A Family without a
-  usable mailing address keeps its row with the Addressee and address
-  columns blank, and the report details count those rows so staff can follow
-  up. Existing columns never change name or order (Family head emails was
-  added at the end), so existing mail-merge templates keep working.
+  holds exactly the filtered Families, like the page: since #951 only active
+  Families with no deliverable head email and a usable mailing address
+  (reach ``mail``). A capture made before that may list a Family without a
+  usable mailing address: it keeps its row with the Addressee and address
+  columns blank, and the report details count those rows. Existing columns
+  never change name or order (Family head emails was added at the end), so
+  existing mail-merge templates keep working.
 """
 
 from dataclasses import dataclass

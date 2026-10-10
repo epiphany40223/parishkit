@@ -300,7 +300,9 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](../admin-portal/spec.md#follow-up-workflows); System logs'
   cross-links, whose answer is the filtered page; Acknowledge on a security
-  event; Dismiss on an integration's finished key change; the
+  event; Clear verified refusal on a
+  [refused address](../admin-portal/spec.md#refused-addresses); Dismiss on an
+  integration's finished key change; the
   [participation report](../reports/spec.md#campaign-statistics)'s Apply
   report options, which refreshes its statistics, chart and export panels)
   names its region by its
@@ -713,8 +715,9 @@ around it, two gates keep it in place instead:
   filter syncs. First use: System logs' level boxes while Sign-in activity is
   chosen.
 - `data-locked-when` (open #957) shows a fixed value, disabled, while its
-  rule holds, with the reason in reserved space, and gives back the reader's
-  own value (kept in a hidden field) when the rule stops holding. First use:
+  rule holds, with the reason in the field's toggletip (never a line under
+  the field), and gives back the reader's own value (kept in a hidden field)
+  when the rule stops holding. First use:
   the directory's "Campaign mail can reach" while Include mailing columns is
   ticked.
 
@@ -795,7 +798,9 @@ Admin pages put the page's data first and keep explanation one deliberate
 click away, without removing any of it. A page leads with its heading, its own
 data line (such as the campaign name or counts), safety notices (such as
 Testing mode) and then its data or form; at most a one-line hint that prevents
-a likely mistake stays visible above the data. A caution that prevents a
+a likely mistake stays visible above the data. A line of cross-links to
+related pages may sit above the heading instead, when an About panel left
+open would otherwise push it out of view (#938). A caution that prevents a
 likely mistake (what an action cannot undo or stop, or a lasting consequence
 it has) is never only in the panel: it stays visible beside its control as a
 one-line hint or a notice. The page's introduction and longer explanation of
@@ -827,8 +832,8 @@ the label, for fields whose format or rule is needed every time (an example
 address, "one per line", a key's paste rule), and a warning that blocks the
 field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
-opening the tip. Checkbox help stays beside the box. A toggletip in a table
-heading is described by its bubble alone, and its bubble floats over the
+opening the tip. Checkbox help is a toggletip beside the box. A toggletip in a
+table heading is described by its bubble alone, and its bubble floats over the
 page, so opening it never changes the size or scroll of the table's box;
 it closes when that box scrolls its button out of view.
 
@@ -1134,23 +1139,32 @@ through a selection column, and Edit opens the item's own page (the New page,
 filled in). **Why.** One pattern for every list of editable things; a dialog
 names exactly what will be removed. **Shared code.** The `table_actions`
 template tag, `components/confirm-dialog.html` and `data-confirm-open` in
-`ui-v1.js`. **Precedent.** #879, #882 (first user), open #947 (second slice).
+`ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice).
 
 A table whose rows can be acted on follows one pattern
 ([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
-and shared; [Dates and mail schedules](../admin-portal/spec.md#dates-and-mail-schedules) is its first
-user, and the other Admin tables with per-row actions move to it in later
-changes.
+and shared. Its users so far are
+[Dates and mail schedules](../admin-portal/spec.md#dates-and-mail-schedules), the
+[Hosted files](../hosted-files/spec.md#admin-page) library and the live
+sessions of
+[Automation access](../admin-automation/spec.md#revocation-and-listing); the
+other Admin tables with per-row actions move to it in later changes, as the
+inventory on #879 lists.
 
 - **Actions column.** The last column holds each row's actions as small icon
-  buttons (`table_actions`): Edit, a link to the item's own page, and Delete.
-  Each has an accessible name and a matching tooltip that name the row ("Edit
-  Reminder 2", "Delete Reminder 2"), and the icons are drawn inline, so they
-  need no request and stay inside the content security policy. A row shows
-  only the actions that apply to it; a row with none shows nothing there.
+  buttons (`table_actions`), all the same square size: Edit, a link to the
+  item's own page, and Delete. Each has an accessible name and a matching
+  tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"), and the
+  icons are drawn inline, so they need no request and stay inside the
+  content security policy. A destructive action with another name uses its
+  own word and icon in Delete's place and works the same way; so far only
+  Revoke ("Revoke nightly export") on Automation access. A row shows only the
+  actions that apply to it; a row with none shows nothing there.
 - **Edit** opens the item's edit page, which is the same page as New, filled
   in. Saving it goes through that page's usual review, and its status page
-  returns to the table.
+  returns to the table. Where only part of an item can change (a hosted
+  file's placeholder name), Edit opens that part's own page, which returns to
+  the table on save.
 - **Delete** opens a confirmation dialog in the page: a native modal
   `<dialog>` that names what it removes and says what cannot be undone, with
   the destructive action and Cancel. While it is open the rest of the page is
@@ -1160,8 +1174,10 @@ changes.
   the chosen rows, without a page load: the confirm button says it is working
   and the dialog cannot be dismissed until the answer arrives. When the
   server records a configuration change, the page follows that change's status
-  until it is applied, then redraws every region from the table's own address
-  (keeping its sort) and closes the dialog, announcing what was removed. A
+  until it is applied; when it acts at once (Hosted files, Automation access)
+  it redirects back to the page. Either way the page then redraws every
+  region from the table's own address (keeping its sort and page) and closes
+  the dialog, announcing what was removed. A
   refusal, or a change that failed to apply, is shown inside the dialog, below
   its buttons so they never move, and nothing is redrawn; the server's
   explanation is shown when it gives one. A page-wide `confirm()` is never

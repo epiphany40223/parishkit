@@ -1,7 +1,11 @@
 """The Admin preview sees exact Testing impact, without acquiring deletion power."""
 
+from uuid import uuid4
+
 import pytest
 from django.db import DatabaseError, connection, transaction
+from django.db.models import BigIntegerField, F
+from django.db.models.functions import Cast
 
 from parishkit.stewardship.campaigns.cleanup_catalog import CleanupCategory
 from parishkit.stewardship.campaigns.cleanup_preview import (
@@ -16,6 +20,9 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.source.models import SourceCurrent
+from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
+from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.source.version_models import SnapshotFamily
 from parishkit.stewardship.web.contracts import PageWindow
 
 from .test_background_grants_postgresql import task_login
@@ -61,8 +68,6 @@ def test_testing_families_sort_on_the_server_by_name_or_duid(
     response_service, monkeypatch
 ):
     """Both columns order the whole inventory before it is paged."""
-    from django.db.models import F
-
     from parishkit.stewardship.campaigns import cleanup_preview as module
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 
@@ -93,13 +98,96 @@ def test_testing_families_sort_on_the_server_by_name_or_duid(
     duids = [row["duid"] for row in rows]
     assert duids == sorted(duids)
     assert [row["duid"] for row in read("-duid")[0]] == duids[::-1]
-    names = [row["name"].lower() for row in read("name")[0]]
-    assert names == sorted(names) and len(set(names)) > 1
-    assert [row["name"].lower() for row in read("-name")[0]] == sorted(
-        names, reverse=True
+    # Shown as "Surname, heads" (snapshot_family_names), ordered by surname,
+    # the whole name and then the DUID, as the Family codes directory is.
+    names = snapshot_family_names(source_id, duids)
+    assert any(", " in name for name in names.values())
+
+    def key(row):
+        """The page's order: surname, the whole shown name, then DUID."""
+        surname = row["name"].split(", ", 1)[0]
+        return surname.lower(), row["name"].lower(), row["duid"]
+
+    by_name = read("name")[0]
+    assert [row["name"] for row in by_name] == [names[row["duid"]] for row in by_name]
+    assert [key(row) for row in by_name] == sorted(map(key, by_name))
+    assert len({row["name"] for row in by_name}) > 1
+    assert [key(row) for row in read("-name")[0]] == sorted(
+        map(key, by_name), reverse=True
     )
     first, has_next, _ = read("-duid", size=1)
     assert has_next and first[0]["duid"] == duids[-1]
+
+
+def test_families_missing_from_the_snapshot_sort_last_by_name(
+    response_service, monkeypatch
+):
+    """A Family absent from the source snapshot has no name to sort by, so it
+    is listed after every named Family in both directions, as Outgoing mail
+    lists its unnamed rows."""
+    from parishkit.stewardship.campaigns import cleanup_preview as module
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    form, answers = form_and_answers(response_service)
+    submit(response_service, form, answers)
+    campaign_id = response_service.campaign.pk
+    monkeypatch.setattr(
+        module,
+        "inventory_queries",
+        lambda _campaign: {
+            CleanupCategory.SUBMISSION: FamilyCampaign.objects.annotate(
+                family_id=F("pk")
+            )
+        },
+    )
+    # A campaign Family the current snapshot does not hold.
+    template = FamilyCampaign.objects.filter(campaign_id=campaign_id).first()
+    source_id = SourceCurrent.objects.get().snapshot_id
+    missing = 10**12
+    assert not snapshot_family_names(source_id, [missing])
+    FamilyCampaign.objects.create(
+        campaign_id=campaign_id,
+        family_duid=missing,
+        active=False,
+        portal_eligible=False,
+        email_eligible=False,
+        email_deliverable=False,
+        status_reason=template.status_reason,
+        deliverability_reason=template.deliverability_reason,
+        eligibility_changed_at=template.eligibility_changed_at,
+        source_generation=template.source_generation,
+        actor_id=template.actor_id,
+        correlation_id=uuid4(),
+    )
+    for sort in ("name", "-name"):
+        with task_login(ServiceRole.WEB), work_transaction():
+            rows = cleanup_families(
+                campaign_id, source_id=source_id, window=PageWindow(1, 100), sort=sort
+            )[1]
+        assert len(rows) > 2
+        assert all(row["name"] for row in rows[:-1])
+        assert rows[-1] == {"duid": missing, "name": ""}
+
+
+def test_sql_family_name_matches_the_shown_name(response_service):
+    """SnapshotFamilyName builds, in SQL and as the web role, the very name
+    snapshot_family_names shows, for every Family of the snapshot."""
+    source_id = SourceCurrent.objects.get().snapshot_id
+    with task_login(ServiceRole.WEB), work_transaction():
+        rows = list(
+            SnapshotFamily.objects.filter(snapshot_id=source_id)
+            .annotate(duid=Cast("source_key", BigIntegerField()))
+            .annotate(
+                name=SnapshotFamilyName(source_id, F("duid")),
+                surname=SnapshotFamilyName(source_id, F("duid"), surname_only=True),
+            )
+            .values_list("duid", "name", "surname")
+        )
+        shown = snapshot_family_names(source_id, [duid for duid, _, _ in rows])
+    assert len(rows) > 1 and any(", " in name for name in shown.values())
+    for duid, name, surname in rows:
+        assert name == shown[duid]
+        assert name.split(", ", 1)[0] == surname
 
 
 def test_inventory_grants_do_not_expose_rendered_mail_or_allow_deletion():

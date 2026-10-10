@@ -4,6 +4,7 @@
 <h1>{% translate "Automation access" %}</h1>
 {% aboutpage "automation-access" %}
 <p>{% translate "An automation session lets the server's command line act as the Administrator who approved it, until it expires or is revoked. Revoke a session as soon as its task is done; it stops working at its next command." %}</p>
+<p>{% translate "Each live session has Revoke in its Actions column. Revoke asks first, then moves the session out of the live list; a revoked session can't be used again." %}</p>
 <p>{% translate "Every live session of any Administrator is listed first, and any Administrator may revoke one; revoke at once any session nobody recognizes. Tick “Include ended sessions” to also list your own sessions that ended in the last 30 days." %}</p>
 <p>{% translate "Choose a column heading to sort a table by it; choose it again to reverse the order." %}</p>
 <p>{% translate "The host is the start of an identifier of the server a session was started on; a session used from another server is ended." %}</p>
@@ -19,18 +20,25 @@
   so unticking the box swaps it away in place. The box's data-applied is
   the state this page shows; ui-v1.js submits again whenever the box and
   the page disagree once nothing is in flight.
+  The live table is an action table (admin-portal spec, "Row actions and
+  confirmation", #879): each row's Revoke opens the confirmation dialog,
+  which posts the session with the revoke form (inside the live region, so
+  its query follows the page state) and then redraws both regions from
+  data-refresh-url. There is no bulk bar: revoking is one deliberate choice
+  per session.
 {% endcomment %}
 <section class="panel" aria-labelledby="automation-live-heading">
-  <h2 id="automation-live-heading">{% translate "Live sessions" %}</h2>
+  <h2 id="automation-live-heading" tabindex="-1">{% translate "Live sessions" %}</h2>
   <form method="get" action="#ended-table" id="automation-filter" data-in-place="automation-filter" data-in-place-message="{% translate 'Session lists updated.' %}" data-table-sync>
     {% for name, value in sort_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
     <label><input type="checkbox" name="ended" value="yes" id="include-ended" autocomplete="off" aria-controls="ended-table" data-submit-on-change data-applied="{{ include_ended|yesno:'true,false' }}" data-message-on="{% translate 'Ended sessions shown.' %}" data-message-off="{% translate 'Ended sessions hidden.' %}"{% if include_ended %} checked{% endif %}> {% translate "Include ended sessions" %}</label>
   </form>
-  <div id="live-table" data-table-region>
+  <div id="live-table" data-table-region data-refresh-url="{{ refresh_url }}">
   {% if live_table.rows %}
+  <form method="post" action="{% url 'admin:automation_sessions' %}{% if state_query %}?{{ state_query }}{% endif %}#live-table" id="session-actions" data-row-actions>{% csrf_token %}
   <div class="table-scroll" tabindex="0" role="region" aria-labelledby="automation-live-caption">
   <table><caption id="automation-live-caption">{% translate "Sessions that can act as an Administrator now" %}</caption>
-  <thead><tr>{% translate "Administrator" as heading %}{% sort_heading live_table "administrator" heading %}{% translate "Label" as heading %}{% sort_heading live_table "label" heading %}{% translate "Scope" as heading %}{% sort_heading live_table "scope" heading %}{% translate "Approved" as heading %}{% sort_heading live_table "created" heading %}{% translate "Expires" as heading %}{% sort_heading live_table "expires" heading %}{% translate "Last used" as heading %}{% sort_heading live_table "used" heading %}<th scope="col">{% translate "Host" %}</th><th scope="col">{% translate "Revoke" %}</th></tr></thead>
+  <thead><tr>{% translate "Administrator" as heading %}{% sort_heading live_table "administrator" heading %}{% translate "Label" as heading %}{% sort_heading live_table "label" heading %}{% translate "Scope" as heading %}{% sort_heading live_table "scope" heading %}{% translate "Approved" as heading %}{% sort_heading live_table "created" heading %}{% translate "Expires" as heading %}{% sort_heading live_table "expires" heading %}{% translate "Last used" as heading %}{% sort_heading live_table "used" heading %}<th scope="col">{% translate "Host" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead>
   <tbody>{% for row in live_table.rows %}<tr>
     <th scope="row">{{ row.principal_email|default:_("unknown") }}{% if row.own %} ({% translate "you" %}){% endif %}</th>
     <td>{{ row.label }}</td>
@@ -39,10 +47,13 @@
     <td><time datetime="{{ row.expires_at|instant }}" data-local-instant>{{ row.expires_at|instant }}</time></td>
     <td>{% if row.last_used_at %}<time datetime="{{ row.last_used_at|instant }}" data-local-instant>{{ row.last_used_at|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
     <td><code>{{ row.host }}</code></td>
-    <td><form method="post" action="{% url 'admin:automation_session' row.id %}{% if state_query %}?{{ state_query }}{% endif %}#live-table" class="inline-form" data-in-place="revoke-{{ row.id }}" data-in-place-message="{% translate 'Session revoked.' %}">{% csrf_token %}{% button type="submit" %}{% translate "Revoke" %}{% endbutton %}</form></td>
+    {% table_actions name=row.label delete=row.id confirm="session-revoke" field="session_id" verb="revoke" %}
   </tr>{% endfor %}</tbody>
   </table>
   </div>
+  </form>
+  {% translate "Revoke {name}?" as title_one %}{% translate "Revoke {count} sessions?" as title_many %}{% translate "The session stops working at its next command, and its command line can no longer act as an Administrator." as body %}{% translate "This cannot be undone. If the work still needs a session, approve a new one." as caution %}{% translate "Revoke" as accept %}
+  {% include "stewardship/components/confirm-dialog.html" with dialog_id="session-revoke" form_id="session-actions" fallback="automation-live-heading" title_one=title_one title_many=title_many body=body caution=caution accept=accept done_one=_("Revoked {name}.") done_many=_("Revoked {count} sessions.") %}
   {% elif include_ended %}<p>{% translate "No live sessions." %}</p>
   {% else %}<p>{% translate "No live sessions. Tick “Include ended sessions” to see your past ones." %}</p>{% endif %}
   </div>

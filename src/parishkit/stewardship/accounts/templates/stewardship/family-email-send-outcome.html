@@ -1,0 +1,6 @@
+{% load i18n stewardship %}{% comment %}
+  One linked count of a Family email send (send_history.Outcome): the count
+  links to exactly those emails on Outgoing mail, or, when some of the count
+  has no email (it failed before it was prepared), the count is shown alone
+  with a separate link to the emails there are, on a line of its own.
+{% endcomment %}{% if outcome.listed == outcome.count and outcome.count %}<a href="{% url 'admin:deliveries' %}?{{ outcome.query }}" aria-label="{% blocktranslate with count=outcome.count|number label=outcome.label send=outcome.send %}{{ count }} {{ label }} emails of {{ send }}: show them{% endblocktranslate %}">{{ outcome.count|number }}</a>{% else %}{{ outcome.count|number }}{% if outcome.listed %}<span class="cell-line"><a href="{% url 'admin:deliveries' %}?{{ outcome.query }}" aria-label="{% blocktranslate with listed=outcome.listed|number label=outcome.label send=outcome.send %}show {{ listed }} {{ label }} emails of {{ send }}{% endblocktranslate %}">{% blocktranslate with listed=outcome.listed|number %}show {{ listed }}{% endblocktranslate %}</a></span>{% endif %}{% endif %}

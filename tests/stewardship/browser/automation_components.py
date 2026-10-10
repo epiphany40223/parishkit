@@ -4,7 +4,10 @@ Automation access and the dashboard are served at their real addresses,
 because a form[data-in-place] swaps regions only when its post redirects
 back to the same page (#559): the page before a change at its address, and
 the page after it at the same address with a query (the fixture server's
-POST answers redirect there). Automation access is rendered through the
+POST answers redirect there). Revoke is a row action (#879): its dialog
+posts to the session collection, then redraws both tables from the page's
+data-refresh-url, which on each start page below is the revoked state's
+address. Automation access is rendered through the
 view's own ``access_context`` for every query its headings and "Include
 ended sessions" box lead to, two choices deep, so sorting and the box
 refresh in place exactly as on the server (#621). The approval page is
@@ -32,7 +35,7 @@ HOME = reverse("admin:index")
 LOCAL_SIGN_IN = "/admin/local/sign-in"
 OWN = UUID(int=701)
 OTHER = UUID(int=702)
-REVOKE = reverse("admin:automation_session", args=[OWN])
+REVOKE = reverse("admin:automation_sessions")
 # The fixture server's answers to the pages' posts (status, Location, body).
 POSTS = {
     REVOKE: (303, ACCESS + "?revoked=1", ""),
@@ -47,7 +50,7 @@ ME = UUID(int=801)
 SOMEONE = UUID(int=802)
 # What ACCESS's tests start from, and how deep the fixture follows the
 # page's own headings and box from each (two choices in a row). The race
-# tests start from "live_sort=label", whose box and Revoke answer slowly.
+# tests start from "live_sort=label", whose box answers slowly.
 STARTS = ("", "ended=yes", "live_sort=label")
 DEPTH = 2
 
@@ -63,9 +66,8 @@ def canonical(path):
 
 
 # Answered after a pause (see the server in conftest.py): ticking the box on
-# the race tests' page, and revoking from it.
+# the race tests' page.
 SLOW_GETS = {canonical(ACCESS + "?live_sort=label&ended=yes")}
-SLOW_POSTS = {REVOKE + "?live_sort=label"}
 
 
 def _session(identifier, label, *, created, principal=ME, ended=None, reason=None):
@@ -89,13 +91,19 @@ def _session(identifier, label, *, created, principal=ME, ended=None, reason=Non
     }
 
 
-def _access_page(context, admin, query, *, own_live=True, fresh=True):
+def _revoked(query):
+    """The address of ``query``'s page after the own session is revoked."""
+    return ACCESS + "?" + "&".join(filter(None, (query, "revoked=1")))
+
+
+def _access_page(context, admin, query, *, own_live=True, fresh=True, refresh=None):
     """Automation access for one query, built by the view's own context.
 
     The own session ("launch <assistant>", the older of the two live ones)
     is live, or revoked by its owner after the revoke test's post. Sorting
     the live table by Administrator therefore changes its order, and so does
-    sorting the ended table by label.
+    sorting the ended table by label. ``refresh``, when given, replaces the
+    page's own address as the one the Revoke dialog redraws from.
     """
     state = views._access_state(QueryDict(query))
     own = _session(
@@ -128,6 +136,8 @@ def _access_page(context, admin, query, *, own_live=True, fresh=True):
         ] + ([] if own_live else [own])
     page = views.access_context(state, ME, everyone, ended)
     page["fresh"] = fresh
+    if refresh:
+        page["refresh_url"] = refresh
     html = render_to_string(
         "stewardship/automation-access.html",
         context | {"admin_chrome": admin} | page,
@@ -165,7 +175,11 @@ def components(context, admin):
         path = canonical(ACCESS + (f"?{query}" if query else ""))
         if path in responses:
             continue
-        html, page = _access_page(context, admin, query)
+        # A start page redraws, after Revoke, from its revoked state.
+        start = depth == 0
+        html, page = _access_page(
+            context, admin, query, refresh=_revoked(query) if start else None
+        )
         responses[path] = ("text/html", html)
         if depth < DEPTH:
             pending.extend((later, depth + 1) for later in _next_queries(page))
@@ -180,7 +194,9 @@ def components(context, admin):
             else "&".join(filter(None, (query, "ended=yes")))
         )
         for shown in {query, ticked}:
-            html, _ = _access_page(context, admin, shown, own_live=False)
+            html, _ = _access_page(
+                context, admin, shown, own_live=False, refresh=_revoked(shown)
+            )
             html = re.sub(
                 r'(<form[^>]*id="automation-filter"[^>]*>)',
                 r'\1<input type="hidden" name="revoked" value="1">',
@@ -188,8 +204,7 @@ def components(context, admin):
                 count=1,
             )
             assert 'name="revoked"' in html
-            path = ACCESS + "?" + "&".join(filter(None, (shown, "revoked=1")))
-            responses[canonical(path)] = ("text/html", html)
+            responses[canonical(_revoked(shown))] = ("text/html", html)
     responses["/automation-access-stale"] = (
         "text/html",
         _access_page(context, admin, "", fresh=False)[0],

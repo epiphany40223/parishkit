@@ -19,17 +19,30 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
 from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 
-from .delivery_metadata import DELIVERY_SORTING, FIELDS, family_duid, listing, messages
+from .delivery_metadata import (
+    DELIVERY_SORTING,
+    FIELDS,
+    family_duid,
+    listing,
+    messages,
+    with_name_keys,
+)
 
-# Every Refused addresses column sorts on the server; the default keeps the
-# old Family DUID, then address, order. No index orders these keys (the
-# recipient_refusal_identity index leads with organization_id, then
-# family_duid), so each is a top-N sort over the unresolved refusals, a
-# small set (one row per refused Family address). id is the unique
-# tiebreak.
+# Every Refused addresses column but Email sorts on the server; the default
+# keeps the old Family DUID, then address, order. Family (name) sorts as
+# Outgoing mail's does: surname, then the whole shown name, then Family DUID
+# (so each Family's addresses stay together) and address, read from the latest
+# ParishSoft data (delivery_metadata.with_name_keys), with Families that
+# data no longer has last in both directions. id has no column (the
+# refusal's own page shows it under Technical details) but keeps its sort
+# for the command line's --sort id, and is the unique tiebreak. No index
+# orders these keys (the recipient_refusal_identity index leads with
+# organization_id, then family_duid), so each is a top-N sort over the
+# unresolved refusals, a small set (one row per refused Family address).
 REFUSAL_SORTING = Sorting.by_column(
     {
         "address": ("address",),
+        "name": ("family_sort_surname", "family_sort_name", "family_duid", "address"),
         "duid": ("family_duid", "address"),
         "refused": ("created_at",),
         "id": ("id",),
@@ -69,8 +82,11 @@ def read_listing(parameters):
     """Outgoing mail: one filtered page of messages, never their content.
 
     Returns ``values`` (the validated filters), ``window``, ``rows``,
-    ``has_next``, ``total`` (a ``bounded_count``) and ``send`` (the
-    described Family email send it is limited to, or None). A malformed or
+    ``has_next``, ``total`` (a ``bounded_count``), ``send`` (the described
+    Family email send it is limited to, or None) and ``snapshot``: the
+    current ParishSoft snapshot id the Family sort read, which the page
+    passes to ``with_family_names`` so the shown names match the order (or
+    None before the first ParishSoft sync). A malformed or
     unknown send is refused rather than ignored, so a filtered link never
     silently lists every email instead (#432).
     """
@@ -84,8 +100,14 @@ def read_listing(parameters):
         described = describe(send)
         if described is None:
             raise ValueError("Unknown Family email send.")
+    snapshot = current_snapshot()
     window, rows, has_next, total = listing(
-        window, state=state, query=query, sort=values["sort"], send=send
+        window,
+        state=state,
+        query=query,
+        sort=values["sort"],
+        send=send,
+        snapshot=snapshot,
     )
     return dict(
         values=values | {"state": state, "q": query},
@@ -94,7 +116,94 @@ def read_listing(parameters):
         has_next=has_next,
         total=total,
         send=described,
+        snapshot=snapshot,
     )
+
+
+def current_snapshot():
+    """The current ParishSoft snapshot id, or None before the first sync."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    return SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+
+
+def with_family_names(rows, snapshot, key="family__family_duid"):
+    """Each listed row with its Family's name, for the Admin mail pages (#931).
+
+    ``family_name`` is the directory's surname-and-heads name from
+    ``snapshot`` (the one the list was sorted by), read by
+    ``snapshot_family_names`` as the Family timeline names a Family, or
+    None for an Administrator report and for a Family that snapshot lacks.
+    The email itself stores no name, so the names are read for the shown
+    page only: at most two small queries (its Families and their heads),
+    however many rows. The command line's ``delivery list`` does not read
+    them. ``key`` names each row's Family DUID: an email's
+    ``family__family_duid`` on Outgoing mail, a refusal's ``family_duid`` on
+    Refused addresses (#935).
+    """
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+
+    duids = {row[key] for row in rows} - {None}
+    names = snapshot_family_names(snapshot, duids, "Family")
+    return [row | {"family_name": names.get(row[key])} for row in rows]
+
+
+def unresolved_refusals():
+    """Every refused address not yet cleared or superseded (#935).
+
+    A refusal is resolved by exactly one resolution row (a verified
+    clearance, or ParishSoft's address changing), so the unresolved ones are
+    those without one. The set stays small: one row per permanently refused
+    Family address.
+    """
+    from .recipient_models import RecipientRefusal, RecipientRefusalResolution
+
+    return RecipientRefusal.objects.exclude(
+        pk__in=RecipientRefusalResolution.objects.values("refusal_id")
+    )
+
+
+def recording_message():
+    """The email whose delivery outcome recorded a refusal, as a subquery.
+
+    A refusal keeps only its outbox event (``event_id``); the event names its
+    message. The web login reads both columns, never the event's evidence.
+    """
+    from django.db.models import OuterRef, Subquery
+
+    from .outbox_models import OutboxEvent
+
+    return Subquery(
+        OutboxEvent.objects.filter(pk=OuterRef("event_id")).values("message_id")[:1]
+    )
+
+
+def with_refusal_counts(rows):
+    """Each listed email with how many of its refused addresses are unresolved.
+
+    Outgoing mail marks such an email ("1 address refused", #935): a refused
+    address does not fail an email another address accepted, so without the
+    mark a Delivered email would hide that one head of household never got
+    it. Each address counts once: a retry that is refused again records a
+    second refusal of the same address against the same email. One grouped
+    query for the shown page, however many rows; an email with none counts 0.
+    """
+    from django.db.models import Count
+
+    from .outbox_models import OutboxEvent
+
+    ids = [row["id"] for row in rows]
+    counts = dict(
+        unresolved_refusals()
+        .filter(
+            event_id__in=OutboxEvent.objects.filter(message_id__in=ids).values("id")
+        )
+        .annotate(message=recording_message())
+        .values("message")
+        .annotate(count=Count("address", distinct=True))
+        .values_list("message", "count")
+    )
+    return [row | {"refused": counts.get(row["id"], 0)} for row in rows]
 
 
 def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry):
@@ -302,22 +411,42 @@ def read_sending_holds(now):
 def read_refusals(parameters):
     """Refused addresses: one page of the unresolved refusals.
 
-    Returns ``values``, ``window``, ``rows`` (the refusal records),
-    ``has_next`` and ``total``. ``duid`` keeps one Family's refusals.
+    Returns ``values``, ``window``, ``rows``, ``has_next``, ``total`` and
+    ``snapshot``, the current ParishSoft snapshot id the Family sort read
+    and the page names its Families from (``with_family_names``). Each row
+    has the refusal's ``id``, ``created_at``, ``family_duid`` and
+    ``address``, and ``message_id``: the email whose delivery recorded it
+    (#935). ``duid`` keeps one Family's refusals.
     """
-    from .recipient_models import RecipientRefusal, RecipientRefusalResolution
-
     values, window = parse_window(parameters, {"duid"}, REFUSAL_SORTING)
-    query = RecipientRefusal.objects.exclude(
-        pk__in=RecipientRefusalResolution.objects.values("refusal_id")
-    )
+    query = unresolved_refusals()
     if values.get("duid"):
         query = query.filter(family_duid=family_duid(values["duid"]))
     total = bounded_count(query)
+    # One snapshot read names the page's Families and sorts them, so the
+    # order and the shown names agree.
+    snapshot = current_snapshot()
+    if REFUSAL_SORTING.tokens[values["sort"]][0] == "name":
+        query = with_name_keys(query, snapshot, duid="family_duid")
     window, rows, has_next = read_window(
-        window, REFUSAL_SORTING.order(query, values["sort"]), total
+        window,
+        REFUSAL_SORTING.order(query, values["sort"]).values(
+            "id",
+            "created_at",
+            "family_duid",
+            "address",
+            message_id=recording_message(),
+        ),
+        total,
     )
-    return dict(values=values, window=window, rows=rows, has_next=has_next, total=total)
+    return dict(
+        values=values,
+        window=window,
+        rows=rows,
+        has_next=has_next,
+        total=total,
+        snapshot=snapshot,
+    )
 
 
 def read_refusal(refusal_id, parameters):
@@ -325,7 +454,8 @@ def read_refusal(refusal_id, parameters):
 
     ``can_clear`` says the current campaign's source generation is the one
     its Family credentials were built from, so a verified clearance can be
-    recorded now. Raises ``RecipientRefusal.DoesNotExist`` for an unknown
+    recorded now. ``message_id`` is the email whose delivery recorded the
+    refusal (#935). Raises ``RecipientRefusal.DoesNotExist`` for an unknown
     refusal.
     """
     from parishkit.stewardship.source.snapshot_models import SourceCurrent
@@ -333,7 +463,9 @@ def read_refusal(refusal_id, parameters):
     from .recipient_models import RecipientRefusal, RecipientRefusalResolution
 
     filters(parameters, allowed=set())
-    refusal = RecipientRefusal.objects.get(pk=refusal_id)
+    refusal = RecipientRefusal.objects.annotate(message_id=recording_message()).get(
+        pk=refusal_id
+    )
     resolved = RecipientRefusalResolution.objects.filter(refusal_id=refusal_id).first()
     source = SourceCurrent.objects.first()
     with connection.cursor() as cursor:
@@ -351,6 +483,7 @@ def read_refusal(refusal_id, parameters):
         can_clear = cursor.fetchone()[0]
     return dict(
         refusal=refusal,
+        message_id=refusal.message_id,
         resolved=resolved,
         source=source,
         can_clear=can_clear,

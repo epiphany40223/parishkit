@@ -833,7 +833,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same) |  |
 | `campaign_ministries` | Campaign Ministries | Ministries | Administrator | Change campaign Ministries | `/admin/parish/ministries/campaign/` | (same) | Moves under Ministries, which links it while the campaign is live; its Return link goes to Ministries. Campaign settings keeps a link. |
 | `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same) |  |
-| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) |  |
+| `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) | The table's confirmation dialog posts here (#879); it answers with a redirect or a refusal, never a page. |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same) |  |
 | `source_refresh` | Refresh from ParishSoft | Menu: Refresh from ParishSoft | Administrator | ParishSoft refresh | `/admin/parish/parishsoft-refresh/` | (same) |  |
 | `users` | Users | Menu: Users | Administrator | Portal users; Sign-in rules | `/admin/users` | `/admin/users/` | One table of users (#952), which replaces the planned split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
@@ -847,7 +847,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `assignments` | Review Ministry assignment | Portal users | Administrator | Assignments | `/admin/users/assignments` (POST only) | (none) | Retired by #922: removed with Ministry assignments. |
 | `chair_confirmations` | Review Chairperson suggestion | Portal users | Administrator | Chair suggestions | `/admin/users/suggestions` (POST only) | (none) | Retired by #922: removed with Chairperson suggestions. |
 | `chair_reviews` | Review Chairperson decision | Portal users | Administrator | Chair reviews | `/admin/users/reviews` (POST only) | (none) | Retired by #922: removed with Chairperson reviews. |
-| `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); revoke posts to `/admin/users/automation/sessions/<session>/`. |
+| `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); the Revoke dialog posts the session to `/admin/users/automation/sessions/` (#879). |
 | `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
 | `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. |
@@ -1345,7 +1345,8 @@ rules; nothing else about those Families changes.
 Hosted files (Parish data) is the Administrator-only library of
 PDF, Office and image files that page and email content links or shows
 with `{{ file.<slug> }}`: upload, placeholder copy, where each file is used,
-and single or multi-select deletion that is refused while a file is in use.
+and single or multi-select deletion that is refused while a file is in use,
+through the shared [row actions and confirmation](#row-actions-and-confirmation).
 The page and its rules are defined by the
 [hosted files specification](../hosted-files/spec.md#admin-page).
 
@@ -1823,11 +1824,18 @@ as the UI and rechecks it at submission. A stale form cannot create new actions
 for an inactive Ministry, and omission of hidden fields never cancels retained
 requests. Use the ordinary changed-baseline reconfirmation flow for stale forms.
 
-A Ministry's name never affects its visibility. ParishSoft names are stored as
-loaded and repaired only where they are shown: on the Family form, this screen,
-Campaign settings, Create the campaign and (before #142) first-campaign setup.
-A name the form can already show
-is used exactly as before, only trimmed, so valid labels and Family form
+A Ministry's name never affects its visibility. A Ministry name is an opaque
+string: every page, report, export, email and the Family form shows the full
+ParishSoft name (only a workbook's sheet tab is cut to Excel's 31-character
+limit), and nothing reads meaning into a prefix. A leading number or
+letter (such as `102-Altar Servers`) or a marker such as `X-` is one parish's
+naming convention, not ParishSoft's, so it is kept and means nothing to the
+application (Administrator decision, 2026-10-10,
+[#971](https://github.com/epiphany40223/parishkit/issues/971)). ParishSoft
+names are stored as loaded and repaired only where they are shown: on the
+Family form, this screen, Campaign settings, Create the campaign and
+(before #142) first-campaign setup. A name the form can already show is used exactly
+as before, only trimmed, so valid labels and Family form
 digests never change because of this rule. An unusable name is repaired:
 whitespace (including tabs, newlines and non-breaking spaces) becomes single
 spaces, and control and other invisible characters are removed. That includes
@@ -1896,17 +1904,15 @@ told apart without a new event name.
 The Admin home page shows Administrators with configuration access a
 "ParishSoft Ministry changes" panel listing the changes recorded by promoted
 snapshots from the last seven days (at most five refreshes, newest first). A
-rename whose new name starts with `X-` and whose old name did not is labeled as
-possibly retired: some parishes rename a retired Ministry that way. It is a
-display hint only and changes no behavior. The panel links to Ministry
-activity, where an Administrator can mark a Ministry inactive.
+rename shows the old and the new full names and reads nothing into either
+(#971). The panel links to Ministry activity, where an Administrator can mark
+a retired Ministry inactive.
 
 While the current campaign is in draft, scheduled or open, entries for
 Ministries in its selections are marked "in the current campaign", the panel
 also links to that campaign's Ministry selections, and it lists, independent of
 the seven days, the campaign's selected Ministries that are missing from the
-current catalog (Families cannot see them) or whose current name starts with
-`X-`. A closed or archived campaign shows Families nothing, so none of this
+current catalog (Families cannot see them). A closed or archived campaign shows Families nothing, so none of this
 applies to it. The whole panel costs the home page one query.
 
 No System logs entry is written: the closed operational-event list is enforced
@@ -1914,8 +1920,7 @@ in SQL, so a new event would be a schema change. A durable
 `ministry_catalog_changed` event can be added after the schema freeze.
 ParishSoft's own Ministry active/inactive flag is not compared. It is not
 reliable enough to decide visibility (see above), but a Ministry turned
-inactive there may be a stronger retirement signal than the `X-` hint; adding
-it to the notice is tracked for after launch in
+inactive there may signal retirement; adding it to the notice is tracked in
 [#342](https://github.com/epiphany40223/parishkit/issues/342).
 
 #### Changing a live campaign's Ministries
@@ -2479,7 +2484,11 @@ re-reads the same check.
 
 The Admin-only Family list (the **Testing submissions** page) opens only
 while the campaign is the current Testing draft, as does Go-live readiness,
-the only page that links to it. Afterwards the list answers with a plain
+the only page that links to it. It names each Family as the other Admin
+tables do, the surname then the heads ("Squyres, Tracy and Jeff"), with the
+Family DUID in its own column; both columns sort on the server, the name by
+surname and then the whole name, as the Family codes directory sorts
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). Afterwards the list answers with a plain
 notice, "Testing submissions are only available before go-live.", as a 410
 refusal: signing in again cannot help, so it never shows the generic
 sign-in-again refusal
@@ -3159,6 +3168,18 @@ progress says so. Only the send the progress page is showing links to it
 another send still in progress, such as an invitation still sending when a
 reminder falls due, says In progress without the link.
 
+**Layout.** The table has seven columns, so it fits a laptop screen beside
+the Admin menu
+([#931](https://github.com/epiphany40223/parishkit/issues/931)). **When**
+comes first and lists the scheduled time, the first email, the latest
+result and the duration as labelled lines. **Email** names the send, with
+its mode, a later schedule change and In progress as muted lines under the
+name. **Total**, **Sent**, **Failed** and **Not sure it arrived** follow,
+then **Not in the total**, a labelled list of Cancelled, Not needed,
+Couldn't be emailed, Skipped: Reminder WorkGroup and Held. Times and counts
+never wrap; labels wrap only between words. On a phone the table scrolls
+inside its own region and the page never scrolls sideways.
+
 **Links to Outgoing mail.** Sent, Failed, Not sure it arrived and Cancelled
 link to Outgoing mail filtered to that send and the matching email state
 (Delivered, Failed, Not sure it arrived and Not sent (cancelled)). The send
@@ -3195,12 +3216,57 @@ Outgoing mail, a restore review that begins while it renders withholds it.
 Outgoing mail (`/admin/mail/outgoing/`, Administrators only) lists every
 email the system has sent or is about to send, with filters by delivery
 state, an exact Family DUID or delivery ID, and a
-[Family email send](#family-email-sends). Each email's own page shows its
-history and offers the resolutions its state allows (an evidence note,
-confirming delivery or that it was not sent, a retry, or a duplicate-risk
-resend), each with a required note, as the
+[Family email send](#family-email-sends). It reads as a log
+([#931](https://github.com/epiphany40223/parishkit/issues/931)): each row is
+one email, not one Family, and **When** shows a single time, that of the
+email's current state (when it last changed, such as when it was
+delivered). When sorts by that time (sort token `changed`), newest first by
+default; the email's own page keeps its whole timeline. Each row names the
+Family and, in a column of its own, its Family DUID; an Administrator
+report has no Family. The name is the Family directory's surname-and-heads
+name from the latest ParishSoft data, read for the shown page only (at
+most two small queries, however many rows), or a muted "Not in current
+ParishSoft data" when that data no longer has the Family. The name opens
+the email's own page. Family sorts on the server over the whole list (sort
+token `name`): by surname, then the whole shown name, then Family DUID
+for Families that show the same name, as the Family directory orders them,
+each email's name read inside the page's query from the same ParishSoft
+snapshot the shown names come from; Family DUID sorts too (token `duid`). Either
+keeps each Family's emails together, newest change first (then newest
+email) in both directions, and Administrator reports (and, by name,
+Families no longer in the data) sort last in both directions. The
+columns follow the Admin tables' shared order
+([#932](https://github.com/epiphany40223/parishkit/issues/932)): When,
+Family, Family DUID, Purpose, Mode, State and Provider attempts. The
+command line's `--sort` takes the same tokens and also `created`, when the
+email was created. The table fits a 1280-pixel-wide screen beside the
+Admin menu without scrolling. Each email's own page shows its history,
+its attempts as one table of short rows, one per recorded change, newest
+first, with When leading as in any log, then the attempt number, what
+happened and the resulting state (#934); and it offers the resolutions its
+state allows (an evidence note, confirming delivery or that it was not
+sent, a retry, or a duplicate-risk resend), each with a required note, as
+the
 [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders)
 defines.
+
+An email whose delivery recorded a [refused address](#refused-addresses)
+that is still unresolved is marked in its State cell, on a second line,
+"1 address refused" or "N addresses refused"
+([#935](https://github.com/epiphany40223/parishkit/issues/935)), counting
+each address once even when a retry was refused again. A
+permanently refused address does not fail an email that another address
+accepted, so the email can be Delivered and still have missed one head of
+household; the mark makes that visible. It links to Refused addresses
+filtered to that Family's DUID. The counts come from one grouped query for
+the shown page (each refusal's outbox event names its email; the web login
+reads both columns, never the event's evidence). The page's link line
+(Watch Family email progress, See Family email history and Review refused
+addresses) sits above the page heading, as the
+[page help convention](../ui-conventions/spec.md#page-help) allows. It reads "Review refused addresses (N
+unresolved)" while any refusal is unresolved, and "Review refused
+addresses" otherwise; it is drawn once per page load, outside the in-place
+regions.
 
 #### Sending limit note
 
@@ -3289,6 +3355,46 @@ The bulk actions are page-only for now; the shared functions in
 [Admin automation](../admin-automation/spec.md) command if one is added.
 No schema change: they insert the same resolution rows the per-email page
 inserts.
+
+#### Refused addresses
+
+Refused addresses (`/admin/mail/refusals/`, Administrators only) lists
+every unresolved refused address: one an outgoing Production email's
+delivery recorded as refused permanently, which stops campaign email to
+that address for that Family until it is cleared or ParishSoft's address
+changes. It filters by an exact Family DUID (`?duid=`), which the
+[Outgoing mail](#outgoing-mail) mark uses. The columns follow the Admin
+tables' shared order
+([#932](https://github.com/epiphany40223/parishkit/issues/932)): Refused
+at, Family, Family DUID, Address and Email
+([#935](https://github.com/epiphany40223/parishkit/issues/935)); the
+refusal's ID shows only under Technical details on its own page, though
+the command line can still sort by it (`--sort id`). The Family's name is
+read as Outgoing mail reads it (the latest ParishSoft data, the same
+snapshot the Family sort reads, for the shown page only, at most two small
+queries) and shows "Not in current
+ParishSoft data" when that data no longer has the Family. Family sorts on
+the server as Outgoing mail's does (sort token `name`: surname, then the
+whole shown name, then Family DUID), with Families no longer in the data
+last in both directions; Family DUID sorts too (token `duid`), since a
+table that shows a Family name and a Family DUID sorts on both
+([#932](https://github.com/epiphany40223/parishkit/issues/932)). Only the
+Email column does not sort. The address opens the refusal's own page, and
+the Email column's **Open email** opens the email whose delivery recorded
+it. A link above the list leads back to Outgoing mail. The two pages stay
+separate: a refusal is per address and outlives the email that recorded
+it, so it is not a row or a state of Outgoing mail.
+
+A refusal's own page names the address, the Family and its Family DUID,
+links that Family's refused addresses and the recording email, and offers
+the verified clearance: a required note saying how the mailbox was
+verified and a required confirmation, available only with current
+ParishSoft data and a current campaign. **Clear verified refusal** is
+unavailable until both are filled in, and clearing acts
+[in place](#in-place-controls): the page's answer replaces the clearance
+region, which then shows the resolution with focus on its heading. A
+refused or stale clearance shows its error page, as before. Nothing is
+sent, and no schema change is involved.
 
 ### Family portal maintenance
 
@@ -3965,6 +4071,11 @@ example Families of a refused change (PR 5) and the debug-off switch
   [Table column order](../ui-conventions/spec.md#table-column-order)), sorted and
   paged in place, and says the Family can open the form after the correction
   and the next ParishSoft refresh.
+  The Family name is therefore the surname alone, the recorded exception to
+  the "Surname, heads" Family name rule
+  ([#932](https://github.com/epiphany40223/parishkit/issues/932)): the heads'
+  names are Member values, and a head's name can be the very value the form
+  refuses.
   The result is cached in memory per campaign, snapshot and campaign
   configuration, so a refresh clears it. The sentence is read on page load
   only, never by the 10-second status poll; if the check cannot run, it

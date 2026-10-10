@@ -525,3 +525,25 @@ def test_table_actions_draw_named_icon_buttons_only_for_given_actions():
     assert '<td class="table-actions"></td>' in empty
     with pytest.raises(template.TemplateSyntaxError):
         render_actions('{% table_actions name="x" delete="abc" %}')
+
+
+def test_table_actions_revoke_has_its_own_words_and_icon():
+    """verb="revoke" names the action Revoke and draws a different icon (#879)."""
+    revoke = render_actions(
+        '{% table_actions name="nightly" delete="abc" confirm="session-revoke" '
+        'field="session_id" verb="revoke" %}'
+    )
+    delete = render_actions(
+        '{% table_actions name="nightly" delete="abc" confirm="session-revoke" '
+        'field="session_id" %}'
+    )
+    assert 'aria-label="Revoke nightly"' in revoke
+    assert 'title="Revoke nightly"' in revoke
+    assert "Delete" not in revoke and 'aria-label="Delete nightly"' in delete
+    assert "<circle" in revoke and "<circle" not in delete
+    # The same square danger button either way.
+    assert 'class="button-secondary icon-button icon-button-danger"' in revoke
+    with pytest.raises(template.TemplateSyntaxError):
+        render_actions(
+            '{% table_actions name="x" delete="abc" confirm="d" verb="remove" %}'
+        )

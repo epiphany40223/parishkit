@@ -49,10 +49,23 @@ from .test_taskrun_postgresql import act
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def refused(harness, *, mode="production", address="valid@example.org", intended=None):
-    """Record a synthetic provider refusal through real task/outbox state edges."""
-    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
-    status = create_message(
+def email(
+    harness,
+    *,
+    mode="production",
+    address="valid@example.org",
+    intended=None,
+    routed=None,
+    duid=1,
+):
+    """Create one synthetic initial email to Family ``duid`` through the real
+    outbox storage; returns its status, not yet submitted.
+
+    ``routed`` names every Production recipient (default: ``address`` alone),
+    for an email sent to more than one head of household.
+    """
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=duid)
+    return create_message(
         identity=DeliveryIdentity(
             scope_id=harness.campaign.pk,
             campaign_id=harness.campaign.pk,
@@ -65,7 +78,7 @@ def refused(harness, *, mode="production", address="valid@example.org", intended
         render=rendering(
             configuration_id=harness.campaign.active_configuration.configuration_id,
             intended_recipients=(address,) if intended is None else intended,
-            routed_recipients=(address,)
+            routed_recipients=(routed or (address,))
             if mode == "production"
             else ("test@example.org",),
         ),
@@ -73,6 +86,27 @@ def refused(harness, *, mode="production", address="valid@example.org", intended
         correlation_id=uuid4(),
         command_id=uuid4(),
         admit=permit,
+    )
+
+
+def refused(
+    harness,
+    *,
+    mode="production",
+    address="valid@example.org",
+    intended=None,
+    routed=None,
+    duid=1,
+):
+    """Record a synthetic provider refusal, of Family ``duid``'s ``address``,
+    through real task/outbox state edges."""
+    status = email(
+        harness,
+        mode=mode,
+        address=address,
+        intended=intended,
+        routed=routed,
+        duid=duid,
     )
     failed = change(
         submit(status),

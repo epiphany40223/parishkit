@@ -687,7 +687,12 @@ pk-admin delivery refusal-clear REFUSAL_ID --source-snapshot-id SNAPSHOT_ID \
 
 `delivery list` takes the page's `--state`, `--send` (send history's `send`
 value), `--search` (an exact Family DUID or delivery id, as input only),
-`--page`, `--size` and `--sort`. `delivery refusals` takes `--duid`.
+`--page`, `--size` and `--sort`. `--sort` takes the page's tokens:
+`changed` (when the email last changed; the default is `-changed`, latest
+first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
+`created`. `delivery refusals` takes `--duid`, and its `--sort` takes
+`refused`, `name` (the Family's name, as `delivery list`), `duid`
+(the default), `address` and `id`.
 
 | Field | What it holds |
 | --- | --- |
@@ -1195,3 +1200,16 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   now include `resend` (it listed only `delivery resolve` actions); an
   offered `resend` is `delivery resend`.
 - `pk-admin/1` (#944): additive. `config request cancel`, which prompts.
+- `pk-admin/1` (#931): a change of meaning, kept on version 1.
+  `delivery list --sort` follows the reworked Outgoing mail page: the
+  Family DUID token is `duid` (it was `recipient`, which is now refused),
+  the new `name` sorts by the Family's name from the latest ParishSoft
+  data, and the default is `-changed`, the latest change first (it was
+  `-created`, the newest email first; `--sort=-created` still gives that
+  order). The document's fields are unchanged. Its only readers are the
+  Administrator and the operator, and the Administrator keeps no legacy
+  forms (the
+  [exception](../specs/stewardship/admin-automation/spec.md#output-documents)
+  records why).
+- `pk-admin/1` (#935): additive. `delivery refusals --sort name`, by the
+  Family's name, as the Refused addresses page.

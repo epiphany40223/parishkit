@@ -1,37 +1,70 @@
 """Real-session Admin metadata, warning privacy, and verified-clearance forms."""
 
+from dataclasses import replace
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from django.db import connection, transaction
 from django.db.models import F
+from django.http import QueryDict
+from django.test.utils import CaptureQueriesContext
+from django.utils.html import escape
 
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.audit.models import AuditEvent, OperationalLog
+from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryResult,
     FamilyDeliveryStatus,
+)
+from parishkit.stewardship.jobs import delivery_views
+from parishkit.stewardship.jobs.delivery_metadata import (
+    DELIVERY_SORTING,
+    with_name_keys,
+)
+from parishkit.stewardship.jobs.delivery_reads import (
+    read_listing,
+    read_refusals,
+    with_family_names,
+    with_refusal_counts,
 )
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.jobs.family_mail_dispatch import (
     begin_submission,
     finish_submission,
 )
-from parishkit.stewardship.jobs.outbox_models import OutboxEvent
+from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.outbox_models import OutboxEvent, OutboxMessage
 from parishkit.stewardship.jobs.outbox_storage import change_message
-from parishkit.stewardship.jobs.recipient_models import RecipientRefusalResolution
+from parishkit.stewardship.jobs.recipient_models import (
+    RecipientRefusal,
+    RecipientRefusalResolution,
+)
+from parishkit.stewardship.jobs.storage import change_run, retry_failed
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
+from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.web.presentation import instant
 
 from ..policy_factory import address
+from ..test_outbox_validation import rendering
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
-from .response_builders import activate_response_service
+from .response_builders import activate_response_service, response_source
 from .test_background_grants_postgresql import task_login
+from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
+from .test_daily_digest_planning_postgresql import INSTANT as DIGEST_INSTANT
 from .test_family_mail_dispatch_postgresql import claim, prepare
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
-from .test_recipient_suppressions_postgresql import refused, remember
+from .test_outbox_postgresql import change as change_outbox
+from .test_outbox_postgresql import claim as claim_task
+from .test_outbox_postgresql import permit, provider_evidence, submit
+from .test_recipient_suppressions_postgresql import email, refused, remember
+from .test_source_families_postgresql import prepare as prepare_source
+from .test_source_families_postgresql import promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -121,7 +154,12 @@ def test_uncertainty_warns_once_and_admin_metadata_never_discloses_payload(
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
-def test_delivery_pages_and_warning_are_admin_only(family_mail, google, role):  # noqa: F811
+def test_delivery_pages_and_warning_are_admin_only(
+    family_mail,  # noqa: F811
+    google,
+    role,
+    monkeypatch,
+):
     """Neither direct UUID navigation nor raw page chrome grants Ministry access."""
     message = uncertain(family_mail)
     store = family_mail.service.store
@@ -139,13 +177,444 @@ def test_delivery_pages_and_warning_are_admin_only(family_mail, google, role):  
     )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
+    name = family_name(message).encode()
+    # The role check comes first: a refused viewer never reads a snapshot.
+    names = []
+    monkeypatch.setattr(delivery_views, "with_family_names", names.append)
     for path in (
         "/admin/mail/outgoing/",
         f"/admin/mail/outgoing/{message.pk}/",
         "/admin/mail/refusals/",
+        # A refusal's page names its Family too (#935); unknown or not,
+        # the role check refuses it first.
+        f"/admin/mail/refusals/{uuid4()}/",
     ):
-        assert browser.get(path).status_code == 403
+        response = browser.get(path)
+        assert response.status_code == 403
+        # Outgoing mail's Family names (#931) are the page's, not the error's.
+        assert name not in response.content
+    assert names == []
     assert b"data-delivery-warning" not in browser.get("/admin/").content
+
+
+def family_name(message):
+    """The Family name Outgoing mail shows for ``message``, from the snapshot."""
+    duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    return snapshot_family_names(snapshot, [duid], "Family")[duid]
+
+
+def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  # noqa: F811
+    """#931: the Family's name opens the email; its DUID is a separate column.
+    Both sort on the server, and When is the one time of the email's current
+    state (its last change), not when it was created."""
+    message = uncertain(family_mail)
+    assert message.updated_at != message.created_at
+    duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
+    name = family_name(message)
+    assert name and name != "Family"
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True):
+        response = browser.get("/admin/mail/outgoing/", {"sort": "-duid"})
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert (
+        f'<th scope="row"><a href="/admin/mail/outgoing/{message.pk}/">'
+        f"{escape(name)}</a></th>"
+    ) in html
+    assert f'<td class="numeric nowrap">{duid}</td>' in html
+    # Family DUID is the sorted heading; Family sorts too (token name).
+    heading = html.split('aria-sort="descending"')[1].split("</th>")[0]
+    assert "Family DUID" in heading
+    assert "sort=name" in html
+    # When: one time, the last change, newest first by default.
+    when = f'<td class="nowrap"><time datetime="{instant(message.updated_at)}"'
+    assert when in html
+    assert f'datetime="{instant(message.created_at)}"' not in html
+    assert "Changed" not in html
+    with task_login(ServiceRole.WEB, exact=True):
+        default = browser.get("/admin/mail/outgoing/").content.decode()
+    heading = default.split('aria-sort="descending"')[1].split("</th>")[0]
+    assert ">When<" in heading
+    # The name is only shown, never searched: the filter stays exact.
+    assert browser.get("/admin/mail/outgoing/", {"q": name}).status_code == 400
+    # Family DUID's sort token is duid; the older recipient is not kept.
+    assert browser.get("/admin/mail/outgoing/", {"sort": "recipient"}).status_code == (
+        400
+    )
+
+
+def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
+    family_mail,  # noqa: F811
+    google,
+):
+    """#931: an Administrator digest is an Administrator report, and a Family
+    the latest ParishSoft data no longer has is said so, through the real
+    snapshot read, which takes at most two queries however many rows."""
+    message = uncertain(family_mail)
+    with campaign_clock(DIGEST_INSTANT):
+        daily_allocated(family_mail)
+    digest = OutboxMessage.objects.get(purpose="daily_digest")
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True):
+        response = browser.get("/admin/mail/outgoing/")
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert (
+        f'<th scope="row"><a href="/admin/mail/outgoing/{digest.pk}/">'
+        "Administrator report</a></th>"
+    ) in html
+    assert escape(family_name(message)) in html
+
+    # The listed rows, plus one whose Family DUID the snapshot lacks.
+    data = read_listing({})
+    rows = data["rows"]
+    assert data["snapshot"] == SourceCurrent.objects.get().snapshot_id
+    duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
+    gone = next(row for row in rows if row["id"] == message.pk) | {
+        "id": uuid4(),
+        "family__family_duid": duid + 1_000_000,
+    }
+    with CaptureQueriesContext(connection) as queries:
+        named = with_family_names([*rows, gone], data["snapshot"])
+    assert len(queries) <= 2
+    assert {row["id"]: row["family_name"] for row in named} == {
+        message.pk: family_name(message),
+        digest.pk: None,
+        gone["id"]: None,
+    }
+
+    # Family sorts the whole list by name: the Administrator report, which
+    # has no Family, comes last in both directions.
+    with task_login(ServiceRole.WEB, exact=True):
+        for sort in ("name", "-name"):
+            assert [
+                row["id"] for row in read_listing(QueryDict(f"sort={sort}"))["rows"]
+            ] == [
+                message.pk,
+                digest.pk,
+            ]
+            response = browser.get("/admin/mail/outgoing/", {"sort": sort})
+            assert response.status_code == 200
+            html = response.content.decode()
+            assert html.index(escape(family_name(message))) < html.index(
+                "Administrator report</a>"
+            )
+
+
+def test_family_name_sort_keys_match_the_shown_names(response_service):
+    """#931: the SQL name keys Outgoing mail sorts by are exactly the names the
+    page shows (snapshot_family_names), lowercased, and order Families by
+    surname, then the whole name, as the Family codes directory does."""
+    data = response_source()
+
+    def family(duid, **values):
+        """One more active parishioner Family, like the fixture's first."""
+        data.families[duid] = (
+            data.families[1]
+            | {
+                "familyDUID": duid,
+                "familyID": duid + 100,
+                "firstName": "",
+                "mailingName": "",
+            }
+            | values
+        )
+
+    def member(duid, family_duid, first, last, kind="Head", **values):
+        """One more active Member of ``family_duid``."""
+        data.members[duid] = (
+            data.members[3]
+            | {
+                "memberDUID": duid,
+                "familyDUID": family_duid,
+                "firstName": first,
+                "lastName": last,
+                "memberType": kind,
+                "emailAddress": "",
+            }
+            | values
+        )
+
+    family(20, lastName="Smith")
+    member(2001, 20, "Carl", "Smith")
+    family(21, lastName="smith")
+    member(2102, 21, "Bob", "Jones", "Husband")
+    member(2101, 21, "Ann", "smith", "Wife")
+    member(2103, 21, "Cy", "smith", "Wife", memberStatus="Inactive")
+    family(22, lastName="Adams")
+    family(23, lastName="", mailingName="Zed Household")
+    family(24, lastName="", firstName="Yolanda")
+    member(2401, 24, "", "")
+    snapshot, claim = prepare_source(data)
+    promote(snapshot, claim, response_service.campaign, response_service.rings)
+    current = SourceCurrent.objects.get().snapshot_id
+    keyed = with_name_keys(
+        FamilyCampaign.objects.filter(campaign=response_service.campaign),
+        current,
+        duid="family_duid",
+    )
+    with task_login(ServiceRole.WEB, exact=True):
+        rows = list(
+            # The name column's surname and whole-name keys, then the DUID
+            # (FamilyCampaign's own column, as the outbox's family__family_duid).
+            keyed.order_by(*DELIVERY_SORTING.orders["name"][:2], "family_duid").values(
+                "family_duid", "family_sort_surname", "family_sort_name"
+            )
+        )
+    shown = snapshot_family_names(current, [row["family_duid"] for row in rows])
+    assert [row["family_sort_name"] for row in rows] == [
+        shown[row["family_duid"]].lower() for row in rows
+    ]
+    assert {row["family_duid"]: shown[row["family_duid"]] for row in rows} == {
+        1: "Example, Member",
+        2: "Empty",
+        20: "Smith, Carl",
+        21: "smith, Ann and Bob Jones",
+        22: "Adams",
+        23: "Zed Household",
+        24: "Yolanda",
+    }
+    # Surname first, then the whole name: both Smiths sort by "smith".
+    assert [row["family_duid"] for row in rows] == [22, 2, 1, 21, 20, 24, 23]
+
+
+def test_tied_family_names_keep_each_familys_emails_together(response_service):
+    """#931: two Families that show the same name sort by Family DUID under
+    Family, as the Family codes directory orders tied names, so each
+    Family's emails stay together in both directions. Under Family and
+    Family DUID, each Family's emails read newest change first in either
+    direction (#934), not in id order."""
+    data = response_source()
+    for duid in (20, 30):
+        data.families[duid] = data.families[1] | {
+            "familyDUID": duid,
+            "familyID": duid + 100,
+            "firstName": "",
+            "mailingName": "",
+            "lastName": "Smith",
+        }
+        data.members[duid * 100] = data.members[3] | {
+            "memberDUID": duid * 100,
+            "familyDUID": duid,
+            "firstName": "Carl",
+            "lastName": "Smith",
+            "memberType": "Head",
+            "emailAddress": "",
+        }
+    snapshot, claim = prepare_source(data)
+    promote(snapshot, claim, response_service.campaign, response_service.rings)
+    current = SourceCurrent.objects.get().snapshot_id
+    assert snapshot_family_names(current, [20, 30]) == {
+        20: "Smith, Carl",
+        30: "Smith, Carl",
+    }
+    harness = activate_response_service(response_service)
+    # Interleaved, so neither creation order nor ids group them by chance.
+    created = [email(harness, duid=duid) for duid in (30, 20, 30, 20, 30, 20)]
+    # Each Family's middle email changes last, so its newest-change-first
+    # order (middle, last, first) is neither id order nor its reverse.
+    for status in created[2:4]:
+        submit(status)
+    newest = {
+        30: [created[index].message_id for index in (2, 4, 0)],
+        20: [created[index].message_id for index in (3, 5, 1)],
+    }
+    with task_login(ServiceRole.WEB, exact=True):
+        for sort, first, second in (
+            ("name", 20, 30),
+            ("-name", 30, 20),
+            ("duid", 20, 30),
+            ("-duid", 30, 20),
+        ):
+            rows = read_listing(QueryDict(f"sort={sort}"))["rows"]
+            assert [row["id"] for row in rows] == newest[first] + newest[second], sort
+
+
+def test_refused_addresses_sort_by_family_name(response_service, google):
+    """#935: Refused addresses' Family column sorts on the server by the
+    Family's name (surname, whole name, Family DUID, then address), so each
+    Family's addresses stay together, as Outgoing mail's Family column."""
+    harness = activate_response_service(response_service)
+    for duid, mailbox in (
+        (1, "b@example.org"),
+        (2, "c@example.org"),
+        (1, "a@example.org"),
+    ):
+        remember(refused(harness, address=mailbox, duid=duid), address=mailbox)
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    assert snapshot_family_names(snapshot, [1, 2]) == {
+        1: "Example, Member",
+        2: "Empty",
+    }
+
+    def addresses(sort):
+        """The refused addresses in the order one page lists them."""
+        rows = read_refusals(QueryDict(f"sort={sort}"))["rows"]
+        return [row["address"] for row in rows]
+
+    with task_login(ServiceRole.WEB, exact=True):
+        assert addresses("name") == ["c@example.org", "a@example.org", "b@example.org"]
+        assert addresses("-name") == ["b@example.org", "a@example.org", "c@example.org"]
+        assert addresses("duid") == ["a@example.org", "b@example.org", "c@example.org"]
+        browser, _ = signed_in()
+        html = browser.get("/admin/mail/refusals/", {"sort": "name"}).content.decode()
+    heading = html.split('aria-sort="ascending"')[1].split("</th>")[0]
+    assert ">Family<" in heading
+    assert html.index("c@example.org") < html.index("a@example.org")
+
+
+def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
+    response_service, google
+):
+    """#935: Outgoing mail marks each email with an unresolved refused address
+    and counts them in its link line; Refused addresses names the Family
+    beside its own Family DUID column and links the recording email; and a
+    cleared refusal drops out of both."""
+    harness = activate_response_service(response_service)
+    events = {
+        mailbox: refused(harness, address=mailbox)
+        for mailbox in ("head@example.org", "spouse@example.org")
+    }
+    refusals = {
+        mailbox: remember(event, address=mailbox) for mailbox, event in events.items()
+    }
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    name = snapshot_family_names(snapshot, [1], "Family")[1]
+    assert name
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+        assert "Review refused addresses (2 unresolved)</a>" in html
+        marker = '<a href="/admin/mail/refusals/?duid=1">1 address refused</a>'
+        assert html.count(marker) == 2
+
+        listing = browser.get("/admin/mail/refusals/", {"duid": "1"})
+        assert listing.status_code == 200
+        html = listing.content.decode()
+        # Dates first, then the Family's name, then its own DUID column
+        # (#932), then the address and the recording email.
+        headings = ["Refused at", "Family", "Family DUID", "Address", "Email"]
+        thead = html.split("<thead>")[1].split("</thead>")[0]
+        places = [thead.index(f">{heading}<") for heading in headings]
+        assert places == sorted(places)
+        assert f'<th scope="row">{escape(name)}</th>' in html
+        assert '<td class="numeric nowrap">1</td>' in html
+        for mailbox, refusal in refusals.items():
+            message = events[mailbox].message_id
+            assert f'<a href="/admin/mail/refusals/{refusal.pk}/">{mailbox}</a>' in html
+            assert f'<a href="/admin/mail/outgoing/{message}/">Open email</a>' in html
+        # The name is shown, not searched: the filter stays an exact DUID.
+        assert browser.get("/admin/mail/refusals/", {"duid": name}).status_code == 400
+
+        refusal = refusals["head@example.org"]
+        path = f"/admin/mail/refusals/{refusal.pk}/"
+        html = browser.get(path).content.decode()
+        assert escape(name) in html
+        assert (
+            f'<a href="/admin/mail/outgoing/{events["head@example.org"].message_id}/">'
+        ) in html
+        assert '<a href="/admin/mail/refusals/?duid=1">' in html
+        assert 'data-in-place="refusal-clear"' in html
+        current = SourceCurrent.objects.get()
+        cleared = browser.post(
+            path + "clearance/",
+            dict(
+                command_id=str(uuid4()),
+                source_snapshot_id=str(current.snapshot_id),
+                source_generation=str(current.generation),
+                verified="yes",
+                note="Called the Family; the mailbox works again.",
+            ),
+            HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
+        )
+        assert cleared.status_code == 302 and cleared["Location"] == path
+        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+        assert "Review refused addresses (1 unresolved)</a>" in html
+        assert html.count(marker) == 1
+        html = browser.get("/admin/mail/refusals/").content.decode()
+        assert "head@example.org" not in html and "spouse@example.org" in html
+
+    # One grouped query counts the shown page's refusals, however many rows.
+    rows = [dict(id=event.message_id) for event in events.values()]
+    rows.append(dict(id=uuid4()))
+    with CaptureQueriesContext(connection) as queries:
+        counted = with_refusal_counts(rows)
+    assert len(queries) == 1
+    assert [row["refused"] for row in counted] == [0, 1, 0]
+
+
+def test_outgoing_mail_always_links_refused_addresses(response_service, google):
+    """#935: an Administrator always sees the Review refused addresses link
+    on Outgoing mail, with nothing refused and under any state filter or
+    sort, not only when refusals exist."""
+    activate_response_service(response_service)
+    browser, _ = signed_in()
+    link = '<a href="/admin/mail/refusals/">Review refused addresses</a>'
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for query in ({}, {"state": "all"}, {"state": "delivered"}, {"sort": "name"}):
+            response = browser.get("/admin/mail/outgoing/", query)
+            assert response.status_code == 200, query
+            assert link in response.content.decode(), query
+
+
+def test_an_email_counts_each_refused_address_once(response_service, google):
+    """#935: an email to both heads with both addresses refused shows "2
+    addresses refused"; a retry refused again at the same address records a
+    second refusal against the same email, which still counts once."""
+    harness = activate_response_service(response_service)
+    heads = ("head@example.org", "spouse@example.org")
+    first = refused(harness, address=heads[0], intended=heads, routed=heads)
+    for mailbox in heads:
+        remember(first, address=mailbox)
+
+    # Retry the failed email, then have the provider refuse it again.
+    failed = OutboxMessage.objects.get(pk=first.message_id)
+    run = TaskRun.objects.get(pk=failed.task_id)
+    failed = SimpleNamespace(
+        message_id=failed.pk, version=failed.version, worker_id=failed.worker_id
+    )
+    change_run(
+        run_id=run.pk,
+        expected_version=run.version,
+        action="permanent_failure",
+        actor_id=run.worker_id,
+        fence=run.fence,
+        correlation_id=uuid4(),
+        admit=permit,
+    )
+    render = rendering(
+        configuration_id=harness.campaign.active_configuration.configuration_id,
+        intended_recipients=heads,
+        routed_recipients=heads,
+    )
+    with work_transaction():
+        retry = retry_failed(
+            run_id=run.pk,
+            command_id=uuid4(),
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=permit,
+        )
+        pending = change_outbox(failed, DeliveryAction.RETRY_FAILED, render=render)
+    submitted = submit(pending, task=claim_task(pending, run_id=retry.run_id))
+    again = change_outbox(
+        submitted,
+        DeliveryAction.FAIL_UNACCEPTED,
+        evidence=replace(provider_evidence(), reason="recipient_refused"),
+    )
+    second = OutboxEvent.objects.get(message_id=again.message_id, version=again.version)
+    assert second.pk != first.pk
+    remember(second, address=heads[0])
+    assert RecipientRefusal.objects.filter(address=heads[0]).count() == 2
+
+    assert [
+        row["refused"] for row in with_refusal_counts([{"id": first.message_id}])
+    ] == [2]
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        html = browser.get("/admin/mail/outgoing/", {"state": "all"}).content.decode()
+    assert '<a href="/admin/mail/refusals/?duid=1">2 addresses refused</a>' in html
 
 
 @pytest.mark.parametrize(
