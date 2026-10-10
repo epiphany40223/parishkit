@@ -481,8 +481,14 @@ def test_a_review_region_another_panel_empties_moves_nothing_on_screen(
     """With the leader panel's Review button on screen and the end-date
     review above the screen, pressing Review empties the end-date region,
     which then holds no height (#973); the button the reader pressed stays
-    where it was on the screen (#736), in every engine, with or without the
-    browser's own scroll anchoring."""
+    where it was on the screen (#736,
+    https://github.com/epiphany40223/parishkit/issues/736), in every engine.
+
+    The button holds only because of the browser's own scroll anchoring:
+    the page keeps the reader's place when content above the screen
+    shrinks. With anchoring turned off (``overflow-anchor: none``) the
+    button moves up by about 174 px. Relying on anchoring here is
+    deliberate; this test fails if a change opts these regions out of it."""
     answer_panel_reviews(page, component_origin)
     page.goto(component_origin + LEADERS)
     end_region = page.locator("#end-date #settings-review")
