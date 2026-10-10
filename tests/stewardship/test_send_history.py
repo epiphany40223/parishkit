@@ -242,17 +242,71 @@ def test_a_finished_send_links_each_count_to_its_emails():
     # Each link says what it lists to a screen reader.
     assert 'aria-label="1,087 sent emails of Invitation, Production: show them"' in html
     assert "26 minutes" in html
-    assert '<td class="numeric">1,091</td>' in html
+    assert '<td class="numeric nowrap">1,091</td>' in html
     assert "In progress" not in html
     assert "Invitation" in html and "Production" in html
     assert "before a return to Testing" not in html
     assert "before a return to Testing" in render(row(earlier=True))
 
 
+def test_the_table_is_seven_readable_columns_with_the_dates_first():
+    """#931: fewer, wider columns; details are labelled or muted lines."""
+    html = render(row())
+    headings = re.findall(r'<th scope="col"[^>]*>([^<]+)</th>', html)
+    assert headings == [
+        "When",
+        "Email",
+        "Total",
+        "Sent",
+        "Failed",
+        "Not sure it arrived",
+        "Not in the total",
+    ]
+
+    def pairs(cell):
+        """The (label, value) lines of one dl.cell-pairs, tags stripped."""
+        found = re.findall(r"<dt>(.*?)</dt><dd>(.*?)</dd>", cell, re.S)
+        return [
+            (label, re.sub(r"<[^>]+>", "", value).strip()) for label, value in found
+        ]
+
+    cells = html.split("<tbody>")[1]
+    # When is the row's first cell: the scheduled time, both sending times
+    # and the duration, each labelled on a line of its own.
+    when = cells.split("<td>", 1)[1].split("</td>", 1)[0]
+    assert when.lstrip().startswith('<dl class="cell-pairs">')
+    assert [label for label, _ in pairs(when)] == [
+        "Scheduled",
+        "First email",
+        "Latest result",
+        "Duration",
+    ]
+    assert pairs(when)[-1] == ("Duration", "26 minutes")
+    # The mode is a muted line under the email's name.
+    assert re.search(
+        r'<span class="cell-line">Invitation</span>\s*'
+        r'<span class="cell-detail">Production</span>',
+        html,
+    )
+    # The counts outside the total are one labelled list; Cancelled links.
+    counts = html.split('<dl class="cell-pairs cell-counts">')[1].split("</dl>")[0]
+    assert "state=cancelled" in counts
+    assert pairs(counts) == [
+        ("Cancelled", "12"),
+        ("Not needed", "12"),
+        ("Couldn't be emailed", "0"),
+        ("Skipped: Reminder WorkGroup", "0"),
+        ("Held", "0"),
+    ]
+    # A send not started says so, with no result or duration lines.
+    waiting = render(row(started_at=None, last_settled_at=None))
+    assert "<dd>Not started</dd>" in waiting and "Latest result" not in waiting
+
+
 def test_failures_before_preparation_show_the_count_and_link_only_the_emails():
     """5 failed, 2 before an email existed: the link lists the 3 there are."""
     html = render(row(failed=5, prepare_failed=2, emails={"permanent_failure": 3}))
-    assert ">5<br><a " in html
+    assert '>5<span class="cell-line"><a ' in html
     assert "show 3" in html
 
 
