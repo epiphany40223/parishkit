@@ -7,15 +7,18 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, localcontext
+from threading import Event
 from uuid import UUID
 
 import pytest
 from PIL import Image
 
+from parishkit.stewardship.reports import charts
 from parishkit.stewardship.reports.charts import (
     RENDERER_VERSION,
     family_axis_top,
     participation_figure,
+    participation_png,
     render_participation,
 )
 from parishkit.stewardship.reports.participation import (
@@ -214,6 +217,65 @@ def test_serialized_thread_rendering_is_deterministic():
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: encoded(value, "png"), range(4)))
     assert all(result == results[0] for result in results)
+
+
+@pytest.fixture
+def png_renders(monkeypatch):
+    """Count page-chart renders, starting each test with an empty cache."""
+    charts._cached_participation_png.cache_clear()
+    calls = []
+    real = charts.render_participation
+
+    def counting(value, output, **options):
+        """Record one render, then draw it for real."""
+        calls.append(value)
+        real(value, output, **options)
+
+    monkeypatch.setattr(charts, "render_participation", counting)
+    yield calls
+    charts._cached_participation_png.cache_clear()
+
+
+def test_page_png_is_rendered_once_per_exact_input(png_renders):
+    """Repeat views reuse the bytes; any changed input renders again (#905)."""
+    from parishkit.stewardship.web import dates
+
+    value = document()
+    first = participation_png(value)
+    assert first == encoded(value, "png")
+    assert participation_png(document()) == first
+    assert len(png_renders) == 1
+    renamed = replace(value, parish_name="Other Parish")
+    assert participation_png(renamed) != first
+    token = dates.use(lambda: "eu_dot")
+    try:
+        assert participation_png(value) != first
+    finally:
+        dates.reset(token)
+    assert len(png_renders) == 3
+
+
+def test_cached_page_png_does_not_wait_for_the_render_lock(png_renders):
+    """A PDF holding the lock in another thread cannot delay a cached chart."""
+    value = document()
+    first = participation_png(value)
+    held, release = Event(), Event()
+
+    def hold():
+        """Stand in for a long PDF render in the same process."""
+        with charts.rendering_style():
+            held.set()
+            release.wait(10)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        holder = pool.submit(hold)
+        assert held.wait(10)
+        try:
+            assert pool.submit(participation_png, value).result(timeout=5) == first
+        finally:
+            release.set()
+        holder.result()
+    assert len(png_renders) == 1
 
 
 @pytest.mark.parametrize("count", [366, 3653])
