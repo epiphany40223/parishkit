@@ -7,6 +7,7 @@ cancels a Family code or link, and a held email is never sent unless an
 Administrator chose "send again".
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -43,6 +44,7 @@ from parishkit.stewardship.campaigns.schedules import occurrence_key
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.storage import StaleRecordError
 
+from ..campaign_factory import campaign as campaign_record
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, campaign_clock, command
 from .credential_builders import keys, populate
@@ -514,28 +516,56 @@ def test_release_reopens_the_site_and_keeps_unsettled_holds(auth_service, google
     # Every unsettled hold still keeps its email from being prepared or sent
     # (the shared exclusion the planner, claim and dispatch guards use).
     assert all(excluded(row) for row in held(state="unreviewed"))
-    # Decisions belong to the review: after release they are refused, by the
-    # owner and by the guard (settling later is #757).
-    hold = held().first()
+    # An undecided hold is still decided after release (#757), by a freshly
+    # signed-in Administrator through the web login, and audited.
+    hold = held().order_by("target", "definition__kind").first()
     signed_in()
-    with pytest.raises(StaleRecordError, match="already released"):
-        as_web(
-            settle_held_email,
-            hold_id=hold.pk,
-            expected_version=1,
-            state="resend_authorized",
-            evidence="Not in the provider's log; send again.",
-        )
+    decision = as_web(
+        settle_held_email,
+        hold_id=hold.pk,
+        expected_version=1,
+        state="resend_authorized",
+        evidence="Not in the provider's log; send again.",
+    )
+    hold.refresh_from_db()
+    assert (hold.state, hold.version) == ("resend_authorized", 2)
+    assert not excluded(hold)
+    assert AuditEvent.objects.filter(
+        event_type="restore_hold_resolved", subject_id=decision.pk
+    ).exists()
+    # A decision stays final after release too.
     with pytest.raises(DatabaseError, match="resend binding"), transaction.atomic():
         RestoreHoldResolution.objects.create(
             hold_id=hold.pk,
-            version=2,
-            state="resend_authorized",
-            evidence="Send again.",
+            version=3,
+            state="assumed_delivered",
+            evidence="Assume it went out.",
             actor_id=administrator().principal_id,
             correlation_id=uuid4(),
         )
-    assert excluded(hold)
+    # Without a fresh sign-in, or from a login other than web, it is refused.
+    other = held(state="unreviewed").first()
+    current = administrator()
+    stale = dict(
+        hold_id=other.pk,
+        expected_version=1,
+        state="assumed_delivered",
+        evidence="Family moved away.",
+        actor_id=current.principal_id,
+        session_id=current.pk,
+        correlation_id=uuid4(),
+    )
+    with (
+        task_login(ServiceRole.WEB, exact=True),
+        pytest.raises(DatabaseError, match="fresh Administrator"),
+    ):
+        settle_held_email(
+            authenticated_at=current.authenticated_at - timedelta(minutes=10), **stale
+        )
+    with task_login(ServiceRole.WORKER, exact=True), pytest.raises(DatabaseError):
+        settle_held_email(authenticated_at=current.authenticated_at, **stale)
+    other.refresh_from_db()
+    assert other.state == "unreviewed" and excluded(other)
     # A second release is refused.
     with pytest.raises(DatabaseError, match="cannot be released"):
         as_web(
@@ -580,6 +610,133 @@ def test_restoring_the_same_backup_after_release_starts_a_new_review(
         runtime.restore_activated_at,
     ) == (again.restore_id, BACKUP, later)
     assert RuntimeTransition.objects.filter(action="restore_begin").count() == 2
+
+
+def released_with_holds(auth_service):
+    """Release a review of the live campaign leaving all 8 holds undecided."""
+    live_campaign(auth_service)
+    signed_in()
+    with campaign_clock(NOW):
+        begin()
+        as_web(list_held_emails_for)
+        as_web(
+            release_review,
+            request_id=uuid4(),
+            expected_runtime_version=SystemConfiguration.objects.get().version,
+        )
+    assert held(state="unreviewed").count() == 8
+    signed_in()
+
+
+def replica(*statements):
+    """Write offline restore input with user triggers off, in one transaction."""
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        for statement, values in statements:
+            cursor.execute(statement, values)
+        cursor.execute("SET LOCAL session_replication_role = origin")
+
+
+def decide_directly(hold, state="assumed_delivered"):
+    """The web login's direct decision insert, with no Python check before it."""
+    current = administrator()
+    with task_login(ServiceRole.WEB, exact=True), transaction.atomic():
+        RestoreHoldResolution.objects.create(
+            hold_id=hold.pk,
+            version=hold.version + 1,
+            state=state,
+            evidence="Decided directly.",
+            actor_id=current.principal_id,
+            session_id=current.pk,
+            authenticated_at=current.authenticated_at,
+            correlation_id=uuid4(),
+        )
+
+
+def test_a_hold_of_a_campaign_no_longer_current_is_not_decided(auth_service, google):
+    """After release only the current campaign's holds are decided (#757)."""
+    released_with_holds(auth_service)
+    hold = held().first()
+    live = SystemConfiguration.objects.get().current_campaign_id
+    _, row, _ = add_draft(
+        auth_service.store,
+        auth_service.store.active(),
+        uuid4(),
+        campaign_record(name="Next campaign"),
+    )
+    other = UUID(row["id"])
+    assert other != live
+    # Another campaign current (as offline input, like restored_occurrence),
+    # or none: the planner would never act on the hold, so no decision.
+    update = "UPDATE stewardship_system_configuration SET current_campaign_id=%s"
+    for current in (other, None):
+        replica((update, [current]))
+        with pytest.raises(DatabaseError, match="resend binding"):
+            decide_directly(hold)
+        hold.refresh_from_db()
+        assert hold.state == "unreviewed"
+    # Back on the hold's campaign, the same decision is admitted.
+    replica((update, [live]))
+    decide_directly(hold)
+    hold.refresh_from_db()
+    assert hold.state == "assumed_delivered"
+
+
+def remove_schedule(definition):
+    """Remove a schedule as restored input: it keeps no current revision."""
+    replica(
+        (
+            "UPDATE stewardship_schedule_definition SET current_revision_id=NULL,"
+            "removed_at=statement_timestamp() WHERE id=%s",
+            [definition.pk],
+        )
+    )
+
+
+@pytest.mark.parametrize("removed", [False, True])
+def test_a_reminder_a_later_one_superseded_may_only_be_assumed_sent(
+    auth_service, google, removed
+):
+    """Sending an earlier reminder after a later one would arrive out of order.
+
+    The later reminder counts even once its schedule was removed, and the SQL
+    guard refuses the resend however the decision is written.
+    """
+    released_with_holds(auth_service)
+    third = FamilyCampaign.objects.get(family_duid=3)
+    first, second = ScheduleDefinition.objects.filter(kind="reminder").order_by(
+        "current_revision__due_at"
+    )[:2]
+    earlier = held(target=f"family:{third.pk}", definition=first).get()
+    later = held(target=f"family:{third.pk}", definition=second).get()
+    arguments = dict(
+        hold_id=earlier.pk,
+        expected_version=1,
+        state="resend_authorized",
+        evidence="Not in the provider's log; send again.",
+    )
+    # The later reminder reached the Family (after release, say).
+    restored_occurrence(second, third)
+    if removed:
+        remove_schedule(second)
+    with pytest.raises(ValueError, match="later reminder"):
+        as_web(settle_held_email, **arguments)
+    with pytest.raises(DatabaseError, match="later reminder reached"):
+        decide_directly(earlier, "resend_authorized")
+    earlier.refresh_from_db()
+    assert earlier.state == "unreviewed"
+    as_web(settle_held_email, **(arguments | {"state": "assumed_delivered"}))
+    earlier.refresh_from_db()
+    assert earlier.state == "assumed_delivered"
+    # The invitation is never superseded; nor is the later reminder itself
+    # while its schedule stands.
+    invitation = held(target=f"family:{third.pk}", definition__kind="initial").get()
+    as_web(settle_held_email, **(arguments | {"hold_id": invitation.pk}))
+    if not removed:
+        as_web(settle_held_email, **(arguments | {"hold_id": later.pk}))
+    assert held(target=f"family:{third.pk}", state="resend_authorized").count() == (
+        1 if removed else 2
+    )
 
 
 def test_release_needs_a_fresh_administrator(auth_service, google):
@@ -831,3 +988,72 @@ def test_work_of_a_replaced_revision_or_old_cycle_is_not_this_emails_history(
         begin()
         as_web(list_held_emails_for)
     assert held(target=f"family:{third.pk}", definition=initial).exists()
+
+
+SCHEMA = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
+FROZEN = SCHEMA / "migrations/0048_restore_holds_after_release.sql"
+# The text 0048 adds to the Family dispatch check, removed to rebuild the
+# body it replaced.
+RESEND_ORDER = re.compile(
+    r"          -- A held reminder sent again after a restore \(#757\).*?"
+    r"(?=          AND \(\(m\.mode)",
+    re.S,
+)
+
+
+def definition(text, name):
+    """One CREATE OR REPLACE FUNCTION statement of a frozen file, whole."""
+    start = text.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
+    return text[start : text.index("$$;", start) + len("$$;")]
+
+
+def test_the_frozen_file_replaces_the_previous_bodies_and_checks_them():
+    """Over the bodies it replaced, the DO block refuses; the file passes.
+
+    The decision guard's previous body is frozen file 0017's; the dispatch
+    check's is 0048's copy without the text 0048 adds.
+    """
+    text = FROZEN.read_text(encoding="utf-8")
+    check = text[text.index("DO $check$") :]
+    acl = text[text.index("SELECT set_config(") : text.index("\n\n-- stewardship_")]
+    guard = definition(
+        (SCHEMA / "migrations/0017_restore_review.sql").read_text(encoding="utf-8"),
+        "stewardship_restore_resolution_v1",
+    )
+    live, count = RESEND_ORDER.subn(
+        "", definition(text, "stewardship_family_dispatch_live_v1")
+    )
+    assert count == 1 and "resend_authorized" not in live
+    assert "restore_released_at" in guard and "later_sent" not in guard
+
+    def installed():
+        """Both replaced functions' installed definitions."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname IN "
+                "('stewardship_restore_resolution_v1',"
+                "'stewardship_family_dispatch_live_v1') ORDER BY proname"
+            )
+            return cursor.fetchall()
+
+    current = installed()
+    for old, message in (
+        (guard, "decision guard is not the one"),
+        (live, "Family dispatch check is not the one"),
+    ):
+        with (
+            pytest.raises(DatabaseError, match=message),
+            transaction.atomic(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(old)
+            cursor.execute(acl)
+            cursor.execute(check)
+    # The upgrade itself: the whole file over both previous bodies installs
+    # exactly the current ones, and its DO block passes.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(guard)
+        cursor.execute(live)
+        assert installed() != current
+        cursor.execute(text)
+        assert installed() == current
