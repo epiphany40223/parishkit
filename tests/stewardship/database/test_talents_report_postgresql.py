@@ -15,6 +15,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.talents import TalentQuery, talents_report
 from parishkit.stewardship.responses.service import DEFAULT_TALENTS
 from parishkit.stewardship.source.models import SourceCurrent
+from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 
 from .auth_builders import signed_in
 from .response_builders import activate_response_service
@@ -80,6 +81,17 @@ def test_report_lists_talents_limitations_and_filters(response_service):
     row = result["members"][0]
     assert row["talents"] == ["Painter", "Other: Organ"]
     assert row["cannot_serve"] is True and row["member_name"]
+    # The listed Member's ParishSoft DUID (#960).
+    assert row["member_duid"] == 3
+    # Search matches the Family as the page names it, "Surname, heads",
+    # built in SQL as snapshot_names builds it (#960).
+    duid = row["family_duid"]
+    shown = snapshot_family_names(result["metadata"]["source_id"], {duid})[duid]
+    assert ", " in shown, shown
+    for text in (shown.upper(), shown.split(", ", 1)[1]):
+        found = report(harness, search=text)
+        assert [m["family_duid"] for m in found["members"]] == [duid], text
+        assert [f["family_duid"] for f in found["families"]] == [duid], text
     assert result["summary"]["cannot_attend"] == 1
     assert dict(result["summary"]["talents"])["Painter"] == 1
     assert len(report(harness, talent=PAINTER)["members"]) == 1
@@ -213,10 +225,11 @@ def test_both_tables_sort_every_column_in_memory():
 
     from parishkit.stewardship.reports.talent_views import tables
 
-    def row(name, duid, day, talents=(), cannot=False):
+    def row(name, duid, day, talents=(), cannot=False, member=None):
         """One member/family row as the selection shapes it."""
         return {
             "member_name": name,
+            "member_duid": member,
             "family_name": name,
             "family_duid": duid,
             "talents": list(talents),
@@ -241,3 +254,15 @@ def test_both_tables_sort_every_column_in_memory():
     assert ("families_sort", "-duid") in members.carried
     members, _ = tables(result, TalentQuery(), {"members_sort": "talents"}, "/r/")
     assert [r["family_duid"] for r in members.rows] == [1, 2]
+    # A Member added on the form (no DUID) sorts last either way (#960).
+    result["members"] = [
+        row("p", 3, 1),
+        row("b", 2, 1, member=7),
+        row("a", 1, 1, member=5),
+    ]
+    for sort, expected in (
+        ("member_duid", [5, 7, None]),
+        ("-member_duid", [7, 5, None]),
+    ):
+        members, _ = tables(result, TalentQuery(), {"members_sort": sort}, "/r/")
+        assert [r["member_duid"] for r in members.rows] == expected, sort

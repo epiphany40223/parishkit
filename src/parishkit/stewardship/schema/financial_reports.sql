@@ -14,7 +14,7 @@
 -- It only ever withholds: the comparison window, its funds and the through-date
 -- are read here from the campaign's own configuration and the snapshot cursor,
 -- never from the caller. Without it, totals are unavailable, never zero.
-CREATE FUNCTION stewardship_financial_report_v1(
+CREATE FUNCTION public.stewardship_financial_report_v1(
     -- A NULL page number returns the complete, unpaged result. The caller owns
     -- the page size and must state it, so its paging arithmetic cannot drift
     -- from the rows returned here; it is ignored for a complete result.
@@ -69,7 +69,8 @@ BEGIN
             OR f->>'frequency'
                 NOT IN ('any','none','weekly','monthly','quarterly','annual')
             OR f->>'sort'
-                NOT IN ('name','name_desc','newest','oldest','pledge','pledge_desc')
+                NOT IN ('name','name_desc','newest','oldest','pledge','pledge_desc',
+                    'duid','duid_desc')
             OR EXISTS(SELECT 1 FROM jsonb_each_text(f) d
                 WHERE d.key IN ('first_start','first_end','latest_start','latest_end')
                   AND d.value<>'' AND (NOT d.value ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
@@ -128,7 +129,9 @@ WITH selected AS MATERIALIZED (
                 nullif(btrim(p.canonical::jsonb->>'lastName'),''))),''),
             'Unavailable Family') AS family_name,
         CASE WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
-            THEN (p.canonical::jsonb->'active')::boolean END AS active
+            THEN (p.canonical::jsonb->'active')::boolean END AS active,
+        CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
+            THEN p.canonical::jsonb->'active_head_duids' END AS head_duids
     FROM source x
     JOIN stewardship_family_campaign i ON i.campaign_id=x.id
     JOIN stewardship_submission s ON s.id=i.effective_submission_id
@@ -137,10 +140,38 @@ WITH selected AS MATERIALIZED (
     LEFT JOIN stewardship_snapshot_family m
         ON m.snapshot_id=x.source_id AND m.source_key=i.family_duid::text
     LEFT JOIN stewardship_source_family p ON p.id=m.payload_id
+), head_names AS MATERIALIZED (
+    -- The Family as the page names it (family_names.family_heads_name): the
+    -- surname, then its active heads' first names, a head of another surname
+    -- in full, so search and sort match what the page shows (#960). One
+    -- set-based join over every head, as in the directory selection.
+    SELECT r.family_duid,array_agg(n.part ORDER BY h.head::bigint)
+        FILTER (WHERE n.part<>'') AS parts
+    FROM responses r CROSS JOIN source x
+    CROSS JOIN LATERAL jsonb_array_elements_text(r.head_duids) h(head)
+    JOIN stewardship_snapshot_member mm
+        ON mm.snapshot_id=x.source_id AND mm.source_key=h.head
+    JOIN stewardship_source_member sm ON sm.id=mm.payload_id
+    -- Each head's record is parsed once (OFFSET 0 keeps the subquery
+    -- from being flattened into one parse per expression).
+    CROSS JOIN LATERAL (SELECT btrim(coalesce(v->>'firstName','')),
+        btrim(coalesce(v->>'lastName',''))
+        FROM (SELECT sm.canonical::jsonb AS v OFFSET 0) j
+        WHERE v->'active'='true'::jsonb) t(first,last)
+    CROSS JOIN LATERAL (SELECT CASE WHEN t.last=r.family_name THEN t.first
+        ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END) n(part)
+    GROUP BY r.family_duid
+), named AS MATERIALIZED (
+    -- "A", "A and B", "A, B and C" after the surname (family_names.name_series).
+    SELECT r.*,r.family_name||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
+            THEN array_to_string(n.parts,' and ')
+            ELSE array_to_string(n.parts[1:cardinality(n.parts)-1],', ')
+                ||' and '||n.parts[cardinality(n.parts)] END),'') AS display_name
+    FROM responses r LEFT JOIN head_names n ON n.family_duid=r.family_duid
 ), filtered AS MATERIALIZED (
     SELECT r.*,nullif(r.financial->>'frequency','') AS frequency
-    FROM responses r CROSS JOIN source x
-    WHERE (f->>'search'='' OR position(lower(f->>'search') IN lower(r.family_name))>0
+    FROM named r CROSS JOIN source x
+    WHERE (f->>'search'='' OR position(lower(f->>'search') IN lower(r.display_name))>0
             OR position(f->>'search' IN r.family_duid::text)>0)
         AND (f->>'active'='any' OR (f->>'active'='active' AND r.active IS TRUE)
             OR (f->>'active'='inactive' AND r.active IS FALSE)
@@ -170,14 +201,20 @@ WITH selected AS MATERIALIZED (
             OR (f->>'share'='none' AND r.financial->'shares'='{}'::jsonb)
             OR r.financial->'shares' ? (f->>'share'))
 ), page AS MATERIALIZED (
+    -- A name sort orders by surname, then the whole shown name, as the
+    -- directory does; the Family DUID is unique here, so it ends every order.
     SELECT *,row_number() OVER (ORDER BY
         CASE WHEN f->>'sort'='name' THEN lower(family_name) END,
+        CASE WHEN f->>'sort'='name' THEN lower(display_name) END,
         CASE WHEN f->>'sort'='name_desc' THEN lower(family_name) END DESC,
+        CASE WHEN f->>'sort'='name_desc' THEN lower(display_name) END DESC,
         CASE WHEN f->>'sort'='newest' THEN submitted_at END DESC,
         CASE WHEN f->>'sort'='oldest' THEN submitted_at END,
         CASE WHEN f->>'sort'='pledge' THEN annual_pledge END,
         CASE WHEN f->>'sort'='pledge_desc' THEN annual_pledge END DESC,
-        lower(family_name),family_duid) AS ordinal
+        CASE WHEN f->>'sort'='duid' THEN family_duid END,
+        CASE WHEN f->>'sort'='duid_desc' THEN family_duid END DESC,
+        lower(family_name),lower(display_name),family_duid) AS ordinal
     FROM filtered ORDER BY ordinal
     LIMIT CASE WHEN page_number IS NULL THEN NULL ELSE page_size END
     OFFSET CASE WHEN page_number IS NULL THEN 0 ELSE (page_number-1)*page_size END

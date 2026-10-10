@@ -24,6 +24,7 @@ from parishkit.stewardship.responses.models import (
     AdditionalInformationItem,
     AdditionalInformationRevision,
 )
+from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StaleRecordError
 
 from .auth_builders import signed_in
@@ -136,6 +137,22 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         page = information_page(harness.campaign.pk, InformationQuery(search="Called"))
         assert page["total"] == 1 and page["rows"][0]["id"] == str(item.pk)
         assert page["rows"][0]["notes"] == "Called the Family"
+        # The Family DUID sorts both ways, and search matches the name the
+        # page shows, "Surname, heads", built in SQL as snapshot_names builds
+        # it; the rows keep their shape (#960).
+        row = page["rows"][0]
+        assert not {"display_name", "head_duids"} & row.keys()
+        for sort in ("duid", "duid_desc"):
+            sorted_page = information_page(
+                harness.campaign.pk, InformationQuery(sort=sort)
+            )
+            assert [found["id"] for found in sorted_page["rows"]] == [row["id"]]
+        duid = row["family_duid"]
+        shown = snapshot_family_names(page["metadata"]["source_id"], {duid})[duid]
+        assert ", " in shown, shown
+        for text in (shown.upper(), shown.split(", ", 1)[1]):
+            found = information_page(harness.campaign.pk, InformationQuery(search=text))
+            assert [match["id"] for match in found["rows"]] == [row["id"]], text
         route = reverse("admin:information_queue")
         response, body = read(browser, route)
         assert response.status_code == 200 and b"Please contact" in body

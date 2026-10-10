@@ -2060,7 +2060,9 @@ def _report_ministry_options(parser):
         "--activity", help="any (default), active, inactive or unavailable"
     )
     parser.add_argument(
-        "--sort", help="the summary's order: name (default) or name_desc"
+        "--sort",
+        help="the summary's order: name (default), name_desc, duid or duid_desc "
+        "(by Ministry DUID)",
     )
     parser.add_argument("--page", type=int, help="summary page number (default 1)")
     parser.add_argument("--size", type=int, help="rows per page: 25, 50, 100 or 250")

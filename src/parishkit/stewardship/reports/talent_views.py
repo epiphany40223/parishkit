@@ -47,6 +47,8 @@ def _text(value):
 MEMBER_SORTING = Sorting.by_column(
     {
         "member": lambda row: _text(row["member_name"]),
+        # A Member the Family added on the form has no DUID yet: last (#960).
+        "member_duid": lambda row: row["member_duid"],
         "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
         "talents": lambda row: _text("; ".join(row["talents"])),
         "cannot_serve": lambda row: bool(row["cannot_serve"]),

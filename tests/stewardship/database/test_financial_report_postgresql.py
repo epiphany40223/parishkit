@@ -545,6 +545,9 @@ def test_several_families_summary_order_and_pages(response_service):
         ("pledge_desc", [1, 2, 6]),
         ("oldest", [1, 2, 6]),
         ("newest", [6, 2, 1]),
+        # The Family DUID column sorts both ways (#960).
+        ("duid", [1, 2, 6]),
+        ("duid_desc", [6, 2, 1]),
     ):
         found = [row["family_duid"] for row in report(harness, sort=sort)["rows"]]
         times = {key: row["submitted_at"].isoformat() for key, row in rows.items()}
@@ -591,6 +594,12 @@ def test_several_families_summary_order_and_pages(response_service):
         last["source_pledge"].display
         == rows[last["family_duid"]]["source_pledge"].display
     )
+    # Paging under a DUID sort is stable and complete too (#960).
+    assert [
+        row["family_duid"]
+        for n in (1, 2)
+        for row in report(harness, page=str(n), page_size=2, sort="duid_desc")["rows"]
+    ] == [6, 2, 1]
     # A page past the end has no rows, but the same whole-result summary.
     beyond = report(harness, page="2")
     assert beyond["rows"] == [] and beyond["total"] == 3
@@ -708,6 +717,52 @@ def test_native_page_filters_privately_and_denies_leaders(
         context["outcome"] for context in contexts
     }
     assert name.decode() not in str(contexts) and "1234" not in str(contexts)
+
+
+def test_name_search_and_sort_use_the_shown_family_name(response_service):
+    """Search and the name sort see "Surname, heads", as the page names a Family.
+
+    Two Families share the surname Zeta; the one whose heads read first sorts
+    first in either direction of the name sort, whatever its DUID, and a
+    head's first name finds its Family (#960).
+    """
+    harness = response_service
+    financial_source(
+        harness,
+        options=map(asdict, OPTIONS),
+        extra_families={
+            6: dict(familyDUID=6, registeredOrganizationID=5, lastName="Zeta"),
+            7: dict(familyDUID=7, registeredOrganizationID=5, lastName="Zeta"),
+        },
+        extra_members={
+            22: head(22, 6) | dict(firstName="Yolanda", lastName="Zeta"),
+            23: head(23, 7) | dict(firstName="Abe", lastName="Zeta"),
+        },
+    )
+    harness = activate_response_service(harness)
+    with web_login():
+        for duid in (6, 7):
+            family = family_session(harness, duid)
+            pledge(family, load_form(family), shares={CHECK: ""})
+    zetas = [
+        row["family_duid"]
+        for row in report(harness)["rows"]
+        if row["family_name"].startswith("Zeta")
+    ]
+    assert zetas == [7, 6]
+    descending = report(harness, sort="name_desc")["rows"]
+    assert [
+        row["family_duid"] for row in descending if row["family_duid"] in {6, 7}
+    ] == [
+        6,
+        7,
+    ]
+    assert {row["family_duid"] for row in report(harness, search="yolan")["rows"]} == {
+        6
+    }
+    assert {
+        row["family_duid"] for row in report(harness, search="zeta, abe")["rows"]
+    } == {7}
 
 
 def test_cannot_contribute_is_reported_and_filterable(response_service):

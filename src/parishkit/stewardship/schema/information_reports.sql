@@ -1,5 +1,5 @@
 -- One closed query owns the HTML queue and complete immutable export inputs.
-CREATE FUNCTION stewardship_information_report_v1(
+CREATE FUNCTION public.stewardship_information_report_v1(
     campaign uuid, parameters jsonb, page_number integer DEFAULT NULL,
     item_uuid uuid DEFAULT NULL, page_size integer DEFAULT 50
 ) RETURNS jsonb LANGUAGE plpgsql STABLE
@@ -22,7 +22,7 @@ BEGIN
        OR f->>'disposition' NOT IN ('current_actionable','superseded','withdrawn','all')
        OR f->>'needed' NOT IN ('any','yes','no')
        OR f->>'completed' NOT IN ('any','yes','no')
-       OR f->>'sort' NOT IN ('newest','oldest','name','name_desc')
+       OR f->>'sort' NOT IN ('newest','oldest','name','name_desc','duid','duid_desc')
        OR (page_number IS NOT NULL AND page_number NOT BETWEEN 1 AND 10000)
        OR page_size IS NULL OR page_size NOT BETWEEN 1 AND 100
     THEN RAISE EXCEPTION 'Invalid information report parameters' USING ERRCODE='23514'; END IF;
@@ -56,6 +56,8 @@ BEGIN
                     nullif(btrim(p.canonical::jsonb->>'firstName'),''),
                     nullif(btrim(p.canonical::jsonb->>'lastName'),''))),''),
                 'Family') AS family_name,
+            CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
+                THEN p.canonical::jsonb->'active_head_duids' END AS head_duids,
             h.value->'reported' ? i.id::text AS previously_reported,
             h.value->'corrected' @>
                 jsonb_build_array(jsonb_build_array(i.id::text,i.disposition))
@@ -74,27 +76,65 @@ BEGIN
         WHERE (item_uuid IS NULL OR i.id=item_uuid)
           AND (f->>'start'='' OR (s.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date>=(f->>'start')::date)
           AND (f->>'end'='' OR (s.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date<=(f->>'end')::date)
+    ), head_names AS MATERIALIZED (
+        -- The Family as the page names it (family_names.family_heads_name):
+        -- the surname, then its active heads' first names, a head of another
+        -- surname in full, so search and sort match what the page shows
+        -- (#960). One set-based join over each Family's heads.
+        SELECT r.family_duid,array_agg(n.part ORDER BY h.head::bigint)
+            FILTER (WHERE n.part<>'') AS parts
+        FROM (SELECT DISTINCT family_duid,family_name,head_duids FROM rows) r
+        CROSS JOIN selected x
+        CROSS JOIN LATERAL jsonb_array_elements_text(r.head_duids) h(head)
+        JOIN stewardship_snapshot_member mm
+            ON mm.snapshot_id=x.source_id AND mm.source_key=h.head
+        JOIN stewardship_source_member sm ON sm.id=mm.payload_id
+        -- Each head's record is parsed once (OFFSET 0 keeps the subquery
+        -- from being flattened into one parse per expression).
+        CROSS JOIN LATERAL (SELECT btrim(coalesce(v->>'firstName','')),
+            btrim(coalesce(v->>'lastName',''))
+            FROM (SELECT sm.canonical::jsonb AS v OFFSET 0) j
+            WHERE v->'active'='true'::jsonb) t(first,last)
+        CROSS JOIN LATERAL (SELECT CASE WHEN t.last=r.family_name THEN t.first
+            ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END) n(part)
+        GROUP BY r.family_duid
+    ), named AS MATERIALIZED (
+        -- "A", "A and B", "A, B and C" after the surname (name_series).
+        SELECT r.*,r.family_name||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
+                THEN array_to_string(n.parts,' and ')
+                ELSE array_to_string(n.parts[1:cardinality(n.parts)-1],', ')
+                    ||' and '||n.parts[cardinality(n.parts)] END),'') AS display_name
+        FROM rows r LEFT JOIN head_names n ON n.family_duid=r.family_duid
     ), filtered AS MATERIALIZED (
-        SELECT * FROM rows WHERE (f->>'disposition'='all' OR disposition=f->>'disposition')
+        SELECT * FROM named WHERE (f->>'disposition'='all' OR disposition=f->>'disposition')
           AND (f->>'needed'='any' OR follow_up_needed=(f->>'needed'='yes'))
           AND (f->>'completed'='any' OR (followed_up_at IS NOT NULL)=(f->>'completed'='yes'))
-          AND (f->>'search'='' OR position(lower(f->>'search') IN lower(family_name))>0
+          AND (f->>'search'='' OR position(lower(f->>'search') IN lower(display_name))>0
             OR position(f->>'search' IN family_duid::text)>0
             OR position(lower(f->>'search') IN lower(text))>0
             OR position(lower(f->>'search') IN lower(notes))>0)
     ), ordered AS (
+        -- A name sort orders by surname, then the whole shown name, as the
+        -- directory does; the item id is the unique tiebreak.
         SELECT *,row_number() OVER (ORDER BY
             CASE WHEN f->>'sort'='newest' THEN submitted_at END DESC,
             CASE WHEN f->>'sort'='oldest' THEN submitted_at END,
             CASE WHEN f->>'sort'='name' THEN lower(family_name) END,
-            CASE WHEN f->>'sort'='name_desc' THEN lower(family_name) END DESC,id) AS ordinal
+            CASE WHEN f->>'sort'='name' THEN lower(display_name) END,
+            CASE WHEN f->>'sort'='name_desc' THEN lower(family_name) END DESC,
+            CASE WHEN f->>'sort'='name_desc' THEN lower(display_name) END DESC,
+            CASE WHEN f->>'sort'='duid' THEN family_duid END,
+            CASE WHEN f->>'sort'='duid_desc' THEN family_duid END DESC,id) AS ordinal
         FROM filtered
     ), page AS (
         SELECT * FROM ordered ORDER BY ordinal
         LIMIT CASE WHEN page_number IS NULL THEN NULL ELSE page_size END
         OFFSET CASE WHEN page_number IS NULL THEN 0 ELSE (page_number-1)*page_size END
     ), detached AS (
-        SELECT ordinal,to_jsonb(page)-'ordinal' || jsonb_build_object('history',
+        -- The shown name and heads only order and search; the page and an
+        -- export capture keep the row they always had.
+        SELECT ordinal,to_jsonb(page)-ARRAY['ordinal','head_duids','display_name']
+            || jsonb_build_object('history',
             CASE WHEN (parameters->>'history')::boolean THEN coalesce((
                 SELECT jsonb_agg(jsonb_build_object(
                     'version',r.expected_version+1,'created_at',r.created_at,
@@ -184,7 +224,7 @@ CREATE INDEX export_information_snapshot ON stewardship_export_request(informati
 -- `search` (name or Family DUID text) and `talent` ('any', 'cannot_serve',
 -- 'cannot_attend' or one talent option identity). Talent wording is resolved
 -- by the application from the campaign configuration.
-CREATE FUNCTION stewardship_talent_report_v1(campaign_uuid uuid, parameters jsonb)
+CREATE FUNCTION public.stewardship_talent_report_v1(campaign_uuid uuid, parameters jsonb)
 RETURNS jsonb LANGUAGE plpgsql STABLE
 -- JIT off, as in the information report above.
 SET search_path TO pg_catalog,public,pg_temp
@@ -218,7 +258,9 @@ WITH selected AS MATERIALIZED (
     SELECT s.id,s.submitted_at,s.answers,i.family_duid,
         coalesce(nullif(btrim(p.canonical::jsonb->>'lastName'),''),
             nullif(btrim(p.canonical::jsonb->>'mailingName'),''),
-            'Unavailable Family') AS family_name
+            'Unavailable Family') AS family_name,
+        CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
+            THEN p.canonical::jsonb->'active_head_duids' END AS head_duids
     FROM selected x
     JOIN stewardship_family_campaign i ON i.campaign_id=x.id
     JOIN stewardship_submission s ON s.id=i.effective_submission_id
@@ -226,8 +268,40 @@ WITH selected AS MATERIALIZED (
     LEFT JOIN stewardship_snapshot_family m
         ON m.snapshot_id=x.source_id AND m.source_key=i.family_duid::text
     LEFT JOIN stewardship_source_family p ON p.id=m.payload_id
+), head_names AS MATERIALIZED (
+    -- The Family as the page names it (family_names.family_heads_name): the
+    -- surname, then its active heads' first names, a head of another surname
+    -- in full, so search and the SQL order match what the page shows (#960).
+    SELECT r.family_duid,array_agg(n.part ORDER BY h.head::bigint)
+        FILTER (WHERE n.part<>'') AS parts
+    FROM responses r CROSS JOIN selected x
+    CROSS JOIN LATERAL jsonb_array_elements_text(r.head_duids) h(head)
+    JOIN stewardship_snapshot_member mm
+        ON mm.snapshot_id=x.source_id AND mm.source_key=h.head
+    JOIN stewardship_source_member sm ON sm.id=mm.payload_id
+    -- Each head's record is parsed once (OFFSET 0 keeps the subquery
+    -- from being flattened into one parse per expression).
+    CROSS JOIN LATERAL (SELECT btrim(coalesce(v->>'firstName','')),
+        btrim(coalesce(v->>'lastName',''))
+        FROM (SELECT sm.canonical::jsonb AS v OFFSET 0) j
+        WHERE v->'active'='true'::jsonb) t(first,last)
+    CROSS JOIN LATERAL (SELECT CASE WHEN t.last=r.family_name THEN t.first
+        ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END) n(part)
+    GROUP BY r.family_duid
+), named AS MATERIALIZED (
+    -- "A", "A and B", "A, B and C" after the surname (name_series).
+    SELECT r.*,r.family_name||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
+            THEN array_to_string(n.parts,' and ')
+            ELSE array_to_string(n.parts[1:cardinality(n.parts)-1],', ')
+                ||' and '||n.parts[cardinality(n.parts)] END),'') AS display_name
+    FROM responses r LEFT JOIN head_names n ON n.family_duid=r.family_duid
 ), people AS MATERIALIZED (
-    SELECT r.family_duid,r.family_name,r.submitted_at,g.grp,e.key AS member_key,
+    SELECT r.family_duid,r.family_name,r.display_name,r.submitted_at,g.grp,
+        e.key AS member_key,
+        -- A listed Member's ParishSoft DUID (#960); a Member the Family added
+        -- on the form has none yet.
+        CASE WHEN g.grp='members' AND e.key ~ '^[1-9][0-9]{0,9}$'
+            THEN e.key::bigint END AS member_duid,
         coalesce(e.value->'cannot_serve'='true'::jsonb,false) AS cannot_serve,
         coalesce(e.value->'talents','{}'::jsonb) AS talents,
         -- The Family's own corrected name first, then the parish record.
@@ -238,7 +312,7 @@ WITH selected AS MATERIALIZED (
                 nullif(btrim(sm.canonical::jsonb->>'firstName'),''),
                 nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),''),
             'Unavailable name') AS member_name
-    FROM responses r
+    FROM named r
     CROSS JOIN LATERAL (VALUES ('members'),('proposed_members')) g(grp)
     CROSS JOIN LATERAL jsonb_each(coalesce(r.answers->'service'->g.grp,'{}'::jsonb)) e
     CROSS JOIN selected x
@@ -250,17 +324,17 @@ WITH selected AS MATERIALIZED (
     SELECT * FROM people q
     WHERE (parameters->>'search'=''
             OR position(lower(parameters->>'search') IN lower(q.member_name))>0
-            OR position(lower(parameters->>'search') IN lower(q.family_name))>0
+            OR position(lower(parameters->>'search') IN lower(q.display_name))>0
             OR position(parameters->>'search' IN q.family_duid::text)>0)
       AND (parameters->>'talent'='any'
             OR (parameters->>'talent'='cannot_serve' AND q.cannot_serve)
             OR q.talents ? (parameters->>'talent'))
 ), families AS MATERIALIZED (
-    SELECT r.family_duid,r.family_name,r.submitted_at FROM responses r
+    SELECT r.family_duid,r.family_name,r.display_name,r.submitted_at FROM named r
     WHERE r.answers->'cannot_attend'='true'::jsonb
       AND parameters->>'talent' IN ('any','cannot_attend')
       AND (parameters->>'search'=''
-            OR position(lower(parameters->>'search') IN lower(r.family_name))>0
+            OR position(lower(parameters->>'search') IN lower(r.display_name))>0
             OR position(parameters->>'search' IN r.family_duid::text)>0)
 )
 SELECT CASE WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
@@ -276,14 +350,15 @@ SELECT CASE WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
             '{}'::jsonb)),
     'members',coalesce((SELECT jsonb_agg(jsonb_build_object(
             'family_name',family_name,'family_duid',family_duid,
-            'member_name',member_name,'proposed',grp='proposed_members',
+            'member_name',member_name,'member_duid',member_duid,
+            'proposed',grp='proposed_members',
             'cannot_serve',cannot_serve,'talents',talents,'submitted_at',submitted_at)
-        ORDER BY lower(family_name),family_duid,lower(member_name),member_key)
+        ORDER BY lower(family_name),lower(display_name),family_duid,lower(member_name),member_key)
         FROM members),'[]'::jsonb),
     'families',coalesce((SELECT jsonb_agg(jsonb_build_object(
             'family_name',family_name,'family_duid',family_duid,
             'submitted_at',submitted_at)
-        ORDER BY lower(family_name),family_duid) FROM families),'[]'::jsonb)) END
+        ORDER BY lower(family_name),lower(display_name),family_duid) FROM families),'[]'::jsonb)) END
 INTO answer FROM (SELECT 1) one LEFT JOIN selected x ON true;
     RETURN answer;
 END $$;

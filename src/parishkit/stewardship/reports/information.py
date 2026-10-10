@@ -19,22 +19,26 @@ from .weekly_presentation import DISPOSITIONS
 ORDERS = {
     "newest": "submitted_at DESC,id",
     "oldest": "submitted_at,id",
-    "name": "lower(family_name),id",
-    "name_desc": "lower(family_name) DESC,id",
+    "name": "lower(family_name),lower(display_name),id",
+    "name_desc": "lower(family_name) DESC,lower(display_name) DESC,id",
+    "duid": "family_duid,id",
+    "duid_desc": "family_duid DESC,id",
 }
 PAGE_SIZE = 50
 # Rows per page the queue offers; the selection accepts 1-100.
 PAGE_SIZES = (25, 50, 100)
 # The installed selection (stewardship_information_report_v1) orders and
 # pages the queue itself (ORDERS above mirrors it for exports), so its closed
-# ``sort`` vocabulary is the whole list of column sorts: Family by name and
-# Submitted by time, each either way, newest first on a first click.
-# Disposition, text, follow-up needed and completion cannot be sorted without
-# changing that frozen SQL (schema freeze, #203).
+# ``sort`` vocabulary is the whole list of column sorts: Family by name (the
+# shown surname-and-heads name), Family DUID (#960) and Submitted by time,
+# each either way, newest first on a first click. Disposition, text,
+# follow-up needed and completion cannot be sorted without a schema change.
 INFORMATION_SORTING = Sorting(
     {
         "name": ("family", False),
         "name_desc": ("family", True),
+        "duid": ("duid", False),
+        "duid_desc": ("duid", True),
         "newest": ("submitted", True),
         "oldest": ("submitted", False),
     },

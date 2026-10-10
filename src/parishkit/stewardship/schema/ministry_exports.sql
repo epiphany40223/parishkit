@@ -45,7 +45,7 @@ CREATE INDEX ministry_export_campaign ON stewardship_ministry_export_snapshot(ca
 CREATE INDEX ministry_export_source ON stewardship_ministry_export_snapshot(source_id);
 CREATE INDEX ministry_export_config ON stewardship_ministry_export_snapshot(configuration_id);
 
-CREATE FUNCTION stewardship_ministry_export_capture_v1() RETURNS trigger
+CREATE FUNCTION public.stewardship_ministry_export_capture_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE current_scope jsonb; filters jsonb; ministry_id integer; request_action text;
         selection bigint[]; packet boolean;
@@ -79,7 +79,7 @@ BEGIN
        OR filters->>'history' NOT IN ('current','all')
        OR filters->>'state' NOT IN ('any','unresolved','new','assigned','in_progress',
            'resolved','closed_no_response','cancelled','superseded')
-       OR filters->>'sort' NOT IN ('name','name_desc','newest','oldest')
+       OR filters->>'sort' NOT IN ('name','name_desc','newest','oldest','duid','duid_desc')
        OR request_action IS NULL
        OR request_action NOT IN ('summary','join','leave','packet')
     THEN RAISE EXCEPTION 'Invalid Ministry export parameters' USING ERRCODE='23514'; END IF;
@@ -116,7 +116,7 @@ BEGIN
     IF (ministry_id IS NULL) IS DISTINCT FROM (request_action IN ('summary','packet'))
        OR (request_action='summary' AND (filters->>'history'<>'current'
            OR filters->>'state'<>'any' OR filters->>'start'<>'' OR filters->>'end'<>''
-           OR filters->>'sort' NOT IN ('name','name_desc')))
+           OR filters->>'sort' NOT IN ('name','name_desc','duid','duid_desc')))
        OR EXISTS(SELECT 1 FROM jsonb_each_text(filters) f
            WHERE f.key IN ('start','end') AND f.value<>'' AND (
                NOT f.value ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'

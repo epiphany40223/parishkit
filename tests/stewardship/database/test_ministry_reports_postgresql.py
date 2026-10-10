@@ -119,6 +119,11 @@ def test_current_intent_history_and_contact_projection(response_service):
         (row["duid"], row["joining"], row["leaving"], row["unresolved"])
         for row in summary["summaries"]
     ] == [(4, 0, 1, 1), (9, 1, 0, 1)]
+    # The Ministry DUID column sorts the summary both ways (#960).
+    for sort, expected in (("duid", [4, 9]), ("duid_desc", [9, 4])):
+        assert [
+            row["duid"] for row in page(harness, sort=sort)["summaries"]
+        ] == expected
     leader = dict(roles=("ministry_leader",), scope=(9,))
     assert [row["duid"] for row in page(harness, **leader)["summaries"]] == [9]
     with pytest.raises(PermissionError):
@@ -242,10 +247,13 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         for invalid in ({"sort": "member_name"}, {"sort": "-name"}, {"size": "7"}):
             response, _ = search(browser, route, {"ministry": "9"} | invalid)
             assert response.status_code == 400
-        # The summary sorts by Ministry name only, within the leader's scope.
+        # The summary sorts by Ministry name or Ministry DUID (#960), within
+        # the leader's scope.
         response, body = search(browser, root, {"sort": "name_desc"})
         assert response.status_code == 200 and b"Food pantry" in body
         assert b"Choir" not in body and b'aria-sort="descending"' in body
+        response, body = search(browser, root, {"sort": "duid_desc"})
+        assert response.status_code == 200 and b"Food pantry" in body
         assert search(browser, root, {"sort": "newest"})[0].status_code == 400
         # A GET has no Ministry selection: back to the summary (#867),
         # dropping any query rather than echoing it.
@@ -357,6 +365,11 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
         row for row in page(harness, ministry=9)["rows"] if row["proposed_id"]
     )
     assert staff_proposed["emails"] == ["proposed@example.org"]
+    # A Member added on the form has no DUID yet, so a Member DUID sort lists
+    # them last in either direction (#960).
+    for sort in ("duid", "duid_desc"):
+        rows = page(harness, ministry=9, sort=sort)["rows"]
+        assert [row["member_duid"] for row in rows] == [3, None], sort
     store = harness.service.store
     assert (
         change(
@@ -434,6 +447,17 @@ def test_detail_pagination_is_complete_stable_and_source_scoped(response_service
         row["id"] for row in page(harness, ministry=9)["rows"]
     ]
     assert first["metadata"]["source_id"] == second["metadata"]["source_id"]
+    # A Member DUID sort pages completely and stably both ways (#960).
+    for sort, expected in (
+        ("duid", [3, *range(100, 151)]),
+        ("duid_desc", [*range(150, 99, -1), 3]),
+    ):
+        found = [
+            row["member_duid"]
+            for number in ("1", "2")
+            for row in page(harness, ministry=9, page=number, sort=sort)["rows"]
+        ]
+        assert found == expected, sort
     assert page(harness, ministry=9, page="3")["rows"] == []
 
 

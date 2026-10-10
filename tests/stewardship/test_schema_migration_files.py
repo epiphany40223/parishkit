@@ -156,6 +156,9 @@ FROZEN = {
     "0041_task_type_creators.sql": (
         "c94558d9c9a56dac0303d38859935922d0e0c7e4ceadab366e5f370bc41fde72"
     ),
+    "0045_report_duid_sorts.sql": (
+        "beae6e4785bb54524981e5de13dc63dd60325e80dec4444d93854ccf448063c6"
+    ),
 }
 
 
