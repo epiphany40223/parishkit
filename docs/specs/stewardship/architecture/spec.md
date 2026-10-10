@@ -24,7 +24,7 @@ behaviors pass the integration suite against the candidate image.
 
 The web UI uses Django templates and progressive enhancement, except that the
 Admin portal [requires
-JavaScript](../admin-portal/spec.md#javascript-requirement). Small,
+JavaScript](../ui-conventions/spec.md#javascript-requirement). Small,
 self-hosted JavaScript modules manage the Family wizard, inline validation,
 browser-timezone rendering, and interactive charts. It is not a separately
 deployed single-page application. Static assets are versioned and served by
@@ -130,7 +130,7 @@ Configuration and runtime state are intentionally distinct:
    proxy count, and credential-file paths.
 2. **Parish configuration authority**: schema-versioned YAML below
    `<root>/config/stewardship/`. It contains parish profile, non-secret
-   integration settings, login rules/manual role mappings, campaign definitions,
+   integration settings, Admin portal users and their roles, campaign definitions,
    content, schedules, share options, Ministry/fund mappings, and other parish-
    specific operational settings. Immutable version documents are selected by
    an atomically replaced active manifest; stable IDs make list entries and
@@ -262,8 +262,8 @@ only active/lookup-only keys and cannot authenticate using a reservation.
 Administration authentication uses Google through django-allauth with OAuth
 authorization code flow, state, nonce, and PKCE. Only a Google-verified email is
 accepted. The stable Google `sub` identifies the external account; normalized
-email is re-evaluated against current login rules on every login and privileged
-request. Password, recovery, signup, and non-Google authentication endpoints
+email is re-evaluated against the current Admin portal users on every login
+and privileged request. Password, recovery, signup, and non-Google authentication endpoints
 are disabled. The only exception is the
 [local test sign-in](../local-environment/spec.md#local-test-sign-in), which
 exists only in the LOCAL deployment profile. An
@@ -277,18 +277,15 @@ until it expires (at most 30 days) or is revoked.
 If an external account rename/deactivation leaves no usable Admin login, an
 authorized host operator may use the separate
 [offline Admin-access recovery workflow](../operations/spec.md#offline-admin-access-recovery).
-It repairs an exact-address grant through the configuration authority; it does
+It repairs an Administrator user through the configuration authority; it does
 not authenticate anyone, migrate a Google `sub` binding, or add a web recovery
 endpoint. The replacement account must complete ordinary Google login and
-current-rule authorization. First-time bootstrap is not a recovery mechanism.
+current-user authorization. First-time bootstrap is not a recovery mechanism.
 
-An exact-address rule matches the verified normalized email without requiring a
-hosted domain. A domain rule matches only when both the email suffix and the
-signed Google ID-token `hd` claim equal the normalized configured domain. The
-application never trusts an OAuth request hint, email suffix alone, DNS/MX
-records, or a client-supplied value as proof of hosted-domain membership.
-Personal Google accounts using addresses at consumer or externally hosted
-domains therefore cannot inherit roles from a domain rule.
+A user matches the verified normalized email exactly. Authorization is by
+email address only (#952): there are no hosted-domain rules, and the signed
+Google ID-token `hd` claim, an OAuth request hint, an email suffix, DNS/MX
+records and client-supplied values never grant a role.
 
 Administration OAuth endpoints use shared Valkey sliding-window counters after
 resolving the source address through the configured trusted-proxy policy. The
@@ -302,7 +299,7 @@ default application limits are:
 Exceeding a limit returns the same safe denial response with `429` and a
 progressive `Retry-After`, capped at one hour. No identity receives a permanent
 or global account lock; a successful authorized login clears only its identity
-failure counter. Adding or broadening a login rule atomically increments a
+failure counter. Adding a user or raising a user's role atomically increments a
 denial-counter namespace version, invalidating existing identity-denial counters
 so a newly authorized user is not held by earlier denials; it audits the reset
 without clearing per-IP abuse counters. Counter keys and logs never store raw
@@ -438,19 +435,20 @@ extends the four-hour absolute lifetime. The idle-warning UI uses the returned
 deadline and remains keyboard and screen-reader operable.
 
 Authorization changes take effect on the next request and invalidate sessions
-that no longer have any role. Removing the last specific-address Administrator
-or the bootstrap Administrator before another Admin exists is prohibited.
-An immediate exact-address Administrator grant, creation of any domain rule, or
-addition of Staff to an existing domain rule creates the durable dashboard
+that no longer have any role. Removing or demoting the last Administrator
+user, or the bootstrap Administrator before another Admin exists, is
+prohibited. An immediate Administrator grant creates the durable dashboard
 security event and preexisting-Administrator operational notifications defined
-by the Admin portal. Notification delivery is not part of the activation
+by the Admin portal
+([user change checks and alerts](../admin-portal/spec.md#user-change-checks-and-alerts)).
+Notification delivery is not part of the activation
 transaction and cannot erase or delay its audit evidence.
 
 The no-reauthentication role-change policy is an explicit accepted product risk
 favoring low-friction role maintenance. Its controls are detective, not
-preventive: a compromised Admin session can create persistent or domain-wide
+preventive: a compromised Admin session can create persistent
 access before notification is acted upon. The durable event and preexisting-
-Admin notification for high-impact expansions, CSRF/current-role checks,
+Admin notification for Administrator grants, CSRF/current-role checks,
 complete audit, and last-Admin guard are the selected compensating controls;
 implementations must not imply they provide the same protection as fresh
 authentication.
@@ -931,30 +929,5 @@ SQL functions to change are:
 
 ## Accessibility and client behavior
 
-The UI meets WCAG 2.2 AA: semantic landmarks, labels and instructions, keyboard
-operation, visible focus, sufficient contrast, error summaries with field
-links, non-color-only change indicators, reduced-motion support, and accessible
-table/chart alternatives. Generated PDFs use tagged structure where the chosen
-renderer supports it; every chart has an equivalent data table.
-
-A person never sees raw JSON. Request errors use closed, server-owned
-messages. Scripts that ask for JSON (`Accept: application/json`, or any
-non-navigation fetch) receive the machine-readable error codes. A browser
-navigation or HTML form submission (`Sec-Fetch-Mode: navigate`, or an
-explicit `text/html` Accept) instead receives an ordinary page in the site
-layout with the same status code. That page shows the message, the next step
-(correct and resubmit, reload, sign in again, or try later), a link back to
-the same-origin Admin page the person came from, and the home link. A missing
-fresh authentication offers **Confirm with Google** as described under
-[identity and session security](#identity-and-session-security). Forms that
-can re-render with inline field errors still do so.
-
-Client validation improves feedback but never replaces server validation.
-Browser-local timezone conversion uses UTC ISO timestamps supplied by the
-server. The Admin portal [requires
-JavaScript](../admin-portal/spec.md#javascript-requirement) and shows a plain
-notice without it. The Family multi-step flow may require JavaScript but must
-show a clear supported-browser message rather than silently fail. A browser
-too old for the Family flow's JavaScript likewise gets a plain notice asking
-the Family to update the device's software or use another device or browser; a
-small ES5 feature check reveals it and never alters the form.
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#accessibility-and-client-behavior),
+which have precedence for it.
