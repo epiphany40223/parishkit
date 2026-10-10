@@ -159,19 +159,12 @@ def financial():
     )
 
 
-def talents():
+def limitations():
     """``talents_report``'s shaped result: the summary and a Member row."""
-    return admin_report_reads.talents_model(
+    return admin_report_reads.limitations_model(
         CAMPAIGN,
         {
-            "collects_talents": True,
-            "summary": {
-                "members": 3,
-                "cannot_serve": 1,
-                "cannot_attend": 1,
-                "talent_counts": {"music": 2, "retired": 1},
-            },
-            "talent_choices": [("music", "Private label")],
+            "summary": {"members": 1, "cannot_serve": 1, "cannot_attend": 1},
             "members": [{"member_name": "Private Member"}],
         },
     )
@@ -375,15 +368,12 @@ GOLDEN = {
             "cannot_give": 1,
         },
     ),
-    "report talents": (
-        talents,
+    "report limitations": (
+        limitations,
         {
             "campaign_id": str(CAMPAIGN),
-            "collects_talents": True,
-            "members": 3,
             "cannot_serve": 1,
             "cannot_attend": 1,
-            "talents": [{"key": "music", "count": 2}, {"key": "retired", "count": 1}],
         },
     ),
     "report information": (
@@ -481,7 +471,7 @@ def test_every_report_command_has_its_models_fields():
         "report participation": admin_report_reads.ParticipationReport,
         "report responses": admin_report_reads.ResponseReport,
         "report financial": admin_report_reads.FinancialReport,
-        "report talents": admin_report_reads.TalentsReport,
+        "report limitations": admin_report_reads.LimitationsReport,
         "report information": admin_report_reads.InformationReport,
         "report ministry": admin_report_reads.MinistryReport,
         # System health's list (#774), not a campaign report: ``report

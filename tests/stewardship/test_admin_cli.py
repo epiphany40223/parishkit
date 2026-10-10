@@ -108,7 +108,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report participation",
         "report responses",
         "report financial",
-        "report talents",
+        "report limitations",
         "report information",
         "report ministry",
         "report source-form",
@@ -408,7 +408,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report participation": "participation_viewed",
         "report responses": "response_dashboard_viewed",
         "report financial": "financial_report_viewed",
-        "report talents": "talents_report_viewed",
+        "report limitations": "talents_report_viewed",
         "report information": "information_viewed",
         "report ministry": "ministry_report_viewed",
         "report source-form": "source_form_viewed",
@@ -610,6 +610,8 @@ def test_commands_needs_no_database_and_prints_one_document():
         ["config", "request", "--config", "x", "--session-stdin"],
         ["config", "request", "show", "601", "--config", "x", "--session-stdin"],
         ["config", "request", "show", "--config", "x", "--session-stdin"],
+        # Renamed ``report limitations`` with no alias (#970).
+        ["report", "talents", "--config", "x", "--session-stdin"],
     ],
 )
 def test_usage_errors_are_documents_that_name_no_value(argv):

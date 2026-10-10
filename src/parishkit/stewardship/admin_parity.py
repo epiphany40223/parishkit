@@ -200,7 +200,7 @@ LEDGER = {
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
-    "limitations_report": command("report talents"),
+    "limitations_report": command("report limitations"),
     "census_changes": pending("PR 8g", "report census"),
     "information_queue": command("report information"),
     # One Family's submission and its follow-up history: read with the

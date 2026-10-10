@@ -2105,7 +2105,7 @@ file is regenerated from the retained capture, in its original format.
 | `reports` | `report list` (PR 8c) |
 | `participation` | `report participation` (PR 8c) |
 | `participation_chart`, `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
-| `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report talents`, `report information`: summaries and counts (PR 8c); Family-level rows only as exports (PR 8e, PR 8g for limitations) |
+| `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970); Family-level rows only as exports (PR 8e, PR 8g for limitations) |
 | `information_item` | One Family's submission and its follow-up history: `followup …` (PR 11), with the Ministry follow-up items; it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report`, `ministry_joiners`, `ministry_leavers` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for a list's count (PR 8c); rows only as exports (PR 8e) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
@@ -2163,7 +2163,7 @@ with 503 (its database, guard or inputs failing, or a value it could not
 shape) is `unavailable` (exit 3, retry). `report participation` prints the `fact_set_id` that
 `export create --fact-set` takes. Reading the current campaign only (no
 `--campaign` until #145), the summaries without search or filtered rows,
-and the stored keys for share options and talents are defaults, pending
+and the stored keys for share options are defaults, pending
 Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#reports)
 lists the fields and options.
@@ -2237,7 +2237,8 @@ are [fresh-gated](#fresh-gated-actions-from-the-command-line), as
 `export financial` is: each asks at the prompt, then calls `require_fresh`
 inside its export lock, for a repeated key too, as the page does.
 The one-Family timeline (it needs a new export kind, a schema change), the
-in-memory downloads (talents and response lists, after #752's audit fields)
+in-memory downloads (limitations and response lists, after #752's audit
+fields)
 and the exact daily exports follow in PR 8g.
 
 The export lifecycle commands work on any report export the Administrator
