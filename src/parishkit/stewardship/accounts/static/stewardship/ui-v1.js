@@ -2275,6 +2275,11 @@
   // without a change event (the back/forward cache, or autofill after load),
   // so every rule is applied again on pageshow, not only at load.
   //
+  // data-enabled-when takes the same rule but never hides: the field stays
+  // where it is, disabled (greyed and not sent) while the rule does not
+  // hold, so choosing a value moves nothing on the page (no layout shift,
+  // #953: the System logs level boxes while Sign-in activity is chosen).
+  //
   // Both this and the complete-before-submit gate are wired for the page and
   // again for content an in-place swap brings in (a follow-up form saved or
   // refused in place, #519), which arrives as fresh elements with no
@@ -2287,8 +2292,9 @@
   let showWhenUpdates = []; // {node, update} for each data-show-when mark
   let completeForms = []; // every form[data-require-complete] wired so far
   const wireShowWhen = (root) => {
-    within(root, "[data-show-when]").forEach((node) => {
-      const rule = node.dataset.showWhen;
+    within(root, "[data-show-when], [data-enabled-when]").forEach((node) => {
+      const hides = node.hasAttribute("data-show-when");
+      const rule = hides ? node.dataset.showWhen : node.dataset.enabledWhen;
       const negated = rule.includes("!=");
       const [name, value] = rule.split(negated ? "!=" : "=");
       const field = node.matches("input, select, textarea");
@@ -2305,7 +2311,7 @@
         // A control outside a swapped region outlives the marks it served.
         if (!node.isConnected) return;
         const shown = (ruleValue(control) === value) !== negated;
-        wrapper.hidden = !shown;
+        if (hides) wrapper.hidden = !shown;
         // A hidden field is not sent, so an error marked on it no longer
         // applies: it clears, with its message and summary item.
         if (!shown) {
