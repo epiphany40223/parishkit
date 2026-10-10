@@ -13,6 +13,7 @@ from parishkit.stewardship.reports.financial_documents import (
     HEADINGS,
     UNPROVEN,
     financial_document,
+    headings,
 )
 from parishkit.stewardship.reports.information_rendering import (
     render_information,
@@ -104,7 +105,7 @@ def test_rows_word_money_status_shares_and_local_instants():
         source_contributions=MoneyAmount(None),
     )
     built = document([row(), unproven, row(active=False)])
-    assert built.item_count == 3 and built.headings is HEADINGS
+    assert built.item_count == 3 and len(built.headings) == len(HEADINGS)
     assert built.rows[0] == (
         "Example <Family>",
         "1234567",
@@ -270,16 +271,25 @@ def test_every_format_renders_from_one_document(format):
 
 
 def test_comparison_headings_match_the_page():
-    """CSV and XLSX head the ParishSoft columns with the page's labels (#404)."""
+    """CSV and XLSX head the ParishSoft columns with the page's labels (#404)
+    and its comparison years (#932)."""
     from pathlib import Path
 
     from openpyxl import load_workbook
 
     import parishkit.stewardship.accounts as accounts
 
-    expected = ["ParishSoft pledged", "ParishSoft contributed"]
-    assert list(HEADINGS[7:9]) == expected
+    labels = ["ParishSoft pledged", "ParishSoft contributed"]
+    assert list(HEADINGS[7:9]) == labels
     assert not any(heading.startswith("Source") for heading in HEADINGS)
+    # The sample period runs July 2025 to June 2026, as the page words it.
+    expected = [f"{label} (2025–2026)" for label in labels]
+    assert list(document([row()]).headings[7:9]) == expected
+    # Only those two headings change; a one-year period names one year.
+    single = headings("2026-01-01", "2026-12-31")
+    assert single[7:9] == ("ParishSoft pledged (2026)", "ParishSoft contributed (2026)")
+    assert single[:7] + single[9:] == HEADINGS[:7] + HEADINGS[9:]
+    assert headings("", "") is HEADINGS
     output = io.BytesIO()
     render_information(document([row()]), output, format="csv")
     header = next(csv.reader(io.StringIO(output.getvalue().decode())))
@@ -291,7 +301,7 @@ def test_comparison_headings_match_the_page():
     template = (
         Path(accounts.__file__).parent / "templates/stewardship/financial-report.html"
     ).read_text(encoding="utf-8")
-    for heading in expected:
+    for heading in labels:
         assert f'{{% translate "{heading}"' in template
     # The stopgap About sentence mapping the old export names is gone.
     assert "Source pledged" not in template
@@ -405,7 +415,7 @@ def test_csv_money_is_the_canonical_amount_and_pdf_keeps_the_page_text():
         f"{label}: {text}" for label, text in card_text(information_records(built))
     ]
     assert "Annual pledge: $1,234.50" in lines
-    assert "ParishSoft pledged: -$50.00" in lines
+    assert "ParishSoft pledged (2025–2026): -$50.00" in lines
     assert "Total annual pledges: $1,234.51" in lines
 
 

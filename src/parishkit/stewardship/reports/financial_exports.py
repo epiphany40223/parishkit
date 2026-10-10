@@ -25,7 +25,7 @@ from .export_services import (
     audit,
     authorize,
 )
-from .financial import FinancialQuery, giving_proof, shape_result
+from .financial import FinancialQuery, giving_proof, name_families, shape_result
 from .financial_documents import financial_document
 
 REPORT = "financial"
@@ -185,17 +185,21 @@ def export_document(request):
 
     Share wording for each row is versioned with the configuration the Family
     answered under, read from the campaign's retained versions; the summary,
-    like the page's, can only use the campaign's current wording.
+    like the page's, can only use the campaign's current wording. Families
+    are named as on the page, from the snapshot the capture was read from
+    (``name_families``).
     """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=request.campaign_id
     )
     parish_name = request.configuration.parish.name
-    result = shape_result(
-        request.financial_snapshot.document,
-        campaign_id=request.campaign_id,
-        parish_name=parish_name,
-        configuration=campaign.active_configuration.values,
+    result = name_families(
+        shape_result(
+            request.financial_snapshot.document,
+            campaign_id=request.campaign_id,
+            parish_name=parish_name,
+            configuration=campaign.active_configuration.values,
+        )
     )
     return financial_document(
         result,

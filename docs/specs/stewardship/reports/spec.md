@@ -860,10 +860,19 @@ link, and Staff notes, in the Admin table
 [column order](../admin-portal/spec.md#table-column-order): Family (surname,
 then heads, as on the
 [active parishioner family directory](#active-parishioner-family-directory)),
-Family DUID, Submitted, then the rest. The default queue shows only `current_actionable`;
-history filters expose superseded/withdrawn
-items. Search covers authorized text, Family name/DUID, notes, date, disposition,
-and workflow state. Exports include complete text and workflow history option.
+Family DUID, Submitted, then the rest. The default queue shows only
+`current_actionable`; history filters expose superseded/withdrawn items.
+Search covers authorized text, Family name/DUID, notes, date, disposition,
+and workflow state. The installed SQL selection searches and sorts by the
+Family's surname, which leads the shown name, so a head's first name does
+not match the Family name and Families that share a surname keep the
+selection's order rather than sorting by their heads; the Family DUID
+column does not sort yet
+([#960](https://github.com/epiphany40223/parishkit/issues/960)). Exports
+include complete text and workflow history option, and name each Family as
+the page does, from the snapshot their capture was read from; a Family
+without a surname is "Family", as the selection names it. A file rendered
+after that snapshot is compacted keeps the captured surname.
 The CSV and XLSX share one set of columns and carry no internal item
 references (the Administrator, 2026-10-09). A "Row type" column says whether a
 row is the "Item" or one of its "Earlier workflow" revisions. Earlier workflow
@@ -1274,9 +1283,12 @@ before the upcoming stewardship year that Families pledge for; the pledge
 total counts ParishSoft pledges dated in it, and the contribution total gifts
 dated in it up to the latest giving data read. The page and
 every export format (CSV, XLSX, PDF) head those two aggregates "ParishSoft
-pledged" and "ParishSoft contributed", and say "ParishSoft" rather than
-"Source" in the export metadata that describes them, so a downloaded file names
-its figures as the page does.
+pledged" and "ParishSoft contributed" with the same years ("ParishSoft
+pledged (2026)"), and say "ParishSoft" rather than "Source" in the export
+metadata that describes them, so a downloaded file names its figures as the
+page does. The exports also name each Family as the page does, from the
+snapshot their capture was read from; a file rendered after that snapshot
+is compacted keeps the captured surname.
 
 Filters include active/inactive, first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method. Summary shows

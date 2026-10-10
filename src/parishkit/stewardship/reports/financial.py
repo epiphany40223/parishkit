@@ -25,6 +25,7 @@ from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.tables import Sorting
 
+from .financial_documents import period_years
 from .information import parse_page
 from .money import MoneyAmount, source_cents
 
@@ -264,11 +265,7 @@ def financial_page(
         parish_name=parish_name,
         configuration=configuration,
     )
-    # The page names each Family as every Admin table does, "Squyres, Jeff
-    # and Tracy" (#932), from the snapshot SQL read. SQL still searches and
-    # orders by the surname, which leads that name. Exports keep their
-    # captured surname until #932's export slice.
-    name_rows(result["metadata"]["source_id"], result["rows"])
+    name_families(result)
     metadata = result["metadata"]
     metadata["comparison_years"] = period_years(
         metadata["comparison_start"], metadata["comparison_end"]
@@ -276,16 +273,17 @@ def financial_page(
     return result
 
 
-def period_years(start, end):
-    """The years an ISO date period covers: "2026", or "2026–2027".
+def name_families(result):
+    """Name each row's Family as every Admin table does, "Squyres, Jeff and Tracy".
 
-    Words the ParishSoft comparison period in the table headings as the
-    Family form does; "" when the campaign has no such period.
+    The name (#932) is read from the snapshot the projection itself was read
+    from, so the page and an export rendered later from its capture name a
+    Family alike. SQL still searches and orders by the surname, which leads
+    that name. Once the 15-minute refresh has compacted that snapshot, a late
+    export render keeps the captured surname rather than mixing in later data.
     """
-    if not start or not end:
-        return ""
-    first, last = start[:4], end[:4]
-    return first if first == last else f"{first}–{last}"
+    name_rows(result["metadata"]["source_id"], result["rows"])
+    return result
 
 
 def shape_result(result, *, campaign_id, parish_name, configuration):

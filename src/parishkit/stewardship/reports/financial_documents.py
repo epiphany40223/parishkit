@@ -19,7 +19,9 @@ from parishkit.stewardship.web import dates
 from .money import MoneyAmount
 
 # The two comparison columns use the page's own labels (#404), so a file and
-# the page name the same figures alike.
+# the page name the same figures alike; ``financial_document`` adds the
+# comparison period's years to them, as the page's headings show
+# ("ParishSoft pledged (2026)").
 HEADINGS = (
     "Family",
     "Family DUID",
@@ -60,9 +62,33 @@ class FinancialDocument:
     rows: tuple[tuple[str | MoneyAmount | datetime, ...], ...]
     item_count: int
     requested_at: datetime
-    headings: ClassVar[tuple[str, ...]] = HEADINGS
+    headings: tuple[str, ...] = HEADINGS
     title: ClassVar[str] = "Financial stewardship detail"
     sheet_name: ClassVar[str] = "Financial detail"
+
+
+def period_years(start, end):
+    """The years an ISO date period covers: "2026", or "2026–2027".
+
+    Words the ParishSoft comparison period in the table headings, on the page
+    and in the downloads, as the Family form does; "" when the campaign has
+    no such period.
+    """
+    if not start or not end:
+        return ""
+    first, last = start[:4], end[:4]
+    return first if first == last else f"{first}–{last}"
+
+
+def headings(comparison_start, comparison_end):
+    """The column headings, the two ParishSoft ones with the period's years."""
+    years = period_years(comparison_start, comparison_end)
+    if not years:
+        return HEADINGS
+    return tuple(
+        f"{heading} ({years})" if heading.startswith("ParishSoft ") else heading
+        for heading in HEADINGS
+    )
 
 
 def _share_cells(row):
@@ -197,4 +223,10 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 + ("",) * 5
                 + (row["id"],)
             )
-    return FinancialDocument(metadata, tuple(rows), result["total"], requested_at)
+    return FinancialDocument(
+        metadata,
+        tuple(rows),
+        result["total"],
+        requested_at,
+        headings(source["comparison_start"], source["comparison_end"]),
+    )
