@@ -526,18 +526,9 @@ NON_PAGES = frozenset(
         "delivery_refusal_clear",
         "dismiss_credential_result",
         "delivery_resolve",
-        "exact_export_cancel",
-        "exact_export_create",
-        "exact_export_retry",
-        "exact_export_status",
         "family_email_progress_status",
         # The header's presence count, polled at the old presence address.
         "presence_count",
-        "export_cancel",
-        "export_create",
-        "export_download",
-        "export_download_grant",
-        "export_status",
         "family_directory_export",
         # The header's Find a Family results (#561), a fragment for its box.
         "find_family",
@@ -561,10 +552,6 @@ NON_PAGES = frozenset(
         # New campaign only redirects. The two campaign choosers are old
         # addresses now (NAV-11).
         "campaign_new",
-        # The old postal-outreach routes: a bookmark redirects to the Family
-        # directory, and forms rendered before the merge still submit.
-        "postal_directory",
-        "postal_directory_export",
         "report_exact_create",
         "report_export_cancel",
         "report_export_create",

@@ -1,4 +1,8 @@
-"""Real signed-login, CSRF, requester API and guarded streaming integration."""
+"""Real signed-login, CSRF, export page actions and guarded streaming integration.
+
+The JSON export API these tests once drove was retired unused (#758); they now
+drive the export pages' own create, cancel and download actions.
+"""
 
 import socket
 from contextlib import contextmanager
@@ -8,14 +12,17 @@ from uuid import uuid4
 import pytest
 from django.db import connection
 from django.test import Client
+from django.urls import reverse
 from psycopg import sql
 
 from parishkit.stewardship.accounts.auth_incidents import record_incident
 from parishkit.stewardship.accounts.authentication import AuthRuntime
 from parishkit.stewardship.accounts.limiting import Limiter
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
+from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.export_models import ExportRequest
 
+from ..export_urls import export_action
 from .auth_builders import signed_in, valkey_client
 from .test_background_grants_postgresql import task_login
 from .test_export_jobs_postgresql import run_export, scenario  # noqa: F401
@@ -62,7 +69,7 @@ def http_scenario(scenario, google, settings):  # noqa: F811
 
 
 def post(browser, url, data=None, **extra):
-    """API requests carry CSRF in its standard header, never a query string."""
+    """Requests carry CSRF in its standard header, never a query string."""
     return browser.post(
         url,
         data or {},
@@ -72,37 +79,62 @@ def post(browser, url, data=None, **extra):
 
 
 def create(http_scenario, *, format="csv"):
-    """Select a complete pinned generation through the public requester endpoint."""
+    """Select a complete pinned generation through the export page's form."""
     setup, browser = http_scenario
     facts = setup[2]
+    key = str(uuid4())
     response = post(
         browser,
-        f"/admin/campaign/{facts.campaign_id}/exports/participation",
+        reverse("admin:report_export_create"),
         {
             "fact_set_id": str(facts.pk),
             "format": format,
             "browser_timezone": "UTC",
-            "request_key": str(uuid4()),
+            "request_key": key,
         },
     )
-    assert response.status_code == 202
+    assert response.status_code == 302
     assert response["Cache-Control"] == "no-store"
-    return ExportRequest.objects.get(pk=response.json()["id"])
+    return ExportRequest.objects.get(request_key=key)
 
 
-def test_real_api_requires_csrf_and_rejects_arbitrary_query_inputs(http_scenario):
+def page(request):
+    """The shared export page of one export request."""
+    return reverse("admin:report_export", args=[request.pk])
+
+
+def read(browser, path):
+    """Read a page that streams inside its response-owned read transaction."""
+    server, peer = socket.socketpair()
+    try:
+        response = browser.get(path, **{"gunicorn.socket": server})
+        body = (
+            b"".join(response.streaming_content)
+            if response.streaming
+            else (response.content)
+        )
+        response.close()
+        return response, body
+    finally:
+        server.close()
+        peer.close()
+
+
+def test_export_creation_requires_csrf_and_rejects_arbitrary_inputs(http_scenario):
     """Export creation is never a GET or an arbitrary report/query execution port."""
     setup, browser = http_scenario
-    path = f"/admin/campaign/{setup[2].campaign_id}/exports/participation"
+    path = reverse("admin:report_export_create")
     assert browser.get(path).status_code == 405
     assert browser.post(path, {}).status_code == 403
     assert post(browser, path, {"report": "system_logs"}).status_code == 400
     request = create(http_scenario)
-    response = browser.get(f"/admin/exports/{request.pk}")
-    assert response.status_code == 200
-    assert response.json()["state"] == "queued"
-    assert "task_id" not in response.json()
-    assert post(browser, f"/admin/exports/{request.pk}/cancel").status_code == 200
+    # The page streams under the web role's own login, as in production.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, page(request))
+    assert response.status_code == 200 and b"task_id" not in body
+    assert response["Cache-Control"] == "no-store"
+    cancel = export_action(page(request), "cancel")
+    assert post(browser, cancel).status_code == 302
 
 
 @contextmanager
@@ -135,20 +167,15 @@ def restricted_download_pool(settings):
 def test_complete_download_holds_guard_and_streams_with_private_headers(
     http_scenario, settings, format
 ):
-    """A signed-in user consumes one grant; files never use proxy redirects."""
+    """The requester streams the file in-app; files never use proxy redirects."""
     setup, browser = http_scenario
     request = create(http_scenario, format=format)
     run_export(setup, request)
-    grant = post(browser, f"/admin/exports/{request.pk}/download-grant").json()["grant"]
+    download = export_action(page(request), "download")
     server, peer = socket.socketpair()
     try:
         with restricted_download_pool(settings):
-            response = post(
-                browser,
-                "/admin/exports/download",
-                {"grant": grant},
-                **{"gunicorn.socket": server},
-            )
+            response = post(browser, download, **{"gunicorn.socket": server})
             assert response.status_code == 200
             assert response.streaming
             assert response["Cache-Control"] == "no-store"
@@ -163,15 +190,8 @@ def test_complete_download_holds_guard_and_streams_with_private_headers(
                 {"csv": b"date,scope,", "png": b"\x89PNG", "pdf": b"%PDF"}[format]
             )
             response.close()
-        assert (
-            post(
-                browser,
-                "/admin/exports/download",
-                {"grant": grant},
-                **{"gunicorn.socket": server},
-            ).status_code
-            == 403
-        )
+        # Another browser never downloads it, even knowing its address.
+        assert Client().post(download).status_code in {302, 403}
     finally:
         server.close()
         peer.close()
@@ -180,37 +200,33 @@ def test_complete_download_holds_guard_and_streams_with_private_headers(
 def test_download_busy_is_retryable_and_does_not_discard_artifact(
     http_scenario, settings
 ):
-    """A capacity failure consumes its grant but permits a fresh authorized retry."""
+    """A capacity failure leaves the file ready for a fresh authorized retry."""
     setup, browser = http_scenario
     request = create(http_scenario)
     run_export(setup, request)
-    grant = post(browser, f"/admin/exports/{request.pk}/download-grant").json()["grant"]
+    download = export_action(page(request), "download")
     pool = settings.STEWARDSHIP_DOWNLOAD_POOL
     server, peer = socket.socketpair()
     pool.acquire()
     try:
-        response = post(
-            browser,
-            "/admin/exports/download",
-            {"grant": grant},
-            **{"gunicorn.socket": server},
-        )
+        response = post(browser, download, **{"gunicorn.socket": server})
         assert response.status_code == 503
         assert response["Retry-After"] == "5"
     finally:
         pool.release()
+    try:
+        response = post(browser, download, **{"gunicorn.socket": server})
+        assert response.status_code == 200
+        response.close()
+    finally:
         server.close()
         peer.close()
-    assert browser.get(f"/admin/exports/{request.pk}").json()["state"] == "ready"
-    assert (
-        post(browser, f"/admin/exports/{request.pk}/download-grant").status_code == 200
-    )
 
 
 def test_anonymous_requests_never_get_export_metadata(http_scenario):
     """No authenticated requester means no campaign/file existence disclosure."""
     request = create(http_scenario)
-    assert Client().get(f"/admin/exports/{request.pk}").status_code in {302, 403}
+    assert Client().get(page(request)).status_code in {302, 403}
 
 
 def test_form_csrf_and_invalid_cancel_are_distinct_from_completed_conflict(
@@ -219,13 +235,13 @@ def test_form_csrf_and_invalid_cancel_are_distinct_from_completed_conflict(
     """Conventional form CSRF works; malformed commands do not return conflicts."""
     setup, browser = http_scenario
     request = create(http_scenario)
-    path = f"/admin/exports/{request.pk}/cancel"
+    path = export_action(page(request), "cancel")
     assert post(browser, path, {"unknown": "value"}).status_code == 400
     run_export(setup, request)
     assert post(browser, path).status_code == 409
     queued = create(http_scenario)
     response = browser.post(
-        f"/admin/exports/{queued.pk}/cancel",
+        export_action(page(queued), "cancel"),
         {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
     )
-    assert response.status_code == 200
+    assert response.status_code == 302

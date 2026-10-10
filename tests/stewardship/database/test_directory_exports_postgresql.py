@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
-from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
@@ -462,24 +461,15 @@ def test_directory_export_staff_gates_and_service_boundaries(
             == 403
         )
         # Mailing columns (addresses) stay with the roles that could open the
-        # old postal page; the old postal routes keep their checks too.
+        # old postal page.
         assert read(browser, route + "?mailing=yes")[0].status_code == 403
         denied = post(browser, route, {"mailing": "yes", "reach": "email"})
         assert denied.status_code == 403 and b"Example Street" not in denied.content
+        # The old postal routes are retired with no redirect (#758, #864).
         legacy = f"/admin/reports/{harness.campaign.pk}/postal/"
-        # A bookmarked old postal URL redirects without reading anything,
-        # then the merged page denies a Ministry leader or a signed-out
-        # visitor exactly as the old page did.
-        target = route + "?reach=mail&mailing=yes"
-        for visitor in (browser, Client()):
-            redirected = visitor.get(legacy)
-            assert redirected.status_code == 302
-            assert redirected["Location"] == target
-            response, body = read(visitor, target)
-            assert response.status_code == 403 and harness.code.encode() not in body
-            assert b"Example Street" not in body
-        assert post(browser, legacy, {}).status_code == 403
-        assert post(browser, legacy + "export", fields).status_code == 403
+        assert browser.get(legacy).status_code == 404
+        assert post(browser, legacy, {}).status_code == 404
+        assert post(browser, legacy + "export", fields).status_code == 404
         assert (
             read(browser, reverse("admin:report_export", args=[request.pk]))[
                 0
@@ -595,17 +585,15 @@ def test_postal_mail_merge_blanks_families_without_a_mailing_address(
     assert {row[11] for row in rows[1:]} == {"Member Example: (no email)"}
     assert request.directory_snapshot.row_count == 3
     assert request.report == "postal_outreach"
-    # A form rendered before the merge has no mailing field and posts to the
-    # old postal export route; it still queues the postal mail merge.
+    # The old postal export address is retired with no redirect (#758,
+    # #864) and queues nothing.
     legacy = DirectoryQuery().form_values() | dict(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
     old_route = f"/admin/reports/{harness.campaign.pk}/postal/export"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert post(browser, old_route, legacy).status_code == 302
-    old = ExportRequest.objects.get(request_key=legacy["request_key"])
-    assert old.report == "postal_outreach" and old.parameters["postal"] is True
-    assert old.directory_snapshot.row_count == 3
+        assert post(browser, old_route, legacy).status_code == 404
+    assert not ExportRequest.objects.filter(request_key=legacy["request_key"]).exists()
 
 
 def test_mail_merge_covers_exactly_the_filtered_email_reachable_rows(
@@ -866,15 +854,9 @@ def test_directory_export_and_regenerate_need_a_fresh_sign_in(
         for path, mailing, back in (
             (export, "no", route),
             (export, "yes", route + "?mailing=yes"),
-            # The old postal route means the mail merge without a field.
-            (f"/admin/reports/{harness.campaign.pk}/postal/export", None, None),
         ):
             values = dict(fields)
-            if mailing is None:
-                values.pop("mailing", None)
-                back = route + "?mailing=yes"
-            else:
-                values["mailing"] = mailing
+            values["mailing"] = mailing
             refused = post(browser, path, values, HTTP_ACCEPT="text/html")
             assert refused.status_code == 403
             page = refused.content.decode()

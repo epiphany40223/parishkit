@@ -830,8 +830,10 @@ download images), weekly `weekly/<snapshot>/` and its items, and Send a weekly
 report now `weekly/new/`. New report emails link the new addresses. No old
 address is kept (#864): the old export, latest-data export, manual weekly
 report and daily and weekly report addresses are gone (404), so a link in a
-report email sent before NAV-12 no longer opens. The unused JSON export API and the old
-postal routes are not retired here (#758). From the NAV-11 review: a moved
+report email sent before NAV-12 no longer opens. The unused JSON export API
+and the old postal routes were left for #758, which then removed both: no
+page, script or command line used the JSON API, and the two postal addresses
+get no redirect (#864; they are Admin-only). From the NAV-11 review: a moved
 report opened with no current campaign says so plainly instead of "This
 campaign is no longer the current campaign", and Ministry follow-up shows the
 "no campaign" page as Ministry requests does. It is proven by
