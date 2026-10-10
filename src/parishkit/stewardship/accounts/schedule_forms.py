@@ -281,9 +281,17 @@ def email_choices(emails, usage):
     ]
 
 
-def email_details(emails, usage, *, links):
-    """The ``data-`` attributes of each email option (see TemplateSelect)."""
+def email_details(emails, usage, *, links, test_mail=True):
+    """The ``data-`` attributes of each email option (see TemplateSelect).
+
+    With ``links``, each email carries its test page and editor addresses.
+    While the campaign admits no test mail (``test_mail`` false, see
+    ``campaign_mail.admits_test_mail``) the test address is replaced by a short
+    note saying why, so the page never links a test that cannot work (#923).
+    """
     from django.urls import reverse
+
+    from .campaign_mail import NOT_OPEN
 
     details = {}
     for row in emails:
@@ -292,9 +300,12 @@ def email_details(emails, usage, *, links):
             "data-used-by": json.dumps(usage.get(row["id"], [])),
         }
         if links:
-            attributes["data-test-url"] = reverse(
-                "admin:campaign_mail", args=[row["id"]]
-            )
+            if test_mail:
+                attributes["data-test-url"] = reverse(
+                    "admin:campaign_mail", args=[row["id"]]
+                )
+            else:
+                attributes["data-test-note"] = str(NOT_OPEN)
             attributes["data-edit-url"] = reverse(
                 "admin:content_revision",
                 args=["email", row["values"]["slot"], row["id"]],
@@ -367,7 +378,16 @@ class ScheduleForm(forms.Form):
         ),
     )
 
-    def __init__(self, *args, templates, usage=None, links=False, label=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        templates,
+        usage=None,
+        links=False,
+        test_mail=True,
+        label=None,
+        **kwargs,
+    ):
         """Offer email revisions and only this row's unresolved legacy value.
 
         A saved schedule's mail type is fixed (the configuration refuses to
@@ -375,8 +395,9 @@ class ScheduleForm(forms.Form):
         type are offered. A disabled field keeps its saved value whatever the
         browser posts. ``usage`` maps an email's ID to the saved schedules that
         send it, for labels that tell emails apart; ``links`` adds each email's
-        preview, test and edit addresses for the page script (#446).
-        ``label`` names a saved schedule (Reminder 2), so the page can tell
+        preview, test and edit addresses for the page script (#446), and
+        ``test_mail`` false replaces the test address with why there is none
+        (#923). ``label`` names a saved schedule (Reminder 2), so the page can tell
         whether other schedules send the same email.
         """
         self.schedule_label = label
@@ -397,7 +418,7 @@ class ScheduleForm(forms.Form):
         choices = email_choices(emails, usage or {})
         kinds = {row["id"]: row["values"]["slot"] for row in emails}
         self.fields["template_version"].widget.details = email_details(
-            emails, usage or {}, links=links
+            emails, usage or {}, links=links, test_mail=test_mail
         )
         field_tips.shorten(
             self, {"template_version": _("Only emails of the chosen mail type fit.")}
@@ -452,6 +473,7 @@ class ScheduleSet(BaseFormSet):
         campaign_id,
         campaign,
         email_links=False,
+        test_mail=True,
         **kwargs,
     ):
         """Retain complete saved records for identity and legacy-template comparison.
@@ -461,12 +483,15 @@ class ScheduleSet(BaseFormSet):
         sorting never mixes up which form edits which schedule. Every form's
         email list says which saved schedules send each email; with
         ``email_links`` (Dates and mail schedules) it also carries each
-        email's preview, test and edit addresses (#446).
+        email's preview, test and edit addresses (#446); ``test_mail`` false
+        (the campaign admits no test mail now) leaves out the test address
+        and says why instead (#923).
         """
         self.previous = sorted(previous, key=schedule_order)
         self.labels = schedule_labels(self.previous)
         self.usage = email_usage(self.previous)
         self.email_links = email_links
+        self.test_mail = test_mail
         self.templates = list(templates)
         self.campaign_id, self.campaign = str(campaign_id), campaign
         initial = [row["values"] | {"id": row["id"]} for row in self.previous]
@@ -478,6 +503,7 @@ class ScheduleSet(BaseFormSet):
             "templates": self.templates,
             "usage": self.usage,
             "links": self.email_links,
+            "test_mail": self.test_mail,
             # Saved forms come first, in the same order as self.previous.
             "label": self.labels[index]
             if index is not None and index < len(self.labels)

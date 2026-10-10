@@ -49,6 +49,24 @@ def test_the_chosen_email_is_described_with_its_users_and_links(
     assert not failures
 
 
+def test_a_live_campaign_says_why_there_is_no_test_link(page, component_origin):
+    """No test link leads to a page that cannot send; the summary says why (#923)."""
+    page.goto(component_origin + "/schedule-table-live")
+    page.get_by_role("button", name="Change Reminder 1").click()
+    reminder = editor(page, "Reminder 1")
+    visible(reminder)
+    text = summary(reminder).inner_text()
+    assert (
+        "Test emails can be sent only while the campaign is being tested, or "
+        "while live email delivery is paused." in text
+    )
+    assert (
+        summary(reminder).get_by_role("link", name="Preview and send a test").count()
+        == 0
+    )
+    visible(summary(reminder).get_by_role("link", name="Edit this email"))
+
+
 def test_a_new_schedule_describes_the_email_it_chooses(page, component_origin):
     """The summary follows the choice in place, and clears with it."""
     page.goto(component_origin + PATH)

@@ -263,8 +263,14 @@ editing it changes every one of them. On the regular page the description
 also links to the email's test page (Preview and send a test) and its
 editor (Edit this email), each in a new tab so the page's unsaved schedule
 changes stay; an email saved there makes this page's preview ask for a
-reload, as any concurrent change does. Choosing an email still saves only
-the schedule's reference to it, exactly as before.
+reload, as any concurrent change does. Test emails can be sent only while
+the campaign is a Testing draft, or in Production while live email delivery
+is paused ([Live delivery pause](#live-delivery-pause)); at any other time
+the description says so in place of the test link, and the test page itself
+refuses with the same explanation and a link to Pause and resume mail rather
+than asking for a reload
+([#923](https://github.com/epiphany40223/parishkit/issues/923)). Choosing an
+email still saves only the schedule's reference to it, exactly as before.
 
 On the regular Dates and mail schedules page, a **Scheduled emails** table
 ([#448](https://github.com/epiphany40223/parishkit/issues/448)) lists every
