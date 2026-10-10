@@ -161,9 +161,11 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   result resets the consecutive-failure count; local unobserved outcomes do
   not. No result can shorten an existing pause. Deterministic shared
   TLS/configuration/protocol faults (SYSTEMIC) stop the run immediately and
-  stay stopped until the process restarts, since waiting cannot fix them.
-  The pause and the stop are process-local; the durable record is BG-10's
-  `mail_provider_failed` incident, which the same stored outcomes open and
+  stay stopped until the mail worker restarts, since waiting cannot fix them.
+  The pause is process-local; the stop is container-wide, shared through a
+  marker file (see [two mail consumers](#two-mail-consumers)). The durable
+  record of both is BG-10's `mail_provider_failed` incident, which the same
+  stored outcomes open and
   the first healthy outcome after the pause resolves. Already-submitted
   outcomes can always drain.
 - Delivery certainty and provider health are separate closed values in the

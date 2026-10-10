@@ -447,7 +447,7 @@ launch scope's
 [production-readiness activation](../plans/stewardship/v1-launch.md#production-readiness-activation-and-schema-freeze)
 allows; after the freeze, every schema change is a forward migration and this
 procedure is the only way forward. It applies the operations specification's
-[production upgrade](../specs/stewardship/operations/spec.md#production-upgrades-deferred)
+[production upgrade](../specs/stewardship/operations/spec.md#production-upgrades)
 sequence with the commands that exist.
 
 1. **Check and prepare the release, stop the background services, then back

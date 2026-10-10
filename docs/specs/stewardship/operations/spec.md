@@ -64,6 +64,7 @@ launch.
 | `logs/` | Optional JSONL/container log exports |
 | `reports/` | Authorized temporary generated exports |
 | `run/` | Locks, bootstrap markers, health/runtime state, isolated persistent service storage |
+| `backups/` | Sealed [backup](#backup) sets, one directory per run, kept under the backup runbook's [retention](../../../guides/stewardship-backup-runbook.md#retention) |
 
 PostgreSQL data, Valkey state, Caddy ACME state, and uploaded media default to
 durable host bind mounts at `<root>/run/persistent/postgresql`,
@@ -519,13 +520,20 @@ Adding a forward migration, in order:
    [scripted upgrade](../../../guides/stewardship-deployment-runbook.md#scripted-upgrade)
    with `STEWARDSHIP_SCHEMA_CHANGE=1`.
 
-### Production upgrades (deferred)
+### Production upgrades
 
-Launch put the [post-launch schema policy](#post-launch-schema-policy) in
-force; the remaining items here stay deferred until the human activates them.
+Production is upgraded by the deployment runbook's
+[upgrade](../../../guides/stewardship-deployment-runbook.md#upgrade)
+procedure, normally through its
+[scripted upgrade](../../../guides/stewardship-deployment-runbook.md#scripted-upgrade),
+under the [post-launch schema policy](#post-launch-schema-policy). Only the
+broader checks named at the end of this section stay deferred.
 
-A production upgrade requires a successful recent backup, pulls pinned images, runs migration checks
-and migrations, then restarts services. The image of a provisioned deployment
+A production upgrade pulls the pinned image while the site is up, then
+stops the background services and takes a backup, abandoning the upgrade
+if that backup has no recorded off-host copy; only then does it stop web,
+retarget the image, run migrations and grants when the upgrade check says
+they are needed, and restart services. The image of a provisioned deployment
 changes only through the image-retargeting command, which rewrites the rendered
 topologies and the provisioning record under the offline startup exclusion and
 refuses any other change; the operator then runs the migration profile and the
@@ -793,6 +801,19 @@ decrypted contents are returned to the web process.
 
 ## Restore
 
+In v1 the restore itself is the backup runbook's operator procedure,
+[restore for real](../../../guides/stewardship-backup-runbook.md#restore-for-real):
+the operator opens and checks the set and restores the database and files
+by hand, so the two restore modes, their automated precondition checks and
+the secret-escrow step below are not application commands, and the
+restricted maintenance queues are named (`jobs/queues.py`) but no service
+claims them yet (v1 launch scope,
+[cut item 2](../../../plans/stewardship/v1-launch.md#cut-from-v1)). What
+the application does provide is the compatibility check and comparison
+below, `restore-begin` and its restore gate, the held-email review and the
+[restore release workflow](../admin-portal/spec.md#restore-release)
+([#537](https://github.com/epiphany40223/parishkit/issues/537)).
+
 Restore is operator-driven and unavailable as an ordinary web action. It has two
 explicit modes. Empty-target restore is the default and refuses any existing
 application data. In-place disaster recovery requires application downtime, an
@@ -945,8 +966,11 @@ backup or database-field encryption requirements.
 The example Families that a refused large ParishSoft change records (DUID
 and directory name only) are deleted under the rules of
 [accept a large ParishSoft change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once)
-(ADM-13), at most seven days after the refusal by default. The worker's
-hourly housekeeping removes the
+(ADM-13), at most seven days after the refusal by default. That action and
+its example Families are not built yet; refused counts are recorded and
+shown, but no example Family is. The worker's
+hourly housekeeping, the
+[maintenance task](../admin-automation/spec.md#maintenance-task), removes the
 [service status record](../admin-portal/spec.md#service-status-records) of
 a process that has not reported for a day.
 
@@ -966,9 +990,13 @@ Only the dedicated source-compaction service may thin unprotected snapshot
 corpora, under the normative retention and reference guards in the
 [data specification](../data/spec.md#source-snapshot).
 
-Each refresh runs this retention first, within a time budget:
+Each refresh runs this retention first (`source/compaction.py`), under the
+source lease's `compaction` phase and outside the work-order lock, within a
+60-second time budget. It removes nothing while a restore review is open,
+and a failure in it is logged but never fails the refresh:
 
-- report fact cleanup goes first and has at most half of it;
+- report fact cleanup (the derived-fact compaction below) goes first and has
+  at most half of it;
 - report fact cleanup waits no more than about a second for a row lock;
 - each reclaim statement has its own time limit;
 - the compaction lease is released even while the worker stops gracefully.
@@ -978,10 +1006,11 @@ refresh resumes the work. Stops that keep happening without progress open
 the [retention incident](../admin-portal/spec.md#parishsoft-refresh-panel)
 ([#833](https://github.com/epiphany40223/parishkit/issues/833)).
 
-Run dedicated derived-fact compaction hourly by default, with a configurable
-positive interval and bounded batches, under the
-[derived fact retention policy](../data/spec.md#derived-fact-retention).
-It removes only eligible superseded generations, respects campaign purge/
+Derived-fact compaction runs as that first share of each refresh's
+retention, in bounded batches (one generation per short transaction), under
+the [derived fact retention policy](../data/spec.md#derived-fact-retention);
+it has no schedule or interval of its own, so it runs as often as refreshes
+do. It removes only eligible superseded generations, respects campaign purge/
 restore gates, and resumes safely after interruption. Record counts, duration,
 last successful completion, and eligible backlog without copying report values;
 surface failures through normal task monitoring. Do not put fact deletion in
@@ -1005,7 +1034,15 @@ other trace adds it, such as the
 Application operational/audit storage is separately queryable in the
 Admin UI. Metrics include request latency/error, sessions, queue depth/age,
 task duration/failure, scheduler lag, outbox age/delivery, ParishSoft snapshot
-age, database/broker health, disk usage, backup age, and TLS expiry.
+age, database/broker health, disk usage, backup age, and TLS expiry. In v1
+`/metrics` (`runtime_health.py`) exposes only readiness per dependency, free
+bytes in the reports and media stores, the database's connection count, and
+HTTP responses by status class with a request-duration histogram; the rest
+are deferred with the
+[Phase 7 hardening cuts](../../../plans/stewardship/v1-launch.md#reduced-for-v1),
+and Administrators see backup age, ParishSoft data age and the mail
+sender's state on [System health](../admin-portal/spec.md#system-health)
+instead.
 
 Every time limit that stops work leaves an operational log entry that says
 what was stopped, which limit stopped it and after how long, using the
@@ -1020,7 +1057,10 @@ lease keeps its margin: a WARNING with outcome `retry`; the timeout that
 ends the run is the ERROR, with outcome `failed`. Those WARNINGs are the
 rollout measure for the retry: their count per day (System logs, level
 WARNING, event `task_timed_out`) says how often renewals queue behind the
-work-order lock, and any ERROR among them says a run was lost to it. A helper entry is
+work-order lock, and any ERROR among them says a run was lost to it. A
+ParishSoft load stopped at its own time bound is a WARNING too
+(`source_load_budget`), since the refresh retries it as a
+[slow provider](../background-processing/spec.md#full-cycle). A helper entry is
 written right after the kill and names the helper (a mail, ParishSoft or provider
 check helper) and the task it served, when a worker runs it. A web worker
 killed by Gunicorn's master is a `helper_timed_out` ERROR as well, which the
@@ -1179,9 +1219,8 @@ counted scheduled full due time (see below) after the last full refresh's
 start. The data is out of date when that slot is more than the **lateness
 margin** overdue. The margin is the deployment's existing
 `source_stale_seconds` (30 minutes by default), which now means "how late a
-scheduled full refresh may be", not "how old the data may be"; the release
-notes of the release that makes this change say so. A due time counts only
-if:
+scheduled full refresh may be", not "how old the data may be" (#510
+changed its meaning). A due time counts only if:
 
 - it is a full time of the effective
   [refresh schedule](../background-processing/spec.md#refresh-schedule) in
@@ -1210,9 +1249,8 @@ hours from 08:00 to 20:00, a missed 10:00 refresh is reported at 10:30. The
 source-staleness alarm (`source_stale`) sounds on exactly this condition,
 and the [bulk-send hold](../background-processing/spec.md#deltas-wait-for-a-bulk-family-send)
 measures its allowance from the same point. Its recovery requires a
-promoted **full** refresh with no newer failure. That is a change from
-today, when any promoted snapshot, including an empty quick update, recovers
-it.
+promoted **full** refresh with no newer failure; before #510 any promoted
+snapshot, including an empty quick update, recovered it.
 
 **Changing the schedule never hides a late refresh.** A full slot is
 **already overdue** when its due time has passed and no full refresh that
@@ -1238,10 +1276,10 @@ Two edges are accepted rather than prevented: a catch-up requested while a
 full refresh that started before the change is still running, which then
 runs one extra full refresh; and a second schedule change before any full
 refresh promotes, which requests a second catch-up at the second instant.
-Both cost one extra full refresh and never hide a late one. Before this cause
-exists (delivery step 1), the settings page says when a full refresh is more
-than the lateness margin late and not running, and offers **Run a full
-refresh now** beside that notice.
+Both cost one extra full refresh and never hide a late one. The refresh
+status on the settings page also says when a full refresh is more than the
+lateness margin late and not running, and offers **Run a full refresh now**
+beside that notice.
 
 For example, the old schedule has full refreshes at 00:00 and every two
 hours from 08:00 to 20:00, and a send that started at 09:30 is holding the
@@ -1265,8 +1303,7 @@ scheduled full refresh is 02:00 tomorrow.
   date, which scheduled refresh is late and by how long, or that a bulk
   Family send is holding it. The System health page's
   [ParishSoft refresh panel](../admin-portal/spec.md#parishsoft-refresh-panel)
-  will show the same when that page is built
-  ([#530](https://github.com/epiphany40223/parishkit/issues/530)).
+  shows the same.
   `pk-stewardship health` reports only dependency checks and does not
   carry these facts.
 - The settings page no longer refuses a schedule for its gaps: it states the

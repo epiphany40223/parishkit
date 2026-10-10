@@ -176,7 +176,7 @@ live database must be upgraded in place instead of reinstalled.
   data and migrating. Each production upgrade takes a verified backup first,
   then pulls the new image, runs migration checks and migrations, and
   restarts services, as in the operations spec's
-  [production upgrades](../../specs/stewardship/operations/spec.md#production-upgrades-deferred)
+  [production upgrades](../../specs/stewardship/operations/spec.md#production-upgrades)
   section. Downgrade is by database restore only; automated upgrade readiness
   checks (OPS-04.03) and upgrade-path tests (OPS-04.05) remain deferred.
 
