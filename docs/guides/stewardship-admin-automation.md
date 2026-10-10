@@ -1176,3 +1176,14 @@ error, as `logs export` does; the wrapper refuses to write it to a terminal.
   `delivery refusal-clear`, which prompt. `delivery show`'s `actions` may
   now include `resend` (it listed only `delivery resolve` actions); an
   offered `resend` is `delivery resend`.
+- `pk-admin/1` (#931): a change of meaning, kept on version 1.
+  `delivery list --sort` follows the reworked Outgoing mail page: the
+  Family DUID token is `duid` (it was `recipient`, which is now refused),
+  the new `name` sorts by the Family's name from the latest ParishSoft
+  data, and the default is `-changed`, the latest change first (it was
+  `-created`, the newest email first; `--sort=-created` still gives that
+  order). The document's fields are unchanged. Its only readers are the
+  Administrator and the operator, and the Administrator keeps no legacy
+  forms (the
+  [exception](../specs/stewardship/admin-automation/spec.md#output-documents)
+  records why).
