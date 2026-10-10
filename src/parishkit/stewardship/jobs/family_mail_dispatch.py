@@ -20,6 +20,7 @@ from parishkit.stewardship.campaigns.family_schedule_planning import (
     plan_family,
 )
 from parishkit.stewardship.campaigns.models import RestoreDeliveryHold
+from parishkit.stewardship.campaigns.restore_review import later_reminder_reached
 from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleFulfillment,
     ScheduleOccurrence,
@@ -566,6 +567,25 @@ def disposition(message, *, check_recipient=False):
         return "restore_assumed_sent"
     if own_holds:
         raise FamilyDeliveryHeld("Family delivery awaits restore review.")
+    # A held reminder sent again (#757) never goes out once a later reminder
+    # reached the Family: it would arrive out of order, and the SQL dispatch
+    # check refuses it, so cancel it rather than fail and retry. (A later
+    # reminder still on its way already waits above, as an unresolved
+    # provider outcome.)
+    if (
+        message.purpose == "reminder"
+        and RestoreDeliveryHold.objects.filter(
+            definition_id=occurrence.definition_id,
+            mode=message.mode,
+            target=occurrence.target,
+            slot=occurrence.slot,
+            state="resend_authorized",
+        ).exists()
+        and later_reminder_reached(
+            occurrence.definition, message.mode, occurrence.target, occurrence.due_at
+        )
+    ):
+        return "restore_superseded"
     if message.not_before > database_now():
         raise FamilyDeliveryHeld("Family delivery retry is not due.")
     return None

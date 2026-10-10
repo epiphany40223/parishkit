@@ -175,7 +175,7 @@ FROZEN = {
         "e90737d9b5386d9edf85de132185fc536f6334161b7a95ce6e96125f0c69eb97"
     ),
     "0048_restore_holds_after_release.sql": (
-        "c00c520423165371e26418c854e995e572c0d7472d2fc6cb4c3d2a702b952477"
+        "8f58646d41dac78b9cc4c996a05187d636c57249e7d5c0ce9c3072c7b3f6ed6c"
     ),
 }
 

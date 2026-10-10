@@ -5458,6 +5458,24 @@ BEGIN
            WHERE other.id<>h.id AND other.definition_id=h.definition_id AND other.mode=h.mode
              AND other.target=h.target AND other.slot=h.slot AND other.state IN ('unreviewed','assumed_delivered'))) THEN
         RAISE EXCEPTION 'Invalid restore hold review or resend binding' USING ERRCODE='23514'; END IF;
+    -- "Send again" on a held reminder is refused once a later reminder for
+    -- the same Family (removed since or not) was delivered, is on its way or
+    -- its delivery is unknown: it would arrive out of order (#757). The
+    -- Family dispatch check refuses the same thing at send time.
+    IF NEW.state='resend_authorized' AND EXISTS(SELECT 1 FROM stewardship_schedule_definition earlier
+        JOIN stewardship_schedule_revision earlier_revision ON earlier_revision.id=earlier.current_revision_id
+        JOIN stewardship_schedule_definition later_definition ON later_definition.campaign_id=earlier.campaign_id
+        JOIN stewardship_schedule_occurrence later ON later.definition_id=later_definition.id
+        WHERE earlier.id=h.definition_id AND earlier.kind='reminder' AND later_definition.kind='reminder'
+          AND later_definition.id<>earlier.id AND later.mode=h.mode AND later.target=h.target
+          AND later.due_at>earlier_revision.due_at
+          AND (EXISTS(SELECT 1 FROM stewardship_outbox_message later_message
+                  WHERE later_message.id=later.outbox_id
+                    AND later_message.state IN ('submitting','delivery_unknown','delivered'))
+              OR EXISTS(SELECT 1 FROM stewardship_schedule_fulfillment later_sent
+                  WHERE later_sent.occurrence_id=later.id AND later_sent.disposition='delivered'))) THEN
+        RAISE EXCEPTION 'A later reminder reached this Family or is on its way; assume this one sent'
+            USING ERRCODE='23514'; END IF;
     -- Settling a held email is an Administrator's decision made within five
     -- minutes of a Google sign-in (migration 0017, #537).
     IF NOT public.stewardship_restore_decision_admitted_v1(NEW.actor_id,NEW.session_id,NEW.authenticated_at) THEN

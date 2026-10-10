@@ -11,11 +11,14 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from django.db import DatabaseError
 
+from parishkit.stewardship.campaigns.credential_keys import initialize_key_inventories
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_schedule_planning import plan_family
 from parishkit.stewardship.campaigns.models import (
     RestoreDeliveryHold,
+    RestoreHoldResolution,
     ScheduleDefinition,
     ScheduleFulfillment,
     ScheduleOccurrence,
@@ -26,22 +29,39 @@ from parishkit.stewardship.campaigns.restore_review import (
     release_review,
     settle_held_email,
 )
+from parishkit.stewardship.campaigns.schedule_production import FamilyScheduleProducer
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import FamilyDeliveryResult
 from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
+from parishkit.stewardship.jobs.dispatch import claim_hint
 from parishkit.stewardship.jobs.family_mail_dispatch import (
     FamilyDeliveryHeld,
     begin_submission,
     finish_submission,
 )
+from parishkit.stewardship.jobs.family_mail_models import FamilyMailPreparation
+from parishkit.stewardship.jobs.family_mail_tasks import TASK_TYPE as PREPARE
+from parishkit.stewardship.jobs.lifetime import maintain_execution
+from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 
 from .campaign_builders import campaign_clock, complete_empty_catchup
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_family_mail_dispatch_postgresql import claim, prepare
-from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
-from .test_restore_review_postgresql import BACKUP, NOW, live_campaign
+from .test_family_mail_preparation_postgresql import (  # noqa: F401
+    family_mail,
+    handler,
+)
+from .test_family_mail_prepare_ahead_postgresql import add_reminder
+from .test_restore_review_postgresql import (
+    BACKUP,
+    NOW,
+    live_campaign,
+    remove_schedule,
+    restored_occurrence,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -269,3 +289,159 @@ def test_a_message_prepared_before_the_backup_follows_the_decision(
     assert ScheduleFulfillment.objects.filter(disposition="delivered").count() == (
         1 if decision == "resend_authorized" else 0
     )
+
+
+def prepared(harness):
+    """Plan and prepare the Family's next due email; return its message."""
+    before = set(FamilyMailPreparation.objects.values_list("pk", flat=True))
+    with task_login(ServiceRole.SCHEDULER, exact=True), scheduler_session() as guard:
+        FamilyScheduleProducer(uuid4())(guard)
+    ticket = FamilyMailPreparation.objects.exclude(pk__in=before).get()
+    owner = handler(harness)
+    with task_login(ServiceRole.WORKER, exact=True):
+        execution = claim_hint(
+            ticket.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={PREPARE: owner},
+        )
+        with maintain_execution(execution):
+            owner.execute(execution)
+    return OutboxMessage.objects.get(semantic_key=ticket.occurrence_id)
+
+
+def submit(harness, message):
+    """Claim a prepared message and begin its submission; return the claim."""
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        started = begin_submission(
+            message.pk,
+            execution.claim,
+            private=harness.rings.private,
+            public_origin="http://localhost:8000",
+        )
+    return execution.claim if started else None
+
+
+def finish(message, claim_, status=Status.ACCEPTED):
+    """Record the provider's outcome of a submission begun by ``submit``."""
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        finish_submission(message.pk, claim_, FamilyDeliveryResult(status, 1))
+
+
+def live(message):
+    """The SQL Family dispatch check on one message, as the sender sees it."""
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT stewardship_family_dispatch_live_v1(%s)", [message.pk])
+        return cursor.fetchone()[0]
+
+
+def held_reminder(harness, *, decide_first):
+    """Two reminders after a delivered invitation; the first one is held.
+
+    The invitation reaches the Family; a restore then holds the first
+    reminder (due after the backup), decided ``decide_first`` during the
+    review (None leaves it undecided), and the site is released. Returns the
+    Family, both reminder definitions and the actor.
+    """
+    harness = activate_response_service(harness)
+    actor = uuid4()
+    complete_empty_catchup(harness.campaign, actor)
+    invitation = ScheduleDefinition.objects.get().current_revision.due_at
+    first_due = add_reminder(harness, "2054-10-03")
+    add_reminder(harness, "2054-10-04")
+    first, second = ScheduleDefinition.objects.filter(kind="reminder").order_by(
+        "current_revision__due_at"
+    )
+    initialize_key_inventories(harness.rings.private)
+    with campaign_clock(invitation):
+        message = prepared(harness)
+        finish(message, submit(harness, message))
+    with campaign_clock(first_due + timedelta(hours=1)):
+        begin_review(
+            backup_at=first_due - timedelta(minutes=30),
+            reason="restore",
+            correlation_id=uuid4(),
+        )
+        list_held_emails(actor_id=actor, correlation_id=uuid4())
+        hold = RestoreDeliveryHold.objects.get(
+            definition=first, target=f"family:{message.family_id}"
+        )
+        if decide_first:
+            decide(hold, decide_first, actor)
+        release(actor)
+    family = FamilyCampaign.objects.get(pk=message.family_id)
+    return harness, family, hold, first, second
+
+
+@pytest.mark.parametrize("removed", [False, True])
+def test_a_resent_reminder_is_never_sent_after_a_later_one(
+    family_mail,  # noqa: F811
+    removed,
+):
+    """Sent again, then a later reminder reaches the Family: the earlier one
+    is cancelled, by the sender's check and by the SQL dispatch check, even
+    once the later schedule was removed (#757)."""
+    harness, family, _, first, second = held_reminder(
+        family_mail, decide_first="resend_authorized"
+    )
+    with campaign_clock(first.current_revision.due_at + timedelta(hours=1)):
+        message = prepared(harness)
+        assert ScheduleOccurrence.objects.get(pk=message.semantic_key).definition == (
+            first
+        )
+        assert live(message) is True
+        # The later reminder reaches the Family before this one is sent.
+        restored_occurrence(second, family)
+        if removed:
+            remove_schedule(second)
+        assert live(message) is False
+        assert submit(harness, message) is None
+    message.refresh_from_db()
+    assert (message.state, message.reason) == ("cancelled", "restore_superseded")
+    assert not ScheduleFulfillment.objects.filter(definition=first).exists()
+
+
+def test_send_again_is_refused_while_a_later_reminder_is_on_its_way(
+    family_mail,  # noqa: F811
+):
+    """A later reminder being submitted, or with an unknown outcome, already
+    makes "send again" on the earlier one out of order (#757)."""
+    harness, family, hold, first, second = held_reminder(family_mail, decide_first=None)
+    with campaign_clock(second.current_revision.due_at):
+        # The held first reminder is skipped; the second one is planned.
+        later = prepared(harness)
+        assert ScheduleOccurrence.objects.get(pk=later.semantic_key).definition == (
+            second
+        )
+        claim_ = submit(harness, later)
+        later.refresh_from_db()
+        assert later.state == "submitting"
+
+        def refused():
+            """Both the owner and a direct insert refuse to send it again."""
+            with pytest.raises(ValueError, match="later reminder"):
+                decide(hold, "resend_authorized", uuid4())
+            with pytest.raises(DatabaseError, match="later reminder reached"):
+                RestoreHoldResolution.objects.create(
+                    hold=hold,
+                    version=2,
+                    state="resend_authorized",
+                    evidence="Send again.",
+                    actor_id=uuid4(),
+                    correlation_id=uuid4(),
+                )
+
+        refused()
+        finish(later, claim_, Status.UNKNOWN)
+        later.refresh_from_db()
+        assert later.state == "delivery_unknown"
+        refused()
+        hold.refresh_from_db()
+        assert hold.state == "unreviewed"
+        # It can still be assumed sent.
+        decide(hold, "assumed_delivered", uuid4())
+    hold.refresh_from_db()
+    assert hold.state == "assumed_delivered"

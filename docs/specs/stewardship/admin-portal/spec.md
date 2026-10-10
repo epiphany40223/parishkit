@@ -2850,9 +2850,13 @@ the review can still be decided after release, by the same rules
 ([#757](https://github.com/epiphany40223/parishkit/issues/757)). After
 release a decision is admitted for an undecided hold of any restore, but only
 for the current campaign: the planner never acts on another campaign's holds.
-"Send again" on a held reminder is refused once a later reminder was
-delivered to the same Family, because it would arrive out of order; that hold
-can only be assumed sent. The Admin page for these decisions is still to
+"Send again" on a held reminder is refused once a later reminder for the
+same Family was delivered, is being sent or has an unknown delivery, even a
+reminder removed since, because it would arrive out of order; that hold can
+only be assumed sent. The decision guard enforces this for every login,
+including a decision the web login inserts directly. If a later reminder
+reaches the Family after "send again" was decided, the Family dispatch check
+never sends the earlier one. The Admin page for these decisions is still to
 come. Besides the listing, the web login may insert a hold row directly; the
 hold guard admits one only during a review and for its current restore, and a
 hold only keeps mail back.

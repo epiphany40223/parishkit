@@ -39,6 +39,24 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
               JOIN public.stewardship_schedule_definition initial ON initial.id=initial_hold.definition_id
               WHERE initial.campaign_id=c.id AND initial.kind='initial' AND initial_hold.mode=m.mode
                 AND initial_hold.target=o.target AND initial_hold.slot='once' AND initial_hold.state='unreviewed'))
+          -- A held reminder sent again after a restore (#757) never goes out
+          -- once a later reminder (removed since or not) reached the Family
+          -- or is on its way: it would arrive out of order.
+          AND (m.purpose<>'reminder' OR NOT EXISTS (
+              SELECT 1 FROM public.stewardship_restore_delivery_hold resent
+              WHERE resent.definition_id=d.id AND resent.mode=m.mode AND resent.target=o.target
+                AND resent.slot=o.slot AND resent.state='resend_authorized')
+            OR NOT EXISTS (
+              SELECT 1 FROM public.stewardship_schedule_occurrence later
+              JOIN public.stewardship_schedule_definition later_definition ON later_definition.id=later.definition_id
+              WHERE later_definition.campaign_id=c.id AND later_definition.kind='reminder'
+                AND later_definition.id<>d.id AND later.mode=m.mode AND later.target=o.target
+                AND later.due_at>o.due_at
+                AND (EXISTS (SELECT 1 FROM public.stewardship_outbox_message later_message
+                        WHERE later_message.id=later.outbox_id
+                          AND later_message.state IN ('submitting','delivery_unknown','delivered'))
+                    OR EXISTS (SELECT 1 FROM public.stewardship_schedule_fulfillment later_sent
+                        WHERE later_sent.occurrence_id=later.id AND later_sent.disposition='delivered'))))
           AND ((m.mode='testing' AND c.state='draft' AND m.credential_namespace='rehearsal'
                 AND m.rehearsal_epoch_id=k.rehearsal_epoch_id
                 AND EXISTS (SELECT 1 FROM public.stewardship_rehearsal_epoch e
