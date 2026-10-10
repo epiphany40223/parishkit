@@ -318,6 +318,20 @@ def display(value):
     return "; ".join(f"{key}: {display(item)}" for key, item in value.items())
 
 
+def member_duid(row):
+    """The ParishSoft Member DUID a Member row is about, else None.
+
+    A Member change's entity key is the Member's DUID (the snapshot's source
+    key). A proposed Member has no DUID yet and a household change is about
+    the Family, so both give None; a key that is not a plain integer (which
+    the schema does not produce) gives None rather than a broken page.
+    """
+    key = row["entity_key"]
+    if row["entity_kind"] != "member" or not (key.isascii() and key.isdecimal()):
+        return None
+    return int(key)
+
+
 def shape(row):
     """Word one proposal row for the page and the downloads."""
     shown = row | {
@@ -338,6 +352,7 @@ def shape(row):
             display(row["baseline_value"]) if row["baseline_available"] else ""
         ),
     }
+    shown["member_duid"] = member_duid(row)
     if row["entity_kind"] == "family":
         shown["who"] = "Family"
     elif row["entity_kind"] == "proposed_member":

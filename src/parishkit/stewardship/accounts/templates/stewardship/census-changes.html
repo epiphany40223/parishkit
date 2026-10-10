@@ -4,7 +4,8 @@
 <h1>{% translate "Census changes" %}</h1>
 {% aboutpage "census-changes" %}<p>{% translate "Every census change Families reported that someone must carry into ParishSoft. Automatic changes can be published by an Administrator; every other change is entered in ParishSoft by hand. Each Family's live responses are used, and Testing responses are excluded. Values are shown in full so you can type them into ParishSoft; opening this page and every download is recorded." %}</p>
 <p>{% translate "ParishSoft now is blank where ParishSoft's current value cannot be read, which today includes every Family address. Status To review means an Administrator has not yet decided an automatic change; To do means the change still has to reach ParishSoft." %}</p>
-<p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can sort or copy it." %}</p>{% endaboutpage %}
+<p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can sort or copy it." %}</p>
+<p>{% translate "Member DUID, beside Who, is the Member's ID number in ParishSoft. It shows New Member for someone the Family added on the form, who is not in ParishSoft yet, and is blank for a change to the whole Family." %}</p>{% endaboutpage %}
 <div id="census-summary" data-table-sync><h2>{% translate "Summary" %}</h2>
 <p class="help">{% if query.history %}{% translate "Every census change by status, including history." %}{% else %}{% translate "Every census change by status, not counting history." %}{% endif %}</p>
 <dl>{% for label,count in summary %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% empty %}<dt>{% translate "Census changes" %}</dt><dd>0</dd>{% endfor %}</dl></div>
@@ -35,11 +36,12 @@
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Census change pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Census changes' %}"><table>
-<caption>{% translate "Census changes" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Who" as heading %}{% sort_heading table "who" heading %}{% translate "What changed" as heading %}{% sort_heading table "what" heading %}<th scope="col">{% translate "ParishSoft now" %}</th><th scope="col">{% translate "Family's answer" %}</th><th scope="col">{% translate "Edited value" %}</th>{% translate "How it reaches ParishSoft" as heading %}{% sort_heading table "route" heading %}{% translate "Status" as heading %}{% sort_heading table "status" heading %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}</tr></thead><tbody>
+<caption>{% translate "Census changes" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Who" as heading %}{% sort_heading table "who" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}{% translate "What changed" as heading %}{% sort_heading table "what" heading %}<th scope="col">{% translate "ParishSoft now" %}</th><th scope="col">{% translate "Family's answer" %}</th><th scope="col">{% translate "Edited value" %}</th>{% translate "How it reaches ParishSoft" as heading %}{% sort_heading table "route" heading %}{% translate "Status" as heading %}{% sort_heading table "status" heading %}{% translate "Submitted" as heading %}{% sort_heading table "submitted" heading %}</tr></thead><tbody>
 {% for row in table.rows %}<tr>
 <td>{{ row.family_name }}</td>
 <td class="numeric">{{ row.family_duid|duid }}</td>
 <th scope="row">{{ row.who }}</th>
+<td class="numeric">{% if row.member_duid %}{{ row.member_duid|duid }}{% elif row.entity_kind == 'proposed_member' %}{% translate "New Member" %}{% endif %}</td>
 <td>{{ row.label }}</td>
 <td>{{ row.parishsoft_now }}{% if row.status == 'conflict' and row.baseline %}<br>{% translate "When the Family answered:" %} {{ row.baseline }}{% endif %}</td>
 <td>{{ row.family_answer }}</td>
@@ -47,7 +49,7 @@
 <td>{{ row.route_label }}</td>
 <td>{{ row.status_label }}</td>
 <td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td></tr>
-{% empty %}<tr><td colspan="10">{% translate "No matching census changes." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="11">{% translate "No matching census changes." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 </div>
 {% endblock %}

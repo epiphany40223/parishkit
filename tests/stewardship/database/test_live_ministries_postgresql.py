@@ -281,7 +281,9 @@ def test_editor_previews_impact_and_audits_the_change(response_service, google):
     body = unescape(review.content.decode())
     assert "Ministries to remove" in body and "Food pantry" in body
     # One submitted join request for Ministry 9, still awaiting follow-up.
-    assert re.search(r"Food pantry \(DUID 9\)</td><td>1</td><td>1</td>", body)
+    # The Ministry DUID has its own column (#932).
+    row = '<th scope="row">Food pantry</th><td class="numeric">9</td>'
+    assert row + "<td>1</td><td>1</td>" in body
     assert "Families with a form open now" in body
     token = re.search(r'name="preview" value="([^"]+)"', review.content.decode())
     before = set(ConfigurationChangeRequest.objects.values_list("pk", flat=True))
