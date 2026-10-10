@@ -715,9 +715,19 @@ around it, two gates keep it in place instead:
   chosen.
 - A rule's value may list alternatives separated by `|` (#953):
   `activity=|family_mail|parishsoft` holds while the control is empty or
-  either value. It applies to `data-show-when`, `data-enabled-when` and
-  `data-required-when` alike. First use: System logs' level boxes and Audit
-  record across the [activity groups](../admin-portal/spec.md#activity-groups).
+  either value. A negated rule `name!=a|b` means "none of a or b": it holds
+  while the control has neither value. It applies to `data-show-when`,
+  `data-enabled-when` and `data-required-when` alike. First use: System
+  logs' level boxes and Audit record across the
+  [activity groups](../admin-portal/spec.md#activity-groups).
+  `data-locked-when` (#957) must match its rule the same way (`anyValue` in
+  `ui-v1.js`) when it lands.
+- Every gate compares a value the same way (`sameValue` in `ui-v1.js`): a
+  number field's value is read as a number, as the server reads it, so
+  `04321` matches a rule's `4321` and an empty number field matches no
+  number; any other control compares its value as text. Until #953 the
+  show and enabled gates compared a number field as text, which no rule in
+  use then depended on.
 - `data-locked-when` (open #957) shows a fixed value, disabled, while its
   rule holds, with the reason in the field's toggletip (never a line under
   the field), and gives back the reader's own value (kept in a hidden field)
