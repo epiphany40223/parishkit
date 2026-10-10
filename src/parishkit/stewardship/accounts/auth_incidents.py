@@ -10,10 +10,16 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 
 from .auth_models import AuthenticationIncident
-from .policy_models import PortalUser
 
 # How often one refused account is named in the audit log at most (#953).
 ACCOUNT_REFUSAL_INTERVAL = timedelta(minutes=10)
+# How many named refusals, across all accounts, one deployment writes per
+# ACCOUNT_REFUSAL_INTERVAL at most (#968). Anyone can create Google accounts,
+# so the per-account bound alone does not bound the log; past this ceiling a
+# refusal falls back to the anonymous admin_login_denied sample. Twenty is
+# far above a parish's legitimate refusals (a handful of people a day) and
+# still caps an attack at under three thousand rows a day.
+ACCOUNT_REFUSAL_CEILING = 20
 
 
 def record_login_rejection(event_type):
@@ -61,34 +67,41 @@ def _record_login_rejection(event_type):
 
 
 def record_account_refusal(user_id):
-    """Name a refused verified Google account, at most once per ten minutes.
+    """Name a refused verified Google account, bounded per account and overall.
 
     Unlike the anonymous samples above, this follows a sign-in Google has
     already verified, which policy then refused (no rule, a rule with no
-    role, or a disabled identity), so the ``admin_login_refused`` entry
-    names the account: its actor is the account's ``PortalUser``, which the
-    sign-in has just recorded, and System logs shows its address (#953). It
-    carries no context, so nothing new is stored about the person.
+    role, a disabled identity, or the SQL session guard's late refusal), so
+    the ``admin_login_refused`` entry names the account: its actor is the
+    account's ``PortalUser``, which the sign-in has just recorded, and
+    System logs shows its address (#953). It carries no context, so nothing
+    new is stored about the person.
 
-    The bound is per account, not per deployment: the account's row is
-    locked while the last ten minutes are checked, so concurrent refusals
-    of one account write one entry, and only verified identities, which an
-    attacker cannot mint freely, reach here at all. Database failure is the
-    same typed, retryable outage as the samples. Returns whether an entry
-    was written.
+    Two bounds apply, both checked under one deployment-wide transaction
+    advisory lock (the samples' lock namespace), so concurrent refusals
+    cannot both pass either check: one entry per account per
+    ``ACCOUNT_REFUSAL_INTERVAL``, and at most ``ACCOUNT_REFUSAL_CEILING``
+    entries across all accounts in that interval. Google accounts are cheap
+    to create, so past the ceiling the refusal is offered to the anonymous
+    ``admin_login_denied`` sample instead. Database failure, including a
+    lock wait past one second, is the same typed, retryable outage as the
+    samples. Returns whether a named entry was written.
     """
     from .limiting import LimiterUnavailable
 
     try:
         with transaction.atomic(), connection.cursor() as cursor:
-            PortalUser.objects.select_for_update().filter(pk=user_id).exists()
+            cursor.execute("SET LOCAL lock_timeout='1s'")
+            cursor.execute("SELECT pg_advisory_xact_lock(%s,%s)", [736228, 4])
             cursor.execute("SELECT statement_timestamp()")
             since = cursor.fetchone()[0] - ACCOUNT_REFUSAL_INTERVAL
-            if AuditEvent.objects.filter(
-                event_type="admin_login_refused",
-                actor_id=user_id,
-                created_at__gte=since,
-            ).exists():
+            recent = AuditEvent.objects.filter(
+                event_type="admin_login_refused", created_at__gte=since
+            )
+            if recent.filter(actor_id=user_id).exists():
+                return False
+            if recent.count() >= ACCOUNT_REFUSAL_CEILING:
+                _record_login_rejection("admin_login_denied")
                 return False
             AuditEvent.objects.create(
                 event_type="admin_login_refused", actor_id=user_id

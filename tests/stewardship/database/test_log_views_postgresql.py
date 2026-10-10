@@ -1071,7 +1071,7 @@ def test_sign_in_activity_lists_every_admin_sign_in_type_together(auth_service, 
         assert types(grouped) == expected and levels(grouped) == []
         body = grouped.content.decode()
         assert body.count("<td>admin@example.org</td>") == 4
-        assert "Someone&#x27;s sign-in to the portal was refused for" in body
+        assert "Someone&#x27;s sign-in to the portal was refused, for" in body
         assert "A Google account&#x27;s sign-in to the portal was refused" in body
         # Same actor keeps the group: that person's sign-in activity only.
         mine = post(browser, {"actor": str(admin.pk), "activity": "sign_in"})
