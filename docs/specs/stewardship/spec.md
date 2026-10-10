@@ -226,9 +226,10 @@ a valid future instant or remove it. The new end date and all resulting schedule
 revisions/cancellations commit atomically with exact affected counts. Any
 provider-submitting or delivery-unknown affected work blocks the operation until
 resolved. If the campaign closes first, the ordinary editor loses the race and
-the guarded reopen workflow applies instead. No page or command offers this
-end-date edit yet, although its storage and guards are built
-([#912](https://github.com/epiphany40223/parishkit/issues/912)).
+the guarded reopen workflow applies instead. Campaign settings, Dates and mail
+schedules and `pk-admin schedule preview`/`confirm` offer this end-date edit
+([#912](https://github.com/epiphany40223/parishkit/issues/912)); extending or
+shortening it never invalidates a Family code or link before the new end.
 
 Before the resolved start instant, a freshly authenticated Admin may use an
 explicit, confirmed **Cancel go-live** workflow. It transactionally

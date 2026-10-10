@@ -1803,7 +1803,12 @@ nothing. It takes `--expected-version` (the `version` of `schedule show`,
 the page's hidden base digest) and `--changes`, a JSON change document bound
 to the page's own forms: a saved schedule named by `id` keeps what the
 document leaves out, `delete` removes it, an entry without `id` adds one,
-and saved schedules it does not name stay unchanged. A schedule's `time`
+and saved schedules it does not name stay unchanged. For a live campaign
+the document's `window` may change `end_date` alone, as the page allows
+([#912](https://github.com/epiphany40223/parishkit/issues/912)), and
+`schedule confirm` binds its exceptional end-edit intent and records
+`campaign_end_date_requested` exactly as the page's confirmation does. A
+schedule's `time`
 takes every form the page's
 [time entry](../admin-portal/spec.md#time-entry) accepts, through the same
 form field and parser. The page's form errors

@@ -414,9 +414,11 @@ that date was used previously. Replaced occurrences and task history remain
 immutable; A → B → A creates three distinct execution revisions. It races safely
 under the Campaign lock:
 if closing wins first, changing the date requires the guarded reopen workflow.
-The locked start date cannot be rescheduled after Production readiness. In v1
-nothing in the product starts this edit or the reopen workflow (see the
-[data model's status note](../data/spec.md#campaign)).
+The locked start date cannot be rescheduled after Production readiness. The
+Admin portal and command line start this edit
+([#912](https://github.com/epiphany40223/parishkit/issues/912)); nothing in
+the product starts the reopen workflow yet (see the
+[data model](../data/spec.md#campaign)).
 
 If shortening the interval affects future Family-mail schedules, that same
 transaction includes the complete Admin-selected reconciliation plan. Every

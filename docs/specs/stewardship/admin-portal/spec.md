@@ -2613,11 +2613,27 @@ schedule definitions/revisions, occurrences, and outbox rows; rechecks state and
 provider uncertainty; and commits the new end date together with every selected
 schedule change. Any failure rolls back the complete edit.
 
-Status: the storage and guards for this edit are built, but no page or
-command offers it yet. Once go-live locks the dates, the date editor refuses
-any date change, so a live campaign's end date cannot be moved from the portal
-([#912](https://github.com/epiphany40223/parishkit/issues/912); see the
-[campaign data model](../data/spec.md#campaign)).
+A live campaign's end date
+([#912](https://github.com/epiphany40223/parishkit/issues/912)) changes in
+two places, both for the current Production campaign while it is scheduled
+or open, before its closing instant and while no background work holds
+campaign changes. Campaign settings shows a **Campaign end date** panel: one
+date field, **Review changes** and the page's in-place review and Apply. Its
+review is the Dates and mail schedules review of the same change, built from
+the saved schedules left as they are; it names the end date before and
+after and every digest re-planned for the new dates, and notes that Family
+codes and links already sent keep working until the new end date. A date
+that has passed, is unchanged, or would need the financial-period overlap
+acknowledged again is refused. When the new date would leave an invitation
+or Reminder outside the campaign, the review is refused with a link to the
+combined date-change review above, on Dates and mail schedules, with the
+proposed date filled in and only the end date open. Either Apply records
+the request and, in the same transaction, binds its exceptional end-edit
+intent and a `campaign_end_date_requested` audit event (subject: the
+request). The configuration installer applies it with that intent's owning
+admission; see the [campaign data model](../data/spec.md#campaign). The end
+date never changes the Family token generation, and Family pages and later
+emails that show the end date use the new one.
 
 ### Dates and mail schedules
 
