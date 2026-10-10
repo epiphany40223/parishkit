@@ -12,6 +12,7 @@ Admin session guard and every export check read it.
 """
 
 import json
+from html import unescape
 from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
@@ -19,6 +20,7 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.db.models import F
+from django.urls import reverse
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
@@ -382,6 +384,28 @@ def test_a_ruled_leader_signs_in_with_google(response_service, google):
         claims.update(email=email, sub=email)
         _, response = signed_in()
         assert response.status_code == 403, email
+
+
+def test_a_ruled_leader_who_leads_nothing_is_told_so(response_service, google):
+    """A ruled Ministry leader leading no Ministry sees a plain 403 (#939).
+
+    Each Ministry page says there is nothing to show, never the generic
+    sign-in denial, which suggests signing in again would help.
+    """
+    harness = response_service
+    promote_leaders(harness, source(), {"lead@example.org": [9]})
+    configure(harness, selected=(4, 9))
+    ruled(harness, "ruleonly@example.org")
+    claims, _ = google
+    claims.update(email="ruleonly@example.org", hd=OMIT, sub="rule-only-subject")
+    client, response = signed_in()
+    assert response.status_code == 302
+    for name in ("ministry_report", "ministry_followup", "reports"):
+        response = client.get(reverse(f"admin:{name}"), HTTP_ACCEPT="text/html")
+        body = unescape(response.content.decode())
+        assert response.status_code == 403, name
+        assert "You don't lead any Ministry in the current ParishSoft data" in body
+        assert "Sign-in is unavailable" not in body
 
 
 def test_the_leader_roles_stay_editable_on_a_live_campaign(response_service):

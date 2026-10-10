@@ -41,8 +41,17 @@ from django.views.decorators.http import (
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.observability import debug_swallowed
+from parishkit.stewardship.web.contracts import (
+    ErrorCode,
+    FieldError,
+    validation_response,
+)
 from parishkit.stewardship.web.namespaces import admin_return_path
-from parishkit.stewardship.web.refusals import UserFacingGone, gone_response
+from parishkit.stewardship.web.refusals import (
+    UserFacingDenied,
+    UserFacingGone,
+    gone_response,
+)
 from parishkit.stewardship.web.security import login_denial
 
 from .auth_incidents import record_login_rejection
@@ -105,6 +114,8 @@ def denial(*, status=403, retry=None, admin=True):
     (navigation rule 10, raised by ``reports.read_admission``). That one is
     answered with its own 410 page instead, which explains that reports
     show the current campaign only, rather than suggesting signing in again.
+    A ``UserFacingDenied`` refusal (a Ministry leader who leads no Ministry
+    now, #939) likewise keeps its 403 but shows its own plain explanation.
     Reading the exception being handled keeps that in one place instead of
     an extra ``except`` clause in every report view.
     """
@@ -112,6 +123,13 @@ def denial(*, status=403, retry=None, admin=True):
     if isinstance(error, UserFacingGone):
         debug_swallowed("admin request refused")
         return gone_response(error)
+    if isinstance(error, UserFacingDenied):
+        # A reviewed refusal says plainly why, still as a 403 (#939: a
+        # Ministry leader who leads no Ministry now), never a sign-in prompt.
+        debug_swallowed("admin request refused")
+        return validation_response(
+            [FieldError(ErrorCode.DENIED)], status=403, refusal=error.refusal
+        )
     # Callers deny from inside an except block; record what actually failed.
     debug_swallowed("admin request denied")
     response = login_denial(
