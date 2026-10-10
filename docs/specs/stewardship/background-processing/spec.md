@@ -114,9 +114,23 @@ identity in a transition is supplied by its caller. Only the login whose
 service executes a task type (the worker for the general queue, mail dispatch
 for the mail queue) may claim or transition it. Web only creates tasks and
 cancels an Admin's waiting cleanup task. The scheduler only cancels superseded
-waiting source work. Any login may create only a type that some service executes.
-SECURITY DEFINER commands, such as the delivery recovery commands, run as the
-schema owner and are exempt from this binding.
+waiting source work. A login may create a task type, as a new task or an
+explicit retry, only if its own code creates that type.
+`stewardship_task_type_creators_v1` lists those logins for each type:
+
+- Web, including the Admin command line, creates the types for Admin and Family
+  requests and Admin retries.
+- The scheduler creates the types its producers queue.
+- The worker creates three types: delivery messages its preparation and fan-out
+  handlers build, the export an exact export hands to its renderer, and a full
+  source refresh after a rejected delta.
+- Mail dispatch creates no tasks.
+
+Every type that some service executes has at least one creator.
+`tests/stewardship/test_task_creators.py` pins each creating call site to its
+types and login. SECURITY DEFINER commands, such as the delivery recovery
+commands and the Production confirmation's catch-up insert, run as the schema
+owner and are exempt from this binding.
 
 | TaskRun state | Terminal? | Permitted next states and conditions |
 | --- | --- | --- |
