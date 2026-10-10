@@ -157,7 +157,7 @@ FROZEN = {
         "c94558d9c9a56dac0303d38859935922d0e0c7e4ceadab366e5f370bc41fde72"
     ),
     "0042_ministry_leaders_from_roles.sql": (
-        "7fa708f2f3f0676fb71ebb535208cbdc365451a67bb5b93de3fad47f5278ddac"
+        "71d3037323f029197f1d8d595f0e16a0bd4069612e2c43c25965ca64817fd612"
     ),
 }
 

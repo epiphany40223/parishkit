@@ -3,12 +3,12 @@
 Its SQL is the frozen file ``schema/migrations/0042_ministry_leaders_from_roles.sql``,
 read whole and never parsed. It adds the campaign's leader-role accessor, the
 one definition of who leads which Ministry and one user's role-derived scope,
-and replaces the Ministry scope, the Admin session guard, the configuration
-pointer guard (one more live-editable campaign key) and the chair receipt
-requirement. It ends with a DO block that refuses to commit unless all of
-them are installed as declared. No model changes, so there is no state
-operation. Reversing needs its own forward migration, so, like the baseline,
-it has no reverse operation.
+and replaces the Ministry scope, the configuration pointer guard (one more
+live-editable campaign key) and the chair receipt requirement. It ends with
+a DO block that refuses to commit unless all of them are installed as
+declared. No model changes, so there is no state operation. Reversing needs
+its own forward migration, so, like the baseline, it has no reverse
+operation.
 """
 
 from pathlib import Path
