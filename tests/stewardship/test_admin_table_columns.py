@@ -1,6 +1,6 @@
 """Admin tables keep every DUID in its own column (#932).
 
-The admin-portal spec's "Table column order" section gives each Family,
+The UX conventions' "Table column order" section gives each Family,
 Member and Ministry DUID its own column beside the name. A table cell that
 prints a DUID beside another value ("Name<br>DUID 1234", "Name (DUID
 1234)", "{{ name }} {{ duid }}") cannot be sorted or scanned by DUID and
@@ -43,7 +43,6 @@ PENDING = {
     "talents-report.html": (1, "#932 slice 3 (Members table)"),
     "ministry-report.html": (2, "#932 slice 3"),
     "campaign-ministries-preview.html": (1, "#932 slice 3"),
-    "users.html": (7, "#952 (the Portal users revamp)"),
     "deliveries.html": (1, "#934 (Outgoing mail)"),
 }
 

@@ -1175,10 +1175,17 @@ column and a DUID column, both sort. **Why.** A combined cell cannot be
 sorted or scanned by DUID, reads badly with a screen reader and copies badly
 into a spreadsheet; staff moving between pages should not re-learn each one.
 **Shared code.** `test_admin_table_columns.py` refuses a cell that prints a
-DUID label with a value (open #941). **Precedent.** #932 (Administrator,
+DUID label with a value (#941). **Precedent.** #932 (Administrator,
 2026-10-09, corrected 2026-10-10 to "most relevant column first", and the
-2026-10-10 rule that the Family name and DUID columns both sort), open #941,
+2026-10-10 rule that the Family name and DUID columns both sort), #941,
 open #950.
+
+The guard test reads every Admin template, components included. In each
+`<td>` and each `<th>` whose attributes include `scope="row"`, it refuses a
+DUID label followed by a printed value, and a printed `*duid` variable
+beside any other printed value (values inside tag attributes or `<option>`
+choices do not count). It allows only the tables not yet split, which it
+lists by name with the exact number of such cells each holds.
 
 Known exceptions, which need a schema change: three report tables are ordered
 by an installed SQL selection with no DUID sort

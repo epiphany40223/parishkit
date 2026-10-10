@@ -1148,34 +1148,10 @@ which have precedence for it.
 
 #### Table column order
 
-Admin tables put their columns in one order, set out with its reasons in the
-UX conventions' [table column order](../ui-conventions/spec.md#table-column-order)
-and [Family and Member names](../ui-conventions/spec.md#family-and-member-names)
-([#932](https://github.com/epiphany40223/parishkit/issues/932)). In short:
-the selection checkbox, then the most relevant column (the Family name for
-Family tables, the Member or Ministry name, or the identifying name or
-address for configuration and account tables; event and log tables keep the
-time first), then the Family name and **Family DUID**, Member name and
-**Member DUID**, Ministry name and **Ministry DUID**, each DUID in its own
-column, then everything else, and actions last. Every Family name is the
-surname, then the active heads ("Squyres, Jeff and Tracy"), from the shared
-helper; where an installed SQL selection searches and orders the rows
-([Admin tables](#admin-tables)), it still searches and orders by the
-surname, and those tables' DUID columns do not sort until one forward
-migration adds the orders
-([#960](https://github.com/epiphany40223/parishkit/issues/960)).
-
-A template guard test keeps each DUID out of its name's cell: it reads
-every Admin template, components included. In each `<td>` and each
-`<th>` whose attributes include `scope="row"`, it refuses a DUID label
-followed by a printed value, and a printed `*duid` variable beside any other
-printed value (values inside tag attributes or `<option>` choices do not
-count). It allows only the tables not yet split, which it lists by name
-with the exact number of such cells each holds.
-
-Downloads keep their own documented columns until #932 reorders them; the
-postal mail-merge file never changes order (see
-[mailing columns](../reports/spec.md#mailing-columns)).
+This general rule lives in the [UX conventions](../ui-conventions/spec.md#table-column-order),
+which have precedence for it. Downloads keep their own documented columns
+until #932 reorders them; the postal mail-merge file never changes order
+(see [mailing columns](../reports/spec.md#mailing-columns)).
 
 ### In-place controls
 
