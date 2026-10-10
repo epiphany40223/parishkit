@@ -8,15 +8,22 @@ from zoneinfo import ZoneInfo
 
 from .weekly_presentation import DISPOSITIONS
 
+# Rows carry no internal references (Administrator, 2026-10-09, PR #929): an
+# "Earlier workflow" row follows its item and repeats the item's Family, DUID,
+# submission time and text, which identify the item to a reader; a superseded
+# item names its replacement by that request's submission time.
+ITEM = "Item"
+EARLIER_WORKFLOW = "Earlier workflow"
+# A superseded item whose replacement the export's filters left out.
+REPLACEMENT_NOT_EXPORTED = "Not in this export"
 HEADINGS = (
-    "Record",
-    "Item reference",
+    "Row type",
     "Version",
     "Family",
     "Family DUID",
     "Submitted",
     "Disposition",
-    "Replacement reference",
+    "Replaced by request submitted",
     "Submitted text",
     "Follow-up needed",
     "Followed up at",
@@ -82,22 +89,35 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
         ),
         ("Digest resolution", "Resolution does not necessarily mean email delivery."),
     )
+    # A replacement is always a later submission of the same Family, so its
+    # submission time finds its row; the capture holds only matching items.
+    submitted = {item["id"]: item["submitted_at"] for item in payload["rows"]}
+
+    def replaced_by(item):
+        """The replacing request's submission time, or why it is not shown."""
+        if not item["replacement_id"]:
+            return ""
+        if item["replacement_id"] not in submitted:
+            return REPLACEMENT_NOT_EXPORTED
+        return instant(submitted[item["replacement_id"]])
+
     rows = []
     for item in payload["rows"]:
+        # Every row of an item repeats its identity, so a sorted or filtered
+        # spreadsheet still says which item an earlier workflow belongs to.
         common = (
             item["family_name"],
             str(item["family_duid"]),
             instant(item["submitted_at"]),
             DISPOSITIONS[item["disposition"]],
-            item["replacement_id"] or "",
+            replaced_by(item),
+            item["text"],
         )
         rows.append(
             (
-                "Item",
-                item["id"],
+                ITEM,
                 f"{item['version']:,}",
                 *common,
-                item["text"],
                 "Yes" if item["follow_up_needed"] else "No",
                 instant(item["followed_up_at"]),
                 item["completed_by"] if item["followed_up_at"] else "",
@@ -112,11 +132,9 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
             for revision in item["history"]:
                 rows.append(
                     (
-                        "Workflow revision",
-                        item["id"],
+                        EARLIER_WORKFLOW,
                         f"{revision['version']:,}",
                         *common,
-                        "",
                         "Yes" if revision["follow_up_needed"] else "No",
                         instant(revision["followed_up_at"]),
                         revision["completed_by"] if revision["followed_up_at"] else "",

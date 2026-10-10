@@ -5,34 +5,29 @@ in a spreadsheet or a word processor's mail merge. XLSX has the same sheet
 plus the shared "Report information" sheet. PDF puts the report details in
 each page's header and footer: a table for the Family-code directory, and
 one address block per Family for the postal mail merge.
-
-The fixed-width table pages (``table_lines``, ``fill_pages`` and
-``draw_pages``) are shared with the response lists' PDF (response_lists).
 """
 
 import csv
 import io
-from textwrap import wrap
 
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
 
 from .directory_documents import HEAD_EMAILS_DETAIL, UNADDRESSED_DETAIL
-from .information_rendering import information_xlsx, pdf_font, visible_text
+from .information_rendering import information_xlsx
 
-PAGE_LINES = 32
-LINE_WIDTH = 124
-# Character widths of the Family-code table's columns (monospaced PDF text).
-# Family holds the surname and the heads of household; long cells wrap. With
-# phones and head emails the row is 136 characters, which still fits the
-# landscape page at 9 pt (about 138 monospaced characters).
-COLUMN_WIDTHS = {
-    "Family": 40,
-    "ParishSoft DUID": 15,
-    "Family code": 11,
-    "Phone numbers": 22,
-    "Family head emails": 40,
+# Relative column widths of the Family-code table. Family holds the surname
+# and the heads of household; long cells wrap within their column. Phone
+# numbers is wide enough that "Name (kind): +1 (555) 555-0123" fits a line.
+COLUMN_WEIGHTS = {
+    "Family": 21,
+    "ParishSoft DUID": 8,
+    "Family code": 9,
+    "Phone numbers": 31,
+    "Family head emails": 31,
 }
+# List cells whose entries ("; "-separated) each start a new line in the PDF.
+LIST_COLUMNS = frozenset({"Phone numbers", "Family head emails"})
 
 
 def directory_csv(document, output):
@@ -48,190 +43,99 @@ def directory_csv(document, output):
         wrapper.detach()
 
 
-def _cell_lines(value, width):
-    """Wrap one cell to its column width without dropping any text."""
-    text = visible_text(dates.display_text(value), supported=pdf_font()[1])
-    return wrap(text, width=width, break_long_words=True) or [""]
+def directory_table(document):
+    """The Family-code table's columns, sized for the landscape page."""
+    from .pdf_design import Table
+
+    return Table.weighted(
+        document.headings, [COLUMN_WEIGHTS[name] for name in document.headings]
+    )
 
 
-def table_heading(headings, widths=COLUMN_WIDTHS):
-    """The bold heading line above a fixed-width table's rows."""
-    return "  ".join(name.ljust(widths[name]) for name in headings).rstrip()
+def table_rows(document):
+    """The PDF table's rows: each phone and each head's emails on its own line.
 
-
-def table_lines(document, widths=COLUMN_WIDTHS):
-    """Fixed-width table rows (with wrapped cells) for a table PDF.
-
-    ``widths`` maps each heading to its column's width in characters; the
-    Family-code directory's are the default. Each row is one block of lines,
-    as tall as its longest wrapped cell.
+    Only the separating space becomes a line break, so every character of
+    the cell is still drawn; CSV and XLSX keep the one-line cell.
     """
-    widths = [widths[heading] for heading in document.headings]
+    lists = [heading in LIST_COLUMNS for heading in document.headings]
     for row in document.rows:
-        cells = [
-            _cell_lines(value, width) for value, width in zip(row, widths, strict=True)
+        yield [
+            value.replace("; ", ";\n") if listed else value
+            for value, listed in zip(row, lists, strict=True)
         ]
-        height = max(len(cell) for cell in cells)
-        yield tuple(
-            "  ".join(
-                (cell[index] if index < len(cell) else "").ljust(width)
-                for cell, width in zip(cells, widths, strict=True)
-            ).rstrip()
-            for index in range(height)
-        )
 
 
 def address_blocks(document):
-    """One mailing-label style block per Family for the postal PDF."""
+    """One mailing-label style card per Family for the postal PDF.
+
+    Each card is (text, emphasis) pairs: the addressee (or a plain warning
+    when there is no usable mailing address), the address, and a muted
+    follow-up line naming the Family, its DUID and its Family code.
+    """
     names = document.headings
     for row in document.rows:
         values = dict(zip(names, row, strict=True))
         city = ", ".join(filter(None, (values["City"], values["State"])))
         # A blank Addressee means no usable mailing address (see
         # directory_document); say so rather than print a bare Family line.
+        addressee = values["Addressee"]
         lines = [
-            values["Addressee"] or "No usable mailing address",
-            *(values[f"Address line {index}"] for index in (1, 2, 3)),
-            " ".join(filter(None, (city, values["ZIP"]))),
-            f"Family: {values['Family']} · ParishSoft DUID {values['ParishSoft DUID']}"
-            f" · Family code {values['Family code'] or 'unavailable'}",
-        ]
-        yield tuple(
-            line for text in lines if text for line in _cell_lines(text, LINE_WIDTH)
-        )
-
-
-def fill_pages(blocks):
-    """Fill pages with whole blocks (a table row or an address block).
-
-    A block taller than a page (a Family with very many phone numbers) is
-    split across pages rather than drawn past the footer.
-    """
-    page = []
-    for whole in blocks:
-        for start in range(0, max(len(whole), 1), PAGE_LINES - 1):
-            yield from _place(page, whole[start : start + PAGE_LINES - 1])
-    if page or not blocks:
-        yield page
-
-
-def _place(page, block):
-    """Add one block to the page being filled, first flushing a full page."""
-    if page and len(page) + len(block) > PAGE_LINES:
-        yield list(page)
-        page.clear()
-    page.extend(block)
-    page.append("")
-
-
-def directory_pdf(document, output):
-    """Draw every page with the report details in its header and footer."""
-    blocks = list(
-        address_blocks(document) if document.postal else table_lines(document)
-    )
-    details = dict(document.metadata)
-    subtitle = " · ".join(
-        (
-            details["Parish"],
-            details["Campaign"],
-            f"Captured {dates.display_text(details['Captured at'])}",
-            # Head emails read from newer ParishSoft data than the capture.
-            *(
-                (
-                    f"{HEAD_EMAILS_DETAIL} "
-                    f"{dates.display_text(details[HEAD_EMAILS_DETAIL])}",
-                )
-                if HEAD_EMAILS_DETAIL in details
-                else ()
+            (addressee, "title")
+            if addressee
+            else ("No usable mailing address", "warning"),
+            *((values[f"Address line {index}"], "") for index in (1, 2, 3)),
+            (" ".join(filter(None, (city, values["ZIP"]))), ""),
+            (
+                f"Family: {values['Family']} · ParishSoft DUID "
+                f"{values['ParishSoft DUID']} · Family code "
+                f"{values['Family code'] or 'unavailable'}",
+                "muted",
             ),
-        )
-    )
+        ]
+        yield tuple((text, emphasis) for text, emphasis in lines if text)
+
+
+def directory_frame(document):
+    """The shared page frame with the directory's counts and filters."""
+    from .pdf_design import PdfFrame
+
+    details = dict(document.metadata)
     counts = f"{details['Families in this file']} Families in this file"
     if document.postal:
         counts += (
-            f"; {details[UNADDRESSED_DETAIL]} with no usable mailing address "
+            f" · {details[UNADDRESSED_DETAIL]} with no usable mailing address "
             "(address left blank)"
         )
-    return draw_pages(
-        document,
-        output,
-        list(fill_pages(blocks)),
-        header=(subtitle, f"{counts}. Filters: {details['Filters applied']}"),
-        heading=None if document.postal else table_heading(document.headings),
-        footer=details["Privacy"],
-        note=details.get("Testing mode"),
+    lines = [f"{counts} · Filters: {details['Filters applied']}"]
+    # Head emails read from newer ParishSoft data than the capture.
+    if HEAD_EMAILS_DETAIL in details:
+        lines.append(
+            f"{HEAD_EMAILS_DETAIL} {dates.display_text(details[HEAD_EMAILS_DETAIL])}"
+        )
+    return PdfFrame.for_document(document, details=lines, stamp_key="Captured at")
+
+
+def directory_pdf(document, output):
+    """A zebra table (Family codes) or address cards (postal), framed."""
+    from . import pdf_design
+
+    frame = directory_frame(document)
+    if document.postal:
+        cards = [pdf_design.card_lines(block) for block in address_blocks(document)]
+        pages = list(pdf_design.card_pages(cards, frame))
+
+        def draw(canvas, page):
+            """One page of address cards."""
+            pdf_design.draw_cards(canvas, page, frame)
+
+    else:
+        table = directory_table(document)
+        pages = list(pdf_design.table_pages(table, table_rows(document), frame))
+        draw = pdf_design.draw_table(table, frame)
+    return frame.write(
+        output, pages, len(pages), draw, requested_at=document.requested_at
     )
-
-
-def draw_pages(document, output, pages, *, header, heading, footer, note=None):
-    """Draw already filled pages (``fill_pages``) as a landscape PDF.
-
-    Every page repeats the document's title, the two ``header`` lines, the
-    table ``heading`` (None for address blocks) and the ``footer`` (the
-    sensitive-data line), with an optional small ``note`` above the footer
-    and "Page n of m". Header and note text is escaped for the PDF's font
-    (``visible_text``); the page lines already were, cell by cell. Returns
-    the page count.
-    """
-    from matplotlib.backends.backend_pdf import PdfPages
-    from matplotlib.figure import Figure
-    from matplotlib.font_manager import FontProperties
-
-    from .charts import rendering_style
-
-    font = FontProperties(fname=pdf_font()[0])
-    with (
-        rendering_style(),
-        PdfPages(
-            output,
-            metadata={
-                "Title": document.title,
-                "CreationDate": document.requested_at,
-                "ModDate": document.requested_at,
-            },
-        ) as pdf,
-    ):
-        for number, page in enumerate(pages, 1):
-            figure = Figure(figsize=(11, 8.5), facecolor="white")
-            try:
-                figure.text(0.05, 0.95, document.title, fontsize=13)
-                for offset, line in zip((0.925, 0.905), header, strict=True):
-                    figure.text(0.05, offset, visible_text(line), fontsize=9)
-                top = 0.87
-                if heading is not None:
-                    figure.text(
-                        0.05,
-                        top,
-                        heading,
-                        fontsize=9,
-                        fontproperties=font,
-                        va="top",
-                        weight="bold",
-                    )
-                    top -= 0.03
-                for index, line in enumerate(page):
-                    figure.text(
-                        0.05,
-                        top - index * 0.024,
-                        line,
-                        fontsize=9,
-                        fontproperties=font,
-                        va="top",
-                    )
-                figure.text(0.05, 0.04, footer, fontsize=9)
-                if note:
-                    figure.text(0.05, 0.065, visible_text(note), fontsize=8)
-                figure.text(
-                    0.95,
-                    0.04,
-                    f"Page {number:,} of {len(pages):,}",
-                    ha="right",
-                    fontsize=9,
-                )
-                pdf.savefig(figure)
-            finally:
-                figure.clear()
-    return len(pages)
 
 
 def render_directory(document, output, *, format):

@@ -109,6 +109,68 @@ In every output format, including CSV, the report-request timestamp is
 immutable across render retries; output labels must not describe it as the
 wall-clock time of a later rendering attempt.
 
+### File design
+
+Every Admin portal PDF and XLSX shares one look (#926), in the portal's
+colors (`web/design_tokens.py`): dark text on white or light tints, so files
+print cleanly in grayscale, and color never the only signal.
+
+PDF pages share one frame (`reports/pdf_design.py`): the parish and
+campaign above the report title, and the capture time with its display time
+zone on the right. Directory and [response list](#response-lists) PDFs add
+short count and filter lines under the title. The footer holds the privacy line, any Testing-mode note and "Page N
+of M". Text is set in proportional DejaVu Sans with a DejaVu Serif title,
+fonts matplotlib already bundles. Wrapping measures the fonts' glyph widths
+and never drops a character of a value it draws, and characters the fonts
+cannot draw become visible escapes. Inside the frame, the Family-code
+directory is a zebra-striped table whose heading row repeats on every page,
+with each phone number and each head's emails on its own line; each response
+list is the same table; the postal mail merge is a grid of address cards.
+
+A field/value report (additional information, Ministry, financial, Family
+test names, packets) prints one card per record. The
+PDF is the readable view; CSV and XLSX stay the complete audit files with
+every column (except as a report's section notes). So that a page is easy to
+scan:
+
+- The first card, "About this report", shows counts and amounts as large
+  tiles, then the remaining details. It leaves out what the page frame
+  already states (parish, campaign, capture time, privacy and Testing-mode
+  lines). Filters and sort read as words ("Search: none · Sort: newest").
+  The note on escaped characters appears only when the file contains one.
+- Each record card is titled "Name (DUID N)", with its disposition, state or
+  status in a chip on the right.
+- Internal references and notes for software are left out: campaign, source
+  and response references, the row type, the source generation, row
+  versions, the email revision, the digest-resolution note and the display
+  and date-filter time zones.
+- Blank fields are left out. A packet is completed by hand, so its blank
+  fields print as write-in rules instead.
+- A workflow revision nests under its item, headed by when and by whom it
+  changed, without the item fields its row repeats; a row that continues a record (long financial share wording)
+  joins that record's card.
+- Two neighboring fields that each fit on one line share a line.
+- A card that fits the space left on a page is never split; it moves to the
+  next page. Only a card taller than a whole page splits, between lines, and
+  each later piece repeats its title's first line marked "(continued)". A
+  title too tall to leave room for a body line on a page is cut with an
+  ellipsis. The report card
+  and, in a packet, each Ministry's details card start a new page.
+
+XLSX tables share one style (`reports/xlsx_design.py`): a bold white-on-teal
+heading row as tall as its most-wrapped heading, Arial text, a frozen heading
+row (and the identifying first column on Family-keyed sheets that start
+with it: the Family-code directory, financial detail, census changes and
+talents, and the response list of ParishSoft data to check; the postal mail
+merge starts with the DUID and freezes only its
+heading row), filters, light zebra banding as a
+display rule, widths fitted to the content within limits with long text
+wrapped, and a landscape print setup that fits one page wide, repeats the
+heading row and numbers the pages. Label/value blocks ("Report information"
+sheets and a packet's Ministry details) use one tinted label style; a
+packet's Ministry detail values span the width of the member table below
+them. Styling never changes a cell's value or type.
+
 All charts have title, legend, labeled axes with units, accessible color/line
 patterns, hover/focus values, and equivalent data tables. They download as PNG
 or PDF. Dollar/count series on one chart use separate labeled axes rather than
@@ -615,12 +677,12 @@ the same rows and columns:
 - **CSV** is exactly the table in the
   [shared CSV format](#shared-report-behavior): times as ISO text in the
   chosen time zone, a missing value blank, every cell neutralized.
-- **XLSX** is the shared report workbook: the list's sheet, with native date
-  and time cells in the chosen time zone, counts as numbers, identifiers and
-  names as literal text (never a formula, characters XLSX cannot hold
+- **XLSX** is the shared, [styled](#file-design) report workbook: the list's
+  sheet, with native date and time cells in the chosen time zone, counts as
+  numbers, identifiers and names as literal text (never a formula, characters XLSX cannot hold
   escaped) and a missing value blank, plus the shared "Report information"
   sheet.
-- **PDF** is landscape table pages in the shared table layout of the
+- **PDF** is the [shared design](#file-design)'s zebra table, as for the
   [Family-code directory](#active-parishioner-family-directory): each cell as
   the page shows it (a missing value in the page's words, counts grouped,
   times in the parish's compact date format in the chosen time zone), with
@@ -797,6 +859,15 @@ disposition, replacement/withdrawal link, and Staff notes. The default queue
 shows only `current_actionable`; history filters expose superseded/withdrawn
 items. Search covers authorized text, Family name/DUID, notes, date, disposition,
 and workflow state. Exports include complete text and workflow history option.
+The CSV and XLSX share one set of columns and carry no internal item
+references (the Administrator, 2026-10-09). A "Row type" column says whether a
+row is the "Item" or one of its "Earlier workflow" revisions. Earlier workflow
+rows are listed directly under their item and repeat its Family name, Family
+DUID, Submitted time, disposition and submitted text, which identify the item
+to a reader even after the sheet is sorted or filtered. A superseded item's
+"Replaced by request submitted" value is the Submitted time of the later
+request that replaced it, which finds that request's row, or "Not in this
+export" when the export's filters left that request out.
 
 Editing is audited and uses optimistic concurrency. This report is also the
 source for the weekly Admin digest.
@@ -1064,7 +1135,7 @@ defined by that rule. This privacy policy applies identically to screen, CSV,
 XLSX, and PDF output.
 
 Recorded workflow values are prefilled; empty cells remain printable for human
-completion. The XLSX is one workbook with a sheet per Ministry. PDF starts each
+completion. Every format carries the report's privacy line. The XLSX is one workbook with a sheet per Ministry. PDF starts each
 Ministry on a new page. CSV is one file with a blank row and repeated headings
 between Ministries. No ZIP/per-Ministry files are required.
 

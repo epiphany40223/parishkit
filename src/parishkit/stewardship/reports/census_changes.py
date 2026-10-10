@@ -428,6 +428,8 @@ def census_xlsx(result, zone):
     # Imported here, like the other export writers, to keep web startup light.
     from openpyxl import Workbook
 
+    from .xlsx_design import style_table
+
     book = Workbook()
     sheet = book.active
     sheet.title = "Census changes"
@@ -435,6 +437,7 @@ def census_xlsx(result, zone):
         for column, value in enumerate(values, start=1):
             # Literal text: a Family-typed "=..." is never a formula.
             xlsx_cell(sheet, row_number, column, value)
+    style_table(sheet, freeze_first_column=True, title="Census changes")
     output = io.BytesIO()
     book.save(output)
     return output.getvalue()

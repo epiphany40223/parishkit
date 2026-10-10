@@ -188,6 +188,7 @@ sections:
     "Shutdown and upgrade behavior": [BG-10]
   reports/spec.md:
     "Shared report behavior": [RPT-01]
+    "File design": [RPT-01]
     "Chart engine": [RPT-01, BG-08]
     "Population and calculation rules": [RPT-02]
     "Participation graph": [RPT-03]

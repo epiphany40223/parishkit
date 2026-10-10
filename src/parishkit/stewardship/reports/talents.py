@@ -205,6 +205,8 @@ def talents_xlsx(result, zone):
     # Imported here, like the other export writers, to keep web startup light.
     from openpyxl import Workbook
 
+    from .xlsx_design import style_table
+
     members, families = export_tables(result, zone)
     book = Workbook()
     sheets = (
@@ -219,6 +221,7 @@ def talents_xlsx(result, zone):
                 # is never a formula, and escapes characters XLSX cannot hold,
                 # such as a vertical tab pasted into a ParishSoft name.
                 xlsx_cell(sheet, row_number, column, value)
+        style_table(sheet, freeze_first_column=True, title=f"Talents: {title}")
     output = io.BytesIO()
     book.save(output)
     return output.getvalue()
