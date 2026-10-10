@@ -871,8 +871,14 @@ column does not sort yet
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)). Exports
 include complete text and workflow history option, and name each Family as
 the page does, from the snapshot their capture was read from; a Family
-without a surname is "Family", as the selection names it. A file rendered
-after that snapshot is compacted keeps the captured surname.
+without a surname is "Family", as the selection names it. The name form is
+chosen once for the whole file, in the same database read as the names: if
+compaction has begun on that snapshot by the time the file is rendered,
+every row keeps the captured surname instead, so one file never mixes the
+two forms. The file's "Family names" report detail says which form it uses
+("Surname, then heads of household", or "Surname only" with the reason). A
+late render (a retry, or regenerating an expired file) can therefore differ
+from an earlier render of the same capture only in that name form.
 The CSV and XLSX share one set of columns and carry no internal item
 references (the Administrator, 2026-10-09). A "Row type" column says whether a
 row is the "Item" or one of its "Earlier workflow" revisions. Earlier workflow
@@ -1287,8 +1293,8 @@ pledged" and "ParishSoft contributed" with the same years ("ParishSoft
 pledged (2026)"), and say "ParishSoft" rather than "Source" in the export
 metadata that describes them, so a downloaded file names its figures as the
 page does. The exports also name each Family as the page does, from the
-snapshot their capture was read from; a file rendered after that snapshot
-is compacted keeps the captured surname.
+snapshot their capture was read from, choosing the name form once per file
+as the [Additional information](#additional-information) exports do.
 
 Filters include active/inactive, first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method. Summary shows

@@ -14,6 +14,7 @@ from datetime import date, datetime
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_DETAIL
 from parishkit.stewardship.web import dates
 
 from .money import MoneyAmount
@@ -150,6 +151,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         ("Source reference", source["source_id"]),
         ("Source generation", f"{source['source_generation']:,}"),
         ("Source as of", instant(source["source_as_of"])),
+        (FAMILY_NAMES_DETAIL, source["family_names"]),
         # A Family-only refresh keeps an older giving read, so the money's own
         # observation time is stated apart from the source promotion time.
         (
