@@ -295,7 +295,7 @@ def saved(owner, **values):
     return schedule_record(owner["id"], template_version=TEMPLATE, **values)
 
 
-def bind(document, previous, campaign, *, editable=True):
+def bind(document, previous, campaign, *, editable=True, end_only=False):
     """The posted form for a change document."""
     return admin_changes.form_data(
         admin_changes.parse_changes(json.dumps(document)),
@@ -303,6 +303,7 @@ def bind(document, previous, campaign, *, editable=True):
         campaign,
         editable=editable,
         base_digest="f" * 64,
+        end_only=end_only,
     )
 
 
@@ -351,6 +352,20 @@ def test_the_window_is_posted_only_while_the_dates_may_change():
         bind({"window": {"end_date": EARLIER_END}}, [], owner["values"], editable=False)
     data, _ = bind({"window": {"end_date": EARLIER_END}}, [], owner["values"])
     assert data["window-end_date"] == EARLIER_END
+
+
+def test_a_live_campaign_posts_only_its_end_date():
+    """Live (#912): the end date alone, posted changed or not; the rest locked."""
+    owner = campaign_record()
+    data, _ = bind({}, [], owner["values"], editable=False, end_only=True)
+    assert [name for name in data if name.startswith("window-")] == ["window-end_date"]
+    assert data["window-end_date"] == FACTORY["end_date"]
+    moved = {"window": {"end_date": EARLIER_END}}
+    data, _ = bind(moved, [], owner["values"], editable=False, end_only=True)
+    assert data["window-end_date"] == EARLIER_END
+    for window in ({"start_date": "2054-10-02"}, {"timezone": "Asia/Tokyo"}):
+        with pytest.raises(StaleRecordError):
+            bind({"window": window}, [], owner["values"], editable=False, end_only=True)
 
 
 def test_the_overlap_acknowledgement_needs_a_financial_period():

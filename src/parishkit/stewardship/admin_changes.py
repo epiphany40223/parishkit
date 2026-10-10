@@ -30,7 +30,9 @@ A saved schedule named by ``id`` keeps every field the document leaves out;
 ``delete`` removes it; an entry without ``id`` adds a schedule. Saved
 schedules the document does not name stay as they are: as on the page,
 omission never removes one. ``window`` (any of its fields) changes the
-campaign's dates only while they may still change.
+campaign's dates only while they may still change; for a live campaign
+(scheduled or open in Production, #912) only ``end_date`` may change, and
+confirming it binds the exceptional end-date intent as the page does.
 """
 
 import json
@@ -153,7 +155,7 @@ def _window_initial(campaign):
     return initial
 
 
-def form_data(changes, previous, campaign, *, editable, base_digest):
+def form_data(changes, previous, campaign, *, editable, base_digest, end_only=False):
     """The page's posted form for this change document.
 
     ``previous`` is the campaign's saved schedule records and ``campaign``
@@ -162,6 +164,8 @@ def form_data(changes, previous, campaign, *, editable, base_digest):
     page's forms read exactly what a browser would have posted. A window
     change while the dates may not change is refused as the page refuses one
     (``StaleRecordError``); values equal to the current ones are no change.
+    ``end_only`` (a live campaign, #912) admits a change to the end date
+    alone.
     Returns ``(data, identifiers)``, the latter naming each form row for
     field errors.
     """
@@ -208,8 +212,13 @@ def form_data(changes, previous, campaign, *, editable, base_digest):
     initial = _window_initial(campaign)
     window = initial | changes["window"]
     if not editable:
-        if window != initial:
+        changed = {name for name in window if window[name] != initial.get(name)}
+        # A live campaign's end date alone may still change (#912).
+        if changed - ({"end_date"} if end_only else set()):
             raise StaleRecordError("Campaign dates are structurally locked.")
+        if end_only:
+            # The page posts its one open window field, changed or not.
+            data["window-end_date"] = window["end_date"]
         return data, identifiers
     if set(window) - set(initial):
         raise InvalidChange(
@@ -395,7 +404,11 @@ def preview_schedule(caller, service, campaign_id, *, expected_version, changes)
     from .accounts.content_views import _records
     from .accounts.schedule_changes import build_preview, preview_salt
     from .accounts.schedule_forms import Schedules, ScheduleWindow, schedule_action
-    from .accounts.schedule_reads import campaign_schedules, schedule_state
+    from .accounts.schedule_reads import (
+        campaign_schedules,
+        live_end_at,
+        schedule_state,
+    )
     from .campaigns.work_locks import work_transaction
 
     actor = _admit_change(caller, service)
@@ -413,19 +426,24 @@ def preview_schedule(caller, service, campaign_id, *, expected_version, changes)
                 raise NotAvailable("No such campaign.") from None
             previous = campaign.active_configuration.values
             saved = campaign_schedules(state[0], target)
+            # A live campaign's end date alone may still change (#912).
+            live_at = None if editable else live_end_at(state, campaign)
             data, identifiers = form_data(
                 parsed,
                 saved,
                 previous,
                 editable=editable,
                 base_digest=expected_version,
+                end_only=live_at is not None,
             )
             window = ScheduleWindow(
-                data, prefix="window", previous=previous, editable=editable
+                data,
+                prefix="window",
+                previous=previous,
+                editable=editable,
+                live_at=live_at,
             )
-            schedule_action(
-                data, window_fields=set(window.fields) if editable else set()
-            )
+            schedule_action(data, window_fields=window.open_fields)
             schedules = Schedules(
                 data,
                 prefix="schedules",
