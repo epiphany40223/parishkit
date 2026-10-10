@@ -170,10 +170,10 @@
   });
   document.addEventListener("pointercancel", () => { pointer = null; });
   document.documentElement.addEventListener("pointerleave", () => { pointer = null; });
-  // This script keeps the page steady itself (steady, below). The browser's
-  // own scroll anchoring (Chromium, Firefox, not WebKit) would add its own
-  // adjustment on top, so it is turned off for this page.
-  [document.documentElement, document.body].forEach((node) => { node.style.overflowAnchor = "none"; });
+  // The browser's own scroll anchoring stays on for the page, so a note the
+  // header's polls show above main moves nothing. The regions steady (below)
+  // manages opt out of it (ui-v1.css), so it does not add a second
+  // adjustment for their changes.
 
   // Whether ``node`` or what holds it stays put as the page scrolls.
   const pinned = (node) => {
@@ -183,30 +183,60 @@
     return false;
   };
   // The height on the screen whose content must not move: the pointer's y,
-  // else ``fallback``'s top, else the focused control's top; null with
-  // none of them, or with the pointer over something sticky or fixed (such
-  // as the Admin sidebar), which does not move with the page anyway. The
-  // pointer's x does not matter: what moves is the content at its height.
+  // unless the pointer is over something sticky or fixed (such as the Admin
+  // sidebar), which does not move with the page; else ``fallback``'s top,
+  // else the focused control's top; null with none of them. The pointer's x
+  // does not matter: what moves is the content at its height.
   const referenceY = (fallback) => {
-    if (pointer) return pinned(document.elementFromPoint(pointer.x, pointer.y)) ? null : pointer.y;
+    if (pointer && !pinned(document.elementFromPoint(pointer.x, pointer.y))) return pointer.y;
     const focused = document.activeElement;
-    const node = fallback || (focused !== document.body ? focused : null);
-    return node ? node.getBoundingClientRect().top : null;
+    const node = fallback || (focused && focused !== document.body ? focused : null);
+    return node && !pinned(node) ? node.getBoundingClientRect().top : null;
   };
-  // The chain of nodes from ``region`` down through the child that spans
-  // the height ``y``, at each level, and back again by child index.
+  // Whether ``node`` is in the page and takes up room.
+  const drawn = (node) => node.isConnected && node.getClientRects().length > 0;
+  // The chain of nodes from ``region`` down to the content at the height
+  // ``y``: at each level, the child that spans y. Over a gap between
+  // children (a row's margin, say), the nearest child below y ends the
+  // chain, as what the gap stays beside.
   const spanning = (region, y) => {
     const chain = [region];
     for (;;) {
-      const child = [...chain[chain.length - 1].children].find((node) => {
-        const box = node.getBoundingClientRect();
-        return box.top <= y && y < box.bottom;
+      const children = [...chain[chain.length - 1].children].filter(drawn);
+      const boxes = children.map((node) => node.getBoundingClientRect());
+      const at = boxes.findIndex((box) => box.top <= y && y < box.bottom);
+      if (at >= 0) {
+        chain.push(children[at]);
+        continue;
+      }
+      let below = -1;
+      boxes.forEach((box, index) => {
+        if (box.top >= y && (below < 0 || box.top < boxes[below].top)) below = index;
       });
-      if (!child) return chain;
-      chain.push(child);
+      if (below >= 0) chain.push(children[below]);
+      return chain;
     }
   };
   const indexOf = (node) => [...node.parentElement.children].indexOf(node);
+  // Where ``chain``'s content is after a change in ``region``: the deepest
+  // node of the chain still drawn inside the region, followed by identity,
+  // so rows removed or added around it do not matter; returned with its
+  // depth in the chain. Only when none of it is left (the region's content
+  // was replaced, as a redraw of the seven-day list does, or the row itself
+  // was removed) is it followed by child position, level by level, as deep
+  // as that is still drawn.
+  const follow = (region, chain, path) => {
+    for (let depth = chain.length - 1; depth > 0; depth -= 1) {
+      if (region.contains(chain[depth]) && drawn(chain[depth])) return [chain[depth], depth];
+    }
+    let node = region;
+    let depth = 0;
+    while (depth < path.length && node.children[path[depth]] && drawn(node.children[path[depth]])) {
+      node = node.children[path[depth]];
+      depth += 1;
+    }
+    return [node, depth];
+  };
 
   // Every change this script makes to the page goes through here, so it
   // never moves what is under the pointer (#736). ``regions`` are the
@@ -215,22 +245,39 @@
   // after the change, against the reference height y (referenceY):
   // - a region wholly above y (its bottom at or above y) moves everything
   //   at y by its change in height;
-  // - in the region that spans y, the content at y moves by however far
-  //   the same child (followed by child index, level by level, as deep as
-  //   it is still drawn) moved within the region; where nothing remains,
-  //   the region's top is what stays;
+  // - in the region that spans y, the content at y moves by however far it
+  //   moved within the region (follow); where nothing remains, the region's
+  //   top is what stays;
   // - regions below y move nothing at y.
-  // The page then scrolls by the sum, rounded (WebKit scrolls by whole
-  // pixels and drops a fraction, which would leave up to a pixel).
+  // The page then scrolls by the sum. WebKit scrolls by whole pixels and
+  // drops a fraction, so there the place is rounded, and the fraction left
+  // over is owed to the next change at the same reference height, so a
+  // run of changes (a reading, then the check's answer) does not add up
+  // to more than half a pixel. At the top or bottom of the page it can
+  // scroll only as far as the page goes. A change made while another is
+  // being steadied (a time reading redrawn as a new row is wired) is part
+  // of that one.
+  let steadying = false;
+  let owed = {y: null, by: 0};
   const steady = (regions, change, fallback) => {
+    if (steadying) {
+      change();
+      return;
+    }
     const y = referenceY(fallback);
+    if (y !== owed.y) owed = {y, by: 0};
     const before = regions.map((region) => region.getClientRects().length && region.getBoundingClientRect());
     const at = y === null ? -1 : before.findIndex((box) => box && box.top <= y && y < box.bottom);
     const chain = at < 0 ? [] : spanning(regions[at], y);
     const offsets = chain.map((node) => node.getBoundingClientRect().top - before[at].top);
     const path = chain.slice(1).map(indexOf);
     const start = window.scrollY;
-    change();
+    steadying = true;
+    try {
+      change();
+    } finally {
+      steadying = false;
+    }
     if (y === null) return;
     let shift = 0;
     regions.forEach((region, index) => {
@@ -240,19 +287,33 @@
       const was = before[index] || {top: box.top, bottom: box.top, height: 0};
       if (was.bottom <= y) shift += box.height - was.height;
       if (index !== at) return;
-      let node = region;
-      let depth = 0;
-      while (depth < path.length && node.children[path[depth]]?.getClientRects().length) {
-        node = node.children[path[depth]];
-        depth += 1;
-      }
+      const [node, depth] = follow(region, chain, path);
       shift += node.getBoundingClientRect().top - box.top - offsets[depth];
     });
     // Scrolled to the place, not by the shift, in case the change itself
-    // scrolled the page (a shorter page near its end).
-    const target = Math.round(start + shift);
-    if (target !== Math.round(window.scrollY)) window.scrollTo(window.scrollX, target);
+    // scrolled the page (a shorter page near its end, or the browser's
+    // scroll anchoring for something outside these regions).
+    const target = start + shift + owed.by;
+    if (Math.abs(window.scrollY - target) > 0.25) window.scrollTo(window.scrollX, target);
+    if (Math.abs(window.scrollY - target) > 0.5) window.scrollTo(window.scrollX, Math.round(target));
+    owed.by = target - window.scrollY;
   };
+  // Move focus to ``node`` without scrolling what is under the pointer
+  // (#736). With no pointer (keyboard only), a control off the screen is
+  // brought just into view.
+  const focusOn = (node) => {
+    node.focus({preventScroll: true});
+    if (pointer) return;
+    const box = node.getBoundingClientRect();
+    if (box.top < 0 || box.bottom > window.innerHeight) node.scrollIntoView({block: "nearest"});
+  };
+  // A time field's reading line (ui-v1.js) can grow by a line or two on a
+  // narrow screen: its changes in this editor are steadied too.
+  fields?.steadyReadings?.((field, change) => {
+    const line = root.contains(field) && field.closest(".schedule-row-fields");
+    if (line) steady([line], change);
+    else change();
+  });
 
   // The check. One request at a time: a newer one aborts the older, and an
   // answer is shown only if it belongs to the latest request.
@@ -359,7 +420,7 @@
         row.remove();
         renumber(scope);
       });
-      root.querySelector(`[data-row-add="${scope}"]`).focus();
+      focusOn(root.querySelector(`[data-row-add="${scope}"]`));
       schedule(0);
     });
     applyShape(row);
@@ -391,7 +452,8 @@
       // edited, so "Enter a time" does not greet the reader.
       let row = null;
       steady([rowsOf(scope)], () => { row = addRow(scope); });
-      row.querySelector("select, input")?.focus();
+      const first = row.querySelector("select, input");
+      if (first) focusOn(first);
     });
   });
 
@@ -422,19 +484,19 @@
       }
       chosen = button;
       ask(true);
-      confirm.querySelector("[data-preset-replace]").focus();
+      focusOn(confirm.querySelector("[data-preset-replace]"));
     });
   });
   confirm.querySelector("[data-preset-replace]").addEventListener("click", () => {
     ask(false);
     if (chosen) {
       usePreset(chosen.dataset.preset);
-      chosen.focus();
+      focusOn(chosen);
     }
   });
   confirm.querySelector("[data-preset-keep]").addEventListener("click", () => {
     ask(false);
-    if (chosen) chosen.focus();
+    if (chosen) focusOn(chosen);
   });
 
   // "Edit as text": the two lists replace the rules with one "at" rule per
@@ -450,7 +512,7 @@
       const result = window.ParishTimeEntry.parseTimes(area.value, 0, "");
       if (result.error) {
         sayTextError(result.message);
-        area.focus();
+        focusOn(area);
         return;
       }
       read[area.dataset.scheduleText] = [...new Set(result.values.map(window.ParishTimeEntry.canonicalTime))].sort();
@@ -460,7 +522,7 @@
     const most = Number(management("rules", "MAX_NUM_FORMS").value);
     if (count > most) {
       sayTextError(words("tooManyTimesText", {count}));
-      textLists()[0].focus();
+      focusOn(textLists()[0]);
       return;
     }
     // The rows above change in number: with no pointer (a touch, which may

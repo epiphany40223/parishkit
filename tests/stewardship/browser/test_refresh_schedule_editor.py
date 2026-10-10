@@ -630,7 +630,8 @@ def test_a_pointer_beside_the_main_column_keeps_its_height_in_place(
     """In the two-column Admin layout only the pointer's height matters: in
     the gap between the sidebar and the page, or right of the page, the
     rows at that height stay put while rule 1's long message clears above.
-    Over the sticky sidebar, which does not scroll, nothing is scrolled."""
+    Over the sticky sidebar, which does not scroll, with nothing focused,
+    the sidebar under the pointer stays put whatever the page does."""
     page.set_viewport_size({"width": 1000, "height": 900})
     requests = answering(page, CLOSE)
     page.goto(component_origin + "/refresh-schedule-close")
@@ -647,14 +648,15 @@ def test_a_pointer_beside_the_main_column_keeps_its_height_in_place(
     }[where]
     pointed = point_at_height(page, x, 310)
     assert ("admin-sidebar" in pointed) == (where == "sidebar")
-    start = page.evaluate("window.scrollY")
+    under = page.evaluate_handle(f"document.elementFromPoint({x}, 310)")
+    held = under.bounding_box()["y"]
     before = tops(page, "#rules-2")
     type_quietly(page, "rules-1-at", "23:30")
     recorded(page, requests, 1)
     has_text(message, "")
     assert height - message.bounding_box()["height"] > 10
     if where == "sidebar":
-        assert page.evaluate("window.scrollY") == start
+        assert abs(under.bounding_box()["y"] - held) <= 0.5
     else:
         assert within_half_a_pixel(before, tops(page, "#rules-2"))
 
@@ -718,3 +720,216 @@ def test_the_not_checked_line_moves_nothing_under_the_pointer(page, component_or
     # Hidden in the same change that redraws the list.
     hidden(page.get_by_text("Not checked since your last change"))
     assert within_half_a_pixel(before, tops(page, time))
+
+
+def point_inside(page, selector, y_offset=12):
+    """Rest the pointer just inside the top of ``selector``; return its handle."""
+    box = page.locator(selector).bounding_box()
+    page.mouse.move(box["x"] + 20, box["y"] + y_offset)
+    return page.locator(selector).element_handle()
+
+
+def handle_top(handle):
+    """Where the element ``handle`` sits on the screen, wherever it went."""
+    return handle.bounding_box()["y"]
+
+
+def press_without_scrolling(page, selector, key="Enter"):
+    """Focus ``selector`` without scrolling (a keyboard reader tabbing
+    there), then press ``key``."""
+    page.locator(selector).evaluate("node => node.focus({preventScroll: true})")
+    page.keyboard.press(key)
+
+
+@pytest.mark.parametrize("where", ["row", "margin"])
+def test_keyboard_remove_keeps_the_row_under_the_pointer(page, component_origin, where):
+    """Removing rule 1 from the keyboard, with the pointer resting on rule 4
+    (or in the margin just above it): rule 4 is followed by identity, not
+    by its old position, so it stays put while the rows above it shrink."""
+    page.set_viewport_size({"width": 480, "height": 900})
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    scroll_to(page, page.locator("#rules-3"), 500)
+    # Rule 1 starts above the screen, so the page can scroll up by its height.
+    assert top(page.locator("#rules-0")) < 0
+    if where == "row":
+        watched = point_inside(page, "#rules-3")
+    else:
+        above = page.locator("#rules-2").bounding_box()
+        below = page.locator("#rules-3").bounding_box()
+        x, y = below["x"] + 20, (above["y"] + above["height"] + below["y"]) / 2
+        page.mouse.move(x, y)
+        pointed = "([x, y]) => document.elementFromPoint(x, y)"
+        assert page.evaluate(f"{pointed}.matches('[data-schedule-rows]')", [x, y])
+        watched = page.locator("#rules-3").element_handle()
+    before = handle_top(watched)
+    press_without_scrolling(page, "#rules-0 [data-row-remove]")
+    assert rule_rows(page).count() == 5
+    assert abs(handle_top(watched) - before) <= 0.5
+    assert page.evaluate("document.activeElement.dataset.rowAdd") == "rules"
+    recorded(page, requests, 1)
+    contains(page.locator(STATUS), "of ParishSoft time a day")
+    assert abs(handle_top(watched) - before) <= 0.5
+
+
+def test_clicking_remove_or_a_preset_does_not_scroll_the_page(page, component_origin):
+    """On a phone, Remove moves focus to Add a rule and a preset (with
+    changes) to Replace my changes, both off the screen: focus moves without
+    scrolling what is under the mouse."""
+    page.set_viewport_size({"width": 360, "height": 640})
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    scroll_to(page, page.locator("#rules-0"), 100)
+    assert top(page.locator('[data-row-add="rules"]')) > 640
+    start = page.evaluate("window.scrollY")
+    before = top(page.locator("#rules-0"))
+    box = page.locator("#rules-0 [data-row-remove]").bounding_box()
+    page.mouse.click(box["x"] + 10, box["y"] + 10)
+    assert page.evaluate("document.activeElement.dataset.rowAdd") == "rules"
+    assert page.evaluate("window.scrollY") == start
+    # The next rule takes the removed one's place under the mouse.
+    assert abs(top(page.locator("#rules-0")) - before) <= 0.5
+    recorded(page, requests, 1)
+    contains(page.locator(STATUS), "of ParishSoft time a day")
+    # A change, so the preset asks first, with its question off the screen.
+    preset = page.locator("[data-preset]").first
+    scroll_to(page, preset, 100)
+    start = page.evaluate("window.scrollY")
+    before = top(preset)
+    box = preset.bounding_box()
+    page.mouse.click(box["x"] + 10, box["y"] + 10)
+    visible(page.get_by_text("Replace your changes with this preset?"))
+    assert page.evaluate("document.activeElement.hasAttribute('data-preset-replace')")
+    assert top(page.locator("[data-preset-replace]")) > 640
+    assert page.evaluate("window.scrollY") == start
+    assert abs(top(preset) - before) <= 0.5
+
+
+def test_a_header_note_above_main_moves_no_rule(page, component_origin):
+    """The header's polls show notes above main (here the delivery warning):
+    the browser's scroll anchoring, left on for the page, keeps the rule
+    under the pointer in place."""
+    page.set_viewport_size({"width": 480, "height": 900})
+    answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    scroll_to(page, page.locator("#rules-3"), 400)
+    watched = point_inside(page, "#rules-3")
+    before = handle_top(watched)
+    warning = page.locator("[data-delivery-warning]")
+    warning.evaluate("node => { node.hidden = false; }")
+    assert warning.bounding_box()["height"] > 20
+    assert top(warning) < top(page.locator("main"))
+    page.wait_for_timeout(100)
+    assert abs(handle_top(watched) - before) <= 0.5
+
+
+# Removes ui-v1.css's rules for the regions the editor redraws, to compare
+# with the plain blocks they would otherwise be.
+REGION_RULES = """() => {
+  for (const sheet of document.styleSheets) {
+    for (let index = sheet.cssRules.length - 1; index >= 0; index -= 1) {
+      if ((sheet.cssRules[index].selectorText || "").includes("[data-schedule-rows]")) {
+        sheet.deleteRule(index);
+      }
+    }
+  }
+}"""
+
+
+@pytest.mark.parametrize("width", [360, 1280])
+def test_the_redrawn_regions_keep_the_spacing_of_plain_blocks(
+    page, component_origin, width
+):
+    """Holding their margins (flow-root) adds no room: rule 1, Add, Save,
+    the seven-day heading and list sit where plain blocks put them."""
+    page.set_viewport_size({"width": width, "height": 800})
+    answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    watched = (
+        "#rules-0",
+        "#rules-5",
+        '[data-row-add="rules"]',
+        SAVE,
+        "#refresh-schedule-outlook > h2:nth-of-type(2)",
+        '[data-schedule-part="preview"] details',
+    )
+
+    def placed():
+        """Each watched element's page y, then where the editor's and the
+        outlook's panels end."""
+        return tuple(
+            page.evaluate(
+                """selectors => selectors.map((selector) => {
+                  const box = document.querySelector(selector).getBoundingClientRect();
+                  return box.top + window.scrollY;
+                }).concat(["#refresh-schedule", "#refresh-schedule-outlook"].map(
+                  (selector) => document.querySelector(selector)
+                    .getBoundingClientRect().bottom + window.scrollY))""",
+                list(watched),
+            )
+        )
+
+    rows = page.locator('[data-schedule-rows="rules"]')
+    display = "node => getComputedStyle(node).display"
+    now = placed()
+    assert rows.evaluate(display) == "flow-root"
+    page.evaluate(REGION_RULES)
+    assert rows.evaluate(display) == "block"
+    assert within_half_a_pixel(now, placed()), (now, placed())
+
+
+def test_a_growing_time_reading_moves_no_rule_under_the_pointer(page, component_origin):
+    """At 320 pixels a time's reading line can take three lines: rule 1's
+    reading growing (and its check's message) keeps rule 2, under the
+    pointer, in place."""
+    page.set_viewport_size({"width": 320, "height": 900})
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
+    scroll_to(page, page.locator("#rules-1"), 600)
+    reading = page.locator("#id_rules-0-at_reading")
+    assert top(reading) > 0
+    height = reading.bounding_box()["height"]
+    watched = point_inside(page, "#rules-1")
+    before = handle_top(watched)
+    contains(page.locator(STATUS), "of ParishSoft time a day")
+    type_quietly(page, "rules-0-at", "8:10 in the evening")
+    # A refusal shows once typing pauses, as the check is sent.
+    page.wait_for_timeout(700)
+    assert reading.bounding_box()["height"] - height > 20
+    assert abs(handle_top(watched) - before) <= 0.5
+    recorded(page, requests, 1)
+    from playwright.sync_api import expect
+
+    # Once answered, the line beside Save says the problem.
+    expect(page.locator(STATUS)).not_to_contain_text("of ParishSoft time a day")
+    assert abs(handle_top(watched) - before) <= 0.5
+    type_quietly(page, "rules-0-at", "9")
+    contains(reading, "Reads as 09:00")
+    assert abs(handle_top(watched) - before) <= 0.5
+
+
+def test_a_pointer_over_the_sidebar_keeps_the_focused_field_in_place(
+    page, component_origin
+):
+    """Over the sticky sidebar, which does not scroll, the focused control
+    is what stays in place while rule 1's long message clears above it."""
+    page.set_viewport_size({"width": 1000, "height": 900})
+    requests = answering(page, CLOSE)
+    page.goto(component_origin + "/refresh-schedule-close")
+    message = page.locator("#rules-0-messages")
+    contains(message, "00:00 is only 10 minutes after the 23:50 full refresh")
+    height = message.bounding_box()["height"]
+    scroll_to(page, page.locator("#rules-2"), 300)
+    page.locator('[name="rules-3-at"]').evaluate(
+        "node => node.focus({preventScroll: true})"
+    )
+    sidebar = page.locator(".admin-sidebar").bounding_box()
+    assert "admin-sidebar" in point_at_height(
+        page, sidebar["x"] + sidebar["width"] / 2, 310
+    )
+    before = tops(page, '[name="rules-3-at"]')
+    type_quietly(page, "rules-1-at", "23:30")
+    recorded(page, requests, 1)
+    has_text(message, "")
+    assert height - message.bounding_box()["height"] > 10
+    assert within_half_a_pixel(before, tops(page, '[name="rules-3-at"]'))
