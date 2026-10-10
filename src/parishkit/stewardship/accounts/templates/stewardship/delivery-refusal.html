@@ -19,7 +19,7 @@ region, which then shows the resolution, with focus on its heading.{% endcomment
 </section>
 {% elif source.snapshot_id and can_clear %}
 {# Clear waits for a note that is more than spaces and the tick, as the server requires; the hint follows the button (#563). #}
-<form method="post" action="{% url 'admin:delivery_refusal_clear' refusal.id %}#refusal-clearance" class="panel" data-in-place="refusal-clear" data-require-complete data-in-place-message="{% translate 'Refusal cleared.' %}">
+<form method="post" action="{% url 'admin:delivery_refusal_clear' refusal.id %}#refusal-clearance" class="panel" data-in-place="refusal-clear" data-in-place-message="{% translate 'Refusal cleared.' %}" data-require-complete>
   {% csrf_token %}
   <input type="hidden" name="command_id" value="{{ command_id }}">
   <input type="hidden" name="source_snapshot_id" value="{{ source.snapshot_id }}">
