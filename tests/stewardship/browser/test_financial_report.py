@@ -226,3 +226,49 @@ def test_heading_tips_float_without_moving_the_table(
     assert page.evaluate(TABLE_BOX)[:5] == before[:5]
     page.keyboard.press("Escape")
     assert bubble.is_hidden()
+
+
+# Scroll the table box sideways until the given tip's button is out of its
+# visible area; returns whether that worked.
+SCROLL_BUTTON_OUT = """id => {
+    const box = document.querySelector(".table-scroll");
+    const button = document.querySelector(`[aria-controls="${id}"]`);
+    const out = () => {
+        const a = button.getBoundingClientRect(), b = box.getBoundingClientRect();
+        return a.right <= b.left || a.left >= b.right;
+    };
+    // The button's edges in the box's content coordinates.
+    const a = button.getBoundingClientRect(), b = box.getBoundingClientRect();
+    const left = a.left - b.left - box.clientLeft + box.scrollLeft;
+    const right = left + a.width;
+    // Past its right edge (it leaves on the left), else before its left
+    // edge (it leaves on the right).
+    box.scrollLeft = Math.ceil(right) + 1;
+    if (!out()) box.scrollLeft = Math.max(0, Math.floor(left - box.clientWidth) - 1);
+    return [out(), left, right, box.clientWidth, box.scrollWidth];
+}"""
+
+
+@pytest.mark.parametrize("column", ["pledged", "contributed"])
+def test_heading_tip_closes_when_its_button_scrolls_out(page, component_origin, column):
+    """A floating tip closes once the table box scrolls its button away (#932).
+
+    Fixed to the viewport, the bubble would otherwise stay over the page,
+    pointing at a column the box no longer shows.
+    """
+    page.set_viewport_size({"width": 320, "height": 900})
+    page.goto(component_origin + "/financial-report")
+    # A narrow box, so that each heading's button can scroll fully out of
+    # it in every engine (WebKit's 320 px table otherwise always shows a
+    # sliver of the last column).
+    page.evaluate("document.querySelector('.table-scroll').style.width = '120px'")
+    tip = f"financial-source-{column}-tip"
+    button = page.locator(f'button[aria-controls="{tip}"]')
+    button.scroll_into_view_if_needed()
+    button.click()
+    bubble = page.locator("#" + tip)
+    visible(bubble)
+    moved = page.evaluate(SCROLL_BUTTON_OUT, tip)
+    assert moved[0], moved
+    bubble.wait_for(state="hidden")
+    assert button.get_attribute("aria-expanded") == "false"

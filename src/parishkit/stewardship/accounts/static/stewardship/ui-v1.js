@@ -4055,11 +4055,24 @@
     bubble.style.left = Math.max(edge, Math.min(start, width - edge - box.width)) + "px";
     bubble.style.top = (fitsBelow || above < edge ? below : above) + "px";
   }
+  function scrolledOut(tip) {
+    // Whether the tip's button has left its .table-scroll box's visible
+    // area. Fixed to the viewport, the bubble would otherwise stay drawn
+    // over the page, pointing at a button the box no longer shows.
+    const box = tip.closest(".table-scroll")?.getBoundingClientRect();
+    if (!box) return false;
+    const anchor = tip.querySelector(".toggletip-button").getBoundingClientRect();
+    return anchor.right <= box.left || anchor.left >= box.right
+      || anchor.bottom <= box.top || anchor.top >= box.bottom;
+  }
   function follow() {
     // Keep an open floating bubble with its button as the page or the
-    // table's box scrolls, and as the window changes size.
+    // table's box scrolls, and as the window changes size; close it once
+    // the box scrolls its button out of view.
     const tip = document.querySelector(".toggletip-open");
-    if (tip && floating(tip.querySelector(".toggletip-bubble"))) place(tip);
+    if (!tip || !floating(tip.querySelector(".toggletip-bubble"))) return;
+    if (scrolledOut(tip)) close(tip);
+    else place(tip);
   }
   document.addEventListener("scroll", follow, true);
   window.addEventListener("resize", follow);

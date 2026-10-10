@@ -1631,7 +1631,8 @@ field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
 opening the tip. Checkbox help stays beside the box. A toggletip in a table
 heading is described by its bubble alone, and its bubble floats over the
-page, so opening it never changes the size or scroll of the table's box.
+page, so opening it never changes the size or scroll of the table's box;
+it closes when that box scrolls its button out of view.
 
 Internal identifiers and bookkeeping fields that matter only for
 troubleshooting (delivery, refusal and test references, a retained
