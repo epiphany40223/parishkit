@@ -81,8 +81,10 @@ sql=$(awk '
     inside && /^```$/ { exit }
     inside { print }
 ' "$guide")
-first=$(printf '%s\n' "$sql" | head -n 1)
-last=$(printf '%s\n' "$sql" | tail -n 1)
+# Parameter expansion, not printf | head: under pipefail a head that exits
+# first gets printf killed by SIGPIPE, and the script exits 141 (#948).
+first=${sql%%$'\n'*}
+last=${sql##*$'\n'}
 if [ "$first" != "BEGIN;" ] || [ "$last" != "ROLLBACK;" ]; then
     ops_refuse "The guide's \"The report\" SQL block was not found, or does not run from BEGIN; to ROLLBACK;"
 fi
