@@ -1,34 +1,24 @@
-"""Admin URL scheme plumbing: permanent redirects from old Admin addresses.
+"""Admin URL scheme plumbing: the slashless redirect and the current campaign.
 
-The Admin URL scheme (admin-portal spec, "URL scheme", #525) moves every
-page under its menu group, ends page URLs with ``/`` and drops the campaign
-identifier. Bookmarks, sent digest emails and the operator runbooks still
-name the old addresses, so each old address stays routed to a ``legacy``
-view that redirects to the new one:
+The Admin URL scheme (admin-portal spec, "URL scheme", #525) puts every page
+under its menu group, ends page URLs with ``/`` and drops the campaign
+identifier. Old Admin addresses are not kept: the Administrator dropped
+them (#864), so each answers 404. A page's form without the trailing slash
+is routed to ``redirect_to``, which redirects to the page:
 
 - GET and HEAD get 301; every other method gets 308, which keeps the method
-  and body, so a form left open on an old page still submits.
+  and body.
 - The query string is kept, because report filters live there.
-- An old address that names a campaign redirects only for the current
-  campaign. Any other campaign gets the 410 refusal and never a redirect, so
-  a form left open on an earlier campaign is never re-posted into the current
-  one. Because the target depends on which campaign is current, those
-  responses are never cached, and they are only given to a signed-in Admin
-  portal user: anyone else gets the sign-in refusal first.
 
-``current_campaign`` lets a new campaign-free route reuse an existing view
-that still takes ``campaign_id``, so moving a route changes only the URL
-pattern, not the view. Family URLs never pass through here.
+``current_campaign`` lets a campaign-free route reuse an existing view that
+still takes ``campaign_id``, so moving a route changes only the URL pattern,
+not the view. Family URLs never pass through here.
 """
 
 from django.http.response import HttpResponseRedirectBase
 from django.urls import reverse
-from django.utils.cache import add_never_cache_headers
-
-from .refusals import gone_response
 
 NAMESPACE = "admin"
-CAMPAIGN = "campaign_id"
 
 
 class HttpResponsePermanentRedirectKeepingMethod(HttpResponseRedirectBase):
@@ -38,7 +28,7 @@ class HttpResponsePermanentRedirectKeepingMethod(HttpResponseRedirectBase):
 
 
 class HttpResponseMovedPermanently(HttpResponseRedirectBase):
-    """301 Moved Permanently, for the GET and HEAD of an old page address."""
+    """301 Moved Permanently, for the GET and HEAD of a slashless page URL."""
 
     status_code = 301
 
@@ -55,76 +45,25 @@ def _current_campaign_id():
     ).first()
 
 
-def _signed_out_refusal(request):
-    """The sign-in refusal when the request has no live Admin session, else None.
+def redirect_to(target):
+    """The view for a page URL's form without its trailing slash.
 
-    Any Admin portal role may hold a campaign address (reports are open to
-    Staff and Ministry leaders), so only the session is checked here; the
-    target page still checks its own capability. The check renews nothing.
-    """
-    from parishkit.stewardship.accounts.admin_editing import (
-        error_response,
-        signed_out,
-    )
-    from parishkit.stewardship.accounts.authentication import runtime
-    from parishkit.stewardship.accounts.sessions import authenticated_admin
-
-    try:
-        admin = authenticated_admin(request, store=runtime().store, read_only=True)
-    except PermissionError:
-        admin = None
-    return error_response(signed_out()) if admin is None else None
-
-
-def _target_url(request, target, arguments):
-    """The new address for ``target`` with ``arguments`` and the old query."""
-    url = reverse(f"{NAMESPACE}:{target}", kwargs=arguments)
-    query = request.META.get("QUERY_STRING", "")
-    return f"{url}?{query}" if query else url
-
-
-def legacy(target, *, campaign=False):
-    """The view for an old Admin address that now lives at ``target``.
-
-    ``target`` is the new route's URL name; the old route's own arguments are
-    passed on unchanged. With ``campaign=True`` the old route names a
-    campaign (``campaign_id``) that the new one does not: it redirects only
-    when that campaign is the current one, and refuses with 410 otherwise.
+    ``target`` is the page's URL name; the route's own arguments are passed
+    on unchanged and the query string is kept.
     """
 
     def view(request, **arguments):
         """Redirect permanently: 301 for GET/HEAD, 308 for other methods."""
-        if campaign:
-            named = arguments.pop(CAMPAIGN)
-            # Whether a campaign is the current one is not for the signed
-            # out: answer them the sign-in refusal before comparing, so the
-            # 301-or-410 choice never tells anyone which campaign is current.
-            refused = _signed_out_refusal(request)
-            if refused is not None:
-                add_never_cache_headers(refused)
-                return refused
-            if named != _current_campaign_id():
-                from parishkit.stewardship.campaigns.single_campaign import (
-                    not_current_refused,
-                )
-
-                response = gone_response(not_current_refused())
-                add_never_cache_headers(response)
-                return response
-        url = _target_url(request, target, arguments)
+        url = reverse(f"{NAMESPACE}:{target}", kwargs=arguments)
+        query = request.META.get("QUERY_STRING", "")
         moved = (
             HttpResponseMovedPermanently
             if request.method in {"GET", "HEAD"}
             else HttpResponsePermanentRedirectKeepingMethod
         )
-        response = moved(url)
-        if campaign:
-            # The target depends on which campaign is current: never cache.
-            add_never_cache_headers(response)
-        return response
+        return moved(f"{url}?{query}" if query else url)
 
-    view.legacy_target = target
-    view.legacy_campaign = campaign
+    view.redirect_target = target
     return view
 
 

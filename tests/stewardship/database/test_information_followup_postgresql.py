@@ -148,21 +148,6 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         rows, more = information_history(item.pk, 1, version=first.expected_version + 1)
         assert [row.pk for row in rows] == [first.pk] and not more
         assert information_history(item.pk, 2, version=item.version) == ([], False)
-        wrong_route = f"/admin/reports/{uuid4()}/information/{item.pk}/"
-        # Until #145 any campaign but the current one is gone (410).
-        assert read(browser, wrong_route)[0].status_code == 410
-        assert (
-            post(
-                browser,
-                wrong_route + "update",
-                {
-                    "expected_version": str(item.version),
-                    "request_key": str(uuid4()),
-                    "notes": "Wrong campaign",
-                },
-            ).status_code
-            == 410
-        )
         for values, found in (
             ({"search": "Called"}, True),
             ({"completed": "yes"}, False),

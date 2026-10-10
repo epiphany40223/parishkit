@@ -19,7 +19,7 @@ or action lands with its command, or with an exemption here.
 
 from typing import NamedTuple
 
-from parishkit.stewardship.admin_urls.legacy import TARGETS as LEGACY_TARGETS
+from parishkit.stewardship.admin_urls.slashless import TARGETS as SLASHLESS_TARGETS
 
 
 class Parity(NamedTuple):
@@ -65,9 +65,9 @@ SETUP = (
 )
 IMAGES = "image bytes for the browser; the data is in the matching read"
 UPLOAD = "file uploads; a later pull request may accept --file"
-LEGACY = (
-    "an old address that only redirects to its new page (#525); the "
-    "new page's entry covers it"
+SLASHLESS = (
+    "a page URL without its trailing slash, which only redirects to the "
+    "page (#525); the page's entry covers it"
 )
 
 GROUP_ROOT = (
@@ -327,6 +327,6 @@ LEDGER = {
             "setup_step",
         )
     },
-    # Old Admin addresses (the URL scheme, #525): redirects, not actions.
-    **{name: permanent(LEGACY) for name in LEGACY_TARGETS},
+    # Pages' slashless forms (the URL scheme, #525): redirects, not actions.
+    **{name: permanent(SLASHLESS) for name in SLASHLESS_TARGETS},
 }

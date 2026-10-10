@@ -592,9 +592,6 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             ].status_code
             == 403
         )
-        wrong = f"/admin/reports/{uuid4()}/ministries/follow-up/{join.pk}/"
-        # Until #145 any campaign but the current one is gone (410).
-        assert get(browser, wrong)[0].status_code == 410
         form = {
             "expected_version": "1",
             "request_key": str(uuid4()),
@@ -609,7 +606,6 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             "contact_notes": "No answer",
         }
         assert browser.post(update, form).status_code == 403  # No CSRF.
-        assert post(browser, wrong + "update", form).status_code == 410
         assert post(browser, update, form).status_code == 302
         assert post(browser, update, form).status_code == 302  # Replay.
         stale = form | {"request_key": str(uuid4())}

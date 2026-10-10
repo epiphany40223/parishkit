@@ -141,16 +141,12 @@ def test_timeline_for_administrators_and_staff(
         "?size=25",
     ):
         assert as_web(admin, corpus + invalid)[0].status_code == 400
-    # An unknown Family is refused; any campaign other than the current one
-    # is gone (410) until the single-campaign change (#145), since reports show
-    # the current campaign only. Neither leaves an audit row (checked below).
-    unknown, elsewhere = uuid4(), uuid4()
+    # An unknown Family is refused, and leaves no audit row (checked below).
+    unknown = uuid4()
     assert (
         as_web(admin, reverse("admin:family_timeline", args=[unknown]))[0].status_code
         == 403
     )
-    other = f"/admin/reports/{elsewhere}/families/{families[1]}/"
-    assert as_web(admin, other)[0].status_code == 410
     # A role without Family codes gets no code and no Open form. No real role
     # has CAMPAIGN_REPORT without FAMILY_CODES, so the view's check is
     # narrowed for one request.
@@ -236,7 +232,6 @@ def test_timeline_for_administrators_and_staff(
     assert viewed.count() == 8
     assert not events.exclude(campaign_reference=harness.campaign.pk).exists()
     assert not events.filter(subject_id=unknown).exists()
-    assert not events.filter(campaign_reference=elsewhere).exists()
     assert events.filter(subject_id=families[11]).count() == 1
     assert not events.filter(subject_id=harness.campaign.pk).exists()
     assert set(events.values_list("auditcontext__context", flat=True).first()) <= {
@@ -294,12 +289,9 @@ def test_a_family_is_refused_under_another_real_campaign(
         admin, login = signed_in()
         assert login.status_code == 302
         assert as_web(admin, reverse("admin:response_dashboard"))[0].status_code == 200
-        # The retained campaign's old address is gone; the Family's address
-        # (which now means the current campaign, the successor) is refused.
-        own = f"/admin/reports/{harness.campaign.pk}/families/{family.pk}/"
-        assert as_web(admin, own)[0].status_code == 410
+        # The Family's address (which now means the current campaign, the
+        # successor) is refused, and the refusal leaves no audit row.
         other = reverse("admin:family_timeline", args=[family.pk])
         assert as_web(admin, other)[0].status_code == 403
-        # Neither refusal leaves an audit row.
         events = AuditEvent.objects.filter(event_type="family_timeline_viewed")
         assert not events.filter(subject_id=family.pk).exists()

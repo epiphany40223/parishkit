@@ -409,7 +409,6 @@ def test_noop_bad_signature_missing_target_and_query_are_closed(auth_service, go
         post(browser, url(row), {"action": "confirm", "preview": "forged"}).status_code
         == 400
     )
-    assert browser.get(f"/admin/campaign/{uuid4()}/settings").status_code == 410
     assert browser.get(url(row) + "?extra=value").status_code == 400
     assert Client().get(url(row)).status_code == 403
 

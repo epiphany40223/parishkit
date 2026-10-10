@@ -104,11 +104,9 @@ def _maintenance_block():
 """
 
 
-# The one route that admits a request body larger than 6 MB (#346), at its
-# address and at its old one (#525): an upload form left open on the old
-# address re-posts its file there through a 308 redirect, so both admit it.
-HOSTED_FILE_UPLOADS = ("/admin/parish/files/uploads/", "/admin/files/upload")
-HOSTED_FILE_UPLOAD = " ".join(HOSTED_FILE_UPLOADS)
+# The one route that admits a request body larger than 6 MB (#346). Its old
+# address is not kept (#864), so only the current one admits it.
+HOSTED_FILE_UPLOAD = "/admin/parish/files/uploads/"
 
 
 def render_caddy(configuration):
