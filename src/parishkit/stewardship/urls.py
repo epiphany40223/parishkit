@@ -9,7 +9,6 @@ from .accounts import (
     authentication,
     automation_views,
     branding_views,
-    campaign_views,
     chair_review_views,
     chair_views,
     content_views,
@@ -92,8 +91,6 @@ admin_patterns = [
         content_views.plain_text_preview,
         name="content_plain_text",
     ),
-    # Retired (decision 11): redirects to the current campaign's settings.
-    path("campaign/new", campaign_views.retired_new, name="campaign_new"),
     path("users", user_views.users, name="users"),
     path("users/rules", user_rule_views.user_rules, name="user_rules"),
     path("users/rules/apply", rule_autosave_views.rule_apply, name="rule_apply"),
