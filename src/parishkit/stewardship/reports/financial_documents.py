@@ -22,11 +22,13 @@ from .money import MoneyAmount
 # The two comparison columns use the page's own labels (#404), so a file and
 # the page name the same figures alike; ``financial_document`` adds the
 # comparison period's years to them, as the page's headings show
-# ("ParishSoft pledged (2026)").
+# ("ParishSoft pledged (2026)"). Every format has the page's columns in the
+# page's order, and no internal references (the Administrator's decisions
+# B1 and E1, #932): the report lists only active Families, so it has no
+# Family status column, and no Family version or response reference.
 HEADINGS = (
     "Family",
     "Family DUID",
-    "Family status",
     "Annual pledge",
     "Frequency",
     "Approximate installment",
@@ -35,10 +37,7 @@ HEADINGS = (
     "ParishSoft contributed",
     "Latest response",
     "First response",
-    "Family version",
-    "Response reference",
 )
-STATUS = {True: "Active", False: "Inactive", None: "Status unavailable"}
 UNPROVEN = (
     "Unavailable: the latest giving data read from ParishSoft is not confirmed "
     "complete for this campaign's comparison period. Unavailable does not mean "
@@ -200,7 +199,6 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
             (
                 row["family_name"],
                 str(row["family_duid"]),
-                STATUS[row["active"]],
                 row["annual"],
                 row["frequency_label"],
                 # No installment (no pledge or no frequency) stays blank.
@@ -210,20 +208,17 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 row["source_contributions"],
                 instant(row["submitted_at"]),
                 instant(row["first_submitted_at"]),
-                f"{row['family_version']:,}",
-                row["id"],
             )
         )
-        # A continuation row names the Family and the response it continues
-        # and carries nothing else, so no amount is ever counted twice and a
-        # filter on any other column never sees a second value for the Family.
+        # A continuation row names the Family it continues and carries
+        # nothing else, so no amount is ever counted twice and a filter on
+        # any other column never sees a second value for the Family.
         for cell in overflow:
             rows.append(
                 (row["family_name"], str(row["family_duid"]))
-                + ("",) * 4
+                + ("",) * 3
                 + (CONTINUED + cell,)
-                + ("",) * 5
-                + (row["id"],)
+                + ("",) * 4
             )
     return FinancialDocument(
         metadata,
