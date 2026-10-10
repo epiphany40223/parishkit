@@ -730,10 +730,18 @@ rules. Under the fail-forward policy, a problem is fixed in a new release; only
 a catastrophic failure restores the pre-upgrade backup, the database and the
 YAML configuration manifest together, plus the previous release.
 
-Bootstrap (`bootstrap --admin-email`) and
-[offline Admin-access recovery](#offline-admin-access-recovery) write and
-preview Administrator users in the same form; their Name is optional and
-defaults to the email's local part.
+Once the configuration holds users,
+[offline Admin-access recovery](#offline-admin-access-recovery) writes and
+previews Administrator users in the same form; the Name is optional
+(`--name`) and defaults to the email's local part. A users configuration
+has its own request formats (`users-patch-v10` for Admin edits,
+`integration-credential-users-v10` for a credential update and
+`operator-recovery-users-v10` for recovery; #952 slice 3), each keeping every
+rule of its `source-cadence-v8` counterpart with the users list in place of
+the sign-in rules. Bootstrap (`bootstrap --admin-email`) writes an
+Administrator user too, with the code slice that changes the setup wizard:
+the bootstrap configuration is the wizard's base, and its access step and SQL
+setup guards still expect an exact-address rule.
 
 ### Offline bootstrap profile
 

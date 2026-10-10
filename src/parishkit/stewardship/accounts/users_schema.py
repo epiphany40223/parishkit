@@ -20,6 +20,13 @@ from .policy_schema import normalized_email
 SCHEMA = "users-v10"
 # The one offline conversion format (#952): an operator-upgrade request.
 UPGRADE_REQUEST_SCHEMA = "operator-upgrade-users-v10"
+# The request formats over a users configuration (#952 slice 3): ordinary
+# Admin edits, an integration credential update, and offline Admin-access
+# recovery. Each keeps every rule of its source-cadence-v8 counterpart, with
+# the users list in place of the sign-in rules.
+REQUEST_SCHEMA = "users-patch-v10"
+CREDENTIAL_SCHEMA = "integration-credential-users-v10"
+RECOVERY_SCHEMA = "operator-recovery-users-v10"
 # Lowest first: each role includes every role before it.
 ROLE_LEVELS = ("ministry_leader", "staff", "administrator")
 NAME_LIMIT = 200
@@ -46,6 +53,11 @@ def record_roles(values):
     if values["kind"] == "user":
         return cumulative_roles(values["role"])
     return list(values.get("roles", ()))
+
+
+def local_part_name(email):
+    """The default Name of a user no one named: the address's local part."""
+    return email.rsplit("@", 1)[0]
 
 
 def uses_users(document):
@@ -95,6 +107,22 @@ def validate_user_records(records):
         administrators += values["role"] == "administrator"
     if not administrators:
         invalid()
+
+
+def validate_user_change(old_records, new_records):
+    """Refuse an edit that moves a user to another address (#952).
+
+    A user's ``id`` is bound to its address for good: changing the address
+    is Delete and then New, so the old address's sessions and history never
+    pass to someone else. Everything else about the list (one user per
+    address, the shapes, and at least one Administrator) is the schema's own
+    check of the whole candidate.
+    """
+    addresses = {record["id"]: record["values"]["email"] for record in old_records}
+    for record in new_records:
+        email = record["values"]["email"]
+        if addresses.get(record["id"], email) != email:
+            invalid()
 
 
 def validate_sections(document):
