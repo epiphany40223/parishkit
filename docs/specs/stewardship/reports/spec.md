@@ -171,10 +171,7 @@ sheets and a packet's Ministry details) use one tinted label style; a
 packet's Ministry detail values span the width of the member table below
 them. Styling never changes a cell's value or type.
 
-All charts have title, legend, labeled axes with units, accessible color/line
-patterns, hover/focus values, and equivalent data tables. They download as PNG
-or PDF. Dollar/count series on one chart use separate labeled axes rather than
-comparing unlike units on one scale.
+Charts follow the [chart conventions](../ui-conventions/spec.md#charts).
 
 ### Chart engine
 

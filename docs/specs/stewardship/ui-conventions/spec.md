@@ -210,7 +210,13 @@ small ES5 feature check reveals it and never alters the form.
 
 ### Charts
 
-Detail: [shared report behavior](../reports/spec.md#shared-report-behavior).
+**Shared code.** `chart-v1.js` and `chart-v1.css`, described with the
+[chart engine](../reports/spec.md#chart-engine).
+
+All charts have title, legend, labeled axes with units, accessible color/line
+patterns, hover/focus values, and equivalent data tables. They download as PNG
+or PDF. Dollar/count series on one chart use separate labeled axes rather than
+comparing unlike units on one scale.
 
 ## Admin portal interaction
 
