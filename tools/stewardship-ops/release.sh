@@ -138,11 +138,17 @@ ops_log "main is $sha (version $version)"
 # misleading "did not verify". Ask its help text now, before any tag exists.
 help_status=0
 gh_help=$(ops_gh attestation verify --help 2>&1) || help_status=$?
+# The capture also took the timeout record and gh's own error text; show
+# them, since nothing else will.
+if [ "$help_status" -ne 0 ]; then
+    printf '%s\n' "$gh_help" >&2
+fi
 if [ "$help_status" = "$OPS_TIMEOUT_STATUS" ]; then
     exit "$OPS_TIMEOUT_STATUS"
 fi
+# Match the flag where the help's flag table lists it, not in prose.
 for flag in --signer-workflow --source-ref --deny-self-hosted-runners; do
-    if [ "$help_status" -ne 0 ] || ! grep -q -e "$flag" <<<"$gh_help"; then
+    if [ "$help_status" -ne 0 ] || ! grep -q -E -e "^ +(-[A-Za-z], )?$flag( |\$)" <<<"$gh_help"; then
         ops_refuse "This gh ($(command -v gh)) cannot run gh attestation verify $flag; upgrade gh before releasing"
     fi
 done

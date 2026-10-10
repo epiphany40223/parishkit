@@ -210,7 +210,8 @@ def test_sql_state_literals_are_real_states():
 # tag; a run's log names IMAGE on its "Application image:" line, plus
 # FAKE_LOG_EXTRA (another line) when set; `attestation verify` passes unless
 # FAKE_ATTEST_FAIL is set, and its --help names the flags release.sh uses
-# except FAKE_GH_LACKS (one flag), as an older gh does.
+# except FAKE_GH_LACKS (one flag, then named only in prose), as an older
+# gh does; with FAKE_HELP_FAIL it fails as a gh without attestation does.
 FAKE_GH = rf"""
 echo "gh $*" >>"$FAKE_DIR/gh.calls"
 runs=$FAKE_DIR/ci_runs
@@ -266,8 +267,15 @@ case "$*" in
         echo "publish Application image: \`{IMAGE}\`"
         if [ -n "${{FAKE_LOG_EXTRA-}}" ]; then echo "$FAKE_LOG_EXTRA"; fi ;;
     "attestation verify --help")
+        if [ -n "${{FAKE_HELP_FAIL-}}" ]; then
+            echo "unknown command \"attestation\" for \"gh\"" >&2; exit 1
+        fi
         for f in --signer-workflow --source-ref --deny-self-hosted-runners; do
-            [ "$f" = "${{FAKE_GH_LACKS-}}" ] || echo "      $f   a flag"
+            if [ "$f" = "${{FAKE_GH_LACKS-}}" ]; then
+                echo "Use $f to pin the signer."
+            else
+                echo "      $f   a flag"
+            fi
         done ;;
     "attestation verify"*)
         if [ -n "${{FAKE_ATTEST_FAIL-}}" ]; then
@@ -754,6 +762,28 @@ def test_release_refuses_a_gh_that_cannot_verify_before_tagging(tmp_path):
         assert f"cannot run gh attestation verify {flag}" in result.stderr
         assert calls == ["gh attestation verify --help"]
         assert remote_tag(remote, "v1.2.3") == ""
+
+
+def test_release_shows_why_gh_attestation_help_failed(tmp_path):
+    """A gh whose attestation help fails is refused, with gh's own error."""
+    work, remote, sha = release_repo(tmp_path)
+    result, calls = run_release(
+        tmp_path,
+        work,
+        "--yes",
+        "1.2.3",
+        "77",
+        ci_runs="77\n",
+        FAKE_HEAD=sha,
+        FAKE_RELEASE_RUN="99",
+        FAKE_HELP_FAIL="1",
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert 'unknown command "attestation"' in result.stderr
+    assert "cannot run gh attestation verify" in result.stderr
+    assert calls == ["gh attestation verify --help"]
+    assert remote_tag(remote, "v1.2.3") == ""
 
 
 def test_release_refuses_a_named_run_the_listing_omits(tmp_path):
