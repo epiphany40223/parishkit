@@ -751,3 +751,32 @@ def test_a_past_end_date_is_refused_on_the_page(auth_service, google):
     assert "Choose an end date that has not already passed." in text
     assert "would no longer fit the campaign" not in text
     assert not CampaignConfigurationIntent.objects.exists()
+
+
+def test_other_schedule_errors_are_shown_as_they_are(auth_service, google, monkeypatch):
+    """Only a mailing outside the campaign links to the combined review (#944)."""
+    from django import forms
+
+    from parishkit.stewardship.accounts import schedule_forms
+
+    store = auth_service.store
+    live(store)
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_settings")
+    page = browser.get(url)
+
+    def broken(self, rows):
+        """A rule between schedules that the end date does not cause."""
+        raise forms.ValidationError("Two emails to Families clash.")
+
+    monkeypatch.setattr(schedule_forms.Schedules, "_check_collection", broken)
+    refused = post(
+        browser,
+        url,
+        {"action": "preview", "end_date": "2054-11-15", "base_digest": digest(page)},
+    )
+    assert refused.status_code == 400
+    text = unescape(refused.content.decode())
+    assert "Two emails to Families clash." in text
+    assert "would no longer fit the campaign" not in text
+    assert "?end_date=" not in text

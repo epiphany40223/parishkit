@@ -47,6 +47,11 @@ NO_TEMPLATES = _(
     "No invitation, reminder or digest email is saved yet, so there is nothing "
     "to choose. Save those emails with the page and email templates first."
 )
+# A mailing dated outside the campaign, and its error code: a live end-date
+# review (#912) offers the combined review that resolves such mailings only
+# for this error, and shows any other schedule error as it is.
+OUTSIDE_WINDOW = _("Choose a date within the campaign (%(window)s).")
+OUTSIDE_CAMPAIGN = "outside_campaign"
 
 
 def window_text(campaign):
@@ -675,9 +680,7 @@ class ScheduleSet(BaseFormSet):
                 )
             )
         elif not start <= data["date"] <= end:
-            problems.append(
-                ("date", _("Choose a date within the campaign (%(window)s)."))
-            )
+            problems.append(("date", OUTSIDE_WINDOW))
         if "weekday" not in FIELDS[kind]:
             if data["weekday"] is not None:
                 problems.append(
@@ -702,7 +705,12 @@ class ScheduleSet(BaseFormSet):
             )
         params = {"window": self.window_text, "kind": EMAIL_LABELS[kind]}
         for field, message in problems:
-            form.add_error(field, forms.ValidationError(message, params=params))
+            # The outside-the-campaign date has its own code, which a live
+            # end-date review recognizes (campaign_end_date.end_review).
+            code = OUTSIDE_CAMPAIGN if message is OUTSIDE_WINDOW else None
+            form.add_error(
+                field, forms.ValidationError(message, code=code, params=params)
+            )
         return bool(problems)
 
     def _check_collection(self, rows):
