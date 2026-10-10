@@ -19,9 +19,9 @@ def test_content_slots_and_clear_markers(step):
     """Every named slot is typed, copied and explicitly removable."""
     kind, _, slot = step.partition("_")
     record = content(str(uuid4()), kind=kind, slot=slot)
-    if step == "page_submission_confirmation":
-        # Retired (#260): the step name stays in the frozen schema, but no
-        # closing note can be staged any more.
+    if step in {"page_submission_confirmation", "email_critical_alert"}:
+        # Retired (#260, #913): the step name stays in the frozen schema, but
+        # no closing note or critical alert can be staged any more.
         with pytest.raises(ConfigError):
             validate_values(step, record)
         return
@@ -90,7 +90,7 @@ def test_default_updates_distinguish_never_set_cleared_and_saved():
     values = campaign()["values"]
     steps = {f"{kind}_{slot}" for kind, slot in applicable_slots(values)}
     everything = default_updates({}, values, attempt, which=FILL_UNSET)
-    assert set(everything) == steps and len(steps) == 11 + 6
+    assert set(everything) == steps and len(steps) == 11 + 5
     assert all(
         matches_default(row["values"])
         and row["values"]["campaign_id"] == str(attempt)

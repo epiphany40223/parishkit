@@ -283,13 +283,6 @@ EMAILS = {
         "{{ campaign_name }} — weekly report",
         "<p>Here are this week’s requests for follow-up.</p>",
     ),
-    "critical_alert": DefaultEmail(
-        "Action needed: {{ campaign_name }} stewardship system alert",
-        "<p>The {{ parish_name }} stewardship system has detected a problem that "
-        "needs attention. Details are below. Please sign in to the "
-        "administration portal to review it, or contact your system "
-        "administrator.</p>",
-    ),
 }
 
 

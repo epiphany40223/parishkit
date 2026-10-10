@@ -50,7 +50,12 @@ EMAIL_LABELS = {
     "confirmation": _("Confirmation email"),
     "daily_digest": _("Daily Admin digest"),
     "weekly_digest": _("Weekly Admin digest"),
-    "critical_alert": _("Critical alert"),
+}
+# Retired email slots (#913) label applied history only and are never offered
+# for editing: operational alerts use fixed text (jobs/operational_content),
+# so a "critical_alert" template was never sent.
+HISTORY_EMAIL_LABELS = EMAIL_LABELS | {
+    "critical_alert": _("Critical alert (retired)"),
 }
 LEGACY_PAGE_REFERENCES = frozenset(
     {

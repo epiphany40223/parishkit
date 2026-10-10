@@ -10,7 +10,7 @@ from parishkit.stewardship.campaigns.configuration import validate_campaign_sect
 from parishkit.stewardship.web.refusals import UserFacingError
 
 from .content_schema import validate_content_records
-from .setup_content_values import CONTENT_STEPS
+from .setup_content_values import CONTENT_STEPS, without_retired
 
 # Why an email cannot be cleared, by the kind of schedule that sends it.
 SCHEDULE_USES = {
@@ -73,7 +73,9 @@ def reconcile_preparation(request, service, attempt_id, updates):
             return updates
     if "campaign" not in updates:
         draft_campaign(request, service, attempt_id)
-    combined = draft.sections | updates
+    # A retired step left in an older draft is never re-validated or carried
+    # into the content checked below (validate_content_records refuses it).
+    combined = without_retired(draft.sections) | updates
     records = deepcopy(combined.get("schedules", {"records": []})["records"])
     for step in CONTENT_STEPS:
         if step not in updates:

@@ -980,6 +980,17 @@ or otherwise joined after a blank line. The slot and its setup
 step name stay allowed in the database schema only so applied history keeps
 verifying.
 
+The former `critical_alert` email slot is retired the same way (#913):
+operational alerts are sent with fixed text (see
+[mode routing](../background-processing/spec.md#mode-routing)), so a template
+in that slot was never sent. No new revision may use it, and the content list,
+setup content step, defaults and editor no longer offer it. An applied
+configuration that already carries one stays valid and the record is inert;
+configuration history still labels it. Cloning a campaign, or finishing a
+setup whose draft saved one, leaves it behind. The slot and its setup step
+name stay allowed in the database schema only so applied history keeps
+verifying.
+
 Built-in default text can improve between releases. A change affects only
 slots filled or reset afterwards; saved content keeps its text. Content saved
 unmodified from an earlier default still counts as default rather than
@@ -987,11 +998,9 @@ customized. For example, the confirmation email's online-giving sentence no
 longer mentions a pledge (a campaign without the Financial module has none),
 and a slot that still holds the earlier sentence still reads as default (#385).
 
-Initial, reminder, confirmation, daily digest, and weekly digest templates have
-separate subject, sanitized HTML, and generated/edited plain-text versions. A
-`critical_alert` email slot can also be saved, but nothing sends it:
-operational alerts use fixed content by notification type (see
-[mode routing](../background-processing/spec.md#mode-routing)). Sanitizing keeps the author's structure: the line `<div>` wrappers
+Initial, reminder, confirmation, daily digest, and weekly digest templates
+have separate subject, sanitized HTML, and generated/edited plain-text
+versions. Sanitizing keeps the author's structure: the line `<div>` wrappers
 that browser editors write become paragraphs, `<b>`/`<i>` become
 `<strong>`/`<em>`, and markup-free text keeps blank-line paragraphs and line
 breaks; already-sanitized content is unchanged. The visual editor starts new

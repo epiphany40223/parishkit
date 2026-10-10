@@ -4,13 +4,14 @@
 
 import pytest
 from django.core import signing
+from django.db import transaction
 from django.test import Client
 
 from parishkit.stewardship.accounts.branding_staging import stage_branding
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.setup_credentials import stage_credential
 from parishkit.stewardship.accounts.setup_drafts import save_section, save_sections
-from parishkit.stewardship.accounts.setup_models import SetupAttempt
+from parishkit.stewardship.accounts.setup_models import SetupAttempt, SetupDraftSection
 from parishkit.stewardship.accounts.setup_preview import (
     PREVIEW_SALT,
     prepare_preview,
@@ -18,8 +19,10 @@ from parishkit.stewardship.accounts.setup_preview import (
 )
 from parishkit.stewardship.accounts.setup_staging import cancel_setup
 from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 
+from ..content_factory import content
 from ..test_integration_candidates import account
 from ..test_setup_forms import VALUES
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
@@ -132,6 +135,58 @@ def test_another_login_and_cancelled_draft_cannot_reuse_preview(
         cancel_setup(request, setup_service, status.attempt_id)
         with pytest.raises(LookupError):
             verify_preview(request, setup_service, token)
+
+
+@pytest.mark.parametrize(
+    "step", ["page_submission_confirmation", "email_critical_alert"]
+)
+def test_retired_step_left_in_a_draft_blocks_neither_saving_nor_finishing(
+    setup_service, monkeypatch, tmp_path, step
+):
+    """A draft saved before a slot retired (#260, #913) still saves and previews.
+
+    The leftover step is written straight to SQL, as the older release did;
+    the current code can no longer save it.
+    """
+    request, status, _ = complete_draft(setup_service, monkeypatch, tmp_path)
+    kind, _, slot = step.partition("_")
+    with web_login(), transaction.atomic(), work_transaction():
+        SetupDraftSection.objects.create(
+            attempt_id=status.attempt_id,
+            step=step,
+            values=content(str(status.attempt_id), kind=kind, slot=slot),
+            actor_id=request.portal_session.principal_id,
+        )
+    saved = {
+        row.step: row.values
+        for row in SetupDraftSection.objects.filter(
+            step__in=["campaign", "schedules", "email_initial"]
+        )
+    }
+    replacement = content(
+        str(status.attempt_id), kind="email", slot="initial", subject="Updated"
+    )
+    with web_login():
+        # Each first-campaign section reconciles against the whole draft.
+        for name, values in (
+            ("campaign", saved["campaign"]),
+            ("schedules", saved["schedules"]),
+            ("email_initial", replacement),
+        ):
+            status = save_section(
+                request,
+                setup_service,
+                status.attempt_id,
+                step=name,
+                values=values,
+                expected_version=status.version,
+            )
+        preview = prepare_preview(request, setup_service)
+    rows = preview.compiled.candidate.document()["sections"]["content"]
+    assert replacement["id"] in {row["id"] for row in rows}
+    assert slot not in {row["values"]["slot"] for row in rows}
+    # The leftover is inert, not rewritten.
+    assert SetupDraftSection.objects.filter(step=step).exists()
 
 
 def test_preview_http_is_private_inert_and_contains_all_named_slots(

@@ -12,7 +12,10 @@ from parishkit.stewardship.accounts.setup_candidate import (
     CandidateCredential,
     compile_candidate,
 )
-from parishkit.stewardship.accounts.setup_content_values import CONTENT_STEPS
+from parishkit.stewardship.accounts.setup_content_values import (
+    CONTENT_STEPS,
+    RETIRED_STEPS,
+)
 
 from .campaign_factory import campaign, schedule
 from .content_factory import content
@@ -213,6 +216,16 @@ def test_disabled_page_remains_in_staging_but_not_in_compiled_selection():
     assert args["sections"]["page_financial"]["values"]
 
 
+@pytest.mark.parametrize("step", sorted(RETIRED_STEPS))
+def test_retired_step_left_in_a_draft_is_not_compiled(step):
+    """A step retired after the draft saved it neither blocks nor joins setup."""
+    base, args = compilation()
+    kind, _, slot = step.partition("_")
+    args["sections"][step] = content(str(args["attempt_id"]), kind=kind, slot=slot)
+    result = compile_candidate(base, **args)
+    assert not result.candidate.document()["sections"].get("content")
+
+
 @pytest.mark.parametrize("invalid", ["content_owner", "schedule_owner", "template"])
 def test_child_ownership_and_template_resolution_are_required(invalid):
     """Detached child records do not gain authority through configuration assembly."""
@@ -250,8 +263,8 @@ def test_maximum_wizard_can_compile_without_artificial_combined_record_limit():
         )
     for step in CONTENT_STEPS:
         kind, _, slot = step.partition("_")
-        # The retired receipt closing note (#260) can no longer be staged.
-        if step != "page_submission_confirmation":
+        # Retired steps (#260, #913) can no longer be staged.
+        if step not in RETIRED_STEPS:
             sections[step] = content(str(args["attempt_id"]), kind=kind, slot=slot)
     sections["campaign"]["campaign"]["end_date"] = "2055-02-01"
     rows = []

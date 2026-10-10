@@ -144,13 +144,13 @@ def _campaign_names(campaign_ids):
 
 def _describe(source, campaign, kind, slot, count):
     """One use in plain words, for the Admin page and refusals."""
-    from .content_forms import EMAIL_LABELS, PAGE_LABELS
+    from .content_forms import HISTORY_EMAIL_LABELS, PAGE_LABELS
 
     if source == "pending_change":
         return _("A change that is still being applied")
     if source == "unsent_mail":
         return _("%(count)s email(s) waiting to be sent") % {"count": count}
-    labels = PAGE_LABELS if kind == "page" else EMAIL_LABELS
+    labels = PAGE_LABELS if kind == "page" else HISTORY_EMAIL_LABELS
     place = str(labels.get(slot, slot))
     what = _("page") if kind == "page" else _("email")
     return f"{campaign or _('Campaign')} › {place} ({what})"

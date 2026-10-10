@@ -16,7 +16,7 @@ from .content_forms import LEGACY_PAGE_REFERENCES, page_slots
 from .policy_schema import validate_manual_operation
 from .provider_context import validated_context, workspace_scope
 from .setup_configuration import build_setup_candidate
-from .setup_content_values import CONTENT_STEPS
+from .setup_content_values import CONTENT_STEPS, without_retired
 from .setup_forms import FORMS, validate_values
 
 
@@ -92,6 +92,9 @@ def compile_candidate(
         raise TypeError("Explicit setup compilation identities are required.")
     if type(sections) is not dict or not set(FORMS) <= sections.keys():
         raise ConfigError("Complete every required setup section before final preview.")
+    # A draft saved before a slot retired may still hold it; leave it behind
+    # instead of refusing to finish.
+    sections = without_retired(sections)
     if "campaign" not in sections:
         return _system_candidate(
             base,

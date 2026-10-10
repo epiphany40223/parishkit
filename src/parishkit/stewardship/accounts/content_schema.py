@@ -51,9 +51,12 @@ EMAIL_SLOTS = frozenset(
         "confirmation",
         "daily_digest",
         "weekly_digest",
+        # Retired (#913): only already-applied records may carry it.
         "critical_alert",
     }
 )
+# Never sent: operational alerts use fixed text (jobs/operational_content).
+RETIRED_ALERT = ("email", "critical_alert")
 
 
 def validate_content_records(document):
@@ -81,9 +84,10 @@ def validate_content_records(document):
             invalid()
         selected.add(identity)
         trusted = is_trusted(record)
-        if (kind, slot) == RETIRED and not trusted:
-            # The closing note now lives in the confirmation email body
-            # (receipt_note); applied history may still carry one.
+        if (kind, slot) in (RETIRED, RETIRED_ALERT) and not trusted:
+            # Retired slots (#260, #913): applied history may still carry
+            # one, but no new revision may. The closing note now lives in
+            # the confirmation email body (receipt_note).
             invalid()
         if trusted:
             # Already-applied, digest-verified text: today's text rules only
