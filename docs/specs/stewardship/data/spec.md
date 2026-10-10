@@ -860,10 +860,12 @@ before #952.
 
 ### Ministry leaders
 
-Signing in to the Admin portal needs a login rule granting Ministry leader,
-Staff or Administrator (Administrator decision, 2026-10-10, made with the
-Portal Users revamp); a ParishSoft role alone admits no one. ParishSoft
-decides only which Ministries such a person leads: a person leads a Ministry
+Signing in to the Admin portal needs a user of Ministry leader, Staff or
+Administrator (Administrator decision, 2026-10-10, made with the Portal Users
+revamp); a ParishSoft role alone admits no one. Until the users code of
+[#952](https://github.com/epiphany40223/parishkit/issues/952) lands, the code
+still admits by login rule as an interim: a login rule granting one of those
+roles stands in for the user. ParishSoft decides only which Ministries such a person leads: a person leads a Ministry
 for the current campaign when an active Member of an active Family holds one
 of the campaign's Ministry leader roles on that Ministry's current roster in
 the promoted ParishSoft data, and the person signs in with a valid email
@@ -885,10 +887,10 @@ same rule). Addresses match case-insensitively, with no Gmail dot or plus
 folding, whatever the contact's publication flag says. An address that
 several leader Members list gets the union of their Ministries. No current
 campaign, or a campaign without Ministry stewardship, means no Ministry
-leaders. Which login rule applies (an exact address over a hosted-domain
-rule) is unchanged
-([Portal user management](../admin-portal/spec.md#portal-user-management)),
-and Ministry assignments grant no Ministry.
+leaders. An address's one user gives its role
+([Portal user management](../admin-portal/spec.md#portal-user-management));
+until #952 lands, the interim code still picks the login rule (an exact
+address over a hosted-domain rule). Ministry assignments grant no Ministry.
 
 The campaign's `ministry_leader_roles` value lists the role names: one to 50
 distinct trimmed names, none repeated once compared as above. Campaign
@@ -903,13 +905,15 @@ it in Python and SQL).
 `stewardship_ministry_leaders_v1()` is the one definition of who leads what.
 It is a SECURITY DEFINER function no login may execute directly.
 `stewardship_ministry_leader_scope_v1(user)`, also a definer, returns one
-portal user's Ministries, empty unless the user's current login rule grants
-one of the three roles; database-grants lets the web, worker and download
-logins execute it. `stewardship_ministry_scope_v1` and Python's
+portal user's Ministries, empty unless the user's role is Ministry leader or
+higher (until #952 lands, the interim code reads the current login rule's
+roles instead); database-grants lets the web, worker and download logins
+execute it. `stewardship_ministry_scope_v1` and Python's
 `current_principal()` read that scope, so Python never restates the rule and
-can never grant more than SQL. The Admin session guard (#306) still admits by
-login rule alone. Every role comes only from login rules, as before; Staff
-and Administrators see every Ministry. Scope is recomputed on every request,
+can never grant more than SQL. The Admin session guard (#306) admits by the
+user's role alone (by login rule in the interim code). Every role comes only
+from users, never from ParishSoft; Staff and Administrators see every
+Ministry. Scope is recomputed on every request,
 so a full refresh that removes a role or an address takes effect on the next
 request. Nothing is cached
 between requests: the web opens a new database connection for each request,

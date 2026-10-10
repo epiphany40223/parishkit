@@ -3637,24 +3637,23 @@ reload.
 ### Ministry leaders from ParishSoft
 
 Which Ministries a Ministry leader sees is not entered in the Admin portal
-(Administrator decision, 2026-10-09, #922). A person signed in through a
-login rule granting Ministry leader or higher leads each Ministry where they
-hold one of the campaign's [Ministry leader roles](#ministry-leader-roles) in
-ParishSoft, matched by an email address their ParishSoft Member record lists.
-A ParishSoft role without a login rule admits no one, and a Ministry leader
-who holds no such role signs in and sees no Ministry (Administrator decision,
+(Administrator decision, 2026-10-09, #922). A person signed in as a user of
+Ministry leader or higher leads each Ministry where they hold one of the
+campaign's [Ministry leader roles](#ministry-leader-roles) in ParishSoft,
+matched by an email address their ParishSoft Member record lists. A
+ParishSoft role without a user admits no one, and a Ministry leader who holds
+no such role signs in and sees no Ministry (Administrator decision,
 2026-10-10). Opening a Ministry page then answers 403 with a plain sentence
 saying they lead no Ministry in the current ParishSoft data, so there are no
 Ministry pages to show, never the generic sign-in denial. The
-[data specification](../data/spec.md#ministry-leaders) defines the rule. A
+[data specification](../data/spec.md#ministry-leaders) defines the rule,
+including the interim login-rule admission that stays until the users code
+of [#952](https://github.com/epiphany40223/parishkit/issues/952) lands. A
 change in ParishSoft reaches the portal with the next full refresh.
 
 The Ministry assignments editor and the Chairperson suggestion, confirmation
-and review pages are removed (#922), and nothing reconciles Chairperson-seeded
-assignments at a refresh or a configuration change. Older configurations keep
-their assignment records and seeded grants, unread and not shown, and their
-tables stay until a later release drops them. A sign-in rule's roles,
-Ministry leader included, still decide who signs in, whatever their origin.
+and review pages are removed (#922); what became of their records is in the
+[data specification](../data/spec.md#administration-user-and-policy).
 
 ### ParishSoft Ministry leaders without a user
 
