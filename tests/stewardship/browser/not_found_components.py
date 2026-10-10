@@ -13,7 +13,10 @@ from parishkit.stewardship.web.error_pages import BrowserErrorMiddleware
 
 PAGE = {"HTTP_ACCEPT": "text/html", "HTTP_SEC_FETCH_MODE": "navigate"}
 # Fixture path -> the portal address the page answers.
-PAGES = {"/not-found-admin": "/admin/no-such-page"}
+PAGES = {
+    "/not-found-admin": "/admin/no-such-page",
+    "/not-found-family": "/family/no-such-page",
+}
 
 
 def components(context, admin):

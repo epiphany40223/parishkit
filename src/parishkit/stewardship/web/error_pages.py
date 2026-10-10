@@ -81,10 +81,11 @@ _NO_PAGE = Refusal(
     ),
 )
 
-# Portal addresses whose untyped 404s become the styled page. Everything else
-# (static assets, branding images, hosted files, probes, stray addresses)
-# keeps the plain normalized 404 from the security middleware.
-_STYLED_PREFIXES = ("/admin/",)
+# Portal addresses whose untyped 404s become the styled page: the Admin
+# portal, and the Family portal in its own layout. Everything else (static
+# assets, branding images, hosted files, probes, stray addresses) keeps the
+# plain normalized 404 from the security middleware.
+_STYLED_PREFIXES = ("/admin/", "/family/")
 
 
 def not_found_response():

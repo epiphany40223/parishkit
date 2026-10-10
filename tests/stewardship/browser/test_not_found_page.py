@@ -1,4 +1,4 @@
-"""An unknown portal address shows the styled not-found page (#927).
+"""An unknown Admin or Family address shows the styled not-found page (#927).
 
 Before #927 it showed the security middleware's plain-text "Not Found",
 in the browser's fixed-width font. The page is
@@ -16,9 +16,17 @@ pytestmark = pytest.mark.parametrize(
 )
 
 
-def test_unknown_admin_address_shows_the_styled_page(page, component_origin):
-    """The Admin layout, a plain-language heading and explanation, a way home."""
-    fixture = "/not-found-admin"
+@pytest.mark.parametrize(
+    "fixture,home",
+    [
+        ("/not-found-admin", "Administration home"),
+        ("/not-found-family", "Family portal home"),
+    ],
+)
+def test_unknown_portal_address_shows_the_styled_page(
+    page, component_origin, fixture, home
+):
+    """The portal's layout, a plain-language heading and explanation, a way home."""
     body = page.request.get(component_origin + fixture).text()
     address = PAGES[fixture]
     page.route(
@@ -33,7 +41,7 @@ def test_unknown_admin_address_shows_the_styled_page(page, component_origin):
     visible(heading)
     visible(page.get_by_text("There is no page at this address."))
     visible(page.locator(".site-header"))
-    visible(page.get_by_role("link", name="Administration home"))
+    visible(page.get_by_role("link", name=home))
     # The portal's own type, not the browser's fixed-width text rendering.
     font = page.evaluate("getComputedStyle(document.body).fontFamily")
     assert "monospace" not in font.lower()
