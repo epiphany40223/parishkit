@@ -141,7 +141,7 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         # page shows, "Surname, heads", built in SQL as snapshot_names builds
         # it; the rows keep their shape (#960).
         row = page["rows"][0]
-        assert not {"display_name", "head_duids"} & row.keys()
+        assert not {"display_name", "head_duids", "surname"} & row.keys()
         for sort in ("duid", "duid_desc"):
             sorted_page = information_page(
                 harness.campaign.pk, InformationQuery(sort=sort)

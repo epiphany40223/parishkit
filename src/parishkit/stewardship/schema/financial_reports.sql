@@ -30,6 +30,10 @@ DECLARE f jsonb:=parameters->'filters'; proof jsonb:=parameters->'proof';
     money_text constant text:='^(0|[1-9][0-9]{0,8})(\.[0-9]{2})?$';
     -- Canonical lowercase text, so identities compare without a fallible cast.
     uuid_text constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+    -- Every character Python's str.strip() removes (str.isspace), as the
+    -- directory's name_trim: the shown name built below matches
+    -- family_names.py exactly, even with tabs or no-break spaces (#960).
+    name_ws constant text:=E' \t\n\x0b\x0c\r\x1c\x1d\x1e\x1f\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000';
 BEGIN
     -- Each step relies only on what an earlier statement established. PL/pgSQL
     -- runs statements in order, which SQL does not promise for the terms of one
@@ -128,6 +132,14 @@ WITH selected AS MATERIALIZED (
                 nullif(btrim(p.canonical::jsonb->>'firstName'),''),
                 nullif(btrim(p.canonical::jsonb->>'lastName'),''))),''),
             'Unavailable Family') AS family_name,
+        -- The surname that leads the shown name, trimmed as Python strips it;
+        -- family_name above keeps its own trim for the returned rows.
+        coalesce(nullif(btrim(p.canonical::jsonb->>'lastName',name_ws),''),
+            nullif(btrim(p.canonical::jsonb->>'mailingName',name_ws),''),
+            nullif(concat_ws(' ',
+                nullif(btrim(p.canonical::jsonb->>'firstName',name_ws),''),
+                nullif(btrim(p.canonical::jsonb->>'lastName',name_ws),'')),''),
+            'Unavailable Family') AS surname,
         CASE WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
             THEN (p.canonical::jsonb->'active')::boolean END AS active,
         CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
@@ -144,7 +156,8 @@ WITH selected AS MATERIALIZED (
     -- The Family as the page names it (family_names.family_heads_name): the
     -- surname, then its active heads' first names, a head of another surname
     -- in full, so search and sort match what the page shows (#960). One
-    -- set-based join over every head, as in the directory selection.
+    -- set-based join over every head, as in the directory selection,
+    -- skipped when neither a search nor a name sort reads the name.
     SELECT r.family_duid,array_agg(n.part ORDER BY h.head::bigint)
         FILTER (WHERE n.part<>'') AS parts
     FROM responses r CROSS JOIN source x
@@ -154,16 +167,17 @@ WITH selected AS MATERIALIZED (
     JOIN stewardship_source_member sm ON sm.id=mm.payload_id
     -- Each head's record is parsed once (OFFSET 0 keeps the subquery
     -- from being flattened into one parse per expression).
-    CROSS JOIN LATERAL (SELECT btrim(coalesce(v->>'firstName','')),
-        btrim(coalesce(v->>'lastName',''))
+    CROSS JOIN LATERAL (SELECT btrim(coalesce(v->>'firstName',''),name_ws),
+        btrim(coalesce(v->>'lastName',''),name_ws)
         FROM (SELECT sm.canonical::jsonb AS v OFFSET 0) j
         WHERE v->'active'='true'::jsonb) t(first,last)
-    CROSS JOIN LATERAL (SELECT CASE WHEN t.last=r.family_name THEN t.first
+    CROSS JOIN LATERAL (SELECT CASE WHEN t.last=r.surname THEN t.first
         ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END) n(part)
+    WHERE f->>'search'<>'' OR f->>'sort' IN ('name','name_desc')
     GROUP BY r.family_duid
 ), named AS MATERIALIZED (
     -- "A", "A and B", "A, B and C" after the surname (family_names.name_series).
-    SELECT r.*,r.family_name||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
+    SELECT r.*,r.surname||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
             THEN array_to_string(n.parts,' and ')
             ELSE array_to_string(n.parts[1:cardinality(n.parts)-1],', ')
                 ||' and '||n.parts[cardinality(n.parts)] END),'') AS display_name
@@ -204,9 +218,9 @@ WITH selected AS MATERIALIZED (
     -- A name sort orders by surname, then the whole shown name, as the
     -- directory does; the Family DUID is unique here, so it ends every order.
     SELECT *,row_number() OVER (ORDER BY
-        CASE WHEN f->>'sort'='name' THEN lower(family_name) END,
+        CASE WHEN f->>'sort'='name' THEN lower(surname) END,
         CASE WHEN f->>'sort'='name' THEN lower(display_name) END,
-        CASE WHEN f->>'sort'='name_desc' THEN lower(family_name) END DESC,
+        CASE WHEN f->>'sort'='name_desc' THEN lower(surname) END DESC,
         CASE WHEN f->>'sort'='name_desc' THEN lower(display_name) END DESC,
         CASE WHEN f->>'sort'='newest' THEN submitted_at END DESC,
         CASE WHEN f->>'sort'='oldest' THEN submitted_at END,
@@ -214,7 +228,7 @@ WITH selected AS MATERIALIZED (
         CASE WHEN f->>'sort'='pledge_desc' THEN annual_pledge END DESC,
         CASE WHEN f->>'sort'='duid' THEN family_duid END,
         CASE WHEN f->>'sort'='duid_desc' THEN family_duid END DESC,
-        lower(family_name),lower(display_name),family_duid) AS ordinal
+        lower(surname),lower(display_name),family_duid) AS ordinal
     FROM filtered ORDER BY ordinal
     LIMIT CASE WHEN page_number IS NULL THEN NULL ELSE page_size END
     OFFSET CASE WHEN page_number IS NULL THEN 0 ELSE (page_number-1)*page_size END

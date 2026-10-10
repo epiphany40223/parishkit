@@ -9,6 +9,10 @@ CREATE FUNCTION public.stewardship_information_report_v1(
 SET search_path TO pg_catalog,public,pg_temp
 SET jit TO off AS $$
 DECLARE f jsonb:=parameters->'filters'; answer jsonb;
+    -- Every character Python's str.strip() removes (str.isspace), as the
+    -- directory's name_trim: the shown name built below matches
+    -- family_names.py exactly, even with tabs or no-break spaces (#960).
+    name_ws constant text:=E' \t\n\x0b\x0c\r\x1c\x1d\x1e\x1f\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000';
 BEGIN
     IF jsonb_typeof(parameters) IS DISTINCT FROM 'object'
        OR NOT parameters ?& ARRAY['filters','history']
@@ -56,6 +60,14 @@ BEGIN
                     nullif(btrim(p.canonical::jsonb->>'firstName'),''),
                     nullif(btrim(p.canonical::jsonb->>'lastName'),''))),''),
                 'Family') AS family_name,
+            -- The surname that leads the shown name, trimmed as Python strips it;
+            -- family_name above keeps its own trim for the returned rows.
+            coalesce(nullif(btrim(p.canonical::jsonb->>'lastName',name_ws),''),
+                nullif(btrim(p.canonical::jsonb->>'mailingName',name_ws),''),
+                nullif(concat_ws(' ',
+                    nullif(btrim(p.canonical::jsonb->>'firstName',name_ws),''),
+                    nullif(btrim(p.canonical::jsonb->>'lastName',name_ws),'')),''),
+                'Family') AS surname,
             CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
                 THEN p.canonical::jsonb->'active_head_duids' END AS head_duids,
             h.value->'reported' ? i.id::text AS previously_reported,
@@ -80,10 +92,11 @@ BEGIN
         -- The Family as the page names it (family_names.family_heads_name):
         -- the surname, then its active heads' first names, a head of another
         -- surname in full, so search and sort match what the page shows
-        -- (#960). One set-based join over each Family's heads.
+        -- (#960). One set-based join over each Family's heads, skipped
+        -- when neither a search nor a name sort reads the name.
         SELECT r.family_duid,array_agg(n.part ORDER BY h.head::bigint)
             FILTER (WHERE n.part<>'') AS parts
-        FROM (SELECT DISTINCT family_duid,family_name,head_duids FROM rows) r
+        FROM (SELECT DISTINCT family_duid,surname,head_duids FROM rows) r
         CROSS JOIN selected x
         CROSS JOIN LATERAL jsonb_array_elements_text(r.head_duids) h(head)
         JOIN stewardship_snapshot_member mm
@@ -91,16 +104,17 @@ BEGIN
         JOIN stewardship_source_member sm ON sm.id=mm.payload_id
         -- Each head's record is parsed once (OFFSET 0 keeps the subquery
         -- from being flattened into one parse per expression).
-        CROSS JOIN LATERAL (SELECT btrim(coalesce(v->>'firstName','')),
-            btrim(coalesce(v->>'lastName',''))
+        CROSS JOIN LATERAL (SELECT btrim(coalesce(v->>'firstName',''),name_ws),
+            btrim(coalesce(v->>'lastName',''),name_ws)
             FROM (SELECT sm.canonical::jsonb AS v OFFSET 0) j
             WHERE v->'active'='true'::jsonb) t(first,last)
-        CROSS JOIN LATERAL (SELECT CASE WHEN t.last=r.family_name THEN t.first
+        CROSS JOIN LATERAL (SELECT CASE WHEN t.last=r.surname THEN t.first
             ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END) n(part)
+        WHERE f->>'search'<>'' OR f->>'sort' IN ('name','name_desc')
         GROUP BY r.family_duid
     ), named AS MATERIALIZED (
         -- "A", "A and B", "A, B and C" after the surname (name_series).
-        SELECT r.*,r.family_name||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
+        SELECT r.*,r.surname||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
                 THEN array_to_string(n.parts,' and ')
                 ELSE array_to_string(n.parts[1:cardinality(n.parts)-1],', ')
                     ||' and '||n.parts[cardinality(n.parts)] END),'') AS display_name
@@ -119,9 +133,9 @@ BEGIN
         SELECT *,row_number() OVER (ORDER BY
             CASE WHEN f->>'sort'='newest' THEN submitted_at END DESC,
             CASE WHEN f->>'sort'='oldest' THEN submitted_at END,
-            CASE WHEN f->>'sort'='name' THEN lower(family_name) END,
+            CASE WHEN f->>'sort'='name' THEN lower(surname) END,
             CASE WHEN f->>'sort'='name' THEN lower(display_name) END,
-            CASE WHEN f->>'sort'='name_desc' THEN lower(family_name) END DESC,
+            CASE WHEN f->>'sort'='name_desc' THEN lower(surname) END DESC,
             CASE WHEN f->>'sort'='name_desc' THEN lower(display_name) END DESC,
             CASE WHEN f->>'sort'='duid' THEN family_duid END,
             CASE WHEN f->>'sort'='duid_desc' THEN family_duid END DESC,id) AS ordinal
@@ -133,7 +147,7 @@ BEGIN
     ), detached AS (
         -- The shown name and heads only order and search; the page and an
         -- export capture keep the row they always had.
-        SELECT ordinal,to_jsonb(page)-ARRAY['ordinal','head_duids','display_name']
+        SELECT ordinal,to_jsonb(page)-ARRAY['ordinal','head_duids','surname','display_name']
             || jsonb_build_object('history',
             CASE WHEN (parameters->>'history')::boolean THEN coalesce((
                 SELECT jsonb_agg(jsonb_build_object(
@@ -231,6 +245,10 @@ SET search_path TO pg_catalog,public,pg_temp
 SET jit TO off AS $$
 DECLARE answer jsonb; bad boolean;
     uuid_text constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+    -- Every character Python's str.strip() removes (str.isspace), as the
+    -- directory's name_trim: the shown name built below matches
+    -- family_names.py exactly, even with tabs or no-break spaces (#960).
+    name_ws constant text:=E' \t\n\x0b\x0c\r\x1c\x1d\x1e\x1f\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000';
 BEGIN
     -- Statements run in order, so each check relies only on earlier ones.
     bad:=jsonb_typeof(parameters) IS DISTINCT FROM 'object';
@@ -259,6 +277,11 @@ WITH selected AS MATERIALIZED (
         coalesce(nullif(btrim(p.canonical::jsonb->>'lastName'),''),
             nullif(btrim(p.canonical::jsonb->>'mailingName'),''),
             'Unavailable Family') AS family_name,
+        -- The surname that leads the shown name, trimmed as Python strips it;
+        -- family_name above keeps its own trim for the returned rows.
+        coalesce(nullif(btrim(p.canonical::jsonb->>'lastName',name_ws),''),
+            nullif(btrim(p.canonical::jsonb->>'mailingName',name_ws),''),
+            'Unavailable Family') AS surname,
         CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
             THEN p.canonical::jsonb->'active_head_duids' END AS head_duids
     FROM selected x
@@ -281,22 +304,22 @@ WITH selected AS MATERIALIZED (
     JOIN stewardship_source_member sm ON sm.id=mm.payload_id
     -- Each head's record is parsed once (OFFSET 0 keeps the subquery
     -- from being flattened into one parse per expression).
-    CROSS JOIN LATERAL (SELECT btrim(coalesce(v->>'firstName','')),
-        btrim(coalesce(v->>'lastName',''))
+    CROSS JOIN LATERAL (SELECT btrim(coalesce(v->>'firstName',''),name_ws),
+        btrim(coalesce(v->>'lastName',''),name_ws)
         FROM (SELECT sm.canonical::jsonb AS v OFFSET 0) j
         WHERE v->'active'='true'::jsonb) t(first,last)
-    CROSS JOIN LATERAL (SELECT CASE WHEN t.last=r.family_name THEN t.first
+    CROSS JOIN LATERAL (SELECT CASE WHEN t.last=r.surname THEN t.first
         ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END) n(part)
     GROUP BY r.family_duid
 ), named AS MATERIALIZED (
     -- "A", "A and B", "A, B and C" after the surname (name_series).
-    SELECT r.*,r.family_name||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
+    SELECT r.*,r.surname||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
             THEN array_to_string(n.parts,' and ')
             ELSE array_to_string(n.parts[1:cardinality(n.parts)-1],', ')
                 ||' and '||n.parts[cardinality(n.parts)] END),'') AS display_name
     FROM responses r LEFT JOIN head_names n ON n.family_duid=r.family_duid
 ), people AS MATERIALIZED (
-    SELECT r.family_duid,r.family_name,r.display_name,r.submitted_at,g.grp,
+    SELECT r.family_duid,r.family_name,r.surname,r.display_name,r.submitted_at,g.grp,
         e.key AS member_key,
         -- A listed Member's ParishSoft DUID (#960); a Member the Family added
         -- on the form has none yet.
@@ -330,7 +353,8 @@ WITH selected AS MATERIALIZED (
             OR (parameters->>'talent'='cannot_serve' AND q.cannot_serve)
             OR q.talents ? (parameters->>'talent'))
 ), families AS MATERIALIZED (
-    SELECT r.family_duid,r.family_name,r.display_name,r.submitted_at FROM named r
+    SELECT r.family_duid,r.family_name,r.surname,r.display_name,r.submitted_at
+    FROM named r
     WHERE r.answers->'cannot_attend'='true'::jsonb
       AND parameters->>'talent' IN ('any','cannot_attend')
       AND (parameters->>'search'=''
@@ -353,12 +377,12 @@ SELECT CASE WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
             'member_name',member_name,'member_duid',member_duid,
             'proposed',grp='proposed_members',
             'cannot_serve',cannot_serve,'talents',talents,'submitted_at',submitted_at)
-        ORDER BY lower(family_name),lower(display_name),family_duid,lower(member_name),member_key)
+        ORDER BY lower(surname),lower(display_name),family_duid,lower(member_name),member_key)
         FROM members),'[]'::jsonb),
     'families',coalesce((SELECT jsonb_agg(jsonb_build_object(
             'family_name',family_name,'family_duid',family_duid,
             'submitted_at',submitted_at)
-        ORDER BY lower(family_name),lower(display_name),family_duid) FROM families),'[]'::jsonb)) END
+        ORDER BY lower(surname),lower(display_name),family_duid) FROM families),'[]'::jsonb)) END
 INTO answer FROM (SELECT 1) one LEFT JOIN selected x ON true;
     RETURN answer;
 END $$;

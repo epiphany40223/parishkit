@@ -34,11 +34,13 @@ from parishkit.stewardship.reports.financial import (
 )
 from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
 from parishkit.stewardship.source.leases import release_source
+from parishkit.stewardship.source.models import SourceCurrent
+from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.source.snapshots import promote_snapshot
 
 from ..financial_factory import record
 from ..test_financial_answers import CHECK, OPTIONS, OTHER
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock, change, close_campaign, command
 from .response_builders import activate_response_service, response_source
 from .test_background_grants_postgresql import task_login
@@ -767,6 +769,101 @@ def test_name_search_and_sort_use_the_shown_family_name(response_service):
     assert {
         row["family_duid"] for row in report(harness, search="zeta, abe")["rows"]
     } == {7}
+
+
+def _rewrite_payload(kind, snapshot, key, changes):
+    """Merge ``changes`` into one snapshot payload, as only a superuser could.
+
+    The source pipeline never stores some shapes the selection must still
+    name as Python does (a head the snapshot lacks, a blank first name,
+    untrimmed Unicode whitespace), so they are written in place.
+    """
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            f"UPDATE stewardship_source_{kind} p "
+            "SET canonical=(p.canonical::jsonb || %s::jsonb)::text "
+            f"FROM stewardship_snapshot_{kind} m "
+            "WHERE m.payload_id=p.id AND m.snapshot_id=%s AND m.source_key=%s",
+            [json.dumps(changes), snapshot, str(key)],
+        )
+        assert cursor.rowcount == 1, (kind, key)
+
+
+def test_sql_shown_name_matches_snapshot_family_names(response_service):
+    """The selection's shown name is snapshot_family_names' name, edge cases too.
+
+    Search by the whole name Python builds finds exactly that Family, so the
+    SQL string equals it, for: three heads; a head of another surname; a
+    blank first name; an inactive head; a head missing from the snapshot;
+    and names padded with a no-break space, tab or ideographic space, which
+    Python's str.strip() removes and plain btrim does not. The returned
+    family_name keeps its own trim (#960).
+    """
+    harness = response_service
+    family = dict(registeredOrganizationID=5)
+    named = {
+        30: (6, "Ann", "Alpha"),
+        31: (6, "Bea", "Alpha"),
+        32: (6, "Cy", "Alpha"),
+        33: (7, "Dan", "Bravo"),
+        34: (7, "Eve", "Smith"),
+        35: (7, "Fay", "Bravo"),
+        36: (7, "Gus", "Bravo"),
+        37: (8, "Jo", "Charlie"),
+    }
+    financial_source(
+        harness,
+        options=map(asdict, OPTIONS),
+        extra_families={
+            duid: family | dict(familyDUID=duid, lastName=last)
+            for duid, last in ((6, "Alpha"), (7, "Bravo"), (8, "Charlie"))
+        },
+        extra_members={
+            member: head(member, duid) | dict(firstName=first, lastName=last)
+            for member, (duid, first, last) in named.items()
+        },
+    )
+    harness = activate_response_service(harness)
+    with web_login():
+        for duid in (6, 7, 8):
+            session = family_session(harness, duid)
+            pledge(session, load_form(session), shares={CHECK: ""})
+    snapshot = SourceCurrent.objects.get().snapshot_id
+    # Family 7: head 35 has a blank first name, 36 is inactive and 99999 is
+    # not in the snapshot at all.
+    _rewrite_payload("member", snapshot, 35, {"firstName": " "})
+    _rewrite_payload("member", snapshot, 36, {"active": False})
+    _rewrite_payload(
+        "family", snapshot, 7, {"active_head_duids": [33, 34, 35, 36, 99999]}
+    )
+    # Family 8: Unicode whitespace around the surname and the head's names.
+    _rewrite_payload("family", snapshot, 8, {"lastName": "\u00a0Charlie\t"})
+    _rewrite_payload(
+        "member",
+        snapshot,
+        37,
+        {"firstName": "\tJo\u00a0", "lastName": "Charlie\u3000"},
+    )
+    shown = snapshot_family_names(snapshot, {6, 7, 8})
+    assert shown == {
+        6: "Alpha, Ann, Bea and Cy",
+        7: "Bravo, Dan and Eve Smith",
+        8: "Charlie, Jo",
+    }
+    for duid, name in shown.items():
+        for text in (name, name.upper()):
+            found = report(harness, search=text)["rows"]
+            assert [row["family_duid"] for row in found] == [duid], text
+    # The returned name is unchanged: plain btrim leaves the no-break space.
+    rows = {row["family_duid"]: row for row in report(harness)["rows"]}
+    assert rows[8]["family_name"] == "\u00a0Charlie\t"
+    # The name sort follows the trimmed surname, not the padded text.
+    ordered = [
+        row["family_duid"]
+        for row in report(harness, sort="name")["rows"]
+        if row["family_duid"] in shown
+    ]
+    assert ordered == [6, 7, 8]
 
 
 def test_cannot_contribute_is_reported_and_filterable(response_service):
