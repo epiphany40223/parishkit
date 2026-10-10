@@ -625,7 +625,9 @@ def test_a_live_campaign_changes_its_leader_roles_in_place(auth_service, google)
     # end date's (Administrator decision E2) ...
     status = browser.get(response["Location"])
     assert "Change status" in leader_region(status.content)
-    assert status.content.decode().count('id="settings-status-title"') == 1
+    # Its heading's id is its region's, so the two regions never share one.
+    assert status.content.decode().count('id="leader-roles-review-status-title"') == 1
+    assert 'id="settings-review-status-title"' not in status.content.decode()
     # ... and so does a refused Apply (a preview now out of date).
     stale = post(browser, url(row), {"action": "confirm", "preview": token(later)})
     assert stale.status_code == 409

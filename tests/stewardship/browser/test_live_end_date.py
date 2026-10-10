@@ -20,6 +20,9 @@ from .settings_components import (
     COMBINED_REVIEW,
     END_CHECKS,
     END_REFUSAL,
+    LEADERS,
+    LEADERS_END_REVIEW,
+    LEADERS_REVIEW,
     LIVE_END,
     LIVE_END_PENDING,
     LIVE_END_REFUSED,
@@ -364,3 +367,67 @@ def test_a_refused_change_settles_in_place_with_its_reason(page, component_origi
     assert page.evaluate(FORM_TOP) == before
     assert page.evaluate(MARKED) == "kept"
     assert page.url == component_origin + LIVE_END_REFUSING
+
+
+# Every element id on the page that more than one element carries.
+DUPLICATE_IDS = """() => {
+    const seen = {};
+    for (const element of document.querySelectorAll('[id]')) {
+        seen[element.id] = (seen[element.id] || 0) + 1;
+    }
+    return Object.keys(seen).filter(id => seen[id] > 1);
+}"""
+# The id of the heading that names the review in the region with this id,
+# or null unless that heading exists inside the region's review.
+LABELLED = """region => {
+    const section = document.querySelector(`#${region} section[aria-labelledby]`);
+    if (!section) return null;
+    const heading = document.getElementById(section.getAttribute('aria-labelledby'));
+    return heading && section.contains(heading) ? heading.id : null;
+}"""
+
+
+def test_each_panel_reviews_under_its_own_heading(page, component_origin):
+    """Reviewing the end date and then the leader roles, with no reload,
+    labels each panel's review by a heading whose id starts with that
+    panel's region id, so no id repeats on the page (#973)."""
+    reviews = []
+
+    def answer(route):
+        """Answer each panel's Review with that panel's review."""
+        request = route.request
+        if request.method != "POST" or "action=preview" not in (
+            request.post_data or ""
+        ):
+            route.continue_()
+            return
+        reviews.append(request.post_data)
+        leaders = "editor=leader_roles" in request.post_data
+        fixture = LEADERS_REVIEW if leaders else LEADERS_END_REVIEW
+        route.fulfill(
+            response=route.fetch(url=component_origin + fixture, method="GET")
+        )
+
+    page.route(lambda url: url.split("#")[0] == component_origin + LEADERS, answer)
+    answer_checks(page, component_origin)
+    page.goto(component_origin + LEADERS)
+    page.evaluate(MARK)
+    end_region = page.locator("#end-date #settings-review")
+    leader_region = page.locator("#leader-roles #leader-roles-review")
+    end_review = page.locator("#end-date").get_by_role("button", name="Review changes")
+    page.locator("#end-date").get_by_label("Campaign end date").fill("2054-11-15")
+    enabled(end_review)
+    end_review.click()
+    visible(end_region.get_by_role("heading", name="Review your changes"))
+    assert "November 15, 2054" in end_region.inner_text()
+    assert page.evaluate(LABELLED, "settings-review") == "settings-review-title"
+    assert page.evaluate(DUPLICATE_IDS) == []
+    roles = page.get_by_role("group", name="Ministry leader roles")
+    roles.get_by_label("Staff").uncheck()
+    page.locator("#leader-roles").get_by_role("button", name="Review changes").click()
+    visible(leader_region.get_by_role("heading", name="Review your changes"))
+    assert len(reviews) == 2 and "editor=leader_roles" in reviews[1]
+    assert "Chairperson, Staff" in leader_region.inner_text()
+    assert page.evaluate(LABELLED, "leader-roles-review") == "leader-roles-review-title"
+    assert page.evaluate(DUPLICATE_IDS) == []
+    assert page.evaluate(MARKED) == "kept"

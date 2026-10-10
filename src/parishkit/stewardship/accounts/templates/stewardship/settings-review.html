@@ -24,10 +24,12 @@
     Change status (status_url) until it settles.
   A page with a second in-place form (a live campaign's Ministry leader
   roles beside its end date, #922 and #912) names that form's region and
-  form in region_id and form_id when it includes this template.
+  form in region_id and form_id when it includes this template. The headings'
+  ids start with the region's id, so two regions on one page, each with
+  content, never share a heading id.
 {% endcomment %}{% if review_errors %}{% include 'stewardship/components/errors.html' with errors=review_errors %}{% if review_link %}<p><a href="{{ review_link.url }}">{{ review_link.label }}</a></p>{% endif %}{% endif %}
-{% if review %}<section class="panel" data-review-of="{{ form_id|default:'settings-form' }}" aria-labelledby="settings-review-title">
-<h2 id="settings-review-title" tabindex="-1" data-in-place-focus>{% translate "Review your changes" %}</h2>
+{% if review %}<section class="panel" data-review-of="{{ form_id|default:'settings-form' }}" aria-labelledby="{{ region_id|default:'settings-review' }}-title">
+<h2 id="{{ region_id|default:'settings-review' }}-title" tabindex="-1" data-in-place-focus>{% translate "Review your changes" %}</h2>
 {% for note in review.notes %}<p class="notice" role="note">{{ note }}</p>{% endfor %}
 {% if review.template %}{% include review.template %}{% else %}{% for change in review.changes %}<section><h3>{{ change.label }}</h3>
 <p>{% translate "Current:" %} {{ change.before|default_if_none:'—'|linebreaksbr }}</p>
@@ -35,7 +37,7 @@
 <p data-review-note>{% translate "Nothing is saved until you choose Apply changes." %}</p>
 <form method="post" action="#{{ region_id|default:'settings-review' }}" data-in-place data-in-place-only="flow-steps" data-in-place-message="{% translate 'Change sent.' %}">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ review.preview }}">
 {% button type="submit" %}{% translate "Apply changes" %}{% endbutton %}</form>
-</section>{% elif receipt %}<section class="panel" aria-labelledby="settings-status-title">
-<h2 id="settings-status-title" tabindex="-1" data-in-place-focus>{% translate "Change status" %}</h2>
+</section>{% elif receipt %}<section class="panel" aria-labelledby="{{ region_id|default:'settings-review' }}-status-title">
+<h2 id="{{ region_id|default:'settings-review' }}-status-title" tabindex="-1" data-in-place-focus>{% translate "Change status" %}</h2>
 {% include 'stewardship/configuration-request-status.html' %}
 </section>{% endif %}
