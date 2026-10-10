@@ -2240,7 +2240,11 @@
       && (node.hasAttribute("data-client-error") || !node.validity.valid || blank(node)));
     const hint = form.querySelector("[data-complete-hint]");
     if (hint) {
-      hint.hidden = !missing;
+      // A hint marked data-complete-hint="reserve" stays in the layout and
+      // only empties, keeping its line's height (ui-v1.css), so it appearing
+      // or going never moves what follows it (no layout shift: the System
+      // logs table under its filter bar, #953). Any other hint hides.
+      hint.hidden = !missing && hint.dataset.completeHint !== "reserve";
       hint.textContent = missing
         ? (missing.dataset.clientError
           // An unreadable time entry says why itself (#398).

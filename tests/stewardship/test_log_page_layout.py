@@ -234,6 +234,8 @@ def test_the_choices_gate_apply_until_one_is_ticked():
     assert 'data-missing-hint="Tick at least one kind of entry to show."' in fieldset
     # The hint names the group too, as it does the gated Apply button.
     assert 'aria-describedby="log-filter-hint"' in fieldset
+    # Its line stays reserved, never hidden, so the table never moves (#953).
+    assert '<p class="help" id="log-filter-hint" data-complete-hint="reserve">' in html
 
 
 @pytest.mark.parametrize(
