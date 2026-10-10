@@ -14,8 +14,6 @@ from types import MappingProxyType
 from uuid import UUID
 
 from parishkit.stewardship.campaigns.domain import SystemMode
-from parishkit.stewardship.schema_primitives import timezone_names
-from parishkit.stewardship.web import dates
 
 
 class IncidentKind(StrEnum):
@@ -227,6 +225,12 @@ def parish_clock_valid(timezone, date_format):
     The date format must already be a normalized code (never unset), so the
     private pipe carries one canonical spelling the SQL twin also reads.
     """
+    # Imported here, not at module level: the web supervisor's master process
+    # imports this module through observability, and schema_primitives loads
+    # Django validators, which the master must never import.
+    from parishkit.stewardship.schema_primitives import timezone_names
+    from parishkit.stewardship.web import dates
+
     return (
         type(timezone) is str
         and timezone in timezone_names()
@@ -244,6 +248,9 @@ def alert_time(alert, instant):
     with PostgreSQL's to_char, whose "TZ" field gives the same abbreviation
     as zoneinfo (both read the IANA data, "ChST" and "+0545" included).
     """
+    # Lazy for the same Django-free reason as parish_clock_valid.
+    from parishkit.stewardship.web import dates
+
     return dates.format_instant(instant, alert.timezone, alert.date_format)
 
 
